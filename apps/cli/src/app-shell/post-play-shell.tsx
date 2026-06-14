@@ -19,6 +19,7 @@ import {
   buildPostPlayView,
   type PostPlayActionRow,
   type PostPlayDiscoveryCard,
+  type PostPlayNextUpHero,
   type PostPlayProgressBar,
   type PostPlayRailFact,
   type PostPlayUpNextCard,
@@ -54,6 +55,10 @@ export type PostPlayShellProps = {
   stopAfterCurrent?: boolean;
   /** Highlighted action row for keyboard navigation (↑/↓ or j/k). */
   selectedActionIndex?: number;
+  /** Live autoplay countdown seconds; when set, the hero shows "Playing in Ns". */
+  autoNextCountdownSeconds?: number;
+  /** Pre-formatted personal watch-time line for the series-complete celebration. */
+  watchTimeSummary?: string;
 };
 
 // ── Color mapping ─────────────────────────────────────────────────────────────
@@ -148,6 +153,33 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
 
 // ── Discovery cards ───────────────────────────────────────────────────────────
 
+// Text-mode mini-poster (chafa symbols inside Ink, not a Kitty placement), so
+// many picks coexist with the single Kitty hero in the body. `preserveTerminalImages`
+// keeps a pick render from wiping that hero.
+function PickPoster({
+  url,
+  title,
+  cols,
+  rows,
+}: {
+  readonly url?: string;
+  readonly title: string;
+  readonly cols: number;
+  readonly rows: number;
+}) {
+  const { poster } = usePosterPreview(url, {
+    rows,
+    cols,
+    enabled: Boolean(url),
+    variant: "preview",
+    inkEmbedded: true,
+    preserveTerminalImages: true,
+    debounceMs: 160,
+  });
+  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
+  return <Text color={palette.dim}>{initialsOf(title)}</Text>;
+}
+
 function DiscoveryCard({
   card,
   width,
@@ -157,6 +189,7 @@ function DiscoveryCard({
 }) {
   const titleWidth = Math.max(8, width - 4);
   const reasonWidth = Math.max(4, width - 4);
+  const posterCols = Math.max(8, width - 4);
   return (
     <Box
       borderStyle="single"
@@ -166,6 +199,9 @@ function DiscoveryCard({
       flexDirection="column"
       width={width}
     >
+      <Box minHeight={3} justifyContent="center" alignItems="center">
+        <PickPoster url={card.posterUrl} title={card.title} cols={posterCols} rows={3} />
+      </Box>
       <Text color={palette.accent} bold>
         {String(card.index)}
       </Text>
@@ -206,16 +242,19 @@ function DiscoveryCards({
     <Box flexDirection="column" marginTop={1}>
       {cards.map((card) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
+          <Box width={5}>
+            <PickPoster url={card.posterUrl} title={card.title} cols={4} rows={2} />
+          </Box>
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}
           </Text>
           <Text color={palette.text} bold>
-            {truncateLine(card.title, Math.max(8, width - 22))}
+            {truncateLine(card.title, Math.max(8, width - 27))}
           </Text>
           {card.reason ? (
             <Text color={palette.dim}>
               {" "}
-              · {truncateLine(card.reason, Math.max(4, width - measureColumns(card.title) - 6))}
+              · {truncateLine(card.reason, Math.max(4, width - measureColumns(card.title) - 11))}
             </Text>
           ) : null}
         </Box>
@@ -288,7 +327,7 @@ function RailLabel({ label }: { readonly label: string }) {
   );
 }
 
-// ── Rail artwork (wide-only; reserved height so metadata never jumps) ──────────
+// ── Title initials fallback (shared by hero + pick posters) ────────────────────
 
 function initialsOf(title: string): string {
   return (
@@ -301,36 +340,68 @@ function initialsOf(title: string): string {
   );
 }
 
-// Renders the real terminal image (kitty or chafa text) for the next-episode
-// thumbnail when available, falling back to the series poster, then to title
-// initials. One image only — two simultaneous poster previews would clobber
-// each other through the shared clearRenderedPosterImages() pass.
-function RailArtwork({
-  url,
+// ── Next-Up hero (body centerpiece; holds the one Kitty image) ─────────────────
+
+function NextUpHeroCard({
+  hero,
+  artworkUrl,
   title,
   width,
+  countdownSeconds,
 }: {
-  readonly url?: string;
+  readonly hero: PostPlayNextUpHero;
+  readonly artworkUrl?: string;
   readonly title: string;
   readonly width: number;
+  readonly countdownSeconds?: number;
 }) {
-  const innerCols = Math.max(8, width - 2);
-  const { poster, posterState } = usePosterPreview(url, {
-    rows: 5,
-    cols: innerCols,
-    enabled: Boolean(url),
+  const innerWidth = Math.max(20, width - 4);
+  const posterCols = 10;
+  const textWidth = Math.max(8, innerWidth - posterCols - 2);
+  const { poster, posterState } = usePosterPreview(artworkUrl, {
+    rows: 4,
+    cols: posterCols,
+    enabled: Boolean(artworkUrl),
     variant: "preview",
   });
-
+  const countdownLine =
+    countdownSeconds && countdownSeconds > 0
+      ? `Playing in ${countdownSeconds}s · ↵ now · x cancel`
+      : hero.kind === "resume"
+        ? "↵ resume · e episodes"
+        : "↵ play · e episodes";
   return (
-    <Box width={width} minHeight={7} justifyContent="center" alignItems="center">
-      {poster.kind !== "none" ? (
-        <Text>{poster.placeholder}</Text>
-      ) : (
-        <Text color={palette.dim} bold>
-          {posterState === "loading" ? "…" : initialsOf(title)}
-        </Text>
-      )}
+    <Box
+      borderStyle="round"
+      borderColor={palette.accent}
+      flexDirection="column"
+      width={width}
+      paddingX={1}
+      marginTop={1}
+    >
+      <Text color={palette.accent} bold>
+        ▶ UP NEXT
+      </Text>
+      <Box flexDirection="row" marginTop={1}>
+        <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
+          {poster.kind !== "none" ? (
+            <Text>{poster.placeholder}</Text>
+          ) : (
+            <Text color={palette.dim} bold>
+              {posterState === "loading" ? "…" : initialsOf(title)}
+            </Text>
+          )}
+        </Box>
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color={palette.text} bold>
+            {truncateLine(hero.label, textWidth)}
+          </Text>
+          <Text color={palette.muted}>{truncateLine(hero.meta, textWidth)}</Text>
+          <Text color={countdownSeconds ? palette.accent : palette.dim}>
+            {truncateLine(countdownLine, textWidth)}
+          </Text>
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -339,14 +410,10 @@ function RailArtwork({
 
 function PostPlayRail({
   view,
-  title,
   railWidth,
-  artworkUrl,
 }: {
   readonly view: PostPlayView;
-  readonly title: string;
   readonly railWidth: number;
-  readonly artworkUrl?: string;
 }) {
   return (
     <Box
@@ -359,10 +426,6 @@ function PostPlayRail({
       borderRight={false}
       borderBottom={false}
     >
-      {/* Artwork slot — next-episode thumbnail (or series poster) — always
-          reserved to prevent layout jump on artwork load */}
-      <RailArtwork url={artworkUrl} title={title} width={railWidth - 3} />
-
       {/* Up next card */}
       {view.upNext ? (
         <>
@@ -404,6 +467,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   autoskipPaused,
   stopAfterCurrent,
   selectedActionIndex = 0,
+  autoNextCountdownSeconds,
+  watchTimeSummary,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
   const isWide = viewport.breakpoint === "wide";
@@ -433,6 +498,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     autoplayPaused,
     autoskipPaused,
     stopAfterCurrent,
+    watchTimeSummary,
   });
 
   const hColor = heroColor(view.heroColor);
@@ -452,21 +518,50 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           <Text color={palette.muted}>{truncateLine(view.episodeMeta, bodyWidth)}</Text>
         ) : null}
 
-        {/* Hero zone label */}
-        <Box marginTop={1}>
-          <Text color={hColor} bold>
-            {view.heroLabel}
-          </Text>
-        </Box>
+        {/* Series-complete celebration replaces the generic hero label + sub:
+            milestone banner + catalog stats + optional personal watch-time. */}
+        {view.celebration ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={palette.milestone} bold>
+              {view.heroLabel}
+            </Text>
+            <Text color={palette.muted}>{truncateLine(view.celebration.statLine, bodyWidth)}</Text>
+            {view.celebration.watchTimeLine ? (
+              <Text color={palette.ok}>
+                {truncateLine(view.celebration.watchTimeLine, bodyWidth)}
+              </Text>
+            ) : null}
+          </Box>
+        ) : (
+          <>
+            {/* Hero zone label */}
+            <Box marginTop={1}>
+              <Text color={hColor} bold>
+                {view.heroLabel}
+              </Text>
+            </Box>
 
-        {/* Hero sub (nextAirDate, series count, etc.) */}
-        {view.heroSub ? (
-          <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
-        ) : null}
+            {/* Hero sub (nextAirDate, series count, etc.) */}
+            {view.heroSub ? (
+              <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
+            ) : null}
+          </>
+        )}
 
         {/* Progress bar */}
         {view.progressBar ? (
           <ProgressStrip bar={view.progressBar} width={barWidth} color={hColor} />
+        ) : null}
+
+        {/* Next-Up hero — the centerpiece, holds the one Kitty image */}
+        {view.nextUpHero ? (
+          <NextUpHeroCard
+            hero={view.nextUpHero}
+            artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
+            title={title}
+            width={bodyWidth}
+            countdownSeconds={autoNextCountdownSeconds}
+          />
         ) : null}
 
         {/* Action rows */}
@@ -499,17 +594,28 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Text>
           </Box>
         ) : null}
+
+        {/* Live-keys footer — discoverable, premium affordance */}
+        <Box marginTop={1}>
+          <Text color={palette.dim}>
+            {truncateLine(
+              [
+                "↑↓ move",
+                "↵ select",
+                recommendations.length > 0 ? "1·2·3 picks" : null,
+                view.nextUpHero ? "x cancel" : null,
+                "/ search",
+              ]
+                .filter(Boolean)
+                .join("   ·   "),
+              bodyWidth,
+            )}
+          </Text>
+        </Box>
       </Box>
 
       {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-      {showRail ? (
-        <PostPlayRail
-          view={view}
-          title={title}
-          railWidth={railWidth}
-          artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
-        />
-      ) : null}
+      {showRail ? <PostPlayRail view={view} railWidth={railWidth} /> : null}
     </Box>
   );
 });

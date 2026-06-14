@@ -72,6 +72,15 @@ export const CONFIG_METADATA = [
     options: ["on", "off"],
   },
   {
+    key: "showWatchTimeStats",
+    label: "Watch-time stats",
+    section: "recommendations",
+    effect: "immediate",
+    privacy: "local",
+    editable: true,
+    options: ["on", "off"],
+  },
+  {
     key: "recoveryMode",
     label: "Recovery mode",
     section: "playback",

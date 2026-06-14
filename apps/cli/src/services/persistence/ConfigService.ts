@@ -67,6 +67,8 @@ export interface KitsuneConfig {
   discoverItemLimit: number;
   /** Show compact recommendation rail after playback completion. Default true. */
   recommendationRailEnabled: boolean;
+  /** Show a personal watch-time stat on the series-complete celebration. Default true. */
+  showWatchTimeStats: boolean;
   /** Collapse companion pane, minimal footer, and dim header status regardless of terminal size. Default false. */
   minimalMode: boolean;
   /** Zen mode: single-column, no companion/preview rail, minimal chrome — ani-cli-style bare layout at any width, every feature still key-reachable. Default false. */

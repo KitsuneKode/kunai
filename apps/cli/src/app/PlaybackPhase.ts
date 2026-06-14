@@ -158,6 +158,7 @@ import {
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -316,6 +317,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           detail: "Auto-next ready",
           note: `Next ${episodeLabel} in ${remaining}s  ·  n now  ·  a pause`,
         });
+        stateManager.dispatch({ type: "SET_AUTO_NEXT_COUNTDOWN", seconds: remaining });
       },
       isCancelled: () => {
         const state = stateManager.getState();
@@ -331,6 +333,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return false;
       },
     });
+
+    // Countdown is over (advanced, cancelled, or skipped) — clear the live value so
+    // the post-play hero stops showing a stale "Playing in Ns".
+    stateManager.dispatch({ type: "SET_AUTO_NEXT_COUNTDOWN", seconds: null });
 
     if (outcome === "cancelled") {
       // No advance is coming; drop the pre-painted loading pane so the paused idle
@@ -2922,6 +2928,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               playbackStarted,
             });
             const postPlayState = resolvePostPlayState(postPlayInput);
+            // Personal watch-time stat for the series-complete celebration, gated by
+            // config. Aggregates this title's history; null hides the line.
+            const watchTimeSummary =
+              postPlayState.kind === "series-complete" && container.config.showWatchTimeStats
+                ? formatWatchTimeSummary(
+                    aggregateWatchTime(historyRepository.listByTitle(title.id)),
+                  )
+                : null;
+            stateManager.dispatch({ type: "SET_WATCH_TIME_SUMMARY", summary: watchTimeSummary });
             const upcomingEpisode = episodeAvailability.nextEpisode;
             const nextEpisodePickerOption = upcomingEpisode
               ? shellEpisodePicker.options.find(

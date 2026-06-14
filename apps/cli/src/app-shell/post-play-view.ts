@@ -14,6 +14,7 @@
 //   • rail facts: up-next card, season progress, catalog metadata
 // =============================================================================
 
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
@@ -48,6 +49,7 @@ export type PostPlayDiscoveryCard = {
   readonly index: number; // 1-based for display
   readonly title: string;
   readonly reason: string; // dim snippet: overview excerpt or year
+  readonly posterUrl?: string;
 };
 
 // ── Rail fact ─────────────────────────────────────────────────────────────────
@@ -61,6 +63,22 @@ export type PostPlayRailFact = {
 // ── Up-next card (rail) ───────────────────────────────────────────────────────
 
 export type PostPlayUpNextCard = {
+  readonly label: string;
+  readonly meta: string;
+};
+
+// ── Series-complete celebration ───────────────────────────────────────────────
+
+export type PostPlayCelebration = {
+  readonly statLine: string; // "28 episodes · 2 seasons · 2023"
+  readonly watchTimeLine?: string;
+};
+
+// ── Next-Up hero (body centerpiece) ───────────────────────────────────────────
+
+export type PostPlayNextUpHero = {
+  /** "next-episode" = binge the current series; "queue" = cross-title queue head. */
+  readonly kind: "next-episode" | "queue" | "resume" | "next-season";
   readonly label: string;
   readonly meta: string;
 };
@@ -90,6 +108,8 @@ export type PostPlayView = {
   readonly discoveryHeading: string;
   readonly discovery: readonly PostPlayDiscoveryCard[];
   readonly upNext?: PostPlayUpNextCard;
+  readonly nextUpHero?: PostPlayNextUpHero;
+  readonly celebration?: PostPlayCelebration;
   readonly railFacts: readonly PostPlayRailFact[];
   /** Catalog-sourced metadata line for the episode page ("S04E07 · U/A 16+ · sub | dub"). */
   readonly episodeMeta?: string;
@@ -119,6 +139,8 @@ export type BuildPostPlayViewProps = {
   readonly autoplayPaused?: boolean;
   readonly autoskipPaused?: boolean;
   readonly stopAfterCurrent?: boolean;
+  /** Pre-formatted personal watch-time line; omitted when disabled or below threshold. */
+  readonly watchTimeSummary?: string;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -170,6 +192,33 @@ function buildUpNextCard(
   return undefined;
 }
 
+// Body-centerpiece hero. Mirrors buildUpNextCard's policy (binge the current
+// series first, else the cross-title queue head) but with state-specific framing.
+function buildNextUpHero(
+  props: BuildPostPlayViewProps,
+  variant: "next-episode" | "resume" | "next-season" | "queue-only",
+): PostPlayNextUpHero | undefined {
+  const { nextEpisodeLabel, queueNextLabel, titleDetail, autoplayPaused, resumeLabel } = props;
+  if (variant === "resume" && resumeLabel) {
+    return { kind: "resume", label: resumeLabel, meta: "same stream · same position" };
+  }
+  if (variant !== "queue-only" && nextEpisodeLabel) {
+    return {
+      kind: variant === "next-season" ? "next-season" : "next-episode",
+      label: formatUpNextLabel(nextEpisodeLabel),
+      meta: buildUpNextMeta(titleDetail, autoplayPaused),
+    };
+  }
+  if (queueNextLabel) {
+    return {
+      kind: "queue",
+      label: queueNextLabel,
+      meta: `From your queue · ${autoplayPaused ? "autoplay paused" : "autoplay on"}`,
+    };
+  }
+  return undefined;
+}
+
 function buildDiscovery(
   recs: readonly PlaybackRecommendationRailItem[],
 ): readonly PostPlayDiscoveryCard[] {
@@ -178,7 +227,8 @@ function buildDiscovery(
     const reason = rec.overview
       ? (rec.overview.split(/[.!?]/u)[0]?.trim().slice(0, 44) ?? rec.year ?? "")
       : (rec.year ?? "");
-    return { id: rec.id, index: i + 1, title: rec.title, reason };
+    const posterUrl = resolveCatalogPosterUrl(rec.posterPath, { tmdbSize: "w185" }) ?? undefined;
+    return { id: rec.id, index: i + 1, title: rec.title, reason, posterUrl };
   });
 }
 
@@ -262,6 +312,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   if (resumeLabel) {
     return {
       heroKind: "stopped-early",
+      nextUpHero: buildNextUpHero(props, "resume"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
       progressBar,
@@ -301,6 +352,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   if (isMovie) {
     return {
       heroKind: "movie-complete",
+      nextUpHero: buildNextUpHero(props, "queue-only"),
       heroLabel: "✓ movie complete",
       heroColor: "ok",
       completionLine: `✓ ${title}`,
@@ -337,6 +389,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     const chainDetail = stopAfterCurrent ? "chain stops after next play" : "chain continues";
     return {
       heroKind: "mid-series",
+      nextUpHero: buildNextUpHero(props, "next-episode"),
       heroLabel: "✓ episode complete",
       heroColor: "ok",
       completionLine: "✓ episode complete",
@@ -385,6 +438,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       : undefined;
     return {
       heroKind: "caught-up",
+      nextUpHero: buildNextUpHero(props, "queue-only"),
       heroLabel: "◉ caught up · airing",
       heroColor: "ok",
       heroSub: airLine,
@@ -434,6 +488,10 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
 
     return {
       heroKind: "season-finale",
+      nextUpHero: buildNextUpHero(
+        props,
+        postPlayState.hasNextSeason ? "next-season" : "queue-only",
+      ),
       heroLabel: `✦ ${seasonLabel} complete`,
       heroColor: "ok",
       progressBar: seasonProgress,
@@ -488,11 +546,18 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     .filter(Boolean)
     .join(" · ");
 
+  const celebration: PostPlayCelebration = {
+    statLine: seriesMeta || "Series complete",
+    watchTimeLine: props.watchTimeSummary,
+  };
+
   return {
     heroKind: "series-complete",
+    nextUpHero: buildNextUpHero(props, "queue-only"),
     heroLabel: "✦ SERIES COMPLETE",
     heroColor: "milestone",
     heroSub: seriesMeta || undefined,
+    celebration,
     actions: [
       {
         id: "search",
