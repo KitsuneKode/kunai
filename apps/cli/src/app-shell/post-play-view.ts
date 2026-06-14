@@ -67,6 +67,15 @@ export type PostPlayUpNextCard = {
   readonly meta: string;
 };
 
+// ── Next-Up hero (body centerpiece) ───────────────────────────────────────────
+
+export type PostPlayNextUpHero = {
+  /** "next-episode" = binge the current series; "queue" = cross-title queue head. */
+  readonly kind: "next-episode" | "queue" | "resume" | "next-season";
+  readonly label: string;
+  readonly meta: string;
+};
+
 // ── Progress bar (season / series) ───────────────────────────────────────────
 
 export type PostPlayProgressBar = {
@@ -92,6 +101,7 @@ export type PostPlayView = {
   readonly discoveryHeading: string;
   readonly discovery: readonly PostPlayDiscoveryCard[];
   readonly upNext?: PostPlayUpNextCard;
+  readonly nextUpHero?: PostPlayNextUpHero;
   readonly railFacts: readonly PostPlayRailFact[];
   /** Catalog-sourced metadata line for the episode page ("S04E07 · U/A 16+ · sub | dub"). */
   readonly episodeMeta?: string;
@@ -165,6 +175,33 @@ function buildUpNextCard(
   }
   if (queueNextLabel) {
     return {
+      label: queueNextLabel,
+      meta: `From your queue · ${autoplayPaused ? "autoplay paused" : "autoplay on"}`,
+    };
+  }
+  return undefined;
+}
+
+// Body-centerpiece hero. Mirrors buildUpNextCard's policy (binge the current
+// series first, else the cross-title queue head) but with state-specific framing.
+function buildNextUpHero(
+  props: BuildPostPlayViewProps,
+  variant: "next-episode" | "resume" | "next-season" | "queue-only",
+): PostPlayNextUpHero | undefined {
+  const { nextEpisodeLabel, queueNextLabel, titleDetail, autoplayPaused, resumeLabel } = props;
+  if (variant === "resume" && resumeLabel) {
+    return { kind: "resume", label: resumeLabel, meta: "same stream · same position" };
+  }
+  if (variant !== "queue-only" && nextEpisodeLabel) {
+    return {
+      kind: variant === "next-season" ? "next-season" : "next-episode",
+      label: formatUpNextLabel(nextEpisodeLabel),
+      meta: buildUpNextMeta(titleDetail, autoplayPaused),
+    };
+  }
+  if (queueNextLabel) {
+    return {
+      kind: "queue",
       label: queueNextLabel,
       meta: `From your queue · ${autoplayPaused ? "autoplay paused" : "autoplay on"}`,
     };
@@ -265,6 +302,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   if (resumeLabel) {
     return {
       heroKind: "stopped-early",
+      nextUpHero: buildNextUpHero(props, "resume"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
       progressBar,
@@ -304,6 +342,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   if (isMovie) {
     return {
       heroKind: "movie-complete",
+      nextUpHero: buildNextUpHero(props, "queue-only"),
       heroLabel: "✓ movie complete",
       heroColor: "ok",
       completionLine: `✓ ${title}`,
@@ -340,6 +379,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     const chainDetail = stopAfterCurrent ? "chain stops after next play" : "chain continues";
     return {
       heroKind: "mid-series",
+      nextUpHero: buildNextUpHero(props, "next-episode"),
       heroLabel: "✓ episode complete",
       heroColor: "ok",
       completionLine: "✓ episode complete",
@@ -388,6 +428,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       : undefined;
     return {
       heroKind: "caught-up",
+      nextUpHero: buildNextUpHero(props, "queue-only"),
       heroLabel: "◉ caught up · airing",
       heroColor: "ok",
       heroSub: airLine,
@@ -437,6 +478,10 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
 
     return {
       heroKind: "season-finale",
+      nextUpHero: buildNextUpHero(
+        props,
+        postPlayState.hasNextSeason ? "next-season" : "queue-only",
+      ),
       heroLabel: `✦ ${seasonLabel} complete`,
       heroColor: "ok",
       progressBar: seasonProgress,
@@ -493,6 +538,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
 
   return {
     heroKind: "series-complete",
+    nextUpHero: buildNextUpHero(props, "queue-only"),
     heroLabel: "✦ SERIES COMPLETE",
     heroColor: "milestone",
     heroSub: seriesMeta || undefined,

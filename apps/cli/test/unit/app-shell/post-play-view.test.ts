@@ -25,3 +25,26 @@ describe("buildDiscovery posters", () => {
     expect(view.discovery[0]?.posterUrl).toBeUndefined();
   });
 });
+
+describe("nextUpHero", () => {
+  it("builds a hero for mid-series with the next episode label", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E01",
+      nextEpisodeLabel: "S01 E02 — Challengers of Science",
+      postPlayState: { kind: "mid-series" },
+    });
+    expect(view.nextUpHero).toBeDefined();
+    expect(view.nextUpHero?.label).toBe("E02 · Challengers of Science");
+    expect(view.nextUpHero?.kind).toBe("next-episode");
+  });
+
+  it("omits the hero when there is no next thing to play", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E12",
+      postPlayState: { kind: "caught-up" },
+    });
+    expect(view.nextUpHero).toBeUndefined();
+  });
+});
