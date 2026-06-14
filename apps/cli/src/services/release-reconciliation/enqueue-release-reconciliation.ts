@@ -16,7 +16,6 @@ type ReleaseReconciliationContainer = Pick<
   | "diagnosticsService"
   | "offlineTitlePolicies"
   | "config"
-  | "followedTitleRepository"
   | "releaseProgressCache"
   | "notificationService"
 >;
@@ -71,16 +70,15 @@ export function enqueueReleaseReconciliation(
         signal: workSignal,
       });
 
-      // Surface reconciliation-found new episodes as notifications for followed
-      // (non-muted) titles. The shared release-progress projection is the source
-      // of truth; the writer race is resolved upstream (ReleaseProgressWriter).
-      const followedTitleIds = new Set(
-        container.followedTitleRepository
-          .listByPreference("following")
-          .map((entry) => entry.titleId),
-      );
-      if (followedTitleIds.size > 0) {
-        const projections = container.releaseProgressCache.getByTitleIds([...followedTitleIds]);
+      // Surface reconciliation-found new episodes as notifications for every
+      // reconciled (continue-watching + followed) title — these are exactly the
+      // "unwatched releases" shown on the home screen. recordSignals drops muted
+      // titles via the engine, so muting a title still silences it. The shared
+      // release-progress projection is the source of truth; the writer race is
+      // resolved upstream (ReleaseProgressWriter).
+      const reconciledTitleIds = historyRows.map((row) => row.titleId);
+      if (reconciledTitleIds.length > 0) {
+        const projections = container.releaseProgressCache.getByTitleIds(reconciledTitleIds);
         const newEpisodeSignals = [...projections.values()]
           .filter((projection) => projection.newEpisodeCount > 0)
           .map((projection) => ({

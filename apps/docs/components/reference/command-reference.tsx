@@ -1,8 +1,7 @@
 "use client";
 
+import { codeMetadata, type CommandMetadata } from "@/lib/code-metadata";
 import { useMemo, useState } from "react";
-
-import { codeMetadata, type CommandMetadata } from "../../lib/code-metadata";
 
 export function CommandReference({ limit }: { readonly limit?: number }) {
   const [query, setQuery] = useState("");

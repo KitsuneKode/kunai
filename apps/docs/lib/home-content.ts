@@ -30,8 +30,8 @@ export const homeHero = {
     "Search, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place. Five active providers, local decryption, no browser required.",
   installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
   primaryCta: {
-    label: "Read the guide",
-    href: "/docs/users/getting-started",
+    label: "Read the docs",
+    href: "/docs",
   },
   secondaryCta: {
     label: "See recovery",

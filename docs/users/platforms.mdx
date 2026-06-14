@@ -3,42 +3,47 @@ title: Platforms
 description: Platform-specific install, playback, opening, protocol, and troubleshooting notes.
 ---
 
-Kunai is Bun-first and terminal-first. Playback uses `mpv`; optional downloads
-use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster
-previews can use Kitty graphics or `chafa` depending on the terminal.
+Kunai is Bun-first and terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews use Kitty graphics or `chafa` depending on terminal capabilities.
 
-## Linux
+<Callout type="info" title="Optional tools stay optional">
+Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths.
+</Callout>
 
-```sh
-bun install -g @kitsunekode/kunai
-kunai --setup
-```
-
-Useful optional tools:
-
-- `mpv` for playback.
-- `yt-dlp` for downloads.
-- `ffprobe` for optional media validation.
-- `chafa` for image previews outside Kitty-compatible terminals.
-- `xdg-open` for `/docs`, `/report-issue`, folder reveal, and account auth.
-
-## macOS
+<Tabs items={["Linux", "macOS", "Windows", "Source checkout"]}>
+<Tab value="Linux">
 
 ```sh
 bun install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-Install `mpv` and optional download tools through Homebrew or your preferred
-package manager. Kunai uses `open` for browser and folder handoffs.
+Recommended optional tools:
 
-## Windows
+- `mpv` — playback engine (required for watching)
+- `yt-dlp` — offline download jobs
+- `ffprobe` — optional validation of completed artifacts
+- `chafa` — poster previews outside Kitty-compatible terminals
+- `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
 
-Kunai can run where Bun, a terminal, and `mpv` are available. Windows Terminal
-works best for a predictable terminal surface. Kunai uses `cmd /c start` for
-browser handoffs such as `/docs` and `/report-issue`.
+</Tab>
+<Tab value="macOS">
 
-## Source Checkout
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+```
+
+Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs.
+
+</Tab>
+<Tab value="Windows">
+
+Kunai runs where **Bun**, a capable terminal, and **mpv** are available. Windows Terminal is the most predictable surface.
+
+Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation.
+
+</Tab>
+<Tab value="Source checkout">
 
 ```sh
 bun install
@@ -47,14 +52,18 @@ bun run dev -- -S "Dune"
 bun run dev -- -a -S "Attack on Titan"
 ```
 
-Source checkouts are the best path for debugging provider changes, playback
-recovery, and docs contributions.
+Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions.
 
-## Platform Guardrails
+</Tab>
+</Tabs>
 
-- If an opener is missing, Kunai should keep running and leave the user in the
-  current shell context.
-- If optional tools are missing, setup and diagnostics should explain the missing
-  capability instead of failing unrelated playback paths.
-- Provider and Discord live smokes are manual release checks, not background
-  activity.
+## Platform guardrails
+
+- If an opener is missing, Kunai keeps running and leaves you in the current shell context.
+- Provider and Discord live smokes are **manual** release checks — not background activity triggered by normal use.
+- Episode numbers are **1-based** in the UI; providers adapt internally.
+
+## Related
+
+- [Install and update](/docs/users/install-and-update) for global package, installer script, and `/update` behavior
+- [Getting started](/docs/users/getting-started) for the first-session checklist

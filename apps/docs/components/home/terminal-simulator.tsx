@@ -1,11 +1,12 @@
 "use client";
 
-import { Terminal as TerminalIcon, Check, Copy, ArrowRight, Sparkles } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
+import { homeHero } from "@/lib/home-content";
+import { Terminal as TerminalIcon, ArrowRight, Sparkles, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { homeHero } from "../../lib/home-content";
 import { HeroHeadline } from "./hero-headline";
 import type { HomeCommandMetadata, HomeLogEntry, HomeProviderMetadata } from "./types";
 
@@ -27,6 +28,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
   installCommands,
   primaryCtaHref,
   primaryCtaLabel,
+  secondaryCtaHref,
+  secondaryCtaLabel,
   copyToClipboard,
   copiedText,
 }: TerminalSimulatorProps) {
@@ -279,6 +282,25 @@ const TerminalSimulator = memo(function TerminalSimulator({
     }
   };
 
+  const getLogLineClass = (text: string): string => {
+    if (text.startsWith("kunai >")) return "kunai-log-line kunai-log-line--prompt";
+    if (text.includes("[ OK ]") || text.includes("OK")) return "kunai-log-line kunai-log-line--ok";
+    if (text.includes("[WARN]") || text.includes("[AIRING]"))
+      return "kunai-log-line kunai-log-line--warn";
+    if (text.includes("[PLAY]") || text.includes("mpv"))
+      return "kunai-log-line kunai-log-line--play";
+    if (
+      text.includes("[QUERY]") ||
+      text.includes("[FETCH]") ||
+      text.includes("[SETUP]") ||
+      text.includes("[RECOVERY]")
+    ) {
+      return "kunai-log-line kunai-log-line--query";
+    }
+    if (text.startsWith("▌")) return "kunai-log-line kunai-log-line--brand";
+    return "kunai-log-line kunai-log-line--muted";
+  };
+
   const onPresetClick = (cmd: string) => {
     focusTerminalInput();
     runSimulatedCommand(cmd);
@@ -287,45 +309,42 @@ const TerminalSimulator = memo(function TerminalSimulator({
   return (
     <div className="grid min-h-[calc(100dvh-8rem)] grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] items-center gap-10 pb-18 max-lg:min-h-0 max-lg:grid-cols-1 max-lg:pt-10">
       <div className="kunai-reveal flex flex-col justify-center">
-        <div className="mb-6 flex w-fit items-center gap-2 rounded-full border border-[#f4d8e4]/10 bg-[#130f17]/40 px-3 py-1 text-[11px] tracking-widest text-[#f09cb5]/80 uppercase shadow-sm backdrop-blur-md">
-          <Sparkles className="h-3.5 w-3.5 animate-pulse text-[#f09cb5]" />
+        <div className="kunai-meta-pill mb-6">
+          <Sparkles className="kunai-text-accent h-3.5 w-3.5 animate-pulse" />
           <span>{homeHero.eyebrow}</span>
         </div>
 
         <HeroHeadline title={homeHero.title} />
 
-        <p className="mt-7 max-w-xl font-sans text-base leading-relaxed font-light text-pretty text-[#f4d8e4]/70 md:text-lg">
-          {homeHero.description}
-        </p>
+        <p className="kunai-type-lead mt-7 max-w-xl">{homeHero.description}</p>
 
         {/* Tactile Install Command in Hero */}
         <div className="mt-6 flex w-full max-w-md flex-col gap-3">
-          <div className="hero-install-box flex items-center justify-between p-3 font-mono text-xs text-zinc-300">
+          <div className="hero-install-box text-fd-foreground flex items-center justify-between p-3 font-mono text-xs">
             <div className="flex items-center gap-2 select-all">
-              <span className="text-[#f09cb5]/70 select-none">$</span>
+              <span className="kunai-text-accent opacity-70 select-none">$</span>
               <span>bun install -g @kitsunekode/kunai</span>
             </div>
-            <button
-              type="button"
-              onClick={() => copyToClipboard("bun install -g @kitsunekode/kunai", "hero-install")}
-              className="copy-btn shrink-0 cursor-pointer rounded-lg border border-[#f4d8e4]/10 bg-[#1e1824] px-2.5 py-1 text-[10px] text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white"
-            >
-              {copiedText === "hero-install" ? "Copied!" : "Copy"}
-            </button>
+            <CopyButton
+              text="bun install -g @kitsunekode/kunai"
+              label="hero-install"
+              copiedText={copiedText}
+              onCopy={copyToClipboard}
+            />
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-[#f4d8e4]/40">
+          <div className="kunai-step-meta flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-1">
-              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
               Bun first
             </span>
-            <span className="h-1.5 w-1.5 rounded-full bg-[#f4d8e4]/10" />
+            <span className="bg-fd-border h-1.5 w-1.5 rounded-full" />
             <span className="flex items-center gap-1">
-              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
               Local decryption
             </span>
-            <span className="h-1.5 w-1.5 rounded-full bg-[#f4d8e4]/10" />
+            <span className="bg-fd-border h-1.5 w-1.5 rounded-full" />
             <span className="flex items-center gap-1">
-              <Check className="h-3.5 w-3.5 stroke-[3] text-[#8de4c2]" />
+              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
               No browser needed
             </span>
           </div>
@@ -336,12 +355,15 @@ const TerminalSimulator = memo(function TerminalSimulator({
             <span>{primaryCtaLabel}</span>
             <ArrowRight className="ml-1.5 h-4 w-4 shrink-0" />
           </Link>
+          <Link className="kunai-button" href={secondaryCtaHref}>
+            <span>{secondaryCtaLabel}</span>
+          </Link>
           <a className="kunai-button" href="#install">
-            <span>Quick Start</span>
+            <span>Quick start</span>
           </a>
           <button
             type="button"
-            className="kunai-button flex items-center gap-2 border-[#f09cb5]/20 text-[#f09cb5]/90 hover:text-white"
+            className="kunai-button kunai-text-accent border-fd-primary/20 hover:text-fd-foreground flex items-center gap-2"
             onClick={() => onPresetClick("/help")}
           >
             <TerminalIcon className="h-4 w-4 shrink-0" />
@@ -355,7 +377,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
         style={{ perspective: 1200 }}
       >
         {/* Glow behind terminal */}
-        <div className="absolute inset-0 -z-10 scale-75 rounded-full bg-gradient-to-tr from-[#f09cb5]/8 to-[#8de4c2]/5 blur-3xl" />
+        <div className="kunai-hero-glow" aria-hidden="true" />
 
         <motion.aside
           ref={terminalStageRef}
@@ -383,59 +405,37 @@ const TerminalSimulator = memo(function TerminalSimulator({
             style={{
               background: `radial-gradient(350px circle at ${((mousePos.x + 0.5) * 100).toFixed(
                 0,
-              )}% ${((mousePos.y + 0.5) * 100).toFixed(
-                0,
-              )}%, rgba(240, 156, 181, 0.08), transparent 80%)`,
+              )}% ${((mousePos.y + 0.5) * 100).toFixed(0)}%, var(--kunai-mesh-a), transparent 80%)`,
             }}
           />
 
-          <div className="kunai-terminal-top border-b border-[#f4d8e4]/10 bg-[#0b070e]/80 backdrop-blur-md">
-            <span className="flex items-center gap-1.5 text-xs text-[#f4d8e4]/80">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-[#f09cb5]"></span>
+          <div className="kunai-terminal-top">
+            <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
+              <span className="kunai-status-dot kunai-status-dot--focus" />
               kunai shell
             </span>
-            <span className="text-[10px] font-semibold text-[#f09cb5]">cli active</span>
-            <span className="text-[10px] text-[#f4d8e4]/40">mpv verified</span>
+            <span className="kunai-text-accent text-[10px] font-semibold">cli active</span>
+            <span className="kunai-step-meta">mpv verified</span>
           </div>
 
           <div
             ref={terminalBodyRef}
-            className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text bg-[#0b070e]/95 text-left backdrop-blur-sm focus:outline-none"
+            className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
             onClick={focusTerminalInput}
             role="presentation"
           >
             {terminalLogs.map((line) => (
-              <span
-                key={line.id}
-                className={`block font-mono text-xs ${
-                  line.text.startsWith("kunai >")
-                    ? "mt-2 font-bold text-[#f09cb5]"
-                    : line.text.includes("[ OK ]") || line.text.includes("OK")
-                      ? "text-[#8de4c2]"
-                      : line.text.includes("[WARN]") || line.text.includes("[AIRING]")
-                        ? "text-[#e4c180]"
-                        : line.text.includes("[PLAY]") || line.text.includes("mpv")
-                          ? "text-sky-300"
-                          : line.text.includes("[QUERY]") ||
-                              line.text.includes("[FETCH]") ||
-                              line.text.includes("[SETUP]") ||
-                              line.text.includes("[RECOVERY]")
-                            ? "text-[#f09cb5]"
-                            : line.text.startsWith("▌")
-                              ? "font-bold text-[#f09cb5]"
-                              : "text-[#f4d8e4]/50"
-                }`}
-              >
+              <span key={line.id} className={getLogLineClass(line.text)}>
                 {line.text}
               </span>
             ))}
 
-            <span className="relative mt-3 flex items-center border-t border-[#f4d8e4]/5 pt-2">
-              <span className="mr-2 text-xs font-bold text-[#f09cb5]">kunai &gt;</span>
+            <span className="kunai-terminal-input-row">
+              <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
               <input
                 ref={terminalInputRef}
                 type="text"
-                className="w-full border-none bg-transparent font-mono text-xs text-white outline-none"
+                className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
                 value={terminalInput}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
@@ -443,7 +443,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
                 disabled={terminalState === "running"}
                 aria-label="Terminal command execution box"
               />
-              <span className="kunai-cursor shrink-0"></span>
+              <span className="kunai-cursor shrink-0" />
             </span>
 
             <AnimatePresence initial={false}>
@@ -453,16 +453,16 @@ const TerminalSimulator = memo(function TerminalSimulator({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.98 }}
                   transition={{ type: "spring", duration: 0.3, bounce: 0.1 }}
-                  className="kunai-command-palette block rounded-xl border border-[#f09cb5] bg-[#1e1824] shadow-2xl"
+                  className="kunai-command-palette"
                   onClick={(e) => e.stopPropagation()}
                   role="presentation"
                 >
-                  <span className="palette-search-wrapper flex items-center border-b border-[#f4d8e4]/10 bg-[#0b070e]/80 px-3 py-2">
-                    <span className="mr-2 font-bold text-[#f09cb5]">/</span>
+                  <span className="palette-search-wrapper">
+                    <span className="kunai-text-accent mr-2 font-bold">/</span>
                     <input
                       ref={paletteInputRef}
                       type="text"
-                      className="palette-search-input w-full border-none bg-transparent text-xs text-white outline-none"
+                      className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
                       value={searchQuery.replace(/^\//, "")}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search commands..."
@@ -476,8 +476,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
                         key={cmd.id}
                         className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
                           index === selectedPaletteIndex
-                            ? "border-l-2 border-[#f09cb5] bg-[#281f30] text-white"
-                            : "text-zinc-300 hover:bg-[#1e1824]"
+                            ? "is-selected"
+                            : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
                         }`}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -488,17 +488,13 @@ const TerminalSimulator = memo(function TerminalSimulator({
                         onMouseEnter={() => setSelectedPaletteIndex(index)}
                       >
                         <span>
-                          <span className="font-semibold text-white">/{cmd.id}</span>
-                          <span className="ml-1.5 text-[10px] text-[#f09cb5]/60">
+                          <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
+                          <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
                             ({cmd.label})
                           </span>
-                          <span className="mt-0.5 block font-sans text-[10px] text-[#f4d8e4]/40">
-                            {cmd.description}
-                          </span>
+                          <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
                         </span>
-                        <span className="palette-shortcut rounded border border-[#f4d8e4]/10 px-1 py-0.5 text-[9px] text-[#f4d8e4]/40">
-                          Enter
-                        </span>
+                        <span className="palette-shortcut">Enter</span>
                       </button>
                     ))}
                   </span>
@@ -513,41 +509,27 @@ const TerminalSimulator = memo(function TerminalSimulator({
                 type="button"
                 key={cmd}
                 onClick={() => onPresetClick(cmd)}
-                className="cursor-pointer rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-2.5 py-1 font-mono text-[10px] text-[#f4d8e4]/80 transition-all hover:border-[#f09cb5] hover:bg-[#1e1824] hover:text-white"
+                className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
               >
                 {cmd}
               </button>
             ))}
           </div>
 
-          <div className="kunai-install mt-4 rounded-xl border-t border-[#f4d8e4]/10 bg-[#0b070e]/80 p-3">
-            <span className="mb-2 block text-[10px] font-semibold tracking-wider text-[#f4d8e4]/40 uppercase">
+          <div className="kunai-install mt-4 rounded-xl p-3">
+            <span className="kunai-step-meta mb-2 block font-semibold tracking-wider uppercase">
               Install CLI package
             </span>
             <div className="space-y-1.5">
               {installCommands.map((command) => (
-                <code
-                  key={command}
-                  className="flex items-center justify-between rounded-lg border border-[#f4d8e4]/5 bg-[#130f17] px-3 py-1.5 font-mono text-[11px] text-zinc-300"
-                >
+                <code key={command} className="kunai-code-row text-[11px]">
                   <span>{command}</span>
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(command, command)}
-                    className="flex cursor-pointer items-center gap-1 rounded border border-[#f4d8e4]/10 bg-[#1e1824]/60 px-2 py-0.5 text-[10px] text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white"
-                  >
-                    {copiedText === command ? (
-                      <>
-                        <Check className="h-3 w-3 text-[#8de4c2]" />
-                        <span className="text-[#8de4c2]">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3 w-3" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
+                  <CopyButton
+                    text={command}
+                    label={command}
+                    copiedText={copiedText}
+                    onCopy={copyToClipboard}
+                  />
                 </code>
               ))}
             </div>

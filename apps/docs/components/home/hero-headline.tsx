@@ -6,7 +6,7 @@ export function HeroHeadline({ title }: { readonly title: string }) {
   const words = title.split(" ");
 
   return (
-    <h1 className="m-0 max-w-5xl bg-gradient-to-br from-white via-[#f4d8e4] to-[#f09cb5] bg-clip-text font-serif text-5xl leading-[0.98] font-light tracking-tight text-balance text-transparent md:text-6xl xl:text-7xl">
+    <h1 className="kunai-type-display m-0 max-w-6xl">
       {words.map((word, index) => (
         <motion.span
           key={`${word}-${index}`}

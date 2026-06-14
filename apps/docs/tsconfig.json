@@ -21,10 +21,14 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
   },
   "include": [
     "app",
+    "components",
     "lib",
     "test",
     ".source/**/*.ts",

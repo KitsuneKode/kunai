@@ -1,0 +1,207 @@
+/* Fumadocs chrome — Clerk-tier docs polish with Kunai editorial tone */
+
+#nd-docs-layout {
+  --fd-sidebar-width: 18rem;
+  --fd-toc-width: 17rem;
+  background:
+    radial-gradient(ellipse 80% 50% at 12% -8%, var(--kunai-mesh-a), transparent 58%),
+    radial-gradient(ellipse 60% 40% at 88% 4%, var(--kunai-mesh-b), transparent 55%),
+    radial-gradient(ellipse 50% 30% at 50% 100%, var(--kunai-mesh-c), transparent 60%),
+    var(--kunai-bg);
+}
+
+#nd-nav {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 40;
+  margin-inline: auto;
+  max-width: min(96rem, calc(100vw - 1.5rem));
+  border-radius: var(--kunai-radius-pill);
+  border: 1px solid color-mix(in oklab, white 8%, transparent);
+  background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+}
+
+#nd-nav,
+#nd-sidebar,
+#nd-toc {
+  backdrop-filter: blur(16px);
+}
+
+#nd-nav a[href="/"]:hover .kunai-nav-wordmark {
+  color: var(--color-fd-primary);
+}
+
+#nd-sidebar {
+  border-inline-end-color: var(--kunai-line);
+}
+
+#nd-sidebar a[data-active="true"] {
+  color: var(--kunai-accent);
+  background: color-mix(in oklab, var(--kunai-accent) 11%, transparent);
+  border-inline-start: 2px solid var(--kunai-accent);
+  font-weight: 600;
+}
+
+/* Page title hierarchy */
+#nd-docs-layout h1 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-display);
+  font-weight: 300;
+  line-height: var(--kunai-leading-tight);
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  margin-bottom: 0.75rem;
+}
+
+#nd-docs-layout [data-docs-description],
+#nd-docs-layout .text-fd-muted-foreground.text-lg {
+  font-size: var(--kunai-text-lead);
+  line-height: var(--kunai-leading-body);
+  max-width: 62ch;
+  text-wrap: pretty;
+  color: var(--color-fd-muted-foreground);
+}
+
+/* Hub pages (full: true) */
+.kunai-docs-hub #nd-docs-layout article {
+  max-width: 72rem;
+}
+
+.kunai-docs-hub .prose {
+  --fd-prose-width: 72rem;
+}
+
+.kunai-docs-hub-intro {
+  position: relative;
+  margin-block: 0 2.5rem;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  border-radius: var(--kunai-radius-outer);
+  border: 1px solid var(--kunai-line);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--kunai-surface) 90%, transparent),
+    color-mix(in oklab, var(--kunai-surface-strong) 70%, transparent)
+  );
+  box-shadow: var(--kunai-shadow-sm);
+  overflow: hidden;
+}
+
+.kunai-docs-hub-intro::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 100% 0%, var(--kunai-mesh-a), transparent 45%);
+  opacity: 0.7;
+}
+
+.kunai-docs-hub-intro > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Prose refinement */
+#nd-docs-layout .prose {
+  --tw-prose-body: var(--color-fd-muted-foreground);
+  --tw-prose-headings: var(--color-fd-foreground);
+  --tw-prose-links: var(--kunai-accent);
+  --tw-prose-code: var(--color-fd-foreground);
+  font-size: var(--kunai-text-body);
+  line-height: var(--kunai-leading-body);
+}
+
+#nd-docs-layout .prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-title);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin-top: 2.5rem;
+  text-wrap: balance;
+}
+
+#nd-docs-layout .prose :where(h3, h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  font-family: var(--font-serif), Georgia, serif;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+#nd-docs-layout .prose :where(code):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 82%, transparent);
+  border-radius: 0.4rem;
+  padding-inline: 0.4rem;
+  font-size: 0.86em;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+#nd-docs-layout pre {
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-bg) 96%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+  border-radius: var(--kunai-radius-inner);
+}
+
+/* Fumadocs Callout — liquid glass edge */
+#nd-docs-layout [data-callout] {
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid var(--kunai-line);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 4%, transparent);
+}
+
+/* Steps */
+#nd-docs-layout [data-step] {
+  border-color: var(--kunai-line);
+}
+
+/* Tables */
+#nd-docs-layout table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-block: 1.75rem;
+  border: 1px solid var(--kunai-line);
+  border-radius: var(--kunai-radius-inner);
+  overflow: hidden;
+  background: color-mix(in oklab, var(--kunai-surface) 50%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+}
+
+#nd-docs-layout th {
+  background: color-mix(in oklab, var(--kunai-surface-strong) 85%, transparent);
+  color: var(--color-fd-foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--kunai-line);
+  text-align: left;
+}
+
+#nd-docs-layout td {
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--kunai-line);
+  font-size: 0.875rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+#nd-docs-layout tr:last-child td {
+  border-bottom: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #nd-docs-layout tr:hover td {
+    color: var(--color-fd-foreground);
+    background: color-mix(in oklab, var(--kunai-accent-soft) 55%, transparent);
+  }
+}
+
+/* Docs page header bar */
+.kunai-docs-toolbar {
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 65%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+}

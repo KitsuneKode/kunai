@@ -1,7 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&display=swap");
-
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
 
 @source "../app/**/*.{ts,tsx,mdx}";
 @source "../components/**/*.{ts,tsx}";
@@ -10,112 +9,25 @@
 @source "../../../docs/**/*.{md,mdx}";
 @source "../../../node_modules/fumadocs-ui/dist/**/*.js";
 
-:root {
-  --font-sans:
-    "Outfit", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
-  --font-serif: "Cormorant Garamond", Georgia, Cambria, "Times New Roman", Times, serif;
-
-  --kunai-bg: #0b070e;
-  --kunai-surface: #130f17;
-  --kunai-surface-strong: #1e1824;
-  --kunai-surface-elevated: #281f30;
-  --kunai-line: color-mix(in oklab, #f4d8e4 8%, transparent);
-  --kunai-accent: #f09cb5;
-  --kunai-accent-deep: #c86884;
-  --kunai-accent-glow: color-mix(in oklab, var(--kunai-accent) 15%, transparent);
-  --kunai-ok: #8de4c2;
-  --kunai-warning: #e4c180;
-  --kunai-danger: #ff8084;
-  --kunai-warm: #f6c478;
-
-  --kunai-card-shadow:
-    0 1px 0 color-mix(in oklab, white 4%, transparent) inset,
-    0 4px 12px color-mix(in oklab, black 16%, transparent),
-    0 16px 48px color-mix(in oklab, black 32%, transparent);
-
-  --kunai-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --kunai-ease-soft: cubic-bezier(0.23, 1, 0.32, 1);
-  --kunai-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* Shadcn / Tailwind variables for Fumadocs compatibility */
-  --background: 274 33% 4.1%;
-  --foreground: 342 30% 92%;
-  --card: 270 21% 7.5%;
-  --card-foreground: 342 30% 92%;
-  --popover: 270 21% 7.5%;
-  --popover-foreground: 342 30% 92%;
-  --primary: 342 75% 77.6%;
-  --primary-foreground: 274 33% 4.1%;
-  --secondary: 270 21% 12%;
-  --secondary-foreground: 342 30% 92%;
-  --muted: 270 21% 7.5%;
-  --muted-foreground: 342 15% 65%;
-  --accent: 270 21% 12%;
-  --accent-foreground: 342 75% 77.6%;
-  --border: 271 21% 15.7%;
-  --ring: 342 75% 77.6%;
-
-  /* Fumadocs specific variables */
-  --color-fd-background: #0b070e;
-  --color-fd-foreground: #f4d8e4;
-  --color-fd-primary: #f09cb5;
-  --color-fd-primary-foreground: #0b070e;
-  --color-fd-border: color-mix(in oklab, #f4d8e4 8%, transparent);
-  --color-fd-muted: #130f17;
-  --color-fd-muted-foreground: color-mix(in oklab, #f4d8e4 60%, transparent);
-  --color-fd-accent: #1e1824;
-  --color-fd-accent-foreground: #f09cb5;
-  --color-fd-popover: #130f17;
-  --color-fd-popover-foreground: #f4d8e4;
-  --color-fd-card: #130f17;
-  --color-fd-card-foreground: #f4d8e4;
-}
-
-.dark {
-  --background: 274 33% 4.1%;
-  --foreground: 342 30% 92%;
-  --card: 270 21% 7.5%;
-  --card-foreground: 342 30% 92%;
-  --popover: 270 21% 7.5%;
-  --popover-foreground: 342 30% 92%;
-  --primary: 342 75% 77.6%;
-  --primary-foreground: 274 33% 4.1%;
-  --secondary: 270 21% 12%;
-  --secondary-foreground: 342 30% 92%;
-  --muted: 270 21% 7.5%;
-  --muted-foreground: 342 15% 65%;
-  --accent: 270 21% 12%;
-  --accent-foreground: 342 75% 77.6%;
-  --border: 271 21% 15.7%;
-  --ring: 342 75% 77.6%;
-
-  --color-fd-background: #0b070e;
-  --color-fd-foreground: #f4d8e4;
-  --color-fd-primary: #f09cb5;
-  --color-fd-primary-foreground: #0b070e;
-  --color-fd-border: color-mix(in oklab, #f4d8e4 8%, transparent);
-  --color-fd-muted: #130f17;
-  --color-fd-muted-foreground: color-mix(in oklab, #f4d8e4 60%, transparent);
-  --color-fd-accent: #1e1824;
-  --color-fd-accent-foreground: #f09cb5;
-  --color-fd-popover: #130f17;
-  --color-fd-popover-foreground: #f4d8e4;
-  --color-fd-card: #130f17;
-  --color-fd-card-foreground: #f4d8e4;
-}
+@import "./styles/tokens.css";
+@import "./styles/typography.css";
+@import "./styles/surfaces.css";
+@import "./styles/docs-chrome.css";
 
 html {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   scroll-behavior: smooth;
-  font-family: var(--font-sans);
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
 
 body {
-  font-family: var(--font-sans);
+  font-family: inherit;
+  font-size: var(--kunai-text-body);
+  line-height: var(--kunai-leading-body);
   letter-spacing: -0.01em;
   background-color: var(--kunai-bg);
+  color: var(--color-fd-foreground);
 }
 
 h1,
@@ -125,13 +37,13 @@ h4,
 h5,
 h6,
 .font-serif {
-  font-family: var(--font-serif);
+  font-family: var(--font-serif), Georgia, serif;
 }
 
 code,
 pre,
 .font-mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono), ui-monospace, monospace;
 }
 
 /* Custom Scrollbar */
@@ -216,11 +128,11 @@ pre,
 
 .kunai-eyebrow {
   margin: 0;
-  color: var(--kunai-accent);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: var(--kunai-text-caption);
+  font-weight: 700;
+  letter-spacing: var(--kunai-tracking-eyebrow);
   text-transform: uppercase;
+  color: var(--kunai-accent);
 }
 
 .kunai-reveal {
@@ -317,6 +229,82 @@ pre,
 .kunai-terminal-body p {
   margin: 0;
   animation: log-fade-in 200ms var(--kunai-ease-out) both;
+}
+
+.kunai-log-line {
+  display: block;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+
+.kunai-log-line--prompt {
+  margin-top: 0.5rem;
+  font-weight: 700;
+  color: var(--kunai-accent);
+}
+
+.kunai-log-line--ok {
+  color: var(--kunai-ok);
+}
+
+.kunai-log-line--warn {
+  color: var(--kunai-warning);
+}
+
+.kunai-log-line--play {
+  color: color-mix(in oklab, #7ec8e3 82%, var(--kunai-ok));
+}
+
+.kunai-log-line--query {
+  color: var(--kunai-accent);
+}
+
+.kunai-log-line--brand {
+  font-weight: 700;
+  color: var(--kunai-accent);
+}
+
+.kunai-log-line--muted {
+  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
+}
+
+.kunai-terminal-input-row {
+  position: relative;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--kunai-line);
+  padding-top: 0.5rem;
+}
+
+.kunai-command-palette {
+  display: block;
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid color-mix(in oklab, var(--kunai-accent) 42%, var(--kunai-line));
+  background: var(--kunai-surface-elevated);
+  box-shadow: var(--kunai-shadow-md);
+}
+
+.palette-search-wrapper {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-bg) 92%, transparent);
+  padding: 0.5rem 0.75rem;
+}
+
+.palette-item.is-selected {
+  border-left: 2px solid var(--kunai-accent);
+  background: color-mix(in oklab, var(--kunai-accent) 10%, var(--kunai-surface));
+  color: var(--color-fd-foreground);
+}
+
+.palette-shortcut {
+  border-radius: 0.25rem;
+  border: 1px solid var(--kunai-line);
+  padding: 0.125rem 0.25rem;
+  font-size: 0.5625rem;
+  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
 }
 
 @keyframes log-fade-in {
@@ -516,12 +504,14 @@ pre,
 .kunai-section-head h2,
 .kunai-final h2 {
   margin: 0.6rem 0 0;
-  max-width: 15ch;
-  font-size: 3.5rem;
-  line-height: 0.98;
-  font-weight: 900;
-  letter-spacing: -0.02em;
+  max-width: 16ch;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-display);
+  line-height: var(--kunai-leading-tight);
+  font-weight: 300;
+  letter-spacing: -0.03em;
   text-wrap: balance;
+  color: var(--color-fd-foreground);
 }
 
 .kunai-section-head {
@@ -676,6 +666,40 @@ pre,
 }
 .kunai-state-danger {
   border-color: color-mix(in oklab, var(--kunai-danger) 44%, var(--kunai-line));
+}
+
+.kunai-status-dot {
+  height: 0.625rem;
+  width: 0.625rem;
+  border-radius: 9999px;
+  box-shadow: var(--kunai-shadow-sm);
+}
+
+.kunai-status-dot--focus {
+  background: var(--kunai-accent);
+  animation: pulse-glow 2.4s var(--kunai-ease-out) infinite;
+}
+
+.kunai-status-dot--ready {
+  background: var(--kunai-ok);
+}
+
+.kunai-status-dot--warn {
+  background: var(--kunai-warning);
+}
+
+.kunai-status-dot--danger {
+  background: var(--kunai-danger);
+}
+
+.kunai-status-dot--idle {
+  background: color-mix(in oklab, var(--color-fd-muted-foreground) 28%, transparent);
+}
+
+.kunai-flow-index {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: color-mix(in oklab, var(--color-fd-muted-foreground) 45%, transparent);
 }
 
 /* Providers catalog styles */
@@ -1002,7 +1026,7 @@ pre,
   position: fixed;
   inset: 0;
   z-index: 9999;
-  opacity: 0.035;
+  opacity: 0.022;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.8 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   mix-blend-mode: overlay;
 }
@@ -1040,99 +1064,30 @@ pre,
 .premium-card-hover:hover {
   transform: translateY(-4px) scale(1.005);
   border-color: var(--kunai-accent);
-  box-shadow:
-    0 12px 30px rgba(240, 156, 181, 0.05),
-    var(--kunai-card-shadow);
+  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-card-shadow);
 }
 
 .premium-card-hover:active {
-  transform: translateY(-2px) scale(0.98);
+  transform: translateY(-1px) scale(0.96);
 }
 
-/* Custom Fumadocs Polish Overrides */
+/* Kunai × Fumadocs — extended rules live in docs-chrome.css */
 
-/* Header / Nav adjustments */
-.fd-nav,
-header,
-[data-transparent="false"] {
-  background-color: rgba(11, 7, 14, 0.82) !important;
-  backdrop-filter: blur(16px) !important;
-  border-bottom: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
-}
-
-/* Sidebar adjustments */
-.fd-sidebar,
-aside {
-  background-color: #0b070e !important;
-  border-right: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
-}
-
-/* Docs container and body spacing */
-.fd-layout,
-.fd-body {
-  background-color: #0b070e !important;
-}
-
-/* Active links in sidebar */
-.fd-sidebar a[data-active="true"] {
-  color: var(--kunai-accent) !important;
-  background-color: rgba(240, 156, 181, 0.08) !important;
-  font-weight: 600 !important;
-  border-left: 2px solid var(--kunai-accent) !important;
-}
-
-/* Custom TOC (Table of Contents) sidebar */
-.fd-toc,
-.fd-toc-container {
-  border-left: 1px solid color-mix(in oklab, #f4d8e4 6%, transparent) !important;
-}
-
-/* Search Dialog adjustments */
-.fd-search-dialog,
-[role="dialog"] {
-  background-color: #130f17 !important;
-  border: 1px solid var(--kunai-accent) !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6) !important;
-}
-
-/* Remove default theme-toggle button if it still gets rendered */
-button.fd-theme-toggle {
-  display: none !important;
-}
-
-/* Hide theme toggle segmented control in the sidebar footer */
-.fd-sidebar button:has(.lucide-sun),
-.fd-sidebar button:has(.lucide-moon),
-.fd-sidebar div:has(> button:has(.lucide-sun)) {
-  display: none !important;
-}
-
-/* Tactile feedback for clickable elements */
-.kunai-button:active {
-  transform: scale(0.97);
-}
-
-/* Preset pills active scale */
+/* Preset pills + interactive chips — unified press feedback */
 .kunai-terminal-stage button:active,
 .flag-checkbox-wrapper:active,
 .provider-interactive-tab:active,
 .kunai-doc-card:active,
 .kunai-flow-card:active,
-.os-tab-button:active {
-  transform: scale(0.97) !important;
+.os-tab-button:active,
+.kunai-fd-card:active {
+  transform: scale(0.96) !important;
 }
 
-/* Copy buttons active scale */
-.kunai-install button:active,
-.flag-cmd-preview button:active,
-.copy-btn:active {
-  transform: scale(0.95) !important;
-}
-
-/* Premium Code Blocks */
+/* Premium Code Blocks (home + shared reference tables) */
 .prose pre,
 .fd-codeblock,
-pre {
+pre:not(#nd-docs-layout pre) {
   background-color: #0b070e !important;
   border: 1px solid var(--kunai-line) !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
@@ -1150,8 +1105,8 @@ pre:hover {
     0 4px 20px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* Premium Tables */
-table {
+/* Premium Tables (home only — docs tables scoped above) */
+.kunai-home table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
@@ -1161,7 +1116,7 @@ table {
   overflow: hidden;
   background: color-mix(in oklab, var(--kunai-surface) 40%, transparent);
 }
-th {
+.kunai-home table th {
   background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
   color: #fff;
   font-family: var(--font-serif);
@@ -1173,16 +1128,16 @@ th {
   border-bottom: 1px solid var(--kunai-line);
   text-align: left;
 }
-td {
+.kunai-home table td {
   padding: 0.85rem 1.1rem !important;
   border-bottom: 1px solid var(--kunai-line);
   font-size: 0.85rem;
   color: var(--color-fd-muted-foreground);
 }
-tr:last-child td {
+.kunai-home table tr:last-child td {
   border-bottom: none;
 }
-tr:hover td {
+.kunai-home table tr:hover td {
   color: #fff;
   background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
 }
@@ -1267,28 +1222,35 @@ tr:hover td {
 }
 
 .install-step-card {
-  background: color-mix(in oklab, var(--kunai-bg) 70%, transparent);
+  background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
   border: 1px solid var(--kunai-line);
-  border-radius: 1rem;
+  border-radius: var(--kunai-radius-inner);
   padding: 1.25rem;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 4%, transparent);
   transition:
-    border-color 200ms var(--kunai-ease-out),
-    box-shadow 200ms var(--kunai-ease-out);
+    border-color var(--kunai-duration-ui) var(--kunai-ease-out),
+    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out),
+    transform var(--kunai-duration-ui) var(--kunai-ease-out);
 }
+
 .install-step-card:hover {
-  border-color: var(--kunai-accent-glow);
-  box-shadow: 0 4px 20px color-mix(in oklab, var(--kunai-accent) 2%, transparent);
+  border-color: color-mix(in oklab, var(--kunai-accent) 28%, var(--kunai-line));
+  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm);
+  transform: translateY(-2px);
 }
 
 /* Hero Install Box */
 .hero-install-box {
   border: 1px solid var(--kunai-line);
-  background: linear-gradient(135deg, rgba(19, 15, 23, 0.7), rgba(30, 24, 36, 0.7));
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  border-radius: 0.75rem;
-  transition: border-color 200ms var(--kunai-ease-out);
+  background: color-mix(in oklab, var(--kunai-surface-strong) 75%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+  border-radius: var(--kunai-radius-inner);
+  transition:
+    border-color var(--kunai-duration-ui) var(--kunai-ease-out),
+    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out);
 }
+
 .hero-install-box:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
+  box-shadow: var(--kunai-shadow-diffuse);
 }

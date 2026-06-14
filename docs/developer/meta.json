@@ -1,4 +1,7 @@
 {
-  "title": "Developer Guides",
-  "pages": ["debugging-workflow", "docs-maintenance"]
+  "title": "Developer",
+  "description": "Debug playback, maintain docs, and extend Kunai safely.",
+  "icon": "Wrench",
+  "root": true,
+  "pages": ["index", "debugging-workflow", "docs-maintenance"]
 }

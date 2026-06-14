@@ -93,11 +93,6 @@ export function NotificationsShell({
           <Text color={palette.dim}>{`page ${view.page + 1}/${view.totalPages} · [ ]`}</Text>
         </Box>
       ) : null}
-      <Box marginTop={1}>
-        <Text color={palette.dim}>
-          ↑↓ move · ↵ action · a all · r read · A all-read · x archive · tab switch · esc close
-        </Text>
-      </Box>
     </Box>
   );
 }

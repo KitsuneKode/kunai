@@ -66,6 +66,14 @@ export class NotificationService {
   dismiss(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.dismissByDedupKey(dedupKey, now);
   }
+
+  delete(dedupKey: string): void {
+    this.deps.repo.deleteByDedupKey(dedupKey);
+  }
+
+  clearArchived(): number {
+    return this.deps.repo.clearArchived();
+  }
 }
 
 function defaultNotificationActionIds(kind: string): readonly string[] {

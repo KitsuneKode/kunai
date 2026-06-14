@@ -879,14 +879,6 @@ export function RootOverlayShell({
     setSelectedIndex(0);
   }, [historyTab, overlay.type]);
 
-  // Opening the notifications surface marks everything read (clears the bell);
-  // rows stay visible and explicit r/A remain available.
-  useEffect(() => {
-    if (overlay.type !== "notifications") return;
-    container.notificationService.markAllRead();
-    setNotifTick((tick) => tick + 1);
-  }, [overlay.type, container.notificationService]);
-
   useEffect(() => {
     if (overlay.type !== "history") {
       return;
@@ -1302,6 +1294,21 @@ export function RootOverlayShell({
         container.notificationService.archive(notifRow.dedupKey);
         setNotifTick((tick) => tick + 1);
         setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
+        return;
+      }
+      if (input === "d" && notifRow) {
+        container.notificationService.delete(notifRow.dedupKey);
+        setNotifTick((tick) => tick + 1);
+        setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
+        setOverlayStatus("Notification deleted");
+        return;
+      }
+      if (input === "C") {
+        const removed = container.notificationService.clearArchived();
+        setNotifTick((tick) => tick + 1);
+        setNotifPage(0);
+        setSelectedIndex(0);
+        setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
         return;
       }
       if (input.toLowerCase() === "a" && notifRow) {
@@ -2021,7 +2028,7 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="Notifications  ·  ⏎ action · a all · r read · A all-read · x archive · tab switch · [ ] page · Esc close"
+            taskLabel="Notifications  ·  ⏎ action · a all · r read · A all-read · x archive · d delete · C clear · tab switch · [ ] page · Esc"
             actions={footerActions}
             mode="detailed"
             commandMode={commandMode}

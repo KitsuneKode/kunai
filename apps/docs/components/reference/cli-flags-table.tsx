@@ -1,4 +1,4 @@
-import { codeMetadata } from "../../lib/code-metadata";
+import { codeMetadata } from "@/lib/code-metadata";
 
 export function CliFlagsTable() {
   return (

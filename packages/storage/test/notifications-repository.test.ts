@@ -55,3 +55,22 @@ test("NotificationRepository: paginates active notifications", () => {
   expect(r.listActive(2, 0)).toHaveLength(2);
   expect(r.listActive(2, 4)).toHaveLength(1);
 });
+
+test("NotificationRepository: delete removes a single notification permanently", () => {
+  const r = repo();
+  r.upsert(base("a", "2026-06-14T01:00:00.000Z"));
+  r.deleteByDedupKey("a");
+  expect(r.getByDedupKey("a")).toBeUndefined();
+  expect(r.listActive(50, 0)).toHaveLength(0);
+});
+
+test("NotificationRepository: clearArchived purges only archived rows", () => {
+  const r = repo();
+  r.upsert(base("a", "2026-06-14T01:00:00.000Z"));
+  r.upsert(base("b", "2026-06-14T02:00:00.000Z"));
+  r.archive("a", "2026-06-14T03:00:00.000Z");
+  const removed = r.clearArchived();
+  expect(removed).toBe(1);
+  expect(r.listArchived(50, 0)).toHaveLength(0);
+  expect(r.listActive(50, 0).map((n) => n.dedupKey)).toEqual(["b"]);
+});

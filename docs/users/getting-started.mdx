@@ -1,0 +1,124 @@
+---
+title: Getting Started
+description: Install Kunai, verify dependencies, and complete your first playback session with explicit recovery steps.
+---
+
+Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream locally, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
+
+<ScopeCallout variant="beta" />
+
+## Quick start
+
+<QuickStartSteps />
+
+## Install Kunai
+
+<Tabs items={["Bun global", "npm global", "Source checkout"]}>
+<Tab value="Bun global">
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+kunai -S "Dune"
+```
+
+During beta, Bun is the supported install and dev runtime.
+
+</Tab>
+<Tab value="npm global">
+
+```sh
+npm install -g @kitsunekode/kunai
+kunai --setup
+```
+
+npm global installs may work, but Bun is what the project tests most often during beta.
+
+</Tab>
+<Tab value="Source checkout">
+
+```sh
+git clone https://github.com/KitsuneKode/kunai.git
+cd kunai
+bun install
+bun run link:global
+kunai --setup
+```
+
+Use `bun run dev -- <flags>` when you need to forward argv without a global link.
+
+</Tab>
+</Tabs>
+
+## Common launch patterns
+
+```sh
+kunai
+kunai -S "Dune"
+kunai -S "Dune" --jump 1
+kunai -a -S "Attack on Titan" --jump 1
+kunai --continue
+kunai --history
+kunai --offline
+kunai --zen --offline
+kunai --discover
+kunai --random
+kunai --calendar
+```
+
+<Callout type="idea" title="Search does not mean auto-play">
+`-S "Title"` runs search and lands on results. Add `--jump 1` or `-q` when you want the first match selected automatically.
+</Callout>
+
+## What the flags mean
+
+| Flag / command | Behavior |
+| --- | --- |
+| `-S "Title"` | Bootstrap search — shows results, does not auto-play by itself |
+| `--jump 1` | Select the first result after search |
+| `-q` | Quick search — acts like `--jump 1` when a query is present |
+| `--continue` / `--resume` | Open the newest unfinished local history entry |
+| `--history` | Open history picker at startup |
+| `--offline` | Open completed downloads first (same intent as `/library`) |
+| `--zen --offline` | Minimal chrome over the offline library |
+| `--discover`, `--random`, `--calendar` | Open those trays first — no auto-play |
+| `kunai --download -S "Title"` | **Download-only** bootstrap: resolve, queue, exit |
+
+<ScopeCallout variant="downloads" />
+
+## In the shell
+
+Press `/` to open the command palette. High-signal commands for a first week:
+
+| Command | Purpose |
+| --- | --- |
+| `/history` | Recent watch progress |
+| `/downloads` | Queued, running, and failed download jobs |
+| `/library` or `/offline` | Playable completed downloads |
+| `/diagnostics` | Runtime state and recent evidence |
+| `/update` | Manual version check with install-method guidance |
+| `/recover` | Refresh the current stream after failure evidence |
+| `/fallback` | Try the next compatible provider |
+
+## When playback fails
+
+<Steps>
+<Step>
+### Stay in the shell
+Do not restart blindly. Kunai keeps session context, provider inventory, and history in SQLite.
+</Step>
+<Step>
+### Recover, then fallback
+Run `/recover` to refresh the current provider intent. If that fails, `/fallback` walks the priority chain.
+</Step>
+<Step>
+### Read evidence
+Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — exports are redacted by default.
+</Step>
+</Steps>
+
+## Next reads
+
+- [Platforms](/docs/users/platforms) for OS-specific optional tools
+- [CLI reference](/docs/users/cli-reference) for codegen-synced flags and providers
+- [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook

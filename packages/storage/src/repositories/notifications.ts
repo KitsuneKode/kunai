@@ -167,4 +167,20 @@ export class NotificationRepository {
       .query("UPDATE notifications SET dismissed_at = ?, updated_at = ? WHERE dedup_key = ?")
       .run(dismissedAt, dismissedAt, dedupKey);
   }
+
+  /** Permanently remove a single notification. */
+  deleteByDedupKey(dedupKey: string): void {
+    this.db.query("DELETE FROM notifications WHERE dedup_key = ?").run(dedupKey);
+  }
+
+  /** Permanently remove every archived notification (cleanup of the Archive tab). */
+  clearArchived(): number {
+    const before = this.db
+      .query<{ n: number }, []>(
+        "SELECT COUNT(*) AS n FROM notifications WHERE archived_at IS NOT NULL",
+      )
+      .get();
+    this.db.query("DELETE FROM notifications WHERE archived_at IS NOT NULL").run();
+    return before?.n ?? 0;
+  }
 }

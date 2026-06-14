@@ -1,0 +1,119 @@
+/* Double-bezel surfaces — machined glass plates */
+
+.kunai-surface-shell {
+  border-radius: var(--kunai-radius-shell);
+  padding: var(--kunai-shell-pad);
+  background: color-mix(in oklab, var(--kunai-surface-strong) 55%, transparent);
+  border: 1px solid color-mix(in oklab, white 6%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+}
+
+.kunai-surface-shell__inner {
+  border-radius: calc(var(--kunai-radius-shell) - var(--kunai-shell-pad));
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 94%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 4%, transparent);
+}
+
+.kunai-surface-inset {
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-bg) 92%, transparent);
+}
+
+.kunai-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  color: color-mix(in oklab, var(--color-fd-foreground) 82%, transparent);
+}
+
+.kunai-fd-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--kunai-radius-inner) !important;
+  border: 1px solid var(--kunai-line) !important;
+  background: color-mix(in oklab, var(--kunai-surface) 92%, transparent) !important;
+  box-shadow: var(--kunai-shadow-sm) !important;
+  transition:
+    transform var(--kunai-duration-ui) var(--kunai-ease-out),
+    border-color var(--kunai-duration-ui) var(--kunai-ease-out),
+    box-shadow var(--kunai-duration-ui) var(--kunai-ease-out) !important;
+}
+
+.kunai-fd-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 5%, transparent);
+}
+
+.kunai-fd-card:hover {
+  border-color: color-mix(in oklab, var(--kunai-accent) 32%, var(--kunai-line)) !important;
+  box-shadow: var(--kunai-shadow-diffuse), var(--kunai-shadow-sm) !important;
+  transform: translateY(-2px);
+}
+
+.kunai-fd-card:active {
+  transform: scale(0.96) translateY(0) !important;
+}
+
+.kunai-doc-row {
+  border-radius: var(--kunai-radius-outer);
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 78%, transparent);
+  box-shadow: var(--kunai-shadow-sm);
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+}
+
+.kunai-hero-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transform: scale(0.75);
+  border-radius: 9999px;
+  background: radial-gradient(ellipse at 40% 50%, var(--kunai-mesh-a), transparent 62%);
+  filter: blur(48px);
+  pointer-events: none;
+}
+
+.kunai-step-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kunai-accent);
+}
+
+.kunai-step-meta {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.5625rem;
+  color: color-mix(in oklab, var(--color-fd-muted-foreground) 72%, transparent);
+}
+
+.kunai-callout-warn {
+  border-radius: var(--kunai-radius-inner);
+  border: 1px solid color-mix(in oklab, var(--kunai-warning) 22%, transparent);
+  background: color-mix(in oklab, var(--kunai-warning) 8%, transparent);
+  padding: 0.625rem;
+  font-size: 0.625rem;
+  font-weight: 300;
+  color: var(--kunai-warning);
+}
+
+.kunai-hub-stat {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--color-fd-muted-foreground);
+}

@@ -1,6 +1,10 @@
 {
   "title": "User Guides",
+  "description": "Install Kunai, play media, recover streams, and use the shell day to day.",
+  "icon": "BookOpen",
+  "root": true,
   "pages": [
+    "index",
     "getting-started",
     "platforms",
     "commands-and-shortcuts",
