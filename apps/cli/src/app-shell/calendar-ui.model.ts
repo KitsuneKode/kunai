@@ -291,6 +291,24 @@ export function hasProviderConfirmedAvailability<T>(option: BrowseShellOption<T>
   return option.calendar?.providerConfirmed === true;
 }
 
+/**
+ * A release is "new since last visit" when it became available strictly after the
+ * last time the calendar was opened and on/before now. `lastVisitAt === 0` (never
+ * visited) returns false so the first calendar open is not flooded with dots.
+ */
+export function isReleaseNew<T>(
+  option: BrowseShellOption<T>,
+  lastVisitAt: number,
+  nowMs: number = Date.now(),
+): boolean {
+  if (lastVisitAt <= 0) return false;
+  const releaseAt = option.calendar?.releaseAt;
+  if (!releaseAt) return false;
+  const ms = Date.parse(releaseAt);
+  if (!Number.isFinite(ms)) return false;
+  return ms > lastVisitAt && ms <= nowMs;
+}
+
 function isSameDayKey(dayKey: string, nowMs: number): boolean {
   const now = new Date(nowMs);
   const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
