@@ -65,4 +65,22 @@ describe("CalendarScheduleRow new marker", () => {
     expect(frame).not.toContain("●");
     expect(frame).toContain("Old Show");
   });
+
+  it("renders the title + new dot at wide and narrow widths without throwing", () => {
+    for (const columns of [130, 60]) {
+      const frame = captureFrame(
+        <CalendarScheduleRow
+          option={option("Frieren")}
+          selected={false}
+          rowWidth={columns - 8}
+          timeLabel="6:00 AM"
+          isNew
+          posterUrl="https://img.example/frieren.jpg"
+        />,
+        { columns },
+      );
+      expect(frame).toContain("●");
+      expect(frame).toContain("Frieren");
+    }
+  });
 });

@@ -405,8 +405,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event
         // (not a render effect) so the just-shown rows still used the prior value.
-        const shownResults = currentState.searchResults;
-        if (shownResults.length > 0 && isCalendarSearchResult(shownResults[0]!)) {
+        const firstShownResult = currentState.searchResults[0];
+        if (firstShownResult && isCalendarSearchResult(firstShownResult)) {
           try {
             await container.config.update({ lastCalendarVisitAt: Date.now() });
             await container.config.save();
