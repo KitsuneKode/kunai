@@ -11,6 +11,8 @@ export interface NotificationRecord {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly dismissedAt?: string;
+  readonly readAt?: string;
+  readonly archivedAt?: string;
 }
 
 export interface NotificationInput {
@@ -35,6 +37,8 @@ interface NotificationRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly dismissed_at: string | null;
+  readonly read_at: string | null;
+  readonly archived_at: string | null;
 }
 
 function mapNotificationRow(row: NotificationRow): NotificationRecord {
@@ -49,6 +53,8 @@ function mapNotificationRow(row: NotificationRow): NotificationRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     dismissedAt: row.dismissed_at ?? undefined,
+    readAt: row.read_at ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 }
 
@@ -94,16 +100,66 @@ export class NotificationRepository {
     return row ? mapNotificationRow(row) : undefined;
   }
 
-  listActive(limit = 50): NotificationRecord[] {
+  listActive(limit = 50, offset = 0): NotificationRecord[] {
     return this.db
-      .query<NotificationRow, [number]>(
+      .query<NotificationRow, [number, number]>(
         `SELECT * FROM notifications
-         WHERE dismissed_at IS NULL
+         WHERE archived_at IS NULL
          ORDER BY updated_at DESC
-         LIMIT ?`,
+         LIMIT ? OFFSET ?`,
       )
-      .all(limit)
+      .all(limit, offset)
       .map(mapNotificationRow);
+  }
+
+  listArchived(limit = 50, offset = 0): NotificationRecord[] {
+    return this.db
+      .query<NotificationRow, [number, number]>(
+        `SELECT * FROM notifications
+         WHERE archived_at IS NOT NULL
+         ORDER BY updated_at DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .all(limit, offset)
+      .map(mapNotificationRow);
+  }
+
+  countActive(): number {
+    return (
+      this.db
+        .query<{ n: number }, []>(
+          "SELECT COUNT(*) AS n FROM notifications WHERE archived_at IS NULL",
+        )
+        .get()?.n ?? 0
+    );
+  }
+
+  countUnread(): number {
+    return (
+      this.db
+        .query<{ n: number }, []>(
+          "SELECT COUNT(*) AS n FROM notifications WHERE archived_at IS NULL AND read_at IS NULL",
+        )
+        .get()?.n ?? 0
+    );
+  }
+
+  markRead(dedupKey: string, now: string): void {
+    this.db
+      .query("UPDATE notifications SET read_at = ? WHERE dedup_key = ? AND read_at IS NULL")
+      .run(now, dedupKey);
+  }
+
+  markAllRead(now: string): void {
+    this.db
+      .query("UPDATE notifications SET read_at = ? WHERE archived_at IS NULL AND read_at IS NULL")
+      .run(now);
+  }
+
+  archive(dedupKey: string, now: string): void {
+    this.db
+      .query("UPDATE notifications SET archived_at = ?, updated_at = ? WHERE dedup_key = ?")
+      .run(now, now, dedupKey);
   }
 
   dismissByDedupKey(dedupKey: string, dismissedAt: string): void {
