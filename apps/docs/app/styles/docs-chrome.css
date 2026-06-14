@@ -36,6 +36,29 @@
   border-inline-end-color: var(--kunai-line);
 }
 
+#nd-toc {
+  border-inline-start: 1px solid var(--kunai-line);
+}
+
+#nd-toc [data-toc-title] {
+  font-size: var(--kunai-text-caption);
+  font-weight: 700;
+  letter-spacing: var(--kunai-tracking-eyebrow);
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-fd-muted-foreground) 80%, transparent);
+}
+
+#nd-toc a {
+  font-size: 0.8125rem;
+  color: var(--color-fd-muted-foreground);
+  transition: color var(--kunai-duration-ui) var(--kunai-ease-out);
+}
+
+#nd-toc a[data-active="true"] {
+  color: var(--kunai-accent);
+  font-weight: 600;
+}
+
 #nd-sidebar a[data-active="true"] {
   color: var(--kunai-accent);
   background: color-mix(in oklab, var(--kunai-accent) 11%, transparent);
@@ -63,13 +86,9 @@
   color: var(--color-fd-muted-foreground);
 }
 
-/* Hub pages (full: true) */
-.kunai-docs-hub #nd-docs-layout article {
-  max-width: 72rem;
-}
-
-.kunai-docs-hub .prose {
-  --fd-prose-width: 72rem;
+/* Hub index pages — slightly wider prose, standard 3-column Fumadocs grid */
+.kunai-docs-index .prose {
+  --fd-prose-width: 48rem;
 }
 
 .kunai-docs-hub-intro {
@@ -198,10 +217,4 @@
   }
 }
 
-/* Docs page header bar */
-.kunai-docs-toolbar {
-  border-radius: var(--kunai-radius-inner);
-  border: 1px solid var(--kunai-line);
-  background: color-mix(in oklab, var(--kunai-surface) 65%, transparent);
-  box-shadow: var(--kunai-shadow-sm);
-}
+/* Docs page header bar — legacy; prefer ViewOptionsPopover inline */

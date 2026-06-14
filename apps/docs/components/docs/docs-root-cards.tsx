@@ -3,7 +3,7 @@ import { Card, Cards } from "fumadocs-ui/components/card";
 
 export function DocsRootCards() {
   return (
-    <Cards className="not-prose my-8 grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-2">
+    <Cards className="not-prose my-6 grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2">
       {docsRootCards.map((item) => (
         <Card
           key={item.href}
