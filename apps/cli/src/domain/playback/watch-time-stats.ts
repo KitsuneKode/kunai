@@ -1,6 +1,7 @@
 // =============================================================================
-// post-play-watch-time.ts — pure watch-time aggregation for the series-complete
+// watch-time-stats.ts — pure watch-time aggregation for the series-complete
 // celebration. No I/O: callers pass a title's history rows; this sums them.
+// Lives in domain so both the app loop (PlaybackPhase) and app-shell can use it.
 // =============================================================================
 
 import type { HistoryProgress } from "@kunai/storage";

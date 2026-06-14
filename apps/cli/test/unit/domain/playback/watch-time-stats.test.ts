@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { aggregateWatchTime, formatWatchTimeSummary } from "@/app-shell/post-play-watch-time";
+import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 
 const row = (over: Partial<{ positionSeconds: number; updatedAt: string }>) => ({
   key: "k",

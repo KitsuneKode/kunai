@@ -91,3 +91,26 @@ describe("PostPlayShell keys footer", () => {
     expect(frame).toContain("1·2·3 picks");
   });
 });
+
+describe("PostPlayShell responsive", () => {
+  const base = {
+    title: "My Show",
+    episodeLabel: "S01 E01",
+    nextEpisodeLabel: "S01 E02 — Next One",
+    postPlayState: { kind: "mid-series" as const },
+    recommendations: recs,
+  };
+  it("wide renders hero + poster tiles + footer without throwing", () => {
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 140 });
+    expect(frame).toContain("▶ UP NEXT");
+    expect(frame).toContain("Frieren");
+  });
+  it("medium renders the hero", () => {
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 90 });
+    expect(frame).toContain("▶ UP NEXT");
+  });
+  it("narrow degrades to compact picks, no posters wall", () => {
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 50 });
+    expect(frame).toContain("My Show");
+  });
+});

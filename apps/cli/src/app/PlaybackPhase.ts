@@ -7,7 +7,6 @@
 
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
-import { aggregateWatchTime, formatWatchTimeSummary } from "@/app-shell/post-play-watch-time";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   openTracksPanel,
@@ -159,6 +158,7 @@ import {
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 import type {
   TitleInfo,
   EpisodeInfo,
