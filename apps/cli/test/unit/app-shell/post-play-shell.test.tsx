@@ -74,3 +74,20 @@ describe("PostPlayShell series-complete celebration", () => {
     expect(frame).toContain("You watched ~11h over 9 days");
   });
 });
+
+describe("PostPlayShell keys footer", () => {
+  it("renders a legible keys footer", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S01 E01"
+        nextEpisodeLabel="S01 E02 — Next One"
+        postPlayState={{ kind: "mid-series" }}
+        recommendations={recs}
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("↑↓ move");
+    expect(frame).toContain("1·2·3 picks");
+  });
+});

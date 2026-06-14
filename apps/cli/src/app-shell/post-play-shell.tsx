@@ -594,6 +594,24 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Text>
           </Box>
         ) : null}
+
+        {/* Live-keys footer — discoverable, premium affordance */}
+        <Box marginTop={1}>
+          <Text color={palette.dim}>
+            {truncateLine(
+              [
+                "↑↓ move",
+                "↵ select",
+                recommendations.length > 0 ? "1·2·3 picks" : null,
+                view.nextUpHero ? "x cancel" : null,
+                "/ search",
+              ]
+                .filter(Boolean)
+                .join("   ·   "),
+              bodyWidth,
+            )}
+          </Text>
+        </Box>
       </Box>
 
       {/* ── Right rail (wide only) ─────────────────────────────────────── */}
