@@ -408,6 +408,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.showWatchTimeStats;
   }
 
+  get lastCalendarVisitAt(): number {
+    return this.config.lastCalendarVisitAt;
+  }
+
   get minimalMode(): boolean {
     return this.config.minimalMode;
   }

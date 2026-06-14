@@ -69,6 +69,8 @@ export interface KitsuneConfig {
   recommendationRailEnabled: boolean;
   /** Show a personal watch-time stat on the series-complete celebration. Default true. */
   showWatchTimeStats: boolean;
+  /** Epoch ms of the last time the release calendar was opened (for "new since" markers). 0 = never. */
+  lastCalendarVisitAt: number;
   /** Collapse companion pane, minimal footer, and dim header status regardless of terminal size. Default false. */
   minimalMode: boolean;
   /** Zen mode: single-column, no companion/preview rail, minimal chrome — ani-cli-style bare layout at any width, every feature still key-reachable. Default false. */
