@@ -1,0 +1,74 @@
+:root {
+  /* OLED editorial base — deep rose terminal */
+  --color-fd-background: #07050b;
+  --color-fd-foreground: #f3e8ee;
+  --color-fd-primary: #e894ad;
+  --color-fd-primary-foreground: #07050b;
+  --color-fd-border: color-mix(in oklab, #efd9e3 10%, transparent);
+  --color-fd-muted: #100d14;
+  --color-fd-muted-foreground: color-mix(in oklab, #efd9e3 56%, transparent);
+  --color-fd-accent: #18121f;
+  --color-fd-accent-foreground: #f0c0d0;
+  --color-fd-popover: #120e17;
+  --color-fd-popover-foreground: #f3e8ee;
+  --color-fd-card: #110d15;
+  --color-fd-card-foreground: #f3e8ee;
+  --color-fd-secondary: #17121f;
+  --color-fd-secondary-foreground: #f3e8ee;
+  --color-fd-ring: #e894ad;
+  --color-fd-overlay: rgba(4, 3, 6, 0.62);
+  --fd-layout-width: 92rem;
+
+  /* Kunai aliases */
+  --kunai-bg: var(--color-fd-background);
+  --kunai-surface: var(--color-fd-card);
+  --kunai-surface-strong: var(--color-fd-secondary);
+  --kunai-surface-elevated: #221a2a;
+  --kunai-line: var(--color-fd-border);
+  --kunai-accent: var(--color-fd-primary);
+  --kunai-accent-deep: #b85f7a;
+  --kunai-accent-soft: color-mix(in oklab, var(--kunai-accent) 18%, var(--kunai-bg));
+  --kunai-accent-glow: color-mix(in oklab, var(--kunai-accent) 12%, transparent);
+  --kunai-ok: #84dcc2;
+  --kunai-warning: #dfbc82;
+  --kunai-danger: #f08084;
+
+  /* Ambient mesh */
+  --kunai-mesh-a: color-mix(in oklab, var(--kunai-accent) 7%, transparent);
+  --kunai-mesh-b: color-mix(in oklab, var(--kunai-ok) 5%, transparent);
+  --kunai-mesh-c: color-mix(in oklab, var(--kunai-accent-deep) 6%, transparent);
+
+  /* Typography scale */
+  --kunai-text-display: clamp(2.35rem, 4.8vw, 3.75rem);
+  --kunai-text-title: clamp(1.65rem, 2.8vw, 2.35rem);
+  --kunai-text-lead: clamp(1rem, 1.4vw, 1.125rem);
+  --kunai-text-body: 0.9375rem;
+  --kunai-text-caption: 0.6875rem;
+  --kunai-leading-tight: 1.05;
+  --kunai-leading-body: 1.65;
+  --kunai-tracking-eyebrow: 0.16em;
+
+  /* Surfaces — concentric radii (outer = inner + padding) */
+  --kunai-radius-shell: 1.25rem;
+  --kunai-radius-outer: 1rem;
+  --kunai-radius-inner: 0.625rem;
+  --kunai-radius-pill: 9999px;
+  --kunai-shell-pad: 0.375rem;
+
+  /* Shadows — tinted, no harsh black */
+  --kunai-shadow-sm:
+    inset 0 1px 0 color-mix(in oklab, white 6%, transparent),
+    0 2px 10px color-mix(in oklab, var(--kunai-bg) 40%, black);
+  --kunai-shadow-md:
+    inset 0 1px 0 color-mix(in oklab, white 5%, transparent),
+    0 10px 32px color-mix(in oklab, var(--kunai-bg) 35%, black),
+    0 28px 56px color-mix(in oklab, black 22%, transparent);
+  --kunai-shadow-diffuse: 0 24px 64px -20px color-mix(in oklab, var(--kunai-accent) 8%, transparent);
+  --kunai-card-shadow: var(--kunai-shadow-md);
+
+  /* Motion */
+  --kunai-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --kunai-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --kunai-duration-fast: 150ms;
+  --kunai-duration-ui: 220ms;
+}

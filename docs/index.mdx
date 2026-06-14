@@ -1,0 +1,60 @@
+---
+title: Documentation
+description: Install Kunai, learn the terminal shell, recover playback, and contribute with evidence-first debugging.
+---
+
+<DocsHubIntro
+  pill="Operator manual"
+  lead="Kunai is a terminal-first media shell — search, resolve direct-provider streams locally, supervise mpv, and recover when catalogs drift."
+  sublead="This documentation states what works today, what is beta-only, what Kunai does not do, and how to debug with evidence instead of guesswork."
+/>
+
+<ScopeCallout variant="beta" />
+
+## Start here
+
+<DocsRootCards />
+
+## What Kunai is
+
+- A Bun CLI with an Ink shell for search, pickers, history, and playback supervision.
+- A local resolver for direct HTTP provider adapters registered in `packages/providers`.
+- An `mpv` handoff — Kunai does not replace the player or host video files.
+- A diagnostics surface with redacted export paths for support.
+
+## What Kunai is not
+
+<ScopeCallout variant="providers" />
+
+Kunai does not store video on a Kunai server, mirror or redistribute content, guarantee third-party catalog stability, or require accounts for core playback. Copyright notices belong to the hosting provider, not Kunai.
+
+## Recommended reading order
+
+<Steps>
+<Step>
+### Install and verify
+Read [Getting Started](/docs/users/getting-started), then [Platforms](/docs/users/platforms) for OS-specific tools.
+</Step>
+<Step>
+### Learn the shell
+Use the [Feature Tour](/docs/users/feature-tour) for live command/provider tables and [Commands and shortcuts](/docs/users/commands-and-shortcuts) for daily palette work.
+</Step>
+<Step>
+### Plan for failure
+[Playback and recovery](/docs/users/playback-and-recovery) explains recover vs fallback. [Diagnostics](/docs/users/diagnostics-and-reporting) shows how to export evidence safely.
+</Step>
+</Steps>
+
+## User guides
+
+<DocSectionCards group="setup" />
+
+<DocSectionCards group="daily" />
+
+<DocSectionCards group="offline" />
+
+<DocSectionCards group="trust" />
+
+## Developer
+
+<DocSectionCards group="develop" />

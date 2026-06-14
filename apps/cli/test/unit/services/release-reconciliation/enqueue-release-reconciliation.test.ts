@@ -38,6 +38,9 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
     },
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
     diagnosticsService: { record: () => {} },
+    followedTitleRepository: { listByPreference: () => [] },
+    releaseProgressCache: { getByTitleIds: () => new Map() },
+    notificationService: { recordSignals: () => {} },
   };
   const entries = [row({ titleId: "anilist:1" })];
 
@@ -59,6 +62,9 @@ test("power saver suppresses passive release reconciliation from browse and hist
     },
     releaseReconciliationService: { reconcile: async () => ({ skipped: [] }) },
     diagnosticsService: { record: () => {} },
+    followedTitleRepository: { listByPreference: () => [] },
+    releaseProgressCache: { getByTitleIds: () => new Map() },
+    notificationService: { recordSignals: () => {} },
   };
   const entries = [row({ titleId: "anilist:1" })];
 
@@ -94,6 +100,9 @@ test("release reconciliation batches offline policy attention lookup once per tr
       },
     },
     diagnosticsService: { record: () => {} },
+    followedTitleRepository: { listByPreference: () => [] },
+    releaseProgressCache: { getByTitleIds: () => new Map() },
+    notificationService: { recordSignals: () => {} },
   };
   const entries = [
     row({ titleId: "anilist:1", title: "Anime 1", episode: 1 }),
@@ -130,6 +139,9 @@ test("release reconciliation completion callback runs after cache write pass", a
     diagnosticsService: {
       record: () => events.push("diagnostics"),
     },
+    followedTitleRepository: { listByPreference: () => [] },
+    releaseProgressCache: { getByTitleIds: () => new Map() },
+    notificationService: { recordSignals: () => {} },
   };
 
   enqueueReleaseReconciliation(

@@ -190,6 +190,7 @@ export class DownloadService {
       readonly abortGraceMs?: number;
       readonly diagnostics?: Pick<DiagnosticsService, "record">;
       readonly onCompletedArtifact?: (job: DownloadJobRecord) => Promise<void> | void;
+      readonly onTerminalFailure?: (job: DownloadJobRecord, error: string) => Promise<void> | void;
     },
   ) {}
 
@@ -510,6 +511,8 @@ export class DownloadService {
         } else {
           this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind);
           this.emit({ type: "failed", jobId: next.id, error: message });
+          const failedJob = this.deps.repo.get(next.id);
+          if (failedJob) await this.deps.onTerminalFailure?.(failedJob, message);
         }
       }
       await rm(next.tempPath, { force: true }).catch(() => {});

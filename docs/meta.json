@@ -1,4 +1,4 @@
 {
-  "title": "Kunai",
-  "pages": ["users", "developer"]
+  "title": "Documentation",
+  "pages": ["index", "users", "developer"]
 }

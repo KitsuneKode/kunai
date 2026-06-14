@@ -1,0 +1,35 @@
+---
+title: Developer
+description: Debug Kunai with evidence, run live provider checks responsibly, and maintain codegen-synced documentation.
+---
+
+<DocsHubIntro
+  pill="Contributor docs"
+  lead="Evidence-first debugging, responsible live-provider checks, and documentation that stays synced with the CLI."
+  sublead="Assume you can run Kunai from source, read traces, and tell manual live smokes apart from automated unit tests."
+/>
+
+<Callout type="warn" title="Live provider traffic is manual">
+Provider scrapers hit real third-party endpoints. Live checks belong in explicit smoke scripts and local debugging — not in docs builds, CI, or background jobs triggered by reading documentation.
+</Callout>
+
+## Guides
+
+<DocSectionCards group="develop" />
+
+## Before you change providers
+
+1. Compare against the local ani-cli checkout when touching AllAnime or AllManga parity logic.
+2. Read `.docs/providers.md` and `.docs/provider-intake.md` in the repository for hard boundaries.
+3. Capture failing evidence with `--debug-session`, reproduce with `/diagnostics`, export with `/export-diagnostics`.
+
+## Docs toolchain
+
+| Task | Command |
+| --- | --- |
+| Sync CLI metadata into docs | `bun run --cwd apps/docs generate` |
+| Typecheck docs app | `bun run --cwd apps/docs typecheck` |
+| Drift + render tests | `bun run --cwd apps/docs test` |
+| Production build | `bun run --cwd apps/docs build` |
+
+Codegen keeps provider ids, command counts, and help tables aligned with `apps/cli` — see [Docs maintenance](/docs/developer/docs-maintenance) for the full workflow.

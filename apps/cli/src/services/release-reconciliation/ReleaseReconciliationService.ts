@@ -36,8 +36,13 @@ export type ReleaseProgressRepositoryLike = {
   readonly upsert: (input: ReleaseProgressProjection) => void;
 };
 
+export type ReleaseProgressWriterLike = {
+  readonly upsertAuthoritative: (input: ReleaseProgressProjection) => void;
+};
+
 export type ReleaseReconciliationServiceOptions = {
   readonly repository: ReleaseProgressRepositoryLike;
+  readonly writer: ReleaseProgressWriterLike;
   readonly loadProgress: (
     candidates: readonly ReleaseReconciliationCandidate[],
     signal?: AbortSignal,
@@ -88,7 +93,7 @@ export class ReleaseReconciliationService {
       const progress = await this.options.loadProgress(plan.candidates, input.signal);
       let writtenCount = 0;
       for (const result of progress) {
-        this.options.repository.upsert(buildProjection(result, input.now));
+        this.options.writer.upsertAuthoritative(buildProjection(result, input.now));
         writtenCount += 1;
       }
       return {
@@ -112,7 +117,7 @@ export class ReleaseReconciliationService {
     for (const candidate of plan.candidates) {
       const existing = existingProjections.get(candidate.titleId);
       if (!isFullProjection(existing)) {
-        this.options.repository.upsert({
+        this.options.writer.upsertAuthoritative({
           titleId: candidate.titleId,
           mediaKind: candidate.mediaKind,
           source: candidate.source,
@@ -132,7 +137,7 @@ export class ReleaseReconciliationService {
         continue;
       }
       const nextErrorCount = existing.errorCount + 1;
-      this.options.repository.upsert({
+      this.options.writer.upsertAuthoritative({
         ...existing,
         checkedAt: now,
         nextCheckAt: new Date(

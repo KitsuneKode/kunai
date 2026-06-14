@@ -72,7 +72,6 @@ import { TracerImpl } from "./infra/tracer/TracerImpl";
 import type { WorkControlService } from "./infra/work/WorkControlService";
 import { WorkControlServiceImpl } from "./infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "./services/attention/AttentionRefreshWorker";
-import { projectReleaseAvailability } from "./services/attention/ReleaseAvailabilityService";
 import { BackgroundWorkScheduler } from "./services/background/BackgroundWorkScheduler";
 import {
   createCatalogScheduleService,
@@ -127,6 +126,7 @@ import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";
 import { RecommendationServiceImpl } from "./services/recommendations/RecommendationServiceImpl";
 import { loadCatalogProgress } from "./services/release-reconciliation/catalog-progress";
+import { ReleaseProgressWriter } from "./services/release-reconciliation/ReleaseProgressWriter";
 import { ReleaseReconciliationService } from "./services/release-reconciliation/ReleaseReconciliationService";
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
@@ -200,6 +200,7 @@ export interface Container {
   // Schedule/release tracking
   readonly catalogScheduleService: CatalogScheduleService;
   readonly releaseProgressCache: ReleaseProgressCacheRepository;
+  readonly releaseProgressWriter: ReleaseProgressWriter;
   readonly calendarArchive: CalendarArchiveRepository;
   readonly releaseReconciliationService: ReleaseReconciliationService;
   readonly timelineService: TimelineService;
@@ -471,21 +472,32 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     onCompletedArtifact: (job) => {
       const asset = offlineAssetService.adoptCompletedJob(job);
       if (asset?.state !== "ready") return;
-      if (asset.mediaKind === "movie" || asset.episode === undefined) return;
-      const projection = projectReleaseAvailability({
-        titleId: asset.titleId,
-        mediaKind: asset.mediaKind,
-        title: asset.titleName,
-        season: asset.season,
-        episode: asset.episode,
-        released: true,
-        providerConfirmed: true,
-        providerId: job.providerId,
-        availableAt: asset.updatedAt,
-      });
-      if (projection.notificationSignal) {
-        notificationService.recordSignals([projection.notificationSignal], asset.updatedAt);
-      }
+      notificationService.recordSignals(
+        [
+          {
+            type: "download-complete",
+            titleId: asset.titleId,
+            mediaKind: asset.mediaKind,
+            title: asset.titleName,
+            season: asset.season,
+            episode: asset.episode,
+          },
+        ],
+        asset.updatedAt,
+      );
+    },
+    onTerminalFailure: (job, error) => {
+      notificationService.recordSignals([
+        {
+          type: "download-failed",
+          titleId: job.titleId,
+          mediaKind: job.mediaKind,
+          title: job.titleName,
+          season: job.season,
+          episode: job.episode,
+          error,
+        },
+      ]);
     },
     resolveDownloadStream: async (intent) => {
       const controller = new AbortController();
@@ -565,8 +577,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
 
   const recommendationService = new RecommendationServiceImpl(recommendationCache);
   const catalogScheduleService = createCatalogScheduleService(scheduleCache);
+  const releaseProgressWriter = new ReleaseProgressWriter(releaseProgressCache);
   const releaseReconciliationService = new ReleaseReconciliationService({
     repository: releaseProgressCache,
+    writer: releaseProgressWriter,
     loadProgress: (candidates, signal) =>
       loadCatalogProgress(catalogScheduleService, candidates, signal),
   });
@@ -644,6 +658,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     recommendationService,
     catalogScheduleService,
     releaseProgressCache,
+    releaseProgressWriter,
     calendarArchive,
     releaseReconciliationService,
     timelineService,

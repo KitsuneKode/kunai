@@ -7,6 +7,7 @@ import type {
 } from "@/services/catalog/CatalogScheduleService";
 import { historyContentType } from "@/services/continuation/history-progress";
 import type { HistoryStore } from "@/services/persistence/HistoryStore";
+import type { ReleaseProgressWriter } from "@/services/release-reconciliation/ReleaseProgressWriter";
 import type {
   CalendarArchiveRepository,
   HistoryProgress,
@@ -26,6 +27,7 @@ export type CalendarResultBundle = {
 type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "listService"> & {
   readonly historyStore?: Pick<HistoryStore, "getAll">;
   readonly releaseProgressCache?: Pick<ReleaseProgressCacheRepository, "getByTitleIds" | "upsert">;
+  readonly releaseProgressWriter?: Pick<ReleaseProgressWriter, "upsertOptimistic">;
   readonly calendarArchive?: Pick<
     CalendarArchiveRepository,
     "archive" | "listInWindow" | "pruneBefore"
@@ -56,7 +58,7 @@ export async function loadCalendarResults(
   ];
   const storedProgress = container.releaseProgressCache?.getByTitleIds(projectionIds) ?? new Map();
   let releaseProgress = projectProgressForCalendarItems(sorted, historyMatches, storedProgress);
-  if (container.releaseProgressCache?.upsert && container.historyStore) {
+  if (container.releaseProgressWriter && container.historyStore) {
     for (const item of sorted) {
       const match = historyMatches.get(item.titleId);
       const entry = match?.entry;
@@ -99,7 +101,7 @@ export async function loadCalendarResults(
         sourceFingerprint: `calendar:${item.source}:${item.titleId}:${item.episode}:${item.releaseAt ?? "-"}`,
         errorCount: 0,
       };
-      container.releaseProgressCache.upsert(projection);
+      container.releaseProgressWriter.upsertOptimistic(projection, now);
       releaseProgress = new Map(releaseProgress).set(item.titleId, projection);
     }
   }

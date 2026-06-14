@@ -40,6 +40,7 @@ import {
   parseOfflineTitleCleanupPreference,
   selectDownloadCleanupCandidates,
 } from "@/services/download/download-cleanup-policy";
+import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
 import { checkDeps } from "@/ui";
 
 import packageJson from "../package.json" with { type: "json" };
@@ -766,7 +767,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   void container.downloadService.processQueue();
-  container.updateService.checkInBackground();
+  // Background update check; on "update available", persist an app-update notification.
+  void container.updateService
+    .checkForUpdate()
+    .then((result) => {
+      const signal = updateSignalFromCheck(result);
+      if (signal) container.notificationService.recordSignals([signal]);
+    })
+    .catch(() => {
+      // checkForUpdate records its own failures; keep startup fire-and-forget.
+    });
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",

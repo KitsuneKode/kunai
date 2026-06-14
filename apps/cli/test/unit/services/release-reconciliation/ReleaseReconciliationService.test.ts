@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { ReleaseProgressWriter } from "@/services/release-reconciliation/ReleaseProgressWriter";
 import { ReleaseReconciliationService } from "@/services/release-reconciliation/ReleaseReconciliationService";
 import type { ReleaseReconciliationHistoryRow } from "@/services/release-reconciliation/types";
 import type { ReleaseProgressProjection } from "@kunai/storage";
@@ -27,6 +28,7 @@ describe("ReleaseReconciliationService", () => {
     let loadedCandidateCount = 0;
     const service = new ReleaseReconciliationService({
       repository: repo,
+      writer: new ReleaseProgressWriter(repo),
       loadProgress: async (candidates) => {
         loaderCalls += 1;
         loadedCandidateCount += candidates.length;
@@ -88,6 +90,7 @@ describe("ReleaseReconciliationService", () => {
     });
     const service = new ReleaseReconciliationService({
       repository: repo,
+      writer: new ReleaseProgressWriter(repo),
       loadProgress: async () => {
         throw new Error("rate limited");
       },
@@ -114,6 +117,7 @@ describe("ReleaseReconciliationService", () => {
     const repo = new MemoryReleaseProgressRepository();
     const service = new ReleaseReconciliationService({
       repository: repo,
+      writer: new ReleaseProgressWriter(repo),
       loadProgress: async () => {
         throw new Error("catalog unavailable");
       },
@@ -138,6 +142,7 @@ describe("ReleaseReconciliationService", () => {
     const repo = new MemoryReleaseProgressRepository();
     const service = new ReleaseReconciliationService({
       repository: repo,
+      writer: new ReleaseProgressWriter(repo),
       loadProgress: async ([candidate]) =>
         candidate
           ? [

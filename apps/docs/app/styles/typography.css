@@ -1,0 +1,99 @@
+/* Typography hierarchy — Outfit body, Cormorant display, JetBrains Mono data */
+
+.kunai-type-display {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-display);
+  line-height: var(--kunai-leading-tight);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--color-fd-foreground);
+}
+
+.kunai-type-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-title);
+  line-height: 1.12;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  color: var(--color-fd-foreground);
+}
+
+.kunai-type-lead {
+  font-size: var(--kunai-text-lead);
+  line-height: var(--kunai-leading-body);
+  color: var(--color-fd-muted-foreground);
+  text-wrap: pretty;
+  max-width: 62ch;
+}
+
+.kunai-type-body {
+  font-size: var(--kunai-text-body);
+  line-height: var(--kunai-leading-body);
+  color: var(--color-fd-muted-foreground);
+  text-wrap: pretty;
+}
+
+.kunai-type-caption {
+  font-size: var(--kunai-text-caption);
+  letter-spacing: var(--kunai-tracking-eyebrow);
+  text-transform: uppercase;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--kunai-accent) 88%, var(--color-fd-foreground));
+}
+
+.kunai-type-mono {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.kunai-display-title {
+  margin: 0.5rem 0 0;
+  max-width: 20ch;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: var(--kunai-text-display);
+  line-height: var(--kunai-leading-tight);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  color: var(--color-fd-foreground);
+}
+
+.kunai-eyebrow {
+  margin: 0;
+  font-size: var(--kunai-text-caption);
+  font-weight: 700;
+  letter-spacing: var(--kunai-tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--kunai-accent);
+}
+
+.kunai-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--kunai-radius-pill);
+  border: 1px solid var(--kunai-line);
+  background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--kunai-accent) 80%, var(--color-fd-foreground));
+  box-shadow: var(--kunai-shadow-sm);
+}
+
+.kunai-body-muted {
+  color: var(--color-fd-muted-foreground);
+}
+
+.kunai-text-accent {
+  color: var(--kunai-accent);
+}
+
+.kunai-text-ok {
+  color: var(--kunai-ok);
+}

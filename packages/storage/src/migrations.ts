@@ -438,6 +438,19 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE history_progress ADD COLUMN poster_url TEXT;
     `,
   },
+  {
+    id: "020_data_notifications_read_archive",
+    database: "data",
+    // Notification center: unread/read state + soft archive (distinct from the
+    // legacy dismissed_at). Active = archived_at IS NULL; unread = read_at IS NULL.
+    sql: `
+      ALTER TABLE notifications ADD COLUMN read_at TEXT;
+      ALTER TABLE notifications ADD COLUMN archived_at TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_active
+        ON notifications(archived_at, updated_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

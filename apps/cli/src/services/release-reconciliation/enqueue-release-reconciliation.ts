@@ -16,6 +16,8 @@ type ReleaseReconciliationContainer = Pick<
   | "diagnosticsService"
   | "offlineTitlePolicies"
   | "config"
+  | "releaseProgressCache"
+  | "notificationService"
 >;
 
 const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = new Set([
@@ -67,6 +69,32 @@ export function enqueueReleaseReconciliation(
         attentionByTitleId,
         signal: workSignal,
       });
+
+      // Surface reconciliation-found new episodes as notifications for every
+      // reconciled (continue-watching + followed) title — these are exactly the
+      // "unwatched releases" shown on the home screen. recordSignals drops muted
+      // titles via the engine, so muting a title still silences it. The shared
+      // release-progress projection is the source of truth; the writer race is
+      // resolved upstream (ReleaseProgressWriter).
+      const reconciledTitleIds = historyRows.map((row) => row.titleId);
+      if (reconciledTitleIds.length > 0) {
+        const projections = container.releaseProgressCache.getByTitleIds(reconciledTitleIds);
+        const newEpisodeSignals = [...projections.values()]
+          .filter((projection) => projection.newEpisodeCount > 0)
+          .map((projection) => ({
+            type: "new-playable-episode" as const,
+            titleId: projection.titleId,
+            mediaKind: projection.mediaKind,
+            title: projection.title,
+            season: projection.latestAiredSeason,
+            episode: projection.latestAiredEpisode,
+            providerId: projection.source,
+            availableAt: projection.checkedAt,
+          }));
+        if (newEpisodeSignals.length > 0) {
+          container.notificationService.recordSignals(newEpisodeSignals);
+        }
+      }
       container.diagnosticsService.record({
         category: "cache",
         operation: "release-reconciliation.refresh",

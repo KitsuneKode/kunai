@@ -86,6 +86,9 @@ export async function openRootOwnedOverlay(
 export async function openNotificationsOverlay(container: Container): Promise<{
   readonly playback: NotificationPlaybackIntent | null;
 }> {
+  // Unread state is cleared explicitly inside the surface (r / A), not on open —
+  // so the unread dots stay visible and the manual keys do something. The bell
+  // hides once countUnread hits zero.
   await openRootOwnedOverlay(container, { type: "notifications" });
   return {
     playback: takeNotificationPlaybackIntent(),

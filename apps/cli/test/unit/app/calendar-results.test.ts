@@ -6,6 +6,7 @@ function withCalendarServices(input: {
   readonly stateManager: { readonly getState: () => { readonly mode: "anime" | "series" } };
   readonly timelineService: Record<string, unknown>;
   readonly releaseProgressCache?: Record<string, unknown>;
+  readonly releaseProgressWriter?: Record<string, unknown>;
   readonly historyStore?: Record<string, unknown>;
 }) {
   return {
@@ -231,6 +232,9 @@ test("loadCalendarResults projects already-loaded released rows without another 
         getByTitleIds: () => new Map(),
         upsert: (projection: unknown) => writes.push(projection),
       },
+      releaseProgressWriter: {
+        upsertOptimistic: (projection: unknown) => writes.push(projection),
+      },
     }) as never,
   );
 
@@ -281,6 +285,9 @@ test("loadCalendarResults joins AniList schedule rows to provider-native history
       releaseProgressCache: {
         getByTitleIds: () => new Map(),
         upsert: (projection: { titleId?: string }) => writes.push(projection),
+      },
+      releaseProgressWriter: {
+        upsertOptimistic: (projection: { titleId?: string }) => writes.push(projection),
       },
     }) as never,
   );

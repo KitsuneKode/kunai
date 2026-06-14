@@ -50,6 +50,8 @@ import {
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
 } from "./notification-overlay-model";
+import { NotificationsShell } from "./notifications-shell";
+import { buildNotificationsView } from "./notifications-view";
 import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
@@ -524,6 +526,9 @@ export function RootOverlayShell({
     readonly dedupKey: string;
     readonly actionId: NotificationActionId;
   } | null>(null);
+  const [notifTab, setNotifTab] = useState<"active" | "archive">("active");
+  const [notifPage, setNotifPage] = useState(0);
+  const [notifTick, setNotifTick] = useState(0);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyNextReleases, setHistoryNextReleases] = useState<
     NonNullable<HistoryPickerOptionsContext["nextReleases"]>
@@ -687,21 +692,35 @@ export function RootOverlayShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
-  const notificationRecords =
-    overlay.type === "notifications" ? container.notificationService.listActive() : [];
+  const NOTIF_PAGE_SIZE = 8;
+  // notifTick forces a fresh service read after mutations (read/archive/mark-all).
+  void notifTick;
+  const notificationRecordsAll =
+    overlay.type === "notifications"
+      ? notifTab === "active"
+        ? container.notificationService.listActive(200, 0)
+        : container.notificationService.listArchived(200, 0)
+      : [];
+  const notificationsView = buildNotificationsView({
+    records: notificationRecordsAll,
+    tab: notifTab,
+    page: notifPage,
+    pageSize: NOTIF_PAGE_SIZE,
+    now: new Date().toISOString(),
+  });
+  const notificationUnreadCount =
+    overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
+  // The current page's records back selection + the action router lookups; their
+  // order mirrors notificationsView.rows exactly so selectedIndex stays aligned.
+  const notificationRecords = notificationRecordsAll.slice(
+    notificationsView.page * NOTIF_PAGE_SIZE,
+    notificationsView.page * NOTIF_PAGE_SIZE + NOTIF_PAGE_SIZE,
+  );
   const filteredNotificationOptions =
     overlay.type === "notifications"
-      ? rankFuzzyMatches(
-          buildNotificationPickerOptions(notificationRecords, {
-            subActionsActive: notificationActionDedupKey !== null,
-          }),
-          filterQuery,
-          (option) => [
-            { value: option.label, weight: 0 },
-            { value: option.detail, weight: 8 },
-            { value: option.badge, weight: 12 },
-          ],
-        )
+      ? buildNotificationPickerOptions(notificationRecords, {
+          subActionsActive: notificationActionDedupKey !== null,
+        })
       : [];
   const selectedNotificationForActions =
     overlay.type === "notifications" && notificationActionDedupKey
@@ -937,7 +956,7 @@ export function RootOverlayShell({
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
             stageNotificationPlaybackIntent(playbackIntentFromMediaItem(item));
-            await container.notificationService.dismiss(notification.dedupKey);
+            await container.notificationService.archive(notification.dedupKey);
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },
@@ -949,7 +968,7 @@ export function RootOverlayShell({
         },
       }),
       notifications: {
-        dismiss: (key) => container.notificationService.dismiss(key),
+        dismiss: (key) => container.notificationService.archive(key),
       },
     });
 
@@ -981,6 +1000,7 @@ export function RootOverlayShell({
                           ? "Opening details"
                           : "Action queued",
         );
+        setNotifTick((tick) => tick + 1);
         onRedraw();
       } catch (error) {
         setOverlayStatus(`Notification action failed: ${String(error)}`);
@@ -1237,19 +1257,66 @@ export function RootOverlayShell({
       }
       // No early return — arrows + filtering fall through.
     }
-    if (overlay.type === "notifications" && input.toLowerCase() === "x") {
-      if (notificationActionDedupKey) return;
-      runNotificationAction(filteredNotificationOptions[selectedIndex]?.value, "dismiss");
-      return;
-    }
-    if (overlay.type === "notifications" && input.toLowerCase() === "a") {
-      const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
-      if (picked) {
-        setNotificationActionDedupKey(picked);
+    if (
+      overlay.type === "notifications" &&
+      !notificationActionDedupKey &&
+      !notificationPlayConfirm
+    ) {
+      const notifRows = notificationsView.rows;
+      const notifRow = notifRows[Math.min(selectedIndex, Math.max(notifRows.length - 1, 0))];
+      if (key.tab) {
+        setNotifTab((prev) => (prev === "active" ? "archive" : "active"));
+        setNotifPage(0);
+        setSelectedIndex(0);
+        return;
+      }
+      if (input === "[") {
+        setNotifPage((page) => Math.max(0, page - 1));
+        setSelectedIndex(0);
+        return;
+      }
+      if (input === "]") {
+        setNotifPage((page) => Math.min(notificationsView.totalPages - 1, page + 1));
+        setSelectedIndex(0);
+        return;
+      }
+      if (input === "A") {
+        container.notificationService.markAllRead();
+        setNotifTick((tick) => tick + 1);
+        return;
+      }
+      if (input === "r" && notifRow) {
+        container.notificationService.markRead(notifRow.dedupKey);
+        setNotifTick((tick) => tick + 1);
+        return;
+      }
+      if (input.toLowerCase() === "x" && notifRow) {
+        container.notificationService.archive(notifRow.dedupKey);
+        setNotifTick((tick) => tick + 1);
+        setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
+        return;
+      }
+      if (input === "d" && notifRow) {
+        container.notificationService.delete(notifRow.dedupKey);
+        setNotifTick((tick) => tick + 1);
+        setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
+        setOverlayStatus("Notification deleted");
+        return;
+      }
+      if (input === "C") {
+        const removed = container.notificationService.clearArchived();
+        setNotifTick((tick) => tick + 1);
+        setNotifPage(0);
+        setSelectedIndex(0);
+        setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
+        return;
+      }
+      if (input.toLowerCase() === "a" && notifRow) {
+        setNotificationActionDedupKey(notifRow.dedupKey);
         setFilterQuery("");
         setSelectedIndex(0);
+        return;
       }
-      return;
     }
     if (
       overlay.type === "settings" &&
@@ -1930,6 +1997,42 @@ export function RootOverlayShell({
             ]}
             mode="minimal"
             commandMode={commandMode}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
+    const notifSelected =
+      notificationsView.rows.length === 0
+        ? 0
+        : Math.min(selectedIndex, notificationsView.rows.length - 1);
+    return (
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <NotificationsShell
+            view={notificationsView}
+            columns={cols}
+            selectedIndex={notifSelected}
+            unreadCount={notificationUnreadCount}
+          />
+        </Box>
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel="Notifications  ·  ⏎ action · a all · r read · A all-read · x archive · d delete · C clear · tab switch · [ ] page · Esc"
+            actions={footerActions}
+            mode="detailed"
+            commandMode={commandMode}
+            terminalWidth={cols}
           />
         </Box>
       </Box>

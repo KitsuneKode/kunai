@@ -1,0 +1,87 @@
+---
+title: Install And Update
+description: Install Kunai across platforms and keep source, global, and packaged installs current.
+---
+
+Kunai supports global package installs, installer scripts, and source checkouts. During beta you need **Bun** and **mpv** on your PATH for the supported workflow. Packaged binaries may appear on GitHub Releases depending on platform — the installer detects what is available.
+
+<ScopeCallout variant="beta" />
+
+## Install paths
+
+<Tabs items={["Installer script", "Bun global", "npm global", "Source"]}>
+<Tab value="Installer script">
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+```
+
+Dry run first when you want to inspect actions:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
+```
+
+</Tab>
+<Tab value="Bun global">
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+```
+
+</Tab>
+<Tab value="npm global">
+
+```sh
+npm install -g @kitsunekode/kunai
+kunai
+```
+
+</Tab>
+<Tab value="Source">
+
+```sh
+git clone https://github.com/KitsuneKode/kunai.git
+cd kunai
+bun install
+bun run link:global
+kunai
+```
+
+</Tab>
+</Tabs>
+
+## Update checks
+
+Kunai may run a **cached, non-blocking** background update check at startup. It never runs package managers or installers silently.
+
+Manual check from the shell:
+
+```text
+/update
+```
+
+The update panel shows install-method-aware guidance:
+
+| Install method | Typical update path |
+| --- | --- |
+| Source checkout | Pull the repository, refresh dependencies/build as needed |
+| Bun global | `bun update --global @kitsunekode/kunai` |
+| npm global | `npm install -g @kitsunekode/kunai` |
+| Packaged binary | Download the latest GitHub Release manually |
+
+You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
+
+## Release notes and support
+
+Published versions live on [GitHub Releases](https://github.com/KitsuneKode/kunai/releases). After updating, run `/update` inside Kunai to confirm the active version and install method.
+
+For support after an update:
+
+1. Run `/report-issue` from Kunai for a guided bundle path.
+2. For verbose traces, launch with `--debug-session`, reproduce, then `/export-diagnostics`.
+
+Contributor release steps: [Docs maintenance](/docs/developer/docs-maintenance).
+
+More flag detail: [CLI reference](/docs/users/cli-reference).

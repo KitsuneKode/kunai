@@ -3,40 +3,66 @@ title: Docs Maintenance
 description: How to add, structure, verify, and release Kunai documentation.
 ---
 
-The docs website lives in `apps/docs` and uses Next.js, Fumadocs, MDX, and
-Tailwind CSS. User and developer content lives in the repository-level `docs/`
-folder so it can serve both the website and source readers.
+The docs website lives in `apps/docs` and uses Next.js, Fumadocs, MDX, and Tailwind CSS. User and developer content lives in the repository-level `docs/` folder so it can serve both the website and source readers.
 
-## Adding A Page
+<Callout type="info" title="Docs build is separate from CLI release">
+The CLI release path builds `@kitsunekode/kunai` without requiring the docs website. Docs CI/build is its own task — keep it that way.
+</Callout>
 
-1. Add an `.md` or `.mdx` file under `docs/users/` or `docs/developer/`.
-2. Include frontmatter with `title` and `description`.
-3. Add the page slug to the nearest `meta.json`.
-4. Link it from the home page if it is a primary user journey.
-5. Run the docs checks.
+## Adding a page
 
+<Steps>
+<Step>
+### Author content
+Add an `.md` or `.mdx` file under `docs/users/` or `docs/developer/` with `title` and `description` frontmatter.
+</Step>
+<Step>
+### Register navigation
+Add the slug to the nearest `meta.json`. Section hubs use `index.mdx` as the first page in each folder.
+</Step>
+<Step>
+### Prefer truthful MDX primitives
+Use `Callout`, `Steps`, `Tabs`, and `Card` for procedural content. Reserve codegen components (`ProviderTable`, `CliFlagsTable`) for reference pages.
+</Step>
+<Step>
+### Verify
 ```sh
+bun run --cwd apps/docs generate
 bun run --cwd apps/docs typecheck
 bun run --cwd apps/docs test
 bun run --cwd apps/docs build
 ```
+</Step>
+</Steps>
 
-## Content Rules
+## Content rules
 
-- Document user-facing behavior before internal implementation details.
-- Say when a feature is local-only, cached-only, opt-in, or live-provider backed.
-- Keep provider traffic and Discord live checks manual unless a test is explicitly
-  named as live smoke.
+- Document **user-visible behavior** before internal implementation details.
+- State when a feature is local-only, cached-only, opt-in, or live-provider backed.
+- Keep provider traffic and Discord live checks **manual** unless a test is explicitly named as live smoke.
 - Prefer reusable command examples over prose-only explanations.
-- Keep security and privacy boundaries visible: no stream URLs in support
-  bundles, no provider probing from normal docs rendering, and no autoplay from
-  imported playlists.
+- Keep security boundaries visible: no stream URLs in support bundles, no provider probing during docs rendering, no autoplay from imported playlists.
 
-## Build Boundaries
+## Codegen and drift tests
 
-The CLI release path should build and package `@kitsunekode/kunai` without
-requiring the docs website. Docs build is its own task and can run in docs CI or
-before docs deployment.
+`apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` guard:
 
-Root scripts should delegate through Turborepo filters instead of hiding package
-logic in root commands.
+- Provider id order vs `container.ts`
+- Command count vs the parsed registry
+- User guides must not link to unpublished `../../.docs` paths
+
+Run `bun run generate` after changing commands, providers, or help text that reference pages embed.
+
+## Hub pages
+
+| Route | File | Purpose |
+| --- | --- | --- |
+| `/docs` | `docs/index.mdx` | Documentation home with section cards |
+| `/docs/users` | `docs/users/index.mdx` | User guide library overview |
+| `/docs/developer` | `docs/developer/index.mdx` | Contributor entry |
+
+Shared card data lives in `apps/docs/lib/doc-hub.ts`. MDX components: `DocsRootCards`, `DocSectionCards`, `ScopeCallout`, `QuickStartSteps`.
+
+## Build boundaries
+
+Root scripts should delegate through Turborepo filters instead of hiding package logic in root commands. The docs app must not become a hard dependency of packaging the CLI binary.
