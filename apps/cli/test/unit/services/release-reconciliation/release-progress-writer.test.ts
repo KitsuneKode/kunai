@@ -11,7 +11,7 @@ function projection(over: Partial<ReleaseProgressProjection> = {}): ReleaseProgr
     title: "Show",
     anchorEpisode: 1,
     newEpisodeCount: 0,
-    status: "up-to-date",
+    status: "caught-up",
     checkedAt: "2026-06-14T00:00:00.000Z",
     nextCheckAt: "2026-06-14T02:00:00.000Z",
     staleAfterAt: "2026-06-15T00:00:00.000Z",
