@@ -40,4 +40,18 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).toContain("▶ UP NEXT");
     expect(frame).toContain("Challengers of Science");
   });
+
+  it("shows the live countdown in the hero when seconds are set", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S01 E01"
+        nextEpisodeLabel="S01 E02 — Next One"
+        postPlayState={{ kind: "mid-series" }}
+        autoNextCountdownSeconds={4}
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("Playing in 4s");
+  });
 });

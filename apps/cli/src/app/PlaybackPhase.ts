@@ -316,6 +316,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           detail: "Auto-next ready",
           note: `Next ${episodeLabel} in ${remaining}s  ·  n now  ·  a pause`,
         });
+        stateManager.dispatch({ type: "SET_AUTO_NEXT_COUNTDOWN", seconds: remaining });
       },
       isCancelled: () => {
         const state = stateManager.getState();
@@ -331,6 +332,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return false;
       },
     });
+
+    // Countdown is over (advanced, cancelled, or skipped) — clear the live value so
+    // the post-play hero stops showing a stale "Playing in Ns".
+    stateManager.dispatch({ type: "SET_AUTO_NEXT_COUNTDOWN", seconds: null });
 
     if (outcome === "cancelled") {
       // No advance is coming; drop the pre-painted loading pane so the paused idle

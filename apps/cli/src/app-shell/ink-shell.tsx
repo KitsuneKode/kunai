@@ -1490,6 +1490,12 @@ function PlaybackShell({
     (session) => session.activeModals.length > 0,
     (left, right) => left === right,
   );
+  // Live per-second countdown so the Next-Up hero ticks during auto-next.
+  const autoNextCountdownSeconds = useSessionSelector(
+    container.stateManager,
+    (session) => session.autoNextCountdownSeconds,
+    (left, right) => left === right,
+  );
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
@@ -1675,6 +1681,7 @@ function PlaybackShell({
           autoskipPaused={state.autoskipPaused}
           stopAfterCurrent={state.stopAfterCurrent}
           selectedActionIndex={selectedActionIndex}
+          autoNextCountdownSeconds={autoNextCountdownSeconds ?? undefined}
         />
       )}
     </ShellFrame>
