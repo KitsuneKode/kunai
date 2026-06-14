@@ -17,6 +17,25 @@ import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { palette } from "./shell-theme";
+import { usePosterPreview } from "./use-poster-preview";
+
+/** Width reserved at the start of a schedule row for the mini-poster + new dot. */
+const CALENDAR_ROW_LEAD_WIDTH = 7;
+
+/** Text mini-poster for a calendar row; falls back to title initials when no art. */
+function CalendarMini({ url, title }: { readonly url?: string; readonly title: string }) {
+  const { poster } = usePosterPreview(url, {
+    rows: 2,
+    cols: 4,
+    enabled: Boolean(url),
+    variant: "preview",
+    inkEmbedded: true,
+    preserveTerminalImages: true,
+    debounceMs: 160,
+  });
+  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
+  return <Text color={palette.dim}>{title.slice(0, 2).toUpperCase()}</Text>;
+}
 
 export function CalendarScheduleStatus({
   model,
@@ -132,6 +151,8 @@ export function CalendarScheduleRow<T>({
   showForYouHeader,
   showForYouHeaderOnce,
   weekTag,
+  isNew,
+  posterUrl,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -147,6 +168,8 @@ export function CalendarScheduleRow<T>({
   showForYouHeader?: boolean;
   showForYouHeaderOnce?: boolean;
   weekTag?: string | null;
+  isNew?: boolean;
+  posterUrl?: string;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -158,7 +181,8 @@ export function CalendarScheduleRow<T>({
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
   const glyph = statusGlyph ?? presentation.glyph.trim();
-  const layout = computeCalendarRowLayout(rowWidth);
+  const innerWidth = Math.max(16, rowWidth - CALENDAR_ROW_LEAD_WIDTH);
+  const layout = computeCalendarRowLayout(innerWidth);
   const statusText = compactCalendarStatusLabel(
     glyph ? `${glyph} ${status}` : status,
     layout.statusWidth,
@@ -192,12 +216,20 @@ export function CalendarScheduleRow<T>({
       {showDayHeader && dayHeaderLabel ? (
         <SectionGroup label={dayHeaderLabel} tag={weekTag ?? undefined} marginTop={1} />
       ) : null}
-      <ListRow
-        selected={selected}
-        rowWidth={rowWidth}
-        flexColumnIndex={layout.flexColumnIndex}
-        columns={columns}
-      />
+      <Box flexDirection="row">
+        <Box width={5}>
+          <CalendarMini url={posterUrl} title={option.label} />
+        </Box>
+        <Text color={palette.accent}>{isNew ? "● " : "  "}</Text>
+        <Box flexGrow={1}>
+          <ListRow
+            selected={selected}
+            rowWidth={innerWidth}
+            flexColumnIndex={layout.flexColumnIndex}
+            columns={columns}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 }

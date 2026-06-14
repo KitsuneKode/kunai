@@ -1266,6 +1266,8 @@ export function BrowseShell<T>({
                       weekTag={row.weekTag}
                       showForYouHeader={calendarDayFilter === null}
                       showForYouHeaderOnce={row.showForYouHeaderOnce}
+                      isNew={row.isNew}
+                      posterUrl={row.posterUrl}
                     />
                   ))
                 : visibleOptions.map((option, index) => {
