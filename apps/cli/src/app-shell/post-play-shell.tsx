@@ -148,6 +148,33 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
 
 // ── Discovery cards ───────────────────────────────────────────────────────────
 
+// Text-mode mini-poster (chafa symbols inside Ink, not a Kitty placement), so
+// many picks coexist with the single Kitty hero in the body. `preserveTerminalImages`
+// keeps a pick render from wiping that hero.
+function PickPoster({
+  url,
+  title,
+  cols,
+  rows,
+}: {
+  readonly url?: string;
+  readonly title: string;
+  readonly cols: number;
+  readonly rows: number;
+}) {
+  const { poster } = usePosterPreview(url, {
+    rows,
+    cols,
+    enabled: Boolean(url),
+    variant: "preview",
+    inkEmbedded: true,
+    preserveTerminalImages: true,
+    debounceMs: 160,
+  });
+  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
+  return <Text color={palette.dim}>{initialsOf(title)}</Text>;
+}
+
 function DiscoveryCard({
   card,
   width,
@@ -157,6 +184,7 @@ function DiscoveryCard({
 }) {
   const titleWidth = Math.max(8, width - 4);
   const reasonWidth = Math.max(4, width - 4);
+  const posterCols = Math.max(8, width - 4);
   return (
     <Box
       borderStyle="single"
@@ -166,6 +194,9 @@ function DiscoveryCard({
       flexDirection="column"
       width={width}
     >
+      <Box minHeight={3} justifyContent="center" alignItems="center">
+        <PickPoster url={card.posterUrl} title={card.title} cols={posterCols} rows={3} />
+      </Box>
       <Text color={palette.accent} bold>
         {String(card.index)}
       </Text>
@@ -206,16 +237,19 @@ function DiscoveryCards({
     <Box flexDirection="column" marginTop={1}>
       {cards.map((card) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
+          <Box width={5}>
+            <PickPoster url={card.posterUrl} title={card.title} cols={4} rows={2} />
+          </Box>
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}
           </Text>
           <Text color={palette.text} bold>
-            {truncateLine(card.title, Math.max(8, width - 22))}
+            {truncateLine(card.title, Math.max(8, width - 27))}
           </Text>
           {card.reason ? (
             <Text color={palette.dim}>
               {" "}
-              · {truncateLine(card.reason, Math.max(4, width - measureColumns(card.title) - 6))}
+              · {truncateLine(card.reason, Math.max(4, width - measureColumns(card.title) - 11))}
             </Text>
           ) : null}
         </Box>
