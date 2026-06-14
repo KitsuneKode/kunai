@@ -64,6 +64,16 @@ test("NotificationRepository: delete removes a single notification permanently",
   expect(r.listActive(50, 0)).toHaveLength(0);
 });
 
+test("NotificationRepository: deleteByKind removes all rows of a kind", () => {
+  const r = repo();
+  r.upsert({ ...base("q1", "2026-06-14T01:00:00.000Z"), kind: "queue-recovery" });
+  r.upsert({ ...base("q2", "2026-06-14T02:00:00.000Z"), kind: "queue-recovery" });
+  r.upsert({ ...base("n1", "2026-06-14T03:00:00.000Z"), kind: "new-episode" });
+  const removed = r.deleteByKind("queue-recovery");
+  expect(removed).toBe(2);
+  expect(r.listActive(50, 0).map((n) => n.dedupKey)).toEqual(["n1"]);
+});
+
 test("NotificationRepository: clearArchived purges only archived rows", () => {
   const r = repo();
   r.upsert(base("a", "2026-06-14T01:00:00.000Z"));

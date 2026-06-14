@@ -552,15 +552,25 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     createdAt: startupAt,
     updatedAt: startupAt,
   });
-  notificationService.recordSignals(
-    queueRepository.listRecoverableQueueSessions().map((queueSession) => ({
-      type: "queue-recoverable" as const,
-      queueSessionId: queueSession.id,
-      itemCount: queueSession.itemCount,
-      updatedAt: queueSession.updatedAt,
-    })),
-    startupAt,
-  );
+  // Queue-recovery is ephemeral: refresh it each startup so exactly one notification
+  // points at the latest recoverable queue (the one the restore action targets),
+  // instead of one accumulating per startup. Clearing first also cleans up any
+  // stale per-session notices from older builds.
+  notificationService.deleteByKind("queue-recovery");
+  const latestRecoverableSession = queueRepository.listRecoverableQueueSessions()[0];
+  if (latestRecoverableSession) {
+    notificationService.recordSignals(
+      [
+        {
+          type: "queue-recoverable" as const,
+          queueSessionId: latestRecoverableSession.id,
+          itemCount: latestRecoverableSession.itemCount,
+          updatedAt: latestRecoverableSession.updatedAt,
+        },
+      ],
+      startupAt,
+    );
+  }
   const continuationProjectionService = new ContinuationProjectionService();
   const continueWatchingService = new ContinueWatchingService(historyRepository);
   const attentionRefreshWorker = new AttentionRefreshWorker({

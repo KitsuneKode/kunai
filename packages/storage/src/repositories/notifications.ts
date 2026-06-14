@@ -173,6 +173,15 @@ export class NotificationRepository {
     this.db.query("DELETE FROM notifications WHERE dedup_key = ?").run(dedupKey);
   }
 
+  /** Permanently remove every notification of a kind (e.g. refresh ephemeral queue-recovery). */
+  deleteByKind(kind: string): number {
+    const before = this.db
+      .query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM notifications WHERE kind = ?")
+      .get(kind);
+    this.db.query("DELETE FROM notifications WHERE kind = ?").run(kind);
+    return before?.n ?? 0;
+  }
+
   /** Permanently remove every archived notification (cleanup of the Archive tab). */
   clearArchived(): number {
     const before = this.db

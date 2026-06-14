@@ -768,15 +768,15 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   void container.downloadService.processQueue();
   // Background update check; on "update available", persist an app-update notification.
-  void container.updateService
-    .checkForUpdate()
-    .then((result) => {
+  void (async () => {
+    try {
+      const result = await container.updateService.checkForUpdate();
       const signal = updateSignalFromCheck(result);
       if (signal) container.notificationService.recordSignals([signal]);
-    })
-    .catch(() => {
+    } catch {
       // checkForUpdate records its own failures; keep startup fire-and-forget.
-    });
+    }
+  })();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",
