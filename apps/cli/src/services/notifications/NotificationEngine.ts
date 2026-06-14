@@ -18,11 +18,38 @@ export type NotificationSignal =
       readonly queueSessionId: string;
       readonly itemCount: number;
       readonly updatedAt: string;
+    }
+  | {
+      readonly type: "download-complete";
+      readonly titleId: string;
+      readonly mediaKind: string;
+      readonly title: string;
+      readonly season?: number;
+      readonly episode?: number;
+    }
+  | {
+      readonly type: "download-failed";
+      readonly titleId: string;
+      readonly mediaKind: string;
+      readonly title: string;
+      readonly season?: number;
+      readonly episode?: number;
+      readonly error: string;
+    }
+  | {
+      readonly type: "app-update";
+      readonly currentVersion: string;
+      readonly latestVersion: string;
     };
 
 export interface DerivedNotification {
   readonly dedupKey: string;
-  readonly kind: "new-episode" | "queue-recovery";
+  readonly kind:
+    | "new-episode"
+    | "queue-recovery"
+    | "download-complete"
+    | "download-failed"
+    | "app-update";
   readonly title: string;
   readonly body: string;
   readonly item?: MediaItemIdentity;
@@ -67,6 +94,76 @@ export function deriveNotifications(
           episode: signal.episode,
           providerHints: sanitizeProviderHints([{ providerId: signal.providerId }]),
         },
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
+      continue;
+    }
+
+    if (signal.type === "download-complete") {
+      const episodePart =
+        signal.season !== undefined && signal.episode !== undefined
+          ? `S${signal.season}E${signal.episode}`
+          : "download";
+      derived.push({
+        dedupKey: [
+          "download-complete",
+          signal.titleId,
+          signal.season ?? "-",
+          signal.episode ?? "-",
+        ].join(":"),
+        kind: "download-complete",
+        title: `Downloaded · ${signal.title} ${episodePart}`,
+        body: "Available offline",
+        item: {
+          mediaKind: signal.mediaKind,
+          titleId: signal.titleId,
+          title: signal.title,
+          season: signal.season,
+          episode: signal.episode,
+          providerHints: sanitizeProviderHints([]),
+        },
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
+      continue;
+    }
+
+    if (signal.type === "download-failed") {
+      const episodePart =
+        signal.season !== undefined && signal.episode !== undefined
+          ? `S${signal.season}E${signal.episode}`
+          : "episode";
+      derived.push({
+        dedupKey: [
+          "download-failed",
+          signal.titleId,
+          signal.season ?? "-",
+          signal.episode ?? "-",
+        ].join(":"),
+        kind: "download-failed",
+        title: `Download failed · ${signal.title} ${episodePart}`,
+        body: signal.error,
+        item: {
+          mediaKind: signal.mediaKind,
+          titleId: signal.titleId,
+          title: signal.title,
+          season: signal.season,
+          episode: signal.episode,
+          providerHints: sanitizeProviderHints([]),
+        },
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
+      continue;
+    }
+
+    if (signal.type === "app-update") {
+      derived.push({
+        dedupKey: `app-update:${signal.latestVersion}`,
+        kind: "app-update",
+        title: `Update available · ${signal.latestVersion}`,
+        body: `You are on ${signal.currentVersion}. Update to ${signal.latestVersion}.`,
         createdAt: input.now,
         updatedAt: input.now,
       });

@@ -3,7 +3,11 @@ import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import type { RunMediaActionInput } from "@/services/media-actions/MediaActionRouter";
 import type { NotificationRecord } from "@kunai/storage";
 
-export type NotificationActionId = MediaActionId | "restore-queue";
+export type NotificationActionId =
+  | MediaActionId
+  | "restore-queue"
+  | "retry-download"
+  | "update-app";
 
 export interface NotificationActionRouterDeps {
   readonly playlist?: {
@@ -43,13 +47,23 @@ export class NotificationActionRouter {
       return;
     }
 
+    // App-update has no in-app upgrade yet (linking the release page is a
+    // follow-up); acknowledging it is a no-op so it stays until archived.
+    if (input.actionId === "update-app") {
+      return;
+    }
+
     const item = parseMediaItem(input.notification);
     if (!item) {
       throw new Error("notification action requires a media item payload");
     }
 
+    // Retry maps to the standard download media action for the same item.
+    const mediaActionId: MediaActionId =
+      input.actionId === "retry-download" ? "download" : input.actionId;
+
     await this.deps.mediaActions?.run({
-      actionId: input.actionId,
+      actionId: mediaActionId,
       item,
       source: "notification",
       playbackActive: input.playbackActive,
@@ -122,6 +136,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isNotificationActionId(value: unknown): value is NotificationActionId {
   return (
     value === "restore-queue" ||
+    value === "retry-download" ||
+    value === "update-app" ||
     value === "play-now" ||
     value === "queue-next" ||
     value === "queue-after-current-chain" ||
