@@ -404,6 +404,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.recommendationRailEnabled;
   }
 
+  get showWatchTimeStats(): boolean {
+    return this.config.showWatchTimeStats;
+  }
+
   get minimalMode(): boolean {
     return this.config.minimalMode;
   }

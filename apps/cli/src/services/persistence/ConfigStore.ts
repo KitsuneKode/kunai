@@ -52,6 +52,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   discoverMode: "auto",
   discoverItemLimit: 24,
   recommendationRailEnabled: true,
+  showWatchTimeStats: true,
   minimalMode: false,
   zenMode: false,
   powerSaverMode: false,
