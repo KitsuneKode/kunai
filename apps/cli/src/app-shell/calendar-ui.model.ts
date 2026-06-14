@@ -51,6 +51,10 @@ export type CalendarRenderRow<T> = {
   readonly showDayHeader: boolean;
   readonly dayHeaderLabel: string | null;
   readonly showForYouHeaderOnce: boolean;
+  /** True when this release aired since the user last opened the calendar. */
+  readonly isNew: boolean;
+  /** Poster URL for the row's mini-poster (falls back to the calendar poster). */
+  readonly posterUrl?: string;
 };
 
 const CALENDAR_WEEKDAY_FORMATTER = new Intl.DateTimeFormat(undefined, { weekday: "short" });
@@ -457,6 +461,7 @@ export function buildCalendarRenderRows<T>(
   nowMs: number = Date.now(),
   selectedDayKey: string | null = null,
   showForYouHeader = false,
+  lastVisitAt = 0,
 ): readonly CalendarRenderRow<T>[] {
   const rows: CalendarRenderRow<T>[] = [];
   let lastDayHeader: string | null = null;
@@ -512,6 +517,8 @@ export function buildCalendarRenderRows<T>(
       showDayHeader,
       dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
       showForYouHeaderOnce,
+      isNew: isReleaseNew(option, lastVisitAt, nowMs),
+      posterUrl: option.previewImageUrl ?? option.calendar?.poster ?? undefined,
     });
   }
 
