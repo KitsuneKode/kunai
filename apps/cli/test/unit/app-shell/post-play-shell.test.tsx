@@ -25,3 +25,19 @@ describe("PostPlayShell discovery posters", () => {
     expect(frame).toContain("Dandadan");
   });
 });
+
+describe("PostPlayShell Next-Up hero", () => {
+  it("renders the Next-Up hero card label", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S01 E01"
+        nextEpisodeLabel="S01 E02 — Challengers of Science"
+        postPlayState={{ kind: "mid-series" }}
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("▶ UP NEXT");
+    expect(frame).toContain("Challengers of Science");
+  });
+});

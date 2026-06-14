@@ -19,6 +19,7 @@ import {
   buildPostPlayView,
   type PostPlayActionRow,
   type PostPlayDiscoveryCard,
+  type PostPlayNextUpHero,
   type PostPlayProgressBar,
   type PostPlayRailFact,
   type PostPlayUpNextCard,
@@ -54,6 +55,8 @@ export type PostPlayShellProps = {
   stopAfterCurrent?: boolean;
   /** Highlighted action row for keyboard navigation (↑/↓ or j/k). */
   selectedActionIndex?: number;
+  /** Live autoplay countdown seconds; when set, the hero shows "Playing in Ns". */
+  autoNextCountdownSeconds?: number;
 };
 
 // ── Color mapping ─────────────────────────────────────────────────────────────
@@ -322,7 +325,7 @@ function RailLabel({ label }: { readonly label: string }) {
   );
 }
 
-// ── Rail artwork (wide-only; reserved height so metadata never jumps) ──────────
+// ── Title initials fallback (shared by hero + pick posters) ────────────────────
 
 function initialsOf(title: string): string {
   return (
@@ -335,36 +338,68 @@ function initialsOf(title: string): string {
   );
 }
 
-// Renders the real terminal image (kitty or chafa text) for the next-episode
-// thumbnail when available, falling back to the series poster, then to title
-// initials. One image only — two simultaneous poster previews would clobber
-// each other through the shared clearRenderedPosterImages() pass.
-function RailArtwork({
-  url,
+// ── Next-Up hero (body centerpiece; holds the one Kitty image) ─────────────────
+
+function NextUpHeroCard({
+  hero,
+  artworkUrl,
   title,
   width,
+  countdownSeconds,
 }: {
-  readonly url?: string;
+  readonly hero: PostPlayNextUpHero;
+  readonly artworkUrl?: string;
   readonly title: string;
   readonly width: number;
+  readonly countdownSeconds?: number;
 }) {
-  const innerCols = Math.max(8, width - 2);
-  const { poster, posterState } = usePosterPreview(url, {
-    rows: 5,
-    cols: innerCols,
-    enabled: Boolean(url),
+  const innerWidth = Math.max(20, width - 4);
+  const posterCols = 10;
+  const textWidth = Math.max(8, innerWidth - posterCols - 2);
+  const { poster, posterState } = usePosterPreview(artworkUrl, {
+    rows: 4,
+    cols: posterCols,
+    enabled: Boolean(artworkUrl),
     variant: "preview",
   });
-
+  const countdownLine =
+    countdownSeconds && countdownSeconds > 0
+      ? `Playing in ${countdownSeconds}s · ↵ now · x cancel`
+      : hero.kind === "resume"
+        ? "↵ resume · e episodes"
+        : "↵ play · e episodes";
   return (
-    <Box width={width} minHeight={7} justifyContent="center" alignItems="center">
-      {poster.kind !== "none" ? (
-        <Text>{poster.placeholder}</Text>
-      ) : (
-        <Text color={palette.dim} bold>
-          {posterState === "loading" ? "…" : initialsOf(title)}
-        </Text>
-      )}
+    <Box
+      borderStyle="round"
+      borderColor={palette.accent}
+      flexDirection="column"
+      width={width}
+      paddingX={1}
+      marginTop={1}
+    >
+      <Text color={palette.accent} bold>
+        ▶ UP NEXT
+      </Text>
+      <Box flexDirection="row" marginTop={1}>
+        <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
+          {poster.kind !== "none" ? (
+            <Text>{poster.placeholder}</Text>
+          ) : (
+            <Text color={palette.dim} bold>
+              {posterState === "loading" ? "…" : initialsOf(title)}
+            </Text>
+          )}
+        </Box>
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color={palette.text} bold>
+            {truncateLine(hero.label, textWidth)}
+          </Text>
+          <Text color={palette.muted}>{truncateLine(hero.meta, textWidth)}</Text>
+          <Text color={countdownSeconds ? palette.accent : palette.dim}>
+            {truncateLine(countdownLine, textWidth)}
+          </Text>
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -373,14 +408,10 @@ function RailArtwork({
 
 function PostPlayRail({
   view,
-  title,
   railWidth,
-  artworkUrl,
 }: {
   readonly view: PostPlayView;
-  readonly title: string;
   readonly railWidth: number;
-  readonly artworkUrl?: string;
 }) {
   return (
     <Box
@@ -393,10 +424,6 @@ function PostPlayRail({
       borderRight={false}
       borderBottom={false}
     >
-      {/* Artwork slot — next-episode thumbnail (or series poster) — always
-          reserved to prevent layout jump on artwork load */}
-      <RailArtwork url={artworkUrl} title={title} width={railWidth - 3} />
-
       {/* Up next card */}
       {view.upNext ? (
         <>
@@ -438,6 +465,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   autoskipPaused,
   stopAfterCurrent,
   selectedActionIndex = 0,
+  autoNextCountdownSeconds,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
   const isWide = viewport.breakpoint === "wide";
@@ -503,6 +531,17 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           <ProgressStrip bar={view.progressBar} width={barWidth} color={hColor} />
         ) : null}
 
+        {/* Next-Up hero — the centerpiece, holds the one Kitty image */}
+        {view.nextUpHero ? (
+          <NextUpHeroCard
+            hero={view.nextUpHero}
+            artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
+            title={title}
+            width={bodyWidth}
+            countdownSeconds={autoNextCountdownSeconds}
+          />
+        ) : null}
+
         {/* Action rows */}
         <ActionRows actions={view.actions} width={bodyWidth} selectedIndex={selectedActionIndex} />
 
@@ -536,14 +575,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
       </Box>
 
       {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-      {showRail ? (
-        <PostPlayRail
-          view={view}
-          title={title}
-          railWidth={railWidth}
-          artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
-        />
-      ) : null}
+      {showRail ? <PostPlayRail view={view} railWidth={railWidth} /> : null}
     </Box>
   );
 });
