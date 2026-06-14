@@ -735,6 +735,7 @@ export function BrowseShell<T>({
         calendarNow,
         calendarDayFilter,
         calendarDayFilter === null,
+        _settings?.lastCalendarVisitAt ?? 0,
       )
     : [];
   const calendarWindow = windowCalendarRowsByLines(

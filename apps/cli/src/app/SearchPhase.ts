@@ -15,7 +15,7 @@ import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import type { BrowseShellOption } from "@/app-shell/types";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
-import { loadCalendarResults } from "@/app/calendar-results";
+import { isCalendarSearchResult, loadCalendarResults } from "@/app/calendar-results";
 import { loadDiscoverResults } from "@/app/discover-results";
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import {
@@ -389,6 +389,19 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             };
           },
         });
+
+        // Leaving the calendar surface — stamp the visit so the next open marks
+        // only releases that aired since now as "new". Done at this close event
+        // (not a render effect) so the just-shown rows still used the prior value.
+        const shownResults = currentState.searchResults;
+        if (shownResults.length > 0 && isCalendarSearchResult(shownResults[0]!)) {
+          try {
+            await container.config.update({ lastCalendarVisitAt: Date.now() });
+            await container.config.save();
+          } catch {
+            // best-effort; a failed visit stamp only over-reports "new" next open
+          }
+        }
 
         if (outcome.type === "cancelled") {
           return { status: "cancelled" };
