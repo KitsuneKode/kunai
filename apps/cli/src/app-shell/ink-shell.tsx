@@ -756,7 +756,10 @@ function AppRoot({ container }: { container: Container }) {
     currentViewLabel === "playback"
       ? "Now Playing"
       : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
-  const activeNotifications = container.notificationService.listActive();
+  // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
+  // renders the bell when notificationCount > 0).
+  const activeNotifications = container.notificationService.listActive(200, 0);
+  const unreadNotifications = activeNotifications.filter((notification) => !notification.readAt);
   const rootStatusSummary = buildRootStatusSummary({
     state,
     currentViewLabel,
@@ -765,8 +768,8 @@ function AppRoot({ container }: { container: Container }) {
     streak,
     syncHealth,
     playlistCount,
-    notificationCount: activeNotifications.length,
-    newEpisodeNotificationCount: activeNotifications.filter(
+    notificationCount: unreadNotifications.length,
+    newEpisodeNotificationCount: unreadNotifications.filter(
       (notification) => notification.kind === "new-episode",
     ).length,
   });
