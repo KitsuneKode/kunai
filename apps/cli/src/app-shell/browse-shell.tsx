@@ -163,6 +163,7 @@ export function BrowseShell<T>({
   settingsAnimeProviderOptions: _settingsAnimeProviderOptions,
   onSaveSettings: _onSaveSettings,
   onQueueSelected,
+  onFollowSelected,
   onResolve,
   onSubmit,
   onCancel,
@@ -192,6 +193,7 @@ export function BrowseShell<T>({
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
+  onFollowSelected?: (value: T) => Promise<void> | void;
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
@@ -918,6 +920,21 @@ export function BrowseShell<T>({
       return;
     }
 
+    // Follow / bookmark the highlighted result (results zone). Bookmarks the title
+    // for release notices via the shared media-action router — same path as queue.
+    if (listFocused && input.toLowerCase() === "w") {
+      if (
+        selectedOption &&
+        onFollowSelected &&
+        displayOptions.length > 0 &&
+        !queryDirty &&
+        searchState === "ready"
+      ) {
+        void Promise.resolve(onFollowSelected(selectedOption.value));
+      }
+      return;
+    }
+
     const canFocusContinueInInput = canFocusIdleRows;
 
     const resolveFocusedIdleAction = (): ShellAction | null => {
@@ -1500,6 +1517,9 @@ export function BrowseShell<T>({
           ...(onQueueSelected && options.length > 0 && !queryDirty
             ? [{ key: "q", label: "up next", action: "playlist" as const }]
             : []),
+          ...(onFollowSelected && options.length > 0 && !queryDirty
+            ? [{ key: "w", label: "follow", action: "follow" as const }]
+            : []),
           { key: "esc", label: "clear/back", action: "quit" },
         ];
         const visibleBrowseFooterActions = selectFooterActions(
@@ -1547,6 +1567,7 @@ export function openBrowseShell<T>({
   settingsAnimeProviderOptions,
   onSaveSettings,
   onQueueSelected,
+  onFollowSelected,
   idleContext,
 }: {
   mode: "series" | "anime";
@@ -1573,6 +1594,7 @@ export function openBrowseShell<T>({
   settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
+  onFollowSelected?: (value: T) => Promise<void> | void;
   idleContext?: import("./types").BrowseIdleContext;
 }): Promise<BrowseShellResult<T>> {
   const session = mountRootContent<BrowseShellResult<T>>({
@@ -1603,6 +1625,7 @@ export function openBrowseShell<T>({
         settingsAnimeProviderOptions={settingsAnimeProviderOptions}
         onSaveSettings={onSaveSettings}
         onQueueSelected={onQueueSelected}
+        onFollowSelected={onFollowSelected}
         idleContext={idleContext}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}

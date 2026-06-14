@@ -268,6 +268,18 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               note: `Queued ${chooseSearchResultTitle(result, container.config.animeTitlePreference)}.`,
             });
           },
+          onFollowSelected: async (result) => {
+            const router = createContainerMediaActionRouter(container);
+            await router.run({
+              actionId: "follow",
+              item: mediaItemFromSearchResult(result),
+              source: "search",
+            });
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Following ${chooseSearchResultTitle(result, container.config.animeTitlePreference)}.`,
+            });
+          },
           onSearch: async (query) => {
             const searchIntent = createSearchIntentEngine().fromText(query, {
               currentMode: stateManager.getState().mode,
