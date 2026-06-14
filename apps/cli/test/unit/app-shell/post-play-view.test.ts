@@ -48,3 +48,29 @@ describe("nextUpHero", () => {
     expect(view.nextUpHero).toBeUndefined();
   });
 });
+
+describe("series-complete celebration", () => {
+  it("includes catalog stats and the watch-time summary when provided", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S02 E12",
+      postPlayState: { kind: "series-complete" },
+      totalEpisodes: 28,
+      currentSeason: 2,
+      watchTimeSummary: "You watched ~11h over 9 days",
+    });
+    expect(view.celebration).toBeDefined();
+    expect(view.celebration?.statLine).toContain("28 episodes");
+    expect(view.celebration?.watchTimeLine).toBe("You watched ~11h over 9 days");
+  });
+
+  it("omits watch-time line when not provided", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S02 E12",
+      postPlayState: { kind: "series-complete" },
+      totalEpisodes: 28,
+    });
+    expect(view.celebration?.watchTimeLine).toBeUndefined();
+  });
+});

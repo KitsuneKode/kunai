@@ -67,6 +67,13 @@ export type PostPlayUpNextCard = {
   readonly meta: string;
 };
 
+// ── Series-complete celebration ───────────────────────────────────────────────
+
+export type PostPlayCelebration = {
+  readonly statLine: string; // "28 episodes · 2 seasons · 2023"
+  readonly watchTimeLine?: string;
+};
+
 // ── Next-Up hero (body centerpiece) ───────────────────────────────────────────
 
 export type PostPlayNextUpHero = {
@@ -102,6 +109,7 @@ export type PostPlayView = {
   readonly discovery: readonly PostPlayDiscoveryCard[];
   readonly upNext?: PostPlayUpNextCard;
   readonly nextUpHero?: PostPlayNextUpHero;
+  readonly celebration?: PostPlayCelebration;
   readonly railFacts: readonly PostPlayRailFact[];
   /** Catalog-sourced metadata line for the episode page ("S04E07 · U/A 16+ · sub | dub"). */
   readonly episodeMeta?: string;
@@ -131,6 +139,8 @@ export type BuildPostPlayViewProps = {
   readonly autoplayPaused?: boolean;
   readonly autoskipPaused?: boolean;
   readonly stopAfterCurrent?: boolean;
+  /** Pre-formatted personal watch-time line; omitted when disabled or below threshold. */
+  readonly watchTimeSummary?: string;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -536,12 +546,18 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     .filter(Boolean)
     .join(" · ");
 
+  const celebration: PostPlayCelebration = {
+    statLine: seriesMeta || "Series complete",
+    watchTimeLine: props.watchTimeSummary,
+  };
+
   return {
     heroKind: "series-complete",
     nextUpHero: buildNextUpHero(props, "queue-only"),
     heroLabel: "✦ SERIES COMPLETE",
     heroColor: "milestone",
     heroSub: seriesMeta || undefined,
+    celebration,
     actions: [
       {
         id: "search",

@@ -55,3 +55,22 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).toContain("Playing in 4s");
   });
 });
+
+describe("PostPlayShell series-complete celebration", () => {
+  it("renders the milestone banner with stats and watch-time", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S02 E12"
+        postPlayState={{ kind: "series-complete" }}
+        totalEpisodes={28}
+        currentSeason={2}
+        watchTimeSummary="You watched ~11h over 9 days"
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("SERIES COMPLETE");
+    expect(frame).toContain("28 episodes");
+    expect(frame).toContain("You watched ~11h over 9 days");
+  });
+});

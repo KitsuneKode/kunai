@@ -143,6 +143,8 @@ export interface SessionState {
   readonly playbackNote: string | null;
   /** Live autoplay countdown seconds for the post-play Next-Up hero; null when idle. */
   readonly autoNextCountdownSeconds: number | null;
+  /** Pre-formatted watch-time line for the series-complete celebration; null when hidden. */
+  readonly watchTimeSummary: string | null;
   readonly playbackProblem: PlaybackProblem | null;
   readonly resolveRetryCount: number;
 
@@ -187,6 +189,7 @@ export type StateTransition =
   | { type: "SET_PLAYBACK_STATUS"; status: PlaybackStatus; error?: string }
   | { type: "SET_PLAYBACK_FEEDBACK"; detail?: string | null; note?: string | null }
   | { type: "SET_AUTO_NEXT_COUNTDOWN"; seconds: number | null }
+  | { type: "SET_WATCH_TIME_SUMMARY"; summary: string | null }
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
   | { type: "CLEAR_PLAYBACK_PROBLEM" }
   | { type: "SET_RESOLVE_RETRY_COUNT"; count: number }
@@ -261,6 +264,7 @@ export function createInitialState(
     playbackDetail: null,
     playbackNote: null,
     autoNextCountdownSeconds: null,
+    watchTimeSummary: null,
     playbackProblem: null,
     resolveRetryCount: 0,
     searchQuery: "",
@@ -430,6 +434,9 @@ export function reduceState(state: SessionState, transition: StateTransition): S
 
     case "SET_AUTO_NEXT_COUNTDOWN":
       return { ...state, autoNextCountdownSeconds: transition.seconds };
+
+    case "SET_WATCH_TIME_SUMMARY":
+      return { ...state, watchTimeSummary: transition.summary };
 
     case "SET_PLAYBACK_PROBLEM":
       return {

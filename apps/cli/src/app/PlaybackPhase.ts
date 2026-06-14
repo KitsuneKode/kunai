@@ -7,6 +7,7 @@
 
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
+import { aggregateWatchTime, formatWatchTimeSummary } from "@/app-shell/post-play-watch-time";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   openTracksPanel,
@@ -2927,6 +2928,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               playbackStarted,
             });
             const postPlayState = resolvePostPlayState(postPlayInput);
+            // Personal watch-time stat for the series-complete celebration, gated by
+            // config. Aggregates this title's history; null hides the line.
+            const watchTimeSummary =
+              postPlayState.kind === "series-complete" && container.config.showWatchTimeStats
+                ? formatWatchTimeSummary(
+                    aggregateWatchTime(historyRepository.listByTitle(title.id)),
+                  )
+                : null;
+            stateManager.dispatch({ type: "SET_WATCH_TIME_SUMMARY", summary: watchTimeSummary });
             const upcomingEpisode = episodeAvailability.nextEpisode;
             const nextEpisodePickerOption = upcomingEpisode
               ? shellEpisodePicker.options.find(

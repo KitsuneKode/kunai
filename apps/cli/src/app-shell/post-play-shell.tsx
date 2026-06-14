@@ -57,6 +57,8 @@ export type PostPlayShellProps = {
   selectedActionIndex?: number;
   /** Live autoplay countdown seconds; when set, the hero shows "Playing in Ns". */
   autoNextCountdownSeconds?: number;
+  /** Pre-formatted personal watch-time line for the series-complete celebration. */
+  watchTimeSummary?: string;
 };
 
 // ── Color mapping ─────────────────────────────────────────────────────────────
@@ -466,6 +468,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   stopAfterCurrent,
   selectedActionIndex = 0,
   autoNextCountdownSeconds,
+  watchTimeSummary,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
   const isWide = viewport.breakpoint === "wide";
@@ -495,6 +498,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     autoplayPaused,
     autoskipPaused,
     stopAfterCurrent,
+    watchTimeSummary,
   });
 
   const hColor = heroColor(view.heroColor);
@@ -514,17 +518,35 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           <Text color={palette.muted}>{truncateLine(view.episodeMeta, bodyWidth)}</Text>
         ) : null}
 
-        {/* Hero zone label */}
-        <Box marginTop={1}>
-          <Text color={hColor} bold>
-            {view.heroLabel}
-          </Text>
-        </Box>
+        {/* Series-complete celebration replaces the generic hero label + sub:
+            milestone banner + catalog stats + optional personal watch-time. */}
+        {view.celebration ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={palette.milestone} bold>
+              {view.heroLabel}
+            </Text>
+            <Text color={palette.muted}>{truncateLine(view.celebration.statLine, bodyWidth)}</Text>
+            {view.celebration.watchTimeLine ? (
+              <Text color={palette.ok}>
+                {truncateLine(view.celebration.watchTimeLine, bodyWidth)}
+              </Text>
+            ) : null}
+          </Box>
+        ) : (
+          <>
+            {/* Hero zone label */}
+            <Box marginTop={1}>
+              <Text color={hColor} bold>
+                {view.heroLabel}
+              </Text>
+            </Box>
 
-        {/* Hero sub (nextAirDate, series count, etc.) */}
-        {view.heroSub ? (
-          <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
-        ) : null}
+            {/* Hero sub (nextAirDate, series count, etc.) */}
+            {view.heroSub ? (
+              <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
+            ) : null}
+          </>
+        )}
 
         {/* Progress bar */}
         {view.progressBar ? (

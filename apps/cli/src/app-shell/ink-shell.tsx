@@ -1496,6 +1496,11 @@ function PlaybackShell({
     (session) => session.autoNextCountdownSeconds,
     (left, right) => left === right,
   );
+  const watchTimeSummary = useSessionSelector(
+    container.stateManager,
+    (session) => session.watchTimeSummary,
+    (left, right) => left === right,
+  );
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
@@ -1682,6 +1687,7 @@ function PlaybackShell({
           stopAfterCurrent={state.stopAfterCurrent}
           selectedActionIndex={selectedActionIndex}
           autoNextCountdownSeconds={autoNextCountdownSeconds ?? undefined}
+          watchTimeSummary={watchTimeSummary ?? undefined}
         />
       )}
     </ShellFrame>
