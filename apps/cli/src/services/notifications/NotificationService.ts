@@ -71,6 +71,10 @@ export class NotificationService {
     this.deps.repo.deleteByDedupKey(dedupKey);
   }
 
+  deleteByKind(kind: string): number {
+    return this.deps.repo.deleteByKind(kind);
+  }
+
   clearArchived(): number {
     return this.deps.repo.clearArchived();
   }
