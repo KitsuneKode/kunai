@@ -14,6 +14,7 @@
 //   • rail facts: up-next card, season progress, catalog metadata
 // =============================================================================
 
+import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
@@ -48,6 +49,7 @@ export type PostPlayDiscoveryCard = {
   readonly index: number; // 1-based for display
   readonly title: string;
   readonly reason: string; // dim snippet: overview excerpt or year
+  readonly posterUrl?: string;
 };
 
 // ── Rail fact ─────────────────────────────────────────────────────────────────
@@ -178,7 +180,8 @@ function buildDiscovery(
     const reason = rec.overview
       ? (rec.overview.split(/[.!?]/u)[0]?.trim().slice(0, 44) ?? rec.year ?? "")
       : (rec.year ?? "");
-    return { id: rec.id, index: i + 1, title: rec.title, reason };
+    const posterUrl = resolveCatalogPosterUrl(rec.posterPath, { tmdbSize: "w185" }) ?? undefined;
+    return { id: rec.id, index: i + 1, title: rec.title, reason, posterUrl };
   });
 }
 
