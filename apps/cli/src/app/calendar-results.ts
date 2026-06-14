@@ -41,7 +41,17 @@ export async function loadCalendarResults(
   const days = 7;
   const forwardItems = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
   const items = mergeArchivedPastWindow(container, forwardItems);
-  const sorted = [...items].sort(compareCalendarItems);
+  // Collapse duplicate schedule entries for the same (titleId, releaseAt) slot so a
+  // title cannot appear twice for one airing (sources occasionally emit dupes, and
+  // the archive merge only dedupes when an archive is present).
+  const seenReleaseKeys = new Set<string>();
+  const deduped = [...items].filter((item) => {
+    const key = `${item.titleId}|${item.releaseAt ?? "-"}`;
+    if (seenReleaseKeys.has(key)) return false;
+    seenReleaseKeys.add(key);
+    return true;
+  });
+  const sorted = deduped.sort(compareCalendarItems);
   const isInWatchlist = (titleId: string) => container.listService.isInWatchlist(titleId);
   let historyMatches = new Map<
     string,

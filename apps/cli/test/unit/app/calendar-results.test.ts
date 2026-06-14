@@ -296,6 +296,34 @@ test("loadCalendarResults joins AniList schedule rows to provider-native history
   expect(results.results[0]?.calendar?.display.badge).toBe("3 new");
 });
 
+test("loadCalendarResults collapses duplicate releases with the same title and release time", async () => {
+  const releaseAt = new Date("2099-07-01T12:00:00.000Z").toISOString();
+  const dupRow = {
+    source: "anilist",
+    titleId: "dup-1",
+    titleName: "Twice Listed",
+    type: "anime",
+    episode: 7,
+    releaseAt,
+    releasePrecision: "timestamp",
+    status: "upcoming",
+    posterPath: null,
+  };
+  const results = await loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleaseWindow: async (mode: string) =>
+          mode === "anime" ? [dupRow, { ...dupRow }] : [],
+        loadMovieReleaseWindow: async () => [],
+      },
+    }) as never,
+  );
+
+  const matching = results.results.filter((r) => r.id === "dup-1");
+  expect(matching).toHaveLength(1);
+});
+
 test("loadCalendarResults merges anime, series, and movie sources into one window", async () => {
   const today = new Date();
   today.setHours(9, 0, 0, 0);
