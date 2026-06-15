@@ -20,6 +20,11 @@ export type TitleStatus = "released" | "upcoming" | "airing" | "unknown";
 
 export type CastKind = "actor" | "voice";
 
+export type TitleLink = {
+  readonly label: string;
+  readonly url: string;
+};
+
 export interface CastMember {
   readonly name: string;
   /** Character name, or "as X" / role label. */
@@ -83,6 +88,12 @@ export interface TitleDetail {
   readonly cast?: readonly CastMember[];
   readonly artwork?: ArtworkSet;
   readonly externalIds?: ProviderExternalIds;
+  /** 0–10 numeric rating (★), normalised across sources. */
+  readonly score?: number;
+  /** Watchable trailer URL (YouTube/Dailymotion) — played in mpv or the browser. */
+  readonly trailerUrl?: string;
+  /** External links (AniList / MAL / IMDb / official site). */
+  readonly externalLinks?: readonly TitleLink[];
   /** Which sources contributed any field (provenance). */
   readonly sources?: readonly MetadataSource[];
 }
