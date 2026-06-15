@@ -6,7 +6,6 @@ import type { HistoryProgress } from "@kunai/storage";
 function entry(over: Partial<HistoryProgress> & { titleId: string }): HistoryProgress {
   return {
     key: `${over.titleId}:${over.episode ?? 1}`,
-    titleId: over.titleId,
     mediaKind: over.mediaKind ?? "anime",
     title: over.title ?? over.titleId,
     season: over.season ?? 1,
