@@ -168,9 +168,28 @@ export class NotificationRepository {
       .run(dismissedAt, dismissedAt, dedupKey);
   }
 
-  /** Permanently remove a single notification. */
-  deleteByDedupKey(dedupKey: string): void {
+  /**
+   * Permanently remove a single notification AND tombstone its dedupKey so a
+   * re-derived signal of the same identity does not resurrect it. A genuinely newer
+   * episode/session has a different dedupKey and is unaffected.
+   */
+  deleteByDedupKey(dedupKey: string, now: string = new Date().toISOString()): void {
     this.db.query("DELETE FROM notifications WHERE dedup_key = ?").run(dedupKey);
+    this.db
+      .query(
+        `INSERT INTO notification_suppressions (dedup_key, suppressed_at)
+         VALUES (?, ?)
+         ON CONFLICT(dedup_key) DO UPDATE SET suppressed_at = excluded.suppressed_at`,
+      )
+      .run(dedupKey, now);
+  }
+
+  /** Dedup keys the user explicitly deleted; recordSignals must not recreate them. */
+  listSuppressedKeys(): ReadonlySet<string> {
+    const rows = this.db
+      .query<{ dedup_key: string }, []>("SELECT dedup_key FROM notification_suppressions")
+      .all();
+    return new Set(rows.map((row) => row.dedup_key));
   }
 
   /** Permanently remove every notification of a kind (e.g. refresh ephemeral queue-recovery). */

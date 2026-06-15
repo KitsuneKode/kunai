@@ -72,6 +72,38 @@ test("NotificationService only stores notification actions the root overlay can 
   db.close();
 });
 
+test("delete is sticky: a re-emitted signal does not resurrect a deleted notification", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+
+  const signal = {
+    type: "queue-recoverable" as const,
+    queueSessionId: "q1",
+    itemCount: 1,
+    updatedAt: "2026-06-16T00:00:00.000Z",
+  };
+  service.recordSignals([signal], "2026-06-16T00:00:00.000Z");
+  const row = service.listActive()[0];
+  expect(row?.dedupKey).toBe("queue-recoverable:q1");
+
+  service.delete(row!.dedupKey, "2026-06-16T00:01:00.000Z");
+  expect(service.listActive()).toHaveLength(0);
+
+  // The same signal fires again next cycle — it must stay gone.
+  service.recordSignals([signal], "2026-06-16T00:02:00.000Z");
+  expect(service.listActive()).toHaveLength(0);
+
+  // A genuinely new session (different dedupKey) still appears.
+  service.recordSignals([{ ...signal, queueSessionId: "q2" }], "2026-06-16T00:03:00.000Z");
+  expect(service.listActive().map((n) => n.dedupKey)).toEqual(["queue-recoverable:q2"]);
+
+  db.close();
+});
+
 test("NotificationService lifecycle: records, counts unread, archives", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

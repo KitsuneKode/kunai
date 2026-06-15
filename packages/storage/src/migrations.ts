@@ -451,6 +451,21 @@ export const dataMigrations: readonly Migration[] = [
         ON notifications(archived_at, updated_at DESC);
     `,
   },
+  {
+    id: "021_data_notification_suppressions",
+    database: "data",
+    // Deleting a notification must STICK: derived notifications (new-episode,
+    // queue-recovery, …) are re-emitted from live signals every cycle and would
+    // otherwise resurrect on the next upsert. A suppression tombstone keyed by the
+    // stable dedupKey makes recordSignals skip re-creating exactly that signal;
+    // a genuinely newer episode/session has a different dedupKey and still appears.
+    sql: `
+      CREATE TABLE IF NOT EXISTS notification_suppressions (
+        dedup_key TEXT PRIMARY KEY,
+        suppressed_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

@@ -17,7 +17,14 @@ export class NotificationService {
       now,
     });
 
+    // Never resurrect a notification the user explicitly deleted. Derived signals
+    // (new-episode, queue-recovery, …) re-fire every cycle; the suppression tombstone
+    // keyed by the stable dedupKey keeps deletes sticky while letting a genuinely new
+    // episode/session (different dedupKey) through.
+    const suppressed = this.deps.repo.listSuppressedKeys();
+
     for (const notification of notifications) {
+      if (suppressed.has(notification.dedupKey)) continue;
       this.deps.repo.upsert({
         dedupKey: notification.dedupKey,
         kind: notification.kind,
@@ -67,8 +74,8 @@ export class NotificationService {
     this.deps.repo.dismissByDedupKey(dedupKey, now);
   }
 
-  delete(dedupKey: string): void {
-    this.deps.repo.deleteByDedupKey(dedupKey);
+  delete(dedupKey: string, now = new Date().toISOString()): void {
+    this.deps.repo.deleteByDedupKey(dedupKey, now);
   }
 
   deleteByKind(kind: string): number {
