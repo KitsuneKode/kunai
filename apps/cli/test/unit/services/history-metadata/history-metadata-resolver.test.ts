@@ -7,7 +7,6 @@ import type { HistoryHealTarget } from "@/services/history-metadata/select-heal-
 function target(over: Partial<HistoryHealTarget> & { title: string }): HistoryHealTarget {
   return {
     titleId: over.titleId ?? "t1",
-    title: over.title,
     mediaKind: over.mediaKind ?? "anime",
     needsPoster: over.needsPoster ?? true,
     needsExternalIds: over.needsExternalIds ?? true,
@@ -19,7 +18,6 @@ function result(over: Partial<SearchResult> & { title: string }): SearchResult {
   return {
     id: over.id ?? "r1",
     type: "series",
-    title: over.title,
     year: "2024",
     overview: "",
     posterPath: over.posterPath ?? null,
