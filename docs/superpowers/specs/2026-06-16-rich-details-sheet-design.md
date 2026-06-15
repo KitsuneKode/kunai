@@ -25,16 +25,17 @@ relevant people search and want to know," like opening a title on AniList/IMDb.
 1. Full-screen details sheet (press `i` / Enter) replacing the string-scrape panel.
 2. Real data from `fetchTitleDetail`: synopsis, genres, score, studio, status + next-airing,
    episode/season counts, cast, collapsible seasons.
-3. New fields: numeric `score`, `trailerUrl` (openable link — terminal can't embed),
-   `externalLinks` (AniList / MAL / IMDb / official site).
+3. New fields: numeric `score`, `trailerUrl`, `externalLinks` (AniList / MAL / IMDb / site).
 4. "Your" block: watch progress + where-to-watch (providers / offline) + subs.
-5. Inline actions footer: play/resume · queue · follow · download · episodes.
+5. Inline actions footer: play/resume · queue · follow · download · episodes · **trailer (mpv)**.
 6. Instant open (cached/known data + skeletons) → live fill → cache; never blocks; graceful
    on fetch failure.
+7. **Minimise network**: seed the sheet from data we already fetched (the browse option /
+   `SearchResult` carries score, poster, genres, external IDs); only fetch the gaps, and only
+   via ONE consolidated call per source.
 
 ## Non-goals
 
-- Embedded trailer/video playback (terminal limitation — trailer is a link).
 - Cast photos rendered as images (model has `photoUrl`; sheet shows names only).
 - Redesigning the inline preview rail (separate; this is the full sheet only).
 - New metadata providers; we extend the existing AniList/TMDB resolvers only.
@@ -45,9 +46,10 @@ relevant people search and want to know," like opening a title on AniList/IMDb.
 | ----------- | ----------------------------------------------------------------------------------------- |
 | Surface     | Full-screen details sheet (not the side rail)                                             |
 | Data source | Existing `TitleDetail` via `fetchTitleDetail`; reuse `details-view` + `DetailsSheetUI`    |
-| Loading     | Instant skeleton from known data → live fetch fill → cached (reopen instant)              |
+| Loading     | Seed from already-fetched data → ONE consolidated gap-fill call per source → cached       |
 | New fields  | `score?: number`, `trailerUrl?: string`, `externalLinks?: {label,url}[]` on `TitleDetail` |
-| Trailer     | Shown as an openable external link, not embedded                                          |
+| Trailer     | Played in mpv (`t`) via the app's player + yt-dlp; browser/link fallback if unavailable   |
+| Links       | External links (AniList/MAL/IMDb/site) open in the browser                                |
 | Scope       | Everything in one pass (score + trailer + links + seasons + actions)                      |
 
 ## Architecture
@@ -62,22 +64,36 @@ readonly trailerUrl?: string;       // external trailer link (YouTube etc.)
 readonly externalLinks?: readonly { readonly label: string; readonly url: string }[];
 ```
 
-Populate in the AniList + TMDB resolvers used by `TitleDetailService`:
+Populate in the AniList + TMDB resolvers used by `TitleDetailService`, each in a SINGLE call:
 
-- **AniList**: `averageScore/10` → `score`; `trailer { site, id }` → YouTube/Dailymotion URL;
-  `externalLinks { site, url }` + a MAL link from `idMal`.
-- **TMDB**: `vote_average` → `score`; `videos` (first YouTube trailer) → `trailerUrl`;
-  `homepage` + IMDb (`external_ids.imdb_id`) → `externalLinks`.
+- **AniList**: one GraphQL `Media` query already returns everything we need — add
+  `averageScore` (→ `/10` `score`), `trailer { site, id }` (→ YouTube/Dailymotion URL),
+  `externalLinks { site, url }`, and `idMal` (→ MAL link) to the existing selection set. No
+  extra request.
+- **TMDB**: one call with `append_to_response=videos,external_ids,credits` returns details +
+  `vote_average` (→ `score`), first YouTube trailer (→ `trailerUrl`), `homepage` + IMDb
+  (`external_ids.imdb_id` → `externalLinks`), and cast — replacing any multi-call path.
 
 All optional and best-effort; missing fields render as skeleton-then-omitted.
+
+### 1a. Minimise network — seed before fetch
+
+The browse option / `SearchResult` already carries data from the search call (`rating`/score,
+`posterPath`, `externalIds`, `episodeCount`, and — for anime — AniList-enriched fields). The
+sheet's **header renders entirely from this seed with zero fetch**: title, poster, year, score,
+type, your-progress. A gap-fill `fetchTitleDetail` (the single consolidated call above, cached
+in `TitleDetailService`) runs only for the parts the seed lacks — synopsis, studio, cast,
+seasons, trailer, links — and only if not already cached. Reopening a title never re-fetches.
+`buildDetailsSheet` takes the seed as `instant` and treats `detail` as the (optional) gap-fill.
 
 ### 2. Pure sheet view-model
 
 New `src/app-shell/details-sheet.model.ts` — `buildDetailsSheet(input)` → a structured,
 fully-typed `DetailsSheetModel` with sections, given:
 
-- `detail: TitleDetail | null` (null = not yet fetched → skeleton)
-- `instant: { title; posterUrl?; type; year?; }` (from the browse option, always present)
+- `detail: TitleDetail | null` (null = gap-fill not yet fetched → skeleton for gap-only parts)
+- `instant: { title; posterUrl?; type; year?; score?; genres?; }` (seed from the browse
+  option / `SearchResult`, always present — header needs no fetch)
 - `history: HistoryProgress | null` (your-progress block)
 - `availability: { providers: string[]; offline: boolean; subs: string[] }`
 - `seasonsExpanded: boolean`
@@ -105,7 +121,9 @@ budget; `usePosterPreview` non-embedded for the hero).
    state → sheet re-renders populated. On failure, drop skeletons, keep instant data.
 3. Seasons collapse toggled by a key (e.g. `s`); actions dispatch through the existing
    browse action paths (`onSubmit` play, `onResolve` download/watchlist, queue, `w` follow,
-   `e` episodes).
+   `e` episodes). `t` plays `trailerUrl` in mpv via the existing `PlayerService` (yt-dlp);
+   if mpv/yt-dlp can't, fall back to opening the URL in the browser. External links (`l` or a
+   links sub-list) open in the browser.
 
 `details-panel.ts` (`DetailsPanelData` + string-scrape) is retired once callers move to the
 new model (check `overlay-panel.tsx`, `post-play`, `playback` consumers; migrate or keep a
@@ -113,10 +131,14 @@ thin adapter only if a non-browse caller still needs the old shape).
 
 ## Data flow
 
-1. `i`/Enter on a browse row → open sheet with instant data + `peekTitleDetail` (cached).
-2. `fetchTitleDetail` resolves (AniList/TMDB, now incl. score/trailer/links) → cache → fill.
-3. `buildDetailsSheet` merges detail + history + availability → `DetailsSheetModel`.
-4. `DetailsSheetUI` renders; `s` toggles seasons; footer keys dispatch existing actions.
+1. `i`/Enter on a browse row → open sheet seeded from the option/`SearchResult` (score,
+   poster, year, genres, progress) + cached `peekTitleDetail` → header is complete with no
+   fetch; gap-only parts (synopsis/cast/seasons/trailer/links) show skeletons.
+2. If not cached, ONE consolidated `fetchTitleDetail` (single AniList GraphQL / one TMDB
+   `append_to_response`) resolves the gaps → cache → fill. Reopen never re-fetches.
+3. `buildDetailsSheet` merges seed + detail + history + availability → `DetailsSheetModel`.
+4. `DetailsSheetUI` renders; `s` toggles seasons; `t` plays the trailer in mpv; footer keys
+   dispatch existing actions.
 
 ## Testing
 
@@ -125,9 +147,12 @@ thin adapter only if a non-browse caller still needs the old shape).
   history (in-progress/completed); availability block; seasons expanded/collapsed (unit).
 - `DetailsSheetUI`: `captureFrame` snapshots — loaded, skeleton, narrow width, no-poster,
   long synopsis wrap, seasons collapsed/expanded.
-- Reachability: opening from a browse row builds instant model without a fetch; fetch fills it
-  (seam test with a fake `fetchTitleDetail`).
-- Graceful failure: fetch rejects → instant data retained, skeletons dropped.
+- Seed-first: the header (title/poster/year/score/genres/progress) builds from the option seed
+  with NO `fetchTitleDetail` call; gap-fill only fires for missing parts and is skipped when
+  cached (seam test with a fake fetch counting calls).
+- Trailer action: `t` with a `trailerUrl` invokes the player port (mpv) with that URL; falls
+  back to the browser opener when the player declines (seam test with fakes).
+- Graceful failure: fetch rejects → seed data retained, skeletons dropped.
 
 ## Out of scope / follow-ups
 
