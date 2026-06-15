@@ -62,6 +62,7 @@ export { SEARCH_BROWSE_COMMAND_IDS };
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
   private hasQueuedStartupReleaseReconciliation = false;
+  private hasHealedHistoryMetadata = false;
 
   async execute(
     input: SearchPhaseInput | void,
@@ -225,6 +226,30 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             context.signal,
           );
           this.hasQueuedStartupReleaseReconciliation = true;
+
+          // Self-heal missing posters / external ids for history titles, once per
+          // session, in the background. Healed titles (now carrying external ids) are
+          // re-reconciled so finished series learn their episode total and stop being
+          // mis-bucketed as "continue".
+          if (!this.hasHealedHistoryMetadata) {
+            this.hasHealedHistoryMetadata = true;
+            const historyForHeal = Object.values(allHistory);
+            void container.historyMetadataHealer
+              .heal(historyForHeal, context.signal)
+              .then((healed) => {
+                if (healed.length === 0) return;
+                const healedSet = new Set(healed);
+                enqueueReleaseReconciliation(
+                  container,
+                  historyForHeal.filter((row) => healedSet.has(row.titleId)),
+                  "history",
+                  context.signal,
+                );
+              })
+              .catch(() => {
+                // best-effort; healing retries next session
+              });
+          }
         } catch {
           // best-effort
         }

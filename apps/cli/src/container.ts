@@ -45,6 +45,7 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
+import { searchTitles } from "./app/search-routing";
 import {
   resolveAttentionFeatureFlags,
   type AttentionFeatureFlags,
@@ -93,6 +94,8 @@ import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
 import { redactDiagnosticValue } from "./services/diagnostics/redaction";
 import { DownloadService } from "./services/download/DownloadService";
+import { createHistoryMetadataResolver } from "./services/history-metadata/create-history-metadata-resolver";
+import { HistoryMetadataHealer } from "./services/history-metadata/HistoryMetadataHealer";
 import { NotificationService } from "./services/notifications/NotificationService";
 import { OfflineAssetService } from "./services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
@@ -205,6 +208,7 @@ export interface Container {
   readonly releaseReconciliationService: ReleaseReconciliationService;
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
+  readonly historyMetadataHealer: HistoryMetadataHealer;
   readonly updateService: UpdateService;
 
   // Lists, playlist, stats, and sync
@@ -614,6 +618,30 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
         : null,
     ttlMs: 5 * 60 * 1000,
   });
+  const historyMetadataHealer = new HistoryMetadataHealer({
+    repo: historyRepository,
+    resolver: createHistoryMetadataResolver({
+      search: async (title, mediaKind) => {
+        const mode = mediaKind === "anime" ? "anime" : "series";
+        try {
+          const { results } = await searchTitles(title, {
+            mode,
+            providerId: mode === "anime" ? config.animeProvider : config.provider,
+            animeLanguageProfile: config.animeLanguageProfile,
+            searchRegistry,
+            providerRegistry,
+            enrichAnimeMetadata: false,
+          });
+          return results;
+        } catch (error) {
+          logger.warn("History metadata search failed", { title, error });
+          return [];
+        }
+      },
+    }),
+    onHealError: (titleId, error) =>
+      logger.warn("History metadata heal failed", { titleId, error }),
+  });
   const updateService = new UpdateService({
     config,
     diagnostics: diagnosticsService,
@@ -673,6 +701,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     releaseReconciliationService,
     timelineService,
     resultEnrichmentService,
+    historyMetadataHealer,
     updateService,
     listRepository,
     queueRepository,
