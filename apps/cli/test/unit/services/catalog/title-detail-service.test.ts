@@ -184,10 +184,13 @@ afterEach(() => {
 describe("TitleDetailService — TMDB movie", () => {
   test("maps title, year, synopsis, genres, studios, runtime, releaseDate from TMDB payload", async () => {
     const restore = mockFetch((url) => {
-      if (url.includes("/movie/550") && !url.includes("/credits") && !url.includes("/external_ids"))
-        return jsonResponse(tmdbMoviePayload());
-      if (url.includes("/movie/550/credits")) return jsonResponse({ cast: [] });
-      if (url.includes("/movie/550/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
+      if (url.includes("/movie/550"))
+        return jsonResponse({
+          ...tmdbMoviePayload(),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
       return null;
     });
 
@@ -210,10 +213,13 @@ describe("TitleDetailService — TMDB movie", () => {
 
   test("builds poster and backdrop artwork with w500/w780 sizes", async () => {
     const restore = mockFetch((url) => {
-      if (url.includes("/movie/550") && !url.includes("/credits") && !url.includes("/external_ids"))
-        return jsonResponse(tmdbMoviePayload());
-      if (url.includes("/movie/550/credits")) return jsonResponse({ cast: [] });
-      if (url.includes("/movie/550/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
+      if (url.includes("/movie/550"))
+        return jsonResponse({
+          ...tmdbMoviePayload(),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
       return null;
     });
 
@@ -228,13 +234,15 @@ describe("TitleDetailService — TMDB movie", () => {
 
   test("maps cast members as actors with role and photoUrl", async () => {
     const restore = mockFetch((url) => {
-      if (url.includes("/movie/550") && !url.includes("/credits") && !url.includes("/external_ids"))
-        return jsonResponse(tmdbMoviePayload());
-      if (url.includes("/movie/550/credits"))
+      if (url.includes("/movie/550"))
         return jsonResponse({
-          cast: [{ name: "Brad Pitt", character: "Tyler Durden", profile_path: "/brad.jpg" }],
+          ...tmdbMoviePayload(),
+          credits: {
+            cast: [{ name: "Brad Pitt", character: "Tyler Durden", profile_path: "/brad.jpg" }],
+          },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
         });
-      if (url.includes("/movie/550/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
       return null;
     });
 
@@ -259,15 +267,13 @@ describe("TitleDetailService — TMDB movie", () => {
 describe("TitleDetailService — TMDB series", () => {
   test("maps seasonCount, episodeCount, seasons[], and episode thumbnails", async () => {
     const restore = mockFetch((url) => {
-      if (
-        url.includes("/tv/1396") &&
-        !url.includes("/credits") &&
-        !url.includes("/external_ids") &&
-        !url.includes("/season/")
-      )
-        return jsonResponse(tmdbSeriesPayload());
-      if (url.includes("/tv/1396/credits")) return jsonResponse(tmdbCreditsPayload());
-      if (url.includes("/tv/1396/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
+      if (url.includes("/tv/1396") && !url.includes("/season/"))
+        return jsonResponse({
+          ...tmdbSeriesPayload(),
+          credits: tmdbCreditsPayload(),
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
       if (url.includes("/tv/1396/season/1"))
         return jsonResponse(
           tmdbSeasonPayload(1, [
@@ -305,15 +311,13 @@ describe("TitleDetailService — TMDB series", () => {
 
   test("maps cast as actors with kind=actor", async () => {
     const restore = mockFetch((url) => {
-      if (
-        url.includes("/tv/1396") &&
-        !url.includes("/credits") &&
-        !url.includes("/external_ids") &&
-        !url.includes("/season/")
-      )
-        return jsonResponse(tmdbSeriesPayload());
-      if (url.includes("/tv/1396/credits")) return jsonResponse(tmdbCreditsPayload());
-      if (url.includes("/tv/1396/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
+      if (url.includes("/tv/1396") && !url.includes("/season/"))
+        return jsonResponse({
+          ...tmdbSeriesPayload(),
+          credits: tmdbCreditsPayload(),
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
       if (url.includes("/season/")) return jsonResponse({ episodes: [] });
       return null;
     });
@@ -610,10 +614,13 @@ describe("TitleDetailService — graceful degradation", () => {
 describe("TitleDetailService — id format compat", () => {
   test("bare numeric id is treated as tmdb id", async () => {
     const restore = mockFetch((url) => {
-      if (url.includes("/movie/550") && !url.includes("/credits") && !url.includes("/external_ids"))
-        return jsonResponse(tmdbMoviePayload());
-      if (url.includes("/movie/550/credits")) return jsonResponse({ cast: [] });
-      if (url.includes("/movie/550/external_ids")) return jsonResponse(tmdbExternalIdsPayload());
+      if (url.includes("/movie/550"))
+        return jsonResponse({
+          ...tmdbMoviePayload(),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
       return null;
     });
 

@@ -27,6 +27,7 @@ import {
   type MetadataSource,
   type SeasonSummary,
   type TitleDetail,
+  type TitleLink,
   type TitleStatus,
   episodeThumbKey,
   mergeArtwork,
@@ -42,6 +43,8 @@ import {
   seasonSummaryNeedsEpisodeVerification,
 } from "@/services/catalog/tmdb-release";
 import type { ProviderExternalIds } from "@kunai/types";
+
+import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-detail-extras";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -243,6 +246,15 @@ function mergeDetails(
     cast: cast.length ? cast : undefined,
     artwork: Object.keys(artwork).length ? artwork : undefined,
     externalIds: Object.keys(externalIds).length ? externalIds : undefined,
+    score:
+      artworkKind === "anime" ? (anilist?.score ?? tmdb?.score) : (tmdb?.score ?? anilist?.score),
+    trailerUrl:
+      artworkKind === "anime"
+        ? (anilist?.trailerUrl ?? tmdb?.trailerUrl)
+        : (tmdb?.trailerUrl ?? anilist?.trailerUrl),
+    externalLinks:
+      (anilist?.externalLinks?.length ? anilist.externalLinks : undefined) ??
+      (tmdb?.externalLinks?.length ? tmdb.externalLinks : undefined),
     sources: sources.length ? sources : undefined,
   };
 }
@@ -267,6 +279,9 @@ interface TmdbDetailResult {
   readonly cast?: readonly CastMember[];
   readonly artwork: ArtworkCandidate;
   readonly externalIds?: ProviderExternalIds;
+  readonly score?: number;
+  readonly trailerUrl?: string;
+  readonly externalLinks?: readonly TitleLink[];
 }
 
 async function fetchTmdbDetail(
@@ -276,19 +291,29 @@ async function fetchTmdbDetail(
 ): Promise<TmdbDetailResult | null> {
   const mediaType = type === "movie" ? "movie" : "tv";
 
-  // Fetch main detail + credits + external IDs in parallel
-  const [detailRes, creditsRes, externalRes] = await Promise.allSettled([
-    fetchJsonWithFallback(`/${mediaType}/${tmdbId}`, signal),
-    fetchJsonWithFallback(`/${mediaType}/${tmdbId}/credits`, signal),
-    fetchJsonWithFallback(`/${mediaType}/${tmdbId}/external_ids`, signal),
-  ]);
-
-  const detail = detailRes.status === "fulfilled" ? detailRes.value : null;
+  // One consolidated call: detail + credits + external IDs + videos (trailer). This
+  // replaces three separate requests; the shared TMDB client caches/dedupes it.
+  const appended = "credits,external_ids,videos,content_ratings,release_dates";
+  const detail = await fetchJsonWithFallback(
+    `/${mediaType}/${tmdbId}?append_to_response=${appended}`,
+    signal,
+  ).catch(() => null);
   if (!detail) return null;
 
   const d = readRecord(detail);
-  const credits = creditsRes.status === "fulfilled" ? readRecord(creditsRes.value) : {};
-  const externalIds = externalRes.status === "fulfilled" ? readRecord(externalRes.value) : {};
+  const credits = readRecord(d.credits);
+  const externalIds = readRecord(d.external_ids);
+  const videos = readRecord(d.videos);
+
+  const score =
+    typeof d.vote_average === "number" ? Math.round(d.vote_average * 10) / 10 : undefined;
+  const videoResults = Array.isArray(videos.results) ? videos.results.map(readRecord) : [];
+  const ytTrailer = videoResults.find(
+    (video) =>
+      readString(video.site).toLowerCase() === "youtube" && /trailer/i.test(readString(video.type)),
+  );
+  const trailerUrl = toTrailerUrl({ site: "youtube", id: readString(ytTrailer?.key) });
+  const externalLinks = tmdbExternalLinks(readString(d.homepage), readString(externalIds.imdb_id));
 
   // For TV: also fetch season details to get season-level posters + episode thumbs
   let seasons: SeasonSummary[] | undefined;
@@ -506,6 +531,9 @@ async function fetchTmdbDetail(
       ...(imdbId ? { imdbId } : {}),
       ...(anilistId ? { anilistId } : {}),
     },
+    score,
+    trailerUrl,
+    externalLinks: externalLinks.length ? externalLinks : undefined,
   };
 }
 
@@ -570,6 +598,9 @@ interface AniListDetailResult {
   readonly cast?: readonly CastMember[];
   readonly artwork: ArtworkCandidate;
   readonly externalIds?: ProviderExternalIds;
+  readonly score?: number;
+  readonly trailerUrl?: string;
+  readonly externalLinks?: readonly TitleLink[];
 }
 
 const ANILIST_DETAIL_QUERY = `
@@ -577,6 +608,7 @@ query($id: Int) {
   Media(id: $id, type: ANIME) {
     id
     idMal
+    averageScore
     title { romaji english native }
     description(asHtml: false)
     genres
@@ -587,6 +619,7 @@ query($id: Int) {
     endDate { year }
     coverImage { extraLarge large }
     bannerImage
+    trailer { id site }
     studios(isMain: true) { nodes { name } }
     characters(role: MAIN, page: 1, perPage: 15, sort: [ROLE]) {
       nodes {
@@ -685,6 +718,21 @@ async function fetchAniListDetail(
   const malId = typeof media.idMal === "number" ? String(media.idMal) : undefined;
   const anilistIdStr = String(media.id);
 
+  const score =
+    typeof media.averageScore === "number" ? Math.round(media.averageScore) / 10 : undefined;
+  const trailerNode = readRecord(media.trailer);
+  const trailerUrl = toTrailerUrl({
+    site: readString(trailerNode.site),
+    id: readString(trailerNode.id),
+  });
+  const externalLinksRaw = Array.isArray(media.externalLinks)
+    ? media.externalLinks.map(readRecord).map((link) => ({
+        site: readString(link.site),
+        url: readString(link.url),
+      }))
+    : [];
+  const externalLinks = aniListExternalLinks(externalLinksRaw, malId);
+
   return {
     title,
     year,
@@ -701,6 +749,9 @@ async function fetchAniListDetail(
       anilistId: anilistIdStr,
       ...(malId ? { malId } : {}),
     },
+    score,
+    trailerUrl,
+    externalLinks: externalLinks.length ? externalLinks : undefined,
   };
 }
 
