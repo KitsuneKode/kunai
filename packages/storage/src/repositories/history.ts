@@ -139,6 +139,33 @@ export class HistoryRepository {
       .run(mediaKind, titleId);
   }
 
+  /**
+   * Self-healing backfill of catalog metadata across every row of a title. Only
+   * fills columns that are currently empty (NULL poster / empty external ids) so a
+   * later, better resolution can heal a row that playback never had art for, while
+   * never clobbering metadata that already exists.
+   */
+  backfillTitleMetadata(
+    titleId: string,
+    metadata: { readonly posterUrl?: string; readonly externalIds?: ProviderExternalIds },
+  ): void {
+    if (metadata.posterUrl) {
+      this.db
+        .query(
+          "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
+        )
+        .run(metadata.posterUrl, titleId);
+    }
+    const externalIdsJson = serializeExternalIds(metadata.externalIds);
+    if (externalIdsJson) {
+      this.db
+        .query(
+          "UPDATE history_progress SET external_ids_json = ? WHERE title_id = ? AND (external_ids_json IS NULL OR external_ids_json = '')",
+        )
+        .run(externalIdsJson, titleId);
+    }
+  }
+
   listRecent(limit = 20): readonly HistoryProgress[] {
     return this.db
       .query<HistoryProgressRow, [number]>(
