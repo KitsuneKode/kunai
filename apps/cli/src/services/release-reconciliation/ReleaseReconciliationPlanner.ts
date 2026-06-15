@@ -97,6 +97,10 @@ export function planReleaseReconciliationCandidates(
     }
 
     const rowForTitle = pickHighestRow(rows);
+    const anchorWatchedAt = rows.reduce<string | undefined>((latest, row) => {
+      if (!row.updatedAt) return latest;
+      return !latest || row.updatedAt > latest ? row.updatedAt : latest;
+    }, undefined);
     planned.push({
       titleId: first.titleId,
       mediaKind: first.mediaKind === "anime" ? "anime" : "series",
@@ -108,6 +112,7 @@ export function planReleaseReconciliationCandidates(
       absoluteEpisode: highest.absoluteEpisode,
       anchorSeason: highest.season,
       anchorEpisode: highest.episode,
+      anchorWatchedAt,
       attention: attentionForTitle(first.titleId, input.attentionByTitleId),
     });
   }

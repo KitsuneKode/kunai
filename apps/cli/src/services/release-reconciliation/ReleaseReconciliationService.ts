@@ -159,21 +159,53 @@ export class ReleaseReconciliationService {
 }
 
 /**
+ * "New episodes" means episodes that aired AFTER the user last watched the title —
+ * not merely episodes they have not gotten to yet. A finished back-catalog season
+ * you stopped partway through (watched ep2 of 12) is "continue watching", NOT "10
+ * new episodes". Recency is proven by comparing the latest episode's air date to the
+ * anchor's last-watch timestamp; when no air date is known we fall back to the airing
+ * status (an ongoing/releasing show drops episodes continuously, so a delta is
+ * genuinely new, while a finished show with no air date is back-catalog).
+ */
+function airedSinceLastWatch(input: {
+  readonly hasUpcoming: boolean;
+  readonly latestKnownReleaseAt?: string;
+  readonly anchorWatchedAt?: string;
+}): boolean {
+  const { hasUpcoming, latestKnownReleaseAt, anchorWatchedAt } = input;
+  if (latestKnownReleaseAt && anchorWatchedAt) {
+    const aired = Date.parse(latestKnownReleaseAt);
+    const watched = Date.parse(anchorWatchedAt);
+    if (Number.isFinite(aired) && Number.isFinite(watched)) return aired > watched;
+  }
+  return hasUpcoming;
+}
+
+/**
  * Pure new-episode delta + status. Guards the absolute-vs-cour numbering mismatch:
  * when the reported latest-aired episode is BELOW the watched anchor (e.g. history
  * stored absolute ep 64 but AniList reports cour-relative ep 5), the delta is not
  * trustworthy — emit "unknown" rather than a false "caught-up" that would hide a
- * new cour forever.
+ * new cour forever. A positive delta only becomes "new-episodes" when those episodes
+ * aired since the user's last watch (see {@link airedSinceLastWatch}).
  */
 export function computeReleaseProgress(input: {
   readonly latestAiredEpisode: number | undefined;
   readonly anchorEpisode: number;
   readonly hasUpcoming: boolean;
+  readonly latestKnownReleaseAt?: string;
+  readonly anchorWatchedAt?: string;
 }): { readonly newEpisodeCount: number; readonly status: ReleaseProgressProjection["status"] } {
   const { latestAiredEpisode, anchorEpisode, hasUpcoming } = input;
   const hasReliableDelta =
     typeof latestAiredEpisode === "number" && latestAiredEpisode >= anchorEpisode;
-  const newEpisodeCount = hasReliableDelta ? latestAiredEpisode - anchorEpisode : 0;
+  const rawDelta = hasReliableDelta ? latestAiredEpisode - anchorEpisode : 0;
+  const isRecent = airedSinceLastWatch({
+    hasUpcoming,
+    latestKnownReleaseAt: input.latestKnownReleaseAt,
+    anchorWatchedAt: input.anchorWatchedAt,
+  });
+  const newEpisodeCount = rawDelta > 0 && isRecent ? rawDelta : 0;
   const status: ReleaseProgressProjection["status"] =
     newEpisodeCount > 0
       ? "new-episodes"
@@ -190,6 +222,8 @@ function buildProjection(result: CatalogProgressResult, now: string): ReleasePro
     latestAiredEpisode: result.latestAiredEpisode,
     anchorEpisode: result.candidate.anchorEpisode,
     hasUpcoming: Boolean(result.nextAiringAt),
+    latestKnownReleaseAt: result.latestKnownReleaseAt,
+    anchorWatchedAt: result.candidate.anchorWatchedAt,
   });
 
   return {

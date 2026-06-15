@@ -33,6 +33,9 @@ export type ReleaseReconciliationCandidate = EpisodeCursor & {
   readonly title: string;
   readonly anchorSeason?: number;
   readonly anchorEpisode: number;
+  /** ISO timestamp of the user's most recent watch of this title — used to decide
+   *  whether newly-aired episodes are genuinely "new since you last watched". */
+  readonly anchorWatchedAt?: string;
   readonly attention: ReleaseReconciliationAttention;
 };
 
