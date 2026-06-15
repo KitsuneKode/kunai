@@ -92,6 +92,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // after each open so a plain /calendar afterwards is not stuck on a filter.
       let pendingCalendarType: CalendarTypeTab | undefined;
 
+      // The subtitle for the most recently loaded route (calendar/trending/surprise/
+      // discover). Without this, an empty-query results view always showed the generic
+      // "N recommendation picks · loaded" even on the calendar. Cleared on manual search.
+      let routeSubtitle: string | undefined;
+
       while (true) {
         const currentState = stateManager.getState();
         if (
@@ -117,12 +122,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             }
             continue;
           }
-          await loadSearchRoute(pendingInitialRoute, context);
+          routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
           pendingInitialRoute = undefined;
           continue;
         }
 
         if (currentState.searchQuery.trim().length > 0 && currentState.searchResults.length === 0) {
+          // A real text search supersedes any route subtitle (calendar/trending/etc).
+          routeSubtitle = undefined;
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
           const searchIntent = createSearchIntentEngine().fromText(currentState.searchQuery, {
@@ -248,7 +255,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           initialResultSubtitle:
             currentState.searchResults.length > 0
               ? currentState.searchQuery.trim().length === 0
-                ? `${currentState.searchResults.length} recommendation picks · loaded`
+                ? (routeSubtitle ??
+                  `${currentState.searchResults.length} recommendation picks · loaded`)
                 : `${currentState.searchResults.length} results · previous search`
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
@@ -496,7 +504,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "recommendation") {
-            await loadSearchRoute("recommendation", context);
+            routeSubtitle = await loadSearchRoute("recommendation", context);
             continue;
           }
 
@@ -506,7 +514,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             outcome.action === "random" ||
             outcome.action === "surprise"
           ) {
-            await loadSearchRoute(outcome.action, context);
+            routeSubtitle = await loadSearchRoute(outcome.action, context);
             continue;
           }
 
@@ -514,7 +522,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // BrowseShell open with the matching type tab so it opens pre-filtered.
           if (outcome.action === "anime-calendar" || outcome.action === "series-calendar") {
             pendingCalendarType = outcome.action === "anime-calendar" ? "Anime" : "TV";
-            await loadSearchRoute("calendar", context);
+            routeSubtitle = await loadSearchRoute("calendar", context);
             continue;
           }
 
@@ -597,7 +605,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 async function loadSearchRoute(
   route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history">,
   context: PhaseContext,
-): Promise<void> {
+): Promise<string | undefined> {
   const { container } = context;
   const { stateManager, diagnosticsService, logger } = container;
   stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
@@ -639,6 +647,8 @@ async function loadSearchRoute(
       count: results.length,
     },
   });
+
+  return "subtitle" in bundle && typeof bundle.subtitle === "string" ? bundle.subtitle : undefined;
 }
 
 async function chooseSearchFilterChip(currentQuery: string): Promise<string | null> {
