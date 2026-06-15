@@ -53,6 +53,8 @@ export type CalendarRenderRow<T> = {
   readonly showForYouHeaderOnce: boolean;
   /** True when this release aired since the user last opened the calendar. */
   readonly isNew: boolean;
+  /** True when the title is on the user's watchlist or in their history (for-you). */
+  readonly tracked: boolean;
   /** Poster URL for the row's mini-poster (falls back to the calendar poster). */
   readonly posterUrl?: string;
 };
@@ -518,6 +520,7 @@ export function buildCalendarRenderRows<T>(
       dayHeaderLabel: showDayHeader ? dayHeaderLabel : null,
       showForYouHeaderOnce,
       isNew: isReleaseNew(option, lastVisitAt, nowMs),
+      tracked: isCalendarTrackedOption(option),
       posterUrl: option.previewImageUrl ?? option.calendar?.poster ?? undefined,
     });
   }

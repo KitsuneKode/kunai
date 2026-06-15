@@ -736,7 +736,7 @@ export function BrowseShell<T>({
         displayOptions.length,
         calendarNow,
         calendarDayFilter,
-        calendarDayFilter === null,
+        false,
         _settings?.lastCalendarVisitAt ?? 0,
       )
     : [];
@@ -1282,9 +1282,10 @@ export function BrowseShell<T>({
                       showDayHeader={row.showDayHeader}
                       dayHeaderLabel={row.dayHeaderLabel}
                       weekTag={row.weekTag}
-                      showForYouHeader={calendarDayFilter === null}
+                      showForYouHeader={false}
                       showForYouHeaderOnce={row.showForYouHeaderOnce}
                       isNew={row.isNew}
+                      tracked={row.tracked}
                       posterUrl={row.posterUrl}
                     />
                   ))

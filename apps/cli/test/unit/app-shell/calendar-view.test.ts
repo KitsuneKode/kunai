@@ -44,7 +44,7 @@ function calendarOption(input: {
   };
 }
 
-test("sortCalendarOptions keeps tracked releases above generic schedule rows", () => {
+test("sortCalendarOptions orders one chronological timeline, not tracked-first", () => {
   const now = Date.now();
   const genericSoon = calendarOption({
     label: "Generic Soon",
@@ -61,7 +61,9 @@ test("sortCalendarOptions keeps tracked releases above generic schedule rows", (
     inHistory: true,
   });
 
+  // Earliest air first regardless of tracked state — tracked items are marked inline,
+  // not hoisted, so the day/week headers stay in order.
   expect(
-    sortCalendarOptions([genericSoon, historyLater, trackedLater]).map((option) => option.label),
-  ).toEqual(["Tracked Later", "History Later", "Generic Soon"]);
+    sortCalendarOptions([trackedLater, historyLater, genericSoon]).map((option) => option.label),
+  ).toEqual(["Generic Soon", "Tracked Later", "History Later"]);
 });

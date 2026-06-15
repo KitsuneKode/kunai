@@ -165,6 +165,7 @@ export function CalendarScheduleRow<T>({
   showForYouHeaderOnce,
   weekTag,
   isNew,
+  tracked,
   posterUrl,
 }: {
   option: BrowseShellOption<T>;
@@ -182,6 +183,7 @@ export function CalendarScheduleRow<T>({
   showForYouHeaderOnce?: boolean;
   weekTag?: string | null;
   isNew?: boolean;
+  tracked?: boolean;
   posterUrl?: string;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
@@ -233,7 +235,9 @@ export function CalendarScheduleRow<T>({
         <Box width={5}>
           <CalendarMini url={posterUrl} title={option.label} enabled={selected} />
         </Box>
-        <Text color={palette.accent}>{isNew ? "● " : "  "}</Text>
+        <Text color={isNew ? palette.accent : palette.ok}>
+          {isNew ? "● " : tracked ? "● " : "  "}
+        </Text>
         <Box flexGrow={1}>
           <ListRow
             selected={selected}

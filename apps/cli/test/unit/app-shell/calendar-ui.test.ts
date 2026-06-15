@@ -310,6 +310,7 @@ test("calendarRowLineCost counts headers as extra lines", () => {
     dayHeaderLabel: null as string | null,
     showForYouHeaderOnce: false,
     isNew: false,
+    tracked: false,
   };
   expect(calendarRowLineCost(base)).toBe(1);
   expect(calendarRowLineCost({ ...base, showDayHeader: true, dayHeaderLabel: "THU 11" })).toBe(3);
@@ -331,6 +332,7 @@ test("windowCalendarRowsByLines keeps the selected row inside the line budget", 
     dayHeaderLabel: i % 5 === 0 ? "DAY" : null,
     showForYouHeaderOnce: false,
     isNew: false,
+    tracked: false,
   }));
   const { start, end } = windowCalendarRowsByLines(rows, 22, 10);
   expect(start).toBeLessThanOrEqual(22);
