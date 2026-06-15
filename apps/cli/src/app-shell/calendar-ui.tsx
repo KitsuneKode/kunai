@@ -22,12 +22,25 @@ import { usePosterPreview } from "./use-poster-preview";
 /** Width reserved at the start of a schedule row for the mini-poster + new dot. */
 const CALENDAR_ROW_LEAD_WIDTH = 7;
 
-/** Text mini-poster for a calendar row; falls back to title initials when no art. */
-function CalendarMini({ url, title }: { readonly url?: string; readonly title: string }) {
+/**
+ * Text mini-poster for a calendar row; falls back to title initials when no art.
+ * The async poster fetch only runs for the focused row (`enabled`) — fetching one
+ * per visible row caused navigation lag and dropped keypresses, since every scroll
+ * remounted a dozen concurrent fetches. Unfocused rows render cheap initials.
+ */
+function CalendarMini({
+  url,
+  title,
+  enabled,
+}: {
+  readonly url?: string;
+  readonly title: string;
+  readonly enabled: boolean;
+}) {
   const { poster } = usePosterPreview(url, {
     rows: 2,
     cols: 4,
-    enabled: Boolean(url),
+    enabled: enabled && Boolean(url),
     variant: "preview",
     inkEmbedded: true,
     preserveTerminalImages: true,
@@ -218,7 +231,7 @@ export function CalendarScheduleRow<T>({
       ) : null}
       <Box flexDirection="row">
         <Box width={5}>
-          <CalendarMini url={posterUrl} title={option.label} />
+          <CalendarMini url={posterUrl} title={option.label} enabled={selected} />
         </Box>
         <Text color={palette.accent}>{isNew ? "● " : "  "}</Text>
         <Box flexGrow={1}>
