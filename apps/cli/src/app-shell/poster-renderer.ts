@@ -106,6 +106,11 @@ function buildPlaceholder(imageId: number, rows: number, cols: number): string {
   return lines.join("\n");
 }
 
+/** Hand the event loop a turn so queued stdin (keypresses) gets processed. */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 async function uploadKitty(
   data: Uint8Array,
   imageId: number,
@@ -115,12 +120,24 @@ async function uploadKitty(
   const b64 = Buffer.from(data).toString("base64");
   if (b64.length === 0) return;
   const chunkSize = 4096;
+  // Yield to the event loop every few chunks. A poster is tens of KB of base64;
+  // writing it all in one synchronous burst blocks the loop (TTY writes don't
+  // yield), which starved stdin and made arrow keys stall MID-UPLOAD (the
+  // "waiting" stall in the loop monitor). Interleaving lets queued keypresses run
+  // between chunks. The image still only displays once the final chunk lands
+  // (m=0), so there is no partial-render flicker.
+  const yieldEveryChunks = 8;
+  let chunksSinceYield = 0;
   for (let i = 0; i < b64.length; i += chunkSize) {
     const chunk = b64.slice(i, i + chunkSize);
     const more = i + chunkSize < b64.length ? 1 : 0;
     const ctrl =
       i === 0 ? `a=T,f=100,U=1,q=2,i=${imageId},c=${cols},r=${rows},m=${more}` : `m=${more}`;
     process.stdout.write(`\x1b_G${ctrl};${chunk}\x1b\\`);
+    if (++chunksSinceYield >= yieldEveryChunks) {
+      chunksSinceYield = 0;
+      await yieldToEventLoop();
+    }
   }
 }
 

@@ -149,7 +149,7 @@ export function CalendarTypeTabs({
   );
 }
 
-export function CalendarScheduleRow<T>({
+function CalendarScheduleRowInner<T>({
   option,
   selected,
   rowWidth,
@@ -250,3 +250,11 @@ export function CalendarScheduleRow<T>({
     </Box>
   );
 }
+
+// Memoized so a selection change only re-renders the two rows whose `selected`
+// flips — not every visible row. Row props come from the memoized render-row list,
+// so identities are stable and the shallow compare holds. The generic cast keeps
+// the <T> call signature React.memo would otherwise erase.
+export const CalendarScheduleRow = React.memo(
+  CalendarScheduleRowInner,
+) as typeof CalendarScheduleRowInner;
