@@ -799,17 +799,30 @@ export function BrowseShell<T>({
   // Calendar rows inject section headers (For You / day bands) that cost extra
   // rendered lines, so the schedule windows by rendered LINES, not option count —
   // otherwise headers push rows past the viewport and into the footer.
-  const calendarRenderRows = isCalendarView
-    ? buildCalendarRenderRows(
-        displayOptions as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
-        0,
-        displayOptions.length,
-        calendarNow,
-        calendarDayFilter,
-        false,
-        _settings?.lastCalendarVisitAt ?? 0,
-      )
-    : [];
+  //
+  // Memoized deliberately: building the rows runs an O(n log n) chronological sort
+  // (Date.parse per comparison) plus per-row day-header/week-tag/isNew work across
+  // the WHOLE schedule. Without this it reran on every render — including every ↑/↓
+  // keystroke (setSelectedIndex) — and Ink renders synchronously on the main thread,
+  // so that work blocked keypress handling and made calendar nav feel laggy / drop
+  // arrows. Selection is intentionally NOT a dependency: navigation only re-slices the
+  // window + flips the `selected` flag below, both cheap.
+  const lastCalendarVisitAt = _settings?.lastCalendarVisitAt ?? 0;
+  const calendarRenderRows = useMemo(
+    () =>
+      isCalendarView
+        ? buildCalendarRenderRows(
+            displayOptions as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
+            0,
+            displayOptions.length,
+            calendarNow,
+            calendarDayFilter,
+            false,
+            lastCalendarVisitAt,
+          )
+        : [],
+    [isCalendarView, displayOptions, calendarNow, calendarDayFilter, lastCalendarVisitAt],
+  );
   const calendarWindow = windowCalendarRowsByLines(
     calendarRenderRows,
     boundedSelectedIndex,
