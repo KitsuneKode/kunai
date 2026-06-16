@@ -980,7 +980,13 @@ function buildHistoryOptionRow(
     entries: [[id, entry]],
     nextRelease: context.nextReleases?.get(id) ?? null,
   });
-  if (decision.kind === "new-episode") {
+  // Gate the legacy reconcile's "new-episode" through the authoritative bucket so a
+  // finished/caught-up title (or one with missing/stale release data) never shows a
+  // fabricated "new" badge — the bucket classifier is conservative where reconcile is
+  // optimistic. Without this, completed shows render "new" (the reported bug).
+  const isNewEpisodeRow =
+    decision.kind === "new-episode" && historyBucketFor(id, entry, context) === "new-episodes";
+  if (isNewEpisodeRow) {
     const nextEpisode =
       typeof decision.episode === "number"
         ? formatSeriesEpisode(decision.season ?? entrySeason, decision.episode)

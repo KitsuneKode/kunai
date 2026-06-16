@@ -764,6 +764,49 @@ describe("panel-data", () => {
     expect(row?.tone).toBe("success");
   });
 
+  test("buildHistoryPickerOptions does NOT fabricate a 'new' badge for a finished title with no fresh release", () => {
+    // Reported bug: a completed show you fell behind on (or with missing release data)
+    // showed a "new" badge because the legacy reconcile fabricated new-episode. The row
+    // must now agree with the authoritative bucket and stay out of new-episodes.
+    const options = buildHistoryPickerOptions(
+      [
+        [
+          "anilist:999",
+          {
+            key: "k2",
+            titleId: "anilist:999",
+            title: "Finished Show",
+            mediaKind: "series",
+            season: 1,
+            episode: 12,
+            positionSeconds: 1440,
+            durationSeconds: 1440,
+            completed: true,
+            providerId: "allanime",
+            updatedAt: "2026-06-10T00:00:00.000Z",
+            createdAt: "2026-06-10T00:00:00.000Z",
+          },
+        ],
+      ],
+      {
+        // A next episode is "released" (reconcile would fabricate new-episode), but the
+        // authoritative signal says caught-up → bucket completed → no "new".
+        nextReleases: new Map([
+          [
+            "anilist:999",
+            { status: "released", releaseAt: "2019-01-01T00:00:00.000Z", season: 1, episode: 13 },
+          ],
+        ]),
+        releaseSignals: new Map([
+          ["anilist:999", { status: "caught-up", newEpisodeCount: 0, latestAiredEpisode: 12 }],
+        ]),
+      },
+    );
+
+    const row = options.find((option) => option.value === "anilist:999");
+    expect(row?.badge).not.toBe("new");
+  });
+
   test("buildHistoryPickerOptions presents cached offline-ready projections with the full new count", () => {
     const completed = {
       key: "k",

@@ -221,7 +221,13 @@ function deriveResumeAction(
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
   });
-  if (decision.kind === "new-episode") return "Play next";
+  // Only call it "Play next" when the authoritative bucket agrees it is new-episodes;
+  // reconcile fabricates new-episode for finished/missing-data titles otherwise.
+  if (
+    decision.kind === "new-episode" &&
+    historyBucketFor(titleId, entry, context) === "new-episodes"
+  )
+    return "Play next";
   if (decision.kind === "resume") return "Continue";
   return "Open";
 }
@@ -247,8 +253,10 @@ function shellOptionToHistoryRow(
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
   });
+  const isNewEpisode =
+    decision.kind === "new-episode" && historyBucketFor(titleId, entry, context) === "new-episodes";
   let statusColor = toneColor(option.tone);
-  if (decision.kind === "new-episode") statusColor = palette.ok;
+  if (isNewEpisode) statusColor = palette.ok;
   if (progress && !progress.completed) statusColor = palette.accentDeep;
 
   return {
