@@ -1178,6 +1178,14 @@ export function BrowseShell<T>({
         return;
       }
       if (boundedSelectedIndex === 0) {
+        if (isCalendarView) {
+          // The calendar has no search box above the list to escape up into, so
+          // dispatching focus away just flips the footer to an invisible zone (the
+          // "moving to an invisible row" bug). Wrap to the last row instead — this
+          // mirrors the downArrow wrap and keeps focus on the schedule.
+          setSelectedIndex(displayOptions.length - 1);
+          return;
+        }
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
