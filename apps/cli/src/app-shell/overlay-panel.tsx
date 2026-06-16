@@ -14,6 +14,8 @@ import React from "react";
 
 import { DetailsSheetUI } from "./details-pane-ui";
 import type { DetailsPanelData } from "./details-panel";
+import { DetailsSheet } from "./details-sheet-ui";
+import type { DetailsSheetModel } from "./details-sheet.model";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
@@ -59,6 +61,9 @@ export type BrowseOverlay =
       subtitle: string;
       lines: readonly ShellPanelLine[];
       detailData?: DetailsPanelData;
+      /** Rich details sheet model — preferred over detailData when present. */
+      sheet?: DetailsSheetModel;
+      seasonsExpanded?: boolean;
       imageUrl?: string;
       loading?: boolean;
       scrollIndex?: number;
@@ -1410,6 +1415,14 @@ export function OverlayPanel({
       ) : isLineOverlay && overlay.loading ? (
         <Box marginTop={1}>
           <Text color={palette.accent}>Loading panel…</Text>
+        </Box>
+      ) : overlay.type === "details" && overlay.sheet ? (
+        <Box marginTop={1} flexDirection="column">
+          <DetailsSheet
+            model={overlay.sheet}
+            seasonsExpanded={overlay.seasonsExpanded ?? false}
+            width={contentWidth}
+          />
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (
         <Box marginTop={1} flexDirection="column">

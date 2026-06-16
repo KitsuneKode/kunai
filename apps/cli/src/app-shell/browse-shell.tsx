@@ -2,6 +2,7 @@ import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import type { SearchResult } from "@/domain/types";
+import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, useInput } from "ink";
 import React, {
@@ -68,6 +69,7 @@ import {
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
+import { buildDetailsSheet, type DetailsSheetSeed } from "./details-sheet.model";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
@@ -139,6 +141,24 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
+/**
+ * Seed for the rich details sheet, built from data the browse list ALREADY loaded
+ * (the SearchResult): header + synopsis render with no network; the detail fetch
+ * only gap-fills cast/seasons/trailer/links.
+ */
+function buildDetailsSheetSeed<T>(option: BrowseShellOption<T>): DetailsSheetSeed {
+  const value = option.value as unknown as Partial<SearchResult> | undefined;
+  return {
+    title: option.previewTitle ?? option.label,
+    type: value?.type === "movie" ? "movie" : "series",
+    year: value?.year || undefined,
+    score: typeof value?.rating === "number" && value.rating > 0 ? value.rating : undefined,
+    posterUrl: option.previewImageUrl,
+    synopsis: value?.overview || undefined,
+    episodeCount: value?.episodeCount,
+  };
+}
+
 export function BrowseShell<T>({
   provider,
   initialQuery,
@@ -164,6 +184,8 @@ export function BrowseShell<T>({
   onSaveSettings: _onSaveSettings,
   onQueueSelected,
   onFollowSelected,
+  onPlayTrailer,
+  onOpenLink,
   onResolve,
   onSubmit,
   onCancel,
@@ -194,6 +216,8 @@ export function BrowseShell<T>({
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
+  onPlayTrailer?: (url: string) => void;
+  onOpenLink?: (url: string) => void;
   onResolve: (action: ShellAction) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
@@ -507,21 +531,51 @@ export function BrowseShell<T>({
       const resolved = option ?? selectedOption;
       if (!resolved) return;
       const panel = buildBrowseDetailsPanel(resolved);
-      const sheetLines = buildDetailsSheetLines(resolved, companionDetails.secondary);
       setCommandMode(false);
       setFocusZone("query");
+
+      const seed = buildDetailsSheetSeed(resolved);
+      const value = resolved.value as unknown as Partial<SearchResult>;
+      const titleId = typeof value?.id === "string" ? value.id : undefined;
+      const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
+
       setActiveOverlay({
         type: "details",
         title: panel.title,
         subtitle: panel.subtitle,
-        lines: sheetLines.length > 0 ? sheetLines : panel.lines,
-        detailData: buildDetailsPanelDataFromBrowseOption(resolved),
+        lines: [],
+        sheet: buildDetailsSheet({ seed, detail: cached, history: null, availability: null }),
+        seasonsExpanded: false,
         imageUrl: panel.imageUrl,
         loading: false,
         scrollIndex: 0,
       });
+
+      // Gap-fill only when cold (peek miss); the fetch rides the shared TMDB cache.
+      if (titleId && !cached) {
+        void fetchTitleDetail(titleId, seed.type)
+          .then((detail) => {
+            setActiveOverlay((current) =>
+              current && current.type === "details"
+                ? {
+                    ...current,
+                    sheet: buildDetailsSheet({
+                      seed,
+                      detail,
+                      history: null,
+                      availability: null,
+                      seasonsExpanded: current.seasonsExpanded,
+                    }),
+                  }
+                : current,
+            );
+          })
+          .catch(() => {
+            // best-effort; the seeded header/synopsis stay, skeletons resolve to "—"
+          });
+      }
     },
-    [companionDetails.secondary, selectedOption],
+    [selectedOption],
   );
 
   const notificationDetailsPending = useSyncExternalStore(
@@ -772,6 +826,25 @@ export function BrowseShell<T>({
           onSubmit(value);
         }
         return;
+      }
+
+      if (activeOverlay.type === "details" && activeOverlay.sheet) {
+        if (input.toLowerCase() === "s") {
+          setActiveOverlay((current) =>
+            current && current.type === "details"
+              ? { ...current, seasonsExpanded: !current.seasonsExpanded }
+              : current,
+          );
+          return;
+        }
+        if (input.toLowerCase() === "t" && activeOverlay.sheet.trailerUrl) {
+          onPlayTrailer?.(activeOverlay.sheet.trailerUrl);
+          return;
+        }
+        if (input.toLowerCase() === "l" && activeOverlay.sheet.links.items[0]) {
+          onOpenLink?.(activeOverlay.sheet.links.items[0].url);
+          return;
+        }
       }
 
       if (activeOverlay.type === "episode-picker") {
@@ -1569,6 +1642,8 @@ export function openBrowseShell<T>({
   onSaveSettings,
   onQueueSelected,
   onFollowSelected,
+  onPlayTrailer,
+  onOpenLink,
   idleContext,
 }: {
   mode: "series" | "anime";
@@ -1596,6 +1671,8 @@ export function openBrowseShell<T>({
   onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
+  onPlayTrailer?: (url: string) => void;
+  onOpenLink?: (url: string) => void;
   idleContext?: import("./types").BrowseIdleContext;
 }): Promise<BrowseShellResult<T>> {
   const session = mountRootContent<BrowseShellResult<T>>({
@@ -1627,6 +1704,8 @@ export function openBrowseShell<T>({
         onSaveSettings={onSaveSettings}
         onQueueSelected={onQueueSelected}
         onFollowSelected={onFollowSelected}
+        onPlayTrailer={onPlayTrailer}
+        onOpenLink={onOpenLink}
         idleContext={idleContext}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}

@@ -16,6 +16,7 @@ import type { BrowseShellOption } from "@/app-shell/types";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/calendar-results";
+import { playTrailer } from "@/app/details-trailer";
 import { loadDiscoverResults } from "@/app/discover-results";
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import {
@@ -37,6 +38,7 @@ import {
 } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, TitleInfo } from "@/domain/types";
+import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
   resultEnrichmentKey,
   type ResultEnrichment,
@@ -313,6 +315,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               note: `Following ${chooseSearchResultTitle(result, container.config.animeTitlePreference)}.`,
             });
           },
+          onPlayTrailer: (url) => {
+            void playTrailer(
+              {
+                playUrl: async (target) => {
+                  if (!Bun.which("mpv")) return false;
+                  Bun.spawn(["mpv", target], {
+                    stdout: "ignore",
+                    stderr: "ignore",
+                    stdin: "ignore",
+                  });
+                  return true;
+                },
+                openInBrowser: async (target) => openExternalUrl(target),
+              },
+              url,
+            );
+          },
+          onOpenLink: (url) => openExternalUrl(url),
           onSearch: async (query) => {
             const searchIntent = createSearchIntentEngine().fromText(query, {
               currentMode: stateManager.getState().mode,
