@@ -744,14 +744,6 @@ export function BrowseShell<T>({
   // companion preview hidden so its (taller) content can't overlap the palette
   // rows or get clipped against the bottom of the viewport.
   const showCompanion = showCompanionLayout && !compact && !commandMode && Boolean(selectedOption);
-  // Render the companion poster as chafa SYMBOLS embedded in the Ink frame
-  // (inkEmbedded), never as a native Kitty placement. A Kitty poster uploads the
-  // full base64 PNG via synchronous process.stdout.write (TTY writes block in
-  // Node/Bun) and clears prior images with another sync write on every selection
-  // change — that froze the event loop mid-write, starving stdin so arrow keys
-  // stalled then fired in a burst. Chafa symbols come back as a string Ink draws
-  // in its normal diff (no out-of-band sync writes); preserveTerminalImages keeps
-  // it from touching the Kitty delete path / nuking the poster cache at all.
   const { poster, posterState: posterPreviewState } = usePosterPreview(
     selectedOption?.previewImageUrl ?? undefined,
     {
@@ -760,8 +752,6 @@ export function BrowseShell<T>({
       enabled: Boolean(selectedOption?.previewImageUrl),
       debounceMs: 90,
       variant: "detail",
-      inkEmbedded: true,
-      preserveTerminalImages: true,
     },
   );
   const mappedPosterState = mapPosterPreviewState({
