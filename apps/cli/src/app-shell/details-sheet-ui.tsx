@@ -85,8 +85,8 @@ export function DetailsSheet({
         {model.synopsis.loading ? (
           <Skeleton width={Math.min(48, textWidth)} />
         ) : synopsisLines.length > 0 ? (
-          synopsisLines.map((line, index) => (
-            <Text key={index} color={palette.text}>
+          synopsisLines.map((line) => (
+            <Text key={line} color={palette.text}>
               {line}
             </Text>
           ))

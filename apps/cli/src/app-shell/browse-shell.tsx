@@ -553,8 +553,9 @@ export function BrowseShell<T>({
 
       // Gap-fill only when cold (peek miss); the fetch rides the shared TMDB cache.
       if (titleId && !cached) {
-        void fetchTitleDetail(titleId, seed.type)
-          .then((detail) => {
+        void (async () => {
+          try {
+            const detail = await fetchTitleDetail(titleId, seed.type);
             setActiveOverlay((current) =>
               current && current.type === "details"
                 ? {
@@ -569,10 +570,10 @@ export function BrowseShell<T>({
                   }
                 : current,
             );
-          })
-          .catch(() => {
+          } catch {
             // best-effort; the seeded header/synopsis stay, skeletons resolve to "—"
-          });
+          }
+        })();
       }
     },
     [selectedOption],

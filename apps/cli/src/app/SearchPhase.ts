@@ -236,9 +236,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           if (!this.hasHealedHistoryMetadata) {
             this.hasHealedHistoryMetadata = true;
             const historyForHeal = Object.values(allHistory);
-            void container.historyMetadataHealer
-              .heal(historyForHeal, context.signal)
-              .then((healed) => {
+            void (async () => {
+              try {
+                const healed = await container.historyMetadataHealer.heal(
+                  historyForHeal,
+                  context.signal,
+                );
                 if (healed.length === 0) return;
                 const healedSet = new Set(healed);
                 enqueueReleaseReconciliation(
@@ -247,10 +250,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   "history",
                   context.signal,
                 );
-              })
-              .catch(() => {
+              } catch {
                 // best-effort; healing retries next session
-              });
+              }
+            })();
           }
         } catch {
           // best-effort
