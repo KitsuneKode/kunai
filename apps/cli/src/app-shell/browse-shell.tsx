@@ -230,6 +230,21 @@ export function BrowseShell<T>({
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
+  // Transient confirmation for row actions (follow / queue / download) — without it,
+  // following a title looked like a no-op even though it persisted.
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const actionFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashActionFeedback = useCallback((message: string) => {
+    setActionFeedback(message);
+    if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
+    actionFeedbackTimer.current = setTimeout(() => setActionFeedback(null), 2500);
+  }, []);
+  useEffect(
+    () => () => {
+      if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
+    },
+    [],
+  );
   const commandEditor = useLineEditor({
     value: commandInput,
     onChange: (nextValue) => {
@@ -849,10 +864,12 @@ export function BrowseShell<T>({
         // Actions advertised in the sheet footer, dispatched against the highlighted row.
         if (input.toLowerCase() === "w" && selectedOption && onFollowSelected) {
           void Promise.resolve(onFollowSelected(selectedOption.value));
+          flashActionFeedback(`Following ${selectedOption.label}`);
           return;
         }
         if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
           void Promise.resolve(onQueueSelected(selectedOption.value));
+          flashActionFeedback(`Queued ${selectedOption.label}`);
           return;
         }
         if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
@@ -1003,6 +1020,7 @@ export function BrowseShell<T>({
         searchState === "ready"
       ) {
         void Promise.resolve(onQueueSelected(selectedOption.value));
+        flashActionFeedback(`Queued ${selectedOption.label}`);
       }
       return;
     }
@@ -1018,6 +1036,7 @@ export function BrowseShell<T>({
         searchState === "ready"
       ) {
         void Promise.resolve(onFollowSelected(selectedOption.value));
+        flashActionFeedback(`Following ${selectedOption.label}`);
       }
       return;
     }
@@ -1569,6 +1588,7 @@ export function BrowseShell<T>({
       {_settings?.discoverShowOnStartup && (
         <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
+      {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       {(() => {
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
