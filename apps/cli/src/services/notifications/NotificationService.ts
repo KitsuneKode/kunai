@@ -10,6 +10,20 @@ export interface NotificationServiceDeps {
 export class NotificationService {
   constructor(private readonly deps: NotificationServiceDeps) {}
 
+  private readonly listeners = new Set<() => void>();
+
+  /** Subscribe to "the notification set changed" — fires after any mutation. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emitChange(): void {
+    for (const listener of this.listeners) listener();
+  }
+
   recordSignals(signals: readonly NotificationSignal[], now = new Date().toISOString()): void {
     const notifications = deriveNotifications({
       signals,
@@ -40,6 +54,7 @@ export class NotificationService {
         updatedAt: notification.updatedAt,
       });
     }
+    this.emitChange();
   }
 
   listActive(limit = 50, offset = 0): NotificationRecord[] {
@@ -60,30 +75,39 @@ export class NotificationService {
 
   markRead(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.markRead(dedupKey, now);
+    this.emitChange();
   }
 
   markAllRead(now = new Date().toISOString()): void {
     this.deps.repo.markAllRead(now);
+    this.emitChange();
   }
 
   archive(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.archive(dedupKey, now);
+    this.emitChange();
   }
 
   dismiss(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.dismissByDedupKey(dedupKey, now);
+    this.emitChange();
   }
 
   delete(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.deleteByDedupKey(dedupKey, now);
+    this.emitChange();
   }
 
   deleteByKind(kind: string): number {
-    return this.deps.repo.deleteByKind(kind);
+    const removed = this.deps.repo.deleteByKind(kind);
+    this.emitChange();
+    return removed;
   }
 
   clearArchived(): number {
-    return this.deps.repo.clearArchived();
+    const removed = this.deps.repo.clearArchived();
+    this.emitChange();
+    return removed;
   }
 }
 
