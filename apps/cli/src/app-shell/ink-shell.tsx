@@ -41,6 +41,7 @@ import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
+import { selectNotificationToast } from "./notification-toast";
 import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { PostPlayShell } from "./post-play-shell";
 import {
@@ -86,6 +87,7 @@ import {
   statsTabFromIndex,
 } from "./stats-view";
 import { getNextStreakMilestone } from "./streak-milestone";
+import { selectTransientRow } from "./transient-row";
 import {
   toShellAction,
   type FooterAction,
@@ -473,6 +475,9 @@ function AppRoot({ container }: { container: Container }) {
   const [playlistCount, setPlaylistCount] = useState<number>(0);
   const [streakMilestoneAlert, setStreakMilestoneAlert] = useState<string | null>(null);
   const [streakAtRiskAlert, setStreakAtRiskAlert] = useState<string | null>(null);
+  const [notificationToast, setNotificationToast] = useState<string | null>(null);
+  const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
+  const notificationToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
@@ -522,6 +527,33 @@ function AppRoot({ container }: { container: Container }) {
     const timer = setInterval(refresh, 60_000);
     return () => clearInterval(timer);
   }, [container.statsService, container.syncService, container.queueService, container.config]);
+
+  // Live notification toast. Seed the seen-set on mount so pre-existing
+  // notifications never toast; then on every NotificationService change diff active
+  // vs seen and surface the newest arrival in the transient row for ~4s.
+  useEffect(() => {
+    notificationSeenKeysRef.current = new Set(
+      container.notificationService.listActive(200, 0).map((n) => n.dedupKey),
+    );
+    const handleChange = () => {
+      const active = container.notificationService.listActive(200, 0);
+      const result = selectNotificationToast({
+        active,
+        seenKeys: notificationSeenKeysRef.current,
+      });
+      notificationSeenKeysRef.current = result.seenKeys;
+      if (result.toast) {
+        setNotificationToast(result.toast);
+        if (notificationToastTimerRef.current) clearTimeout(notificationToastTimerRef.current);
+        notificationToastTimerRef.current = setTimeout(() => setNotificationToast(null), 4000);
+      }
+    };
+    const unsubscribe = container.notificationService.subscribe(handleChange);
+    return () => {
+      unsubscribe();
+      if (notificationToastTimerRef.current) clearTimeout(notificationToastTimerRef.current);
+    };
+  }, [container.notificationService]);
 
   useEffect(() => {
     const lastShown = container.config.lastWeeklyDigestShownAt;
@@ -1083,50 +1115,30 @@ function AppRoot({ container }: { container: Container }) {
         size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
         width={Math.max(0, shellWidth - 2)}
       />
-      {/* Single transient alert — highest priority wins, null when idle */}
-      {rootStatusSummary.alert ? (
-        <Text color={statusColor(rootStatusSummary.alert.tone)} dimColor>
-          {truncateLine(rootStatusSummary.alert.text, Math.max(36, shellWidth - 8))}
-        </Text>
-      ) : null}
-      {/* Presence boot line renders as alert override when it fires.
-          Error/warning tones stay at full intensity so they read as alarms;
-          calm tones (connected/info) dim so they recede. */}
-      {visiblePresenceBootLine && !rootStatusSummary.alert ? (
-        <Text
-          dimColor={
-            visiblePresenceBootLine.tone !== "error" && visiblePresenceBootLine.tone !== "warning"
-          }
-          color={statusColor(visiblePresenceBootLine.tone)}
-        >
-          {truncateLine(visiblePresenceBootLine.text, Math.max(36, shellWidth - 8))}
-        </Text>
-      ) : null}
-      {/* Streak milestone celebration */}
-      {streakMilestoneAlert && !rootStatusSummary.alert && !visiblePresenceBootLine ? (
-        <Text dimColor color={statusColor("warning")}>
-          {truncateLine(streakMilestoneAlert, Math.max(36, shellWidth - 8))}
-        </Text>
-      ) : null}
-      {/* Streak-at-risk: evening reminder when streak is active but nothing watched today */}
-      {streakAtRiskAlert &&
-      !rootStatusSummary.alert &&
-      !visiblePresenceBootLine &&
-      !streakMilestoneAlert ? (
-        <Text dimColor color={statusColor("warning")}>
-          {truncateLine(streakAtRiskAlert, Math.max(36, shellWidth - 8))}
-        </Text>
-      ) : null}
-      {/* Weekly digest shows once per week when not mid-playback */}
-      {weeklyDigestLine &&
-      !rootStatusSummary.alert &&
-      !visiblePresenceBootLine &&
-      !streakMilestoneAlert &&
-      !streakAtRiskAlert ? (
-        <Text dimColor color={statusColor("info")}>
-          {truncateLine(weeklyDigestLine, Math.max(36, shellWidth - 8))}
-        </Text>
-      ) : null}
+      {/* Single transient row — exactly one line wins by priority (see
+          selectTransientRow): alert → notification arrival toast → streak
+          milestone → presence boot → streak-at-risk → weekly digest. Arrivals
+          render bright accent; calm infos dim. */}
+      {(() => {
+        const transient = selectTransientRow({
+          alert: rootStatusSummary.alert ?? null,
+          notificationToast,
+          streakMilestoneAlert,
+          presenceBootLine: visiblePresenceBootLine,
+          streakAtRiskAlert,
+          weeklyDigestLine,
+        });
+        if (!transient) return null;
+        return (
+          <Text
+            dimColor={transient.dim}
+            bold={transient.accent}
+            color={transient.accent ? palette.accent : statusColor(transient.tone)}
+          >
+            {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
+          </Text>
+        );
+      })()}
       <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           {rootSurface === "error" ? (
