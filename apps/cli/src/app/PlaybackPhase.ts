@@ -1960,7 +1960,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 id: title.id,
                 // Content-derived persisted kind: a drama watched in anime mode
                 // (AllAnime hosts live-action) must not be stamped "anime". See #1.
-                kind: classifyPersistedKind(title, stateManager.getState().mode),
+                kind: classifyPersistedKind(title, stateManager.getState().mode, {
+                  providerId: resolvedProviderId,
+                }),
                 title: title.name,
                 externalIds: title.externalIds,
               },

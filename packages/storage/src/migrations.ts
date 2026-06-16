@@ -466,6 +466,26 @@ export const dataMigrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: "022_data_history_anime_kind_correction",
+    database: "data",
+    // Most anime were stored as "series": the write path only stamped "anime" when an
+    // AniList/MAL id or TMDB Animation genre was present, so AllAnime/Miruro titles with
+    // no external id fell through to "series". Correct the stored truth (reconciliation
+    // routes AniList vs TMDB off media_kind): a title streamed via an anime-only provider,
+    // or carrying an AniList/MAL id (those catalogs are anime-only), is anime. Movies are
+    // never touched.
+    sql: `
+      UPDATE history_progress
+      SET media_kind = 'anime'
+      WHERE media_kind = 'series'
+        AND (
+          provider_id IN ('allanime', 'miruro')
+          OR external_ids_json LIKE '%"anilistId"%'
+          OR external_ids_json LIKE '%"malId"%'
+        );
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

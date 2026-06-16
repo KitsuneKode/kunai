@@ -17,6 +17,19 @@ export type ContentKind = "movie" | "series" | "anime";
 const TMDB_ANIMATION_GENRE_ID = 16;
 
 /**
+ * Provider ids that ONLY serve anime (their manifests are `mediaKinds: ["anime"]`).
+ * A title played through one is anime even when no AniList/MAL id resolved — which is
+ * the common case for AllAnime, and the reason most anime were mis-stamped "series".
+ * (AllAnime occasionally hosts a live-action drama; the user can reclassify that rare
+ * case — defaulting the majority to anime is far more accurate than the reverse.)
+ */
+const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set(["allanime", "miruro"]);
+
+export function isAnimeOnlyProviderId(providerId: string | undefined | null): boolean {
+  return providerId != null && ANIME_ONLY_PROVIDER_IDS.has(providerId);
+}
+
+/**
  * Whether a title's *content* is genuinely anime — independent of ShellMode.
  * AniList/MAL only catalog anime, so an id from either is authoritative; TMDB's
  * Animation genre is a secondary signal. A live-action C/K-drama hosted on an
@@ -56,6 +69,7 @@ export function resolveContentKind(
 export function classifyPersistedKind(
   title: Pick<TitleInfo, "type" | "externalIds" | "genreIds" | "isAnime"> | null | undefined,
   mode: ShellMode,
+  options: { readonly providerId?: string | null } = {},
 ): ContentKind {
   if (title?.type === "movie") return "movie";
   // The deterministic classifier tag (TMDB original_language=ja etc.) is
@@ -64,6 +78,9 @@ export function classifyPersistedKind(
   // fall back to the old rule: anime mode AND a content marker (so AllAnime's
   // live-action dramas in anime mode aren't mislabeled).
   if (title?.isAnime === true) return "anime";
+  // An anime-only provider is itself a content marker: AllAnime/Miruro serve anime,
+  // so a title streamed through one is anime even with no external id.
+  if (isAnimeOnlyProviderId(options.providerId)) return "anime";
   if (mode === "anime" && isAnimeContent(title)) return "anime";
   return "series";
 }

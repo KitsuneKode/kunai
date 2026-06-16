@@ -40,6 +40,21 @@ describe("classifyPersistedKind (content-derived)", () => {
       classifyPersistedKind({ type: "series", externalIds: { anilistId: "1" } }, "series"),
     ).toBe("series");
   });
+
+  test("an anime-only provider stamps anime even with no markers, any mode", () => {
+    expect(classifyPersistedKind({ type: "series" }, "series", { providerId: "allanime" })).toBe(
+      "anime",
+    );
+    expect(classifyPersistedKind({ type: "series" }, "anime", { providerId: "miruro" })).toBe(
+      "anime",
+    );
+  });
+
+  test("a non-anime provider does not over-stamp anime", () => {
+    expect(classifyPersistedKind({ type: "series" }, "series", { providerId: "vidking" })).toBe(
+      "series",
+    );
+  });
 });
 
 describe("correctedHistoryMediaKind (legacy read-time correction)", () => {
@@ -58,6 +73,25 @@ describe("correctedHistoryMediaKind (legacy read-time correction)", () => {
   test("legacy 'anime' with an AniList/MAL id stays anime", () => {
     expect(correctedHistoryMediaKind({ mediaKind: "anime", externalIds: { malId: "5" } })).toBe(
       "anime",
+    );
+  });
+
+  test("a row on an anime-only provider is anime even when stored 'series'", () => {
+    expect(correctedHistoryMediaKind({ mediaKind: "series", providerId: "allanime" })).toBe(
+      "anime",
+    );
+    expect(correctedHistoryMediaKind({ mediaKind: "series", providerId: "miruro" })).toBe("anime");
+  });
+
+  test("a 'series' row with an AniList/MAL id is upgraded to anime (TMDB/series-provider anime)", () => {
+    expect(
+      correctedHistoryMediaKind({ mediaKind: "series", externalIds: { anilistId: "21" } }),
+    ).toBe("anime");
+  });
+
+  test("a plain series on a non-anime provider stays series", () => {
+    expect(correctedHistoryMediaKind({ mediaKind: "series", providerId: "vidking" })).toBe(
+      "series",
     );
   });
 });

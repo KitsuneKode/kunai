@@ -5,6 +5,7 @@
 // HistoryProgress row. Replaces the lossy facade-era isFinished.
 // =============================================================================
 
+import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType } from "@/domain/types";
 import type { HistoryProgress } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
@@ -22,10 +23,18 @@ const FINISHED_RATIO = 0.95;
  * row correctly via the write path (resolveContentKind).
  */
 export function correctedHistoryMediaKind(
-  progress: Pick<HistoryProgress, "mediaKind" | "externalIds">,
+  progress: Pick<HistoryProgress, "mediaKind" | "externalIds" | "providerId">,
 ): MediaKind {
-  if (progress.mediaKind !== "anime") return progress.mediaKind;
-  return progress.externalIds?.anilistId || progress.externalIds?.malId ? "anime" : "series";
+  // 1. An anime-only provider (AllAnime/Miruro) is definitive — anime even if stored
+  //    "series" with no external id (the common AllAnime mislabel).
+  if (isAnimeOnlyProviderId(progress.providerId)) return "anime";
+  // 2. An AniList/MAL id is definitive too (those catalogs are anime-only) — so an
+  //    anime watched via a TMDB/series provider, or one whose id was self-healed, is
+  //    upgraded to anime regardless of the stored kind.
+  if (progress.externalIds?.anilistId || progress.externalIds?.malId) return "anime";
+  // 3. Otherwise keep the stored kind, except a legacy "anime" with no markers (a
+  //    drama watched in anime mode) corrects down to series.
+  return progress.mediaKind === "anime" ? "series" : progress.mediaKind;
 }
 
 /**
