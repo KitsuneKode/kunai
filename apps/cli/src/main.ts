@@ -983,6 +983,10 @@ export async function startCli(argv = process.argv.slice(2)): Promise<void> {
   // runaway even when the main event loop is jammed (the closed-terminal case).
   const { installMemoryWatchdog } = await import("./infra/diagnostics/memory-watchdog");
   installMemoryWatchdog();
+  // Opt-in event-loop lag monitor for the input-stall hunt (inert unless
+  // KUNAI_LOOP_MONITOR=1). Logs main-thread jams to ./loop-monitor.log.
+  const { installEventLoopMonitor } = await import("./infra/diagnostics/event-loop-monitor");
+  installEventLoopMonitor();
   // Opt-in heap profiler for the anime-mode memory-runaway hunt (inert otherwise).
   if (process.env.KUNAI_HEAP_PROFILE === "1") {
     const { installHeapProfiler } = await import("./infra/diagnostics/heap-profiler");
