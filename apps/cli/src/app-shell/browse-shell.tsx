@@ -846,6 +846,19 @@ export function BrowseShell<T>({
           onOpenLink?.(activeOverlay.sheet.links.items[0].url);
           return;
         }
+        // Actions advertised in the sheet footer, dispatched against the highlighted row.
+        if (input.toLowerCase() === "w" && selectedOption && onFollowSelected) {
+          void Promise.resolve(onFollowSelected(selectedOption.value));
+          return;
+        }
+        if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
+          void Promise.resolve(onQueueSelected(selectedOption.value));
+          return;
+        }
+        if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
+          onResolve("download");
+          return;
+        }
       }
 
       if (activeOverlay.type === "episode-picker") {
