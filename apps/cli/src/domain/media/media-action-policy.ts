@@ -9,6 +9,7 @@ export type MediaActionId =
   | "download"
   | "follow"
   | "mute"
+  | "mark-watched"
   | "dismiss"
   | "open-details";
 

@@ -23,6 +23,9 @@ export interface MediaActionRouterDeps {
     readonly follow: (item: MediaItemIdentity) => Promise<void> | void;
     readonly mute: (item: MediaItemIdentity) => Promise<void> | void;
   };
+  readonly history?: {
+    readonly markWatched: (item: MediaItemIdentity) => Promise<void> | void;
+  };
   readonly details?: {
     readonly open: (item: MediaItemIdentity) => Promise<void> | void;
   };
@@ -100,6 +103,10 @@ export class MediaActionRouter {
     }
     if (input.actionId === "mute") {
       await requireAction(this.deps.attention?.mute, "mute")(input.item);
+      return;
+    }
+    if (input.actionId === "mark-watched") {
+      await requireAction(this.deps.history?.markWatched, "mark-watched")(input.item);
       return;
     }
     if (input.actionId === "open-details") {

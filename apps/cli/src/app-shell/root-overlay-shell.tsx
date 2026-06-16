@@ -1834,6 +1834,41 @@ export function RootOverlayShell({
         })();
         return;
       }
+      // Episode picker: `m` marks the highlighted episode watched (writes completed
+      // history via the shared action router). Intercepted before the filter editor so
+      // it is an action, not a typed filter character.
+      if (
+        overlay.type === "episode_picker" &&
+        input.toLowerCase() === "m" &&
+        !key.ctrl &&
+        !key.meta
+      ) {
+        const pickerState = container.stateManager.getState();
+        const pickerTitle = pickerState.currentTitle;
+        const optionValue = filteredGenericPickerOptions[pickerSelectedIndex]?.value;
+        if (pickerTitle && optionValue) {
+          const [seasonRaw, episodeRaw] = optionValue.split(":");
+          const season = Number(seasonRaw);
+          const episode = Number(episodeRaw);
+          if (Number.isFinite(season) && Number.isFinite(episode)) {
+            void createContainerMediaActionRouter(container).run({
+              actionId: "mark-watched",
+              item: {
+                titleId: pickerTitle.id,
+                title: pickerTitle.name,
+                mediaKind: pickerState.mode === "anime" ? "anime" : pickerTitle.type,
+                season,
+                episode,
+              },
+              source: "episode-picker",
+            });
+            setOverlayStatus(
+              `Marked S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} watched`,
+            );
+          }
+        }
+        return;
+      }
       if (filterEditor.handleInput(input, key)) {
         return;
       }

@@ -45,6 +45,11 @@ export function createContainerMediaActionRouter(
         upsertAttentionPreference(container, item, "muted");
       },
     },
+    history: {
+      markWatched: (item) => {
+        markMediaItemWatched(container, item);
+      },
+    },
     playback: options.playback,
     details: options.details,
     notifications: {
@@ -79,6 +84,33 @@ export async function queueDownloadFromMediaItem(
     { title },
     { container, signal: AbortSignal.timeout(60_000) },
   );
+}
+
+/**
+ * Mark a specific episode (or a movie) as watched — writes a completed history
+ * entry for the item's identity. completed=true is the bucket classifier's
+ * authority, so the title moves to Completed / advances continuation honestly.
+ */
+function markMediaItemWatched(container: Container, item: MediaItemIdentity): void {
+  const hasEpisode = typeof item.season === "number" && typeof item.episode === "number";
+  const kind =
+    item.mediaKind === "movie" ? "movie" : item.mediaKind === "anime" ? "anime" : "series";
+  container.historyRepository.upsertProgress({
+    title: {
+      id: item.titleId,
+      kind,
+      title: item.title,
+    },
+    episode: hasEpisode
+      ? {
+          season: item.season,
+          episode: item.episode,
+          absoluteEpisode: item.absoluteEpisode,
+        }
+      : undefined,
+    positionSeconds: 0,
+    completed: true,
+  });
 }
 
 function upsertAttentionPreference(

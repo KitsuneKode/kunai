@@ -32,6 +32,21 @@ test("queue action delegates to queue service without playing immediately", asyn
   expect(calls).toEqual(["queue"]);
 });
 
+test("mark-watched delegates to the history port with the item", async () => {
+  const marked: MediaItemIdentity[] = [];
+  const router = new MediaActionRouter({
+    history: {
+      markWatched: async (target) => {
+        marked.push(target);
+      },
+    },
+  });
+
+  await router.run({ actionId: "mark-watched", item, source: "episode-picker" });
+
+  expect(marked).toEqual([item]);
+});
+
 test("play now requires explicit confirmation while playback is active", async () => {
   const router = new MediaActionRouter({
     queue: { enqueueMediaItem: async () => {} },
