@@ -653,7 +653,11 @@ function AppRoot({ container }: { container: Container }) {
       clearPresenceBootTimer();
       if (snapshot.status === "ready") {
         setPresenceBootLine({ text: "Discord presence · connected", tone: "success" });
-      } else if (snapshot.status === "disabled") {
+      } else if (snapshot.status === "disabled" || snapshot.status === "unavailable") {
+        // "unavailable" = Discord simply isn't running / the IPC pipe isn't there.
+        // For someone who enabled Discord that is the EXPECTED state most launches,
+        // not an error — nagging with a scary warning line on every startup is a
+        // false positive. Stay silent (the diagnostics panel still shows status).
         return;
       } else {
         const rawDetail = snapshot.detail.trim() || snapshot.status;

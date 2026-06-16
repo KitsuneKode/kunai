@@ -167,12 +167,55 @@ export function filterCalendarOptionsByDay<T>(
   });
 }
 
+function trackedReleaseMs(option: BrowseShellOption<SearchResult>): number {
+  const releaseAt = option.value.calendar?.releaseAt;
+  const ms = releaseAt ? Date.parse(releaseAt) : Number.NaN;
+  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+}
+
+// For the Tracked tab, a show should appear ONCE — as "what's next" — not once
+// per scheduled episode (the timeline view already shows every airing). Prefer
+// the soonest UPCOMING airing for a title; if nothing is upcoming, keep the most
+// recently aired one.
+function preferTrackedOccurrence(
+  a: BrowseShellOption<SearchResult>,
+  b: BrowseShellOption<SearchResult>,
+  nowMs: number,
+): BrowseShellOption<SearchResult> {
+  const am = trackedReleaseMs(a);
+  const bm = trackedReleaseMs(b);
+  const aUpcoming = am > nowMs;
+  const bUpcoming = bm > nowMs;
+  if (aUpcoming && bUpcoming) return am <= bm ? a : b; // soonest upcoming wins
+  if (aUpcoming !== bUpcoming) return aUpcoming ? a : b; // upcoming beats aired
+  return am >= bm ? a : b; // both aired → most recently aired
+}
+
+function dedupeTrackedByTitle(
+  options: readonly BrowseShellOption<SearchResult>[],
+  nowMs: number,
+): readonly BrowseShellOption<SearchResult>[] {
+  const byTitle = new Map<string, BrowseShellOption<SearchResult>>();
+  for (const option of options) {
+    const key = option.value.id || option.label;
+    const existing = byTitle.get(key);
+    byTitle.set(key, existing ? preferTrackedOccurrence(existing, option, nowMs) : option);
+  }
+  return [...byTitle.values()];
+}
+
 export function filterCalendarOptionsByType(
   options: readonly BrowseShellOption<SearchResult>[],
   tab: CalendarTypeTab,
+  nowMs: number = Date.now(),
 ): readonly BrowseShellOption<SearchResult>[] {
   if (tab === "All") return options;
-  if (tab === "Tracked") return options.filter((option) => isCalendarTrackedOption(option));
+  if (tab === "Tracked") {
+    return dedupeTrackedByTitle(
+      options.filter((option) => isCalendarTrackedOption(option)),
+      nowMs,
+    );
+  }
   return options.filter((option) => matchesCalendarType(option.value, tab));
 }
 

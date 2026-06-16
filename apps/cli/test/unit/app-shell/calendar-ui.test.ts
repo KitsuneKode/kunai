@@ -178,6 +178,41 @@ test("filterCalendarOptionsByType keeps watched rows on Tracked tab", () => {
   expect(filtered.map((row) => row.label)).toEqual(["Watched"]);
 });
 
+test("Tracked tab dedupes a title to one row — its next upcoming airing", () => {
+  const now = Date.now();
+  const aired = new Date(now - 86_400_000).toISOString();
+  const upcoming = new Date(now + 86_400_000).toISOString();
+  const options = [
+    calOption({ label: "Warrior", inWatchlist: true, releaseAt: aired, episode: 10, nowMs: now }),
+    calOption({
+      label: "Warrior",
+      inWatchlist: true,
+      releaseAt: upcoming,
+      episode: 11,
+      nowMs: now,
+    }),
+    calOption({ label: "Other", inWatchlist: true, releaseAt: upcoming, episode: 1, nowMs: now }),
+  ];
+  const tracked = filterCalendarOptionsByType(options, "Tracked", now);
+  expect(tracked.filter((o) => o.value.id === "Warrior")).toHaveLength(1);
+  expect(tracked).toHaveLength(2);
+  const warrior = tracked.find((o) => o.value.id === "Warrior");
+  expect(warrior?.value.calendar?.releaseAt).toBe(upcoming);
+});
+
+test("Tracked tab falls back to the latest aired when nothing is upcoming", () => {
+  const now = Date.now();
+  const older = new Date(now - 2 * 86_400_000).toISOString();
+  const newer = new Date(now - 86_400_000).toISOString();
+  const options = [
+    calOption({ label: "Done", inWatchlist: true, releaseAt: older, episode: 1, nowMs: now }),
+    calOption({ label: "Done", inWatchlist: true, releaseAt: newer, episode: 2, nowMs: now }),
+  ];
+  const tracked = filterCalendarOptionsByType(options, "Tracked", now);
+  expect(tracked).toHaveLength(1);
+  expect(tracked[0]?.value.calendar?.releaseAt).toBe(newer);
+});
+
 test("deriveCalendarReleaseState treats today's catalog released as resolving", () => {
   const option = calOption({
     label: "Show",
