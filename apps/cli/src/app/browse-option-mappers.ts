@@ -96,6 +96,7 @@ export function toBrowseResultOption(
   const historyBadge = buildHistoryBadge(historyEntry);
   const enrichmentBadges = enrichment?.badges ?? [];
   const inWatchlist = listService?.isInWatchlist(result.id) ?? false;
+  const isFollowing = optionContext?.followPreference === "following";
   const displayTitle = chooseSearchResultTitle(result, titlePreference);
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const overview = normalizeProviderText(result.overview);
@@ -120,7 +121,7 @@ export function toBrowseResultOption(
     }${historyBadge ? ` · ${historyBadge}` : ""}${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
-    previewBadge: inWatchlist ? "wl" : undefined,
+    previewBadge: inWatchlist ? "wl" : isFollowing ? "★ following" : undefined,
     previewFacts: [
       ...buildLocalEnrichmentFacts(enrichment),
       ...buildManagementFacts(result, listService, optionContext),
