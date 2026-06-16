@@ -25,6 +25,7 @@ export interface MediaActionRouterDeps {
   };
   readonly history?: {
     readonly markWatched: (item: MediaItemIdentity) => Promise<void> | void;
+    readonly markUnwatched?: (item: MediaItemIdentity) => Promise<void> | void;
   };
   readonly details?: {
     readonly open: (item: MediaItemIdentity) => Promise<void> | void;
@@ -107,6 +108,10 @@ export class MediaActionRouter {
     }
     if (input.actionId === "mark-watched") {
       await requireAction(this.deps.history?.markWatched, "mark-watched")(input.item);
+      return;
+    }
+    if (input.actionId === "mark-unwatched") {
+      await requireAction(this.deps.history?.markUnwatched, "mark-unwatched")(input.item);
       return;
     }
     if (input.actionId === "open-details") {

@@ -47,6 +47,22 @@ test("mark-watched delegates to the history port with the item", async () => {
   expect(marked).toEqual([item]);
 });
 
+test("mark-unwatched delegates to the history port with the item", async () => {
+  const unmarked: MediaItemIdentity[] = [];
+  const router = new MediaActionRouter({
+    history: {
+      markWatched: async () => {},
+      markUnwatched: async (target) => {
+        unmarked.push(target);
+      },
+    },
+  });
+
+  await router.run({ actionId: "mark-unwatched", item, source: "history" });
+
+  expect(unmarked).toEqual([item]);
+});
+
 test("play now requires explicit confirmation while playback is active", async () => {
   const router = new MediaActionRouter({
     queue: { enqueueMediaItem: async () => {} },

@@ -1834,9 +1834,10 @@ export function RootOverlayShell({
         })();
         return;
       }
-      // Episode picker: `m` marks the highlighted episode watched (writes completed
-      // history via the shared action router). Intercepted before the filter editor so
-      // it is an action, not a typed filter character.
+      // Episode picker: `m` TOGGLES the highlighted episode watched/unwatched
+      // (writes completed history via the shared action router — single source of
+      // truth). Intercepted before the filter editor so it is an action, not a
+      // typed filter character.
       if (
         overlay.type === "episode_picker" &&
         input.toLowerCase() === "m" &&
@@ -1851,19 +1852,27 @@ export function RootOverlayShell({
           const season = Number(seasonRaw);
           const episode = Number(episodeRaw);
           if (Number.isFinite(season) && Number.isFinite(episode)) {
+            const mediaKind = pickerState.mode === "anime" ? "anime" : pickerTitle.type;
+            const alreadyWatched =
+              container.historyRepository.getProgress(
+                { id: pickerTitle.id, kind: mediaKind, title: pickerTitle.name },
+                { season, episode },
+              )?.completed === true;
             void createContainerMediaActionRouter(container).run({
-              actionId: "mark-watched",
+              actionId: alreadyWatched ? "mark-unwatched" : "mark-watched",
               item: {
                 titleId: pickerTitle.id,
                 title: pickerTitle.name,
-                mediaKind: pickerState.mode === "anime" ? "anime" : pickerTitle.type,
+                mediaKind,
                 season,
                 episode,
               },
               source: "episode-picker",
             });
             setOverlayStatus(
-              `Marked S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} watched`,
+              `Marked S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")} ${
+                alreadyWatched ? "unwatched" : "watched"
+              }`,
             );
           }
         }

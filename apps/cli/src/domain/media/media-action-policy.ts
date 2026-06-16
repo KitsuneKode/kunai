@@ -10,6 +10,7 @@ export type MediaActionId =
   | "follow"
   | "mute"
   | "mark-watched"
+  | "mark-unwatched"
   | "dismiss"
   | "open-details";
 

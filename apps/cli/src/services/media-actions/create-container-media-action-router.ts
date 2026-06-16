@@ -47,7 +47,10 @@ export function createContainerMediaActionRouter(
     },
     history: {
       markWatched: (item) => {
-        markMediaItemWatched(container, item);
+        markMediaItemWatched(container, item, true);
+      },
+      markUnwatched: (item) => {
+        markMediaItemWatched(container, item, false);
       },
     },
     playback: options.playback,
@@ -87,11 +90,18 @@ export async function queueDownloadFromMediaItem(
 }
 
 /**
- * Mark a specific episode (or a movie) as watched — writes a completed history
- * entry for the item's identity. completed=true is the bucket classifier's
- * authority, so the title moves to Completed / advances continuation honestly.
+ * Single source of truth for marking a specific episode (or movie) watched or
+ * unwatched — writes a history entry for the item's identity with the given
+ * `completed` flag. `completed` is the bucket classifier's authority, so toggling
+ * it moves the title between Completed and continue/unwatched honestly. All
+ * surfaces (episode picker, history, details, browse) route through this helper
+ * via the MediaActionRouter so the behavior is identical everywhere.
  */
-function markMediaItemWatched(container: Container, item: MediaItemIdentity): void {
+export function markMediaItemWatched(
+  container: Container,
+  item: MediaItemIdentity,
+  completed: boolean,
+): void {
   const hasEpisode = typeof item.season === "number" && typeof item.episode === "number";
   const kind =
     item.mediaKind === "movie" ? "movie" : item.mediaKind === "anime" ? "anime" : "series";
@@ -109,7 +119,7 @@ function markMediaItemWatched(container: Container, item: MediaItemIdentity): vo
         }
       : undefined,
     positionSeconds: 0,
-    completed: true,
+    completed,
   });
 }
 
