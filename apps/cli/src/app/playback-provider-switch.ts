@@ -133,8 +133,57 @@ export async function applyUserProviderSwitch(input: {
   });
 }
 
+export type ProviderPickerSelectionResult = {
+  readonly changed: boolean;
+  readonly recomputeRequested: boolean;
+};
+
+export async function applyProviderPickerSelection(input: {
+  readonly container: Container;
+  readonly pickedProviderId: string | null | undefined;
+  readonly reason: string;
+}): Promise<ProviderPickerSelectionResult> {
+  const { container, pickedProviderId, reason } = input;
+  if (!pickedProviderId) return { changed: false, recomputeRequested: false };
+
+  const state = container.stateManager.getState();
+  const fromProviderId = resolveStreamProviderId(state.stream) ?? state.provider;
+  if (pickedProviderId === fromProviderId) {
+    return { changed: false, recomputeRequested: false };
+  }
+
+  await applyUserProviderSwitch({
+    container,
+    fromProviderId,
+    toProviderId: pickedProviderId,
+    ...(state.currentTitle && state.currentEpisode
+      ? { title: state.currentTitle, episode: state.currentEpisode, mode: state.mode }
+      : {}),
+  });
+
+  const next = container.stateManager.getState();
+  const recomputeRequested =
+    isPlaybackActiveForProviderSwitch(next.playbackStatus) && Boolean(next.currentEpisode);
+  if (recomputeRequested) {
+    void container.playerControl.recomputeCurrentPlayback(reason);
+  }
+
+  return { changed: true, recomputeRequested };
+}
+
 export function resolveStreamProviderId(
   stream: { readonly providerResolveResult?: { readonly providerId?: string } } | null,
 ): string | undefined {
   return stream?.providerResolveResult?.providerId;
+}
+
+function isPlaybackActiveForProviderSwitch(status: string): boolean {
+  return (
+    status === "loading" ||
+    status === "ready" ||
+    status === "buffering" ||
+    status === "seeking" ||
+    status === "stalled" ||
+    status === "playing"
+  );
 }

@@ -7,6 +7,7 @@ import {
   sortProvidersByConfigPriority,
 } from "@/app-shell/panel-data";
 import { applySettingsToRuntime } from "@/app/apply-settings-to-runtime";
+import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import {
   getRuntimeMemoryLine,
@@ -58,21 +59,10 @@ export function buildShellRuntimeBindings(container: Container) {
       currentProvider: rawConfig.animeProvider,
     }),
     onChangeProvider: async (providerId: string) => {
-      const fromProviderId = stateManager.getState().provider;
-      if (providerId === fromProviderId) return;
-      const snapshot = stateManager.getState();
-      const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
-      await applyUserProviderSwitch({
+      await applyProviderPickerSelection({
         container,
-        fromProviderId,
-        toProviderId: providerId,
-        ...(snapshot.currentTitle && snapshot.currentEpisode
-          ? {
-              title: snapshot.currentTitle,
-              episode: snapshot.currentEpisode,
-              mode: snapshot.mode,
-            }
-          : {}),
+        pickedProviderId: providerId,
+        reason: "provider-picker-switch",
       });
     },
     onSaveSettings: async (next: KitsuneConfig) => {

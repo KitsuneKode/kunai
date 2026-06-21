@@ -10,6 +10,7 @@ import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-ma
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { markEntryWatched } from "@/app/history-actions";
 import { playCompletedDownload } from "@/app/offline-playback";
+import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -983,26 +984,12 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
         }),
       }),
   );
-  if (picked && picked !== fromProviderId) {
-    const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
-    await applyUserProviderSwitch({
+  if (picked) {
+    await applyProviderPickerSelection({
       container,
-      fromProviderId,
-      toProviderId: picked,
-      ...(state.currentTitle && state.currentEpisode
-        ? { title: state.currentTitle, episode: state.currentEpisode, mode: state.mode }
-        : {}),
+      pickedProviderId: picked,
+      reason: "provider-picker-switch",
     });
-    const playbackActive =
-      state.playbackStatus === "loading" ||
-      state.playbackStatus === "ready" ||
-      state.playbackStatus === "buffering" ||
-      state.playbackStatus === "seeking" ||
-      state.playbackStatus === "stalled" ||
-      state.playbackStatus === "playing";
-    if (playbackActive && state.currentEpisode) {
-      void container.playerControl.recomputeCurrentPlayback("provider-picker-switch");
-    }
   }
   return "handled";
 }

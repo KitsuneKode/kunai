@@ -3,6 +3,7 @@ import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
 } from "@/app/notification-media-session";
+import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
@@ -1675,33 +1676,13 @@ export function RootOverlayShell({
       }
       if (overlay.type === "provider_picker") {
         const picked = filteredProviderOptions[selectedIndex]?.value;
-        if (picked && picked !== state.provider) {
-          const fromProviderId = state.provider;
+        if (picked) {
           void (async () => {
-            const { applyUserProviderSwitch } = await import("@/app/playback-provider-switch");
-            await applyUserProviderSwitch({
+            await applyProviderPickerSelection({
               container,
-              fromProviderId,
-              toProviderId: picked,
-              ...(state.currentTitle && state.currentEpisode
-                ? {
-                    title: state.currentTitle,
-                    episode: state.currentEpisode,
-                    mode: state.mode,
-                  }
-                : {}),
+              pickedProviderId: picked,
+              reason: "provider-picker-switch",
             });
-            const next = container.stateManager.getState();
-            const playbackActive =
-              next.playbackStatus === "loading" ||
-              next.playbackStatus === "ready" ||
-              next.playbackStatus === "buffering" ||
-              next.playbackStatus === "seeking" ||
-              next.playbackStatus === "stalled" ||
-              next.playbackStatus === "playing";
-            if (playbackActive && next.currentEpisode) {
-              void container.playerControl.recomputeCurrentPlayback("provider-picker-switch");
-            }
           })();
         }
       } else if (overlay.type === "history") {
