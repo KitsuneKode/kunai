@@ -212,6 +212,53 @@ describe("panel-data", () => {
     );
   });
 
+  test("buildDiagnosticsPanelLines renders provider source attempts from timeline diagnostics", () => {
+    const lines = buildDiagnosticsPanelLines({
+      state: createInitialState("videasy", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [
+        {
+          timestamp: 1,
+          level: "warn",
+          category: "provider",
+          operation: "provider.resolve.timeline",
+          message: "Videasy did not produce a playable source",
+          providerId: "videasy",
+          context: {
+            status: "failed",
+            attempts: 1,
+            sourceAttemptCount: 2,
+            sourceAttempts: [
+              {
+                type: "source:start",
+                message: "Trying Luffy",
+                sourceId: "source:videasy:mb-flix",
+                serverId: "mb-flix",
+                at: "2026-06-21T00:00:01.000Z",
+              },
+              {
+                type: "source:failed",
+                message: "Luffy returned no playable candidates",
+                sourceId: "source:videasy:mb-flix",
+                failureClass: "candidate-empty",
+                serverId: "mb-flix",
+                at: "2026-06-21T00:00:02.000Z",
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const sourceAttempts = lines.find((line) => line.label === "Source attempts");
+    expect(sourceAttempts?.detail).toContain("mb-flix failed");
+    expect(sourceAttempts?.detail).toContain("candidate-empty");
+    expect(sourceAttempts?.tone).toBe("warning");
+  });
+
   test("buildDiagnosticsPanelLines renders playback startup timing summaries", () => {
     const lines = buildDiagnosticsPanelLines({
       state: createInitialState("vidking", "allanime", {

@@ -375,6 +375,7 @@ export function buildDiagnosticsPanelLines({
   const startupVerdictDetail = playbackStartupEvent
     ? `${formatPlaybackStartupTimelineEvent(playbackStartupEvent)}  ·  slowest: ${findSlowestStartupStage(playbackStartupEvent)}`
     : "No startup timeline recorded this session";
+  const sourceAttemptDetail = formatProviderSourceAttempts(providerTimelineEvent);
 
   return [
     {
@@ -410,6 +411,15 @@ export function buildDiagnosticsPanelLines({
       })(),
       tone: providerVerdictTone,
     },
+    ...(sourceAttemptDetail
+      ? [
+          {
+            label: "Source attempts",
+            detail: sourceAttemptDetail.detail,
+            tone: sourceAttemptDetail.tone,
+          } satisfies ShellPanelLine,
+        ]
+      : []),
     {
       label: "Network",
       detail: networkVerdictDetail,
@@ -731,6 +741,55 @@ function formatProviderAttemptEvidence(events: readonly DiagnosticEvent[]): stri
       return `${provider} ${phase}${elapsed}${failure}`;
     });
   return attempts.length > 0 ? attempts.join("  ·  ") : "no physical provider attempts yet";
+}
+
+function formatProviderSourceAttempts(
+  event: DiagnosticEvent | undefined,
+): { detail: string; tone: ShellPanelLine["tone"] } | null {
+  const attempts = Array.isArray(event?.context?.sourceAttempts)
+    ? event.context.sourceAttempts
+    : [];
+  if (!attempts.length) return null;
+  const formatted = attempts.slice(0, 5).map(formatProviderSourceAttempt).filter(Boolean);
+  if (!formatted.length) return null;
+  const failed = attempts.some(
+    (attempt) =>
+      attempt &&
+      typeof attempt === "object" &&
+      "type" in attempt &&
+      attempt.type === "source:failed",
+  );
+  return {
+    detail: formatted.join("  ·  "),
+    tone: failed ? "warning" : "info",
+  };
+}
+
+function formatProviderSourceAttempt(attempt: unknown): string | null {
+  if (!attempt || typeof attempt !== "object") return null;
+  const record = attempt as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : null;
+  const sourceId = typeof record.sourceId === "string" ? record.sourceId : null;
+  const serverId =
+    typeof record.serverId === "string" || typeof record.serverId === "number"
+      ? String(record.serverId)
+      : null;
+  const failureClass =
+    typeof record.failureClass === "string" || typeof record.failureClass === "number"
+      ? String(record.failureClass)
+      : null;
+  const attemptNumber = typeof record.attempt === "number" ? `#${record.attempt}` : null;
+  const label = serverId ?? sourceId?.split(":").at(-1) ?? "source";
+  if (type === "source:failed") {
+    return [label, "failed", failureClass, attemptNumber].filter(Boolean).join(" ");
+  }
+  if (type === "source:success") {
+    return [label, "succeeded", attemptNumber].filter(Boolean).join(" ");
+  }
+  if (type === "source:start") {
+    return [label, "started", attemptNumber].filter(Boolean).join(" ");
+  }
+  return null;
 }
 
 function formatSubtitleOutcome(events: readonly DiagnosticEvent[]): string {

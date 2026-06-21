@@ -3,7 +3,12 @@ import type { StreamInfo } from "@/domain/types";
 import { withDiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import type { ProviderEngine, ProviderEngineEvent, ProviderPriorityInput } from "@kunai/core";
+import {
+  summarizeProviderTraceEvents,
+  type ProviderEngine,
+  type ProviderEngineEvent,
+  type ProviderPriorityInput,
+} from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
 
 import {
@@ -249,6 +254,7 @@ export class PlaybackResolveCoordinator {
     const failedAttempt = result.providerTimeline.attempts.find(
       (attempt) => attempt.status === "failed",
     );
+    const sourceTrace = summarizeResolveSourceTrace(result);
     this.deps.diagnostics.record(
       withDiagnosticCorrelation(input.correlation, {
         category: "provider",
@@ -274,10 +280,19 @@ export class PlaybackResolveCoordinator {
           })),
           failureClass: failedAttempt?.failureClass ?? "none",
           truncated: result.providerTimeline.truncated,
+          sourceAttemptCount: sourceTrace.sourceAttempts.length,
+          sourceAttempts: sourceTrace.sourceAttempts.slice(0, 8),
+          lastTraceEvent: sourceTrace.lastEvent,
         },
       }),
     );
   }
+}
+
+function summarizeResolveSourceTrace(result: PlaybackResolveOutput) {
+  return summarizeProviderTraceEvents(
+    result.attempts.flatMap((attempt) => [...(attempt.result?.trace.events ?? [])]),
+  );
 }
 
 function describeProviderEngineEvent(eventType: ProviderEngineEvent["type"]): string {

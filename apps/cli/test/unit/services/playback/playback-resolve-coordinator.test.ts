@@ -189,6 +189,72 @@ function createProviderResultAfterFallback(): ProviderEngineResolveOutput {
   };
 }
 
+function createProviderResultWithSourceTraceFailure(): ProviderEngineResolveOutput {
+  return {
+    result: null,
+    providerId: null,
+    attempts: [
+      {
+        providerId: "videasy" as ProviderId,
+        result: {
+          status: "exhausted",
+          providerId: "videasy" as ProviderId,
+          streams: [],
+          subtitles: [],
+          sources: [],
+          variants: [],
+          trace: {
+            id: "trace:videasy-empty",
+            startedAt: "2026-06-21T00:00:00.000Z",
+            endedAt: "2026-06-21T00:00:03.000Z",
+            title: { id: "12345", kind: "series", title: "Test Series" },
+            cacheHit: false,
+            runtime: "direct-http",
+            steps: [],
+            failures: [],
+            events: [
+              {
+                type: "source:start",
+                providerId: "videasy" as ProviderId,
+                sourceId: "source:videasy:mb-flix",
+                at: "2026-06-21T00:00:01.000Z",
+                attempt: 1,
+                message: "Trying Luffy",
+                attributes: { serverId: "mb-flix" },
+              },
+              {
+                type: "source:failed",
+                providerId: "videasy" as ProviderId,
+                sourceId: "source:videasy:mb-flix",
+                at: "2026-06-21T00:00:02.000Z",
+                attempt: 1,
+                message: "Luffy returned no playable candidates",
+                attributes: { serverId: "mb-flix", failureClass: "candidate-empty" },
+              },
+            ],
+          },
+          failures: [
+            {
+              providerId: "videasy" as ProviderId,
+              code: "not-found",
+              message: "Videasy did not produce a playable source",
+              retryable: false,
+              at: "2026-06-21T00:00:03.000Z",
+            },
+          ],
+        },
+        failure: {
+          providerId: "videasy" as ProviderId,
+          code: "not-found",
+          message: "Videasy did not produce a playable source",
+          retryable: false,
+          at: "2026-06-21T00:00:03.000Z",
+        },
+      },
+    ],
+  };
+}
+
 function input(signal = new AbortController().signal) {
   return {
     title,
@@ -357,6 +423,51 @@ describe("PlaybackResolveCoordinator", () => {
         sessionId: "session-1",
         playbackCycleId: "playback-1",
         providerAttemptId: "provider-1",
+      }),
+    );
+  });
+
+  test("records source attempt breadcrumbs in provider timeline diagnostics", async () => {
+    const events: unknown[] = [];
+    const diagnostics = {
+      record: (event: unknown) => events.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createMockEngine(createProviderResultWithSourceTraceFailure()),
+      cacheStore: createMemoryCache(null),
+      diagnostics,
+    });
+
+    const result = await coordinator.resolve({ ...input(), providerId: "videasy" });
+
+    expect(result.stream).toBeNull();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        category: "provider",
+        operation: "provider.resolve.timeline",
+        providerId: "videasy",
+        context: expect.objectContaining({
+          sourceAttemptCount: 2,
+          sourceAttempts: [
+            expect.objectContaining({
+              type: "source:start",
+              sourceId: "source:videasy:mb-flix",
+              serverId: "mb-flix",
+            }),
+            expect.objectContaining({
+              type: "source:failed",
+              sourceId: "source:videasy:mb-flix",
+              failureClass: "candidate-empty",
+              serverId: "mb-flix",
+            }),
+          ],
+        }),
       }),
     );
   });
