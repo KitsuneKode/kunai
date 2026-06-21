@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-type MatrixProviderId = "vidking" | "rivestream" | "allanime" | "miruro";
+type MatrixProviderId = "videasy" | "rivestream" | "allanime" | "miruro";
 
 type MatrixEntry = {
   readonly provider: MatrixProviderId;
@@ -29,8 +29,8 @@ type MatrixResult = {
 
 const MATRIX: readonly MatrixEntry[] = [
   {
-    provider: "vidking",
-    command: ["bun", "-e", "await import('./test/live/vidking-bloodhounds.smoke.ts')"],
+    provider: "videasy",
+    command: ["bun", "-e", "await import('./test/live/videasy-bloodhounds.smoke.ts')"],
     media: "series",
     fixture: "Bloodhounds S01E02",
   },

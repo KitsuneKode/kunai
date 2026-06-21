@@ -77,6 +77,27 @@ test("runProviderCycle retries a timed out candidate before moving to the next o
   ]);
 });
 
+test("runProviderCycle streams source events to an external observer", async () => {
+  const observed: string[] = [];
+  await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    maxAttemptsPerCandidate: 1,
+    now: fixedClock(),
+    emit: (event) => observed.push(`${event.type}:${event.sourceId ?? "none"}`),
+    async resolveCandidate(candidate) {
+      throw createProviderCycleFailureError(candidate, {
+        failureClass: "candidate-parse",
+        message: "Missing stream field",
+        retryable: false,
+        at: "2026-05-19T00:00:00.000Z",
+      });
+    },
+  });
+
+  expect(observed).toEqual(["source:start:sub", "source:failed:sub"]);
+});
+
 test("runProviderCycle moves past non-retryable parse failures", async () => {
   const result = await runProviderCycle({
     providerId: "allanime",

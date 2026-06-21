@@ -1,3 +1,4 @@
+import { resolveProviderId } from "./provider-engine";
 import type { CoreProviderModule } from "./provider-sdk";
 
 export type ProviderPriorityInput = {
@@ -42,7 +43,8 @@ export function buildFirstSeenRank(
 ): Map<string, number> {
   const rank = new Map<string, number>();
   (providerIds ?? []).forEach((providerId, index) => {
-    if (!rank.has(providerId)) rank.set(providerId, index);
+    const normalizedProviderId = resolveProviderId(providerId);
+    if (!rank.has(normalizedProviderId)) rank.set(normalizedProviderId, index);
   });
   return rank;
 }
@@ -55,8 +57,8 @@ function sortLaneModules(
     .map((module, index) => ({ module, index }))
     .sort((a, b) => {
       const rankDelta =
-        (rank.get(a.module.providerId) ?? Number.MAX_SAFE_INTEGER) -
-        (rank.get(b.module.providerId) ?? Number.MAX_SAFE_INTEGER);
+        (rank.get(resolveProviderId(a.module.providerId)) ?? Number.MAX_SAFE_INTEGER) -
+        (rank.get(resolveProviderId(b.module.providerId)) ?? Number.MAX_SAFE_INTEGER);
       return rankDelta === 0 ? a.index - b.index : rankDelta;
     })
     .map(({ module }) => module);

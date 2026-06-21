@@ -8,3 +8,4 @@ export * from "./provider-sdk";
 export * from "./providers/factory";
 export * from "./resolver";
 export * from "./trace";
+export * from "./trace-summary";

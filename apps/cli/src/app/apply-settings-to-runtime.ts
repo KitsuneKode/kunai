@@ -1,5 +1,6 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 
 export async function applySettingsToRuntime({
   container,
@@ -16,10 +17,7 @@ export async function applySettingsToRuntime({
   await config.update(next);
   await config.save();
 
-  container.providerRegistry.setPriority({
-    providerPriority: [next.provider, ...next.providerPriority],
-    animeProviderPriority: [next.animeProvider, ...next.animeProviderPriority],
-  });
+  container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
 
   const state = stateManager.getState();
   stateManager.dispatch({

@@ -124,6 +124,7 @@ import { VideasyLazySourceProbeService } from "./services/playback/VideasyLazySo
 import { DurablePlaylistService } from "./services/playlists/DurablePlaylistService";
 import type { PresenceService } from "./services/presence/PresenceService";
 import { PresenceServiceImpl } from "./services/presence/PresenceServiceImpl";
+import { createProviderPrioritySnapshot } from "./services/providers/provider-priority";
 import type { ProviderRegistry } from "./services/providers/ProviderRegistry";
 import { createProviderRegistry } from "./services/providers/ProviderRegistry";
 import type { RecommendationService } from "./services/recommendations/RecommendationService";
@@ -406,6 +407,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
   // Engine: single source of truth for provider resolution
+  const providerPriority = createProviderPrioritySnapshot(config);
   const providerModules = orderProviderModulesByPriority(
     [
       videasyProviderModule,
@@ -414,10 +416,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       allmangaProviderModule,
       miruroProviderModule,
     ],
-    {
-      providerPriority: [config.provider, ...config.providerPriority],
-      animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
-    },
+    providerPriority,
   );
   const engine = createProviderEngine({
     modules: providerModules,
@@ -440,10 +439,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     },
   });
 
-  const providerRegistry = createProviderRegistry(engine, {
-    providerPriority: [config.provider, ...config.providerPriority],
-    animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
-  });
+  const providerRegistry = createProviderRegistry(engine, providerPriority);
   const streamHealthService = new StreamHealthService();
   const offlineAssetService = new OfflineAssetService(offlineAssets);
   const playbackResolveWork = new PlaybackResolveWorkService(
@@ -455,10 +451,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       sourceInventory,
       titleProviderHealth,
       diagnostics: diagnosticsService,
-      getProviderPriority: () => ({
-        providerPriority: [config.provider, ...config.providerPriority],
-        animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
-      }),
+      getProviderPriority: () => createProviderPrioritySnapshot(config),
     }),
     {
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),

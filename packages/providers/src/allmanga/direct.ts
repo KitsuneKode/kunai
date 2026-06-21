@@ -477,6 +477,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           }),
           signal: context.signal,
           now: context.now,
+          emit: context.emit,
           maxAttemptsPerCandidate: 1,
           candidateTimeoutMs: 2_500,
           resolveCandidate: async (candidate, cycleContext) => {

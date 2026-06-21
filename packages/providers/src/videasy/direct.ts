@@ -426,6 +426,7 @@ export async function resolveVideasyDirect(
     candidates: cycleCandidates,
     signal: context.signal,
     now: context.now,
+    emit: context.emit,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
     shouldStopAfterFailure: (failure) =>
@@ -457,6 +458,7 @@ export async function resolveVideasyDirect(
       candidates: embedCandidates,
       signal: context.signal,
       now: context.now,
+      emit: context.emit,
       maxAttemptsPerCandidate: 1,
       candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
       shouldStopAfterFailure: (failure) =>
@@ -464,7 +466,6 @@ export async function resolveVideasyDirect(
         isVideasySessionGuardMessage(failure.message),
       resolveCandidate: resolveVidkingCycleCandidate,
     });
-    events.push(...embedCycleResult.events);
     if (embedCycleResult.selected) {
       cycleResult = embedCycleResult;
     } else if (!embedCycleResult.cancelled) {

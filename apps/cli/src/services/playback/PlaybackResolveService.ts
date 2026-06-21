@@ -25,7 +25,9 @@ import {
   type ProviderEngine,
   type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
+  type ProviderPriorityInput,
   type ResolveAttempt,
+  isOfflineNetworkFailure,
   orderProviderModulesByPriority,
 } from "@kunai/core";
 import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
@@ -186,10 +188,7 @@ export class PlaybackResolveService {
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
-      readonly getProviderPriority?: () => {
-        readonly providerPriority: readonly string[];
-        readonly animeProviderPriority: readonly string[];
-      };
+      readonly getProviderPriority?: () => ProviderPriorityInput;
       readonly titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
@@ -580,15 +579,15 @@ export class PlaybackResolveService {
     }
 
     if (engineResult.result) {
-      if (!providerResultHasDeferredStream(engineResult.result)) {
-        await this.deps.sourceInventory?.set(
-          { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
-          engineResult.result,
-        );
-      }
       const stream = resolvedStream;
 
       if (stream) {
+        if (!providerResultHasDeferredStream(engineResult.result)) {
+          await this.deps.sourceInventory?.set(
+            { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
+            engineResult.result,
+          );
+        }
         const resolvedProviderId = engineResult.providerId ?? input.providerId;
         const primaryFailureKind = titleProviderFailureFromAttempts(
           engineResult.attempts,
@@ -911,25 +910,6 @@ function titleProviderFailureFromAttempts(
     default:
       return null;
   }
-}
-
-function isOfflineNetworkFailure(failure: {
-  readonly code: string;
-  readonly message: string;
-}): boolean {
-  if (failure.code !== "network-error") return false;
-  const message = failure.message.toLowerCase();
-  return (
-    message.includes("enotfound") ||
-    message.includes("eai_again") ||
-    message.includes("enetunreach") ||
-    message.includes("network is unreachable") ||
-    message.includes("err_internet_disconnected") ||
-    message.includes("err_name_not_resolved") ||
-    message.includes("could not resolve host") ||
-    message.includes("failed to resolve") ||
-    message.includes("offline")
-  );
 }
 
 function buildProviderTimeline(

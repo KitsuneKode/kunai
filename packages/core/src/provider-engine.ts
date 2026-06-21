@@ -5,6 +5,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderTraceEvent,
 } from "@kunai/types";
 import { isProviderResolveResultResolved } from "@kunai/types";
 
@@ -19,7 +20,7 @@ const PROVIDER_ID_ALIASES: Readonly<Record<string, ProviderId>> = {
   vidking: "videasy",
 };
 
-function resolveProviderId(providerId: ProviderId): ProviderId {
+export function resolveProviderId(providerId: ProviderId): ProviderId {
   return PROVIDER_ID_ALIASES[providerId] ?? providerId;
 }
 
@@ -145,7 +146,7 @@ export class ProviderEngine {
       let failure: ProviderFailure | null = null;
       let failureError: ProviderResolveFailureError | null = null;
       try {
-        const result = await this.resolveWithTimeout(module, input, signal);
+        const result = await this.resolveWithTimeout(module, input, startedAt, signal);
         const finishedAt = this.now();
 
         if (result && isProviderResolveResultResolved(result)) {
@@ -261,7 +262,7 @@ export class ProviderEngine {
             ? { result: error.result }
             : {}),
         });
-        if (isOfflineNetworkFailure(failure)) break;
+
         const nextProviderId = candidateIds[index + 1];
         if (nextProviderId) {
           observer?.({
@@ -272,6 +273,8 @@ export class ProviderEngine {
             failure,
           });
         }
+
+        if (!nextProviderId) break;
       }
     }
 
@@ -285,12 +288,14 @@ export class ProviderEngine {
   private async resolveWithTimeout(
     module: CoreProviderModule,
     input: ProviderResolveInput,
+    startedAt: string,
     signal?: AbortSignal,
   ): Promise<ProviderResolveResult | null> {
     if (signal?.aborted) throw this.abortError();
 
     const attemptController = new AbortController();
     const attemptSignal = attemptController.signal;
+    const traceEvents: ProviderTraceEvent[] = [];
 
     const onParentAbort = () => attemptController.abort(signal?.reason);
     signal?.addEventListener("abort", onParentAbort, { once: true });
@@ -304,6 +309,7 @@ export class ProviderEngine {
         delayMs: this.retryDelayMs,
       },
       auth: this.auth,
+      emit: (event) => traceEvents.push(event),
     };
 
     const operation = module.resolve(input, context);
@@ -316,14 +322,25 @@ export class ProviderEngine {
         new Promise<ProviderResolveResult | null>((_, reject) => {
           timeout = setTimeout(() => {
             attemptController.abort(new Error("provider resolve timeout"));
+            const failure: ProviderFailure = {
+              providerId: module.providerId,
+              code: "timeout",
+              message: `Provider did not return a stream within ${Math.round(this.attemptTimeoutMs / 1000)}s`,
+              retryable: true,
+              at: this.now(),
+            };
             reject(
-              new ProviderResolveFailureError({
-                providerId: module.providerId,
-                code: "timeout",
-                message: `Provider did not return a stream within ${Math.round(this.attemptTimeoutMs / 1000)}s`,
-                retryable: true,
-                at: this.now(),
-              }),
+              new ProviderResolveFailureError(
+                failure,
+                createTimeoutResolveResult({
+                  input,
+                  providerId: module.providerId,
+                  startedAt,
+                  endedAt: failure.at,
+                  events: traceEvents,
+                  failure,
+                }),
+              ),
             );
           }, this.attemptTimeoutMs);
 
@@ -366,7 +383,51 @@ export class ProviderEngine {
   }
 }
 
-function isOfflineNetworkFailure(failure: ProviderFailure): boolean {
+function createTimeoutResolveResult({
+  input,
+  providerId,
+  startedAt,
+  endedAt,
+  events,
+  failure,
+}: {
+  readonly input: ProviderResolveInput;
+  readonly providerId: ProviderId;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly events: readonly ProviderTraceEvent[];
+  readonly failure: ProviderFailure;
+}): ProviderResolveResult {
+  return {
+    status: "exhausted",
+    providerId,
+    streams: [],
+    subtitles: [],
+    sources: [],
+    variants: [],
+    trace: {
+      id: `trace:${providerId}:timeout:${Date.parse(startedAt) || 0}`,
+      startedAt,
+      endedAt,
+      title: input.title,
+      episode: input.episode,
+      selectedProviderId: providerId,
+      cacheHit: false,
+      runtime: input.allowedRuntimes[0],
+      steps: [],
+      events,
+      failures: [failure],
+    },
+    failures: [failure],
+    healthDelta: {
+      providerId,
+      outcome: "failure",
+      at: endedAt,
+    },
+  };
+}
+
+export function isOfflineNetworkFailure(failure: ProviderFailure): boolean {
   if (failure.code !== "network-error") return false;
   const message = failure.message.toLowerCase();
   return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
@@ -401,7 +462,6 @@ const OFFLINE_NETWORK_PATTERNS = [
   "network is unreachable",
   "err_internet_disconnected",
   "err_name_not_resolved",
-  "dns",
 ];
 
 export function createProviderEngine(opts: ProviderEngineOptions): ProviderEngine {

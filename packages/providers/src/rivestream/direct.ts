@@ -336,6 +336,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         candidates: cycleCandidates,
         signal: context.signal,
         now: context.now,
+        emit: context.emit,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: 10_000,
         resolveCandidate: async (candidate) => {

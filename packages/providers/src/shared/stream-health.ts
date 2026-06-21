@@ -178,6 +178,13 @@ function planCacheRevalidateHealth(
   if (input.force) {
     return probePlan(context, "forced");
   }
+  if (
+    input.streamReachabilityVerified === true &&
+    typeof context.ageMs === "number" &&
+    context.ageMs <= context.playbackTrustMs
+  ) {
+    return skipPlan(context, "provider-attested", "provider-attested");
+  }
   if (typeof context.ageMs === "number" && context.ageMs <= context.staleAfterMs) {
     return skipPlan(context, "fresh-cache", "fresh");
   }

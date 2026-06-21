@@ -127,7 +127,7 @@ test("ProviderRegistry sorts compatible providers by configured priority", () =>
   const modules = [
     createModule("vidlink", ["movie", "series"]),
     createModule("rivestream", ["movie", "series"]),
-    createModule("vidking", ["movie", "series"]),
+    createModule("videasy", ["movie", "series"]),
     createModule("allanime", ["anime"]),
     createModule("miruro", ["anime"]),
   ];
@@ -153,12 +153,12 @@ test("ProviderRegistry sorts compatible providers by configured priority", () =>
   );
 
   expect(seriesProviders.map((provider) => provider.metadata.id)).toEqual([
-    "vidking",
+    "videasy",
     "vidlink",
     "rivestream",
   ]);
   expect(animeProviders.map((provider) => provider.metadata.id)).toEqual(["miruro", "allanime"]);
-  expect(registry.getDefault(false).metadata.id).toBe("vidking");
+  expect(registry.getDefault(false).metadata.id).toBe("videasy");
   expect(registry.getDefault(true).metadata.id).toBe("miruro");
 
   registry.setPriority({
@@ -170,7 +170,7 @@ test("ProviderRegistry sorts compatible providers by configured priority", () =>
     registry
       .getCompatible({ id: "movie:1", type: "movie", name: "Movie" }, "series")
       .map((provider) => provider.metadata.id),
-  ).toEqual(["rivestream", "vidlink", "vidking"]);
+  ).toEqual(["rivestream", "vidlink", "videasy"]);
   expect(registry.getDefault(false).metadata.id).toBe("rivestream");
   expect(registry.getDefault(true).metadata.id).toBe("allanime");
 });

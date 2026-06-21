@@ -1,5 +1,10 @@
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
-import { buildFirstSeenRank, type CoreProviderManifest, type ProviderEngine } from "@kunai/core";
+import {
+  buildFirstSeenRank,
+  resolveProviderId,
+  type CoreProviderManifest,
+  type ProviderEngine,
+} from "@kunai/core";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 
@@ -94,7 +99,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   get(id: string): Provider | undefined {
-    return this.providersById.get(id);
+    return this.providersById.get(resolveProviderId(id));
   }
 
   getManifest(id: string): CoreProviderManifest | undefined {
@@ -120,7 +125,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   getDefault(isAnime: boolean): Provider {
     const preferred = this.getPriority(isAnime)
-      .map((providerId) => this.providersById.get(providerId))
+      .map((providerId) => this.providersById.get(resolveProviderId(providerId)))
       .find((provider) => provider && provider.metadata.isAnimeProvider === isAnime);
 
     if (preferred) return preferred;
@@ -137,7 +142,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getMetadata(id: string): ProviderMetadata | undefined {
-    return this.providersById.get(id)?.metadata;
+    return this.providersById.get(resolveProviderId(id))?.metadata;
   }
 
   setPriority(options: ProviderRegistryOptions): void {

@@ -13,6 +13,7 @@ import {
   orderProviderModulesByPriority,
   ProviderResolveFailureError,
   resolveWithFallback,
+  summarizeProviderTraceEvents,
   type CoreProviderModule,
   type ProviderEngineEvent,
 } from "../src/index";
@@ -215,6 +216,20 @@ test("provider module priority is mode-aware and keeps unlisted modules availabl
     "miruro",
     "vidlink",
   ]);
+});
+
+test("provider module priority canonicalizes legacy provider aliases", () => {
+  const modules = [
+    providerModule("rivestream", rivestreamManifest),
+    providerModule("videasy", { ...vidkingManifest, id: "videasy", displayName: "Videasy" }),
+  ];
+
+  const ordered = orderProviderModulesByPriority(modules, {
+    providerPriority: ["vidking"],
+    animeProviderPriority: [],
+  });
+
+  expect(ordered.map((module) => module.providerId)).toEqual(["videasy", "rivestream"]);
 });
 
 test("provider cache policy normalizes deterministic key parts", () => {
@@ -895,7 +910,7 @@ test("ProviderEngine observes fallback after primary exhaustion", async () => {
   );
 });
 
-test("ProviderEngine does not retry or fallback when the network is offline", async () => {
+test("ProviderEngine falls back to the next provider after provider-local network failure", async () => {
   let primaryAttempts = 0;
   let fallbackAttempts = 0;
   const offlineProvider: CoreProviderModule = {
@@ -983,12 +998,145 @@ test("ProviderEngine does not retry or fallback when the network is offline", as
     ["offline", "fallback"],
   );
 
-  expect(resolved.result).toBeNull();
-  expect(resolved.attempts).toHaveLength(1);
+  expect(resolved.result).not.toBeNull();
+  expect(resolved.providerId).toBe("fallback");
   expect(primaryAttempts).toBe(1);
-  expect(fallbackAttempts).toBe(0);
+  expect(fallbackAttempts).toBe(1);
   expect(resolved.attempts[0]?.failure).toMatchObject({
     code: "network-error",
     message: "getaddrinfo ENOTFOUND api.example.test",
   });
+});
+
+test("ProviderEngine timeout failures preserve partial provider trace events", async () => {
+  const slowProvider: CoreProviderModule = {
+    providerId: "slow",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "slow",
+      displayName: "Slow Provider",
+    }),
+    async resolve(_input, context) {
+      context.emit?.({
+        type: "source:start",
+        providerId: "slow",
+        sourceId: "source:slow:primary",
+        at: context.now(),
+        message: "Trying primary source",
+      });
+      await new Promise(() => {});
+      throw new Error("unreachable");
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [slowProvider],
+    maxAttempts: 1,
+    attemptTimeoutMs: 1,
+    retryDelayMs: 0,
+    now: () => "2026-06-21T00:00:00.000Z",
+  });
+
+  await expect(
+    engine.resolve(
+      {
+        title: { id: "123", kind: "movie", title: "Demo" },
+        mediaKind: "movie",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      "slow",
+    ),
+  ).rejects.toMatchObject({
+    failure: { code: "timeout" },
+    result: {
+      status: "exhausted",
+      trace: {
+        events: [
+          expect.objectContaining({
+            type: "source:start",
+            sourceId: "source:slow:primary",
+          }),
+        ],
+      },
+    },
+  });
+});
+
+test("summarizeProviderTraceEvents exports source attempt breadcrumbs", () => {
+  const summary = summarizeProviderTraceEvents([
+    {
+      type: "provider:start",
+      providerId: "videasy",
+      at: "2026-06-21T00:00:00.000Z",
+      message: "Started Videasy",
+    },
+    {
+      type: "source:start",
+      providerId: "videasy",
+      sourceId: "source:videasy:neon",
+      at: "2026-06-21T00:00:01.000Z",
+      attempt: 1,
+      message: "Trying Neon",
+      attributes: { serverId: "luffy" },
+    },
+    {
+      type: "source:failed",
+      providerId: "videasy",
+      sourceId: "source:videasy:neon",
+      at: "2026-06-21T00:00:02.000Z",
+      attempt: 1,
+      message: "Neon failed",
+      attributes: { failureClass: "candidate-timeout", serverId: "luffy" },
+    },
+  ]);
+
+  expect(summary.eventCount).toBe(3);
+  expect(summary.lastEvent).toMatchObject({
+    type: "source:failed",
+    failureClass: "candidate-timeout",
+    serverId: "luffy",
+  });
+  expect(summary.sourceAttempts.map((event) => event.type)).toEqual([
+    "source:start",
+    "source:failed",
+  ]);
+});
+
+test("summarizeProviderTraceEvents prefers canonical cycle events over provider-local source notes", () => {
+  const summary = summarizeProviderTraceEvents([
+    {
+      type: "source:start",
+      providerId: "videasy",
+      sourceId: "source:videasy:mb-flix",
+      at: "2026-06-21T00:00:00.000Z",
+      message: "Trying Videasy source Luffy",
+    },
+    {
+      type: "source:start",
+      providerId: "videasy",
+      sourceId: "source:videasy:mb-flix",
+      at: "2026-06-21T00:00:00.000Z",
+      attempt: 1,
+      message: "Luffy",
+      attributes: { serverId: "mb-flix" },
+    },
+    {
+      type: "source:start",
+      providerId: "videasy",
+      sourceId: "source:videasy:mb-flix",
+      at: "2026-06-21T00:00:00.000Z",
+      attempt: 1,
+      message: "Luffy duplicate",
+      attributes: { serverId: "mb-flix" },
+    },
+  ]);
+
+  expect(summary.sourceAttempts).toEqual([
+    expect.objectContaining({
+      type: "source:start",
+      message: "Luffy",
+      sourceId: "source:videasy:mb-flix",
+      serverId: "mb-flix",
+    }),
+  ]);
 });

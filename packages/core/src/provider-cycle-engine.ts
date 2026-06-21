@@ -27,6 +27,7 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
   readonly intent?: ProviderCycleIntent;
   readonly signal?: AbortSignal;
   readonly now?: () => string;
+  readonly emit?: (event: ProviderTraceEvent) => void;
   readonly resolveCandidate: (
     candidate: ProviderCycleCandidate,
     context: ProviderCycleCandidateContext,
@@ -72,6 +73,7 @@ export async function runProviderCycle<TResolved>(
 
   const emit = (event: ProviderTraceEvent) => {
     events.push(event);
+    input.emit?.(event);
   };
 
   if (input.intent === "fallback-provider") {

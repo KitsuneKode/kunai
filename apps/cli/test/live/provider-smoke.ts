@@ -6,7 +6,12 @@ import type { StreamInfo, TitleInfo } from "@/domain/types";
 import type { StreamRequest } from "@/services/providers/Provider";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
-import type { ProviderResolveResult } from "@kunai/types";
+import {
+  ProviderResolveFailureError,
+  summarizeProviderTraceEvents,
+  type ProviderTraceEventSummary,
+} from "@kunai/core";
+import type { ProviderResolveResult, StartupPriority } from "@kunai/types";
 
 export type ProviderSmokePayload = {
   readonly ok: boolean;
@@ -30,6 +35,10 @@ export type ProviderSmokePayload = {
   readonly failureCodes: readonly string[];
   readonly failureMessages?: readonly string[];
   readonly streamCandidates?: number;
+  readonly traceEventCount?: number;
+  readonly lastTraceEvent?: ProviderTraceEventSummary | null;
+  readonly sourceAttempts?: readonly ProviderTraceEventSummary[];
+  readonly startupPriority?: StartupPriority;
   readonly isolatedProfile?: boolean;
   readonly profileRoot?: string;
   readonly error?: string;
@@ -155,18 +164,28 @@ export async function resolveProviderSmokeStream({
 
 export function providerSmokeError(
   error: unknown,
-): Pick<ProviderSmokePayload, "error" | "failureCodes"> {
-  const failure =
-    error &&
-    typeof error === "object" &&
-    "failure" in error &&
-    error.failure &&
-    typeof error.failure === "object"
-      ? (error.failure as { code?: unknown })
-      : null;
+): Pick<
+  ProviderSmokePayload,
+  | "error"
+  | "failureCodes"
+  | "failureMessages"
+  | "streamCandidates"
+  | "traceEventCount"
+  | "lastTraceEvent"
+  | "sourceAttempts"
+> {
+  const result = error instanceof ProviderResolveFailureError ? error.result : null;
+  const failure = error instanceof ProviderResolveFailureError ? error.failure : null;
+  const traceSummary = summarizeProviderTraceEvents(result?.trace.events);
 
   return {
     error: error instanceof Error ? error.message : String(error),
-    failureCodes: typeof failure?.code === "string" ? [failure.code] : [],
+    failureCodes: result?.failures.map((item) => item.code) ?? (failure ? [failure.code] : []),
+    failureMessages:
+      result?.failures.map((item) => item.message) ?? (failure ? [failure.message] : []),
+    streamCandidates: result?.streams.length ?? 0,
+    traceEventCount: traceSummary.eventCount,
+    lastTraceEvent: traceSummary.lastEvent,
+    sourceAttempts: traceSummary.sourceAttempts,
   };
 }

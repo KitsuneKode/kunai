@@ -1,5 +1,6 @@
 import type { TitleInfo } from "@/domain/types";
 import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
+import type { StartupPriority } from "@kunai/types";
 
 import {
   buildProviderSmokePayload,
@@ -9,19 +10,20 @@ import {
   resolveProviderSmokeStream,
 } from "./provider-smoke";
 
-const profile = createProviderSmokeProfile("vidking");
-const args = process.argv.slice(2);
+const profile = createProviderSmokeProfile("videasy");
+const args = process.argv.slice(1);
 
 const season = Number(args[0] ?? "1");
 const episode = Number(args[1] ?? "2");
 const clearCache = process.env.KITSUNE_CLEAR_CACHE === "1";
+const startupPriority = resolveSmokeStartupPriority(process.env.KITSUNE_SMOKE_STARTUP_PRIORITY);
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
-const provider = container.providerRegistry.get("vidking");
+const provider = container.providerRegistry.get("videasy");
 
 if (!provider) {
-  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_vidking" }));
+  console.error(JSON.stringify({ ok: false, stage: "provider", reason: "missing_videasy" }));
   process.exit(1);
 }
 
@@ -41,13 +43,14 @@ let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
 const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
-  providerId: "vidking",
+  providerId: "videasy",
   mode: "series",
   request: {
     title,
     episode: { season, episode },
     audioPreference: container.config.seriesLanguageProfile.audio,
     subtitlePreference: container.config.seriesLanguageProfile.subtitle,
+    startupPriority,
   },
 })
   .then((resolved) => {
@@ -71,7 +74,7 @@ const streamProbe = stream?.url
 
 const payload = {
   ...buildProviderSmokePayload({
-    provider: "vidking",
+    provider: "videasy",
     title,
     season,
     episode,
@@ -86,15 +89,20 @@ const payload = {
   streamReachable: streamProbe ? isStreamReachableForResolve(streamProbe) : false,
   streamProbeStatus: streamProbe?.status ?? null,
   ...providerSmokeProfilePayload(profile),
-  provider: "vidking",
+  provider: "videasy",
   subtitleUrl: stream?.subtitle ?? null,
   subtitleSource: stream?.subtitleSource ?? null,
   subtitleEvidence: stream?.subtitleEvidence ?? null,
   cacheCleared: clearCache,
+  startupPriority,
 };
 
 console.log(JSON.stringify(payload, null, 2));
 
 if (!stream?.url || !streamProbe || !isStreamReachableForResolve(streamProbe)) {
   process.exit(1);
+}
+
+function resolveSmokeStartupPriority(value: string | undefined): StartupPriority {
+  return value === "fast" || value === "balanced" || value === "quality-first" ? value : "balanced";
 }

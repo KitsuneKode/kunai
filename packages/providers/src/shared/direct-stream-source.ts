@@ -127,6 +127,13 @@ export async function resolveDirectStreamSource(
     providerId,
     message: `Started ${label} direct resolution`,
   });
+  emitTraceEvent(events, context, {
+    type: "source:start",
+    providerId,
+    sourceId,
+    message: `Trying ${label} direct source`,
+    attributes: { host },
+  });
 
   try {
     const payload = await fetchPayload({
@@ -201,6 +208,15 @@ export async function resolveDirectStreamSource(
       }
       streamReachabilityVerified = true;
     }
+
+    emitTraceEvent(events, context, {
+      type: "source:success",
+      providerId,
+      sourceId,
+      streamId: selectedStream.id,
+      message: `${label} selected ${selectedStream.qualityLabel ?? "auto"} stream`,
+      attributes: { streams: streams.length },
+    });
 
     const subtitles = normalizeSubtitles(
       payload?.subtitles ?? [],
@@ -295,6 +311,13 @@ export async function resolveDirectStreamSource(
       at: context.now(),
     };
     failures.push(failure);
+    emitTraceEvent(events, context, {
+      type: "source:failed",
+      providerId,
+      sourceId,
+      message: `${label} direct source failed`,
+      attributes: { code: failure.code },
+    });
     return createExhaustedResult(input, context, providerId, failure, {
       cachePolicy,
       events,

@@ -3,7 +3,7 @@ import type { StreamInfo } from "@/domain/types";
 import { withDiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
-import type { ProviderEngine, ProviderEngineEvent } from "@kunai/core";
+import type { ProviderEngine, ProviderEngineEvent, ProviderPriorityInput } from "@kunai/core";
 import type { ProviderHealthRepository } from "@kunai/storage";
 
 import {
@@ -36,10 +36,7 @@ export type PlaybackResolveCoordinatorDeps = {
   readonly streamHealth?: StreamHealthChecker;
   readonly streamHealthService?: StreamHealthService;
   readonly diagnostics?: DiagnosticsService;
-  readonly getProviderPriority?: () => {
-    readonly providerPriority: readonly string[];
-    readonly animeProviderPriority: readonly string[];
-  };
+  readonly getProviderPriority?: () => ProviderPriorityInput;
   readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
   readonly titleProviderHealth?: Pick<
     TitleProviderHealthService,
