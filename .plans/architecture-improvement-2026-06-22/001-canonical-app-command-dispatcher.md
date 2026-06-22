@@ -121,12 +121,13 @@ bun run test
 
 - `apps/cli/src/app-shell/active-playback-command-dispatcher.ts` centralizes active playback command effects.
 - Active playback command palette actions and app-owned playback hotkeys now route through `dispatchActivePlaybackCommand(...)`.
+- `apps/cli/src/app-shell/app-command-dispatcher.ts` now exposes the public app command dispatch seam and delegates active playback commands through the shared dispatcher.
 - Direct duplicate handlers in `ink-shell.tsx` for next, previous, recover, fallback, source, quality, episode, autoplay, autoskip, stop-after-current, stop, and return-to-search were replaced with command-dispatch calls.
 - `apps/cli/test/unit/app-shell/active-playback-command-dispatcher.test.ts` covers fallback cancellation, source/quality/audio/subtitle picker routing, disabled next, and player-control delegation for next/previous/quit.
+- `apps/cli/test/unit/app-shell/app-command-dispatcher.test.ts` proves active playback commands enter through the public app dispatcher seam.
 
 Remaining:
 
-- Rename or wrap the active playback dispatcher as a truly generic `app-command-dispatcher.ts` if root/search/post-play command effects need one public entry point.
 - Migrate root overlay command effects after root content state is no longer module-global.
 - Add disabled-result propagation to visible UI copy instead of only returning ignored.
 

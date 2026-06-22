@@ -35,7 +35,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { dispatchActivePlaybackCommand } from "./active-playback-command-dispatcher";
+import { dispatchAppCommand } from "./app-command-dispatcher";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
@@ -890,36 +890,40 @@ function AppRoot({ container }: { container: Container }) {
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
-      void dispatchActivePlaybackCommand(action, {
-        deps: {
-          playerControl: container.playerControl,
-          workControl: container.workControl,
-          stateManager: container.stateManager,
-          openStreamSelectionPicker: async (_deps, pickerAction, reason) => {
-            await openPlaybackStreamSelectionPicker(container, pickerAction, reason);
+      void dispatchAppCommand({
+        action,
+        source: "runtime",
+        activePlayback: {
+          deps: {
+            playerControl: container.playerControl,
+            workControl: container.workControl,
+            stateManager: container.stateManager,
+            openStreamSelectionPicker: async (_deps, pickerAction, reason) => {
+              await openPlaybackStreamSelectionPicker(container, pickerAction, reason);
+            },
+            openEpisodePicker: async (_deps, reason) => {
+              await openActivePlaybackEpisodePicker(container, reason);
+            },
+            enqueueCurrentPlaybackDownload: async (_deps, reason) => {
+              const { enqueueCurrentPlaybackDownload } = await import("./workflows");
+              await enqueueCurrentPlaybackDownload({
+                container,
+                reason,
+              });
+            },
+            switchSessionMode: () => {
+              switchSessionMode(container.stateManager);
+            },
+            routeSearchShellAction: async (nextAction) => {
+              const { routeSearchShellAction } = await import("./command-router");
+              return routeSearchShellAction({ action: nextAction, container });
+            },
+            setExiting,
           },
-          openEpisodePicker: async (_deps, reason) => {
-            await openActivePlaybackEpisodePicker(container, reason);
-          },
-          enqueueCurrentPlaybackDownload: async (_deps, reason) => {
-            const { enqueueCurrentPlaybackDownload } = await import("./workflows");
-            await enqueueCurrentPlaybackDownload({
-              container,
-              reason,
-            });
-          },
-          switchSessionMode: () => {
-            switchSessionMode(container.stateManager);
-          },
-          routeSearchShellAction: async (nextAction) => {
-            const { routeSearchShellAction } = await import("./command-router");
-            return routeSearchShellAction({ action: nextAction, container });
-          },
-          setExiting,
+          canGoNext,
+          canGoPrevious,
+          canToggleAutoplay,
         },
-        canGoNext,
-        canGoPrevious,
-        canToggleAutoplay,
       });
     },
     [container, canGoNext, canGoPrevious, canToggleAutoplay, setExiting],

@@ -1,5 +1,6 @@
 import type { ShellChrome } from "@/container";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import { Command } from "commander";
 
 export type CliArgs = {
   search?: string;
@@ -137,10 +138,136 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--check",
 ]);
 
-// Simple CLI arg parser. Commander remains a reasonable future parser, but this
-// module keeps the current behavior isolated and tested until that migration is
-// worth the extra dependency.
+const VALUE_FLAGS: ReadonlySet<string> = new Set([
+  "-S",
+  "--search",
+  "-i",
+  "--id",
+  "-t",
+  "--type",
+  "--jump",
+  "--download-path",
+  "--handoff-url",
+  "--mpv-log-file",
+]);
+
+type CommanderCliOptions = {
+  readonly search?: string;
+  readonly id?: string;
+  readonly type?: string;
+  readonly anime?: boolean;
+  readonly minimal?: boolean;
+  readonly zen?: boolean;
+  readonly quick?: boolean;
+  readonly jump?: string;
+  readonly debug?: boolean;
+  readonly debugJson?: boolean;
+  readonly debugSession?: boolean;
+  readonly setup?: boolean;
+  readonly offline?: boolean;
+  readonly discover?: boolean;
+  readonly calendar?: boolean;
+  readonly random?: boolean;
+  readonly history?: boolean;
+  readonly continue?: boolean;
+  readonly resume?: boolean;
+  readonly download?: boolean;
+  readonly downloadPath?: string;
+  readonly handoffUrl?: string;
+  readonly installProtocolHandler?: boolean;
+  readonly dryRun?: boolean;
+  readonly mpvDebug?: boolean;
+  readonly mpvClean?: boolean;
+  readonly noUserMpvConfig?: boolean;
+  readonly mpvLogFile?: string;
+  readonly help?: boolean;
+  readonly version?: boolean;
+  readonly uninstall?: boolean;
+};
+
+function createCliCommand(): Command {
+  return new Command()
+    .name("kunai")
+    .exitOverride()
+    .allowUnknownOption(true)
+    .allowExcessArguments(true)
+    .helpOption(false)
+    .option("-S, --search <query>")
+    .option("-i, --id <id>")
+    .option("-t, --type <type>")
+    .option("-a, --anime")
+    .option("-m, --minimal")
+    .option("-z, --zen")
+    .option("-q, --quick")
+    .option("--jump <n>")
+    .option("--debug")
+    .option("--debug-json")
+    .option("--debug-session")
+    .option("--setup")
+    .option("--offline")
+    .option("--discover")
+    .option("--calendar")
+    .option("--random")
+    .option("--history")
+    .option("--continue")
+    .option("--resume")
+    .option("--download")
+    .option("--download-path <dir>")
+    .option("--handoff-url <url>")
+    .option("--install-protocol-handler")
+    .option("--dry-run")
+    .option("--mpv-debug")
+    .option("--mpv-clean")
+    .option("--no-user-mpv-config")
+    .option("--mpv-log-file <path>")
+    .option("-h, --help")
+    .option("-v, --version")
+    .option("--uninstall")
+    .argument("[query...]");
+}
+
+function normalizeCliArgv(argv: readonly string[]): {
+  readonly argv: readonly string[];
+  readonly warnings: readonly string[];
+} {
+  const normalized: string[] = [];
+  const warnings: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (!arg) continue;
+    if (VALUE_FLAGS.has(arg)) {
+      const next = argv[i + 1];
+      if (next === undefined || KNOWN_FLAGS.has(next)) {
+        warnings.push(`${arg} expected a value`);
+      } else {
+        normalized.push(arg, next);
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith("-") && arg !== "-" && !KNOWN_FLAGS.has(arg)) {
+      warnings.push(`unknown option ${arg}`);
+      continue;
+    }
+    normalized.push(arg);
+  }
+  return { argv: normalized, warnings };
+}
+
+// Process argv parsing is intentionally delegated to Commander so Kunai does
+// not grow a bespoke CLI parser as subcommands and flags mature.
 export function parseCliArgs(argv: readonly string[]): CliArgs {
+  const normalized = normalizeCliArgv(argv);
+  const command = createCliCommand();
+  command.configureOutput({
+    writeErr: () => {},
+    writeOut: () => {},
+  });
+  command.parse([...normalized.argv], { from: "user" });
+  const options = command.opts<CommanderCliOptions>();
+  const warnings = [...normalized.warnings];
+  const positionals = command.args.filter((arg) => arg !== undefined && !arg.startsWith("-"));
+
   const args: Omit<CliArgs, "shellChrome"> = {
     anime: false,
     debug: false,
@@ -161,98 +288,48 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     version: false,
     uninstall: false,
   };
-  const warnings: string[] = [];
-  const positionals: string[] = [];
-  let i = 0;
-  const takeValue = (flag: string): string | undefined => {
-    const next = argv[i + 1];
-    if (next === undefined || KNOWN_FLAGS.has(next)) {
-      warnings.push(`${flag} expected a value`);
-      return undefined;
-    }
-    i += 1;
-    return next;
-  };
 
-  for (; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "-S" || arg === "--search") {
-      args.search = takeValue(arg);
-    } else if (arg === "-i" || arg === "--id") {
-      args.id = takeValue(arg);
-    } else if (arg === "-t" || arg === "--type") {
-      const rawType = takeValue(arg);
-      args.type = rawType === "tv" ? "series" : rawType;
-    } else if (arg === "-a" || arg === "--anime") {
-      args.anime = true;
-    } else if (arg === "-m" || arg === "--minimal") {
-      args.minimal = true;
-    } else if (arg === "-z" || arg === "--zen") {
-      args.zen = true;
-      args.minimal = true;
-      args.quick = true;
-    } else if (arg === "-q" || arg === "--quick") {
-      args.quick = true;
-    } else if (arg === "--jump") {
-      const raw = takeValue(arg);
-      const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-      if (Number.isFinite(parsed) && parsed >= 1) {
-        args.jump = parsed;
-      }
-    } else if (arg === "--debug") {
-      args.debug = true;
-    } else if (arg === "--debug-json") {
-      args.debug = true;
-      args.debugJson = true;
-    } else if (arg === "--debug-session") {
-      args.debug = true;
-      args.debugJson = true;
-      args.debugSession = true;
-    } else if (arg === "--setup") {
-      args.setup = true;
-    } else if (arg === "--offline") {
-      args.offline = true;
-    } else if (arg === "--discover") {
-      args.initialRoute = "recommendation";
-    } else if (arg === "--calendar") {
-      args.initialRoute = "calendar";
-    } else if (arg === "--random") {
-      args.initialRoute = "random";
-    } else if (arg === "--history") {
-      args.history = true;
-    } else if (arg === "--continue" || arg === "--resume") {
-      args.continuePlayback = true;
-    } else if (arg === "--download") {
-      args.download = true;
-    } else if (arg === "--download-path") {
-      args.downloadPath = takeValue(arg);
-    } else if (arg === "--handoff-url") {
-      args.handoffUrl = takeValue(arg);
-    } else if (arg === "--install-protocol-handler") {
-      args.installProtocolHandler = true;
-    } else if (arg === "--dry-run") {
-      args.dryRun = true;
-    } else if (arg === "--mpv-debug") {
-      args.mpv = { ...args.mpv, debug: true };
-    } else if (arg === "--mpv-clean") {
-      args.mpv = { ...args.mpv, clean: true };
-    } else if (arg === "--no-user-mpv-config") {
-      args.mpv = { ...args.mpv, noUserConfig: true };
-    } else if (arg === "--mpv-log-file") {
-      const value = takeValue(arg);
-      if (value) args.mpv = { ...args.mpv, logFile: value };
-    } else if (arg === "-h" || arg === "--help") {
-      args.help = true;
-    } else if (arg === "-v" || arg === "--version") {
-      args.version = true;
-    } else if (arg === "--uninstall") {
-      args.uninstall = true;
-    } else if (arg !== undefined && arg.startsWith("-") && arg !== "-") {
-      warnings.push(`unknown option ${arg}`);
-    } else if (arg !== undefined) {
-      positionals.push(arg);
-    }
+  args.search = options.search;
+  args.id = options.id;
+  if (options.type !== undefined) args.type = options.type === "tv" ? "series" : options.type;
+  args.anime = Boolean(options.anime);
+  args.minimal = Boolean(options.minimal);
+  args.zen = Boolean(options.zen);
+  args.quick = Boolean(options.quick);
+  if (args.zen) {
+    args.minimal = true;
+    args.quick = true;
   }
+
+  const parsedJump = options.jump ? Number.parseInt(options.jump, 10) : Number.NaN;
+  if (Number.isFinite(parsedJump) && parsedJump >= 1) {
+    args.jump = parsedJump;
+  }
+
+  args.debug = Boolean(options.debug || options.debugJson || options.debugSession);
+  args.debugJson = Boolean(options.debugJson || options.debugSession);
+  args.debugSession = Boolean(options.debugSession);
+  args.setup = Boolean(options.setup);
+  args.offline = Boolean(options.offline);
+  if (options.discover) args.initialRoute = "recommendation";
+  if (options.calendar) args.initialRoute = "calendar";
+  if (options.random) args.initialRoute = "random";
+  args.history = Boolean(options.history);
+  args.continuePlayback = Boolean(options.continue || options.resume);
+  args.download = Boolean(options.download);
+  args.downloadPath = options.downloadPath;
+  args.handoffUrl = options.handoffUrl;
+  args.installProtocolHandler = Boolean(options.installProtocolHandler);
+  args.dryRun = Boolean(options.dryRun);
+  args.mpv = {
+    ...(options.mpvDebug ? { debug: true } : {}),
+    ...(options.mpvClean ? { clean: true } : {}),
+    ...(options.noUserMpvConfig ? { noUserConfig: true } : {}),
+    ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
+  };
+  args.help = Boolean(options.help);
+  args.version = Boolean(options.version);
+  args.uninstall = Boolean(options.uninstall);
 
   if (args.search === undefined && args.id === undefined && positionals.length > 0) {
     args.search = positionals.join(" ");
