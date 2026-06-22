@@ -17,12 +17,11 @@ function parseSemver(version: string): [number, number, number] {
 }
 
 function compareSemverDesc(a: string, b: string): number {
-  const av = parseSemver(a);
-  const bv = parseSemver(b);
-  for (let i = 0; i < 3; i++) {
-    if (av[i] !== bv[i]) return bv[i]! - av[i]!;
-  }
-  return 0;
+  const [am, an, ap] = parseSemver(a);
+  const [bm, bn, bp] = parseSemver(b);
+  if (bm !== am) return bm - am;
+  if (bn !== an) return bn - an;
+  return bp - ap;
 }
 
 async function listVersionDirs(versionsDir: string): Promise<string[]> {

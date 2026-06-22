@@ -216,9 +216,12 @@ export function resolveBuildConcurrency(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--jobs" && argv[i + 1]) {
-      const parsed = Number.parseInt(argv[i + 1]!, 10);
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    if (argv[i] === "--jobs") {
+      const jobsArg = argv[i + 1];
+      if (jobsArg !== undefined) {
+        const parsed = Number.parseInt(jobsArg, 10);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+      }
     }
   }
   const fromEnv = Number.parseInt(env.KUNAI_BUILD_JOBS ?? "", 10);
@@ -241,7 +244,9 @@ export async function mapWithConcurrency<T, R>(
       const index = nextIndex;
       nextIndex += 1;
       if (index >= items.length) return;
-      results[index] = await worker(items[index]!, index);
+      const item = items[index];
+      if (item === undefined) return;
+      results[index] = await worker(item, index);
     }
   }
 

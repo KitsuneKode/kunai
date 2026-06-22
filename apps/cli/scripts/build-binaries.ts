@@ -46,9 +46,12 @@ async function sha256(path: string): Promise<string> {
 function selectedTargets() {
   const ids: string[] = [];
   for (let i = 0; i < process.argv.length; i++) {
-    if (process.argv[i] === "--only" && process.argv[i + 1]) {
-      ids.push(process.argv[i + 1]!);
-      i += 1;
+    if (process.argv[i] === "--only") {
+      const targetId = process.argv[i + 1];
+      if (targetId !== undefined) {
+        ids.push(targetId);
+        i += 1;
+      }
     }
   }
   if (ids.length === 0) return RELEASE_BINARY_TARGETS;

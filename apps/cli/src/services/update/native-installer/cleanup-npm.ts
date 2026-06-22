@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readlink, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 const PKG = "@kitsunekode/kunai";
 

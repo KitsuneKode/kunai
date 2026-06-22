@@ -26,7 +26,8 @@ const TMDB_ANIMATION_GENRE_ID = 16;
 const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set(["allanime", "miruro"]);
 
 export function isAnimeOnlyProviderId(providerId: string | undefined | null): boolean {
-  return providerId != null && ANIME_ONLY_PROVIDER_IDS.has(providerId);
+  if (providerId === undefined || providerId === null) return false;
+  return ANIME_ONLY_PROVIDER_IDS.has(providerId);
 }
 
 /**
