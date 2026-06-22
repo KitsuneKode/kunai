@@ -1,6 +1,15 @@
 import { expect, test } from "bun:test";
 
-import { parseArgs } from "@/main";
+import { buildCliHelpText, parseCliArgs as parseArgs } from "@/cli-args";
+
+test("buildCliHelpText describes canonical launch flags", () => {
+  const help = buildCliHelpText("0.0.0-test");
+
+  expect(help).toContain("Kunai 0.0.0-test");
+  expect(help).toContain("-S, --search <query>");
+  expect(help).toContain("--continue, --resume");
+  expect(help).toContain("--install-protocol-handler");
+});
 
 test("parseArgs supports download-only mode", () => {
   const args = parseArgs(["--download", "-S", "Dune", "--download-path", "/tmp/kunai"]);

@@ -1,10 +1,25 @@
 # Plan 005: CLI Args and State Library Decisions
 
-Status: ready
+Status: implemented
 Priority: P2
 Effort: S-M
 Risk: Low-Medium
 Created: 2026-06-22
+
+## Implemented Slice
+
+Landed in the 2026-06-22 architecture pass:
+
+- Moved argv parsing and help text ownership into `apps/cli/src/cli-args.ts`.
+- Kept `main.ts` compatibility exports for older tests/imports while making launch orchestration the only meaningful owner in `main.ts`.
+- Added direct tests for `buildCliHelpText` and kept the existing parser behavior tests against the extracted parser.
+- Decided not to add Commander yet: the current parser is isolated and tested, and Commander can be adopted later if subcommands/help behavior outgrows this module.
+- Decided not to add Zustand for canonical session state: continue using `SessionStateManager` and `useSessionSelector`, with any future Zustand-like store limited to proven ephemeral shell UI state.
+
+Remaining follow-up:
+
+- Reconsider Commander after the action dispatcher and state ownership plans are complete.
+- Delete the `main.ts` compatibility parser exports once callers/tests import `cli-args.ts` directly.
 
 ## Decision Summary
 
