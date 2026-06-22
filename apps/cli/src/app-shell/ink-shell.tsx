@@ -466,6 +466,7 @@ export function useSessionState(stateManager: SessionStateManager) {
 function AppRoot({ container }: { container: Container }) {
   const { stateManager } = container;
   const state = useSessionState(stateManager);
+  const rootOverlay = useSessionSelector(stateManager, getRootOwnedOverlay);
   const screen = useRootShellScreen();
   const rootContent = useRootContentSession();
   const { cols: shellWidth, rows: shellHeight } = useShellDimensions();
@@ -810,7 +811,6 @@ function AppRoot({ container }: { container: Container }) {
       (notification) => notification.kind === "new-episode",
     ).length,
   });
-  const rootOverlay = getRootOwnedOverlay(state);
   const rootSurface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
     hasMountedScreen: Boolean(screen),

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { subscribeSessionSelector } from "@/app-shell/use-session-selector";
+import { shallowEqual, subscribeSessionSelector } from "@/app-shell/use-session-selector";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 import type { SessionState, StateTransition } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
@@ -68,5 +68,28 @@ describe("session selector subscriptions", () => {
     unsubscribe();
     manager.dispatch({ type: "SET_MODE", mode: "series", provider: "vidking" });
     expect(selectedModes).toEqual(["anime"]);
+  });
+
+  test("custom shallow equality prevents object selector churn", () => {
+    const manager = new TestSessionStateManager();
+    const selected: Array<{ mode: string; provider: string }> = [];
+
+    const unsubscribe = subscribeSessionSelector(
+      manager,
+      (state) => ({ mode: state.mode, provider: state.provider }),
+      (value) => {
+        selected.push(value);
+      },
+      shallowEqual,
+    );
+
+    manager.dispatch({ type: "SET_SEARCH_QUERY", query: "friends" });
+    manager.dispatch({ type: "SET_SEARCH_RESULTS", results: [] });
+    expect(selected).toEqual([]);
+
+    manager.dispatch({ type: "SET_PROVIDER", provider: "rivestream" });
+    expect(selected).toEqual([{ mode: "series", provider: "rivestream" }]);
+
+    unsubscribe();
   });
 });

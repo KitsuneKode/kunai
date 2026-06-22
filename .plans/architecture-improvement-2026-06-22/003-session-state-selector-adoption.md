@@ -1,6 +1,6 @@
 # Plan 003: Session State Selector Adoption
 
-Status: ready
+Status: partially implemented
 Priority: P1
 Effort: M
 Risk: Medium
@@ -88,6 +88,12 @@ bun run test
 - `useSessionSelector` is imported by the migrated surface instead of local revision state.
 - The migrated screen closes through reducer actions, not module-global subscriber notification.
 - No provider picker or playback behavior changes in this slice.
+
+## Implemented Slice
+
+- `use-session-selector.ts` now exports a tested `shallowEqual` helper for object selectors.
+- Root-owned overlay lookup in `AppRoot` now uses `useSessionSelector(...)` directly.
+- Existing root overlays already open and close through `SessionState.activeModals`; the remaining work is to migrate mounted helper screens/root content sessions off module-global subscriber sets one flow at a time.
 
 ## Rollback
 
