@@ -11,8 +11,8 @@ import type { LineEditorKey } from "@/app-shell/line-editor";
  * Accuracy note: the in-player ("player" scope) chords mirror the mpv Lua bridge
  * (`apps/cli/assets/mpv/kunai-bridge.lua`) exactly — `n`/`p` navigate, `b` skips,
  * `k` opens the quality picker in the terminal, Ctrl+R refreshes the stream, Alt+R
- * resumes to the saved position. The post-play keys mirror the footer actions built
- * in `ink-shell.tsx`. When you add or move a binding in those files, update it here.
+ * resumes to the saved position. Surface-specific hint builders read these bindings
+ * by action id, so changing a chord here updates help/footer playback copy together.
  */
 
 export type KeyScope =
@@ -39,6 +39,8 @@ export type KeyBinding = {
   readonly chord: KeyChord;
   /** Intent label shown in help + footer (e.g. "Back", "Next episode"). */
   readonly label: string;
+  /** Compact copy for dense hint rows, e.g. "next" instead of "Next episode". */
+  readonly hintLabel?: string;
   readonly scope: KeyScope;
   /** Group heading for the `?` help overlay. */
   readonly group: string;
@@ -83,6 +85,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "command-palette",
     chord: { input: "/" },
     label: "Open command palette",
+    hintLabel: "commands",
     scope: "global",
     group: "Global",
     footerPriority: 20,
@@ -91,6 +94,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "help",
     chord: { input: "?" },
     label: "Show this help",
+    hintLabel: "help",
     scope: "global",
     group: "Global",
     footerPriority: 40,
@@ -99,6 +103,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "back",
     chord: { named: "escape" },
     label: "Back · close panel · clear filter",
+    hintLabel: "back",
     scope: "global",
     group: "Global",
     footerPriority: 30,
@@ -107,6 +112,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "quit",
     chord: { input: "c", ctrl: true },
     label: "Quit",
+    hintLabel: "quit",
     scope: "global",
     group: "Global",
     footerPriority: 50,
@@ -154,6 +160,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-open",
     chord: { named: "return" },
     label: "Open the highlighted title",
+    hintLabel: "open",
     scope: "browse",
     group: "While browsing",
     footerPriority: 10,
@@ -162,6 +169,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-mode",
     chord: { named: "tab" },
     label: "Switch series / anime mode",
+    hintLabel: "mode",
     scope: "browse",
     group: "While browsing",
     footerPriority: 15,
@@ -208,6 +216,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-stop",
     chord: { input: "q" },
     label: "Stop playback",
+    hintLabel: "stop",
     scope: "player",
     group: "In the player",
     footerPriority: 5,
@@ -217,6 +226,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "n" },
     display: "n / N",
     label: "Next episode",
+    hintLabel: "next",
     scope: "player",
     group: "In the player",
     footerPriority: 10,
@@ -226,6 +236,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "p" },
     display: "p / P",
     label: "Previous episode",
+    hintLabel: "prev",
     scope: "player",
     group: "In the player",
     footerPriority: 15,
@@ -234,6 +245,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-fallback",
     chord: { input: "f" },
     label: "Fallback to another provider",
+    hintLabel: "fallback",
     scope: "player",
     group: "In the player",
     footerPriority: 20,
@@ -242,6 +254,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-source",
     chord: { input: "o" },
     label: "Choose source",
+    hintLabel: "source",
     scope: "player",
     group: "In the player",
     footerPriority: 25,
@@ -250,6 +263,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-episode",
     chord: { input: "e" },
     label: "Choose episode",
+    hintLabel: "episodes",
     scope: "player",
     group: "In the player",
     footerPriority: 30,
@@ -280,6 +294,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-autoplay",
     chord: { input: "a" },
     label: "Toggle autoplay",
+    hintLabel: "autoplay",
     scope: "player",
     group: "In the player",
     footerPriority: 35,
@@ -288,6 +303,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-autoskip",
     chord: { input: "u" },
     label: "Toggle autoskip",
+    hintLabel: "autoskip",
     scope: "player",
     group: "In the player",
     footerPriority: 40,
@@ -296,6 +312,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-stop-after-current",
     chord: { input: "x" },
     label: "Stop after current episode",
+    hintLabel: "stop after",
     scope: "player",
     group: "In the player",
     footerPriority: 45,
@@ -319,6 +336,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "k" },
     display: "k / K",
     label: "Choose quality (in the terminal; v in mpv)",
+    hintLabel: "quality",
     scope: "player",
     group: "In the player",
   },
@@ -343,6 +361,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-continue",
     chord: { input: "n" },
     label: "Continue / next",
+    hintLabel: "continue",
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 10,
@@ -351,6 +370,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-replay",
     chord: { input: "r" },
     label: "Replay this episode",
+    hintLabel: "replay",
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 15,
@@ -380,6 +400,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-fallback",
     chord: { input: "f" },
     label: "Fallback to another provider",
+    hintLabel: "fallback",
     scope: "postPlayback",
     group: "After playback",
   },
@@ -387,6 +408,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-source",
     chord: { input: "o" },
     label: "Choose source",
+    hintLabel: "source",
     scope: "postPlayback",
     group: "After playback",
   },
@@ -541,7 +563,7 @@ export function footerHints(scope: KeyScope, max?: number): readonly KeyHint[] {
   const hints = bindingsForScope(scope)
     .filter((binding) => binding.footerPriority !== undefined && !binding.helpOnly)
     .sort((a, b) => (a.footerPriority ?? 0) - (b.footerPriority ?? 0))
-    .map((binding) => ({ keys: bindingKeys(binding), label: binding.label }));
+    .map((binding) => ({ keys: bindingKeys(binding), label: binding.hintLabel ?? binding.label }));
   return max === undefined ? hints : hints.slice(0, max);
 }
 

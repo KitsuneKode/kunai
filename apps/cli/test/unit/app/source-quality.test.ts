@@ -9,7 +9,6 @@ import {
   buildStreamPickerOptions,
   decodeMediaTrackPickerSelection,
   formatPlaybackSessionFactsStrip,
-  formatPlaybackSessionKeysHint,
   isCurrentStreamSelection,
   streamSelectionFromSource,
   streamSelectionFromStream,
@@ -290,31 +289,6 @@ test("formatPlaybackSessionFactsStrip surfaces stream inventory only", () => {
   expect(strip).toContain("2 sources");
   expect(strip).not.toContain("autoplay");
   expect(strip).not.toContain("autoskip");
-});
-
-test("formatPlaybackSessionKeysHint lists session state and only available nav keys", () => {
-  const hint = formatPlaybackSessionKeysHint({
-    stream: streamWithSubtitles,
-    autoplayPaused: false,
-    autoskipPaused: true,
-    canToggleAutoplay: true,
-    hasNextEpisode: true,
-    hasPreviousEpisode: false,
-    isSeries: true,
-    stopAfterCurrent: false,
-  });
-
-  expect(hint).toContain("autoplay on");
-  expect(hint).toContain("autoskip paused");
-  expect(hint).toContain("q stop");
-  expect(hint).toContain("n next");
-  expect(hint).not.toContain("p prev");
-  expect(hint).not.toContain("—");
-  expect(hint).not.toContain("k tracks");
-  expect(hint).not.toContain("t tracks");
-  expect(hint).toContain("o source");
-  expect(hint).toContain("k quality");
-  expect(hint).toContain("/ commands");
 });
 
 test("buildPlaybackControlSummary keeps one-off direct streams compact", () => {

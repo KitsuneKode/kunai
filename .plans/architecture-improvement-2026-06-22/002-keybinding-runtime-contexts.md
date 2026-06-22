@@ -1,6 +1,6 @@
 # Plan 002: Keybinding Runtime Contexts
 
-Status: ready
+Status: partially implemented
 Priority: P0
 Effort: M
 Risk: Medium
@@ -17,8 +17,6 @@ Current evidence:
 - `apps/cli/test/unit/app-shell/keybindings.test.ts` and `keybindings-collision.test.ts` validate the registry.
 - Runtime usage is not equivalent:
   - `apps/cli/src/app-shell/shell-command-input.ts` matches footer actions directly by `action.key === input.toLowerCase()`.
-  - `apps/cli/src/app/source-quality.ts` builds playback key text manually in `formatPlaybackSessionKeysHint`.
-  - `apps/cli/src/app-shell/ink-shell.tsx` imports and renders `formatPlaybackSessionKeysHint`.
   - multiple surfaces call `useInput` directly.
 
 The result is drift: the help overlay can say one thing, footers another thing, and handlers can still be bound by local component logic.
@@ -116,6 +114,21 @@ bun run test
 - A command shown in the player footer has the same action id used by the handler.
 - Help-only bindings remain visible in help but cannot be executed accidentally.
 - No new user keybinding config exists; internal truth comes first.
+
+## Implemented Slice
+
+- Playback session key hints moved from `apps/cli/src/app/source-quality.ts` to `apps/cli/src/app-shell/playback-session-key-hints.ts`.
+- `source-quality.ts` now owns stream/source facts only; shell presentation owns key copy.
+- `KeyBinding` gained optional `hintLabel` metadata for dense UI rows while help overlays keep full labels.
+- `footerHints(...)` now uses `hintLabel` when present, reducing footer/help copy drift.
+- `formatPlaybackSessionKeysHint(...)` derives player/source/quality/episode/command keys from `KEYBINDINGS` by action id and filters unavailable actions from playback capability state.
+- `apps/cli/test/unit/app-shell/playback-session-key-hints.test.ts` proves playback hints follow keybinding registry changes.
+
+Remaining:
+
+- Route player hotkeys themselves through the runtime resolver and Plan 001 dispatcher.
+- Migrate post-playback footer actions to the same registry + dispatcher path.
+- Delete local `useInput`/footer action duplication only after matching focused tests are in place.
 
 ## Rollback
 

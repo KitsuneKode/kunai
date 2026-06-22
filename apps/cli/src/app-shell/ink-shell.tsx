@@ -1,5 +1,6 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
+import { formatPlaybackSessionKeysHint } from "@/app-shell/playback-session-key-hints";
 import { switchSessionMode } from "@/app/mode-switch";
 import {
   buildPlaybackBootstrapPresentation,
@@ -8,7 +9,6 @@ import {
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
 import {
   formatPlaybackSessionFactsStrip,
-  formatPlaybackSessionKeysHint,
   formatPlaybackSourceLine,
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,

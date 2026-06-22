@@ -400,60 +400,6 @@ export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInp
   return control.summary;
 }
 
-export type PlaybackSessionKeysInput = PlaybackSessionControlInput & {
-  readonly hasNextEpisode: boolean;
-  readonly hasPreviousEpisode: boolean;
-};
-
-function appendPlaybackSessionStatusChips(
-  parts: string[],
-  input: Pick<
-    PlaybackSessionKeysInput,
-    "autoplayPaused" | "autoskipPaused" | "canToggleAutoplay" | "stopAfterCurrent" | "isSeries"
-  >,
-): void {
-  if (input.canToggleAutoplay) {
-    parts.push(input.autoplayPaused ? "autoplay paused" : "autoplay on");
-  }
-  parts.push(input.autoskipPaused ? "autoskip paused" : "autoskip on");
-  if (input.isSeries && input.stopAfterCurrent) {
-    parts.push("stops after ep");
-  }
-}
-
-/** Session state + live-key legend (one line; omit nav keys when unavailable). */
-export function formatPlaybackSessionKeysHint(input: PlaybackSessionKeysInput): string {
-  const control = buildPlaybackControlSummary(input.stream);
-  const parts: string[] = [];
-
-  appendPlaybackSessionStatusChips(parts, input);
-  parts.push("q stop");
-
-  if (input.isSeries) {
-    if (input.hasNextEpisode) parts.push("n next");
-    if (input.hasPreviousEpisode) parts.push("p prev");
-    parts.push(input.stopAfterCurrent ? "x resume chain" : "x stop after");
-  }
-
-  if (input.canToggleAutoplay) {
-    parts.push("a autoplay");
-  }
-  parts.push("u autoskip");
-
-  if (control.showSourceControl) {
-    parts.push("o source");
-  }
-  if (control.showQualityControl) {
-    parts.push("k quality");
-  }
-  if (input.isSeries) {
-    parts.push("e episodes");
-  }
-
-  parts.push("/ commands");
-  return parts.join(" · ");
-}
-
 export function applyPreferredStreamSelection(
   stream: StreamInfo,
   selection: StreamSelectionIntent,
