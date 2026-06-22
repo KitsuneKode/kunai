@@ -41,6 +41,8 @@ Every release publishes exactly these asset names:
 ```
 kunai-linux-x64
 kunai-linux-arm64
+kunai-linux-x64-musl
+kunai-linux-arm64-musl
 kunai-darwin-x64
 kunai-darwin-arm64
 kunai-windows-x64.exe

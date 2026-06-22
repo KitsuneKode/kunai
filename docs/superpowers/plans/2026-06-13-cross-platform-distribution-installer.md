@@ -1,5 +1,7 @@
 # Cross-Platform Distribution & Installer — Implementation Plan
 
+> **Status (2026-06):** Superseded in part by the native installer layer. Lifecycle is **`kunai upgrade` / `kunai uninstall` only** (no `uninstall.sh`, no `--uninstall` flag). Binary installs use a **versioned store** (`dataDir/versions/X.Y.Z/`) + launcher symlink. See `docs/users/install-and-update.mdx` and `apps/cli/src/services/update/native-installer/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship Kunai as zero-prerequisite compiled binaries with a coherent, channel-aware install/upgrade/uninstall system across Linux, macOS, and Windows, while keeping npm/bun/source as first-class fallbacks.

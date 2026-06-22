@@ -3,17 +3,34 @@ title: Install And Update
 description: Install Kunai across platforms and keep source, global, and packaged installs current.
 ---
 
-Kunai supports global package installs, installer scripts, and source checkouts. During beta you need **Bun** and **mpv** on your PATH for the supported workflow. Packaged binaries may appear on GitHub Releases depending on platform — the installer detects what is available.
+Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime — you do not need Bun installed to run them. npm/bun/source channels still require Bun for the JS bundle runtime.
 
 <ScopeCallout variant="beta" />
 
 ## Install paths
 
-<Tabs items={["Installer script", "Bun global", "npm global", "Source"]}>
-<Tab value="Installer script">
+<Tabs items={["Linux / macOS", "Windows", "Bun global", "npm global", "Source"]}>
+<Tab value="Linux / macOS">
+
+Default — downloads a verified release binary into a versioned store and links `~/.local/bin/kunai`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+```
+
+Or from an existing Kunai binary:
+
+```sh
+kunai install
+kunai install --force 1.2.3
+```
+
+On-disk layout (binary channel):
+
+```text
+~/.local/share/kunai/versions/X.Y.Z/kunai   # versioned binary
+~/.local/bin/kunai                            # launcher symlink
+~/.config/kunai/install.json                  # channel manifest
 ```
 
 Dry run first when you want to inspect actions:
@@ -21,6 +38,19 @@ Dry run first when you want to inspect actions:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 ```
+
+Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`.
+
+</Tab>
+<Tab value="Windows">
+
+```powershell
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, adds that directory to your **User** PATH, and records the install channel in `%APPDATA%\kunai\install.json`.
+
+Supported binary targets: `windows-x64`, `windows-arm64`.
 
 </Tab>
 <Tab value="Bun global">
@@ -38,6 +68,8 @@ npm install -g @kitsunekode/kunai
 kunai
 ```
 
+Global npm installs write `install.json` automatically via `postinstall` so `kunai upgrade` routes correctly.
+
 </Tab>
 <Tab value="Source">
 
@@ -52,9 +84,38 @@ kunai
 </Tab>
 </Tabs>
 
+## Unsigned binaries (beta)
+
+Release binaries are **not code-signed or notarized** today. That is intentional for beta:
+
+- **Windows:** SmartScreen may warn on first run. After download, `install.ps1` runs `Unblock-File` on the staged binary. You can also run `Unblock-File` manually on `kunai.exe`, or right-click → Properties → Unblock.
+- **macOS:** Gatekeeper may block unsigned binaries. Remove the quarantine attribute if needed: `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
+- **Linux:** No signing step; verify downloads against the `SHA256SUMS` file published on each GitHub Release.
+
+Production code signing and notarization are a post-beta goal, not a beta blocker.
+
+## Lifecycle (CLI only)
+
+After install, all lifecycle commands run through the binary:
+
+```text
+kunai install              # binary install/reinstall (default)
+kunai uninstall            # channel-aware removal
+kunai uninstall --purge    # also delete config/history/cache
+kunai upgrade              # channel-aware self-update
+kunai upgrade --check      # report only (+ install diagnostics)
+```
+
+Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall — that matches how Claude Code and other production CLIs keep a single owner for lifecycle logic inside the binary.
+
+`kunai --version` shows the active install channel when `install.json` is present.
+
 ## Update checks
 
-Kunai may run a **cached, non-blocking** background update check at startup. It never runs package managers or installers silently.
+Kunai runs a **cached, non-blocking** background update check at startup.
+
+- **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
+- **npm/bun/source:** notify-only — run `kunai upgrade` or your package manager manually.
 
 Manual check from the shell:
 
@@ -66,12 +127,40 @@ The update panel shows install-method-aware guidance:
 
 | Install method | Typical update path |
 | --- | --- |
+| Binary (default) | `kunai upgrade` or background auto-apply (restart to pick up) |
 | Source checkout | Pull the repository, refresh dependencies/build as needed |
-| Bun global | `bun update --global @kitsunekode/kunai` |
-| npm global | `npm install -g @kitsunekode/kunai` |
-| Packaged binary | Download the latest GitHub Release manually |
+| Bun global | `bun update --global @kitsunekode/kunai` or `kunai upgrade` |
+| npm global | `npm install -g @kitsunekode/kunai` or `kunai upgrade` |
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
+
+## Platform gaps (current)
+
+| Platform | Status |
+| --- | --- |
+| Linux glibc x64/arm64 | Supported via release binaries |
+| macOS x64/arm64 (Apple Silicon) | Supported via release binaries |
+| Windows x64/arm64 | Supported via release binaries |
+| Linux musl (Alpine) | Supported via `kunai-linux-*-musl` release binaries |
+| FreeBSD / BSD | Not published — use npm/bun/source |
+| Code signing / notarization | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
+
+Override the download mirror for air-gapped or future CDN hosting:
+
+```sh
+KUNAI_DL_BASE=https://github.com/KitsuneKode/kunai/releases ./install.sh
+```
+
+### Docker smoke (isolated, no host install)
+
+To verify install/upgrade/uninstall end-to-end without touching `~/.local/bin` or `~/.config/kunai`:
+
+```sh
+bun run test:installer:docker
+# or: bash apps/cli/test/docker/native-installer/run-local.sh
+```
+
+This builds linux-x64 + musl binaries, serves a mock release from a temp directory, and runs the full flow inside Debian (glibc) and Alpine (musl) containers with `HOME=/tmp/kunai-home` only.
 
 ## Release notes and support
 

@@ -99,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh |
 Then run `kunai` to open the shell, or `kunai -S "Dune"` to search directly.
 Inside the shell, `/` opens the command palette from anywhere.
 
-Keep it current with `kunai upgrade`; remove it with `kunai --uninstall`
+Keep it current with `kunai upgrade`; remove it with `kunai uninstall`
 (add `--purge` to also delete config/history/cache).
 
 > **Alternatives for developers / Bun users** (these require Bun `>=1.3.9` at
@@ -582,13 +582,13 @@ and trending so they never depend on provider availability.
 
 ## Uninstall
 
-`kunai --uninstall` is channel-aware — it removes the binary, runs the matching
+`kunai uninstall` is channel-aware — it removes the binary, runs the matching
 `npm`/`bun` uninstall, or prints source-checkout steps, based on how you
 installed. It keeps your data by default.
 
 ```bash
-kunai --uninstall            # remove kunai, keep config/history/cache
-kunai --uninstall --purge    # also delete config, data, and cache
+kunai uninstall            # remove kunai, keep config/history/cache
+kunai uninstall --purge    # also delete config, data, and cache
 ```
 
 Manual fallback if `kunai` isn't on PATH:

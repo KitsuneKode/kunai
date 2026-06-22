@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-13T14:57:55.868Z",
+  "syncedAt": "2026-06-22T20:31:35.369Z",
   "version": "0.2.5",
   "commandCount": 65,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro"],
@@ -626,11 +626,6 @@
       "short": "-v",
       "long": "--version",
       "description": "Print the version"
-    },
-    {
-      "short": "",
-      "long": "--uninstall",
-      "description": "Remove kunai (add --purge to also delete user data)"
     }
   ]
 }

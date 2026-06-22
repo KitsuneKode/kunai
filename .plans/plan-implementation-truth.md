@@ -1,6 +1,6 @@
 # Plan vs Implementation Truth Index
 
-**Last reconciled:** 2026-06-11
+**Last reconciled:** 2026-06-23
 
 Use this file when a `.plans/*` status disagrees with the codebase. **Code wins** unless this index explicitly says otherwise. Update this file in the same change set when you complete or retire plan work.
 
@@ -54,6 +54,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 | Reliability core hardening                                            | [reliability-core-autonomous-sweep.md](./reliability-core-autonomous-sweep.md)                                                                   | Fake mpv harness, PlayerControl ordering tests, release gate, live smoke scripts                                                                                                                |
 | Codebase coherence sweep                                              | [codebase-coherence-and-redundancy-report.md](./codebase-coherence-and-redundancy-report.md)                                                     | README/PR checklist/release gate coherence, debugging map, deferred architecture report                                                                                                         |
 | Unified trace/event correlation                                       | `apps/cli/src/services/diagnostics/correlation.ts`                                                                                               | Session/playback/provider correlation fields thread through diagnostics, support bundles, resolver, playback events, and background task failures                                               |
+| Native installer + auto-update layer                                  | `apps/cli/src/services/update/native-installer/*`, `install.sh`, `install.ps1`                                                                   | Versioned binary store (`dataDir/versions/`), launcher symlink, `kunai install`, PID locks, musl assets, configurable `autoApplyBinaryUpdates`, `kunai upgrade`/`kunai uninstall` lifecycle     |
 
 ---
 

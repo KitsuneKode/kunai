@@ -195,6 +195,43 @@ Best target for:
 
 Keep these few and high-signal.
 
+#### Native installer Docker smoke
+
+For install/upgrade/uninstall lifecycle, use the isolated Docker harness under `apps/cli/test/docker/native-installer/`:
+
+```sh
+bun run test:installer:docker
+```
+
+- Builds `linux-x64` + `linux-x64-musl` binaries and serves a **mock GitHub Release** from a temp dir
+- Runs `install.sh` → `kunai upgrade` → `kunai uninstall` inside Debian (glibc) and Alpine (musl)
+- Uses `HOME=/tmp/kunai-home` only — never reads or writes the host's `~/.config/kunai` or `~/.local/bin`
+- Skipped in default unit runs unless `KUNAI_INSTALLER_DOCKER=1` (set by CI `installer-docker` job)
+
+**CI job order** (`.github/workflows/ci.yml`):
+
+1. `changes` — path filter (`cli` vs `installer`)
+2. `checks` — typecheck, lint, test, npm build (always)
+3. `build-binaries` — linux glibc + musl when `cli` or `installer` paths change; uploads artifact
+4. `installer-docker` — only when `installer` paths change; reuses binaries artifact, caches Docker images, runs `run-local.sh --skip-build --skip-image-build`
+
+Local equivalent: `KUNAI_INSTALLER_DOCKER=1 bun run test:installer:docker`
+
+**PowerShell installer dry-run** (`apps/cli/test/integration/install-scripts-pwsh.test.ts`):
+
+- Spawns `pwsh -File install.ps1 -DryRun` (no downloads)
+- Skipped when `pwsh` is not installed (same pattern as Docker tests)
+
+**Full cross-compile (all 8 targets)** — not on every PR (too slow). Use:
+
+- **Release** workflow `binaries` job after a real npm publish (authoritative)
+- **`.github/workflows/build-binaries.yml`** — weekly cron + `workflow_dispatch` + pushes that touch build scripts
+
+```sh
+bun run build:binaries
+bash apps/cli/scripts/verify-release-binaries.sh
+```
+
 ### 5. Visual CLI tapes with VHS
 
 Best target for:
