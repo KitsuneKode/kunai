@@ -19,6 +19,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
+import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
 
@@ -133,6 +134,7 @@ export type BuildPostPlayViewProps = {
   readonly resumeLabel?: string;
   readonly postPlayState: PostPlayState;
   readonly recommendations?: readonly PlaybackRecommendationRailItem[];
+  readonly bindings?: readonly KeyBinding[];
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
@@ -150,6 +152,26 @@ function buildProgressBar(watched: number, total: number, suffix = ""): PostPlay
   const percent = Math.round((watched / total) * 100);
   const label = `${watched} / ${total}${suffix ? ` ${suffix}` : ""} · ${percent}%`;
   return { watched, total, percent, label };
+}
+
+function postPlayShortcut(
+  bindings: readonly KeyBinding[],
+  bindingId: string,
+  fallback: string,
+): string {
+  const binding = bindings.find((candidate) => candidate.id === bindingId);
+  return binding ? formatChord(binding.chord).toLowerCase() : fallback;
+}
+
+function postPlayShortcutGroup(
+  bindings: readonly KeyBinding[],
+  bindingIds: readonly string[],
+  fallbacks: readonly string[],
+): string {
+  return bindingIds
+    .map((bindingId, index) => postPlayShortcut(bindings, bindingId, fallbacks[index] ?? ""))
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // "S01 E06 — Challengers of Science" → "E06 · Challengers of Science".
@@ -253,6 +275,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     stopAfterCurrent,
   } = props;
 
+  const bindings = props.bindings ?? KEYBINDINGS;
   const isMovie = episodeLabel === "Movie";
   const discovery = buildDiscovery(recommendations);
 
@@ -277,28 +300,28 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "try-again",
           label: "Try again",
           detail: "retry the same episode",
-          shortcut: "r",
+          shortcut: postPlayShortcut(bindings, "post-replay", "r"),
           primary: true,
         },
         {
           id: "fallback",
           label: "Fallback",
           detail: "try another provider",
-          shortcut: "f",
+          shortcut: postPlayShortcut(bindings, "post-fallback", "f"),
           primary: false,
         },
         {
           id: "source",
           label: "Sources",
           detail: "choose another stream",
-          shortcut: "o",
+          shortcut: postPlayShortcut(bindings, "post-source", "o"),
           primary: false,
         },
         {
           id: "search",
           label: "Search",
           detail: "find another title",
-          shortcut: "s",
+          shortcut: postPlayShortcut(bindings, "post-search", "s"),
           primary: false,
         },
       ],
@@ -329,14 +352,14 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "episodes",
           label: "Episodes",
           detail: "open season list",
-          shortcut: "e",
+          shortcut: postPlayShortcut(bindings, "post-episode", "e"),
           primary: false,
         },
         {
           id: "replay",
           label: "Replay",
           detail: "rewatch from the start",
-          shortcut: "r",
+          shortcut: postPlayShortcut(bindings, "post-replay", "r"),
           primary: false,
         },
       ],
@@ -362,14 +385,14 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "replay",
           label: "Replay",
           detail: "rewatch from the start",
-          shortcut: "r",
+          shortcut: postPlayShortcut(bindings, "post-replay", "r"),
           primary: true,
         },
         {
           id: "search",
           label: "Search",
           detail: "find another title",
-          shortcut: "/",
+          shortcut: postPlayShortcut(bindings, "post-search", "s"),
           primary: false,
         },
       ],
@@ -399,28 +422,32 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "next",
           label: "Next episode",
           detail: `${nextLabel} · ${autoplayDetail}`,
-          shortcut: "↵ n",
+          shortcut: `↵ ${postPlayShortcut(bindings, "post-continue", "n")}`,
           primary: true,
         },
         {
           id: "episodes",
           label: "Episodes",
           detail: "open season list, current stays marked",
-          shortcut: "e",
+          shortcut: postPlayShortcut(bindings, "post-episode", "e"),
           primary: false,
         },
         {
           id: "session-controls",
           label: "Session",
           detail: `${autoskipDetail} · ${chainDetail}`,
-          shortcut: "a · u · x",
+          shortcut: postPlayShortcutGroup(
+            bindings,
+            ["player-autoplay", "player-autoskip", "player-stop-after-current"],
+            ["a", "u", "x"],
+          ),
           primary: false,
         },
         {
           id: "replay",
           label: "Replay / Tracks",
           detail: "rewatch, or change source · quality · audio",
-          shortcut: "r · t",
+          shortcut: postPlayShortcutGroup(bindings, ["post-replay", "post-source"], ["r", "o"]),
           primary: false,
         },
       ],
@@ -448,7 +475,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "bookmark",
           label: "Bookmark",
           detail: "save to watchlist for release alerts",
-          shortcut: "w",
+          shortcut: postPlayShortcut(bindings, "post-watchlist", "w"),
           primary: true,
         },
         {
@@ -462,7 +489,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           id: "search",
           label: "Search",
           detail: "find something to watch now",
-          shortcut: "s",
+          shortcut: postPlayShortcut(bindings, "post-search", "s"),
           primary: false,
         },
       ],
@@ -502,14 +529,14 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
               id: "next-season",
               label: "↵ Continue",
               detail: continueDetail,
-              shortcut: "↵",
+              shortcut: `↵ ${postPlayShortcut(bindings, "post-continue", "n")}`,
               primary: true,
             },
             {
               id: "episodes",
               label: "Episodes",
               detail: "review this season",
-              shortcut: "e",
+              shortcut: postPlayShortcut(bindings, "post-episode", "e"),
               primary: false,
             },
           ]
@@ -518,14 +545,14 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
               id: "search",
               label: "Search",
               detail: "find another title",
-              shortcut: "s",
+              shortcut: postPlayShortcut(bindings, "post-search", "s"),
               primary: false,
             },
             {
               id: "episodes",
               label: "Episodes",
               detail: "review this season",
-              shortcut: "e",
+              shortcut: postPlayShortcut(bindings, "post-episode", "e"),
               primary: false,
             },
           ],
@@ -564,14 +591,14 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         id: "search",
         label: "Search",
         detail: "find something new to watch",
-        shortcut: "s",
+        shortcut: postPlayShortcut(bindings, "post-search", "s"),
         primary: false,
       },
       {
         id: "replay",
         label: "Replay",
         detail: "rewatch from the beginning",
-        shortcut: "r",
+        shortcut: postPlayShortcut(bindings, "post-replay", "r"),
         primary: false,
       },
     ],

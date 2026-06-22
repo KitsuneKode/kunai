@@ -1,6 +1,6 @@
 # Plan 002: Keybinding Runtime Contexts
 
-Status: partially implemented
+Status: implemented
 Priority: P0
 Effort: M
 Risk: Medium
@@ -127,11 +127,12 @@ bun run test
 - Post-play footer actions moved to `apps/cli/src/app-shell/post-play-footer-actions.ts` and derive visible keys from `KEYBINDINGS`.
 - The post-play registry now includes scoped entries for visible post-play quit and episode controls; next-season reuses the post-continue key with a contextual label.
 - `apps/cli/test/unit/app-shell/post-play-footer-actions.test.ts` proves post-play footer keys follow registry changes.
+- Post-play action-row shortcut labels now derive from the same registry in `buildPostPlayView(...)`, including shared player session controls (`a`, `u`, `x`).
+- `apps/cli/test/unit/app-shell/post-play-view.test.ts` proves row shortcut labels follow registry changes.
 
-Remaining:
+Remaining follow-up:
 
-- Route non-footer post-play action-row shortcuts through the same registry where appropriate.
-- Delete local `useInput`/footer action duplication only after matching focused tests are in place.
+- Continue deleting local `useInput` duplication one surface at a time as Plan 001/003 remove the large shell islands.
 
 ## Rollback
 

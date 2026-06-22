@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
 import { buildPostPlayView } from "@/app-shell/post-play-view";
 
 describe("buildDiscovery posters", () => {
@@ -46,6 +47,40 @@ describe("nextUpHero", () => {
       postPlayState: { kind: "caught-up" },
     });
     expect(view.nextUpHero).toBeUndefined();
+  });
+});
+
+describe("post-play action shortcuts", () => {
+  it("derives action-row shortcuts from the keybinding registry", () => {
+    const bindings: readonly KeyBinding[] = KEYBINDINGS.map((binding) =>
+      binding.id === "post-source" ? { ...binding, chord: { input: "z" } } : binding,
+    );
+
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E02",
+      postPlayState: { kind: "did-not-start" },
+      bindings,
+    });
+
+    expect(view.actions.find((action) => action.id === "source")?.shortcut).toBe("z");
+  });
+
+  it("uses the same player registry keys for mid-series session controls", () => {
+    const bindings: readonly KeyBinding[] = KEYBINDINGS.map((binding) =>
+      binding.id === "player-autoskip" ? { ...binding, chord: { input: "y" } } : binding,
+    );
+
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E02",
+      postPlayState: { kind: "mid-series" },
+      bindings,
+    });
+
+    expect(view.actions.find((action) => action.id === "session-controls")?.shortcut).toBe(
+      "a · y · x",
+    );
   });
 });
 
