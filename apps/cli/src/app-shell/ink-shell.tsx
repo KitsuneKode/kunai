@@ -35,6 +35,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { dispatchActivePlaybackCommand } from "./active-playback-command-dispatcher";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
@@ -42,6 +43,7 @@ import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-p
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
 import { selectNotificationToast } from "./notification-toast";
+import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { PostPlayShell } from "./post-play-shell";
 import {
@@ -847,6 +849,16 @@ function AppRoot({ container }: { container: Container }) {
       }),
     [state.playbackStatus, state.playbackDetail, container.diagnosticsStore],
   );
+  const playbackFailureWaterfall = useMemo(
+    () =>
+      state.playbackStatus === "error"
+        ? buildPlaybackFailureWaterfall({
+            state,
+            recentEvents: container.diagnosticsStore.getRecent(40),
+          })
+        : null,
+    [state, container.diagnosticsStore],
+  );
   const playbackBootstrapStageDetail = useMemo(() => {
     const base =
       playbackBootstrapPresentation.stageDetail ?? state.playbackDetail?.trim() ?? undefined;
@@ -877,130 +889,37 @@ function AppRoot({ container }: { container: Container }) {
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
-      if (action === "command-mode") return;
-      if (action === "next" && canGoNext) {
-        void container.playerControl.nextCurrentPlayback("playback-loading-command-next");
-        return;
-      }
-      if (action === "previous" && canGoPrevious) {
-        void container.playerControl.previousCurrentPlayback("playback-loading-command-previous");
-        return;
-      }
-      if (action === "toggle-autoplay" && canToggleAutoplay) {
-        container.stateManager.dispatch({
-          type: "SET_SESSION_AUTOPLAY_PAUSED",
-          paused: !container.stateManager.getState().autoplaySessionPaused,
-        });
-        return;
-      }
-      if (action === "toggle-autoskip") {
-        container.stateManager.dispatch({
-          type: "SET_SESSION_AUTOSKIP_PAUSED",
-          paused: !container.stateManager.getState().autoskipSessionPaused,
-        });
-        return;
-      }
-      if (action === "stop-after-current") {
-        container.stateManager.dispatch({
-          type: "SET_SESSION_STOP_AFTER_CURRENT",
-          enabled: !container.stateManager.getState().stopAfterCurrent,
-        });
-        return;
-      }
-      if (action === "search") {
-        void container.playerControl.returnToSearchFromPlayback("playback-loading-command-search");
-        return;
-      }
-      if (action === "back-to-search") {
-        void container.playerControl.returnToSearchFromPlayback("playback-loading-command-search");
-        return;
-      }
-      if (action === "recover") {
-        void container.playerControl.recoverCurrentPlayback("playback-loading-command-recover");
-        return;
-      }
-      if (action === "recompute") {
-        void container.playerControl.recomputeCurrentPlayback("playback-loading-command-recompute");
-        return;
-      }
-      if (action === "fallback") {
-        const cancelledWork = container.workControl.cancelActive(
-          "playback-loading-command-fallback",
-        );
-        if (!cancelledWork) {
-          void container.playerControl.fallbackCurrentPlayback("playback-loading-command-fallback");
-        }
-        return;
-      }
-      if (action === "audio") {
-        void openPlaybackStreamSelectionPicker(
-          container,
-          "audio",
-          "playback-loading-command-audio",
-        );
-        return;
-      }
-      if (action === "subtitle") {
-        void openPlaybackStreamSelectionPicker(
-          container,
-          "subtitle",
-          "playback-loading-command-subtitle",
-        );
-        return;
-      }
-      if (action === "pick-episode") {
-        void openActivePlaybackEpisodePicker(container, "playback-loading-command-episode");
-        return;
-      }
-      if (action === "provider") {
-        void openPlaybackStreamSelectionPicker(
-          container,
-          "provider",
-          "playback-loading-command-provider",
-        );
-        return;
-      }
-      if (action === "source") {
-        void openPlaybackStreamSelectionPicker(
-          container,
-          "source",
-          "playback-loading-command-source",
-        );
-        return;
-      }
-      if (action === "quality") {
-        void openPlaybackStreamSelectionPicker(
-          container,
-          "quality",
-          "playback-loading-command-quality",
-        );
-        return;
-      }
-      if (action === "download") {
-        void (async () => {
-          const { enqueueCurrentPlaybackDownload } = await import("./workflows");
-          await enqueueCurrentPlaybackDownload({
-            container,
-            reason: "active-playback-command",
-          });
-        })();
-        return;
-      }
-      if (action === "quit") {
-        void container.playerControl.stopCurrentPlayback("playback-loading-command-stop");
-        return;
-      }
-      if (action === "toggle-mode") {
-        switchSessionMode(container.stateManager);
-        return;
-      }
-      void (async () => {
-        const { routeSearchShellAction } = await import("./command-router");
-        const routed = await routeSearchShellAction({ action, container });
-        if (routed === "quit") {
-          setExiting(true);
-        }
-      })();
+      void dispatchActivePlaybackCommand(action, {
+        deps: {
+          playerControl: container.playerControl,
+          workControl: container.workControl,
+          stateManager: container.stateManager,
+          openStreamSelectionPicker: async (_deps, pickerAction, reason) => {
+            await openPlaybackStreamSelectionPicker(container, pickerAction, reason);
+          },
+          openEpisodePicker: async (_deps, reason) => {
+            await openActivePlaybackEpisodePicker(container, reason);
+          },
+          enqueueCurrentPlaybackDownload: async (_deps, reason) => {
+            const { enqueueCurrentPlaybackDownload } = await import("./workflows");
+            await enqueueCurrentPlaybackDownload({
+              container,
+              reason,
+            });
+          },
+          switchSessionMode: () => {
+            switchSessionMode(container.stateManager);
+          },
+          routeSearchShellAction: async (nextAction) => {
+            const { routeSearchShellAction } = await import("./command-router");
+            return routeSearchShellAction({ action: nextAction, container });
+          },
+          setExiting,
+        },
+        canGoNext,
+        canGoPrevious,
+        canToggleAutoplay,
+      });
     },
     [container, canGoNext, canGoPrevious, canToggleAutoplay, setExiting],
   );
@@ -1149,13 +1068,14 @@ function AppRoot({ container }: { container: Container }) {
                 title: state.currentTitle?.name,
                 resolveRetryCount: state.resolveRetryCount,
               })}
+              waterfall={playbackFailureWaterfall}
               onResolve={() => {
                 stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
                 stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               }}
               onRetry={() => {
                 stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
-                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
               }}
             />
           ) : rootSurface === "playback" ? (

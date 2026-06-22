@@ -1,3 +1,4 @@
+import { resolveKeybinding, resolvePlaybackBindingEffect } from "./keybinding-runtime";
 import type { ShellAction } from "./types";
 
 export type PlaybackShellInputHandlers = {
@@ -133,15 +134,30 @@ export function resolvePlaybackShellInput(
 ): PlaybackShellInputEffect | null {
   const key = normalizedKey(input);
   const isPlaying = ctx.operation === "playing";
+  const binding = resolveKeybinding(["player"], input, {});
 
   if (ctx.recoveryViewActive || ctx.playbackTroubleActive) {
-    const recoveryEffect = resolveRecoveryOrTroubleKeys(key, ctx);
+    const recoveryEffect = binding
+      ? resolvePlaybackBindingEffect(binding, {
+          isPlaying,
+          cancellable: ctx.cancellable,
+          fallbackAvailable: ctx.fallbackAvailable,
+          canOpenSourcePicker: ctx.canOpenSourcePicker,
+          handlers: ctx.handlers,
+        })
+      : resolveRecoveryOrTroubleKeys(key, ctx);
     if (recoveryEffect) return recoveryEffect;
   }
 
-  if (key === "q") {
-    if (isPlaying && ctx.handlers.onStop) return { kind: "stop" };
-    if (ctx.cancellable && ctx.handlers.onCancel) return { kind: "cancel" };
+  if (binding) {
+    const bindingEffect = resolvePlaybackBindingEffect(binding, {
+      isPlaying,
+      cancellable: ctx.cancellable,
+      fallbackAvailable: ctx.fallbackAvailable,
+      canOpenSourcePicker: ctx.canOpenSourcePicker,
+      handlers: ctx.handlers,
+    });
+    if (bindingEffect) return bindingEffect;
   }
 
   if (!isPlaying) {

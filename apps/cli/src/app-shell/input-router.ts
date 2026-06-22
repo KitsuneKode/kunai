@@ -1,5 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 
+import { resolveShellInputCommand } from "./keybinding-runtime";
+
 export type ShellInputOwner =
   | "hard-global"
   | "command-palette"
@@ -25,7 +27,9 @@ export function routeShellInput(
   key: LineEditorKey,
   context: ShellInputRouteContext,
 ): ShellInputRoute {
-  if (isHardGlobalQuit(input, key)) {
+  const keybindingCommand = resolveShellInputCommand(["global"], input, key);
+
+  if (keybindingCommand === "quit" || input === "\x03") {
     return { owner: "hard-global", command: "quit" };
   }
 
@@ -38,12 +42,18 @@ export function routeShellInput(
   }
 
   if (context.textInputFocused) {
-    return { owner: "text-input", command: input === "/" ? "open-command-palette" : null };
+    return {
+      owner: "text-input",
+      command: keybindingCommand === "open-command-palette" ? keybindingCommand : null,
+    };
   }
 
-  return { owner: "surface", command: input === "/" ? "open-command-palette" : null };
+  return {
+    owner: "surface",
+    command: keybindingCommand === "open-command-palette" ? keybindingCommand : null,
+  };
 }
 
 export function isHardGlobalQuit(input: string, key: LineEditorKey): boolean {
-  return (input === "c" && key.ctrl === true) || input === "\x03";
+  return resolveShellInputCommand(["global"], input, key) === "quit" || input === "\x03";
 }

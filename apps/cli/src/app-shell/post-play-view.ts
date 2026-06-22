@@ -18,6 +18,7 @@ import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
+import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
 import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
 
@@ -701,22 +702,28 @@ export function resolvePostPlayUnhandledInput(
     }
     return context.selectedActionAvailable ? { type: "run-selected-action" } : null;
   }
-  if (input === "w" && context.postPlayStateKind === "caught-up") {
-    return { type: "shell-result", result: "bookmark" };
+  const binding = resolveKeybinding(["postPlayback"], input, key);
+  const bindingResult = binding ? resolvePostPlaybackBindingResult(binding) : null;
+  if (binding && bindingResult) {
+    if (binding.id === "post-watchlist" && context.postPlayStateKind !== "caught-up") return null;
+    if (
+      (binding.id === "post-replay" ||
+        binding.id === "post-fallback" ||
+        binding.id === "post-source" ||
+        binding.id === "post-diagnostics" ||
+        binding.id === "post-search") &&
+      context.postPlayStateKind !== "did-not-start"
+    ) {
+      return null;
+    }
+    return { type: "shell-result", result: bindingResult };
   }
   if (context.postPlayStateKind === "did-not-start") {
-    if (input === "r") return { type: "shell-result", result: "replay" };
-    if (input === "f") return { type: "shell-result", result: "fallback" };
-    if (input === "o") return { type: "shell-result", result: "source" };
-    if (input === "d") return { type: "shell-result", result: "diagnostics" };
-    if (input === "s") return { type: "shell-result", result: "search" };
+    return null;
   }
   if (input === "1" || input === "2" || input === "3") {
     const index = Number(input) - 1;
     return index < context.recommendationCount ? { type: "recommendation", index } : null;
-  }
-  if (input === "h" && !key.ctrl && !key.meta) {
-    return { type: "shell-result", result: "history" };
   }
   const actionIndex = input === "!" ? 0 : input === "@" ? 1 : input === "#" ? 2 : -1;
   if (actionIndex >= 0 && actionIndex < context.recommendationCount) {

@@ -4,6 +4,10 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import type {
+  PlaybackFailureWaterfallModel,
+  PlaybackFailureWaterfallRow,
+} from "./playback-failure-waterfall";
 import { palette } from "./shell-theme";
 
 export type { ErrorScenario } from "@/domain/playback/playback-problem";
@@ -118,11 +122,13 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
 export function ErrorShell({
   message,
   scenario,
+  waterfall,
   onResolve,
   onRetry,
 }: {
   message: string;
   scenario?: ErrorScenario;
+  waterfall?: PlaybackFailureWaterfallModel | null;
   onResolve: () => void;
   onRetry?: () => void;
 }) {
@@ -154,6 +160,7 @@ export function ErrorShell({
         ) : (
           <Text color={palette.text}>{message}</Text>
         )}
+        {waterfall ? <FailureWaterfall model={waterfall} /> : null}
         <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
             {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
@@ -161,5 +168,35 @@ export function ErrorShell({
         </Box>
       </Box>
     </Box>
+  );
+}
+
+function FailureWaterfall({ model }: { model: PlaybackFailureWaterfallModel }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={palette.dim} dimColor>
+        {model.title}
+        {model.truncated ? "  ·  more in /diagnostics" : ""}
+      </Text>
+      {model.rows.map((row) => (
+        <FailureWaterfallRow row={row} key={`${row.label}:${row.status}:${row.detail ?? ""}`} />
+      ))}
+    </Box>
+  );
+}
+
+function FailureWaterfallRow({ row }: { row: PlaybackFailureWaterfallRow }) {
+  const marker = row.status === "succeeded" ? "✓" : row.status === "failed" ? "x" : "·";
+  const color =
+    row.status === "succeeded"
+      ? palette.ok
+      : row.status === "failed"
+        ? palette.danger
+        : palette.dim;
+  return (
+    <Text color={color}>
+      {marker} {row.label}
+      {row.detail ? <Text color={palette.dim}>{`  ·  ${row.detail}`}</Text> : null}
+    </Text>
   );
 }
