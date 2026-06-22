@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { routeShellInput } from "@/app-shell/input-router";
+import { routeShellInput, routeOverlayInput } from "@/app-shell/input-router";
 
 test("ctrl-c always routes to the hard global owner", () => {
   expect(
@@ -43,5 +43,23 @@ test("playback surface slash opens command palette", () => {
   expect(routeShellInput("/", {}, {})).toEqual({
     owner: "surface",
     command: "open-command-palette",
+  });
+});
+
+test("overlay route maps escape to close", () => {
+  expect(routeOverlayInput("", { escape: true }, { overlayOpen: true })).toEqual({
+    owner: "overlay",
+    command: "close",
+  });
+});
+
+test("overlay route maps bracket chords to page navigation", () => {
+  expect(routeOverlayInput("[", {}, { overlayOpen: true })).toEqual({
+    owner: "overlay",
+    command: "page-up",
+  });
+  expect(routeOverlayInput("]", {}, { overlayOpen: true })).toEqual({
+    owner: "overlay",
+    command: "page-down",
   });
 });

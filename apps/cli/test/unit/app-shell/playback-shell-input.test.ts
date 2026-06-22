@@ -21,6 +21,10 @@ function handlers(overrides: Partial<PlaybackShellInputHandlers> = {}): Playback
   };
 }
 
+function emptyKey() {
+  return {};
+}
+
 describe("resolvePlaybackShellInput", () => {
   test("playing trouble routes r/f/o/d without onCommandAction gate", () => {
     const ctx = {
@@ -32,10 +36,10 @@ describe("resolvePlaybackShellInput", () => {
       playbackTroubleActive: true,
       handlers: handlers({ onCommandAction: undefined }),
     };
-    expect(resolvePlaybackShellInput("r", ctx)?.kind).toBe("recover");
-    expect(resolvePlaybackShellInput("f", ctx)?.kind).toBe("fallback");
-    expect(resolvePlaybackShellInput("o", ctx)?.kind).toBe("pick-source");
-    expect(resolvePlaybackShellInput("d", ctx)).toBeNull();
+    expect(resolvePlaybackShellInput("r", emptyKey(), ctx)?.kind).toBe("recover");
+    expect(resolvePlaybackShellInput("f", emptyKey(), ctx)?.kind).toBe("fallback");
+    expect(resolvePlaybackShellInput("o", emptyKey(), ctx)?.kind).toBe("pick-source");
+    expect(resolvePlaybackShellInput("d", emptyKey(), ctx)).toBeNull();
   });
 
   test("playing trouble diagnostics uses onCommandAction when present", () => {
@@ -48,7 +52,7 @@ describe("resolvePlaybackShellInput", () => {
       playbackTroubleActive: true,
       handlers: handlers(),
     };
-    expect(resolvePlaybackShellInput("d", ctx)).toEqual({
+    expect(resolvePlaybackShellInput("d", emptyKey(), ctx)).toEqual({
       kind: "shell-action",
       action: "diagnostics",
     });
@@ -64,12 +68,12 @@ describe("resolvePlaybackShellInput", () => {
       playbackTroubleActive: false,
       handlers: handlers({ onPickQuality: () => {} }),
     };
-    expect(resolvePlaybackShellInput("e", ctx)?.kind).toBe("pick-episode");
-    expect(resolvePlaybackShellInput("a", ctx)?.kind).toBe("toggle-autoplay");
-    expect(resolvePlaybackShellInput("q", ctx)?.kind).toBe("stop");
-    expect(resolvePlaybackShellInput("r", ctx)?.kind).toBe("recover");
-    expect(resolvePlaybackShellInput("k", ctx)?.kind).toBe("pick-quality");
-    expect(resolvePlaybackShellInput("v", ctx)?.kind).toBe("pick-quality");
+    expect(resolvePlaybackShellInput("e", emptyKey(), ctx)?.kind).toBe("pick-episode");
+    expect(resolvePlaybackShellInput("a", emptyKey(), ctx)?.kind).toBe("toggle-autoplay");
+    expect(resolvePlaybackShellInput("q", emptyKey(), ctx)?.kind).toBe("stop");
+    expect(resolvePlaybackShellInput("r", emptyKey(), ctx)?.kind).toBe("recover");
+    expect(resolvePlaybackShellInput("k", emptyKey(), ctx)?.kind).toBe("pick-quality");
+    expect(resolvePlaybackShellInput("v", emptyKey(), ctx)?.kind).toBe("pick-quality");
   });
 
   test("bootstrap footer keys resolve before playback starts", () => {
@@ -82,15 +86,15 @@ describe("resolvePlaybackShellInput", () => {
       playbackTroubleActive: false,
       handlers: handlers({ onCancel: () => {} }),
     };
-    expect(resolvePlaybackShellInput("g", ctx)).toEqual({
+    expect(resolvePlaybackShellInput("g", emptyKey(), ctx)).toEqual({
       kind: "shell-action",
       action: "settings",
     });
-    expect(resolvePlaybackShellInput("?", ctx)).toEqual({
+    expect(resolvePlaybackShellInput("?", emptyKey(), ctx)).toEqual({
       kind: "shell-action",
       action: "help",
     });
-    expect(resolvePlaybackShellInput("q", ctx)?.kind).toBe("cancel");
+    expect(resolvePlaybackShellInput("q", emptyKey(), ctx)?.kind).toBe("cancel");
   });
 
   test("applyPlaybackShellInputEffect dispatches shell actions", () => {

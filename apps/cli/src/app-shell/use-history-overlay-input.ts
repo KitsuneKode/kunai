@@ -1,0 +1,76 @@
+import { cycleHistoryTab, cycleHistoryTypeFilter, type HistoryTab } from "@/app-shell/history-view";
+import type { HistoryTypeFilter } from "@/app-shell/history-view";
+import type { LineEditorKey } from "@/app-shell/line-editor";
+import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
+import {
+  buildRootHistorySelection,
+  type RootHistorySelection,
+} from "@/app-shell/root-history-bridge";
+import type { Container } from "@/container";
+import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
+
+export type HistoryOverlayInputContext = {
+  readonly container: Container;
+  readonly historyView: { readonly flatRows: readonly { readonly titleId: string }[] };
+  readonly historySelections: readonly RootHistorySelection[];
+  readonly historyPickerContext: HistoryPickerOptionsContext;
+  readonly selectedIndex: number;
+  readonly setHistoryTypeFilter: (update: (prev: HistoryTypeFilter) => HistoryTypeFilter) => void;
+  readonly setHistoryTab: (update: (prev: HistoryTab) => HistoryTab) => void;
+  readonly setSelectedIndex: (update: (current: number) => number) => void;
+  readonly setOverlayStatus: (status: string) => void;
+  readonly onRedraw: () => void;
+};
+
+export type HistoryOverlayInputResult = "handled" | "not-handled";
+
+/** History overlay key map extracted from root-overlay-shell (Phase 9). */
+export function handleHistoryOverlayInput(
+  input: string,
+  key: LineEditorKey,
+  ctx: HistoryOverlayInputContext,
+): HistoryOverlayInputResult {
+  if (key.tab && key.shift) {
+    ctx.setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev));
+    ctx.setSelectedIndex(() => 0);
+    return "handled";
+  }
+  if (key.tab) {
+    ctx.setHistoryTab((prev) => cycleHistoryTab(prev));
+    return "handled";
+  }
+  if (input.toLowerCase() === "q") {
+    const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
+    const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
+    if (selected) {
+      const historySelection = buildRootHistorySelection(
+        selected,
+        ctx.historyPickerContext.nextReleases,
+        ctx.historyPickerContext.projections,
+      );
+      const queueEntry = historySelection.targetEpisode
+        ? {
+            ...historySelection.entry,
+            season: historySelection.targetEpisode.season,
+            episode: historySelection.targetEpisode.episode,
+            positionSeconds:
+              historySelection.targetEpisode.reason === "resume"
+                ? historySelection.entry.positionSeconds
+                : 0,
+            completed:
+              historySelection.targetEpisode.reason === "resume"
+                ? historySelection.entry.completed
+                : false,
+          }
+        : historySelection.entry;
+      ctx.container.queueService.enqueueMediaItem(
+        mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
+        { placement: "end", source: "history" },
+      );
+      ctx.setOverlayStatus("Queued from history");
+      ctx.onRedraw();
+    }
+    return "handled";
+  }
+  return "not-handled";
+}

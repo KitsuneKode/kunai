@@ -1,3 +1,5 @@
+import type { LineEditorKey } from "@/app-shell/line-editor";
+
 import { resolveKeybinding, resolvePlaybackBindingEffect } from "./keybinding-runtime";
 import type { ShellAction } from "./types";
 
@@ -130,11 +132,12 @@ function resolvePlayingKeys(
 
 export function resolvePlaybackShellInput(
   input: string,
+  key: LineEditorKey,
   ctx: PlaybackShellInputContext,
 ): PlaybackShellInputEffect | null {
-  const key = normalizedKey(input);
+  const normalized = normalizedKey(input);
   const isPlaying = ctx.operation === "playing";
-  const binding = resolveKeybinding(["player"], input, {});
+  const binding = resolveKeybinding(["player"], input, key);
 
   if (ctx.recoveryViewActive || ctx.playbackTroubleActive) {
     const recoveryEffect = binding
@@ -145,7 +148,7 @@ export function resolvePlaybackShellInput(
           canOpenSourcePicker: ctx.canOpenSourcePicker,
           handlers: ctx.handlers,
         })
-      : resolveRecoveryOrTroubleKeys(key, ctx);
+      : resolveRecoveryOrTroubleKeys(normalized, ctx);
     if (recoveryEffect) return recoveryEffect;
   }
 
@@ -161,10 +164,10 @@ export function resolvePlaybackShellInput(
   }
 
   if (!isPlaying) {
-    return resolveBootstrapKeys(input, key, ctx);
+    return resolveBootstrapKeys(input, normalized, ctx);
   }
 
-  return resolvePlayingKeys(input, key, ctx);
+  return resolvePlayingKeys(input, normalized, ctx);
 }
 
 export function applyPlaybackShellInputEffect(
