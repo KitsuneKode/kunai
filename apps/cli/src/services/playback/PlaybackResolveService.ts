@@ -467,18 +467,19 @@ export class PlaybackResolveService {
     let combinedAttempts = [...engineResult.attempts];
     let resolvedStream: StreamInfo | null = null;
     while (engineResult.result) {
+      const resolvedProviderId = engineResult.providerId ?? input.providerId;
+      const selection = providerScopedSelection(input, resolvedProviderId);
       const candidateStream = providerResolveResultToStreamInfo({
         result: engineResult.result,
         title: input.title.name,
         subtitlePreference: input.subtitlePreference,
-        selectedSourceId: input.selectedSourceId,
-        selectedStreamId: input.selectedStreamId,
+        selectedSourceId: selection.selectedSourceId,
+        selectedStreamId: selection.selectedStreamId,
         blockedStreamUrls: input.blockedStreamUrls,
       });
 
       if (!candidateStream) break;
 
-      const resolvedProviderId = engineResult.providerId ?? input.providerId;
       if (
         candidateStream.deferredLocator ||
         (!this.deps.streamHealth && !this.deps.streamHealthService)
@@ -629,8 +630,8 @@ export class PlaybackResolveService {
                     result: a.result,
                     title: input.title.name,
                     subtitlePreference: input.subtitlePreference,
-                    selectedSourceId: input.selectedSourceId,
-                    selectedStreamId: input.selectedStreamId,
+                    selectedSourceId: providerScopedSelection(input, a.providerId).selectedSourceId,
+                    selectedStreamId: providerScopedSelection(input, a.providerId).selectedStreamId,
                     blockedStreamUrls: input.blockedStreamUrls,
                   })
                 : null,
@@ -779,6 +780,7 @@ export class PlaybackResolveService {
 
   private buildCacheKey(input: PlaybackResolveInput, providerId: string): string {
     const providerManifest = this.deps.engine.getManifest(providerId);
+    const selection = providerScopedSelection(input, providerId);
     return buildApiStreamResolveCacheKey({
       providerId,
       providerManifest,
@@ -789,10 +791,21 @@ export class PlaybackResolveService {
       subtitlePreference: input.subtitlePreference,
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
-      selectedSourceId: input.selectedSourceId,
-      selectedStreamId: input.selectedStreamId,
+      selectedSourceId: selection.selectedSourceId,
+      selectedStreamId: selection.selectedStreamId,
     });
   }
+}
+
+function providerScopedSelection(
+  input: Pick<PlaybackResolveInput, "providerId" | "selectedSourceId" | "selectedStreamId">,
+  providerId: string,
+): Pick<PlaybackResolveInput, "selectedSourceId" | "selectedStreamId"> {
+  if (providerId !== input.providerId) return {};
+  return {
+    selectedSourceId: input.selectedSourceId,
+    selectedStreamId: input.selectedStreamId,
+  };
 }
 
 function inventoryMatchesSelection(

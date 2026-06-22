@@ -441,6 +441,76 @@ test("PlaybackResolveService records the classified primary failure when fallbac
   expect(failures).toEqual(["parse"]);
 });
 
+test("PlaybackResolveService does not carry primary source selection into fallback cache keys", async () => {
+  const cache = createMemoryCache(null);
+  const fallbackResult: ProviderResolveResult = {
+    status: "resolved",
+    providerId: "fallback" as ProviderId,
+    selectedStreamId: "stream:fallback",
+    streams: [
+      {
+        id: "stream:fallback",
+        providerId: "fallback" as ProviderId,
+        sourceId: "source:fallback:flowcast",
+        url: "https://fallback.example/stream.m3u8",
+        protocol: "hls" as const,
+        confidence: 0.9,
+        cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: "trace:fallback",
+      startedAt: new Date().toISOString(),
+      title: { id: "12345", kind: "movie", title: "Test Movie" },
+      cacheHit: false,
+      steps: [],
+      failures: [],
+    },
+    failures: [],
+  };
+  const engine = createMockEngine({
+    result: fallbackResult,
+    providerId: "fallback" as ProviderId,
+    attempts: [
+      {
+        providerId: "primary" as ProviderId,
+        failure: {
+          providerId: "primary" as ProviderId,
+          code: "not-found",
+          message: "primary had no streams",
+          retryable: true,
+          at: new Date().toISOString(),
+        },
+      },
+      {
+        providerId: "fallback" as ProviderId,
+        result: fallbackResult,
+      },
+    ],
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    selectedSourceId: "source:primary:1movies",
+    selectedStreamId: "stream:primary:1080",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.providerId).toBe("fallback");
+  expect(cache.setKeys).toHaveLength(1);
+  expect(cache.setKeys[0]).toContain("provider:fallback");
+  expect(cache.setKeys[0]).toContain(":balanced:none:none");
+  expect(cache.setKeys[0]).not.toContain("source:primary:1movies");
+  expect(cache.setKeys[0]).not.toContain("stream:primary:1080");
+});
+
 test("PlaybackResolveService caches late valid user-navigation results without returning them", async () => {
   const cache = createMemoryCache(null);
   const controller = new AbortController();

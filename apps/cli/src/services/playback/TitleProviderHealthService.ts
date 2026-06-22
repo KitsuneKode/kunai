@@ -66,6 +66,10 @@ export class TitleProviderHealthService {
     const now = this.now();
     const existing = this.repository.get(titleId, providerId, now);
     if (!existing) return;
+    if (existing.errorClass !== "parse") {
+      this.repository.delete(titleId, providerId);
+      return;
+    }
     const cleanSuccessCount = existing.cleanSuccessCount + 1;
     if (cleanSuccessCount >= 2) {
       this.repository.delete(titleId, providerId);

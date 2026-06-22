@@ -46,7 +46,22 @@ describe("TitleProviderHealthService", () => {
     });
   });
 
-  test("two clean title/provider successes heal a warning", () => {
+  test("one clean title/provider success heals ordinary warnings", () => {
+    const service = new TitleProviderHealthService(
+      new MemoryRepo(),
+      () => new Date("2026-05-23T12:00:00.000Z"),
+    );
+    service.recordFailure("tmdb:1", "vidking", "rivestream", "no-streams");
+    service.recordFailure("tmdb:1", "vidking", "rivestream", "dead-stream");
+    expect(service.getSwitchSuggestion("tmdb:1", "vidking")).toEqual({
+      providerId: "vidking",
+      suggestedProviderId: "rivestream",
+    });
+    service.recordCleanSuccess("tmdb:1", "vidking");
+    expect(service.getSwitchSuggestion("tmdb:1", "vidking")).toBeNull();
+  });
+
+  test("two clean title/provider successes heal a severe parse warning", () => {
     const service = new TitleProviderHealthService(
       new MemoryRepo(),
       () => new Date("2026-05-23T12:00:00.000Z"),

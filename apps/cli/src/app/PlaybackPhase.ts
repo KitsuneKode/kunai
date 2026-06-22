@@ -75,6 +75,7 @@ import {
   openPostPlaybackRecommendationActionPanel,
   recommendationRailItemToSearchResult,
 } from "@/app/playback-recommendation-actions";
+import { resolvePlaybackResolvePolicy } from "@/app/playback-resolve-policy";
 import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
 import { PlaybackSelectionCoordinator } from "@/app/playback-selection-coordinator";
 import {
@@ -426,7 +427,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   private async showPlaybackProblem(
     context: PhaseContext,
     problem: PlaybackProblem,
-  ): Promise<void> {
+  ): Promise<"dismiss" | "retry"> {
     const { diagnosticsService, stateManager, player, playerControl } = context.container;
     stateManager.dispatch({
       type: "SET_PLAYBACK_PROBLEM",
@@ -451,6 +452,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       diagnostics: diagnosticsService,
     });
     await this.showPlaybackError(context, problem.userMessage);
+    return stateManager.getState().playbackStatus === "loading" ? "retry" : "dismiss";
   }
 
   private describePlayerEvent(event: PlayerPlaybackEvent): {
@@ -1325,7 +1327,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (!stream) {
             recordStartupMark("resolve-started");
-            if (sourceRefreshDecision?.kind === "recover") {
+            const resolvePolicy = resolvePlaybackResolvePolicy({
+              recomputeSources,
+              pendingUserProviderSwitch,
+              sourceRefreshDecision,
+              configuredRecoveryMode: config.recoveryMode,
+            });
+            if (resolvePolicy.shouldInvalidateSuspectResolveState) {
               await invalidateEpisodePlaybackCaches({
                 cacheStore,
                 sourceInventory: container.sourceInventory,
@@ -1338,16 +1346,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 selectedStreamId: currentPreferredStreamSelection.streamId,
               });
             }
-            const sourceRefreshIsRecover = sourceRefreshDecision?.kind === "recover";
-            const sourceRefreshIsRefresh = sourceRefreshDecision?.kind === "refresh";
             const titlePreferredProviderId = resolveTitleProviderPreference(
               config.getRaw(),
               title.id,
             );
-            // Per-title preference picks the default provider and invalidates caches on
-            // switch, but must not force recoveryMode "manual" — that blocks automatic
-            // fallback when the preferred provider has no stream (e.g. VidKing down).
-            const honorExplicitProviderOnly = pendingUserProviderSwitch || recomputeSources;
             const resolveResult = await container.playbackResolveWork.resolve(
               {
                 title,
@@ -1361,15 +1363,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 favoriteSourceNames: config.favoriteSources,
                 selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
                 selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
-                recoveryMode: honorExplicitProviderOnly ? "manual" : config.recoveryMode,
-                preferFreshStream:
-                  honorExplicitProviderOnly || sourceRefreshIsRefresh || sourceRefreshIsRecover,
-                forceHealthCheck: sourceRefreshIsRecover,
+                recoveryMode: resolvePolicy.recoveryMode,
+                preferFreshStream: resolvePolicy.preferFreshStream,
+                forceHealthCheck: resolvePolicy.forceHealthCheck,
                 preserveCachedStreamOnFreshFailure:
-                  sourceRefreshIsRefresh && !honorExplicitProviderOnly,
-                ignoreTitleHealthSuggestion: honorExplicitProviderOnly,
-                ignoreProviderHealth: honorExplicitProviderOnly,
-                resolveIntent: recomputeSources ? "refresh" : "play",
+                  resolvePolicy.preserveCachedStreamOnFreshFailure,
+                ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
+                ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
+                resolveIntent: resolvePolicy.resolveIntent,
                 blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
                 signal: resolveController.signal,
                 correlation: playbackCorrelation,
@@ -1647,7 +1648,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 cause: problem.cause,
               },
             );
-            await this.showPlaybackProblem(context, problem);
+            const problemAction = await this.showPlaybackProblem(context, problem);
+            if (problemAction === "retry") {
+              pendingSourceRefreshAction = "recover";
+              pendingRecomputeSources = true;
+              autoSourceRecoverAttempts = 0;
+              invalidateRecentEpisodeStream(currentEpisode);
+              this.updatePlaybackFeedback(context, {
+                detail: "Retrying with fresh provider sources…",
+                note: "Cached failures and stale source inventory are bypassed for this attempt.",
+              });
+              continue;
+            }
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
           }
