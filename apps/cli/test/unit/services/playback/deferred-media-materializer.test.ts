@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import type { StreamInfo } from "@/domain/types";
-import { materializeDeferredMediaForPlayback } from "@/infra/player/deferred-media-materializer";
+import { materializeDeferredMediaForPlayback } from "@/services/playback/deferred-media-materializer";
 import { registerAllMangaAkDeferredDescriptor } from "@kunai/providers";
 
 const cleanup: Array<() => Promise<void>> = [];

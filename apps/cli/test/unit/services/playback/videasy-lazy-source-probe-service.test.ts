@@ -103,6 +103,35 @@ describe("VideasyLazySourceProbeService", () => {
     const streamIds = lastPersisted?.streams.map((stream) => stream.id) ?? [];
     expect(streamIds).toEqual([...new Set(streamIds)]);
   });
+
+  test("honors injected probe concurrency", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const service = new VideasyLazySourceProbeService({
+      probeConcurrency: 1,
+      sourceInventory: {
+        get: async () => null,
+        set: async () => {},
+      },
+      resolveVideasyDirect: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await Bun.sleep(1);
+        active -= 1;
+        return baseResult();
+      },
+    });
+
+    await service.schedulePhaseB({
+      resolveInput: resolveInput(),
+      context: runtimeContext(),
+      baseResult: baseResult(),
+      inventoryKey,
+      preferredAudioLanguage: "de",
+    });
+
+    expect(maxActive).toBe(1);
+  });
 });
 
 function resolveInput(): ProviderResolveInput {

@@ -13,10 +13,11 @@ import type {
   ProviderSourceCandidate,
 } from "@kunai/types";
 
+import { providerWorkLanePolicy } from "./provider-work-lane-policy";
 import type { SourceInventoryService } from "./SourceInventoryService";
 import type { SourceInventoryCacheInput } from "./SourceInventoryService";
 
-const PROBE_CONCURRENCY = 2;
+const DEFAULT_PROBE_CONCURRENCY = providerWorkLanePolicy("background-inventory").concurrency;
 type VideasyDirectResolver = typeof resolveVideasyDirect;
 
 function phaseBSessionKey(key: SourceInventoryCacheInput): string {
@@ -39,6 +40,7 @@ export class VideasyLazySourceProbeService {
     private readonly options: {
       readonly sourceInventory?: Pick<SourceInventoryService, "set" | "get">;
       readonly resolveVideasyDirect?: VideasyDirectResolver;
+      readonly probeConcurrency?: number;
     } = {},
   ) {}
 
@@ -103,7 +105,11 @@ export class VideasyLazySourceProbeService {
     };
 
     let cursor = 0;
-    const workers = Array.from({ length: PROBE_CONCURRENCY }, async () => {
+    const probeConcurrency = Math.max(
+      1,
+      Math.floor(this.options.probeConcurrency ?? DEFAULT_PROBE_CONCURRENCY),
+    );
+    const workers = Array.from({ length: probeConcurrency }, async () => {
       while (cursor < flavorIds.length) {
         if (input.context.signal?.aborted) return;
         const flavorId = flavorIds[cursor];

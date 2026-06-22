@@ -186,6 +186,16 @@ describe("runtime boundary imports", () => {
     expect(offenders).toEqual([]);
   });
 
+  test("infra does not import provider implementation packages directly", () => {
+    const offenders = collectSourceFiles("apps/cli/src/infra").flatMap((file) =>
+      collectImports(file)
+        .filter((specifier) => PROVIDER_PACKAGE_IMPORT.test(specifier))
+        .map((specifier) => `${file} -> ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   test("workspace package dependencies follow the package direction map", () => {
     const packageJsonFiles = [
       "packages/types/package.json",

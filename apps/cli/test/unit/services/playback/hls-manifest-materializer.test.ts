@@ -7,7 +7,7 @@ import {
   absolutizeHostRootHlsManifest,
   manifestUsesHostRootSegmentPaths,
   materializeHlsManifestForPlayback,
-} from "@/infra/player/hls-manifest-materializer";
+} from "@/services/playback/hls-manifest-materializer";
 import { shouldMaterializeHlsManifest } from "@kunai/providers";
 
 const cleanup: Array<() => Promise<void>> = [];

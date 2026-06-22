@@ -14,6 +14,7 @@ import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsServi
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
@@ -25,7 +26,6 @@ import {
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
-import { materializePlaybackMediaForPlayback } from "./playback-media-materializer";
 import type { PlayerControlService } from "./PlayerControlService";
 import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 
