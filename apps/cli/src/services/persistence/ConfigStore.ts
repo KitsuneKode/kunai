@@ -83,6 +83,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   downloadPath: "",
   downloadOnboardingDismissed: false,
   updateChecksEnabled: true,
+  autoApplyBinaryUpdates: true,
+  updateChannel: "stable",
   updateCheckIntervalDays: 7,
   updateSnoozedUntil: 0,
   lastUpdateCheckAt: 0,

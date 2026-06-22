@@ -7,16 +7,22 @@ import { getKunaiPaths } from "@kunai/storage";
 import type { InstallMethodKind } from "./install-method";
 
 /**
- * Records how this Kunai install happened so `kunai upgrade` / `kunai --uninstall`
+ * Records how this Kunai install happened so `kunai upgrade` / `kunai uninstall`
  * route to the correct mechanism per channel and never fight another installer.
  * Authoritative when present; otherwise callers fall back to `detectInstallMethod`.
  */
+export type InstallLayoutKind = "flat" | "versioned";
+
 export type InstallManifest = {
   readonly channel: InstallMethodKind;
   readonly version: string;
+  /** Launcher path (~/.local/bin/kunai or Windows bin/kunai.exe). */
   readonly binPath: string;
+  /** Versioned binary path under dataDir/versions (binary channel). */
+  readonly versionPath?: string;
   readonly dlBase: string;
   readonly installedAt: string;
+  readonly layout?: InstallLayoutKind;
 };
 
 const FILENAME = "install.json";

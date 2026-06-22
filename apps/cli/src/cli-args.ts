@@ -26,7 +26,6 @@ export type CliArgs = {
   dryRun: boolean;
   help: boolean;
   version: boolean;
-  uninstall: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
   shellChrome: ShellChrome;
 };
@@ -81,9 +80,10 @@ DIAGNOSTICS
   -v, --version              Print the version
 
 MAINTENANCE
+  kunai install                Install or reinstall Kunai (binary default)
   kunai upgrade              Update to the latest release (channel-aware)
   kunai upgrade --check      Report whether an update is available
-      --uninstall            Remove kunai (add --purge to also delete user data)
+  kunai uninstall            Remove kunai (add --purge to also delete user data)
 
 Inside the app, press / for the command palette and ? for keyboard help.
 `;
@@ -133,7 +133,6 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--help",
   "-v",
   "--version",
-  "--uninstall",
   "--purge",
   "--check",
 ]);
@@ -182,7 +181,6 @@ type CommanderCliOptions = {
   readonly mpvLogFile?: string;
   readonly help?: boolean;
   readonly version?: boolean;
-  readonly uninstall?: boolean;
 };
 
 function createCliCommand(): Command {
@@ -222,7 +220,6 @@ function createCliCommand(): Command {
     .option("--mpv-log-file <path>")
     .option("-h, --help")
     .option("-v, --version")
-    .option("--uninstall")
     .argument("[query...]");
 }
 
@@ -286,7 +283,6 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     dryRun: false,
     help: false,
     version: false,
-    uninstall: false,
   };
 
   args.search = options.search;
@@ -329,7 +325,6 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   };
   args.help = Boolean(options.help);
   args.version = Boolean(options.version);
-  args.uninstall = Boolean(options.uninstall);
 
   if (args.search === undefined && args.id === undefined && positionals.length > 0) {
     args.search = positionals.join(" ");

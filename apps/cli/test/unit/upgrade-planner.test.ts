@@ -37,6 +37,23 @@ test("windows binary uses the .exe asset name", () => {
   if (p.kind === "self-replace") expect(p.assetName).toBe("kunai-windows-x64.exe");
 });
 
+test("windows arm64 binary uses the arm64 asset name", () => {
+  const p = planUpgrade({ ...base, channel: "binary", os: "windows", arch: "arm64" });
+  expect(p.kind).toBe("self-replace");
+  if (p.kind === "self-replace") expect(p.assetName).toBe("kunai-windows-arm64.exe");
+});
+
+test("manifest version placeholder latest still upgrades", () => {
+  const p = planUpgrade({
+    ...base,
+    currentVersion: "latest",
+    channel: "binary",
+    os: "linux",
+    arch: "x64",
+  });
+  expect(p.kind).toBe("self-replace");
+});
+
 test("source channel plans manual guidance", () => {
   const p = planUpgrade({ ...base, channel: "source" });
   expect(p.kind).toBe("manual");

@@ -368,6 +368,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.updateChecksEnabled;
   }
 
+  get autoApplyBinaryUpdates(): boolean {
+    return this.config.autoApplyBinaryUpdates;
+  }
+
+  get updateChannel(): KitsuneConfig["updateChannel"] {
+    return this.config.updateChannel;
+  }
+
   get updateCheckIntervalDays(): number {
     return this.config.updateCheckIntervalDays;
   }

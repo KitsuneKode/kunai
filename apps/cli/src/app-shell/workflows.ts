@@ -1161,24 +1161,58 @@ async function handleUpdate(container: Container): Promise<"handled"> {
 }
 
 async function openUpdateShell(container: Container): Promise<void> {
-  const result = await container.updateService.checkForUpdate({ force: true });
-  const status =
-    result.status === "update-available"
-      ? `Kunai ${result.latestVersion} is available. Current ${result.currentVersion}.`
-      : result.status === "up-to-date"
-        ? `Kunai is up to date (${result.currentVersion}).`
-        : result.status === "error"
-          ? `Update check failed: ${result.error ?? "unknown error"}`
-          : `Update checks are ${result.status}.`;
+  const { getPendingRestartVersion } = await import("@/services/update/BinaryAutoUpdater");
+  const { getInstallDiagnostics } = await import("@/services/update/native-installer");
+  const { readInstallManifest } = await import("@/services/update/install-manifest");
+
+  const manifest = await readInstallManifest();
+  const channel = manifest?.channel ?? "unknown";
+  const config = container.config.getRaw();
+
+  const updateCheck = await container.updateService.checkForUpdate({ force: true });
+
+  if (channel === "binary" && config.autoApplyBinaryUpdates) {
+    await container.binaryAutoUpdater.runOnce({ force: true });
+  }
+
+  const pending = await getPendingRestartVersion(updateCheck.currentVersion);
+  const diagnostics = await getInstallDiagnostics();
+  const diagText = diagnostics
+    .filter((d) => d.code !== "ok")
+    .map((d) => d.message)
+    .join(" · ");
+
+  let status: string;
+  if (pending) {
+    status = `Kunai ${pending} is ready on disk. Restart to use it (running ${updateCheck.currentVersion}).`;
+  } else if (updateCheck.status === "update-available") {
+    status = `Kunai ${updateCheck.latestVersion} is available. Current ${updateCheck.currentVersion}.`;
+  } else if (updateCheck.status === "up-to-date") {
+    status = `Kunai is up to date (${updateCheck.currentVersion}).`;
+  } else if (updateCheck.status === "error") {
+    status = `Update check failed: ${updateCheck.error ?? "unknown error"}`;
+  } else {
+    status = `Update checks are ${updateCheck.status}.`;
+  }
+
+  const subtitle = [status, updateCheck.guidance, diagText].filter(Boolean).join("  ·  ");
+  const autoApply = config.autoApplyBinaryUpdates;
 
   const choice = await chooseFromListShell({
     title: "Update",
-    subtitle: result.guidance ? `${status}  ·  ${result.guidance}` : status,
+    subtitle,
     options: [
       {
         value: "snooze" as const,
         label: "Snooze update checks for 7 days",
         detail: "Mute automatic update notices temporarily",
+      },
+      {
+        value: "toggle-auto" as const,
+        label: autoApply ? "Disable background binary updates" : "Enable background binary updates",
+        detail: autoApply
+          ? "Stop downloading updates automatically (binary installs)"
+          : "Download binary updates in the background",
       },
       {
         value: "disable" as const,
@@ -1196,6 +1230,8 @@ async function openUpdateShell(container: Container): Promise<void> {
 
   if (choice === "snooze") {
     await container.updateService.snoozeForDays(7);
+  } else if (choice === "toggle-auto") {
+    await container.binaryAutoUpdater.setAutoApply(!autoApply);
   } else if (choice === "disable") {
     await container.updateService.setChecksEnabled(false);
   } else if (choice === "enable") {

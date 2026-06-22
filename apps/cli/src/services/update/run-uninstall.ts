@@ -1,14 +1,18 @@
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
 import { readInstallManifest } from "./install-manifest";
 import type { InstallMethodKind } from "./install-method";
+import { getInstallLayoutPaths, removeLauncherIfVersioned } from "./native-installer";
 
 const PKG = "@kitsunekode/kunai";
+const MANIFEST_FILE = "install.json";
 
 export type UninstallPlan =
   | { kind: "exec"; command: string[] }
+  | { kind: "remove-binary"; launcherPath: string; versionsDir: string }
   | { kind: "remove-file"; path: string }
   | { kind: "manual"; message: string };
 
@@ -16,6 +20,7 @@ export type UninstallPlan =
 export function planUninstall(input: {
   channel: InstallMethodKind;
   binPath: string;
+  layout?: "flat" | "versioned";
 }): UninstallPlan {
   switch (input.channel) {
     case "npm-global":
@@ -23,6 +28,14 @@ export function planUninstall(input: {
     case "bun-global":
       return { kind: "exec", command: ["bun", "uninstall", "-g", PKG] };
     case "binary":
+      if (input.layout === "versioned") {
+        const layout = getInstallLayoutPaths({ launcherPath: input.binPath });
+        return {
+          kind: "remove-binary",
+          launcherPath: layout.launcherPath,
+          versionsDir: layout.versionsDir,
+        };
+      }
       return { kind: "remove-file", path: input.binPath };
     case "source":
       return {
@@ -43,16 +56,36 @@ export function planUninstall(input: {
 export async function runUninstall(opts: { purge: boolean }): Promise<number> {
   const manifest = await readInstallManifest();
   const channel: InstallMethodKind = manifest?.channel ?? "unknown";
-  const plan = planUninstall({ channel, binPath: manifest?.binPath ?? process.execPath });
+  const plan = planUninstall({
+    channel,
+    binPath: manifest?.binPath ?? process.execPath,
+    layout: manifest?.layout,
+  });
 
   if (plan.kind === "manual") {
     console.log(plan.message);
   } else if (plan.kind === "exec") {
-    await Bun.spawn(plan.command, { stdout: "inherit", stderr: "inherit" }).exited;
+    const code = await Bun.spawn(plan.command, { stdout: "inherit", stderr: "inherit" }).exited;
+    if (code !== 0) {
+      console.error(`Package manager uninstall exited with code ${code}.`);
+      return code;
+    }
+  } else if (plan.kind === "remove-binary") {
+    const removed = await removeLauncherIfVersioned({
+      launcherPath: plan.launcherPath,
+      versionsDir: plan.versionsDir,
+    });
+    if (removed) {
+      console.log(`Removed launcher ${plan.launcherPath}`);
+    }
+    await rm(plan.versionsDir, { recursive: true, force: true }).catch(() => {});
+    console.log(`Removed versioned binaries under ${plan.versionsDir}`);
   } else {
     await rm(plan.path, { force: true });
     console.log(`Removed ${plan.path}`);
   }
+
+  await rm(join(getKunaiPaths().configDir, MANIFEST_FILE), { force: true }).catch(() => {});
 
   if (opts.purge) {
     const paths = getKunaiPaths();

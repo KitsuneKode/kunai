@@ -22,6 +22,8 @@
 // compatibility shim while migration residue is retired.
 // =============================================================================
 
+import { existsSync } from "node:fs";
+
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import {
   applyHistorySelectionProvider,
@@ -357,18 +359,38 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
-  // `kunai upgrade` — channel-aware self-update subcommand. Handled before the
-  // shell boots so it can run standalone (and self-replace its own binary).
+  // `kunai upgrade` / `kunai uninstall` — channel-aware maintenance subcommands.
+  // Handled before the shell boots so they can run standalone (binary self-replace).
   if (argv[0] === "upgrade") {
     const { runUpgrade } = await import("./services/update/run-upgrade");
     const checkOnly = argv.includes("--check");
     process.exit(await runUpgrade({ checkOnly, currentVersion: KUNAI_VERSION }));
+  }
+  if (argv[0] === "uninstall") {
+    const { runUninstall } = await import("./services/update/run-uninstall");
+    process.exit(await runUninstall({ purge: argv.includes("--purge") }));
+  }
+  if (argv[0] === "install") {
+    const { runInstall } = await import("./services/update/run-install");
+    process.exit(await runInstall(argv.slice(1)));
   }
 
   // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
     cleanupOldBinary(process.execPath).catch(() => {}),
   );
+
+  // Versioned binary: hold lifetime lock and prune old versions (binary channel).
+  void (async () => {
+    const { lockCurrentVersion, cleanupOldVersions } =
+      await import("./services/update/native-installer");
+    const { readInstallManifest } = await import("./services/update/install-manifest");
+    const manifest = await readInstallManifest();
+    if (manifest?.channel === "binary" || manifest?.layout === "versioned") {
+      await lockCurrentVersion().catch(() => {});
+      void cleanupOldVersions().catch(() => {});
+    }
+  })();
 
   // Parse CLI arguments
   const args = parseArgs(argv);
@@ -377,12 +399,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (args.version) {
-    process.stdout.write(`kunai ${KUNAI_VERSION}\n`);
+    const { formatVersionLine } = await import("./services/update/version-display");
+    process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
     return;
-  }
-  if (args.uninstall) {
-    const { runUninstall } = await import("./services/update/run-uninstall");
-    process.exit(await runUninstall({ purge: argv.includes("--purge") }));
   }
   if (args.installProtocolHandler) {
     const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
@@ -486,9 +505,33 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   void container.downloadService.processQueue();
-  // Background update check; on "update available", persist an app-update notification.
+  // Background update: binary channel auto-applies; others notify-only.
   void (async () => {
     try {
+      const { readInstallManifest } = await import("./services/update/install-manifest");
+      const { detectInstallMethod } = await import("./services/update/install-method");
+      const manifest = await readInstallManifest();
+      const channel = manifest?.channel ?? detectInstallMethod({ fileExists: existsSync }).kind;
+      const rawConfig = container.config.getRaw();
+
+      if (channel === "binary" && rawConfig.autoApplyBinaryUpdates) {
+        const result = await container.binaryAutoUpdater.runOnce();
+        if (
+          (result.status === "installed" || result.status === "pending-restart") &&
+          "version" in result
+        ) {
+          container.notificationService.recordSignals([
+            {
+              type: "app-update",
+              currentVersion: KUNAI_VERSION,
+              latestVersion: result.version,
+            },
+          ]);
+        }
+        container.binaryAutoUpdater.startBackground();
+        return;
+      }
+
       const result = await container.updateService.checkForUpdate();
       const signal = updateSignalFromCheck(result);
       if (signal) container.notificationService.recordSignals([signal]);

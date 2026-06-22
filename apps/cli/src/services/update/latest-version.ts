@@ -1,4 +1,8 @@
-const RELEASES_API = "https://api.github.com/repos/KitsuneKode/kunai/releases/latest";
+const DEFAULT_RELEASES_API = "https://api.github.com/repos/KitsuneKode/kunai/releases/latest";
+
+export function resolveReleasesApiUrl(): string {
+  return process.env.KUNAI_RELEASES_API?.trim() || DEFAULT_RELEASES_API;
+}
 
 /**
  * Extract a `major.minor.patch` from a GitHub tag. Robust to both our binary
@@ -18,7 +22,7 @@ export function parseVersionFromTag(tag: string | undefined): string | null {
  */
 export async function fetchLatestVersion(
   fetchImpl: typeof fetch = fetch,
-  url: string = RELEASES_API,
+  url: string = resolveReleasesApiUrl(),
 ): Promise<string | null> {
   try {
     const res = await fetchImpl(url, { headers: { "user-agent": "kunai-cli" } });

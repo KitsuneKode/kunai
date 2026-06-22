@@ -1,4 +1,10 @@
 import type { InstallMethodKind } from "./install-method";
+import {
+  releaseAssetName,
+  type PlatformArch,
+  type PlatformLibc,
+  type PlatformOs,
+} from "./platform-assets";
 
 /**
  * Pure decision logic for `kunai upgrade`: given the install channel and version
@@ -6,8 +12,8 @@ import type { InstallMethodKind } from "./install-method";
  * A thin runner (run-upgrade.ts) executes the returned plan. This split keeps the
  * routing unit-testable.
  */
-export type UpgradeOs = "linux" | "darwin" | "windows";
-export type UpgradeArch = "x64" | "arm64";
+export type UpgradeOs = PlatformOs;
+export type UpgradeArch = PlatformArch;
 
 export type PlanUpgradeInput = {
   readonly channel: InstallMethodKind;
@@ -17,6 +23,7 @@ export type PlanUpgradeInput = {
   readonly dlBase: string;
   readonly os?: UpgradeOs;
   readonly arch?: UpgradeArch;
+  readonly libc?: PlatformLibc;
 };
 
 export type UpgradePlan =
@@ -35,6 +42,7 @@ const PKG = "@kitsunekode/kunai";
 
 /** Semver-ish compare limited to the `major.minor.patch` Kunai uses. */
 function isNewer(latest: string, current: string): boolean {
+  if (!/^\d+\.\d+\.\d+/.test(current)) return true;
   const a = latest.split(".").map((n) => Number.parseInt(n, 10));
   const b = current.split(".").map((n) => Number.parseInt(n, 10));
   for (let i = 0; i < 3; i++) {
@@ -45,9 +53,7 @@ function isNewer(latest: string, current: string): boolean {
   return false;
 }
 
-export function assetNameFor(os: UpgradeOs, arch: UpgradeArch): string {
-  return os === "windows" ? "kunai-windows-x64.exe" : `kunai-${os}-${arch}`;
-}
+export { releaseAssetName as assetNameFor };
 
 export function planUpgrade(input: PlanUpgradeInput): UpgradePlan {
   if (!isNewer(input.latestVersion, input.currentVersion)) return { kind: "up-to-date" };
@@ -64,12 +70,12 @@ export function planUpgrade(input: PlanUpgradeInput): UpgradePlan {
           "Source checkout: run `git pull --ff-only`, then `bun install && bun run build && bun run relink:global`.",
       };
     case "binary": {
-      const { os, arch } = input;
+      const { os, arch, libc = "gnu" } = input;
       if (!os || !arch) {
         return { kind: "manual", message: "Could not detect OS/arch for the binary upgrade." };
       }
       const tag = `v${input.latestVersion}`;
-      const asset = assetNameFor(os, arch);
+      const asset = releaseAssetName(os, arch, libc);
       return {
         kind: "self-replace",
         assetName: asset,

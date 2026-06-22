@@ -158,6 +158,10 @@ export interface KitsuneConfig {
   downloadOnboardingDismissed: boolean;
   /** Optional background update checks. Never runs package-manager commands. */
   updateChecksEnabled: boolean;
+  /** When true (binary channel), download and stage updates in the background. */
+  autoApplyBinaryUpdates: boolean;
+  /** Release channel for update resolution. v1 maps to GitHub latest. */
+  updateChannel: "stable" | "latest";
   /** Minimum days between automatic update checks. */
   updateCheckIntervalDays: number;
   /** Epoch ms until which update notices are muted. 0 means not snoozed. */

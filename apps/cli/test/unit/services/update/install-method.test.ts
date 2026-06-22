@@ -55,7 +55,7 @@ describe("install method detection", () => {
     });
 
     expect(binary.kind).toBe("binary");
-    expect(updateGuidanceForInstallMethod(binary)).toMatch(/download/i);
+    expect(updateGuidanceForInstallMethod(binary)).toContain("kunai upgrade");
     expect(unknown.kind).toBe("unknown");
     expect(updateGuidanceForInstallMethod(unknown)).toContain("install method");
   });

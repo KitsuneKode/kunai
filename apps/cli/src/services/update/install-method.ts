@@ -51,7 +51,7 @@ export function updateGuidanceForInstallMethod(method: InstallMethod): string {
     case "npm-global":
       return "npm global install detected. Update manually with npm install -g @kitsunekode/kunai.";
     case "binary":
-      return "Packaged binary detected. Download the latest Kunai release from the project release page.";
+      return "Packaged binary detected. Update with `kunai upgrade`.";
     case "unknown":
       return "Unknown install method. Check how Kunai was installed before updating manually.";
   }

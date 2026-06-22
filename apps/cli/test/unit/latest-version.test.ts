@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { fetchLatestVersion, parseVersionFromTag } from "@/services/update/latest-version";
+import {
+  fetchLatestVersion,
+  parseVersionFromTag,
+  resolveReleasesApiUrl,
+} from "@/services/update/latest-version";
 
 test("parseVersionFromTag handles v-prefixed and changesets package tags", () => {
   expect(parseVersionFromTag("v1.2.3")).toBe("1.2.3");
@@ -22,6 +26,15 @@ test("strips the leading v from the tag", async () => {
 test("returns null on non-ok response", async () => {
   const v = await fetchLatestVersion(fakeFetch(404, {}));
   expect(v).toBeNull();
+});
+
+test("resolveReleasesApiUrl honors KUNAI_RELEASES_API override", () => {
+  const prev = process.env.KUNAI_RELEASES_API;
+  process.env.KUNAI_RELEASES_API = "http://127.0.0.1:9/mock.json";
+  expect(resolveReleasesApiUrl()).toBe("http://127.0.0.1:9/mock.json");
+  delete process.env.KUNAI_RELEASES_API;
+  if (prev !== undefined) process.env.KUNAI_RELEASES_API = prev;
+  expect(resolveReleasesApiUrl()).toContain("github.com");
 });
 
 test("returns null when fetch throws", async () => {
