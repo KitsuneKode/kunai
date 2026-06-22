@@ -60,14 +60,17 @@ Short one-line summary of the release.
 
 ## Automated release flow
 
-- **Release Guard** (`.github/workflows/release-guard.yml`): PR-time check that `package.json`, both changelogs, and pending changesets agree.
-- **Release** (`.github/workflows/release.yml`): runs on pushes to `main` that touch release paths. Steps:
-  1. `bun run ci` + `bun run build` + `bun run pkg:check`
-  2. `bun run guard`
-  3. `changesets/action`: `bun run version:packages` then `bun run release`
-- `version:packages` runs `changeset version` then mirrors the new per-package entry to the root changelog.
+- **Release Guard** (`.github/workflows/release-guard.yml`): PR-time check that `package.json`, both changelogs, pending changesets, and installer/release paths agree.
+- **Release** (`.github/workflows/release.yml`): runs on pushes to `main` that touch release paths. Two jobs:
+  1. **Publish** — `bun run ci` + `bun run build` + `bun run pkg:check` + `bun run guard` + `changesets/action` (`bun run version:packages` then `bun run release` for npm).
+  2. **Binaries** (only after a real publish) — `bun run build:binaries` (all 8 targets), `verify-release-binaries.sh`, merges per-asset SHA256 checksums into `.release/kunai-v<version>.json`, then `softprops/action-gh-release` uploads assets + `SHA256SUMS` to tag `v<version>` with body from `.release/kunai-v<version>.md`.
+- `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` via `bun run release:notes`.
 - Publish uses OIDC (`id-token: write`) with npm provenance enabled.
-- GitHub releases are created from changelog entries by the changesets action.
+- **CI** (`.github/workflows/ci.yml`): on installer-related diffs, runs Docker `install.sh → upgrade → uninstall` smoke after building linux glibc + musl binaries (images cached; binaries not rebuilt in Docker job).
+
+## GitHub release tags
+
+Prefer tag `vX.Y.Z` with binary assets attached by the **binaries** job (not a separate empty GitHub release from Changesets alone). Release notes body comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 
 ## Local release utilities
 
@@ -90,10 +93,6 @@ Dependency truth-sync before publish:
 - Root README, npm README, and quickstart must agree on required runtime (`mpv`) and optional runtime (`yt-dlp`, optional `ffprobe`, terminal image stack).
 - If dependency guidance changes, include platform install snippets for Linux/macOS and Windows package-manager options.
 - Confirm default download path docs match runtime storage paths.
-
-## GitHub release tags
-
-Prefer a single tag convention per version. The manual `v0.2.5` style release (`Kunai v0.2.5`) is the user-facing default. Avoid leaving duplicate auto-generated `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 
 ## Reconciling a bad release (emergency only)
 

@@ -3,12 +3,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { artifactWithoutBinaryChecksums } from "./release-binary-checksums.ts";
 import { parseRootChangelogEntry, parseTopCliChangelogEntry } from "./release-changelog.ts";
 
 export type ReleaseNotesSection = {
   readonly title: string;
   readonly body: string;
   readonly items: readonly string[];
+};
+
+export type ReleaseBinaryChecksum = {
+  readonly name: string;
+  readonly sha256: string;
 };
 
 export type ReleaseNotesArtifact = {
@@ -26,6 +32,8 @@ export type ReleaseNotesArtifact = {
     readonly bunx: string;
     readonly binaryLatest: string;
   };
+  /** Populated after `build:binaries` merges `dist/bin/SHA256SUMS` (optional in repo). */
+  readonly assets?: readonly ReleaseBinaryChecksum[];
 };
 
 export type BuildReleaseNotesArtifactInput = {
@@ -166,7 +174,7 @@ function artifactPaths(version: string): { readonly json: string; readonly markd
 }
 
 function serializeArtifact(artifact: ReleaseNotesArtifact): string {
-  return `${JSON.stringify(artifact, null, 2)}\n`;
+  return `${JSON.stringify(artifactWithoutBinaryChecksums(artifact), null, 2)}\n`;
 }
 
 function writeArtifact(artifact: ReleaseNotesArtifact): void {
@@ -180,14 +188,18 @@ function writeArtifact(artifact: ReleaseNotesArtifact): void {
 
 function checkArtifact(artifact: ReleaseNotesArtifact): void {
   const paths = artifactPaths(artifact.version);
-  const expectedJson = serializeArtifact(artifact);
   const expectedMarkdown = renderReleaseNotesMarkdown(artifact);
   const errors: string[] = [];
 
   if (!existsSync(paths.json)) {
     errors.push(`${paths.json} is missing.`);
-  } else if (readFileSync(paths.json, "utf8") !== expectedJson) {
-    errors.push(`${paths.json} is out of date.`);
+  } else {
+    const onDisk = JSON.parse(readFileSync(paths.json, "utf8")) as ReleaseNotesArtifact;
+    const expected = artifactWithoutBinaryChecksums(artifact);
+    const actual = artifactWithoutBinaryChecksums(onDisk);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      errors.push(`${paths.json} is out of date.`);
+    }
   }
 
   if (!existsSync(paths.markdown)) {

@@ -21,6 +21,7 @@ export type ReleaseNotesArtifact = {
     readonly bunx: string;
     readonly binaryLatest: string;
   };
+  readonly assets?: readonly { readonly name: string; readonly sha256: string }[];
 };
 
 function repoRoot(): string {
