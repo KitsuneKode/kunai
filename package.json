@@ -35,7 +35,7 @@
     "pkg:check": "bun run --cwd apps/cli pkg:check",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
-    "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts",
+    "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts && bun run release:notes",
     "release:notes": "bun run scripts/generate-release-notes.ts",
     "release:notes:check": "bun run scripts/generate-release-notes.ts --check",
     "release": "bunx changeset publish",

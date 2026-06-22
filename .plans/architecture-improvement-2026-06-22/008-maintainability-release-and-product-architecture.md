@@ -193,11 +193,12 @@ bun run release:notes:check
 - Generated tracked `.release/kunai-v0.2.5.json` and `.release/kunai-v0.2.5.md` from the current package version and root changelog entry.
 - Added unit tests for release body section parsing, artifact generation, and Markdown rendering.
 - Wired release workflows to run `bun run release:notes:check` and to trigger when `.release/**` or the generator changes.
+- Wired `version:packages` to regenerate release-note artifacts after Changesets updates the package changelog and root changelog.
+- Wired GitHub release upload to use `.release/kunai-vX.Y.Z.md` as the release body.
 
 Remaining release work:
 
 - Render docs release pages from `.release/*.json`.
-- Feed `.release/kunai-vX.Y.Z.md` into GitHub release body upload.
 - Add binary checksum fields after `build:binaries` produces `SHA256SUMS`.
 - Evaluate dependency catalogs only after current Bun support and lockfile behavior are verified in a separate scoped commit.
 

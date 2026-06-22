@@ -131,6 +131,7 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           make_latest: true
+          body_path: .release/kunai-${{ steps.ver.outputs.tag }}.md
           files: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-arm64
