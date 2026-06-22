@@ -27,6 +27,10 @@ describe("docs shell", () => {
           text: "Debug",
           url: "/docs/developer",
         }),
+        expect.objectContaining({
+          text: "Releases",
+          url: "/releases",
+        }),
       ]),
     );
   });

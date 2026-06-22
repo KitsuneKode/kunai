@@ -1,6 +1,6 @@
 # Plan 008: Maintainability, Release Notes, and Product Architecture
 
-Status: partially implemented
+Status: implemented
 Priority: P1
 Effort: L
 Risk: Medium
@@ -195,10 +195,12 @@ bun run release:notes:check
 - Wired release workflows to run `bun run release:notes:check` and to trigger when `.release/**` or the generator changes.
 - Wired `version:packages` to regenerate release-note artifacts after Changesets updates the package changelog and root changelog.
 - Wired GitHub release upload to use `.release/kunai-vX.Y.Z.md` as the release body.
+- Added `/releases` docs route rendered from `.release/*.json`.
+- Added `apps/docs/lib/release-notes.ts` and tests proving docs release notes load from the tracked artifact.
+- Updated docs codegen drift guards to follow the current provider registry and CLI help ownership.
 
-Remaining release work:
+Remaining follow-up:
 
-- Render docs release pages from `.release/*.json`.
 - Add binary checksum fields after `build:binaries` produces `SHA256SUMS`.
 - Evaluate dependency catalogs only after current Bun support and lockfile behavior are verified in a separate scoped commit.
 

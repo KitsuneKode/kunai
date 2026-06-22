@@ -2,7 +2,7 @@ import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
 import { NavTitle } from "@/components/layout/nav-title";
 import type { DocsLayoutProps } from "fumadocs-ui/layouts/docs";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { BookOpen, FileText, Terminal, Wrench } from "lucide-react";
+import { BookOpen, FileClock, FileText, Terminal, Wrench } from "lucide-react";
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -41,6 +41,14 @@ export function baseOptions(): BaseLayoutProps {
         text: "Debug",
         icon: <Wrench className="size-4" />,
         url: "/docs/developer",
+        active: "nested-url",
+      },
+      {
+        type: "icon",
+        label: "Release notes",
+        text: "Releases",
+        icon: <FileClock className="size-4" />,
+        url: "/releases",
         active: "nested-url",
       },
       {

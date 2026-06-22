@@ -17,7 +17,7 @@ function listUserGuideFiles(): string[] {
 }
 
 function parseContainerProviderModules(content: string): string[] {
-  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\],\s*\{/);
+  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\]\s*,/);
   if (!arrayMatch?.[1]) return [];
   return [...arrayMatch[1].matchAll(/(\w+ProviderModule)/g)]
     .map((match) => match[1])

@@ -126,7 +126,7 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
 function syncProvidersFromContainer(): ProviderMetadata[] {
   const containerPath = path.join(ROOT_DIR, "apps/cli/src/container.ts");
   const content = fs.readFileSync(containerPath, "utf-8");
-  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\],\s*\{/);
+  const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\]\s*,/);
   if (!arrayMatch) {
     throw new Error("Could not parse providerModules from apps/cli/src/container.ts");
   }
@@ -220,13 +220,13 @@ function parseHelpTextFlags(helpText: string): CliOptionMetadata[] {
 }
 
 function syncCliOptionsFromHelp(): CliOptionMetadata[] {
-  const mainPath = path.join(ROOT_DIR, "apps/cli/src/main.ts");
-  const content = fs.readFileSync(mainPath, "utf-8");
+  const cliArgsPath = path.join(ROOT_DIR, "apps/cli/src/cli-args.ts");
+  const content = fs.readFileSync(cliArgsPath, "utf-8");
   const helpMatch = content.match(
-    /export function buildHelpText\(\): string \{\s*return `([\s\S]*?)`;\s*\}/,
+    /export function buildCliHelpText\([^)]*\): string \{\s*return `([\s\S]*?)`;\s*\}/,
   );
   if (!helpMatch) {
-    throw new Error("buildHelpText() not found in main.ts");
+    throw new Error("buildCliHelpText() not found in apps/cli/src/cli-args.ts");
   }
 
   const options = parseHelpTextFlags(helpMatch[1]);
