@@ -105,7 +105,11 @@ export function renderReleaseNotesMarkdown(artifact: ReleaseNotesArtifact): stri
   for (const section of artifact.sections) {
     lines.push(`### ${section.title}`, "", section.body, "");
   }
-  return `${lines.join("\n").trimEnd()}\n`;
+  return `${normalizeMarkdownEmphasis(lines.join("\n").trimEnd())}\n`;
+}
+
+function normalizeMarkdownEmphasis(markdown: string): string {
+  return markdown.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "_$1_");
 }
 
 function extractTopLevelBullets(sectionBody: string): readonly string[] {

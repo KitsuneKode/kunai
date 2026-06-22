@@ -91,4 +91,21 @@ A release.
 - Better retry feedback.
 `);
   });
+
+  test("renders formatter-stable single emphasis", () => {
+    const artifact = buildReleaseNotesArtifact({
+      packageName: "@kitsunekode/kunai",
+      version: "0.2.6",
+      body: `A release.
+
+### Fixes
+
+- Keeps *single emphasis* stable while preserving **strong emphasis**.
+`,
+    });
+
+    expect(renderReleaseNotesMarkdown(artifact)).toContain(
+      "Keeps _single emphasis_ stable while preserving **strong emphasis**.",
+    );
+  });
 });
