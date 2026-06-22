@@ -9,6 +9,9 @@ on:
     branches: [main]
     paths:
       - "apps/cli/**"
+      - "install.sh"
+      - "install.ps1"
+      - "packages/**"
       - ".changeset/**"
       - ".changeset/config.json"
       - "package.json"
@@ -18,6 +21,7 @@ on:
       - ".release/**"
       - "scripts/release-changelog.ts"
       - "scripts/generate-release-notes.ts"
+      - "scripts/release-binary-checksums.ts"
       - "scripts/release-guard.ts"
       - "scripts/sync-root-changelog.ts"
       - "CHANGELOG.md"
@@ -114,14 +118,15 @@ jobs:
       - name: Build binaries
         run: bun run build:binaries
 
-      - name: Smoke test (linux-x64)
-        run: |
-          ./apps/cli/dist/bin/kunai-linux-x64 --version
-          ./apps/cli/dist/bin/kunai-linux-x64 --help >/dev/null
+      - name: Verify release binaries
+        run: bash apps/cli/scripts/verify-release-binaries.sh
 
       - name: Resolve published version
         id: ver
         run: echo "tag=v$(bun -e 'console.log(require(\"./apps/cli/package.json\").version)')" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes guard (binary upload)
+        run: test -f ".release/kunai-${{ steps.ver.outputs.tag }}.md"
 
       # Publishes a release tagged `v<version>` and marks it latest, so the
       # download contract (`releases/latest/download/<asset>` and
@@ -135,9 +140,12 @@ jobs:
           files: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-arm64
+            apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-arm64-musl
             apps/cli/dist/bin/kunai-darwin-x64
             apps/cli/dist/bin/kunai-darwin-arm64
             apps/cli/dist/bin/kunai-windows-x64.exe
+            apps/cli/dist/bin/kunai-windows-arm64.exe
             apps/cli/dist/bin/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

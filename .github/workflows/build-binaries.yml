@@ -1,0 +1,64 @@
+name: Build all release binaries
+
+# Full 8-target cross-compile is too slow for every PR (~5+ min). Run on a
+# schedule, manually, or when release binaries workflow inputs change.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/scripts/build-binaries.ts"
+      - "apps/cli/scripts/build-shared.ts"
+      - "apps/cli/scripts/verify-release-binaries.sh"
+      - ".github/workflows/build-binaries.yml"
+
+concurrency:
+  group: build-binaries-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+
+jobs:
+  all-targets:
+    name: Cross-compile all 8 targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all release binaries
+        run: bun run build:binaries
+
+      - name: Verify release binaries
+        run: bash apps/cli/scripts/verify-release-binaries.sh
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kunai-release-binaries
+          retention-days: 7
+          path: |
+            apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-arm64
+            apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/kunai-linux-arm64-musl
+            apps/cli/dist/bin/kunai-darwin-x64
+            apps/cli/dist/bin/kunai-darwin-arm64
+            apps/cli/dist/bin/kunai-windows-x64.exe
+            apps/cli/dist/bin/kunai-windows-arm64.exe
+            apps/cli/dist/bin/SHA256SUMS

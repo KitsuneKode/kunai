@@ -17,8 +17,42 @@ env:
   TURBO_TOKEN: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.TURBO_TOKEN || '' }}
 
 jobs:
+  # Decide which expensive release-artifact jobs are worth running for this diff.
+  changes:
+    name: Path filters
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      cli: ${{ steps.filter.outputs.cli }}
+      installer: ${{ steps.filter.outputs.installer }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            cli:
+              - 'apps/cli/**'
+              - 'packages/**'
+              - 'turbo.json'
+              - 'package.json'
+              - 'bun.lock'
+            installer:
+              - 'apps/cli/scripts/build*.ts'
+              - 'apps/cli/src/services/update/**'
+              - 'apps/cli/test/docker/**'
+              - 'apps/cli/test/integration/compiled-binary-smoke.test.ts'
+              - 'apps/cli/test/integration/install-scripts-pwsh.test.ts'
+              - 'apps/cli/test/integration/native-installer-docker.test.ts'
+              - 'install.sh'
+              - 'install.ps1'
+              - 'packages/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
+
   checks:
     name: Checks
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -45,12 +79,15 @@ jobs:
         run: bun run pkg:check
 
       - name: Lint installer scripts
+        if: needs.changes.outputs.installer == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y shellcheck
-          shellcheck install.sh uninstall.sh
+          sudo apt-get install -y shellcheck shfmt
+          shellcheck install.sh
+          shfmt -d install.sh
 
       - name: Lint PowerShell installer
+        if: needs.changes.outputs.installer == 'true'
         shell: pwsh
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
@@ -58,7 +95,101 @@ jobs:
           $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
           if ($issues) { $issues | Format-Table; exit 1 }
 
-      - name: Build binaries (linux smoke)
+  build-binaries:
+    name: Build linux binaries
+    needs: [changes, checks]
+    if: needs.changes.outputs.cli == 'true' || needs.changes.outputs.installer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build linux binaries (glibc + musl)
+        run: bun run build:binaries -- --only linux-x64 --only linux-x64-musl --jobs 2
+
+      - name: Smoke test compiled binaries
+        run: bash apps/cli/scripts/verify-release-binaries.sh --partial
+
+      - name: Assert kunai version (not Bun runtime)
         run: |
-          bun run --cwd apps/cli build:binaries --only linux-x64
-          ./apps/cli/dist/bin/kunai-linux-x64 --version
+          ./apps/cli/dist/bin/kunai-linux-x64 --version | tee /tmp/kunai-version.txt
+          grep -q '^kunai ' /tmp/kunai-version.txt
+          ./apps/cli/dist/bin/kunai-linux-x64 --help >/dev/null
+
+      - name: Upload linux binaries for installer job
+        if: needs.changes.outputs.installer == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kunai-linux-binaries
+          retention-days: 1
+          path: |
+            apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/SHA256SUMS
+
+  installer-docker:
+    name: Native installer Docker smoke
+    needs: [changes, build-binaries]
+    if: needs.changes.outputs.installer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: kunai-linux-binaries
+          path: apps/cli/dist/bin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache installer smoke images
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: installer-smoke-${{ runner.os }}-${{ hashFiles('apps/cli/test/docker/native-installer/Dockerfile') }}
+          restore-keys: |
+            installer-smoke-${{ runner.os }}-
+
+      - name: Build glibc smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/cli/test/docker/native-installer
+          file: apps/cli/test/docker/native-installer/Dockerfile
+          target: glibc
+          load: true
+          tags: kunai-installer-smoke:glibc
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Build musl smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/cli/test/docker/native-installer
+          file: apps/cli/test/docker/native-installer/Dockerfile
+          target: musl
+          load: true
+          tags: kunai-installer-smoke:musl
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Rotate Buildx cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+
+      - name: Native installer smoke (glibc + musl)
+        env:
+          KUNAI_INSTALLER_DOCKER: "1"
+        run: bash apps/cli/test/docker/native-installer/run-local.sh --skip-build --skip-image-build
