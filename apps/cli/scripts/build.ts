@@ -11,7 +11,13 @@ import { existsSync } from "node:fs";
 import { chmod, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { RELEASE_DEFINE, reactDevtoolsStubPlugin } from "./build-shared";
+import {
+  RELEASE_DEFINE,
+  assertNoForbiddenReleaseInputs,
+  forbiddenReleaseInputs,
+  reactDevtoolsStubPlugin,
+  requireBuildMetafile,
+} from "./build-shared";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
@@ -20,6 +26,7 @@ const BIN = join(DIST, "kunai.js");
 
 const clean = process.argv.includes("--clean");
 const noMinify = process.argv.includes("--no-minify");
+const analyze = process.argv.includes("--analyze") || process.env.KUNAI_BUILD_ANALYZE === "1";
 
 // Runtime assets (VidKing WASM, mpv Lua bridge) are no longer copied here. They
 // are referenced from source via `import … with { type: "file" }`, so Bun's
@@ -63,9 +70,11 @@ async function main(): Promise<void> {
     },
 
     sourcemap: "none",
+    metafile: true,
     // Minified by default for the published artifact; `--no-minify` keeps readable
     // output for local debugging.
     minify: !noMinify,
+    drop: ["debugger"],
 
     define: RELEASE_DEFINE,
 
@@ -87,6 +96,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const metafile = requireBuildMetafile(result.metafile);
+  assertNoForbiddenReleaseInputs(metafile);
+
   if (!existsSync(BIN)) {
     console.error("[build] Build succeeded but dist/kunai.js was not created.");
     console.error("[build] Bun outputs:");
@@ -102,8 +114,20 @@ async function main(): Promise<void> {
 
   const ms = Date.now() - start;
   const sizeKb = (Bun.file(BIN).size / 1024).toFixed(0);
+  const forbiddenCount = forbiddenReleaseInputs(metafile).length;
 
   console.log(`[build] dist/kunai.js ${sizeKb} KB (${ms}ms)`);
+  if (analyze) {
+    const inputs = Object.entries(metafile.inputs)
+      .map(([path, input]) => ({ path, bytes: input.bytes }))
+      .sort((left, right) => right.bytes - left.bytes)
+      .slice(0, 12);
+    console.log(`[build] release graph inputs: ${Object.keys(metafile.inputs).length}`);
+    console.log(`[build] forbidden non-prod inputs: ${forbiddenCount}`);
+    for (const input of inputs) {
+      console.log(`[build] input ${(input.bytes / 1024).toFixed(1)} KB ${input.path}`);
+    }
+  }
 }
 
 await main();

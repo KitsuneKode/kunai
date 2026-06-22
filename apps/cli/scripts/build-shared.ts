@@ -9,6 +9,8 @@ import { join } from "node:path";
 
 import type { BunPlugin } from "bun";
 
+export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
+
 /**
  * Ink can optionally load `react-devtools-core` when `process.env.DEV` is truthy.
  * Release builds must not require that debug-only package, so we alias it to a
@@ -28,4 +30,49 @@ export function reactDevtoolsStubPlugin(root: string): BunPlugin {
 export const RELEASE_DEFINE: Record<string, string> = {
   // Pin Ink's optional devtools path off in release builds.
   "process.env.DEV": '"false"',
+  // Let React and any small env-gated branches take their production path.
+  "process.env.NODE_ENV": '"production"',
 };
+
+const RELEASE_FORBIDDEN_INPUT_MARKERS: readonly string[] = [
+  "/test/",
+  "/tests/",
+  ".test.",
+  ".spec.",
+  "/__tests__/",
+  "/apps/experiments/",
+  "/archive/legacy/",
+  "/.plans/",
+];
+
+export function forbiddenReleaseInputs(metafile: BunBuildMetafile): readonly string[] {
+  return Object.keys(metafile.inputs)
+    .map((path) => path.replaceAll("\\", "/"))
+    .filter((path) => {
+      const comparable = path.startsWith("/") ? path : `/${path}`;
+      return RELEASE_FORBIDDEN_INPUT_MARKERS.some((marker) => comparable.includes(marker));
+    })
+    .sort();
+}
+
+export function requireBuildMetafile(metafile: BunBuildMetafile | undefined): BunBuildMetafile {
+  if (!metafile) {
+    throw new Error("[build] Bun did not return a metafile even though metafile: true was set");
+  }
+  return metafile;
+}
+
+export function assertNoForbiddenReleaseInputs(metafile: BunBuildMetafile): void {
+  const forbidden = forbiddenReleaseInputs(metafile);
+  if (forbidden.length === 0) return;
+
+  throw new Error(
+    [
+      "[build] release bundle pulled non-production inputs into the graph:",
+      ...forbidden.slice(0, 20).map((path) => `- ${path}`),
+      forbidden.length > 20 ? `- ... ${forbidden.length - 20} more` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}

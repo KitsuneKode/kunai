@@ -18,7 +18,12 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { RELEASE_DEFINE, reactDevtoolsStubPlugin } from "./build-shared";
+import {
+  RELEASE_DEFINE,
+  assertNoForbiddenReleaseInputs,
+  reactDevtoolsStubPlugin,
+  requireBuildMetafile,
+} from "./build-shared";
 
 const ROOT = join(import.meta.dirname, "..");
 const ENTRY = join(ROOT, "src/main.ts");
@@ -62,6 +67,8 @@ async function compileTarget(target: Target): Promise<void> {
     target: "bun",
     minify: true,
     define: RELEASE_DEFINE,
+    drop: ["debugger"],
+    metafile: true,
     plugins: [reactDevtoolsStubPlugin(ROOT)],
     // `compile` produces a single self-contained executable for the given target.
     compile: { target: target.triple, outfile },
@@ -71,6 +78,7 @@ async function compileTarget(target: Target): Promise<void> {
     for (const log of result.logs) console.error(log);
     throw new Error(`[binaries] compile failed for ${target.triple}`);
   }
+  assertNoForbiddenReleaseInputs(requireBuildMetafile(result.metafile));
 }
 
 async function main(): Promise<void> {
