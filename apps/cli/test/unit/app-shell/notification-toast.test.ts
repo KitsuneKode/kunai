@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { formatNotificationToast } from "@/app-shell/notification-queue";
 import { selectNotificationToast } from "@/app-shell/notification-toast";
 
 const item = (dedupKey: string, kind: string, title: string) => ({ dedupKey, kind, title });
@@ -50,6 +51,6 @@ describe("selectNotificationToast", () => {
       active: [item("k1", "mystery", "Thing")],
       seenKeys: new Set<string>(),
     });
-    expect(r.toast).toBe("● Notification — Thing");
+    expect(r.toast).toBe(formatNotificationToast({ kind: "mystery", title: "Thing" }));
   });
 });

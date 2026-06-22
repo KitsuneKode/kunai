@@ -1,5 +1,7 @@
 import type { NotificationRecord } from "@kunai/storage";
 
+import { notificationKindGlyph } from "./notification-kinds";
+
 export type NotificationsTab = "active" | "archive";
 
 export type NotificationRow = {
@@ -31,11 +33,8 @@ export type BuildNotificationsViewInput = {
 };
 
 function glyphForKind(kind: string): string {
-  if (kind === "download-complete") return "⬇";
-  if (kind === "download-failed") return "⚠";
-  if (kind === "queue-recovery") return "↩";
-  if (kind === "app-update") return "⬆";
-  return "🆕";
+  if (kind === "new-episode") return "🆕";
+  return notificationKindGlyph(kind);
 }
 
 function posterUrlOf(record: NotificationRecord): string | undefined {

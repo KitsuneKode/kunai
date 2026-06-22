@@ -1,3 +1,4 @@
+import type { NotificationPriority } from "./notification-queue";
 import type { ShellStatusTone } from "./types";
 
 export type TransientToneLine = { readonly text: string; readonly tone: ShellStatusTone };
@@ -5,6 +6,8 @@ export type TransientToneLine = { readonly text: string; readonly tone: ShellSta
 export type TransientRowInput = {
   readonly alert: TransientToneLine | null;
   readonly notificationToast: string | null;
+  /** Immediate arrivals can briefly preempt standing playback alerts. */
+  readonly notificationToastPriority?: NotificationPriority | null;
   readonly streakMilestoneAlert: string | null;
   readonly presenceBootLine: TransientToneLine | null;
   readonly streakAtRiskAlert: string | null;
@@ -25,6 +28,9 @@ export type TransientRowLine = {
 // streak-at-risk → weekly digest. Arrivals render bright; calm infos dim. Keeping
 // this pure makes the priority testable without mounting the whole shell.
 export function selectTransientRow(input: TransientRowInput): TransientRowLine | null {
+  if (input.notificationToast && input.notificationToastPriority === "immediate") {
+    return { text: input.notificationToast, tone: "info", accent: true, dim: false };
+  }
   if (input.alert) {
     return { text: input.alert.text, tone: input.alert.tone, accent: false, dim: true };
   }

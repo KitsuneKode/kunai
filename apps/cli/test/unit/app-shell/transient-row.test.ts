@@ -28,6 +28,17 @@ describe("selectTransientRow", () => {
     expect(row?.accent).toBe(false);
   });
 
+  test("immediate notification toasts can preempt a standing alert", () => {
+    const row = selectTransientRow({
+      ...EMPTY,
+      alert: { text: "⚠ autoplay paused", tone: "warning" },
+      notificationToast: "⚠ Download failed — Show",
+      notificationToastPriority: "immediate",
+    });
+    expect(row?.text).toBe("⚠ Download failed — Show");
+    expect(row?.accent).toBe(true);
+  });
+
   test("a toast wins over streak/presence and renders bright accent", () => {
     const row = selectTransientRow({
       ...EMPTY,
