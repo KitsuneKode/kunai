@@ -1,4 +1,8 @@
+import type { ShellFooterMode } from "./types";
+
 export type ShellViewportKind = "browse" | "picker" | "playback";
+
+export type OverlayPanelKind = "picker" | "line" | "dedicated" | "tracks";
 
 export type ShellViewportBreakpoint = "narrow" | "medium" | "wide" | "blocked";
 export type ShellTerminalProfile = "local" | "constrained";
@@ -158,13 +162,146 @@ export function getBrowseCommandPaletteMaxVisible(
   return Math.max(1, Math.min(18, availableRows));
 }
 
-/** Rows consumed by AppRoot header, padding, and transient alert strip above shell content. */
+/** Rows consumed by AppRoot header and padding above shell content. */
 export const ROOT_CHROME_ROWS = 4;
+
+/** Always reserve one line under AppHeader for transient alerts/toasts. */
+export const TRANSIENT_ROW_SLOTS = 1;
+
+/** Horizontal padding/margins consumed by the overlay host (cols - 8). */
+export const OVERLAY_FRAME_COLS = 8;
+
+const OVERLAY_CONTEXT_STRIP_ROWS = 1;
+const OVERLAY_COMMAND_PALETTE_ROWS = 4;
+const OVERLAY_DEDICATED_SHELL_HEADER_ROWS = 2;
+const OVERLAY_INK_BUFFER_ROWS = 2;
+const BROWSE_INK_BUFFER_ROWS = 3;
+const SCROLL_AFFORDANCE_ROWS = 2;
+
+const OVERLAY_PANEL_CHROME_BY_KIND: Record<OverlayPanelKind, number> = {
+  picker: 5,
+  line: 4,
+  dedicated: 6,
+  tracks: 1,
+};
+
+export const FOOTER_TASK_ROWS = 1;
+export const FOOTER_ACTION_ROWS = 1;
+export const FOOTER_COMMAND_MODE_EXTRA_ROWS = 3;
+export const FOOTER_MARGIN_ROWS = 1;
+
+export function getFooterReservedRows(flags: {
+  readonly mode?: ShellFooterMode;
+  readonly commandMode?: boolean;
+}): number {
+  const mode = flags.mode ?? "detailed";
+  const commandMode = flags.commandMode ?? false;
+  if (commandMode) {
+    return FOOTER_TASK_ROWS + FOOTER_COMMAND_MODE_EXTRA_ROWS + FOOTER_MARGIN_ROWS;
+  }
+  if (mode === "minimal") {
+    return FOOTER_TASK_ROWS + FOOTER_MARGIN_ROWS;
+  }
+  return FOOTER_TASK_ROWS + FOOTER_ACTION_ROWS + FOOTER_MARGIN_ROWS;
+}
+
+export function getOverlayHostChromeRows(flags: {
+  readonly commandMode: boolean;
+  readonly dedicatedShell?: boolean;
+}): number {
+  let rows = OVERLAY_CONTEXT_STRIP_ROWS;
+  if (flags.dedicatedShell) {
+    rows += OVERLAY_DEDICATED_SHELL_HEADER_ROWS;
+  }
+  if (flags.commandMode) {
+    rows += OVERLAY_COMMAND_PALETTE_ROWS;
+  }
+  return rows;
+}
+
+export function getOverlayPanelChromeRows(kind: OverlayPanelKind): number {
+  return OVERLAY_PANEL_CHROME_BY_KIND[kind];
+}
+
+export function resolveOverlayPanelKind(overlayType: string): OverlayPanelKind {
+  if (overlayType === "tracks_panel") return "tracks";
+  if (
+    overlayType === "history" ||
+    overlayType === "queue" ||
+    overlayType === "notifications" ||
+    overlayType === "downloads"
+  ) {
+    return "dedicated";
+  }
+  if (
+    overlayType === "help" ||
+    overlayType === "about" ||
+    overlayType === "diagnostics" ||
+    overlayType === "details"
+  ) {
+    return "line";
+  }
+  return "picker";
+}
+
+export function getOverlayContentViewport(input: {
+  readonly terminalRows: number;
+  readonly terminalCols: number;
+  readonly overlayChromeRows: number;
+  readonly commandMode?: boolean;
+  readonly footerMode?: ShellFooterMode;
+}): {
+  readonly contentRows: number;
+  readonly contentColumns: number;
+  readonly chromeRows: number;
+} {
+  const commandMode = input.commandMode ?? false;
+  const footerRows = getFooterReservedRows({
+    mode: input.footerMode ?? "detailed",
+    commandMode,
+  });
+  const contentRows = Math.max(
+    1,
+    input.terminalRows -
+      ROOT_CHROME_ROWS -
+      TRANSIENT_ROW_SLOTS -
+      input.overlayChromeRows -
+      footerRows -
+      BROWSE_INK_BUFFER_ROWS -
+      SCROLL_AFFORDANCE_ROWS -
+      OVERLAY_INK_BUFFER_ROWS,
+  );
+  const contentColumns = Math.max(24, input.terminalCols - OVERLAY_FRAME_COLS);
+
+  return {
+    contentRows,
+    contentColumns,
+    chromeRows: input.overlayChromeRows,
+  };
+}
+
+export function getOverlayListMaxVisible(input: {
+  readonly terminalRows: number;
+  readonly terminalCols?: number;
+  readonly overlayChromeRows: number;
+  readonly panelKind?: OverlayPanelKind;
+  readonly commandMode?: boolean;
+  readonly footerMode?: ShellFooterMode;
+}): number {
+  const panelKind = input.panelKind ?? "picker";
+  const viewport = getOverlayContentViewport({
+    terminalRows: input.terminalRows,
+    terminalCols: input.terminalCols ?? 80,
+    overlayChromeRows: input.overlayChromeRows,
+    commandMode: input.commandMode,
+    footerMode: input.footerMode,
+  });
+  const panelChrome = getOverlayPanelChromeRows(panelKind);
+  return Math.max(1, Math.min(18, viewport.contentRows - panelChrome));
+}
 
 const BROWSE_BASE_CHROME_ROWS = 10;
 const BROWSE_FOOTER_ROWS = 5;
-const BROWSE_INK_BUFFER_ROWS = 3;
-const SCROLL_AFFORDANCE_ROWS = 2;
 
 export function getBrowseChromeRows(flags: {
   readonly hasResultSubtitle: boolean;
@@ -190,10 +327,12 @@ export function getBrowseListMaxVisible(
   rows: number,
   chromeRows: number,
   rootHeaderRows: number = ROOT_CHROME_ROWS,
+  transientRows: number = TRANSIENT_ROW_SLOTS,
 ): number {
   const available =
     rows -
     rootHeaderRows -
+    transientRows -
     chromeRows -
     BROWSE_FOOTER_ROWS -
     BROWSE_INK_BUFFER_ROWS -

@@ -5,10 +5,15 @@ import {
   getBrowseListMaxVisible,
   getBrowseCommandPaletteMaxVisible,
   getCommandPaletteVisibleCommandCount,
+  getFooterReservedRows,
+  getOverlayContentViewport,
+  getOverlayHostChromeRows,
+  getOverlayListMaxVisible,
   getPickerChromeRows,
   getPickerListMaxVisible,
   getPickerLayout,
   ROOT_CHROME_ROWS,
+  TRANSIENT_ROW_SLOTS,
   getShellViewportPolicy,
 } from "@/app-shell/layout-policy";
 import { getShellTerminalProfile } from "@/app-shell/use-viewport-policy";
@@ -202,8 +207,66 @@ describe("getShellViewportPolicy", () => {
     const rows = 34;
     const visibleRows = getBrowseListMaxVisible(rows, chromeRows);
 
-    expect(visibleRows).toBe(2);
-    expect(visibleRows + 2).toBeLessThanOrEqual(rows - ROOT_CHROME_ROWS - chromeRows - 5 - 3);
+    expect(visibleRows).toBe(1);
+    expect(visibleRows + 2).toBeLessThanOrEqual(
+      rows - ROOT_CHROME_ROWS - TRANSIENT_ROW_SLOTS - chromeRows - 5 - 3,
+    );
+  });
+
+  test("browse list max visible stays stable when transient content toggles", () => {
+    const chromeRows = getBrowseChromeRows({
+      hasResultSubtitle: false,
+      hasFilterBar: false,
+      hasFilterBadges: false,
+      hasCalendarChrome: false,
+      hasContextStrip: false,
+      hasQueryDirtyHint: false,
+      commandMode: false,
+    });
+    const withTransientReserved = getBrowseListMaxVisible(30, chromeRows);
+    expect(withTransientReserved).toBe(
+      getBrowseListMaxVisible(30, chromeRows, ROOT_CHROME_ROWS, 1),
+    );
+    expect(withTransientReserved).toBeLessThan(
+      getBrowseListMaxVisible(30, chromeRows, ROOT_CHROME_ROWS, 0),
+    );
+  });
+
+  test("overlay content viewport subtracts root chrome, transient row, and overlay host chrome", () => {
+    const hostChrome = getOverlayHostChromeRows({ commandMode: false, dedicatedShell: false });
+    const viewport = getOverlayContentViewport({
+      terminalRows: 40,
+      terminalCols: 100,
+      overlayChromeRows: hostChrome,
+    });
+    expect(viewport.contentColumns).toBe(92);
+    expect(viewport.contentRows).toBeGreaterThanOrEqual(8);
+    expect(viewport.contentRows).toBeLessThan(40);
+  });
+
+  test("overlay list max visible scales with terminal height on 24-row and 40-row terminals", () => {
+    const hostChrome = getOverlayHostChromeRows({ commandMode: false, dedicatedShell: false });
+    const short = getOverlayListMaxVisible({
+      terminalRows: 24,
+      terminalCols: 80,
+      overlayChromeRows: hostChrome,
+      panelKind: "picker",
+    });
+    const tall = getOverlayListMaxVisible({
+      terminalRows: 40,
+      terminalCols: 80,
+      overlayChromeRows: hostChrome,
+      panelKind: "picker",
+    });
+    expect(short).toBeGreaterThanOrEqual(1);
+    expect(short).toBeLessThanOrEqual(6);
+    expect(tall).toBeGreaterThan(short);
+    expect(tall).toBeLessThanOrEqual(18);
+  });
+
+  test("footer reserved rows account for command palette mode", () => {
+    expect(getFooterReservedRows({ mode: "detailed", commandMode: false })).toBe(3);
+    expect(getFooterReservedRows({ mode: "detailed", commandMode: true })).toBeGreaterThan(3);
   });
 
   test("picker chrome row budget replaces ad-hoc maxVisibleRows subtraction", () => {

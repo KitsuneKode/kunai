@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
@@ -11,6 +12,28 @@ type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent"
 const MINIMAL_FOOTER_ACTION_LIMIT = 4;
 const DETAILED_FOOTER_ACTION_LIMIT = 5;
 const DETAILED_FOOTER_VISIBLE_LIMIT = 4;
+
+export { TRANSIENT_ROW_SLOTS };
+
+/** Reserved row under AppHeader — always occupies layout budget even when empty. */
+export function TransientRowSlot({
+  children,
+  width,
+}: {
+  children?: React.ReactNode;
+  width?: number;
+}) {
+  const lineWidth = width ?? 40;
+  return (
+    <Box flexDirection="column">
+      {children ?? (
+        <Text color={palette.dim} dimColor>
+          {truncateLine(" ", lineWidth)}
+        </Text>
+      )}
+    </Box>
+  );
+}
 
 /** Optional footer glyphs — off by default for calmer Claude Code–style footers. */
 const FOOTER_GLYPHS: Record<string, string> = {};
@@ -179,7 +202,13 @@ export function Footer({
             );
           })}
         </Box>
-      ) : null}
+      ) : (
+        <Box marginTop={1} minHeight={1}>
+          <Text color={palette.dim} dimColor>
+            {truncateLine(" ", taskWidth)}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 }
