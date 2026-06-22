@@ -19,11 +19,34 @@ describe("dispatchAppCommand", () => {
       },
     });
 
-    expect(result).toEqual({ status: "handled", surface: "active-playback" });
+    expect(result).toEqual({
+      status: "handled",
+      surface: "active-playback",
+      reason: undefined,
+    });
     expect(calls).toEqual([
       "cancel:playback-loading-command-fallback",
       "fallback:playback-loading-command-fallback",
     ]);
+  });
+
+  test("returns a visible reason when an active playback command is disabled", async () => {
+    const result = await dispatchAppCommand({
+      action: "next",
+      source: "hotkey",
+      activePlayback: {
+        deps: createDeps([]),
+        canGoNext: false,
+        canGoPrevious: false,
+        canToggleAutoplay: false,
+      },
+    });
+
+    expect(result).toEqual({
+      status: "ignored",
+      surface: "active-playback",
+      reason: "No next episode available",
+    });
   });
 });
 

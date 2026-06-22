@@ -924,6 +924,12 @@ function AppRoot({ container }: { container: Container }) {
           canGoPrevious,
           canToggleAutoplay,
         },
+      }).then((result) => {
+        if (result.status !== "ignored" || !result.reason) return;
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          detail: result.reason,
+        });
       });
     },
     [container, canGoNext, canGoPrevious, canToggleAutoplay, setExiting],

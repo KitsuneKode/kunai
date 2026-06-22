@@ -1,6 +1,6 @@
 # Plan 001: Canonical App Command Dispatcher
 
-Status: partially implemented
+Status: implemented
 Priority: P0
 Effort: M
 Risk: Medium
@@ -125,11 +125,11 @@ bun run test
 - Direct duplicate handlers in `ink-shell.tsx` for next, previous, recover, fallback, source, quality, episode, autoplay, autoskip, stop-after-current, stop, and return-to-search were replaced with command-dispatch calls.
 - `apps/cli/test/unit/app-shell/active-playback-command-dispatcher.test.ts` covers fallback cancellation, source/quality/audio/subtitle picker routing, disabled next, and player-control delegation for next/previous/quit.
 - `apps/cli/test/unit/app-shell/app-command-dispatcher.test.ts` proves active playback commands enter through the public app dispatcher seam.
+- Disabled active playback commands now return visible reasons through `dispatchAppCommand(...)`; `ink-shell.tsx` surfaces those reasons via `SET_PLAYBACK_FEEDBACK`.
 
-Remaining:
+Remaining follow-up:
 
 - Migrate root overlay command effects after root content state is no longer module-global.
-- Add disabled-result propagation to visible UI copy instead of only returning ignored.
 
 ## Rollback
 
