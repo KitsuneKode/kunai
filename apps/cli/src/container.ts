@@ -14,13 +14,11 @@ import {
   orderProviderModulesByPriority,
   type ProviderEngine,
 } from "@kunai/core";
-import {
-  allmangaProviderModule,
-  miruroProviderModule,
-  rivestreamProviderModule,
-  videasyProviderModule,
-  vidlinkProviderModule,
-} from "@kunai/providers";
+import { allmangaProviderModule } from "@kunai/providers/allmanga";
+import { miruroProviderModule } from "@kunai/providers/miruro";
+import { rivestreamProviderModule } from "@kunai/providers/rivestream";
+import { videasyProviderModule } from "@kunai/providers/videasy";
+import { vidlinkProviderModule } from "@kunai/providers/vidlink";
 import {
   DownloadJobsRepository,
   FollowedTitleRepository,
@@ -138,8 +136,11 @@ import { SearchRegistryImpl } from "./services/search/SearchRegistry";
 import { AniListAdapter } from "./services/sync/AniListAdapter";
 import { SyncService } from "./services/sync/SyncService";
 import { TmdbAdapter } from "./services/sync/TmdbAdapter";
+import { BinaryAutoUpdater } from "./services/update/BinaryAutoUpdater";
+import { readInstallManifest } from "./services/update/install-manifest";
 import { detectInstallMethod } from "./services/update/install-method";
-import { fetchLatestKunaiVersion, UpdateService } from "./services/update/UpdateService";
+import { resolveLatestVersion } from "./services/update/resolve-latest-version";
+import { UpdateService } from "./services/update/UpdateService";
 import type { CapabilitySnapshot } from "./ui";
 
 /**
@@ -211,6 +212,7 @@ export interface Container {
   readonly resultEnrichmentService: ResultEnrichmentService;
   readonly historyMetadataHealer: HistoryMetadataHealer;
   readonly updateService: UpdateService;
+  readonly binaryAutoUpdater: BinaryAutoUpdater;
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;
@@ -639,16 +641,27 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     onHealError: (titleId, error) =>
       logger.warn("History metadata heal failed", { titleId, error }),
   });
+  const detectedInstall = detectInstallMethod({
+    cwd: process.cwd(),
+    entrypoint: process.argv[1],
+    fileExists: existsSync,
+  });
   const updateService = new UpdateService({
     config,
     diagnostics: diagnosticsService,
     currentVersion: options?.appVersion ?? "0.0.0",
-    installMethod: detectInstallMethod({
-      cwd: process.cwd(),
-      entrypoint: process.argv[1],
-      fileExists: existsSync,
-    }),
-    fetchLatestVersion: fetchLatestKunaiVersion,
+    installMethod: detectedInstall,
+    fetchLatestVersion: async () => {
+      const manifest = await readInstallManifest();
+      const channel = manifest?.channel ?? detectedInstall.kind;
+      const version = await resolveLatestVersion(channel);
+      if (!version) throw new Error("Could not resolve latest version");
+      return version;
+    },
+  });
+  const binaryAutoUpdater = new BinaryAutoUpdater({
+    config,
+    currentVersion: options?.appVersion ?? "0.0.0",
   });
 
   const container: Container = {
@@ -700,6 +713,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     resultEnrichmentService,
     historyMetadataHealer,
     updateService,
+    binaryAutoUpdater,
     listRepository,
     queueRepository,
     notificationRepository,

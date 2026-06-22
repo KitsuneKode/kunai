@@ -50,6 +50,8 @@
     "test:file": "bun test",
     "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration",
+    "test:installer:docker": "bash test/docker/native-installer/run-local.sh",
+    "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",
     "test:live:allanime": "bun -e \"await import('./test/live/allanime-demonslayer.smoke.ts')\"",
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
     "test:live:miruro": "bun -e \"await import('./test/live/miruro-demonslayer.smoke.ts')\"",
@@ -69,14 +71,17 @@
     "check": "bun run typecheck && bun run lint && bun run fmt",
     "clean": "rm -rf dist",
     "build": "bun run scripts/build.ts",
+    "build:watch": "bun --watch run scripts/build.ts",
+    "build:analyze": "KUNAI_BUILD_ANALYZE=1 bun run scripts/build.ts",
     "build:binaries": "bun run scripts/build-binaries.ts",
     "build:prod": "bun run check && bun run build",
-    "pkg:check": "bun run build && npm pack --dry-run --ignore-scripts",
+    "pkg:check": "npm pack --dry-run --ignore-scripts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
     "link:global": "bun link",
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
-    "prepack": "bun run build"
+    "prepack": "bun run build",
+    "postinstall": "bun run scripts/postinstall.ts"
   },
   "dependencies": {
     "commander": "^15.0.0",

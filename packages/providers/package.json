@@ -5,7 +5,14 @@
   "description": "Kunai provider modules behind the Provider SDK boundary.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./experimental": "./src/experimental.ts",
+    "./research": "./src/research.ts",
+    "./allmanga": "./src/allmanga/direct.ts",
+    "./miruro": "./src/miruro/direct.ts",
+    "./rivestream": "./src/rivestream/direct.ts",
+    "./videasy": "./src/videasy/index.ts",
+    "./vidlink": "./src/vidlink/direct.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",

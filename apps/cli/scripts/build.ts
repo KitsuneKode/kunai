@@ -1,98 +1,76 @@
 #!/usr/bin/env bun
 // Build script for @kitsunekode/kunai.
 //
-// Bundles src/main.ts into a single dist/kunai.js.
-// Workspace packages (@kunai/*) are inlined for a compact direct-provider CLI.
-// WASM assets (e.g. VidKing's module1_patched.wasm) are handled automatically
-// by Bun's bundler when it encounters new URL('./...', import.meta.url) references.
-// The mpv Lua bridge is copied separately since it is a runtime file path, not a JS import.
+// Order:
+//   1. validate entry
+//   2. clean dist/
+//   3. Bun.build npm bundle (workspace packages inlined)
+//   4. metafile guard (no tests/experiments/legacy in graph)
+//   5. optional bundle budget check
+//   6. chmod + size summary (bundle + assets)
+//
+// Runtime assets (VidKing WASM, mpv Lua bridge) are referenced from source via
+// `import … with { type: "file" }`, so Bun emits them into dist/assets and
+// rewrites import paths. `bun build --compile` embeds them into binaries too.
 
 import { existsSync } from "node:fs";
-import { chmod, rm } from "node:fs/promises";
+import { chmod, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  RELEASE_DEFINE,
+  assertNpmBundleBudget,
+  CLI_ENTRY,
+  formatBuildSize,
+  NPM_BUNDLE_OUT,
   assertNoForbiddenReleaseInputs,
   forbiddenReleaseInputs,
-  reactDevtoolsStubPlugin,
+  npmBundleBuildOptions,
+  printBuildSizeTable,
   requireBuildMetafile,
+  topReleaseInputs,
 } from "./build-shared";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
-const ENTRY = join(ROOT, "src/main.ts");
-const BIN = join(DIST, "kunai.js");
+const ENTRY = join(ROOT, CLI_ENTRY);
+const BIN = join(ROOT, NPM_BUNDLE_OUT);
+const ASSETS = join(DIST, "assets");
 
 const clean = process.argv.includes("--clean");
 const noMinify = process.argv.includes("--no-minify");
 const analyze = process.argv.includes("--analyze") || process.env.KUNAI_BUILD_ANALYZE === "1";
+const skipBudget = process.argv.includes("--no-budget");
 
-// Runtime assets (VidKing WASM, mpv Lua bridge) are no longer copied here. They
-// are referenced from source via `import … with { type: "file" }`, so Bun's
-// bundler emits them into dist/assets and rewrites the import paths. This also
-// makes `bun build --compile` embed them into single-file binaries automatically.
+async function assetBytes(): Promise<number> {
+  if (!existsSync(ASSETS)) return 0;
+  const names = await readdir(ASSETS);
+  let total = 0;
+  for (const name of names) {
+    total += (await stat(join(ASSETS, name))).size;
+  }
+  return total;
+}
 
 async function main(): Promise<void> {
   const start = Date.now();
 
-  await rm(DIST, { recursive: true, force: true });
+  if (!clean && !existsSync(ENTRY)) {
+    throw new Error(`[build] missing CLI entry: ${ENTRY}`);
+  }
 
+  await rm(DIST, { recursive: true, force: true });
   if (clean) {
     console.log("[build] cleaned dist/");
     return;
   }
 
-  if (!existsSync(ENTRY)) {
-    throw new Error(`[build] missing CLI entry: ${ENTRY}`);
-  }
-
-  const result = await Bun.build({
-    entrypoints: [ENTRY],
-    outdir: DIST,
-
-    target: "bun",
-    format: "esm",
-    splitting: false,
-
-    /**
-     * Bundle local workspace packages like:
-     * @kunai/core, @kunai/providers, @kunai/storage,
-     * @kunai/schemas, @kunai/types, etc.
-     */
-    packages: "bundle",
-    plugins: [reactDevtoolsStubPlugin(ROOT)],
-
-    naming: {
-      entry: "kunai.js",
-      chunk: "[name]-[hash].[ext]",
-      asset: "assets/[name]-[hash].[ext]",
-    },
-
-    sourcemap: "none",
-    metafile: true,
-    // Minified by default for the published artifact; `--no-minify` keeps readable
-    // output for local debugging.
-    minify: !noMinify,
-    drop: ["debugger"],
-
-    define: RELEASE_DEFINE,
-
-    /**
-     * IMPORTANT:
-     * Do not add `banner: "#!/usr/bin/env bun\n"` here.
-     * src/main.ts already has the shebang.
-     * Adding a banner creates a double-shebang syntax error.
-     */
-  });
+  const result = await Bun.build(npmBundleBuildOptions(ROOT, { minify: !noMinify }));
 
   if (!result.success) {
     console.error("[build] Bun build failed");
-
     for (const log of result.logs) {
       console.error(log);
     }
-
     process.exit(1);
   }
 
@@ -102,30 +80,44 @@ async function main(): Promise<void> {
   if (!existsSync(BIN)) {
     console.error("[build] Build succeeded but dist/kunai.js was not created.");
     console.error("[build] Bun outputs:");
-
     for (const output of result.outputs) {
       console.error(`- ${output.path}`);
     }
-
     process.exit(1);
   }
 
   await chmod(BIN, 0o755);
 
+  const bundleBytes = Bun.file(BIN).size;
+  const assetsTotal = await assetBytes();
   const ms = Date.now() - start;
-  const sizeKb = (Bun.file(BIN).size / 1024).toFixed(0);
-  const forbiddenCount = forbiddenReleaseInputs(metafile).length;
 
-  console.log(`[build] dist/kunai.js ${sizeKb} KB (${ms}ms)`);
+  printBuildSizeTable(
+    [
+      { label: "dist/kunai.js", bytes: bundleBytes },
+      { label: "dist/assets/*", bytes: assetsTotal },
+      { label: "dist/ total", bytes: bundleBytes + assetsTotal },
+    ],
+    "npm release artifact",
+  );
+  console.log(`[build] completed in ${ms}ms`);
+
+  for (const input of topReleaseInputs(metafile, 5)) {
+    console.log(`[build] input ${formatBuildSize(input.bytes)} ${input.path}`);
+  }
+
+  if (!skipBudget && !noMinify) {
+    assertNpmBundleBudget(bundleBytes);
+  }
+
   if (analyze) {
-    const inputs = Object.entries(metafile.inputs)
-      .map(([path, input]) => ({ path, bytes: input.bytes }))
-      .sort((left, right) => right.bytes - left.bytes)
-      .slice(0, 12);
+    const metaPath = join(DIST, "build-meta.json");
+    await writeFile(metaPath, `${JSON.stringify(metafile, null, 2)}\n`);
+    console.log(`[build] wrote ${metaPath}`);
     console.log(`[build] release graph inputs: ${Object.keys(metafile.inputs).length}`);
-    console.log(`[build] forbidden non-prod inputs: ${forbiddenCount}`);
-    for (const input of inputs) {
-      console.log(`[build] input ${(input.bytes / 1024).toFixed(1)} KB ${input.path}`);
+    console.log(`[build] forbidden non-prod inputs: ${forbiddenReleaseInputs(metafile).length}`);
+    for (const input of topReleaseInputs(metafile)) {
+      console.log(`[build] input ${formatBuildSize(input.bytes)} ${input.path}`);
     }
   }
 }

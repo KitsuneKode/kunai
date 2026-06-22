@@ -22,7 +22,7 @@
       "outputs": []
     },
     "build": {
-      "dependsOn": ["typecheck"],
+      "dependsOn": ["^typecheck", "typecheck"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "check": {

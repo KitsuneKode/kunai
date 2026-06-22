@@ -18,14 +18,11 @@ import {
   miruroProviderModule,
   createVidkingResultFromPayload,
   extractQualitiesFromMaster,
-  getProviderMigrationQueue,
-  getProviderResearchProfile,
   listVidkingFlavors,
   normalizeIsoLanguageCode,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   parseSourceHost,
-  providerResearchProfiles,
   qualityRankFromLabel,
   resolveFlavorEngineOptions,
   resolveVidkingDirect,
@@ -35,6 +32,11 @@ import {
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
+import {
+  getProviderMigrationQueue,
+  getProviderResearchProfile,
+  providerResearchProfiles,
+} from "../src/research";
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 
