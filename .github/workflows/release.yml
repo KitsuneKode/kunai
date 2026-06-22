@@ -15,7 +15,9 @@ on:
       - "bun.lock"
       - "turbo.json"
       - ".github/workflows/release.yml"
+      - ".release/**"
       - "scripts/release-changelog.ts"
+      - "scripts/generate-release-notes.ts"
       - "scripts/release-guard.ts"
       - "scripts/sync-root-changelog.ts"
       - "CHANGELOG.md"
@@ -72,6 +74,9 @@ jobs:
 
       - name: Release guard
         run: bun run guard
+
+      - name: Release notes guard
+        run: bun run release:notes:check
 
       - name: Create release PR or publish
         id: changesets

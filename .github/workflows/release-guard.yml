@@ -15,9 +15,11 @@ on:
       - "bun.lock"
       - "turbo.json"
       - "CHANGELOG.md"
+      - ".release/**"
       - ".github/workflows/release.yml"
       - ".github/workflows/release-guard.yml"
       - "scripts/release-changelog.ts"
+      - "scripts/generate-release-notes.ts"
       - "scripts/release-guard.ts"
       - "scripts/sync-root-changelog.ts"
   push:
@@ -26,7 +28,9 @@ on:
       - "apps/cli/**"
       - ".changeset/**"
       - "CHANGELOG.md"
+      - ".release/**"
       - "scripts/release-changelog.ts"
+      - "scripts/generate-release-notes.ts"
       - "scripts/release-guard.ts"
       - "scripts/sync-root-changelog.ts"
 
@@ -52,3 +56,6 @@ jobs:
 
       - name: Run release guard
         run: bun run guard
+
+      - name: Run release notes guard
+        run: bun run release:notes:check

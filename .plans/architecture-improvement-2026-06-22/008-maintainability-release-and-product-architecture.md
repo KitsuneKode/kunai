@@ -1,6 +1,6 @@
 # Plan 008: Maintainability, Release Notes, and Product Architecture
 
-Status: ready
+Status: partially implemented
 Priority: P1
 Effort: L
 Risk: Medium
@@ -183,6 +183,23 @@ bun run release:notes:check
 - Root shell rendered state no longer depends on module-global subscriber sets.
 - Release notes, root changelog, docs release pages, and GitHub release bodies derive from the same generated artifact.
 - CI/Turbo tasks make boundary and release drift fail early.
+
+## Implemented Slices
+
+### Release Note Artifact Generation
+
+- Added `scripts/generate-release-notes.ts`.
+- Added `bun run release:notes` and `bun run release:notes:check`.
+- Generated tracked `.release/kunai-v0.2.5.json` and `.release/kunai-v0.2.5.md` from the current package version and root changelog entry.
+- Added unit tests for release body section parsing, artifact generation, and Markdown rendering.
+- Wired release workflows to run `bun run release:notes:check` and to trigger when `.release/**` or the generator changes.
+
+Remaining release work:
+
+- Render docs release pages from `.release/*.json`.
+- Feed `.release/kunai-vX.Y.Z.md` into GitHub release body upload.
+- Add binary checksum fields after `build:binaries` produces `SHA256SUMS`.
+- Evaluate dependency catalogs only after current Bun support and lockfile behavior are verified in a separate scoped commit.
 
 ## Rollback
 

@@ -36,6 +36,8 @@
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
     "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts",
+    "release:notes": "bun run scripts/generate-release-notes.ts",
+    "release:notes:check": "bun run scripts/generate-release-notes.ts --check",
     "release": "bunx changeset publish",
     "guard": "bun run scripts/release-guard.ts",
     "link:global": "bun run --cwd apps/cli link:global",
@@ -76,6 +78,9 @@
     ],
     ".changeset/*.md": [
       "bun run guard"
+    ],
+    ".release/*.{json,md}": [
+      "bun run release:notes:check"
     ]
   },
   "engines": {
