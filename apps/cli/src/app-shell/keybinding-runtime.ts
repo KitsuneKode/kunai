@@ -98,6 +98,8 @@ export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackS
       return "source";
     case "post-diagnostics":
       return "diagnostics";
+    case "post-episode":
+      return "pick-episode";
     default:
       return null;
   }

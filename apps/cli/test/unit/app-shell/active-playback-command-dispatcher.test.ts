@@ -88,6 +88,36 @@ describe("dispatchActivePlaybackCommand", () => {
     expect(result).toBe("ignored");
     expect(calls).toEqual([]);
   });
+
+  test("enabled next previous and quit commands delegate to player control", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls);
+
+    await dispatchActivePlaybackCommand("next", {
+      deps,
+      canGoNext: true,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+    await dispatchActivePlaybackCommand("previous", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: true,
+      canToggleAutoplay: false,
+    });
+    await dispatchActivePlaybackCommand("quit", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual([
+      "next:playback-loading-command-next",
+      "previous:playback-loading-command-previous",
+      "stop:playback-loading-command-stop",
+    ]);
+  });
 });
 
 function createDeps(

@@ -123,11 +123,14 @@ bun run test
 - `footerHints(...)` now uses `hintLabel` when present, reducing footer/help copy drift.
 - `formatPlaybackSessionKeysHint(...)` derives player/source/quality/episode/command keys from `KEYBINDINGS` by action id and filters unavailable actions from playback capability state.
 - `apps/cli/test/unit/app-shell/playback-session-key-hints.test.ts` proves playback hints follow keybinding registry changes.
+- App-owned active playback hotkeys now enter `dispatchActivePlaybackCommand(...)` instead of duplicate local handlers in `ink-shell.tsx`.
+- Post-play footer actions moved to `apps/cli/src/app-shell/post-play-footer-actions.ts` and derive visible keys from `KEYBINDINGS`.
+- The post-play registry now includes scoped entries for visible post-play quit and episode controls; next-season reuses the post-continue key with a contextual label.
+- `apps/cli/test/unit/app-shell/post-play-footer-actions.test.ts` proves post-play footer keys follow registry changes.
 
 Remaining:
 
-- Route player hotkeys themselves through the runtime resolver and Plan 001 dispatcher.
-- Migrate post-playback footer actions to the same registry + dispatcher path.
+- Route non-footer post-play action-row shortcuts through the same registry where appropriate.
 - Delete local `useInput`/footer action duplication only after matching focused tests are in place.
 
 ## Rollback

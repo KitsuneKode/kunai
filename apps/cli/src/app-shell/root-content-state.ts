@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 export type RootContentKind = "browse" | "loading" | "playback" | "post-playback" | "picker";
 
@@ -36,23 +36,24 @@ export function getRootContentSession(): RootContentSession | null {
   return rootContentSession;
 }
 
+export function subscribeRootContentSession(subscriber: () => void): () => void {
+  rootContentSubscribers.add(subscriber);
+  return () => {
+    rootContentSubscribers.delete(subscriber);
+  };
+}
+
 function setRootContentSession(session: RootContentSession | null): void {
   rootContentSession = session;
   notifyRootContentSubscribers();
 }
 
 export function useRootContentSession(): RootContentSession | null {
-  const [, setRevision] = useState(0);
-
-  useEffect(() => {
-    const subscriber = () => setRevision((revision) => revision + 1);
-    rootContentSubscribers.add(subscriber);
-    return () => {
-      rootContentSubscribers.delete(subscriber);
-    };
-  }, []);
-
-  return rootContentSession;
+  return useSyncExternalStore(
+    subscribeRootContentSession,
+    getRootContentSession,
+    getRootContentSession,
+  );
 }
 
 export function clearRootContentSession(): void {

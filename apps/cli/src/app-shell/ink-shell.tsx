@@ -45,6 +45,7 @@ import { LoadingShell } from "./loading-shell";
 import { selectNotificationToast } from "./notification-toast";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
+import { buildPostPlayFooterActions } from "./post-play-footer-actions";
 import { PostPlayShell } from "./post-play-shell";
 import {
   buildPostPlayView,
@@ -932,35 +933,32 @@ function AppRoot({ container }: { container: Container }) {
   }, [container]);
 
   const onStop = useCallback(() => {
-    void container.playerControl.stopCurrentPlayback("playback-shell-q");
-  }, [container]);
+    onCommandAction("quit");
+  }, [onCommandAction]);
 
   const onNextHandler = useCallback(() => {
-    void container.playerControl.nextCurrentPlayback("playback-shell-n");
-  }, [container]);
+    onCommandAction("next");
+  }, [onCommandAction]);
 
   const onPreviousHandler = useCallback(() => {
-    void container.playerControl.previousCurrentPlayback("playback-shell-p");
-  }, [container]);
+    onCommandAction("previous");
+  }, [onCommandAction]);
 
   const onRecover = useCallback(() => {
-    void container.playerControl.recoverCurrentPlayback("playback-shell-r");
-  }, [container]);
+    onCommandAction("recover");
+  }, [onCommandAction]);
 
   const onFallback = useCallback(() => {
-    const cancelledWork = container.workControl.cancelActive("playback-shell-fallback");
-    if (!cancelledWork) {
-      void container.playerControl.fallbackCurrentPlayback("playback-shell-fallback");
-    }
-  }, [container]);
+    onCommandAction("fallback");
+  }, [onCommandAction]);
 
   const onPickStreams = useCallback(() => {
-    void openPlaybackStreamSelectionPicker(container, "source", "playback-shell-k");
-  }, [container]);
+    onCommandAction("source");
+  }, [onCommandAction]);
 
   const onPickEpisode = useCallback(() => {
-    void openActivePlaybackEpisodePicker(container, "playback-shell-e");
-  }, [container]);
+    onCommandAction("pick-episode");
+  }, [onCommandAction]);
 
   const onReloadSubtitles = useCallback(() => {
     void container.playerControl.reloadCurrentSubtitles("playback-shell-s");
@@ -971,37 +969,28 @@ function AppRoot({ container }: { container: Container }) {
   }, [container]);
 
   const onToggleAutoplay = useCallback(() => {
-    container.stateManager.dispatch({
-      type: "SET_SESSION_AUTOPLAY_PAUSED",
-      paused: !container.stateManager.getState().autoplaySessionPaused,
-    });
-  }, [container]);
+    onCommandAction("toggle-autoplay");
+  }, [onCommandAction]);
 
   const onToggleAutoskip = useCallback(() => {
-    container.stateManager.dispatch({
-      type: "SET_SESSION_AUTOSKIP_PAUSED",
-      paused: !container.stateManager.getState().autoskipSessionPaused,
-    });
-  }, [container]);
+    onCommandAction("toggle-autoskip");
+  }, [onCommandAction]);
 
   const onStopAfterCurrent = useCallback(() => {
-    container.stateManager.dispatch({
-      type: "SET_SESSION_STOP_AFTER_CURRENT",
-      enabled: !container.stateManager.getState().stopAfterCurrent,
-    });
-  }, [container]);
+    onCommandAction("stop-after-current");
+  }, [onCommandAction]);
 
   const onPickSource = useCallback(() => {
-    void openPlaybackStreamSelectionPicker(container, "source", "playback-shell-o");
-  }, [container]);
+    onCommandAction("source");
+  }, [onCommandAction]);
 
   const onPickQuality = useCallback(() => {
-    void openPlaybackStreamSelectionPicker(container, "quality", "playback-shell-v");
-  }, [container]);
+    onCommandAction("quality");
+  }, [onCommandAction]);
 
   const onReturnToSearch = useCallback(() => {
-    void container.playerControl.returnToSearchFromPlayback("playback-shell-shift-s");
-  }, [container]);
+    onCommandAction("search");
+  }, [onCommandAction]);
 
   const onExitDone = useCallback(() => requestHardExit(0), []);
 
@@ -1301,91 +1290,6 @@ export async function shutdownSessionApp(): Promise<void> {
   deleteAllKittyImages();
 }
 
-function buildPostPlayFooterActions(
-  postPlayState: NonNullable<PlaybackShellState["postPlayState"]>,
-  canResume: boolean,
-  autoplayPaused = false,
-  autoskipPaused = false,
-  stopAfterCurrent = false,
-): readonly FooterAction[] {
-  const commandAction: FooterAction = { key: "/", label: "commands", action: "command-mode" };
-  const quitAction: FooterAction = { key: "q", label: "quit", action: "quit" };
-  const autoplayAction: FooterAction = {
-    key: "a",
-    label: autoplayPaused ? "autoplay on" : "autoplay off",
-    action: "toggle-autoplay",
-  };
-  const autoskipAction: FooterAction = {
-    key: "u",
-    label: autoskipPaused ? "autoskip on" : "autoskip off",
-    action: "toggle-autoskip",
-  };
-  const stopAfterCurrentAction: FooterAction = {
-    key: "x",
-    label: stopAfterCurrent ? "resume chain" : "stop after",
-    action: "stop-after-current",
-  };
-  const sourceAction: FooterAction = { key: "o", label: "source", action: "source" };
-
-  switch (postPlayState.kind) {
-    case "did-not-start":
-      // Nothing played — retry the same episode (provider recover refetch), never advance.
-      return [
-        { key: "r", label: "try again", action: "replay", primary: true },
-        { key: "f", label: "fallback", action: "fallback" },
-        { key: "o", label: "source", action: "source" },
-        { key: "d", label: "diagnostics", action: "diagnostics" },
-        { key: "s", label: "search", action: "search" },
-        quitAction,
-        commandAction,
-      ];
-    case "caught-up":
-      return [
-        { key: "w", label: "watchlist", action: "watchlist", primary: true },
-        quitAction,
-        commandAction,
-      ];
-    case "season-finale":
-      if (postPlayState.hasNextSeason) {
-        return [
-          { key: "n", label: "next season", action: "next-season", primary: true },
-          { key: "r", label: "replay", action: "replay" },
-          quitAction,
-          commandAction,
-        ];
-      }
-      return [
-        { key: "s", label: "search", action: "search", primary: true },
-        { key: "e", label: "episodes", action: "pick-episode" },
-        quitAction,
-        commandAction,
-      ];
-    case "series-complete":
-      return [
-        { key: "r", label: "replay", action: "replay" },
-        { key: "s", label: "search", action: "search" },
-        quitAction,
-        commandAction,
-      ];
-    case "mid-series":
-    default:
-      return [
-        {
-          key: "n",
-          label: "continue",
-          action: canResume ? "resume" : "next",
-          primary: true,
-        },
-        autoplayAction,
-        autoskipAction,
-        stopAfterCurrentAction,
-        sourceAction,
-        { key: "r", label: "replay", action: "replay" },
-        commandAction,
-      ];
-  }
-}
-
 function PlaybackShell({
   container,
   state,
@@ -1442,13 +1346,12 @@ function PlaybackShell({
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
-  const footerActions = buildPostPlayFooterActions(
-    postPlayState,
+  const footerActions = buildPostPlayFooterActions(postPlayState, {
     canResume,
-    state.autoplayPaused,
-    state.autoskipPaused,
-    state.stopAfterCurrent,
-  );
+    autoplayPaused: state.autoplayPaused,
+    autoskipPaused: state.autoskipPaused,
+    stopAfterCurrent: state.stopAfterCurrent,
+  });
   const contextStrip = [
     "post-play",
     state.provider,

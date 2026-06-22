@@ -94,6 +94,13 @@ bun run test
 - `use-session-selector.ts` now exports a tested `shallowEqual` helper for object selectors.
 - Root-owned overlay lookup in `AppRoot` now uses `useSessionSelector(...)` directly.
 - Existing root overlays already open and close through `SessionState.activeModals`; the remaining work is to migrate mounted helper screens/root content sessions off module-global subscriber sets one flow at a time.
+- `root-content-state.ts` now exposes `subscribeRootContentSession(...)` and `useRootContentSession()` uses `useSyncExternalStore(...)` instead of a manual local revision bump.
+- `apps/cli/test/unit/app-shell/root-content-state.test.ts` covers root-content subscription notifications.
+
+Remaining:
+
+- Migrate `rootShellScreen` / `rootShellSubscribers` in `ink-shell.tsx` or delete them after converting the remaining helper screen flows.
+- Decide whether long-lived root content belongs in `SessionState` proper or in the focused root-content external store.
 
 ## Rollback
 

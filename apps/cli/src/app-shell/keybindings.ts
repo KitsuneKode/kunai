@@ -356,7 +356,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "In the player",
   },
 
-  // ── Post-play — terminal footer; mirrors buildPostPlayFooterActions ──
+  // ── Post-play — terminal footer ──
   {
     id: "post-continue",
     chord: { input: "n" },
@@ -365,6 +365,14 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 10,
+  },
+  {
+    id: "post-quit",
+    chord: { input: "q" },
+    label: "Quit post-playback",
+    hintLabel: "quit",
+    scope: "postPlayback",
+    group: "After playback",
   },
   {
     id: "post-replay",
@@ -379,6 +387,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-search",
     chord: { input: "s" },
     label: "Search for something else",
+    hintLabel: "search",
     scope: "postPlayback",
     group: "After playback",
   },
@@ -416,6 +425,15 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "post-diagnostics",
     chord: { input: "d" },
     label: "Open diagnostics",
+    hintLabel: "diagnostics",
+    scope: "postPlayback",
+    group: "After playback",
+  },
+  {
+    id: "post-episode",
+    chord: { input: "e" },
+    label: "Choose episode",
+    hintLabel: "episodes",
     scope: "postPlayback",
     group: "After playback",
   },
