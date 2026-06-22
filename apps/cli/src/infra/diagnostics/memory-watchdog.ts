@@ -10,7 +10,15 @@
 // always present in dev, the npm bundle, and `bun build --compile` binaries —
 // Bun's bundler does not emit `new Worker(new URL(...))` entries in this setup.
 
-const DEFAULT_CAP_MB = 1536;
+const DEFAULT_CAP_MB = 3072;
+const REQUIRED_OVER_CAP_SAMPLES = 2;
+const EMERGENCY_OVERSHOOT_MULTIPLIER = 1.5;
+
+export type MemoryGuardDecision = {
+  readonly terminate: boolean;
+  readonly nextOverCapSamples: number;
+  readonly reason: "below-cap" | "over-cap" | "sustained-over-cap" | "emergency-overshoot";
+};
 
 export function memoryCapMb(env: Record<string, string | undefined> = process.env): number {
   const raw = Number.parseInt(env.KUNAI_MEM_CAP_MB ?? "", 10);
@@ -27,6 +35,24 @@ export function exceedsMemoryCap(rssBytes: number, capMb: number): boolean {
   return rssBytes / 1048576 >= capMb;
 }
 
+export function shouldTerminateMemoryGuard(input: {
+  readonly rssMb: number;
+  readonly capMb: number;
+  readonly previousOverCapSamples: number;
+}): MemoryGuardDecision {
+  if (input.rssMb < input.capMb) {
+    return { terminate: false, nextOverCapSamples: 0, reason: "below-cap" };
+  }
+  const nextOverCapSamples = input.previousOverCapSamples + 1;
+  if (input.rssMb >= input.capMb * EMERGENCY_OVERSHOOT_MULTIPLIER) {
+    return { terminate: true, nextOverCapSamples, reason: "emergency-overshoot" };
+  }
+  if (nextOverCapSamples >= REQUIRED_OVER_CAP_SAMPLES) {
+    return { terminate: true, nextOverCapSamples, reason: "sustained-over-cap" };
+  }
+  return { terminate: false, nextOverCapSamples, reason: "over-cap" };
+}
+
 // Self-contained worker source (no backslashes → no template-escaping hazards;
 // the VmRSS parse mirrors parseVmRssKb above without a regex).
 const WATCHDOG_WORKER_SOURCE = `
@@ -34,6 +60,7 @@ import { readFileSync } from "node:fs";
 const NL = String.fromCharCode(10);
 const cap = (() => { const r = Number.parseInt(process.env.KUNAI_MEM_CAP_MB ?? "", 10); return Number.isFinite(r) && r > 0 ? r : ${DEFAULT_CAP_MB}; })();
 const pid = process.pid;
+let overCapSamples = 0;
 function rssMb() {
   try {
     const txt = readFileSync("/proc/" + pid + "/status", "utf8");
@@ -49,8 +76,15 @@ function rssMb() {
   for (;;) {
     await Bun.sleep(2000);
     const mb = rssMb();
-    if (mb >= cap) {
-      process.stderr.write(NL + "[kunai] memory guard: RSS " + Math.round(mb) + "MB >= cap " + cap + "MB — terminating to protect your system (runaway after the terminal closed). Set KUNAI_MEM_CAP_MB to adjust or KUNAI_NO_MEMORY_GUARD=1 to disable." + NL);
+    if (mb < cap) {
+      overCapSamples = 0;
+      continue;
+    }
+    overCapSamples += 1;
+    const emergency = mb >= cap * ${EMERGENCY_OVERSHOOT_MULTIPLIER};
+    if (emergency || overCapSamples >= ${REQUIRED_OVER_CAP_SAMPLES}) {
+      const reason = emergency ? "emergency overshoot" : "sustained over-cap memory";
+      process.stderr.write(NL + "[kunai] memory guard: RSS " + Math.round(mb) + "MB >= cap " + cap + "MB (" + reason + ") — terminating to protect your system. Set KUNAI_MEM_CAP_MB to adjust or KUNAI_NO_MEMORY_GUARD=1 to disable." + NL);
       process.kill(pid, "SIGKILL");
       return;
     }
