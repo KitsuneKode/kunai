@@ -1,10 +1,23 @@
 # Plan 006: Package Seam Guards and Provider Materialization
 
-Status: ready
+Status: implemented
 Priority: P0
 Effort: S-M
 Risk: Low-Medium
 Created: 2026-06-22
+
+## Implemented Slice
+
+Landed in the 2026-06-22 architecture pass:
+
+- Provider-aware playback materializers now live under `apps/cli/src/services/playback`.
+- `apps/cli/src/infra` is guarded against direct `@kunai/providers` imports.
+- Architecture tests also guard app-shell/provider/player imports, app phase provider imports, Ink imports outside shell code, and workspace package dependency direction.
+- Materializer behavior is covered by service-level tests for deferred media and HLS manifest materialization.
+
+Remaining follow-up:
+
+- Keep reducing the allowlist for app-layer imports from `app-shell` as the shell is decomposed.
 
 ## Problem
 

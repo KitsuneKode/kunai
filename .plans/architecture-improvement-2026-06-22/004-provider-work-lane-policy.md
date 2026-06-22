@@ -1,10 +1,24 @@
 # Plan 004: Provider Work-Lane Policy
 
-Status: ready
+Status: implemented
 Priority: P1
 Effort: M
 Risk: Medium
 Created: 2026-06-22
+
+## Implemented Slice
+
+Landed in the 2026-06-22 architecture pass:
+
+- `apps/cli/src/services/playback/provider-work-lane-policy.ts` defines the shared provider work lanes and concrete policy table.
+- `PlaybackResolveWorkService` records lane and policy summaries in resolve work ledger entries.
+- `VideasyLazySourceProbeService` defaults probe concurrency from the background inventory policy and accepts injected concurrency for tests or future config.
+- Focused tests cover lane mapping, policy differences, and injected Videasy probe concurrency.
+
+Remaining follow-up:
+
+- Add an explicit `KUNAI_PROVIDER_PROBE_CONCURRENCY` config/env override only if real-world tuning needs it.
+- Continue improving diagnostics presentation so lane and policy details are easier to read in the TUI.
 
 ## Problem
 
