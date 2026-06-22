@@ -29,6 +29,7 @@ describe("loading shell runtime policy", () => {
     expect(policy.trackElapsed).toBe(false);
     expect(policy.memoryRefreshMs).toBeNull();
     expect(policy.runtimeHealthRefreshMs).toBeNull();
+    expect(policy.freezeWhenOffscreen).toBe(true);
     expect(shouldShowLoadingElapsed("playing", 600)).toBe(false);
   });
 
@@ -66,7 +67,18 @@ describe("loading shell runtime policy", () => {
     expect(policy.trackElapsed).toBe(true);
     expect(policy.memoryRefreshMs).toBeNull();
     expect(policy.runtimeHealthRefreshMs).toBeNull();
+    expect(policy.freezeWhenOffscreen).toBe(false);
     expect(shouldShowLoadingElapsed("loading", 12)).toBe(true);
+  });
+
+  test("offscreen hint freezes loader reconciliation", () => {
+    const policy = getLoadingShellTimerPolicy({
+      operation: "loading",
+      offscreen: true,
+    });
+
+    expect(policy.animate).toBe(true);
+    expect(policy.freezeWhenOffscreen).toBe(true);
   });
 
   test("provider resolve copy becomes honest after a long wait and keeps fallback visible", () => {

@@ -21,6 +21,7 @@ import {
   stageLabel,
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
+import { OffscreenFreeze } from "./offscreen-freeze";
 import { PlaybackPlayingRail } from "./playback-playing-rail";
 import { buildPlaybackPlayingRailView } from "./playback-playing-view";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
@@ -413,7 +414,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       return;
     }
 
-    const effect = resolvePlaybackShellInput(input, {
+    const effect = resolvePlaybackShellInput(input, key, {
       operation: state.operation,
       cancellable: Boolean(state.cancellable),
       fallbackAvailable: Boolean(state.fallbackAvailable),
@@ -555,12 +556,17 @@ export const LoadingShell = React.memo(function LoadingShell({
               {/* Animation grid + stage context side-by-side */}
               <Box flexDirection="row" marginTop={1} alignItems="flex-start">
                 <Box marginRight={2}>
-                  <DotMatrixLoader
-                    variant={getStageAnimationVariant(activeStage)}
+                  <OffscreenFreeze
                     active={timerPolicy.animate}
-                    onColor={palette.accent}
-                    offColor={palette.dim}
-                  />
+                    frozen={timerPolicy.freezeWhenOffscreen}
+                  >
+                    <DotMatrixLoader
+                      variant={getStageAnimationVariant(activeStage)}
+                      active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                      onColor={palette.accent}
+                      offColor={palette.dim}
+                    />
+                  </OffscreenFreeze>
                 </Box>
                 <Box flexDirection="column" flexGrow={1}>
                   <Text bold color={palette.text}>

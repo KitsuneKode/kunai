@@ -4,6 +4,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
 import type {
   PlaybackFailureWaterfallModel,
   PlaybackFailureWaterfallRow,
@@ -123,15 +124,21 @@ export function ErrorShell({
   message,
   scenario,
   waterfall,
+  debugEnabled = false,
+  debugError,
   onResolve,
   onRetry,
 }: {
   message: string;
   scenario?: ErrorScenario;
   waterfall?: PlaybackFailureWaterfallModel | null;
+  debugEnabled?: boolean;
+  debugError?: unknown;
   onResolve: () => void;
   onRetry?: () => void;
 }) {
+  const debugExcerpt = debugEnabled ? extractErrorDebugExcerpt(debugError) : null;
+
   useInput((input, key) => {
     if (key.return || key.escape) {
       onResolve();
@@ -161,6 +168,19 @@ export function ErrorShell({
           <Text color={palette.text}>{message}</Text>
         )}
         {waterfall ? <FailureWaterfall model={waterfall} /> : null}
+        {debugExcerpt ? (
+          <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={palette.dim}>
+            <Text color={palette.dim} dimColor>
+              debug
+            </Text>
+            <Text color={palette.muted}>{debugExcerpt.message}</Text>
+            {debugExcerpt.topFrame ? (
+              <Text color={palette.dim} dimColor>
+                {debugExcerpt.topFrame}
+              </Text>
+            ) : null}
+          </Box>
+        ) : null}
         <Box marginTop={1}>
           <Text color={palette.dim} dimColor>
             {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}

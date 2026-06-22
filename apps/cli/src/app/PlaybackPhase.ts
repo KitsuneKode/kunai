@@ -7,6 +7,7 @@
 
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
+import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
 import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   openTracksPanel,
@@ -407,7 +408,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   }
 
   /** Dispatches the error status to the UI and waits for the user to dismiss it. */
-  private async showPlaybackError(context: PhaseContext, message: string): Promise<void> {
+  private async showPlaybackError(
+    context: PhaseContext,
+    message: string,
+    cause?: unknown,
+  ): Promise<void> {
+    if (cause !== undefined) {
+      capturePlaybackShellError(cause);
+    } else {
+      capturePlaybackShellError(new Error(message));
+    }
     const { stateManager } = context.container;
     stateManager.dispatch({
       type: "SET_PLAYBACK_STATUS",
@@ -3094,7 +3104,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 };
               }
               if (postAction.type === "queue-recommendation") {
-                enqueuePostPlaybackRecommendation(container, postAction.item);
+                await enqueuePostPlaybackRecommendation(container, postAction.item);
               } else if (postAction.type === "open-recommendation-actions") {
                 await openPostPlaybackRecommendationActionPanel({
                   container,

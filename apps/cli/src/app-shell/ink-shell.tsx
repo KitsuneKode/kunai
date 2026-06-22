@@ -42,9 +42,16 @@ import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
-import { selectNotificationToast } from "./notification-toast";
+import {
+  createNotificationQueueState,
+  NOTIFICATION_TOAST_TTL_MS,
+  syncNotificationQueueFromActive,
+  tickNotificationQueue,
+  type NotificationPriority,
+} from "./notification-queue";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
+import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
 import { buildPostPlayFooterActions } from "./post-play-footer-actions";
 import { PostPlayShell } from "./post-play-shell";
 import {
@@ -77,7 +84,7 @@ import {
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { InputField, ShellFrame } from "./shell-frame";
-import { LocalSection, ResizeBlocker, ShellFooter } from "./shell-primitives";
+import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
 import { getWindowStart, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import {
@@ -108,6 +115,7 @@ import { useTerminalResizeCleanup } from "./use-terminal-resize-cleanup";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
+const ROOT_STATUS_DEBOUNCE_MS = 250;
 const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
   { key: "/", label: "commands", action: "command-mode" },
   { key: "esc", label: "back", action: "quit" },
@@ -340,8 +348,11 @@ function AppRoot({ container }: { container: Container }) {
   const [streakMilestoneAlert, setStreakMilestoneAlert] = useState<string | null>(null);
   const [streakAtRiskAlert, setStreakAtRiskAlert] = useState<string | null>(null);
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
+  const [notificationToastPriority, setNotificationToastPriority] =
+    useState<NotificationPriority | null>(null);
   const notificationSeenKeysRef = useRef<ReadonlySet<string>>(new Set());
-  const notificationToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notificationQueueRef = useRef(createNotificationQueueState());
+  const notificationQueueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [weeklyDigestLine, setWeeklyDigestLine] = useState<string | null>(null);
 
@@ -392,30 +403,57 @@ function AppRoot({ container }: { container: Container }) {
     return () => clearInterval(timer);
   }, [container.statsService, container.syncService, container.queueService, container.config]);
 
-  // Live notification toast. Seed the seen-set on mount so pre-existing
-  // notifications never toast; then on every NotificationService change diff active
-  // vs seen and surface the newest arrival in the transient row for ~4s.
+  // Live notification queue. Seed the seen-set on mount so pre-existing
+  // notifications never toast; arrivals are sequenced with priority, fold, and TTL.
   useEffect(() => {
     notificationSeenKeysRef.current = new Set(
       container.notificationService.listActive(200, 0).map((n) => n.dedupKey),
     );
+    notificationQueueRef.current = createNotificationQueueState();
+    setNotificationToast(null);
+    setNotificationToastPriority(null);
+
+    const scheduleQueueTick = () => {
+      if (notificationQueueTimerRef.current) {
+        clearTimeout(notificationQueueTimerRef.current);
+      }
+      notificationQueueTimerRef.current = setTimeout(
+        () => {
+          const ticked = tickNotificationQueue(notificationQueueRef.current, Date.now());
+          notificationQueueRef.current = ticked.state;
+          setNotificationToast(ticked.toast);
+          setNotificationToastPriority(ticked.state.current?.priority ?? null);
+          if (ticked.state.current) {
+            scheduleQueueTick();
+          }
+        },
+        Math.min(500, NOTIFICATION_TOAST_TTL_MS),
+      );
+    };
+
     const handleChange = () => {
       const active = container.notificationService.listActive(200, 0);
-      const result = selectNotificationToast({
+      const synced = syncNotificationQueueFromActive({
+        state: notificationQueueRef.current,
         active,
         seenKeys: notificationSeenKeysRef.current,
+        now: Date.now(),
       });
-      notificationSeenKeysRef.current = result.seenKeys;
-      if (result.toast) {
-        setNotificationToast(result.toast);
-        if (notificationToastTimerRef.current) clearTimeout(notificationToastTimerRef.current);
-        notificationToastTimerRef.current = setTimeout(() => setNotificationToast(null), 4000);
+      notificationQueueRef.current = synced.state;
+      notificationSeenKeysRef.current = synced.seenKeys;
+      setNotificationToast(synced.toast);
+      setNotificationToastPriority(synced.currentPriority);
+      if (synced.state.current) {
+        scheduleQueueTick();
       }
     };
+
     const unsubscribe = container.notificationService.subscribe(handleChange);
     return () => {
       unsubscribe();
-      if (notificationToastTimerRef.current) clearTimeout(notificationToastTimerRef.current);
+      if (notificationQueueTimerRef.current) {
+        clearTimeout(notificationQueueTimerRef.current);
+      }
     };
   }, [container.notificationService]);
 
@@ -659,19 +697,82 @@ function AppRoot({ container }: { container: Container }) {
   // renders the bell when notificationCount > 0).
   const activeNotifications = container.notificationService.listActive(200, 0);
   const unreadNotifications = activeNotifications.filter((notification) => !notification.readAt);
-  const rootStatusSummary = buildRootStatusSummary({
-    state,
-    currentViewLabel,
-    rootStatus,
-    downloadStatus,
-    streak,
-    syncHealth,
-    playlistCount,
-    notificationCount: unreadNotifications.length,
-    newEpisodeNotificationCount: unreadNotifications.filter(
-      (notification) => notification.kind === "new-episode",
-    ).length,
-  });
+  const unreadNotificationCount = unreadNotifications.length;
+  const newEpisodeNotificationCount = useMemo(
+    () => unreadNotifications.filter((notification) => notification.kind === "new-episode").length,
+    [unreadNotifications],
+  );
+  const rootStatusSummaryInput = useMemo(
+    () => ({
+      currentViewLabel,
+      rootStatus,
+      downloadStatus,
+      streak,
+      syncHealth,
+      playlistCount,
+      notificationCount: unreadNotificationCount,
+      newEpisodeNotificationCount,
+      playbackProblem: state.playbackProblem,
+      autoplaySessionPaused: state.autoplaySessionPaused,
+      autoskipSessionPaused: state.autoskipSessionPaused,
+      stopAfterCurrent: state.stopAfterCurrent,
+      provider: state.provider,
+      currentTitle: state.currentTitle,
+      mode: state.mode,
+      streamProviderId: state.stream?.providerResolveResult?.providerId,
+    }),
+    [
+      currentViewLabel,
+      rootStatus,
+      downloadStatus,
+      streak,
+      syncHealth,
+      playlistCount,
+      unreadNotificationCount,
+      newEpisodeNotificationCount,
+      state.playbackProblem,
+      state.autoplaySessionPaused,
+      state.autoskipSessionPaused,
+      state.stopAfterCurrent,
+      state.provider,
+      state.currentTitle,
+      state.mode,
+      state.stream?.providerResolveResult?.providerId,
+    ],
+  );
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const [rootStatusSummary, setRootStatusSummary] = useState(() =>
+    buildRootStatusSummary({
+      state,
+      currentViewLabel,
+      rootStatus,
+      downloadStatus,
+      streak,
+      syncHealth,
+      playlistCount,
+      notificationCount: unreadNotificationCount,
+      newEpisodeNotificationCount,
+    }),
+  );
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRootStatusSummary(
+        buildRootStatusSummary({
+          state: stateRef.current,
+          currentViewLabel: rootStatusSummaryInput.currentViewLabel,
+          rootStatus: rootStatusSummaryInput.rootStatus,
+          downloadStatus: rootStatusSummaryInput.downloadStatus,
+          streak: rootStatusSummaryInput.streak,
+          syncHealth: rootStatusSummaryInput.syncHealth,
+          playlistCount: rootStatusSummaryInput.playlistCount,
+          notificationCount: rootStatusSummaryInput.notificationCount,
+          newEpisodeNotificationCount: rootStatusSummaryInput.newEpisodeNotificationCount,
+        }),
+      );
+    }, ROOT_STATUS_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [rootStatusSummaryInput]);
   const rootSurface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
     hasMountedScreen: false,
@@ -894,30 +995,29 @@ function AppRoot({ container }: { container: Container }) {
         size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
         width={Math.max(0, shellWidth - 2)}
       />
-      {/* Single transient row — exactly one line wins by priority (see
-          selectTransientRow): alert → notification arrival toast → streak
-          milestone → presence boot → streak-at-risk → weekly digest. Arrivals
-          render bright accent; calm infos dim. */}
-      {(() => {
-        const transient = selectTransientRow({
-          alert: rootStatusSummary.alert ?? null,
-          notificationToast,
-          streakMilestoneAlert,
-          presenceBootLine: visiblePresenceBootLine,
-          streakAtRiskAlert,
-          weeklyDigestLine,
-        });
-        if (!transient) return null;
-        return (
-          <Text
-            dimColor={transient.dim}
-            bold={transient.accent}
-            color={transient.accent ? palette.accent : statusColor(transient.tone)}
-          >
-            {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
-          </Text>
-        );
-      })()}
+      <TransientRowSlot width={Math.max(36, shellWidth - 8)}>
+        {(() => {
+          const transient = selectTransientRow({
+            alert: rootStatusSummary.alert ?? null,
+            notificationToast,
+            notificationToastPriority,
+            streakMilestoneAlert,
+            presenceBootLine: visiblePresenceBootLine,
+            streakAtRiskAlert,
+            weeklyDigestLine,
+          });
+          if (!transient) return null;
+          return (
+            <Text
+              dimColor={transient.dim}
+              bold={transient.accent}
+              color={transient.accent ? palette.accent : statusColor(transient.tone)}
+            >
+              {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
+            </Text>
+          );
+        })()}
+      </TransientRowSlot>
       <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           {rootSurface === "error" ? (
@@ -929,11 +1029,15 @@ function AppRoot({ container }: { container: Container }) {
                 resolveRetryCount: state.resolveRetryCount,
               })}
               waterfall={playbackFailureWaterfall}
+              debugEnabled={Boolean(container.debugTracePath)}
+              debugError={peekPlaybackShellError()}
               onResolve={() => {
+                clearPlaybackShellError();
                 stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
                 stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               }}
               onRetry={() => {
+                clearPlaybackShellError();
                 stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
                 stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
               }}

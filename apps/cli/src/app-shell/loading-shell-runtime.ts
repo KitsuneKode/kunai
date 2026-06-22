@@ -7,6 +7,8 @@ export type LoadingShellTimerPolicy = {
   readonly trackElapsed: boolean;
   readonly memoryRefreshMs: number | null;
   readonly runtimeHealthRefreshMs: number | null;
+  /** When true, freeze animated loader output instead of reconciling every tick. */
+  readonly freezeWhenOffscreen: boolean;
 };
 
 function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"]): boolean {
@@ -51,13 +53,18 @@ export function getLoadingShellTimerPolicy(input: {
   operation: LoadingShellState["operation"];
   memoryPanelVisible?: boolean;
   runtimeHealthVisible?: boolean;
+  /** Parent surface is hidden (e.g. scrolled off in scrollback). */
+  offscreen?: boolean;
 }): LoadingShellTimerPolicy {
   const supervisingPlayback = isPlaybackSupervisionOperation(input.operation);
+  const animate = !supervisingPlayback;
+  const offscreen = input.offscreen === true;
   return {
-    animate: !supervisingPlayback,
+    animate,
     trackElapsed: !supervisingPlayback,
     memoryRefreshMs: input.memoryPanelVisible ? 2_000 : null,
     runtimeHealthRefreshMs: input.runtimeHealthVisible ? 2_000 : null,
+    freezeWhenOffscreen: offscreen || !animate,
   };
 }
 

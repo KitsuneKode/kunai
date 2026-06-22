@@ -7,7 +7,6 @@ import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
-import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
@@ -30,21 +29,26 @@ import type {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
-  cycleHistoryTab,
-  cycleHistoryTypeFilter,
   historyTabFromLegacy,
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
+import { routeOverlayInput } from "./input-router";
 import { helpSections, type HelpSection } from "./keybindings";
-import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
+import {
+  getOverlayContentViewport,
+  getOverlayHostChromeRows,
+  getOverlayListMaxVisible,
+  getPickerLayout,
+  resolveOverlayPanelKind,
+} from "./layout-policy";
 import { LibraryShell } from "./library-shell";
 import {
   buildNotificationActionOptions,
@@ -53,6 +57,8 @@ import {
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView } from "./notifications-view";
+import { isOverlayCancelActive, overlayDestructiveCancelMessage } from "./overlay-input-safety";
+import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
@@ -112,6 +118,8 @@ import {
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
+import { handleHistoryOverlayInput } from "./use-history-overlay-input";
+import { handleNotificationsOverlayInput } from "./use-notifications-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
@@ -150,6 +158,10 @@ export const HELP_TABS: readonly string[] = HELP_TABS_INTERNAL;
  */
 export function buildHelpTabRows(tab: string): readonly { key: string; desc: string }[] {
   return helpTabRows(tab);
+}
+
+function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
+  return <OverlayLayoutProvider value={layout}>{node}</OverlayLayoutProvider>;
 }
 
 function HelpShell({
@@ -400,10 +412,6 @@ export function RootOverlayShell({
   onRedraw: () => void;
 }) {
   const { cols, rows } = useShellDimensions();
-  const maxLines = getPickerListMaxVisible(
-    rows,
-    getPickerChromeRows({ hasSubtitle: false, commandMode: false, extraRows: 1 }),
-  );
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const rawConfig = container.config.getRaw();
   const providerOptions =
@@ -522,6 +530,7 @@ export function RootOverlayShell({
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
+  const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
   const [notificationPlayConfirm, setNotificationPlayConfirm] = useState<{
     readonly dedupKey: string;
@@ -638,38 +647,6 @@ export function RootOverlayShell({
       { value: option.badge, weight: 12 },
     ],
   );
-  const historyView = useMemo(
-    () =>
-      buildHistoryView({
-        entries: historySelections.map(({ titleId, entry }) => [titleId, entry] as const),
-        tab: historyTab,
-        typeFilter: historyTypeFilter,
-        filterQuery,
-        selectedIndex,
-        maxVisible: maxLines,
-        narrow: cols < 124,
-        context: {
-          nextReleases: historyNextReleases,
-          projections: historyProjections,
-          releaseSignals: historyReleaseSignals,
-        },
-        loading: overlay.type === "history" ? loadingAsyncLines : false,
-      }),
-    [
-      filterQuery,
-      historyNextReleases,
-      historyProjections,
-      historyReleaseSignals,
-      historySelections,
-      historyTab,
-      historyTypeFilter,
-      loadingAsyncLines,
-      maxLines,
-      overlay.type,
-      selectedIndex,
-      cols,
-    ],
-  );
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
@@ -693,63 +670,6 @@ export function RootOverlayShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
-  const NOTIF_PAGE_SIZE = 8;
-  // notifTick forces a fresh service read after mutations (read/archive/mark-all).
-  void notifTick;
-  const notificationRecordsAll =
-    overlay.type === "notifications"
-      ? notifTab === "active"
-        ? container.notificationService.listActive(200, 0)
-        : container.notificationService.listArchived(200, 0)
-      : [];
-  const notificationsView = buildNotificationsView({
-    records: notificationRecordsAll,
-    tab: notifTab,
-    page: notifPage,
-    pageSize: NOTIF_PAGE_SIZE,
-    now: new Date().toISOString(),
-  });
-  const notificationUnreadCount =
-    overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
-  // The current page's records back selection + the action router lookups; their
-  // order mirrors notificationsView.rows exactly so selectedIndex stays aligned.
-  const notificationRecords = notificationRecordsAll.slice(
-    notificationsView.page * NOTIF_PAGE_SIZE,
-    notificationsView.page * NOTIF_PAGE_SIZE + NOTIF_PAGE_SIZE,
-  );
-  const filteredNotificationOptions =
-    overlay.type === "notifications"
-      ? buildNotificationPickerOptions(notificationRecords, {
-          subActionsActive: notificationActionDedupKey !== null,
-        })
-      : [];
-  const selectedNotificationForActions =
-    overlay.type === "notifications" && notificationActionDedupKey
-      ? (notificationRecords.find((record) => record.dedupKey === notificationActionDedupKey) ??
-        null)
-      : null;
-  const filteredNotificationActionOptions = selectedNotificationForActions
-    ? rankFuzzyMatches(
-        buildNotificationActionOptions(selectedNotificationForActions),
-        filterQuery,
-        (option) => [
-          { value: option.label, weight: 0 },
-          { value: option.detail, weight: 8 },
-        ],
-      )
-    : [];
-  const notificationPlayConfirmOptions = [
-    {
-      value: "confirm" as const,
-      label: "Play now",
-      detail: "Switch playback to this notice",
-    },
-    {
-      value: "cancel" as const,
-      label: "Cancel",
-      detail: "Keep current playback",
-    },
-  ];
   const settingsPanel =
     overlay.type === "settings" && settingsDraft
       ? settingsChoice
@@ -874,6 +794,123 @@ export function RootOverlayShell({
       }
     },
   });
+
+  const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
+  const overlayDedicatedShell =
+    overlay.type === "history" || overlay.type === "queue" || overlay.type === "downloads";
+  const overlayHostChromeRows = getOverlayHostChromeRows({
+    commandMode,
+    dedicatedShell: overlayDedicatedShell,
+  });
+  const overlayLayout = useMemo((): OverlayLayoutValue => {
+    const viewport = getOverlayContentViewport({
+      terminalRows: rows,
+      terminalCols: cols,
+      overlayChromeRows: overlayHostChromeRows,
+      commandMode,
+    });
+    const listMaxVisible = getOverlayListMaxVisible({
+      terminalRows: rows,
+      terminalCols: cols,
+      overlayChromeRows: overlayHostChromeRows,
+      panelKind: overlayPanelKind,
+      commandMode,
+    });
+    return {
+      contentRows: viewport.contentRows,
+      contentColumns: viewport.contentColumns,
+      chromeRows: viewport.chromeRows,
+      listMaxVisible,
+    };
+  }, [cols, rows, commandMode, overlayHostChromeRows, overlayPanelKind]);
+  const maxLines = overlayLayout.listMaxVisible;
+  const notifPageSize = overlayLayout.listMaxVisible;
+  const historyView = useMemo(
+    () =>
+      buildHistoryView({
+        entries: historySelections.map(({ titleId, entry }) => [titleId, entry] as const),
+        tab: historyTab,
+        typeFilter: historyTypeFilter,
+        filterQuery,
+        selectedIndex,
+        maxVisible: maxLines,
+        narrow: overlayLayout.contentColumns < 124,
+        context: {
+          nextReleases: historyNextReleases,
+          projections: historyProjections,
+          releaseSignals: historyReleaseSignals,
+        },
+        loading: overlay.type === "history" ? loadingAsyncLines : false,
+      }),
+    [
+      filterQuery,
+      historyNextReleases,
+      historyProjections,
+      historyReleaseSignals,
+      historySelections,
+      historyTab,
+      historyTypeFilter,
+      loadingAsyncLines,
+      maxLines,
+      overlay.type,
+      overlayLayout.contentColumns,
+      selectedIndex,
+    ],
+  );
+  // notifTick forces a fresh service read after mutations (read/archive/mark-all).
+  void notifTick;
+  const notificationRecordsAll =
+    overlay.type === "notifications"
+      ? notifTab === "active"
+        ? container.notificationService.listActive(200, 0)
+        : container.notificationService.listArchived(200, 0)
+      : [];
+  const notificationsView = buildNotificationsView({
+    records: notificationRecordsAll,
+    tab: notifTab,
+    page: notifPage,
+    pageSize: notifPageSize,
+    now: new Date().toISOString(),
+  });
+  const notificationUnreadCount =
+    overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
+  const notificationRecords = notificationRecordsAll.slice(
+    notificationsView.page * notifPageSize,
+    notificationsView.page * notifPageSize + notifPageSize,
+  );
+  const filteredNotificationOptions =
+    overlay.type === "notifications"
+      ? buildNotificationPickerOptions(notificationRecords, {
+          subActionsActive: notificationActionDedupKey !== null,
+        })
+      : [];
+  const selectedNotificationForActions =
+    overlay.type === "notifications" && notificationActionDedupKey
+      ? (notificationRecords.find((record) => record.dedupKey === notificationActionDedupKey) ??
+        null)
+      : null;
+  const filteredNotificationActionOptions = selectedNotificationForActions
+    ? rankFuzzyMatches(
+        buildNotificationActionOptions(selectedNotificationForActions),
+        filterQuery,
+        (option) => [
+          { value: option.label, weight: 0 },
+          { value: option.detail, weight: 8 },
+        ],
+      )
+    : [];
+  const notificationPlayConfirmOptions = [
+    {
+      value: "confirm" as const,
+      label: "Play now",
+      detail: "Switch playback to this notice",
+    },
+    {
+      value: "cancel" as const,
+      label: "Cancel",
+      detail: "Keep current playback",
+    },
+  ];
 
   useEffect(() => {
     if (overlay.type !== "history") return;
@@ -1013,7 +1050,45 @@ export function RootOverlayShell({
     if (commandMode) {
       return;
     }
-    if (input === "?" && !key.ctrl && !key.meta) {
+
+    const cancelActive = isOverlayCancelActive({
+      overlay,
+      settingsChoice,
+      filterQuery,
+      pickerFilterQuery,
+    });
+
+    if ((input === "c" && key.ctrl) || input === "\x03") {
+      const settingsDirty =
+        overlay.type === "settings" &&
+        settingsDraft !== null &&
+        !settingsEqual(settingsDraft, container.config.getRaw());
+      if (settingsDirty) {
+        if (!overlayClosePending) {
+          setOverlayClosePending(true);
+          setOverlayStatus(
+            overlayDestructiveCancelMessage({ overlay, settingsDirty: true }) ??
+              "Press Ctrl+C again to close",
+          );
+          return;
+        }
+        setOverlayClosePending(false);
+        setSettingsDraft(container.config.getRaw());
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        return;
+      }
+      setOverlayClosePending(false);
+    } else if (overlayClosePending) {
+      setOverlayClosePending(false);
+    }
+
+    const overlayRoute = routeOverlayInput(input, key, {
+      commandPaletteOpen: false,
+      modalOpen: true,
+      overlayOpen: true,
+      textInputFocused: !cancelActive,
+    });
+    if (overlayRoute.command === "help" && input === "?" && !key.ctrl && !key.meta) {
       // `?` is the global help toggle. The keybinding registry declares it
       // global but only ShellFrame wired it before — every root overlay
       // (history, settings, notifications, pickers) was missing it. Help has
@@ -1097,7 +1172,7 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape) {
+    if (key.escape && !cancelActive) {
       if (overlay.type === "settings" && settingsChoice) {
         setSettingsChoice(null);
         setFilterQuery("");
@@ -1143,49 +1218,23 @@ export function RootOverlayShell({
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
-    if (overlay.type === "history" && key.tab && key.shift) {
-      // Shift+Tab cycles the content-type axis (All/Anime/Series/Movies); plain
-      // Tab cycles the bucket (Continue/Completed/New/All).
-      setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev));
-      setSelectedIndex(0);
-      return;
-    }
-    if (overlay.type === "history" && key.tab) {
-      setHistoryTab((prev) => cycleHistoryTab(prev));
-      return;
-    }
-    if (overlay.type === "history" && input.toLowerCase() === "q") {
-      const picked = historyView.flatRows[selectedIndex]?.titleId ?? null;
-      const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
-      if (selected) {
-        const historySelection = buildRootHistorySelection(
-          selected,
-          historyPickerContext.nextReleases,
-          historyPickerContext.projections,
-        );
-        const queueEntry = historySelection.targetEpisode
-          ? {
-              ...historySelection.entry,
-              season: historySelection.targetEpisode.season,
-              episode: historySelection.targetEpisode.episode,
-              positionSeconds:
-                historySelection.targetEpisode.reason === "resume"
-                  ? historySelection.entry.positionSeconds
-                  : 0,
-              completed:
-                historySelection.targetEpisode.reason === "resume"
-                  ? historySelection.entry.completed
-                  : false,
-            }
-          : historySelection.entry;
-        container.queueService.enqueueMediaItem(
-          mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
-          { placement: "end", source: "history" },
-        );
-        setOverlayStatus("Queued from history");
-        onRedraw();
+    if (overlay.type === "history") {
+      if (
+        handleHistoryOverlayInput(input, key, {
+          container,
+          historyView,
+          historySelections,
+          historyPickerContext,
+          selectedIndex,
+          setHistoryTypeFilter,
+          setHistoryTab,
+          setSelectedIndex,
+          setOverlayStatus,
+          onRedraw,
+        }) === "handled"
+      ) {
+        return;
       }
-      return;
     }
     if (overlay.type === "queue") {
       // Handle queue management keys; let arrows / filtering fall through to the
@@ -1265,57 +1314,21 @@ export function RootOverlayShell({
     ) {
       const notifRows = notificationsView.rows;
       const notifRow = notifRows[Math.min(selectedIndex, Math.max(notifRows.length - 1, 0))];
-      if (key.tab) {
-        setNotifTab((prev) => (prev === "active" ? "archive" : "active"));
-        setNotifPage(0);
-        setSelectedIndex(0);
-        return;
-      }
-      if (input === "[") {
-        setNotifPage((page) => Math.max(0, page - 1));
-        setSelectedIndex(0);
-        return;
-      }
-      if (input === "]") {
-        setNotifPage((page) => Math.min(notificationsView.totalPages - 1, page + 1));
-        setSelectedIndex(0);
-        return;
-      }
-      if (input === "A") {
-        container.notificationService.markAllRead();
-        setNotifTick((tick) => tick + 1);
-        return;
-      }
-      if (input === "r" && notifRow) {
-        container.notificationService.markRead(notifRow.dedupKey);
-        setNotifTick((tick) => tick + 1);
-        return;
-      }
-      if (input.toLowerCase() === "x" && notifRow) {
-        container.notificationService.archive(notifRow.dedupKey);
-        setNotifTick((tick) => tick + 1);
-        setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
-        return;
-      }
-      if (input === "d" && notifRow) {
-        container.notificationService.delete(notifRow.dedupKey);
-        setNotifTick((tick) => tick + 1);
-        setSelectedIndex((current) => Math.max(0, Math.min(current, notifRows.length - 2)));
-        setOverlayStatus("Notification deleted");
-        return;
-      }
-      if (input === "C") {
-        const removed = container.notificationService.clearArchived();
-        setNotifTick((tick) => tick + 1);
-        setNotifPage(0);
-        setSelectedIndex(0);
-        setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
-        return;
-      }
-      if (input.toLowerCase() === "a" && notifRow) {
-        setNotificationActionDedupKey(notifRow.dedupKey);
-        setFilterQuery("");
-        setSelectedIndex(0);
+      if (
+        handleNotificationsOverlayInput(input, key, {
+          container,
+          notifRow,
+          totalPages: notificationsView.totalPages,
+          onRedraw,
+          setNotifTab,
+          setNotifPage,
+          setSelectedIndex,
+          setNotifTick,
+          setOverlayStatus,
+          setNotificationActionDedupKey,
+          setFilterQuery,
+        }) === "handled"
+      ) {
         return;
       }
     }
@@ -1960,7 +1973,8 @@ export function RootOverlayShell({
                   };
 
   if (overlay.type === "downloads") {
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <ContextStrip items={[{ label: "panel downloads", tone: "info" }]} />
@@ -1986,12 +2000,13 @@ export function RootOverlayShell({
             commandMode={commandMode}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
   if (overlay.type === "library") {
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <LibraryShell
@@ -2024,7 +2039,7 @@ export function RootOverlayShell({
             commandMode={commandMode}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
@@ -2033,12 +2048,13 @@ export function RootOverlayShell({
       notificationsView.rows.length === 0
         ? 0
         : Math.min(selectedIndex, notificationsView.rows.length - 1);
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <NotificationsShell
             view={notificationsView}
-            columns={cols}
+            columns={overlayLayout.contentColumns}
             selectedIndex={notifSelected}
             unreadCount={notificationUnreadCount}
           />
@@ -2060,12 +2076,16 @@ export function RootOverlayShell({
             terminalWidth={cols}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
   if (overlay.type === "queue") {
-    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(cols, rows);
+    const {
+      innerWidth,
+      listWidth: pickerListWidth,
+      rowWidth,
+    } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
     const listWidth = pickerListWidth ?? innerWidth;
     const qSelected =
       queueView.rows.length === 0 ? 0 : Math.min(selectedIndex, queueView.rows.length - 1);
@@ -2083,7 +2103,8 @@ export function RootOverlayShell({
         : null,
     };
 
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <ContextStrip
@@ -2097,7 +2118,7 @@ export function RootOverlayShell({
           />
           <QueueShell
             view={queueViewForRender}
-            columns={cols}
+            columns={overlayLayout.contentColumns}
             listWidth={listWidth}
             rowWidth={rowWidth}
           />
@@ -2120,15 +2141,20 @@ export function RootOverlayShell({
             terminalWidth={cols}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
   if (overlay.type === "history") {
-    const { innerWidth, listWidth: pickerListWidth, rowWidth } = getPickerLayout(cols, rows);
+    const {
+      innerWidth,
+      listWidth: pickerListWidth,
+      rowWidth,
+    } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
     const listWidth = pickerListWidth ?? innerWidth;
 
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <ContextStrip
@@ -2144,7 +2170,7 @@ export function RootOverlayShell({
           />
           <HistoryShell
             view={historyView}
-            columns={cols}
+            columns={overlayLayout.contentColumns}
             listWidth={listWidth}
             rowWidth={rowWidth}
           />
@@ -2167,12 +2193,13 @@ export function RootOverlayShell({
             terminalWidth={cols}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
   if (overlay.type === "help") {
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <HelpShell
         commandMode={commandMode}
         commandInput={commandInput}
@@ -2181,13 +2208,14 @@ export function RootOverlayShell({
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
         onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-      />
+      />,
     );
   }
 
   if (overlay.type === "tracks_panel") {
     const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
-    return (
+    return wrapOverlayLayout(
+      overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
           <ContextStrip
@@ -2201,8 +2229,8 @@ export function RootOverlayShell({
             nav={tracksNav}
             favorites={tracksFavorites}
             providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
-            width={Math.max(24, cols - 8)}
-            height={Math.max(8, rows - 9)}
+            width={overlayLayout.contentColumns}
+            height={overlayLayout.contentRows}
           />
         </Box>
 
@@ -2230,11 +2258,12 @@ export function RootOverlayShell({
             commandMode={commandMode}
           />
         </Box>
-      </Box>
+      </Box>,
     );
   }
 
-  return (
+  return wrapOverlayLayout(
+    overlayLayout,
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
       <Box flexDirection="column" flexGrow={1}>
         <ContextStrip
@@ -2261,7 +2290,7 @@ export function RootOverlayShell({
         />
         <OverlayPanel
           overlay={overlayPanel}
-          width={Math.max(24, cols - 8)}
+          width={overlayLayout.contentColumns}
           maxLinesOverride={maxLines}
         />
       </Box>
@@ -2296,6 +2325,6 @@ export function RootOverlayShell({
           commandMode={commandMode}
         />
       </Box>
-    </Box>
+    </Box>,
   );
 }

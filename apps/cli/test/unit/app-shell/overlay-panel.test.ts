@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { getOverlayHostChromeRows, getOverlayListMaxVisible } from "@/app-shell/layout-policy";
 import {
   applySeriesProviderOrder,
   buildSettingsChoiceOverlay,
@@ -13,6 +14,19 @@ import {
 } from "@/app-shell/overlay-panel";
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+
+test("overlay picker list budget uses inner viewport rows, not full terminal height", () => {
+  const hostChrome = getOverlayHostChromeRows({ commandMode: false, dedicatedShell: false });
+  const shortTerminal = getOverlayListMaxVisible({
+    terminalRows: 24,
+    terminalCols: 80,
+    overlayChromeRows: hostChrome,
+    panelKind: "picker",
+  });
+  const fullTerminalPicker = Math.max(5, 24 - 10);
+  expect(shortTerminal).toBeLessThan(fullTerminalPicker);
+  expect(shortTerminal).toBeGreaterThanOrEqual(1);
+});
 
 test("formatPickerOptionRow keeps settings rows within the available width", () => {
   const row = formatPickerOptionRow({

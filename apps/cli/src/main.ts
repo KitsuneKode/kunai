@@ -586,8 +586,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  // Launch the persistent state-driven UI
+  if (!capabilitySnapshot.mpv) {
+    console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(1);
+  }
+
+  const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const { launchSessionApp } = await import("./app-shell/ink-shell");
+  if (args.debug) {
+    logger.info("Ink shell loaded", {
+      lazyImportMs: Math.round(performance.now() - shellLoadStartedAt),
+    });
+  }
   launchSessionApp(container);
   if (protocolHandoff) {
     const { confirmProtocolHandoff } = await import("./app-shell/workflows");
@@ -617,12 +628,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await shutdownShell();
     if (process.stdin.isTTY) process.stdin.unref();
     return;
-  }
-  if (!capabilitySnapshot.mpv) {
-    console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
-    await shutdownShell();
-    if (process.stdin.isTTY) process.stdin.unref();
-    process.exit(1);
   }
 
   // Run the main session loop

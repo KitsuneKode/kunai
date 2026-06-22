@@ -16,9 +16,11 @@ import { DetailsSheetUI } from "./details-pane-ui";
 import type { DetailsPanelData } from "./details-panel";
 import { DetailsSheet } from "./details-sheet-ui";
 import type { DetailsSheetModel } from "./details-sheet.model";
+import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
+import { LoadingState } from "./primitives/LoadingState";
 import { BooleanSwitch } from "./primitives/Switch";
 import { getWindowStart, truncateAtWord, truncateLine, wrapText } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
@@ -26,8 +28,6 @@ import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
 export { formatPickerDisplayRow, formatPickerOptionRow } from "./overlay-picker-row.model";
-
-const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 const HistoryProgressBar = React.memo(function HistoryProgressBar({
   percentage,
@@ -43,16 +43,6 @@ const HistoryProgressBar = React.memo(function HistoryProgressBar({
 
   return <>[{`${"█".repeat(filledBlocks)}${"░".repeat(emptyBlocks)}`}]</>;
 });
-
-function useBusySpinner(active: boolean): string {
-  const [frame, setFrame] = React.useState(0);
-  React.useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(() => setFrame((f) => (f + 1) % BUSY_FRAMES.length), 80);
-    return () => clearInterval(timer);
-  }, [active]);
-  return BUSY_FRAMES[frame] ?? "⠋";
-}
 
 export type BrowseOverlay =
   | {
@@ -1179,6 +1169,7 @@ export function OverlayPanel({
   width: number;
   maxLinesOverride?: number;
 }) {
+  const insideOverlay = useIsInsideOverlay();
   const contentWidth = Math.max(24, width - 4);
   const maxLines = maxLinesOverride ?? (overlay.type === "episode-picker" ? 8 : 6);
   const isPickerOverlay =
@@ -1203,9 +1194,12 @@ export function OverlayPanel({
   const pickerAccent = isPickerOverlay
     ? pickerFocusAccent((overlay as Extract<BrowseOverlay, { filterQuery: string }>).type)
     : palette.accent;
-  const busySpinner = useBusySpinner(
-    isPickerOverlay && Boolean((overlay as { busy?: boolean }).busy),
-  );
+  const pickerBusyMessage =
+    overlay.type === "provider"
+      ? "Updating provider…"
+      : overlay.type === "history-picker"
+        ? "Loading history…"
+        : "Saving settings…";
   const pickerPreviewImageUrl = getOverlayPickerPreviewImageUrl(overlay);
   const { poster: pickerPoster, posterState: pickerPosterState } = usePosterPreview(
     pickerPreviewImageUrl,
@@ -1226,7 +1220,7 @@ export function OverlayPanel({
     : contentWidth;
 
   return (
-    <Box marginTop={1} flexDirection="column" paddingX={1}>
+    <Box marginTop={insideOverlay ? 0 : 1} flexDirection="column" paddingX={insideOverlay ? 0 : 1}>
       <Text color={palette.text} bold>
         {overlay.title}
       </Text>
@@ -1388,19 +1382,15 @@ export function OverlayPanel({
             ) : null}
           </Box>
           {overlay.busy || overlay.type !== "episode-picker" ? (
-            <Box marginTop={1}>
-              <Text color={overlay.busy ? palette.accent : palette.dim}>
-                {overlay.busy
-                  ? `${busySpinner} ${
-                      overlay.type === "provider"
-                        ? "Updating provider…"
-                        : overlay.type === "history-picker"
-                          ? "Loading history…"
-                          : "Saving settings…"
-                    }`
-                  : `${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
-              </Text>
-            </Box>
+            overlay.busy ? (
+              <LoadingState message={pickerBusyMessage} framed />
+            ) : (
+              <Box marginTop={1}>
+                <Text color={palette.dim}>
+                  {`${overlay.options.length} items  ·  ↑↓ choose · Enter select · Esc close`}
+                </Text>
+              </Box>
+            )
           ) : null}
           {overlay.type === "settings" ? (
             <Box marginTop={1}>
@@ -1413,9 +1403,7 @@ export function OverlayPanel({
           ) : null}
         </>
       ) : isLineOverlay && overlay.loading ? (
-        <Box marginTop={1}>
-          <Text color={palette.accent}>Loading panel…</Text>
-        </Box>
+        <LoadingState message="Loading panel…" framed />
       ) : overlay.type === "details" && overlay.sheet ? (
         <Box marginTop={1} flexDirection="column">
           <DetailsSheet

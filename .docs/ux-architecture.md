@@ -23,6 +23,7 @@ KitsuneSnipe should behave like a terminal app shell, not a sequence of unrelate
 - compact status strip for user-critical runtime state
 - command bar for global actions
 - overlays for secondary flows
+- overlay pickers size against `OverlayLayoutProvider` inner viewport (`contentRows` / `contentColumns`), not raw terminal dimensions — see `apps/cli/src/app-shell/overlay-layout-context.tsx`
 - playback surfaces should keep title, episode identity, provider, and subtitle state visible without making users infer where they are
 
 ### Fullscreen TUI consensus
