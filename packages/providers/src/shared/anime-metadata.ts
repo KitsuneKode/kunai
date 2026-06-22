@@ -2,7 +2,7 @@ import type { ProviderEpisodeOption } from "@kunai/types";
 
 import { TTLCache } from "./provider-cache";
 
-export type AnimeEpisodeMetadataSource = "anilist" | "jikan" | "miruro" | "merged";
+export type AnimeEpisodeMetadataSource = "anilist" | "jikan" | "miruro" | "allmanga" | "merged";
 
 export type AnimeEpisodeMetadata = {
   readonly number: number;
@@ -19,6 +19,81 @@ const METADATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const metadataCache = new TTLCache<string, Map<number, AnimeEpisodeMetadata>>(
   METADATA_CACHE_TTL_MS,
 );
+const seededMetadataCache = new TTLCache<string, Map<number, AnimeEpisodeMetadata>>(
+  METADATA_CACHE_TTL_MS,
+);
+
+/** Default coverage threshold before skipping AniList/Jikan enrichment on listEpisodes. */
+export const EPISODE_METADATA_COVERAGE_THRESHOLD = 0.8;
+
+export function allMangaEpisodeMetadataCacheKey(showId: string, mode: "sub" | "dub"): string {
+  return `allanime:${showId}:${mode}`;
+}
+
+export function miruroEpisodeMetadataCacheKey(anilistId: string): string {
+  return `miruro:${anilistId}`;
+}
+
+export function seedEpisodeMetadataFromProvider(
+  cacheKey: string,
+  entries: readonly AnimeEpisodeMetadata[],
+): void {
+  if (entries.length === 0) return;
+  const existing = seededMetadataCache.get(cacheKey) ?? new Map<number, AnimeEpisodeMetadata>();
+  const merged = new Map(existing);
+  for (const entry of entries) {
+    const { number, ...patch } = entry;
+    mergeEpisodeMetadata(merged, number, patch);
+  }
+  seededMetadataCache.set(cacheKey, merged);
+}
+
+export function getSeededEpisodeMetadata(
+  cacheKey: string,
+): ReadonlyMap<number, AnimeEpisodeMetadata> | null {
+  const cached = seededMetadataCache.get(cacheKey);
+  return cached ? new Map(cached) : null;
+}
+
+export function mergeSeededEpisodeMetadataInto(
+  target: Map<number, AnimeEpisodeMetadata>,
+  cacheKey: string,
+): void {
+  const seeded = seededMetadataCache.get(cacheKey);
+  if (!seeded) return;
+  for (const [number, meta] of seeded) {
+    const { number: _number, ...patch } = meta;
+    mergeEpisodeMetadata(target, number, patch);
+  }
+}
+
+export function episodeMetadataTitleCoverage(
+  metadata: ReadonlyMap<number, AnimeEpisodeMetadata>,
+  episodeCount: number,
+): number {
+  if (episodeCount <= 0 || metadata.size === 0) return 0;
+  let titled = 0;
+  for (let number = 1; number <= episodeCount; number += 1) {
+    if (metadata.get(number)?.title?.trim()) titled += 1;
+  }
+  return titled / episodeCount;
+}
+
+export function shouldSkipExternalEpisodeMetadataEnrichment(
+  metadata: ReadonlyMap<number, AnimeEpisodeMetadata>,
+  episodeCount: number,
+  threshold = EPISODE_METADATA_COVERAGE_THRESHOLD,
+): boolean {
+  return episodeMetadataTitleCoverage(metadata, episodeCount) >= threshold;
+}
+
+export function pipeEpisodeMetadataTitleCoverage(
+  entries: readonly { readonly number: number; readonly title?: string }[],
+): number {
+  if (entries.length === 0) return 0;
+  const titled = entries.filter((entry) => entry.title?.trim()).length;
+  return titled / entries.length;
+}
 
 const JIKAN_BASE = "https://api.jikan.moe/v4";
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
@@ -187,7 +262,13 @@ export function mergeMiruroPipeEpisodeMetadata(
   }
 }
 
-/** Fetch episode titles/synopses/stills keyed by absolute episode number. */
+/** Fetch episode titles/synopses/stills keyed by absolute episode number.
+ *
+ * @deprecated Prefer provider-native episode metadata (Miruro pipe, AllManga
+ * episodeInfo cache via `seedEpisodeMetadataFromProvider`). Keep for sparse
+ * catalogs, filler/recap flags, and offline backfill when provider coverage
+ * is below `EPISODE_METADATA_COVERAGE_THRESHOLD`.
+ */
 export async function fetchAnimeEpisodeMetadataByNumber(
   ids: { readonly anilistId?: string; readonly malId?: string },
   signal?: AbortSignal,
@@ -260,4 +341,5 @@ export function enrichEpisodeOptionsWithAnimeMetadata(
 
 export function clearAnimeMetadataCacheForTest(): void {
   metadataCache.clear();
+  seededMetadataCache.clear();
 }

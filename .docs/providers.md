@@ -375,6 +375,20 @@ Active providers are registered in `apps/cli/src/container.ts` via `createProvid
 | `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 
+### Anime catalog identity
+
+Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
+
+- **AllAnime (`allanime`)** — `provider-native`. AniList-backed discovery results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is preserved on merge.
+- **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
+
+### Episode metadata ownership
+
+Default hot path prefers provider-native episode titles:
+
+- **Miruro** — pipe `episodes` entries (title, description, image, airDate). When ≥80% of catalog episodes have titles after merge, AniList/Jikan enrichment is skipped.
+- **AllAnime** — resolve-time `tobeparsed` `episodeInfo` seeds a per-show cache; `listEpisodes` uses seeded metadata when coverage is sufficient, otherwise falls back to AniList/Jikan via `fetchAnimeEpisodeMetadataByNumber` (deprecated for default hot path, kept for sparse catalogs and filler/recap flags).
+
 All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `apps/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
 
 `vidking` remains accepted as a legacy config/cache alias for `videasy`.

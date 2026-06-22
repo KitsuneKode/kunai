@@ -159,6 +159,7 @@ function anilistMediaToSearchResult(media: AniListSearchMedia): SearchResult {
     rating: typeof media.averageScore === "number" ? media.averageScore / 10 : null,
     popularity: media.popularity ?? null,
     episodeCount: media.episodes ?? undefined,
+    externalIds: { anilistId: String(media.id) },
   };
 }
 

@@ -24,11 +24,15 @@ export async function mapAnimeDiscoveryResultToProviderNative(
     return result;
   }
 
-  const discoveryAniListId = parseInt(result.id, 10);
   const provider = context.providerRegistry.get(context.providerId);
+  if (provider?.metadata.catalogIdentity === "anilist") {
+    return ensureAniListDiscoveryExternalIds(result);
+  }
+
+  const discoveryAniListId = parseInt(result.id, 10);
   const searchProviderNative = context.searchProviderNative ?? searchAllManga;
 
-  // Tier 1: Direct AniList ID match via API (fast, accurate)
+  // Tier 1: Direct AniList ID match via API (fast, accurate) — AllAnime opaque id only
   if (!isNaN(discoveryAniListId)) {
     const animeLang =
       context.animeLanguageProfile.audio === "ja" ||
@@ -83,6 +87,20 @@ export async function mapAnimeDiscoveryResultToProviderNative(
 
 function isAniListBackedResult(result: SearchResult): boolean {
   return result.metadataSource?.startsWith("AniList ") === true;
+}
+
+function ensureAniListDiscoveryExternalIds(result: SearchResult): SearchResult {
+  const discoveryAniListId = parseInt(result.id, 10);
+  if (Number.isNaN(discoveryAniListId) || result.externalIds?.anilistId) {
+    return result;
+  }
+  return {
+    ...result,
+    externalIds: {
+      ...result.externalIds,
+      anilistId: String(discoveryAniListId),
+    },
+  };
 }
 
 function toAllMangaResult(r: SearchResult): AllMangaSearchResult {
@@ -146,9 +164,29 @@ function mergeAniListDiscoveryWithProviderResult(
   discovery: SearchResult,
   providerResult: AllMangaSearchResult,
 ): SearchResult {
+  const discoveryAniListId = parseInt(discovery.id, 10);
+  const externalIds = {
+    ...discovery.externalIds,
+    anilistId:
+      discovery.externalIds?.anilistId ??
+      (!Number.isNaN(discoveryAniListId) ? String(discoveryAniListId) : undefined),
+    malId:
+      providerResult.malId !== undefined
+        ? String(providerResult.malId)
+        : discovery.externalIds?.malId,
+  };
+
   return {
     ...discovery,
     id: providerResult.id,
+    externalIds:
+      externalIds.anilistId || externalIds.malId
+        ? {
+            ...externalIds,
+            anilistId: externalIds.anilistId || undefined,
+            malId: externalIds.malId || undefined,
+          }
+        : discovery.externalIds,
     title: providerResult.title || discovery.title,
     titleAliases: mergeTitleAliases(discovery.titleAliases, [
       { kind: "provider", value: providerResult.title },

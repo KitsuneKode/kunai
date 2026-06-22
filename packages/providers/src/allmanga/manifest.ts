@@ -10,6 +10,7 @@ export const allanimeManifest = defineProviderManifest({
   domain: "allmanga.to",
   recommended: false,
   mediaKinds: ["anime"],
+  catalogIdentity: "provider-native",
   capabilities: ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
   runtimePorts: [
     {

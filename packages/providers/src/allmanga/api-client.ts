@@ -1,7 +1,12 @@
 import {
+  allMangaEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
   fetchAnimeEpisodeMetadataByNumber,
+  getSeededEpisodeMetadata,
   parseAllMangaEpisodeNumber,
+  seedEpisodeMetadataFromProvider,
+  shouldSkipExternalEpisodeMetadataEnrichment,
+  type AnimeEpisodeMetadata,
 } from "../shared/anime-metadata";
 import { TTLCache } from "../shared/provider-cache";
 
@@ -198,6 +203,12 @@ export function hexDecode(encoded: string): string {
 export async function decodeTobeparsed(
   blob: string,
 ): Promise<Array<{ sourceName: string; sourceUrl: string }>> {
+  const plain = await decryptTobeparsedPlaintext(blob);
+  if (!plain) return [];
+  return extractRawSourcesFromPlaintext(plain);
+}
+
+export async function decryptTobeparsedPlaintext(blob: string): Promise<string | null> {
   try {
     const raw = Uint8Array.from(atob(blob), (char) => char.charCodeAt(0));
     const iv = raw.slice(1, 13);
@@ -208,20 +219,93 @@ export async function decodeTobeparsed(
 
     const key = await deriveAllMangaKey();
     const plain = await crypto.subtle.decrypt({ name: "AES-CTR", counter, length: 64 }, key, data);
-    const text = new TextDecoder().decode(plain);
-    const results: Array<{ sourceName: string; sourceUrl: string }> = [];
-    const pattern = /"sourceUrl"\s*:\s*"--([^"]+)"[^}]*"sourceName"\s*:\s*"([^"]+)"/g;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      const [, sourceUrl, sourceName] = match;
-      if (sourceUrl && sourceName) {
-        results.push({ sourceUrl, sourceName });
-      }
-    }
-    return results;
+    return new TextDecoder().decode(plain);
   } catch {
-    return [];
+    return null;
   }
+}
+
+const ALLMANGA_EPISODE_THUMBNAIL_ORIGIN = "https://wp.youtube-anime.com/aln.youtube-anime.com";
+
+function extractRawSourcesFromPlaintext(
+  text: string,
+): Array<{ sourceName: string; sourceUrl: string }> {
+  const results: Array<{ sourceName: string; sourceUrl: string }> = [];
+  const pattern = /"sourceUrl"\s*:\s*"--([^"]+)"[^}]*"sourceName"\s*:\s*"([^"]+)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const [, sourceUrl, sourceName] = match;
+    if (sourceUrl && sourceName) {
+      results.push({ sourceUrl, sourceName });
+    }
+  }
+  return results;
+}
+
+function normalizeAllMangaEpisodeThumbnail(path: string | undefined): string | undefined {
+  if (!path?.trim()) return undefined;
+  const trimmed = path.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `${ALLMANGA_EPISODE_THUMBNAIL_ORIGIN}${normalized}`;
+}
+
+function readAllMangaEpisodeNumber(episodeString: string | undefined): number | null {
+  if (!episodeString?.trim()) return null;
+  const parsed = episodeOrderValue(episodeString.trim());
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function seedAllMangaEpisodeInfoFromPlaintext(
+  showId: string,
+  mode: "sub" | "dub",
+  plainText: string,
+): void {
+  let episode: Record<string, unknown> | undefined;
+  try {
+    const payload = JSON.parse(plainText) as { episode?: Record<string, unknown> };
+    episode = payload.episode;
+  } catch {
+    episode = undefined;
+  }
+  if (!episode) return;
+
+  const episodeInfo =
+    episode.episodeInfo && typeof episode.episodeInfo === "object"
+      ? (episode.episodeInfo as Record<string, unknown>)
+      : undefined;
+  const notes =
+    (typeof episodeInfo?.notes === "string" ? episodeInfo.notes : undefined) ??
+    (typeof episode.notes === "string" ? episode.notes : undefined);
+  const synopsis =
+    typeof episodeInfo?.description === "string"
+      ? episodeInfo.description
+      : typeof episode.description === "string"
+        ? episode.description
+        : undefined;
+  const thumbnails = Array.isArray(episodeInfo?.thumbnails)
+    ? episodeInfo.thumbnails.filter((value): value is string => typeof value === "string")
+    : [];
+  const uploadDates =
+    episodeInfo?.uploadDates && typeof episodeInfo.uploadDates === "object"
+      ? (episodeInfo.uploadDates as Record<string, unknown>)
+      : undefined;
+  const airDateRaw = uploadDates?.[mode];
+  const airDate = typeof airDateRaw === "string" ? airDateRaw.slice(0, 10) : undefined;
+  const episodeString =
+    typeof episode.episodeString === "string" ? episode.episodeString : undefined;
+  const number = readAllMangaEpisodeNumber(episodeString);
+  if (!number) return;
+
+  const entry: AnimeEpisodeMetadata = {
+    number,
+    title: notes?.trim() || undefined,
+    synopsis: synopsis?.trim() || undefined,
+    airDate,
+    thumbnail: normalizeAllMangaEpisodeThumbnail(thumbnails[0]),
+    source: "allmanga",
+  };
+  seedEpisodeMetadataFromProvider(allMangaEpisodeMetadataCacheKey(showId, mode), [entry]);
 }
 
 export function buildStreamHeaders(
@@ -477,7 +561,17 @@ export async function resolveEpisodeSources(opts: {
 
   if (!rawText) return [];
 
-  const rawSources = await extractRawSources(rawText);
+  let rawSources: Array<{ sourceUrl: string; sourceName: string }> = [];
+  if (rawText.includes('"tobeparsed"')) {
+    const blobMatch = /"tobeparsed"\s*:\s*"([^"]+)"/.exec(rawText);
+    const plain = blobMatch?.[1] ? await decryptTobeparsedPlaintext(blobMatch[1]) : null;
+    if (plain) {
+      seedAllMangaEpisodeInfoFromPlaintext(showId, mode, plain);
+      rawSources = extractRawSourcesFromPlaintext(plain);
+    }
+  } else {
+    rawSources = await extractRawSources(rawText);
+  }
   const direct: StreamLink[] = [];
   const apiJobs: Promise<StreamLink[]>[] = [];
 
@@ -564,9 +658,43 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
 
   const anilistId = info.aniListId ? String(info.aniListId) : undefined;
   const malId = info.malId ? String(info.malId) : undefined;
+  const metadataCacheKey = allMangaEpisodeMetadataCacheKey(showId, mode);
+  const metadata = new Map<number, AnimeEpisodeMetadata>();
+  const seeded = getSeededEpisodeMetadata(metadataCacheKey);
+  if (seeded) {
+    for (const [number, meta] of seeded) metadata.set(number, meta);
+  }
+
+  const episodeCount = baseEpisodes.length;
+  if (episodeCount > 0 && shouldSkipExternalEpisodeMetadataEnrichment(metadata, episodeCount)) {
+    return enrichEpisodeOptionsWithAnimeMetadata(
+      baseEpisodes,
+      metadata,
+      parseAllMangaEpisodeNumber,
+    );
+  }
+
   if (!anilistId && !malId) return baseEpisodes;
 
-  const metadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+  const externalMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+  for (const [number, meta] of externalMetadata) {
+    const existing = metadata.get(number);
+    if (!existing) {
+      metadata.set(number, meta);
+      continue;
+    }
+    metadata.set(number, {
+      number,
+      title: existing.title ?? meta.title,
+      synopsis: existing.synopsis ?? meta.synopsis,
+      airDate: existing.airDate ?? meta.airDate,
+      thumbnail: existing.thumbnail ?? meta.thumbnail,
+      isFiller: existing.isFiller ?? meta.isFiller,
+      isRecap: existing.isRecap ?? meta.isRecap,
+      source: "merged",
+    });
+  }
+
   if (metadata.size === 0) return baseEpisodes;
 
   return enrichEpisodeOptionsWithAnimeMetadata(baseEpisodes, metadata, parseAllMangaEpisodeNumber);
@@ -697,11 +825,6 @@ async function deriveAllMangaKey(): Promise<CryptoKey> {
 async function extractRawSources(
   rawText: string,
 ): Promise<Array<{ sourceUrl: string; sourceName: string }>> {
-  if (rawText.includes('"tobeparsed"')) {
-    const blobMatch = /"tobeparsed"\s*:\s*"([^"]+)"/.exec(rawText);
-    return blobMatch?.[1] ? decodeTobeparsed(blobMatch[1]) : [];
-  }
-
   const data = JSON.parse(rawText) as {
     data: { episode: { sourceUrls?: Array<{ sourceUrl: string; sourceName: string }> } };
   };

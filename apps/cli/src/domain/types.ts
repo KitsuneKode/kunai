@@ -196,6 +196,7 @@ export interface ProviderMetadata {
   readonly description: string;
   readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
+  readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
   readonly status?: "production" | "candidate" | "experimental" | "research";
   readonly domain?: string;
 }

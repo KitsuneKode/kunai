@@ -29,6 +29,7 @@ import {
   fetchAnimeEpisodeMetadataByNumber,
   formatAnimeEpisodeLabel,
   mergeMiruroPipeEpisodeMetadata,
+  shouldSkipExternalEpisodeMetadataEnrichment,
 } from "../shared/anime-metadata";
 import { TTLCache } from "../shared/provider-cache";
 import {
@@ -744,26 +745,30 @@ export async function fetchMiruroEpisodeCatalog(
   mergeMiruroPipeEpisodeMetadata(metadata, entries);
 
   const malId = readMiruroMappingMalId(epData?.mappings);
-  const sharedMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
-  for (const [number, meta] of sharedMetadata) {
-    const existing = metadata.get(number);
-    if (!existing) {
-      metadata.set(number, meta);
-      continue;
+  const skipExternal = shouldSkipExternalEpisodeMetadataEnrichment(metadata, entries.length);
+
+  if (!skipExternal) {
+    const sharedMetadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId, malId }, signal);
+    for (const [number, meta] of sharedMetadata) {
+      const existing = metadata.get(number);
+      if (!existing) {
+        metadata.set(number, meta);
+        continue;
+      }
+      metadata.set(number, {
+        ...existing,
+        title:
+          meta.title && (!existing.title || meta.title.length > existing.title.length)
+            ? meta.title
+            : existing.title,
+        synopsis: existing.synopsis ?? meta.synopsis,
+        airDate: existing.airDate ?? meta.airDate,
+        thumbnail: existing.thumbnail ?? meta.thumbnail,
+        isFiller: existing.isFiller ?? meta.isFiller,
+        isRecap: existing.isRecap ?? meta.isRecap,
+        source: "merged",
+      });
     }
-    metadata.set(number, {
-      ...existing,
-      title:
-        meta.title && (!existing.title || meta.title.length > existing.title.length)
-          ? meta.title
-          : existing.title,
-      synopsis: existing.synopsis ?? meta.synopsis,
-      airDate: existing.airDate ?? meta.airDate,
-      thumbnail: existing.thumbnail ?? meta.thumbnail,
-      isFiller: existing.isFiller ?? meta.isFiller,
-      isRecap: existing.isRecap ?? meta.isRecap,
-      source: "merged",
-    });
   }
 
   return entries.map((entry) => {

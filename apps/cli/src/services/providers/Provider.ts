@@ -7,6 +7,7 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
+import { resolveProviderCatalogIdentity } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
 
 import { providerResolveResultToStreamInfo } from "./provider-result-adapter";
@@ -65,6 +66,7 @@ export function createProviderFromModule(
     description: manifest.description,
     recommended: manifest.recommended,
     isAnimeProvider: manifest.mediaKinds.includes("anime"),
+    catalogIdentity: resolveProviderCatalogIdentity(manifest),
     status: manifest.status,
     domain: manifest.domain,
   };
