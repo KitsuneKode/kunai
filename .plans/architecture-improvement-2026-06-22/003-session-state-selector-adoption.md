@@ -1,6 +1,6 @@
 # Plan 003: Session State Selector Adoption
 
-Status: partially implemented
+Status: implemented
 Priority: P1
 Effort: M
 Risk: Medium
@@ -96,10 +96,11 @@ bun run test
 - Existing root overlays already open and close through `SessionState.activeModals`; the remaining work is to migrate mounted helper screens/root content sessions off module-global subscriber sets one flow at a time.
 - `root-content-state.ts` now exposes `subscribeRootContentSession(...)` and `useRootContentSession()` uses `useSyncExternalStore(...)` instead of a manual local revision bump.
 - `apps/cli/test/unit/app-shell/root-content-state.test.ts` covers root-content subscription notifications.
+- Removed the legacy `rootShellScreen` / `rootShellSubscribers` mounted-screen plane from `ink-shell.tsx`.
+- Removed the unused `openLoadingShell(...)` path; loading now stays on the state-driven `AppRoot` / `LoadingShell` surface.
 
-Remaining:
+Remaining follow-up:
 
-- Migrate `rootShellScreen` / `rootShellSubscribers` in `ink-shell.tsx` or delete them after converting the remaining helper screen flows.
 - Decide whether long-lived root content belongs in `SessionState` proper or in the focused root-content external store.
 
 ## Rollback

@@ -96,7 +96,6 @@ import {
   type FooterAction,
   type ShellFooterMode,
   type PlaybackShellState,
-  type LoadingShellState,
   type PlaybackShellResult,
   type ShellPanelLine,
   type ShellPickerOption,
@@ -157,23 +156,8 @@ const stdinManager = {
 // Initialize on module load
 stdinManager.setup();
 
-const SCREEN_CLEAR_GRACE_MS = 0;
-
-type MountedShell<TResult> = {
-  close: (value: TResult) => void;
-  result: Promise<TResult>;
-};
-
-type RootShellScreen = {
-  id: number;
-  element: React.ReactElement;
-};
-
-const rootShellSubscribers = new Set<() => void>();
-let rootShellScreen: RootShellScreen | null = null;
 let rootShellInk: ReturnType<typeof render> | null = null;
 let rootShellExitPromise: Promise<unknown> | null = null;
-let rootShellNextId = 1;
 
 /**
  * Clears terminal image artifacts. With alternateScreen: true, Ink owns the
@@ -185,33 +169,6 @@ export function clearShellScreen() {
   if (process.stdout.isTTY) {
     deleteAllKittyImages();
   }
-}
-
-function notifyRootShellSubscribers() {
-  for (const subscriber of rootShellSubscribers) {
-    subscriber();
-  }
-}
-
-function setRootShellScreen(screen: RootShellScreen | null) {
-  rootShellScreen = screen;
-  notifyRootShellSubscribers();
-}
-
-function RootShellHost() {
-  const [, setRevision] = useState(0);
-
-  useEffect(() => {
-    const subscriber = () => setRevision((revision) => revision + 1);
-    rootShellSubscribers.add(subscriber);
-    return () => {
-      rootShellSubscribers.delete(subscriber);
-    };
-  }, []);
-
-  return rootShellScreen ? (
-    <React.Fragment key={rootShellScreen.id}>{rootShellScreen.element}</React.Fragment>
-  ) : null;
 }
 
 async function openPlaybackStreamSelectionPicker(
@@ -352,102 +309,6 @@ async function openActivePlaybackEpisodePicker(
   await container.playerControl.selectCurrentPlaybackEpisode(selection, reason);
 }
 
-function useRootShellScreen(): RootShellScreen | null {
-  const [, setRevision] = useState(0);
-
-  useEffect(() => {
-    const subscriber = () => setRevision((revision) => revision + 1);
-    rootShellSubscribers.add(subscriber);
-    return () => {
-      rootShellSubscribers.delete(subscriber);
-    };
-  }, []);
-
-  return rootShellScreen;
-}
-
-function ensureRootShell() {
-  if (rootShellInk && rootShellExitPromise) {
-    return rootShellExitPromise;
-  }
-
-  stdinManager.enterShell();
-  clearShellScreen();
-
-  rootShellInk = render(<RootShellHost />, {
-    exitOnCtrlC: false,
-    alternateScreen: true,
-  });
-  rootShellExitPromise = rootShellInk.waitUntilExit();
-
-  void (async () => {
-    await rootShellExitPromise;
-    rootShellInk = null;
-    rootShellExitPromise = null;
-    rootShellScreen = null;
-    clearRootContentSession();
-    stdinManager.exitShell();
-  })();
-
-  return rootShellExitPromise;
-}
-
-function mountShell<TResult>({
-  renderShell,
-  fallbackValue,
-  clearOnResolve = true,
-}: {
-  renderShell: (finish: (value: TResult) => void) => React.ReactElement;
-  fallbackValue: TResult;
-  clearOnResolve?: boolean;
-}): MountedShell<TResult> {
-  const exitPromise = ensureRootShell();
-  const screenId = rootShellNextId++;
-  let settled = false;
-  let resolveResult!: (value: TResult) => void;
-
-  const result = new Promise<TResult>((resolve) => {
-    resolveResult = resolve;
-  });
-
-  const settle = (value: TResult, shouldClear: boolean) => {
-    if (settled) return;
-    settled = true;
-
-    if (shouldClear && rootShellScreen?.id === screenId) {
-      setTimeout(() => {
-        if (rootShellScreen?.id === screenId) {
-          setRootShellScreen(null);
-        }
-      }, SCREEN_CLEAR_GRACE_MS);
-    }
-
-    resolveResult(value);
-  };
-
-  // With alternateScreen: true and SCREEN_CLEAR_GRACE_MS = 0, the previous
-  // shell is removed immediately when the next mounts, preventing flicker.
-  // The raw screen clear was removed to let Ink handle reconciliation.
-
-  setRootShellScreen({
-    id: screenId,
-    element: renderShell((value) => settle(value, clearOnResolve)),
-  });
-
-  void (async () => {
-    await exitPromise;
-    if (!settled) {
-      settled = true;
-      resolveResult(fallbackValue);
-    }
-  })();
-
-  return {
-    close: (value: TResult) => settle(value, true),
-    result,
-  };
-}
-
 // =============================================================================
 // STATE-DRIVEN APP HOST
 // =============================================================================
@@ -468,7 +329,6 @@ function AppRoot({ container }: { container: Container }) {
   const { stateManager } = container;
   const state = useSessionState(stateManager);
   const rootOverlay = useSessionSelector(stateManager, getRootOwnedOverlay);
-  const screen = useRootShellScreen();
   const rootContent = useRootContentSession();
   const { cols: shellWidth, rows: shellHeight } = useShellDimensions();
   useTerminalResizeCleanup();
@@ -814,7 +674,7 @@ function AppRoot({ container }: { container: Container }) {
   });
   const rootSurface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
-    hasMountedScreen: Boolean(screen),
+    hasMountedScreen: false,
   });
   const isSeriesPlayback =
     rootSurface === "playback" &&
@@ -890,47 +750,48 @@ function AppRoot({ container }: { container: Container }) {
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
-      void dispatchAppCommand({
-        action,
-        source: "runtime",
-        activePlayback: {
-          deps: {
-            playerControl: container.playerControl,
-            workControl: container.workControl,
-            stateManager: container.stateManager,
-            openStreamSelectionPicker: async (_deps, pickerAction, reason) => {
-              await openPlaybackStreamSelectionPicker(container, pickerAction, reason);
+      void (async () => {
+        const result = await dispatchAppCommand({
+          action,
+          source: "runtime",
+          activePlayback: {
+            deps: {
+              playerControl: container.playerControl,
+              workControl: container.workControl,
+              stateManager: container.stateManager,
+              openStreamSelectionPicker: async (_deps, pickerAction, reason) => {
+                await openPlaybackStreamSelectionPicker(container, pickerAction, reason);
+              },
+              openEpisodePicker: async (_deps, reason) => {
+                await openActivePlaybackEpisodePicker(container, reason);
+              },
+              enqueueCurrentPlaybackDownload: async (_deps, reason) => {
+                const { enqueueCurrentPlaybackDownload } = await import("./workflows");
+                await enqueueCurrentPlaybackDownload({
+                  container,
+                  reason,
+                });
+              },
+              switchSessionMode: () => {
+                switchSessionMode(container.stateManager);
+              },
+              routeSearchShellAction: async (nextAction) => {
+                const { routeSearchShellAction } = await import("./command-router");
+                return routeSearchShellAction({ action: nextAction, container });
+              },
+              setExiting,
             },
-            openEpisodePicker: async (_deps, reason) => {
-              await openActivePlaybackEpisodePicker(container, reason);
-            },
-            enqueueCurrentPlaybackDownload: async (_deps, reason) => {
-              const { enqueueCurrentPlaybackDownload } = await import("./workflows");
-              await enqueueCurrentPlaybackDownload({
-                container,
-                reason,
-              });
-            },
-            switchSessionMode: () => {
-              switchSessionMode(container.stateManager);
-            },
-            routeSearchShellAction: async (nextAction) => {
-              const { routeSearchShellAction } = await import("./command-router");
-              return routeSearchShellAction({ action: nextAction, container });
-            },
-            setExiting,
+            canGoNext,
+            canGoPrevious,
+            canToggleAutoplay,
           },
-          canGoNext,
-          canGoPrevious,
-          canToggleAutoplay,
-        },
-      }).then((result) => {
+        });
         if (result.status !== "ignored" || !result.reason) return;
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           detail: result.reason,
         });
-      });
+      })();
     },
     [container, canGoNext, canGoPrevious, canToggleAutoplay, setExiting],
   );
@@ -1233,8 +1094,6 @@ function AppRoot({ container }: { container: Container }) {
               container={container}
               onRedraw={clearShellScreen}
             />
-          ) : screen ? (
-            <Box key={screen.id}>{screen.element}</Box>
           ) : (
             <RootIdleShell state={state} />
           )}
@@ -1277,7 +1136,6 @@ export async function launchSessionApp(container: Container) {
     await rootShellExitPromise;
     rootShellInk = null;
     rootShellExitPromise = null;
-    rootShellScreen = null;
     clearRootContentSession();
     stdinManager.exitShell();
   })();
@@ -1604,46 +1462,6 @@ export function openPlaybackShell({
   });
 
   return session.result;
-}
-
-export type LoadingShellHandle = {
-  close: () => void;
-  update: (state: LoadingShellState) => void;
-  result: Promise<"done" | "cancelled">;
-};
-
-export function openLoadingShell({
-  state: initialState,
-  cancellable = false,
-}: {
-  state: LoadingShellState;
-  cancellable?: boolean;
-}): LoadingShellHandle {
-  let externalSetState: ((s: LoadingShellState) => void) | null = null;
-
-  function LiveLoadingShell({ finish }: { finish: (value: "done" | "cancelled") => void }) {
-    const [state, setState] = useState(initialState);
-    useEffect(() => {
-      externalSetState = setState;
-      return () => {
-        externalSetState = null;
-      };
-    }, []);
-    return (
-      <LoadingShell state={state} onCancel={cancellable ? () => finish("cancelled") : undefined} />
-    );
-  }
-
-  const session = mountShell<"done" | "cancelled">({
-    renderShell: (finish) => <LiveLoadingShell finish={finish} />,
-    fallbackValue: "done",
-  });
-
-  return {
-    close: () => session.close("done"),
-    update: (state) => externalSetState?.(state),
-    result: session.result,
-  };
 }
 
 type ListShellActionResult = {
