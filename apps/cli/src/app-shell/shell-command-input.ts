@@ -4,6 +4,7 @@ import { useInput } from "ink";
 import { useEffect, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
+import { recordInputDrop } from "./diagnostics/render-trace";
 import { routeShellInput } from "./input-router";
 import {
   buildCommandPickerModel,
@@ -48,6 +49,7 @@ export function useShellInput({
 
   useInput((input, key) => {
     if (disabled) {
+      recordInputDrop("shell-input", "input-locked", input);
       return;
     }
 
@@ -109,8 +111,9 @@ export function useShellInput({
       return;
     }
 
+    const matchKey = input.toLowerCase();
     const footerAction = footerActions.find(
-      (action) => action.key === input.toLowerCase() && !action.disabled,
+      (action) => action.key === matchKey && !action.disabled,
     );
     if (footerAction) {
       if (footerAction.action === "command-mode") {
@@ -120,11 +123,23 @@ export function useShellInput({
         return;
       }
       if (letterKeysHandledExternally) {
+        // The letter binding exists but the playback/loading surface owns letters;
+        // `/` still opened the palette above. Surface this so a "first press did
+        // nothing" report can be traced to external ownership rather than a bug.
+        recordInputDrop("shell-input", "handled-externally", input);
         return;
       }
       if (footerAction.action) {
         onResolve(footerAction.action);
+        return;
       }
+    }
+    // A binding exists for this key but is currently disabled — a common cause of a
+    // press that "does nothing". (Unbound keys are intentionally NOT logged here:
+    // sibling surface `useInput` handlers commonly own them, so a frame-level
+    // "no-binding" would be misleading.)
+    if (footerActions.some((action) => action.key === matchKey && action.disabled)) {
+      recordInputDrop("shell-input", "binding-disabled", input);
     }
   });
 
