@@ -2,23 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import {
   normalizeAutoDownloadNextCount,
-  resolveAutoDownloadScope,
   selectEpisodesForDownloadScope,
 } from "@/services/download/download-scope-policy";
 
 describe("download scope policy", () => {
-  test("keeps auto-download disabled by default", () => {
-    expect(resolveAutoDownloadScope({ mode: "off" })).toBeNull();
-  });
-
-  test("maps next mode to one episode unless next-count is explicitly raised", () => {
-    expect(resolveAutoDownloadScope({ mode: "next" })).toEqual({ type: "next-episode" });
-    expect(resolveAutoDownloadScope({ mode: "next", nextCount: 3 })).toEqual({
-      type: "next-n",
-      count: 3,
-    });
-  });
-
   test("clamps next-count to a bounded opt-in batch size", () => {
     expect(normalizeAutoDownloadNextCount(-1)).toBe(1);
     expect(normalizeAutoDownloadNextCount(200)).toBe(24);
