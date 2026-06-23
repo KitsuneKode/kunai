@@ -1,4 +1,5 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
+import { resolveProviderTitleIdentity, type ProviderCatalogIdentity } from "@kunai/core";
 import { normalizeLegacyVideasySourceId, resolveAnimeAudioIntent } from "@kunai/providers";
 import type {
   EpisodeIdentity,
@@ -23,11 +24,13 @@ export function streamRequestToResolveInput(
   request: StreamRequestLike,
   mode: ShellMode,
   intent: ProviderResolveInput["intent"] = "play",
+  catalogIdentity?: ProviderCatalogIdentity,
+  providerId?: string,
 ): ProviderResolveInput {
   const animeAudioIntent =
     mode === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
   return {
-    title: titleToCoreIdentity(request.title, mode),
+    title: titleToCoreIdentity(request.title, mode, catalogIdentity, providerId),
     episode: episodeToCoreIdentity(request.episode),
     mediaKind: mode === "anime" ? "anime" : request.title.type,
     preferredSourceId: normalizeOptionalId(request.selectedSourceId),
@@ -59,26 +62,40 @@ function normalizeQualityPreference(value: string | undefined): string | undefin
   return normalized;
 }
 
-export function titleToCoreIdentity(title: TitleInfo, mode: ShellMode): TitleIdentity {
+export function titleToCoreIdentity(
+  title: TitleInfo,
+  mode: ShellMode,
+  catalogIdentity?: ProviderCatalogIdentity,
+  providerId?: string,
+): TitleIdentity {
   const kind = mode === "anime" ? "anime" : title.type;
+  const year = title.year ? Number.parseInt(title.year, 10) || undefined : undefined;
+
+  if (catalogIdentity) {
+    return resolveProviderTitleIdentity(
+      {
+        id: title.id,
+        kind,
+        title: title.name,
+        year,
+        externalIds: title.externalIds,
+      },
+      catalogIdentity,
+      providerId,
+    );
+  }
 
   return {
     id: title.id,
     kind,
     title: title.name,
-    year: title.year ? Number.parseInt(title.year, 10) || undefined : undefined,
-    tmdbId: title.externalIds?.tmdbId ?? (kind === "anime" ? undefined : title.id),
-    anilistId:
-      title.externalIds?.anilistId ??
-      (kind === "anime" && isNumericId(title.id) ? title.id : undefined),
+    year,
+    anilistId: title.externalIds?.anilistId,
+    tmdbId: title.externalIds?.tmdbId,
     imdbId: title.externalIds?.imdbId,
     malId: title.externalIds?.malId,
     externalIds: title.externalIds,
   };
-}
-
-function isNumericId(id: string): boolean {
-  return /^\d+$/.test(id);
 }
 
 export function episodeToCoreIdentity(

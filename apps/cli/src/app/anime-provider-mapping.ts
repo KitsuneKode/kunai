@@ -1,6 +1,8 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
+import { mergeProviderNativeId } from "@kunai/core";
 import { searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
+import type { ProviderId } from "@kunai/types";
 
 export type AnimeProviderMappingContext = {
   readonly mode: ShellMode;
@@ -20,13 +22,26 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   result: SearchResult,
   context: AnimeProviderMappingContext,
 ): Promise<SearchResult> {
-  if (context.mode !== "anime" || !isAniListBackedResult(result)) {
+  if (context.mode !== "anime") {
     return result;
+  }
+
+  if (looksLikeProviderNativeSearchId(result)) {
+    return result;
+  }
+
+  const storedNative = result.externalIds?.providerNativeIds?.[context.providerId as ProviderId];
+  if (storedNative) {
+    return { ...result, id: storedNative };
   }
 
   const provider = context.providerRegistry.get(context.providerId);
   if (provider?.metadata.catalogIdentity === "anilist") {
     return ensureAniListDiscoveryExternalIds(result);
+  }
+
+  if (!shouldRemapDiscoveryToProviderNative(result)) {
+    return result;
   }
 
   const discoveryAniListId = parseInt(result.id, 10);
@@ -50,9 +65,11 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         context.signal,
       ).catch(() => []);
       const idMatch = matches.find((r) => r.aniListId === discoveryAniListId);
-      if (idMatch) return mergeAniListDiscoveryWithProviderResult(result, idMatch);
+      if (idMatch)
+        return mergeAniListDiscoveryWithProviderResult(result, idMatch, context.providerId);
       const titleMatch = chooseProviderSearchMatch(result, matches);
-      if (titleMatch) return mergeAniListDiscoveryWithProviderResult(result, titleMatch);
+      if (titleMatch)
+        return mergeAniListDiscoveryWithProviderResult(result, titleMatch, context.providerId);
     }
   }
 
@@ -76,18 +93,40 @@ export async function mapAnimeDiscoveryResultToProviderNative(
     // Try numeric ID match on provider results
     if (!isNaN(discoveryAniListId)) {
       const idMatch = providerResults.find((r) => r.id === discoveryAniListId.toString());
-      if (idMatch) return result;
+      if (idMatch) {
+        return mergeAniListDiscoveryWithProviderResult(
+          result,
+          toAllMangaResult(idMatch),
+          context.providerId,
+        );
+      }
     }
 
     const match = chooseProviderSearchMatch(result, providerResults.map(toAllMangaResult));
-    if (match) return mergeAniListDiscoveryWithProviderResult(result, match);
+    if (match) return mergeAniListDiscoveryWithProviderResult(result, match, context.providerId);
   }
 
   return result;
 }
 
+function shouldRemapDiscoveryToProviderNative(result: SearchResult): boolean {
+  if (result.externalIds?.anilistId) return true;
+  return isAniListBackedResult(result);
+}
+
+function looksLikeProviderNativeSearchId(result: SearchResult): boolean {
+  const anilistId = result.externalIds?.anilistId;
+  if (anilistId && result.id === anilistId) return false;
+  if (/^\d+$/.test(result.id)) return false;
+  return result.id.trim().length > 0;
+}
+
 function isAniListBackedResult(result: SearchResult): boolean {
-  return result.metadataSource?.startsWith("AniList ") === true;
+  if (result.metadataSource?.startsWith("AniList") === true) return true;
+  if (/^\d+$/.test(result.id) && result.metadataSource?.toLowerCase().includes("anilist")) {
+    return true;
+  }
+  return false;
 }
 
 function ensureAniListDiscoveryExternalIds(result: SearchResult): SearchResult {
@@ -164,9 +203,10 @@ function titleMatchScore(discovery: SearchResult, candidate: AllMangaSearchResul
 function mergeAniListDiscoveryWithProviderResult(
   discovery: SearchResult,
   providerResult: AllMangaSearchResult,
+  providerId: string,
 ): SearchResult {
   const discoveryAniListId = parseInt(discovery.id, 10);
-  const externalIds = {
+  const catalogIds = {
     ...discovery.externalIds,
     anilistId:
       discovery.externalIds?.anilistId ??
@@ -176,18 +216,12 @@ function mergeAniListDiscoveryWithProviderResult(
         ? String(providerResult.malId)
         : discovery.externalIds?.malId,
   };
+  const externalIds = mergeProviderNativeId(catalogIds, providerId, providerResult.id);
 
   return {
     ...discovery,
     id: providerResult.id,
-    externalIds:
-      externalIds.anilistId || externalIds.malId
-        ? {
-            ...externalIds,
-            anilistId: externalIds.anilistId || undefined,
-            malId: externalIds.malId || undefined,
-          }
-        : discovery.externalIds,
+    externalIds: externalIds ?? discovery.externalIds,
     title: providerResult.title || discovery.title,
     titleAliases: mergeTitleAliases(discovery.titleAliases, [
       { kind: "provider", value: providerResult.title },

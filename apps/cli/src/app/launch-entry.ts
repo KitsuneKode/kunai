@@ -1,11 +1,17 @@
 import { applyTitleProviderPreferenceToSession } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
+import { isAnimeContent } from "@/domain/media/content-kind";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
-import { historyContentType, isFinished } from "@/services/continuation/history-progress";
+import {
+  correctedHistoryMediaKind,
+  historyContentType,
+  isFinished,
+} from "@/services/continuation/history-progress";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryProgress } from "@kunai/storage";
+import type { ProviderId } from "@kunai/types";
 
 export type HistoryLaunchSelection = {
   readonly titleId: string;
@@ -75,7 +81,7 @@ function selectNewestUnfinishedAnchor(
 }
 
 export function titleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {
-  return {
+  const title: TitleInfo = {
     id: selection.titleId,
     type: historyContentType(selection.entry),
     name: selection.entry.title,
@@ -83,6 +89,61 @@ export function titleFromHistorySelection(selection: HistoryLaunchSelection): Ti
     // absent because history never persisted a poster URL).
     posterUrl: selection.entry.posterUrl,
     externalIds: selection.entry.externalIds,
+    launchSource: "history",
+  };
+  if (isAnimeHistoryEntry(selection.entry)) {
+    return { ...title, isAnime: true };
+  }
+  return title;
+}
+
+function isAnimeHistoryEntry(entry: HistoryProgress): boolean {
+  return correctedHistoryMediaKind(entry) === "anime";
+}
+
+export async function prepareReplayTitleForProvider(
+  container: Pick<Container, "config" | "providerRegistry" | "stateManager">,
+  title: TitleInfo,
+  entry?: HistoryProgress,
+): Promise<TitleInfo> {
+  const animeReplay = isAnimeContent(title) || (entry ? isAnimeHistoryEntry(entry) : false);
+  if (!animeReplay) return title;
+
+  const state = container.stateManager.getState();
+  if (state.mode !== "anime") {
+    container.stateManager.dispatch({
+      type: "SET_MODE",
+      mode: "anime",
+      provider: state.provider,
+    });
+  }
+
+  const activeProvider = container.stateManager.getState().provider;
+  const provider = container.providerRegistry.get(activeProvider);
+  if (provider?.metadata.catalogIdentity === "anilist") return title;
+
+  const storedNative = title.externalIds?.providerNativeIds?.[activeProvider as ProviderId];
+  if (storedNative) {
+    return {
+      ...title,
+      id: storedNative,
+      launchSource: title.launchSource ?? "history",
+    };
+  }
+
+  const { mapAnimeDiscoveryResultToProviderNative } = await import("@/app/anime-provider-mapping");
+  const { searchResultFromTitleInfo, titleInfoFromSearchResult } = await import("@/app/title-info");
+
+  const discovery = searchResultFromTitleInfo(title);
+  const mapped = await mapAnimeDiscoveryResultToProviderNative(discovery, {
+    mode: "anime",
+    providerId: activeProvider,
+    animeLanguageProfile: container.config.animeLanguageProfile,
+    providerRegistry: container.providerRegistry,
+  });
+  return {
+    ...titleInfoFromSearchResult(mapped, title.name),
+    launchSource: title.launchSource ?? "history",
   };
 }
 
@@ -166,9 +227,18 @@ export function applyHistorySelectionProvider(
 ): void {
   const titleId = selection.titleId;
   const appliedPreference = applyTitleProviderPreferenceToSession(container, titleId);
+  const state = container.stateManager.getState();
+  const keepSessionProvider = state.providerSwitchSeq > 0;
+
+  if (isAnimeHistoryEntry(selection.entry) && state.mode !== "anime") {
+    container.stateManager.dispatch({
+      type: "SET_MODE",
+      mode: "anime",
+      provider: state.provider,
+    });
+  }
+
   if (!appliedPreference) {
-    const state = container.stateManager.getState();
-    const keepSessionProvider = state.providerSwitchSeq > 0;
     if (!keepSessionProvider) {
       const provider = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
       if (provider) {

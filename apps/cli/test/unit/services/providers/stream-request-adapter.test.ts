@@ -68,6 +68,7 @@ test("streamRequestToResolveInput maps startup priority", () => {
         id: "1396",
         type: "series",
         name: "Breaking Bad",
+        externalIds: { tmdbId: "1396" },
       },
       episode: { season: 1, episode: 2 },
       audioPreference: "original",
@@ -75,7 +76,76 @@ test("streamRequestToResolveInput maps startup priority", () => {
       startupPriority: "fast",
     },
     "series",
+    "play",
+    "tmdb",
   );
 
   expect(input.startupPriority).toBe("fast");
+  expect(input.title.tmdbId).toBe("1396");
+});
+
+test("streamRequestToResolveInput normalizes anilist catalog ids for miruro", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "20431",
+        type: "series",
+        name: "Hozuki's Coolheadedness",
+        externalIds: { anilistId: "20431" },
+      },
+      episode: { season: 1, episode: 1 },
+      audioPreference: "original",
+      subtitlePreference: "en",
+    },
+    "anime",
+    "play",
+    "anilist",
+  );
+
+  expect(input.title.id).toBe("20431");
+  expect(input.title.anilistId).toBe("20431");
+});
+
+test("streamRequestToResolveInput does not infer anilistId without catalog identity", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "20431",
+        type: "series",
+        name: "Hozuki's Coolheadedness",
+      },
+      episode: { season: 1, episode: 1 },
+      audioPreference: "original",
+      subtitlePreference: "en",
+    },
+    "anime",
+  );
+
+  expect(input.title.anilistId).toBeUndefined();
+});
+
+test("streamRequestToResolveInput uses stored provider native id for allanime resolve", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "20431",
+        type: "series",
+        name: "Hozuki's Coolheadedness",
+        externalIds: {
+          anilistId: "20431",
+          providerNativeIds: { allanime: "bxCKTnota29uSRnZw" },
+        },
+      },
+      episode: { season: 1, episode: 1 },
+      audioPreference: "sub",
+      subtitlePreference: "en",
+    },
+    "anime",
+    "play",
+    "provider-native",
+    "allanime",
+  );
+
+  expect(input.title.id).toBe("bxCKTnota29uSRnZw");
+  expect(input.title.anilistId).toBe("20431");
 });

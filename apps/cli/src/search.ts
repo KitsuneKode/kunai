@@ -27,6 +27,7 @@ export type SearchResult = {
   popularity?: number | null;
   /** Deterministic anime detection (anime-classifier) for routing + badge. */
   isAnime?: boolean;
+  externalIds?: { readonly tmdbId?: string };
 };
 
 export type SearchService = {
@@ -79,6 +80,7 @@ export async function searchVideasy(query: string, signal?: AbortSignal): Promis
       rating: typeof r.vote_average === "number" ? r.vote_average : null,
       popularity: typeof r.popularity === "number" ? r.popularity : null,
       isAnime: classifyRecordAnime(r),
+      externalIds: { tmdbId: String(r.id) },
     }));
 
   cache.set(key, results);
@@ -123,6 +125,7 @@ export async function discoverVideasy(
             rating: typeof record.vote_average === "number" ? record.vote_average : null,
             popularity: typeof record.popularity === "number" ? record.popularity : null,
             isAnime: classifyRecordAnime(record),
+            externalIds: { tmdbId: String(record.id) },
           };
         });
     }),

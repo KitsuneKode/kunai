@@ -157,10 +157,40 @@ test("miruro mapping chain preserves numeric anilistId for resolve (Farming Life
       subtitlePreference: "en",
     },
     "anime",
+    "play",
+    "anilist",
   );
 
   expect(resolveInput.title.anilistId).toBe("197824");
   expect(resolveInput.title.id).toBe("197824");
+});
+
+test("remaps history titles with anilist externalIds for provider-native providers", async () => {
+  const historyBacked = {
+    ...discovery,
+    id: "20431",
+    title: "Hozuki's Coolheadedness",
+    metadataSource: "AniList history",
+    externalIds: { anilistId: "20431" },
+  };
+
+  const mapped = await mapAnimeDiscoveryResultToProviderNative(historyBacked, {
+    mode: "anime",
+    providerId: "allanime",
+    animeLanguageProfile: { audio: "original", subtitle: "en" },
+    searchProviderNative: async () => [
+      {
+        id: "bxCKTnota29uSRnZw",
+        title: "Hoozuki no Reitetsu",
+        type: "series",
+        aniListId: 20431,
+      },
+    ],
+    providerRegistry: allanimeProviderRegistry,
+  });
+
+  expect(mapped.id).toBe("bxCKTnota29uSRnZw");
+  expect(mapped.externalIds?.anilistId).toBe("20431");
 });
 
 test("leaves ordinary provider-native anime search results unchanged", async () => {

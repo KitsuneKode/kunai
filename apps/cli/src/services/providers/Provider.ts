@@ -98,7 +98,14 @@ function defaultResolveStream(
   mode: "series" | "anime",
 ): ProviderResolveFn {
   return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
-    const input = streamRequestToResolveInput(request, mode);
+    const catalogIdentity = resolveProviderCatalogIdentity(module.manifest);
+    const input = streamRequestToResolveInput(
+      request,
+      mode,
+      "play",
+      catalogIdentity,
+      module.manifest.id,
+    );
     const result = await module.resolve(input, {
       now: () => new Date().toISOString(),
       signal,

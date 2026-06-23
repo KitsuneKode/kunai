@@ -21,6 +21,7 @@ import { loadDiscoveryList } from "@/app/discovery-lists";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
+  prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
@@ -506,7 +507,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             }
 
             applyHistorySelectionProvider(container, continueWatchingSelection);
-            const title = titleFromHistorySelection(continueWatchingSelection);
+            const title = await prepareReplayTitleForProvider(
+              container,
+              titleFromHistorySelection(continueWatchingSelection),
+              continueWatchingSelection.entry,
+            );
             stateManager.dispatch({ type: "SELECT_TITLE", title });
             const episode = episodeFromHistorySelection(continueWatchingSelection);
             if (episode) {

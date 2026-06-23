@@ -93,6 +93,28 @@ describe("launch entry helpers", () => {
       id: "tmdb:1399",
       type: "series",
       name: "Game of Thrones",
+      launchSource: "history",
+    });
+  });
+
+  test("titleFromHistorySelection marks anime history rows with isAnime", () => {
+    expect(
+      titleFromHistorySelection({
+        titleId: "20431",
+        entry: history({
+          title: "Hozuki's Coolheadedness",
+          mediaKind: "anime",
+          externalIds: { anilistId: "20431" },
+          providerId: "miruro",
+        }),
+      }),
+    ).toEqual({
+      id: "20431",
+      type: "series",
+      name: "Hozuki's Coolheadedness",
+      externalIds: { anilistId: "20431" },
+      launchSource: "history",
+      isAnime: true,
     });
   });
 
@@ -156,6 +178,53 @@ describe("launch entry helpers", () => {
       type: "SET_MODE",
       mode: "series",
       provider: "rivestream",
+    });
+  });
+
+  test("applyHistorySelectionProvider switches to anime mode for anime history rows", () => {
+    const transitions: unknown[] = [];
+
+    applyHistorySelectionProvider(
+      {
+        config: {
+          getRaw() {
+            return { titleProviderPreferences: {} };
+          },
+        },
+        providerRegistry: {
+          get(providerId: string) {
+            return {
+              metadata: {
+                id: providerId,
+                isAnimeProvider: providerId === "allanime" || providerId === "miruro",
+              },
+            };
+          },
+        },
+        stateManager: {
+          getState() {
+            return { provider: "allanime", providerSwitchSeq: 1, mode: "series" };
+          },
+          dispatch(transition: unknown) {
+            transitions.push(transition);
+          },
+        },
+      } as never,
+      {
+        titleId: "20431",
+        entry: history({
+          title: "Hozuki's Coolheadedness",
+          mediaKind: "anime",
+          externalIds: { anilistId: "20431" },
+          providerId: "miruro",
+        }),
+      },
+    );
+
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "anime",
+      provider: "allanime",
     });
   });
 

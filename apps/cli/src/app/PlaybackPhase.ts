@@ -203,6 +203,7 @@ import {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
+import { resolveCanonicalCatalogTitleId } from "@kunai/core";
 import type { ResolveAttempt } from "@kunai/core";
 
 // Re-exported for tests that import it from this module's public surface.
@@ -1975,14 +1976,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               effectiveTiming.current,
               quitThresholdMode,
             );
+            const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
+              providerId: resolvedProviderId,
+            });
+            const historyTitleId = resolveCanonicalCatalogTitleId({
+              id: title.id,
+              kind: persistedKind,
+              externalIds: title.externalIds,
+            });
             container.historyRepository.upsertProgress({
               title: {
                 id: title.id,
-                // Content-derived persisted kind: a drama watched in anime mode
-                // (AllAnime hosts live-action) must not be stamped "anime". See #1.
-                kind: classifyPersistedKind(title, stateManager.getState().mode, {
-                  providerId: resolvedProviderId,
-                }),
+                kind: persistedKind,
                 title: title.name,
                 externalIds: title.externalIds,
               },
@@ -1999,7 +2004,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               posterUrl: title.posterUrl,
               updatedAt: new Date().toISOString(),
             });
-            const savedHistoryRow = container.historyRepository.getLatestForTitle(title.id);
+            const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
             enqueueReleaseReconciliation(
               container,
               savedHistoryRow ? [savedHistoryRow] : [],

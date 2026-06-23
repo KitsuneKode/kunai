@@ -31,6 +31,7 @@ import {
   episodeFromHistorySelection,
   historyLaunchSelectionFromContinuation,
   recordLocalHistorySourceDecision,
+  prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
 import { resolveSessionConfigOverrides } from "@/app/session-overrides";
@@ -150,7 +151,11 @@ async function maybeOpenStartupHistory(
 
   applyHistorySelectionProvider(container, selection);
   return {
-    title: titleFromHistorySelection(selection),
+    title: await prepareReplayTitleForProvider(
+      container,
+      titleFromHistorySelection(selection),
+      selection.entry,
+    ),
     episode: episodeFromHistorySelection(selection),
   };
 }
@@ -206,7 +211,11 @@ async function maybeResolveContinueTitle(
   });
   await recordLocalHistorySourceDecision(container, selection, "continue");
   return {
-    title: titleFromHistorySelection(selection),
+    title: await prepareReplayTitleForProvider(
+      container,
+      titleFromHistorySelection(selection),
+      selection.entry,
+    ),
     episode: episodeFromHistorySelection(selection),
   };
 }

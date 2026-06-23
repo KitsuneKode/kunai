@@ -9,7 +9,7 @@ function findRepoRoot(start: string): string {
       const packageJson = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as {
         workspaces?: unknown;
       };
-      if (Array.isArray(packageJson.workspaces)) {
+      if (packageJson.workspaces !== undefined) {
         return directory;
       }
     } catch {
@@ -87,7 +87,7 @@ const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([
   ["@kunai/schemas", ["@kunai/types"]],
   ["@kunai/core", ["@kunai/types"]],
   ["@kunai/providers", ["@kunai/core", "@kunai/types"]],
-  ["@kunai/storage", ["@kunai/schemas", "@kunai/types"]],
+  ["@kunai/storage", ["@kunai/core", "@kunai/schemas", "@kunai/types"]],
   ["@kunai/design", []],
 ]);
 
