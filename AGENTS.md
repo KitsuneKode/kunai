@@ -80,6 +80,8 @@ apps/cli/src/session-flow.ts         start-episode selection and provider/sessio
 apps/cli/src/services/persistence/ConfigService.ts   persisted user config + provider overrides (KitsuneConfig)
 packages/storage/src/repositories/history.ts         SQLite watch history persistence
 apps/cli/src/services/providers/*    active direct-provider adapters and registry
+packages/relay/src/*                 shared provider RPC relay validation, registry, client fetch port, geo-block detection
+apps/relay-server/*                  user-owned Vercel/Bun relay template; thin adapter over @kunai/relay
 archive/legacy/apps/cli/src/browser/*        quarantined Playwright interception reference; not active beta runtime
 archive/legacy/apps/cli/src/providers/*      quarantined browser/legacy provider reference; not active beta runtime
 apps/experiments/*                   private provider research lab, not production runtime
@@ -94,6 +96,7 @@ bun run dev -- -S "Dune"
 bun run dev -- -i 438631 -t movie
 bun run dev -- -a
 bun run dev -- --debug
+bun run dev:relay
 bun run link:global
 ```
 
@@ -108,12 +111,16 @@ bun run fmt
 Use `bun run build` after completed a full feature or before release so we have well defined build steps and can catch any build-only errors.
 Use `bun run test` if tests are relevant and available. Do not use `bun test` directly.
 Unit tests live under `apps/cli/test/unit/`, integration tests under `apps/cli/test/integration/`, and live provider checks under `apps/cli/test/live/`.
+Relay smoke is opt-in: run `bun run dev:relay`, set `KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787`, then `bun run test:live:relay-allanime`.
 
 ## Hard Boundaries
 
 - `apps/cli/index.ts` is a temporary compatibility wrapper only; new runtime work belongs in `apps/cli/src/main.ts`
 - Episode numbers are 1-based in the UI; providers adapt internally
 - `apps/cli/src/container.ts` (`providerModules` + `createProviderEngine`) is the single production registry source of truth; provider modules live in `packages/providers/src/*/direct.ts`
+- `packages/relay` is the single shared implementation for provider geo-relay validation and fetch-port routing; `apps/relay-server` must stay a thin adapter
+- Relay is metadata-only by default. Do not route video through relay unless `videoFallback` is explicitly enabled and the host is in `relayProfile.videoRelayHosts`
+- Kunai must not ship a shared public relay URL; `providerRelay.baseUrl` is empty by default and user-owned
 - `isAnimeProvider: true` is what places a provider in anime mode
 - `packages/providers/src/allmanga/api-client.ts` contains ani-cli parity logic; check external parity before changing crypto or decoder constants
 - On this machine, the local canonical ani-cli checkout for AllAnime or AllManga parity checks is `~/Projects/osc/ani-cli`

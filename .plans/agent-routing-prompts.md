@@ -2,7 +2,7 @@
 
 Status: Active Reference
 
-Last updated: 2026-04-29
+Last updated: 2026-06-23
 
 Use this file to route work across multiple agents without reloading the whole Kunai vision into every session.
 
@@ -26,6 +26,8 @@ Use these rules in every prompt unless a task explicitly says otherwise:
 - Do not add Prisma or a heavy ORM.
 - Use TypeScript for internal contracts.
 - Use Zod only at trust, storage, IPC, relay, provider-response, sync, imported-dataset, or plugin-manifest boundaries.
+- Treat `packages/relay` as the single provider geo-relay implementation and `apps/relay-server` as a thin deployable adapter.
+- Provider metadata fetches that may need relay support should use `providerFetch(context, ...)`; do not add provider-local proxy code or a generic `?url=` relay.
 - Prefer tests around pure policy/state logic over brittle terminal snapshots.
 - If a task touches `apps/cli/src/app-shell/**`, `apps/cli/src/app/**`, `apps/cli/src/main.ts`, or provider resolution, it needs a Day-1/runtime-aware agent or principal review.
 
@@ -40,12 +42,14 @@ Goal:
 Finish Phase 1 only: make the minimal Turborepo move clean, verified, and committed.
 
 Read only:
+
 1. `AGENTS.md`
 2. `.plans/turborepo-and-package-boundaries.md`
 3. `.docs/architecture.md`
 4. `.docs/architecture-v2.md`
 
 Hard boundaries:
+
 - Do not start true shell refactor.
 - Do not extract `packages/types`, `packages/storage`, or `@kunai/core`.
 - Do not rewrite providers.
@@ -53,6 +57,7 @@ Hard boundaries:
 - Do not make visual redesign changes.
 
 Tasks:
+
 1. Inspect `git status --short`.
 2. Verify root package/workspace setup.
 3. Verify current CLI lives under `apps/cli`.
@@ -69,12 +74,14 @@ Tasks:
 9. Commit the Phase 1 migration only.
 
 Acceptance:
+
 - Root `bun run dev` launches the CLI.
 - Root `bun run build` produces the CLI artifact.
 - No provider behavior changes were introduced.
 - Working tree is clean after commit.
 
 Report:
+
 - commit hash
 - verification results
 - remaining risks
@@ -92,6 +99,7 @@ Goal:
 Execute Phase 1.5: true root shell foundation in `apps/cli`.
 
 Read:
+
 1. `AGENTS.md`
 2. `.plans/persistent-shell-implementation.md`
 3. `.plans/fullscreen-root-shell-redesign.md`
@@ -104,6 +112,7 @@ Context assumption:
 You may already remember Kunai's product direction. Do not reread brainstorms unless blocked.
 
 Hard boundaries:
+
 - Do not extract shared packages yet.
 - Do not rewrite providers.
 - Do not start web/desktop.
@@ -112,6 +121,7 @@ Hard boundaries:
 - Do not create `packages/ui-cli` yet.
 
 Tasks:
+
 1. Inspect current root shell/app-shell structure.
 2. Identify remaining helper-shell/remount boundaries.
 3. Make or refine one root owner for:
@@ -131,12 +141,14 @@ Tasks:
 8. Run relevant checks and commit.
 
 Acceptance:
+
 - CLI still launches from root.
 - Main browse/playback path uses one mounted shell as much as safely possible.
 - At least one overlay flow proves shared overlay ownership.
 - Remaining transitional shell gaps are documented.
 
 Report:
+
 - shell ownership changed
 - flows still transitional
 - tests added/updated
@@ -154,6 +166,7 @@ Goal:
 Complete Phase 2 by creating or hardening `packages/types` and `packages/schemas` with package names `@kunai/types` and `@kunai/schemas`, without changing provider behavior.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/architecture-v2.md`
 3. `.plans/turborepo-and-package-boundaries.md`
@@ -161,6 +174,7 @@ Read:
 5. `.plans/storage-hardening.md`
 
 Hard boundaries:
+
 - Do not extract provider implementations.
 - Do not move cache/history storage yet.
 - Do not add web/desktop.
@@ -169,6 +183,7 @@ Hard boundaries:
 - Do not change stream resolution, cache path, provider fallback, history, or playback behavior.
 
 Tasks:
+
 1. Create `packages/types`.
 2. Create `packages/schemas`.
 3. Define minimal shared contracts:
@@ -198,6 +213,7 @@ Tasks:
 9. Run verification and commit.
 
 Acceptance:
+
 - CLI behavior unchanged.
 - Shared contracts compile.
 - Zod is not used as hot-path internal validation.
@@ -217,6 +233,7 @@ Goal:
 Execute Phase 1.8: make browse, loading, playback, and post-playback one mounted content tree in `apps/cli`.
 
 Read:
+
 1. `AGENTS.md`
 2. `.plans/phase-1.8-single-mounted-content-tree.md`
 3. `.plans/persistent-shell-implementation.md`
@@ -228,6 +245,7 @@ Context assumption:
 You already know the broad product direction. Do not reread brainstorms or monetization docs unless blocked.
 
 Hard boundaries:
+
 - Do not extract shared packages.
 - Do not rewrite providers.
 - Do not start web/desktop.
@@ -235,6 +253,7 @@ Hard boundaries:
 - Do not redesign colors/theme in this phase; keep visual changes structural and minimal.
 
 Tasks:
+
 1. Add a pure root content-state union and adapter for home, browse, loading, playback, post-playback, and fallback states.
 2. Extract root overlay/picker rendering out of `ink-shell.tsx` where safe.
 3. Convert browse to root content without losing query, result list, selected index, details-first enter flow, or command palette behavior.
@@ -251,6 +270,7 @@ Tasks:
 8. Commit in small phase-labeled commits.
 
 Acceptance:
+
 - The CLI feels like one mounted app whose content changes in place.
 - `SearchPhase` and `PlaybackPhase` behave as controllers/orchestrators, not UI shell launchers.
 - `apps/cli/src/app-shell/ink-shell.tsx` is materially smaller or clearly split by responsibility.
@@ -266,6 +286,7 @@ Use this for a fresh agent after Prompt 2.
 You are working in Kunai. Your task is bounded test coverage only.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/testing-strategy.md`
 3. `packages/types`
@@ -275,11 +296,13 @@ Goal:
 Add focused tests for the shared contracts and schemas.
 
 Hard boundaries:
+
 - Do not change production behavior unless a test reveals a clear typo.
 - Do not edit app-shell/provider/runtime files.
 - Do not add broad integration tests.
 
 Tasks:
+
 1. Add fixtures for valid and invalid serialized payloads.
 2. Test Zod schemas for cache policy, provider capability, resolve trace, and stream candidate shapes.
 3. Test that schema outputs align with exported TypeScript types where practical.
@@ -287,6 +310,7 @@ Tasks:
 5. Commit only tests/fixtures and tiny schema typo fixes if needed.
 
 Report:
+
 - tests added
 - invalid cases covered
 - any schema ambiguity found
@@ -303,6 +327,7 @@ Goal:
 Complete Phase 3A by creating `packages/storage` with package name `@kunai/storage`, without changing CLI runtime behavior yet.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/architecture.md`
 3. `.docs/architecture-v2.md`
@@ -311,6 +336,7 @@ Read:
 6. `.docs/testing-strategy.md`
 
 Hard boundaries:
+
 - Do not extract providers.
 - Do not wire the CLI from JSON history/cache into SQLite yet.
 - Do not build remote sync, accounts, web, desktop, or paid cloud.
@@ -319,6 +345,7 @@ Hard boundaries:
 - Do not change playback, provider fallback, subtitle behavior, or cache runtime behavior in this phase.
 
 Tasks:
+
 1. Create `packages/storage` as `@kunai/storage`.
 2. Add OS-aware path resolution for config, data DB, cache DB, logs, and temp files.
 3. Add `bun:sqlite` connection helpers for `kunai-data.sqlite` and `kunai-cache.sqlite`.
@@ -337,6 +364,7 @@ Tasks:
 11. Commit Phase 3A only.
 
 Acceptance:
+
 - `@kunai/storage` compiles and is included in root checks.
 - Tests prove migrations are idempotent.
 - Linux, macOS, and Windows path behavior is deterministic.
@@ -345,6 +373,7 @@ Acceptance:
 - No runtime behavior changed in `apps/cli`.
 
 Report:
+
 - commit hash
 - package API summary
 - tests added
@@ -363,6 +392,7 @@ Goal:
 Wire the CLI to SQLite-backed history and stream cache while preserving user-facing playback behavior.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/architecture.md`
 3. `.docs/diagnostics-guide.md`
@@ -371,6 +401,7 @@ Read:
 6. `.docs/testing-strategy.md`
 
 Hard boundaries:
+
 - Do not extract providers.
 - Do not add web/desktop/remote sync.
 - Do not add daemon pairing.
@@ -378,6 +409,7 @@ Hard boundaries:
 - Do not change provider fallback, subtitle selection, autoplay, or episode navigation semantics except to fix discovered storage bugs.
 
 Tasks:
+
 1. Replace JSON history reads/writes with `@kunai/storage` history repository.
 2. Replace repo-local stream cache reads/writes with `@kunai/storage` stream cache repository.
 3. Keep config and provider overrides JSON.
@@ -393,6 +425,7 @@ Tasks:
 9. Commit Phase 3B only.
 
 Acceptance:
+
 - Continue Watching works from SQLite.
 - Stream cache works from OS cache DB.
 - Repo root is not used for new default stream cache writes.
@@ -411,6 +444,7 @@ Goal:
 Create the first core provider package, `packages/core` as `@kunai/core`, and extract one low-risk provider path or provider contract first.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/providers.md`
 3. `.docs/provider-examples.md`
@@ -420,12 +454,14 @@ Read:
 7. `packages/storage`
 
 Hard boundaries:
+
 - Extract one provider or one contract slice only.
 - Do not move all providers.
 - Do not change UI behavior.
 - Do not touch web/desktop.
 
 Tasks:
+
 1. Create `packages/core` as `@kunai/core`.
 2. Define provider interface and runtime-port contracts using shared types.
 3. Add a compatibility adapter for the current `apps/cli` provider shape before moving internals.
@@ -436,6 +472,7 @@ Tasks:
 8. Run verification and commit.
 
 Acceptance:
+
 - CLI still works.
 - One provider path imports through `@kunai/core` or one core contract is proven.
 - No broad provider rewrite.
@@ -449,6 +486,7 @@ Use this for fresh agents who can research one provider without touching product
 You are working in Kunai. This is a read-mostly provider research task.
 
 Read:
+
 1. `AGENTS.md`
 2. `.docs/provider-intake.md`
 3. `.docs/provider-agent-workflow.md`
@@ -459,11 +497,13 @@ Goal:
 Produce or update one provider dossier with capability, runtime, cache, and failure notes.
 
 Hard boundaries:
+
 - Do not modify production provider code unless explicitly asked.
 - Do not run broad rewrites.
 - Do not touch shell/cache architecture.
 
 Tasks:
+
 1. Pick the assigned provider only.
 2. Identify runtime type:
    - `browser-safe-fetch`
@@ -476,6 +516,7 @@ Tasks:
 5. Include recommended tests or fixtures.
 
 Report:
+
 - what changed
 - what is production-safe
 - what needs principal review before implementation
@@ -492,6 +533,7 @@ Goal:
 Surface resolve trace and source confidence in the CLI shell without changing provider behavior.
 
 Read:
+
 1. `AGENTS.md`
 2. `.plans/kunai-experience-and-growth-moat.md`
 3. `.plans/kunai-architecture-and-cache-hardening.md`
@@ -499,11 +541,13 @@ Read:
 5. current `apps/cli/src/app-shell/**`
 
 Hard boundaries:
+
 - Do not redesign the entire shell.
 - Do not rewrite providers.
 - Do not change fallback policy.
 
 Tasks:
+
 1. Find the current diagnostics/status surfaces.
 2. Add compact source confidence display.
 3. Add trace summary display in diagnostics or companion panel.
@@ -512,6 +556,7 @@ Tasks:
 6. Run verification and commit.
 
 Acceptance:
+
 - Users can see cache/provider/runtime path.
 - Failures have a clear next-action-oriented trace.
 - No sensitive URLs or credentials are exported in shareable text.
@@ -525,6 +570,7 @@ Use this after any phase that changes paths or commands.
 You are working in Kunai. This is a documentation sync task only.
 
 Read:
+
 1. `AGENTS.md`
 2. `README.md`
 3. `.docs/quickstart.md`
@@ -535,11 +581,13 @@ Goal:
 Update docs for changed paths, commands, package names, and current phase status.
 
 Hard boundaries:
+
 - Do not edit runtime code.
 - Do not change plans beyond status/path/command corrections.
 - Do not rewrite product strategy.
 
 Tasks:
+
 1. Search for stale paths or commands.
 2. Update only docs affected by completed code changes.
 3. Keep `roadmap.md` short.
@@ -547,6 +595,7 @@ Tasks:
 5. Commit docs only.
 
 Report:
+
 - stale references fixed
 - docs intentionally left unchanged
 ```
@@ -557,21 +606,26 @@ Every agent should end with:
 
 ```md
 Summary:
+
 - ...
 
 Verification:
+
 - `bun run typecheck`: pass/fail/not run
 - `bun run lint`: pass/fail/not run
 - `bun run test`: pass/fail/not run
 - other:
 
 Changed files:
+
 - ...
 
 Risks:
+
 - ...
 
 Next recommended prompt:
+
 - Prompt N: ...
 ```
 
