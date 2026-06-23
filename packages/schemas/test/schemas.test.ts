@@ -6,11 +6,14 @@ import {
   providerFailureSchema,
   providerHealthSchema,
   providerLanguageEvidenceSchema,
+  providerRelayConfigSchema,
   providerReleaseInfoSchema,
   providerSourceCandidateSchema,
   providerSourceInventorySchema,
   providerTraceEventSchema,
   providerVariantCandidateSchema,
+  relayRpcErrorSchema,
+  relayRpcRequestSchema,
   resolveTraceSchema,
   streamCandidateSchema,
 } from "../src/index";
@@ -21,6 +24,34 @@ const cachePolicy = {
   scope: "local",
   keyParts: ["vidking", "movie", "tmdb:1"],
 } as const;
+
+test("relay schemas validate config rpc requests and structured errors", () => {
+  const config = providerRelayConfigSchema.parse({
+    baseUrl: "https://relay.example",
+    token: "secret",
+    fallbackToDirect: true,
+    providers: {
+      allanime: { enabled: true, videoFallback: false },
+    },
+  });
+  const request = relayRpcRequestSchema.parse({
+    method: "POST",
+    upstreamUrl: "https://api.allanime.day/api",
+    headers: { "Content-Type": "application/json" },
+    body: '{"query":"x"}',
+  });
+  const error = relayRpcErrorSchema.parse({
+    error: {
+      code: "host-not-allowed",
+      providerId: "allanime",
+      message: "Target host is not allowed for provider",
+    },
+  });
+
+  expect(config.providers?.allanime?.enabled).toBe(true);
+  expect(request.method).toBe("POST");
+  expect(error.error.code).toBe("host-not-allowed");
+});
 
 test("stream candidate schema accepts serialized cache-safe shape", () => {
   const parsed = streamCandidateSchema.parse({

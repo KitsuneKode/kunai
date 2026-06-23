@@ -410,11 +410,66 @@ export interface ProviderFetchPort {
   fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 }
 
+export type RelayMethod = "GET" | "POST" | "HEAD";
+
+export type RelayErrorCode =
+  | "unknown-provider"
+  | "provider-not-relayable"
+  | "host-not-allowed"
+  | "protocol-not-allowed"
+  | "method-not-allowed"
+  | "headers-rejected"
+  | "body-too-large"
+  | "response-too-large"
+  | "redirect-not-allowed"
+  | "unauthorized"
+  | "upstream-timeout"
+  | "upstream-error"
+  | "bad-request";
+
+export interface RelayProfile {
+  readonly upstreamHosts: readonly string[];
+  readonly videoRelayHosts?: readonly string[];
+  readonly maxRequestBodyBytes?: number;
+  readonly maxResponseBodyBytes?: number;
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
+  readonly allowedMethods?: readonly RelayMethod[];
+}
+
+export interface ProviderRelayProviderConfig {
+  readonly enabled?: boolean;
+  readonly videoFallback?: boolean;
+}
+
+export interface ProviderRelayConfig {
+  readonly enabled?: boolean;
+  readonly baseUrl?: string;
+  readonly token?: string;
+  readonly fallbackToDirect?: boolean;
+  readonly providers?: Readonly<Record<string, ProviderRelayProviderConfig>>;
+}
+
+export interface RelayRpcRequest {
+  readonly method: RelayMethod;
+  readonly upstreamUrl: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string;
+}
+
+export interface RelayRpcErrorBody {
+  readonly error: {
+    readonly code: RelayErrorCode;
+    readonly providerId?: string;
+    readonly message: string;
+  };
+}
+
 export interface ProviderAuthPort {
   getSecret(providerId: ProviderId, key: string): string | undefined;
 }
 
 export interface ProviderRuntimeContext {
+  readonly providerId?: ProviderId;
   readonly signal?: AbortSignal;
   readonly retryPolicy?: ProviderRetryPolicy;
   readonly fetch?: ProviderFetchPort;

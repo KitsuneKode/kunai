@@ -5,12 +5,15 @@ import type {
   ProviderFailure,
   ProviderHealth,
   ProviderLanguageEvidence,
+  ProviderRelayConfig,
   ProviderReleaseInfo,
   ProviderSourceCandidate,
   ProviderSourceEvidence,
   ProviderSourceInventory,
   ProviderTraceEvent,
   ProviderVariantCandidate,
+  RelayRpcErrorBody,
+  RelayRpcRequest,
   ResolveTrace,
   StreamCandidate,
   SubtitleCandidate,
@@ -19,6 +22,22 @@ import { z } from "zod";
 
 export const mediaKindSchema = z.enum(["movie", "series", "anime"]);
 export const providerRuntimeSchema = z.enum(["browser-safe-fetch", "direct-http", "debrid"]);
+export const relayMethodSchema = z.enum(["GET", "POST", "HEAD"]);
+export const relayErrorCodeSchema = z.enum([
+  "unknown-provider",
+  "provider-not-relayable",
+  "host-not-allowed",
+  "protocol-not-allowed",
+  "method-not-allowed",
+  "headers-rejected",
+  "body-too-large",
+  "response-too-large",
+  "redirect-not-allowed",
+  "unauthorized",
+  "upstream-timeout",
+  "upstream-error",
+  "bad-request",
+]);
 export const providerOperationSchema = z.enum([
   "search",
   "list-episodes",
@@ -55,6 +74,37 @@ export const resolveErrorCodeSchema = z.enum([
   "cancelled",
   "unknown",
 ]);
+
+export const relayRpcRequestSchema = z.object({
+  method: relayMethodSchema,
+  upstreamUrl: z.url(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.string().optional(),
+}) satisfies z.ZodType<RelayRpcRequest>;
+
+export const relayRpcErrorSchema = z.object({
+  error: z.object({
+    code: relayErrorCodeSchema,
+    providerId: z.string().min(1).optional(),
+    message: z.string().min(1),
+  }),
+}) satisfies z.ZodType<RelayRpcErrorBody>;
+
+export const providerRelayConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  baseUrl: z.url().optional().or(z.literal("")),
+  token: z.string().optional(),
+  fallbackToDirect: z.boolean().optional(),
+  providers: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean().optional(),
+        videoFallback: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+}) satisfies z.ZodType<ProviderRelayConfig>;
 
 export const providerExternalIdsSchema = z.object({
   anilistId: z.string().min(1).optional(),
