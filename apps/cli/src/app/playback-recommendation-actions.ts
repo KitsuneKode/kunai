@@ -3,7 +3,9 @@ import { buildPickerActionContext } from "@/app-shell/workflows";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import type { PhaseContext } from "@/app/Phase";
 import { titleInfoFromSearchResult } from "@/app/title-info";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import type { SearchResult } from "@/domain/types";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 
 /**
  * Post-play recommendation rail actions — queue, details, and confirm-then-download.
@@ -21,16 +23,20 @@ export type RecommendationRailPanelAction =
 export function enqueuePostPlaybackRecommendation(
   container: PhaseContext["container"],
   item: PlaybackRecommendationRailItem,
-): void {
-  container.queueService.enqueueMediaItem(
-    {
-      mediaKind: item.type,
-      ...(item.sourceId ? { sourceId: item.sourceId } : {}),
-      titleId: item.id,
-      title: item.title,
-    },
-    { placement: "end", source: "post-playback-recommendation" },
-  );
+): Promise<void> {
+  return enqueuePostPlaybackRecommendationViaRouter(container, item);
+}
+
+async function enqueuePostPlaybackRecommendationViaRouter(
+  container: PhaseContext["container"],
+  item: PlaybackRecommendationRailItem,
+): Promise<void> {
+  const router = createContainerMediaActionRouter(container);
+  await router.run({
+    actionId: "queue-end",
+    item: recommendationRailItemToMediaItem(item),
+    source: "post-playback-recommendation",
+  });
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
     note: `Queued ${item.title}.`,
@@ -81,11 +87,22 @@ export async function openPostPlaybackRecommendationActionPanel({
   });
   if (!action || action.type === "back") return;
   if (action.type === "queue") {
-    enqueuePostPlaybackRecommendation(container, action.item);
+    await enqueuePostPlaybackRecommendation(container, action.item);
     return;
   }
   if (action.type === "details") {
-    await openRecommendationDetailsPanel(container, action.item);
+    const router = createContainerMediaActionRouter(container, {
+      details: {
+        open: async () => {
+          await openRecommendationDetailsPanel(container, action.item);
+        },
+      },
+    });
+    await router.run({
+      actionId: "open-details",
+      item: recommendationRailItemToMediaItem(action.item),
+      source: "post-playback-recommendation",
+    });
     return;
   }
   await confirmAndDownloadPostPlaybackRecommendation(container, action.item, mode);
@@ -153,6 +170,26 @@ export async function confirmAndDownloadPostPlaybackRecommendation(
   });
   if (!confirmed) return;
 
+  const router = createContainerMediaActionRouter(container, {
+    downloads: {
+      queueDownload: async () => {
+        await downloadPostPlaybackRecommendation(container, item, mode);
+      },
+    },
+  });
+  await router.run({
+    actionId: "download",
+    item: recommendationRailItemToMediaItem(item),
+    source: "post-playback-recommendation",
+    confirmedProviderResolution: true,
+  });
+}
+
+async function downloadPostPlaybackRecommendation(
+  container: PhaseContext["container"],
+  item: PlaybackRecommendationRailItem,
+  mode: "series" | "anime",
+): Promise<void> {
   const searchResult = recommendationRailItemToSearchResult(item);
   const mapped =
     mode === "anime"
@@ -172,6 +209,17 @@ export async function confirmAndDownloadPostPlaybackRecommendation(
     },
     { container, signal: new AbortController().signal },
   );
+}
+
+export function recommendationRailItemToMediaItem(
+  item: PlaybackRecommendationRailItem,
+): MediaItemIdentity {
+  return {
+    mediaKind: item.type,
+    ...(item.sourceId ? { sourceId: item.sourceId } : {}),
+    titleId: item.id,
+    title: item.title,
+  };
 }
 
 export function recommendationRailItemToSearchResult(

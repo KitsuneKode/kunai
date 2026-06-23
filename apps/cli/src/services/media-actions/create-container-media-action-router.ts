@@ -1,12 +1,18 @@
 import type { Container } from "@/container";
 import { titleInfoFromMediaItemIdentity } from "@/domain/media/media-item-adapters";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
+import {
+  buildDefaultDownloadProfile,
+  commitDownloadIntent,
+  resolveDownloadIntentEpisodes,
+} from "@/services/download/DownloadIntentService";
 
 import { MediaActionRouter, type MediaActionRouterDeps } from "./MediaActionRouter";
 
 export type ContainerMediaActionRouterOptions = {
   readonly playback?: MediaActionRouterDeps["playback"];
   readonly details?: MediaActionRouterDeps["details"];
+  readonly downloads?: MediaActionRouterDeps["downloads"];
   readonly onDownloadQueued?: (item: MediaItemIdentity) => void;
 };
 
@@ -20,7 +26,7 @@ export function createContainerMediaActionRouter(
         container.queueService.enqueueMediaItem(item, placement);
       },
     },
-    downloads: {
+    downloads: options.downloads ?? {
       queueDownload: async (item) => {
         await queueDownloadFromMediaItem(container, item);
         options.onDownloadQueued?.(item);
@@ -68,25 +74,26 @@ export function createContainerMediaActionRouter(
   });
 }
 
+/**
+ * Programmatic (non-interactive) download for a media item: commit the carried
+ * episode (or movie slot) with the default profile via DownloadIntentService.
+ * Interactive surfaces (DownloadOnlyPhase) gather a confirmed profile first and
+ * then call the same service, so the queue/persist behaviour stays identical.
+ */
 export async function queueDownloadFromMediaItem(
   container: Container,
   item: MediaItemIdentity,
 ): Promise<void> {
-  const eligibility = container.downloadService.getEnqueueEligibility();
-  if (!eligibility.allowed) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: `Download unavailable: ${eligibility.reason}`,
-    });
-    return;
-  }
-
-  const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
   const title = titleInfoFromMediaItemIdentity(item);
-  await new DownloadOnlyPhase().execute(
-    { title },
-    { container, signal: AbortSignal.timeout(60_000) },
-  );
+  await commitDownloadIntent(container, {
+    title,
+    episodes: resolveDownloadIntentEpisodes({
+      title,
+      season: item.season,
+      episode: item.episode,
+    }),
+    profile: buildDefaultDownloadProfile(container),
+  });
 }
 
 /**

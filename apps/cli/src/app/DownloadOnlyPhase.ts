@@ -2,30 +2,18 @@ import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell"
 import { buildPickerActionContext } from "@/app-shell/workflows";
 import { pickEpisodesToDownload } from "@/app/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/Phase";
-import { mediaLanguageProfileFor } from "@/domain/media/content-kind";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
+import {
+  buildDefaultDownloadProfile,
+  commitDownloadIntent,
+  type DownloadConfirmationProfile,
+} from "@/services/download/DownloadIntentService";
 import { chooseStartingEpisode } from "@/session-flow";
 
 export type DownloadOnlyInput = {
   readonly title: TitleInfo;
   readonly outputDirectory?: string;
 };
-
-export type DownloadConfirmationProfile = {
-  readonly audioPreference: string;
-  readonly subtitlePreference: string;
-  readonly qualityPreference?: string;
-  readonly cacheArtwork: boolean;
-  readonly outputDirectory?: string;
-  readonly enrollKeepWatchingOffline: boolean;
-  readonly runwayTarget?: number;
-  readonly cleanupPolicy: OfflineCleanupPolicy;
-};
-
-export type OfflineCleanupPolicy =
-  | { readonly mode: "keep-last-watched"; readonly count: number }
-  | { readonly mode: "cleanup-watched"; readonly graceDays: number };
 
 export type DownloadConfirmationEditAction =
   | "cycle-subtitle"
@@ -105,7 +93,9 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
       episodes = [single];
     }
 
-    const proposedProfile = buildDownloadConfirmationProfile(input, context);
+    const proposedProfile = buildDefaultDownloadProfile(container, {
+      outputDirectory: input.outputDirectory,
+    });
     const profile = this.deps.confirmProfile
       ? await this.deps.confirmProfile({
           title: input.title,
@@ -123,104 +113,13 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     const confirmedTitle = this.deps.prepareConfirmedTitle
       ? await this.deps.prepareConfirmedTitle(input.title, context)
       : input.title;
-    const existingPolicy =
-      confirmedTitle.type !== "movie"
-        ? container.offlineTitlePolicies.get(confirmedTitle.id)
-        : undefined;
-    const persistSeriesPolicy = () => {
-      if (confirmedTitle.type === "movie") return;
-      const enrolled = profile.enrollKeepWatchingOffline || existingPolicy?.enrolled === true;
-      container.offlineTitlePolicies.upsert({
-        titleId: confirmedTitle.id,
-        titleName: confirmedTitle.name,
-        mediaKind: state.mode === "anime" ? "anime" : "series",
-        enrolled,
-        runwayTarget: profile.enrollKeepWatchingOffline
-          ? (profile.runwayTarget ?? container.config.offlineDefaultRunwayTarget)
-          : (existingPolicy?.runwayTarget ??
-            profile.runwayTarget ??
-            container.config.offlineDefaultRunwayTarget),
-        profileJson: JSON.stringify({
-          audio: profile.audioPreference,
-          subtitle: profile.subtitlePreference,
-          quality: profile.qualityPreference,
-          cacheArtwork: profile.cacheArtwork,
-        }),
-        cleanupJson: JSON.stringify(profile.cleanupPolicy),
-        pausedReason: profile.enrollKeepWatchingOffline ? undefined : existingPolicy?.pausedReason,
-        updatedAt: new Date().toISOString(),
-      });
-      if (profile.enrollKeepWatchingOffline) {
-        container.offlineRunwayService.enqueueEvaluation(confirmedTitle.id, "policy-change");
-      }
-    };
 
-    let queuedCount = 0;
-    let lastJobId: string | undefined;
-    try {
-      for (const episode of episodes) {
-        const job = await container.downloadService.enqueue({
-          title: confirmedTitle,
-          episode,
-          providerId: state.provider,
-          mode: state.mode,
-          audioPreference: profile.audioPreference,
-          subtitlePreference: profile.subtitlePreference,
-          qualityPreference: profile.qualityPreference,
-          outputDirectory: profile.outputDirectory,
-          posterUrl: profile.cacheArtwork ? confirmedTitle.posterUrl : undefined,
-        });
-        lastJobId = job.id;
-        queuedCount += 1;
-      }
-    } catch (error) {
-      const message =
-        error instanceof DownloadEnqueueRejectedError
-          ? error.reason
-          : error instanceof Error
-            ? error.message
-            : String(error);
-      container.diagnosticsService.record({
-        category: "download",
-        message: "Download-only batch enqueue stopped",
-        context: { queuedCount, error: message, titleId: input.title.id },
-      });
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          queuedCount > 0
-            ? `Queued ${queuedCount} download(s), then stopped: ${message}`
-            : `Download failed: ${message}`,
-      });
-      if (queuedCount > 0) persistSeriesPolicy();
-      void container.downloadService.processQueue();
-      return { status: "success", value: queuedCount > 0 ? "queued" : "back" };
-    }
-
-    container.diagnosticsService.record({
-      category: "download",
-      operation: "download.profile.confirmed",
-      message: "Download-only job(s) queued",
-      context: {
-        jobId: lastJobId,
-        count: queuedCount,
-        titleId: confirmedTitle.id,
-        titleName: confirmedTitle.name,
-        cacheArtwork: profile.cacheArtwork,
-        keepWatchingOffline: profile.enrollKeepWatchingOffline,
-        runwayTarget: profile.runwayTarget ?? null,
-      },
+    const result = await commitDownloadIntent(container, {
+      title: confirmedTitle,
+      episodes,
+      profile,
     });
-    persistSeriesPolicy();
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note:
-        queuedCount === 1
-          ? `Download queued: ${confirmedTitle.name}`
-          : `Downloads queued: ${queuedCount} episodes · ${confirmedTitle.name}`,
-    });
-    void container.downloadService.processQueue();
-    return { status: "success", value: "queued" };
+    return { status: "success", value: result.queuedCount > 0 ? "queued" : "back" };
   }
 }
 
@@ -248,24 +147,6 @@ async function pickSingleDownloadEpisodeFallback({
   });
   if (!selected) return null;
   return { season: selected.season, episode: selected.episode };
-}
-
-function buildDownloadConfirmationProfile(
-  input: DownloadOnlyInput,
-  context: PhaseContext,
-): DownloadConfirmationProfile {
-  const state = context.container.stateManager.getState();
-  const language = mediaLanguageProfileFor(state);
-  return {
-    audioPreference: language.audio,
-    subtitlePreference: language.subtitle,
-    qualityPreference: language.quality,
-    cacheArtwork: context.container.config.offlineArtworkCacheEnabled,
-    outputDirectory: input.outputDirectory || context.container.config.downloadPath || undefined,
-    enrollKeepWatchingOffline: false,
-    runwayTarget: context.container.config.offlineDefaultRunwayTarget,
-    cleanupPolicy: { mode: "keep-last-watched", count: 1 },
-  };
 }
 
 export function updateDownloadConfirmationProfile(

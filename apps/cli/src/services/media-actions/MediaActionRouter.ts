@@ -56,70 +56,68 @@ export class MediaActionRouter {
       throw new Error("play-now requires confirmation while playback is active");
     }
 
-    if (input.actionId === "play-now") {
-      await requireAction(this.deps.playback?.playNow, "play-now")(input.item);
-      return;
-    }
-    if (input.actionId === "queue-next") {
-      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-next")(input.item, {
-        placement: "next",
-        source: input.source,
-      });
-      return;
-    }
-    if (input.actionId === "queue-after-current-chain") {
-      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-after-current-chain")(
-        input.item,
-        {
-          placement: "after-current-chain",
+    switch (input.actionId) {
+      case "play-now":
+        await requireAction(this.deps.playback?.playNow, "play-now")(input.item);
+        return;
+      case "queue-next":
+        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-next")(input.item, {
+          placement: "next",
           source: input.source,
-        },
-      );
-      return;
-    }
-    if (input.actionId === "queue-end") {
-      await requireAction(this.deps.queue?.enqueueMediaItem, "queue-end")(input.item, {
-        placement: "end",
-        source: input.source,
-      });
-      return;
-    }
-    if (input.actionId === "download") {
-      if (
-        requiresProviderResolutionConfirmation(input.source) &&
-        !input.confirmedProviderResolution
-      ) {
-        throw new Error("download requires provider resolution confirmation");
+        });
+        return;
+      case "queue-after-current-chain":
+        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-after-current-chain")(
+          input.item,
+          {
+            placement: "after-current-chain",
+            source: input.source,
+          },
+        );
+        return;
+      case "queue-end":
+        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-end")(input.item, {
+          placement: "end",
+          source: input.source,
+        });
+        return;
+      case "download": {
+        if (
+          requiresProviderResolutionConfirmation(input.source) &&
+          !input.confirmedProviderResolution
+        ) {
+          throw new Error("download requires provider resolution confirmation");
+        }
+        await requireAction(this.deps.downloads?.queueDownload, "download")(input.item);
+        return;
       }
-      await requireAction(this.deps.downloads?.queueDownload, "download")(input.item);
-      return;
-    }
-    if (input.actionId === "add-to-playlist") {
-      await requireAction(this.deps.playlists?.addToPlaylist, "add-to-playlist")(input.item);
-      return;
-    }
-    if (input.actionId === "follow") {
-      await requireAction(this.deps.attention?.follow, "follow")(input.item);
-      return;
-    }
-    if (input.actionId === "mute") {
-      await requireAction(this.deps.attention?.mute, "mute")(input.item);
-      return;
-    }
-    if (input.actionId === "mark-watched") {
-      await requireAction(this.deps.history?.markWatched, "mark-watched")(input.item);
-      return;
-    }
-    if (input.actionId === "mark-unwatched") {
-      await requireAction(this.deps.history?.markUnwatched, "mark-unwatched")(input.item);
-      return;
-    }
-    if (input.actionId === "open-details") {
-      await requireAction(this.deps.details?.open, "open-details")(input.item);
-      return;
-    }
-    if (input.actionId === "dismiss") {
-      await requireAction(this.deps.notifications?.dismissByItem, "dismiss")(input.item);
+      case "add-to-playlist":
+        await requireAction(this.deps.playlists?.addToPlaylist, "add-to-playlist")(input.item);
+        return;
+      case "follow":
+        await requireAction(this.deps.attention?.follow, "follow")(input.item);
+        return;
+      case "mute":
+        await requireAction(this.deps.attention?.mute, "mute")(input.item);
+        return;
+      case "mark-watched":
+        await requireAction(this.deps.history?.markWatched, "mark-watched")(input.item);
+        return;
+      case "mark-unwatched":
+        await requireAction(this.deps.history?.markUnwatched, "mark-unwatched")(input.item);
+        return;
+      case "open-details":
+        await requireAction(this.deps.details?.open, "open-details")(input.item);
+        return;
+      case "dismiss":
+        await requireAction(this.deps.notifications?.dismissByItem, "dismiss")(input.item);
+        return;
+      default: {
+        // Exhaustiveness guard: a displayed action with no router branch must fail
+        // loudly rather than resolve as a silent no-op success.
+        const unsupported: never = input.actionId;
+        throw new Error(`media action is unsupported: ${String(unsupported)}`);
+      }
     }
   }
 }

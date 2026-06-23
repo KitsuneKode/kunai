@@ -146,3 +146,17 @@ test("unsupported media actions fail clearly instead of silently doing nothing",
     "media action is unavailable: queue-end",
   );
 });
+
+test("unknown action ids fail loudly instead of resolving as a silent no-op", async () => {
+  const router = new MediaActionRouter({
+    queue: { enqueueMediaItem: async () => {} },
+  });
+
+  await expect(
+    router.run({
+      actionId: "not-a-real-action" as never,
+      item,
+      source: "history",
+    }),
+  ).rejects.toThrow("media action is unsupported: not-a-real-action");
+});

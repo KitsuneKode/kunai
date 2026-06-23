@@ -65,4 +65,51 @@ describe("createContainerMediaActionRouter", () => {
 
     expect(calls).toEqual(["queue", "follow", "watchlist"]);
   });
+
+  test("allows callers to override the download executor", async () => {
+    const calls: string[] = [];
+    const container = {
+      queueService: {
+        enqueueMediaItem: () => {},
+      },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
+      },
+      listService: {
+        addToWatchlist: () => {},
+      },
+      followedTitleRepository: {
+        upsert: () => {},
+      },
+      notificationService: {
+        listActive: () => [],
+      },
+      stateManager: {
+        dispatch: () => {
+          calls.push("default-download");
+        },
+      },
+    };
+
+    const router = createContainerMediaActionRouter(container as never, {
+      downloads: {
+        queueDownload: (item) => {
+          calls.push(`custom-download:${item.titleId}`);
+        },
+      },
+    });
+
+    await router.run({
+      actionId: "download",
+      item: {
+        mediaKind: "series",
+        titleId: "tmdb:2",
+        title: "Custom",
+      },
+      source: "post-playback-recommendation",
+      confirmedProviderResolution: true,
+    });
+
+    expect(calls).toEqual(["custom-download:tmdb:2"]);
+  });
 });
