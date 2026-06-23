@@ -59,6 +59,12 @@ import {
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView } from "./notifications-view";
+import { resolveOverlayFilterEscape } from "./overlay-filter-escape";
+import {
+  historyFooterActions,
+  notificationsFooterActions,
+  queueFooterActions,
+} from "./overlay-footer-actions";
 import {
   isOverlayCancelActive,
   overlayDestructiveCancelMessage,
@@ -1230,6 +1236,24 @@ export function RootOverlayShell({
       if (overlay.type === "library" || overlay.type === "downloads") {
         return;
       }
+      // Double-Esc on filterable overlays: first Esc clears a non-empty filter,
+      // second Esc closes — same contract as the media pickers above.
+      if (
+        overlay.type === "history" ||
+        overlay.type === "settings" ||
+        overlay.type === "provider_picker" ||
+        overlay.type === "notifications"
+      ) {
+        if (resolveOverlayFilterEscape(filterQuery) === "clear-filter") {
+          setFilterQuery("");
+          setSelectedIndex(
+            overlay.type === "settings"
+              ? nextSelectableIndex(settingsPanel?.options ?? [], -1, 1)
+              : 0,
+          );
+          return;
+        }
+      }
       if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
       }
@@ -2090,8 +2114,8 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="Notifications  ·  ⏎ action · a all · r read · A all-read · x archive · d delete · C clear · tab switch · [ ] page · Esc"
-            actions={footerActions}
+            taskLabel="Notifications"
+            actions={notificationsFooterActions()}
             mode="detailed"
             commandMode={commandMode}
             terminalWidth={cols}
@@ -2155,8 +2179,8 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="Up Next  ·  ⏎ play · J/K reorder · g/G ends · x remove · c clear · r restore · Esc close"
-            actions={footerActions}
+            taskLabel="Up Next"
+            actions={queueFooterActions()}
             mode="detailed"
             commandMode={commandMode}
             terminalWidth={cols}
@@ -2207,8 +2231,8 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="History  ·  Enter resumes, q queues, Tab filters, type to narrow"
-            actions={footerActions}
+            taskLabel="History"
+            actions={historyFooterActions()}
             mode="detailed"
             commandMode={commandMode}
             terminalWidth={cols}
