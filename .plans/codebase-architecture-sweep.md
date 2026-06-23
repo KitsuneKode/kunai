@@ -410,25 +410,29 @@ packages/storage
    - Shared hooks.
 
 8. `refactor(app): unify history and continuation entrypoints`
-   - Status: In progress
+   - Status: Done for shared-decision surfaces
    - Done: `continuation-policy.ts` now delegates projection decisions to
      `continuation-engine.ts`, including release-progress-only new episode
      signals.
-   - One continuation read model for `--continue`, history picker, search
-     continue rows, result enrichment, and post-play.
+   - Done: startup `--continue`, history row Enter targets, result enrichment,
+     root history selection, and root history projections now consume
+     `ContinueWatchingService` decisions.
    - Keep release reconciliation as the freshness source, not a UI concern.
-   - Remaining: migrate startup `--continue`, history row Enter targets, result
-     enrichment, and root history selection to service-owned adapters.
+   - Remaining: D4 `historyStore` retirement; remaining call sites must move to
+     raw `historyRepository` for factual reads or `ContinueWatchingService` for
+     continuation decisions.
 
 9. `refactor(app): unify queue and media actions`
-   - Status: In progress
+   - Status: Done for history/post-play/follow foundations
    - Done: post-play recommendation queue/details/download actions route through
      `MediaActionRouter`; post-play download keeps the existing confirmation
      gate and anime provider-native mapping through a router override.
-   - Route queue/download/follow/list actions through a single media action
-     boundary where possible.
-   - Add explicit unsupported-action results when displayed actions lack an
-     executor.
+   - Done: history queue/mark-watched and shell/watchlist follow/mute paths route
+     through media-action executors.
+   - Done: `MediaActionRouter.run(...)` returns explicit handled/unsupported
+     results when displayed actions lack an executor.
+   - Remaining: notification-specific UX polish and richer unsupported-action
+     copy.
 
 10. `refactor(playback): extract up-next planner`
     - Status: Done

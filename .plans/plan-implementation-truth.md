@@ -112,7 +112,9 @@ Canonical UX: [`.docs/flavor-naming-and-source-inventory-ux.md`](../.docs/flavor
 - **Discover empty states** — section-level `"Nothing here yet"` exists; dedicated copy for no-history / TMDB failure / no-similar-titles may still need product pass.
 - **Nested card chrome** — fullscreen redesign slice 2; child shells may still draw redundant borders.
 - **Single mounted content tree** — browse/playback phase loops vs always-mounted reducer state.
-- **Central input routing** — beta-ui Task 6 step 2 unchecked.
+- **Continuation decision owner** — implemented for startup `--continue`, history Enter targets, root history projection, and result badges. Continue Hub product polish and D4 `historyStore` retirement remain.
+- **Central input routing** — keybinding/runtime helpers and some overlay paths are centralized, but local `useInput` surfaces still exist; continue reducing them surface by surface.
+- **Media action executor** — core queue/follow/mark/download/detail actions return handled/unsupported results and route through `MediaActionRouter` in history/post-play/follow foundations. Notification copy can be polished later.
 - **Split `ink-shell.tsx`** — beta-ui Task 10; file still large.
 - **Image flicker on terminal shrink** — explicit cleanup in `ink-shell.tsx` comments; image-pane ownership incomplete.
 - **Trace/event correlation expansion** — core playback/provider/background events now share IDs; future work can carry the same IDs into provider package resolve trace payloads and persisted `resolve_traces`.
