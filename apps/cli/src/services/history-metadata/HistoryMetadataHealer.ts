@@ -9,7 +9,7 @@
 // the orchestration stays pure-testable.
 // =============================================================================
 
-import { mergeProviderNativeId } from "@kunai/core";
+import { looksLikeOpaqueProviderNativeId, mergeProviderNativeId } from "@kunai/core";
 import type { HistoryProgress } from "@kunai/storage";
 import type { ProviderExternalIds } from "@kunai/types";
 
@@ -67,9 +67,14 @@ export class HistoryMetadataHealer {
       }
 
       let externalIds = target.needsExternalIds ? resolved?.externalIds : target.externalIds;
-      if (target.needsProviderNativeMapping && target.providerId) {
+      if (target.providerId) {
         const nativeId = target.titleId.replace(/^allanime:/, "").trim();
-        externalIds = mergeProviderNativeId(externalIds, target.providerId, nativeId);
+        if (
+          target.needsProviderNativeMapping ||
+          looksLikeOpaqueProviderNativeId(target.titleId, externalIds)
+        ) {
+          externalIds = mergeProviderNativeId(externalIds, target.providerId, nativeId);
+        }
       }
 
       const posterUrl = target.needsPoster ? resolved?.posterUrl : undefined;

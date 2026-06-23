@@ -60,11 +60,23 @@ describe("HistoryMetadataHealer", () => {
     expect(healed).toEqual([]);
   });
 
-  it("does not touch already-resolved titles", async () => {
-    const { healer, backfills } = harness({});
-    await healer.heal([
-      entry({ titleId: "a", posterUrl: "https://img/a.jpg", externalIds: { anilistId: "1" } }),
+  it("persists provider-native mapping after external ids are resolved", async () => {
+    const { healer, backfills } = harness({
+      Frp8xJDSeLh6wEHNk: { posterUrl: "https://img/a.jpg", externalIds: { anilistId: "186497" } },
+    });
+
+    const healed = await healer.heal([
+      entry({
+        titleId: "Frp8xJDSeLh6wEHNk",
+        title: "The Ramparts of Ice",
+        providerId: "allanime",
+      }),
     ]);
-    expect(backfills).toHaveLength(0);
+
+    expect(healed).toEqual(["Frp8xJDSeLh6wEHNk"]);
+    expect(backfills[0]?.externalIds).toMatchObject({
+      anilistId: "186497",
+      providerNativeIds: { allanime: "Frp8xJDSeLh6wEHNk" },
+    });
   });
 });

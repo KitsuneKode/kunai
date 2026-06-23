@@ -39,23 +39,43 @@ function isPlausibleMatch(historyTitle: string, candidateTitle: string): boolean
   return shorter.length >= 4 && longer.includes(shorter);
 }
 
+function resolvedMetadataFromSearchResult(match: SearchResult): ResolvedHistoryMetadata | null {
+  const posterUrl = toPosterUrl(match.posterPath);
+  const externalIds = match.externalIds;
+  if (!posterUrl && !externalIds) return null;
+  return {
+    ...(posterUrl ? { posterUrl } : {}),
+    ...(externalIds ? { externalIds } : {}),
+  };
+}
+
+function pickSearchMatch(
+  target: HistoryHealTarget,
+  results: readonly SearchResult[],
+): SearchResult | undefined {
+  const byTitle = results.find((result) => isPlausibleMatch(target.title, result.title));
+  if (byTitle) return byTitle;
+  // Provider search often returns a romaji/alt catalog title while history keeps the
+  // English display name the user watched under — accept an exact provider-native id.
+  return results.find((result) => result.id === target.titleId);
+}
+
 export function createHistoryMetadataResolver(deps: {
   readonly search: (title: string, mediaKind: MediaKind) => Promise<readonly SearchResult[]>;
 }): HistoryMetadataResolver {
   return {
     async resolve(target: HistoryHealTarget): Promise<ResolvedHistoryMetadata | null> {
-      const results = await deps.search(target.title, target.mediaKind);
-      const match = results.find((result) => isPlausibleMatch(target.title, result.title));
-      if (!match) return null;
+      const searchKinds: MediaKind[] =
+        target.mediaKind === "anime" ? ["anime", "series"] : [target.mediaKind];
 
-      const posterUrl = toPosterUrl(match.posterPath);
-      const externalIds = match.externalIds;
-      if (!posterUrl && !externalIds) return null;
+      for (const mediaKind of searchKinds) {
+        const results = await deps.search(target.title, mediaKind);
+        const match = pickSearchMatch(target, results);
+        const resolved = match ? resolvedMetadataFromSearchResult(match) : null;
+        if (resolved) return resolved;
+      }
 
-      return {
-        ...(posterUrl ? { posterUrl } : {}),
-        ...(externalIds ? { externalIds } : {}),
-      };
+      return null;
     },
   };
 }
