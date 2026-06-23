@@ -463,6 +463,10 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     repo: notificationRepository,
     getMutedTitleIds: () =>
       new Set(followedTitleRepository.listByPreference("muted").map((item) => item.titleId)),
+    derivationFlags: {
+      newEpisodeProjection: featureFlags.newEpisodeProjection,
+      queueRecovery: featureFlags.queueRecovery,
+    },
   });
 
   const downloadService = new DownloadService({

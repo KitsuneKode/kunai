@@ -58,10 +58,20 @@ export interface DerivedNotification {
   readonly updatedAt: string;
 }
 
+/**
+ * Gates which derived notification kinds are produced. Omitted/undefined fields
+ * default to enabled, so callers that do not pass flags keep the full set.
+ */
+export interface NotificationDerivationFlags {
+  readonly newEpisodeProjection?: boolean;
+  readonly queueRecovery?: boolean;
+}
+
 export interface DeriveNotificationsInput {
   readonly signals: readonly NotificationSignal[];
   readonly mutedTitleIds: ReadonlySet<string>;
   readonly now: string;
+  readonly flags?: NotificationDerivationFlags;
 }
 
 export function deriveNotifications(
@@ -70,6 +80,7 @@ export function deriveNotifications(
   const derived: DerivedNotification[] = [];
   for (const signal of input.signals) {
     if (signal.type === "new-playable-episode") {
+      if (input.flags?.newEpisodeProjection === false) continue;
       if (input.mutedTitleIds.has(signal.titleId)) continue;
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
@@ -170,6 +181,7 @@ export function deriveNotifications(
       continue;
     }
 
+    if (input.flags?.queueRecovery === false) continue;
     derived.push({
       dedupKey: `queue-recoverable:${signal.queueSessionId}`,
       kind: "queue-recovery",

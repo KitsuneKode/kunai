@@ -16,6 +16,10 @@ export interface NotificationActionRouterDeps {
   readonly mediaActions?: {
     readonly run: (input: RunMediaActionInput) => Promise<void> | void;
   };
+  readonly appUpdate?: {
+    /** Open the release page for the advertised version (null when unknown). */
+    readonly openReleasePage: (latestVersion: string | null) => Promise<void> | void;
+  };
   readonly notifications: {
     readonly dismiss: (dedupKey: string) => Promise<void> | void;
   };
@@ -47,9 +51,14 @@ export class NotificationActionRouter {
       return;
     }
 
-    // App-update has no in-app upgrade yet (linking the release page is a
-    // follow-up); acknowledging it is a no-op so it stays until archived.
+    // App-update opens the release page for the advertised version, then clears
+    // the notification. With no appUpdate handler wired it stays a no-op so the
+    // notice persists until archived.
     if (input.actionId === "update-app") {
+      if (this.deps.appUpdate) {
+        await this.deps.appUpdate.openReleasePage(parseAppUpdateVersion(input.notification));
+        await this.deps.notifications.dismiss(input.notification.dedupKey);
+      }
       return;
     }
 
@@ -78,6 +87,17 @@ export function parseNotificationActionIds(
   const parsed = parseJson(notification.actionJson);
   if (!Array.isArray(parsed)) return [];
   return parsed.filter(isNotificationActionId);
+}
+
+/**
+ * The app-update notification encodes its target version in the dedupKey
+ * (`app-update:<version>`, see NotificationEngine). Returns null if absent.
+ */
+export function parseAppUpdateVersion(notification: NotificationRecord): string | null {
+  const prefix = "app-update:";
+  if (!notification.dedupKey.startsWith(prefix)) return null;
+  const version = notification.dedupKey.slice(prefix.length).trim();
+  return version.length > 0 ? version : null;
 }
 
 function parseQueueSessionId(notification: NotificationRecord): string | null {

@@ -1,10 +1,16 @@
 import type { NotificationRepository, NotificationRecord } from "@kunai/storage";
 
-import { deriveNotifications, type NotificationSignal } from "./NotificationEngine";
+import {
+  deriveNotifications,
+  type NotificationDerivationFlags,
+  type NotificationSignal,
+} from "./NotificationEngine";
 
 export interface NotificationServiceDeps {
   readonly repo: NotificationRepository;
   readonly getMutedTitleIds: () => ReadonlySet<string>;
+  /** Feature gates for which notification kinds are derived. Defaults to all on. */
+  readonly derivationFlags?: NotificationDerivationFlags;
 }
 
 export class NotificationService {
@@ -29,6 +35,7 @@ export class NotificationService {
       signals,
       mutedTitleIds: this.deps.getMutedTitleIds(),
       now,
+      flags: this.deps.derivationFlags,
     });
 
     // Never resurrect a notification the user explicitly deleted. Derived signals
