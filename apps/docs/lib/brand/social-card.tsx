@@ -127,6 +127,7 @@ export function KunaiSocialCard({
     >
       <div
         style={{
+          display: "flex",
           position: "absolute",
           inset: 0,
           background: `radial-gradient(circle at 18% 42%, ${kunaiBrand.accentGlow}, transparent 55%)`,
@@ -158,6 +159,7 @@ export function KunaiSocialCard({
             <KunaiMark size={46} />
             <div
               style={{
+                display: "flex",
                 fontSize: 22,
                 letterSpacing: "0.28em",
                 color: kunaiBrand.accent,
@@ -171,6 +173,7 @@ export function KunaiSocialCard({
             <div
               key={line}
               style={{
+                display: "flex",
                 fontSize: 58,
                 lineHeight: 1.05,
                 fontWeight: 500,
@@ -181,6 +184,7 @@ export function KunaiSocialCard({
           ))}
           <div
             style={{
+              display: "flex",
               fontSize: 22,
               lineHeight: 1.35,
               color: kunaiBrand.textDim,
@@ -190,7 +194,7 @@ export function KunaiSocialCard({
           >
             {subline}
           </div>
-          <div style={{ marginTop: 8, maxWidth: 760 }}>
+          <div style={{ display: "flex", marginTop: 8, maxWidth: 760 }}>
             <TerminalStrip command={command} />
           </div>
           <div
@@ -203,7 +207,14 @@ export function KunaiSocialCard({
             }}
           >
             <KindDots />
-            <div style={{ fontSize: 14, color: kunaiBrand.muted, fontFamily: "monospace" }}>
+            <div
+              style={{
+                display: "flex",
+                fontSize: 14,
+                color: kunaiBrand.muted,
+                fontFamily: "monospace",
+              }}
+            >
               {footer}
             </div>
           </div>
