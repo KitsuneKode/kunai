@@ -110,7 +110,12 @@ describe("PostPlayShell responsive", () => {
     expect(frame).toContain("▶ UP NEXT");
   });
   it("narrow degrades to compact picks, no posters wall", () => {
-    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 50 });
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 72 });
     expect(frame).toContain("My Show");
+  });
+  it("blocks below the usable minimum with a resize hint", () => {
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 50 });
+    expect(frame).toContain("Resize terminal to see post-play options");
+    expect(frame).not.toContain("My Show");
   });
 });

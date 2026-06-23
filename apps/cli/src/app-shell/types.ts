@@ -92,7 +92,13 @@ export type ShellFooterMode = "detailed" | "minimal";
 export type FooterAction = {
   key: string;
   label: string;
-  action: ShellAction;
+  /**
+   * Dispatchable shell action for footers wired into the keyboard router. Omit
+   * for display-only hint rows whose keys are handled by an overlay's own input
+   * loop (queue/history/notifications), so the footer can still render the real
+   * binding hierarchy without fabricating a router action.
+   */
+  action?: ShellAction;
   disabled?: boolean;
   reason?: string;
   /** Mark as the single primary action — renders key in amber instead of dim. */

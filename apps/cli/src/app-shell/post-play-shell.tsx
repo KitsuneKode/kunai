@@ -25,6 +25,8 @@ import {
   type PostPlayUpNextCard,
   type PostPlayView,
 } from "./post-play-view";
+import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -153,33 +155,6 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
 
 // ── Discovery cards ───────────────────────────────────────────────────────────
 
-// Text-mode mini-poster (chafa symbols inside Ink, not a Kitty placement), so
-// many picks coexist with the single Kitty hero in the body. `preserveTerminalImages`
-// keeps a pick render from wiping that hero.
-function PickPoster({
-  url,
-  title,
-  cols,
-  rows,
-}: {
-  readonly url?: string;
-  readonly title: string;
-  readonly cols: number;
-  readonly rows: number;
-}) {
-  const { poster } = usePosterPreview(url, {
-    rows,
-    cols,
-    enabled: Boolean(url),
-    variant: "preview",
-    inkEmbedded: true,
-    preserveTerminalImages: true,
-    debounceMs: 160,
-  });
-  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
-  return <Text color={palette.dim}>{initialsOf(title)}</Text>;
-}
-
 function DiscoveryCard({
   card,
   width,
@@ -200,7 +175,13 @@ function DiscoveryCard({
       width={width}
     >
       <Box minHeight={3} justifyContent="center" alignItems="center">
-        <PickPoster url={card.posterUrl} title={card.title} cols={posterCols} rows={3} />
+        <MiniPosterTile
+          url={card.posterUrl}
+          title={card.title}
+          cols={posterCols}
+          rows={3}
+          enabled
+        />
       </Box>
       <Text color={palette.accent} bold>
         {String(card.index)}
@@ -243,7 +224,7 @@ function DiscoveryCards({
       {cards.map((card) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
           <Box width={5}>
-            <PickPoster url={card.posterUrl} title={card.title} cols={4} rows={2} />
+            <MiniPosterTile url={card.posterUrl} title={card.title} cols={4} rows={2} enabled />
           </Box>
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}
@@ -307,7 +288,9 @@ function RailFacts({
     <Box flexDirection="column" marginTop={1}>
       {facts.map((fact) => (
         <Box key={`${fact.label}:${fact.value}`} flexDirection="row" flexWrap="nowrap">
-          <Text color={palette.muted}>{fact.label.padEnd(labelWidth).slice(0, labelWidth)} </Text>
+          <Text color={palette.muted}>
+            {padColumnsEnd(truncateLine(fact.label, labelWidth), labelWidth)}{" "}
+          </Text>
           <Text color={fact.tone === "success" ? palette.ok : palette.textDim}>
             {truncateLine(fact.value, valueWidth)}
           </Text>
@@ -505,117 +488,125 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   const barWidth = Math.min(36, bodyWidth - 4);
 
   return (
-    <Box flexDirection="row" paddingX={1}>
-      {/* ── Left / body column ─────────────────────────────────────────── */}
-      <Box flexDirection="column" width={bodyWidth}>
-        {/* Title hero */}
-        <Text color={palette.text} bold>
-          {truncateLine(title, bodyWidth)}
-        </Text>
+    <ViewportResizeGate kind="playback" message="Resize terminal to see post-play options">
+      <Box flexDirection="row" paddingX={1}>
+        {/* ── Left / body column ─────────────────────────────────────────── */}
+        <Box flexDirection="column" width={bodyWidth}>
+          {/* Title hero */}
+          <Text color={palette.text} bold>
+            {truncateLine(title, bodyWidth)}
+          </Text>
 
-        {/* Episode meta line */}
-        {view.episodeMeta ? (
-          <Text color={palette.muted}>{truncateLine(view.episodeMeta, bodyWidth)}</Text>
-        ) : null}
+          {/* Episode meta line */}
+          {view.episodeMeta ? (
+            <Text color={palette.muted}>{truncateLine(view.episodeMeta, bodyWidth)}</Text>
+          ) : null}
 
-        {/* Series-complete celebration replaces the generic hero label + sub:
+          {/* Series-complete celebration replaces the generic hero label + sub:
             milestone banner + catalog stats + optional personal watch-time. */}
-        {view.celebration ? (
-          <Box flexDirection="column" marginTop={1}>
-            <Text color={palette.milestone} bold>
-              {view.heroLabel}
-            </Text>
-            <Text color={palette.muted}>{truncateLine(view.celebration.statLine, bodyWidth)}</Text>
-            {view.celebration.watchTimeLine ? (
-              <Text color={palette.ok}>
-                {truncateLine(view.celebration.watchTimeLine, bodyWidth)}
-              </Text>
-            ) : null}
-          </Box>
-        ) : (
-          <>
-            {/* Hero zone label */}
-            <Box marginTop={1}>
-              <Text color={hColor} bold>
+          {view.celebration ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={palette.milestone} bold>
                 {view.heroLabel}
               </Text>
+              <Text color={palette.muted}>
+                {truncateLine(view.celebration.statLine, bodyWidth)}
+              </Text>
+              {view.celebration.watchTimeLine ? (
+                <Text color={palette.ok}>
+                  {truncateLine(view.celebration.watchTimeLine, bodyWidth)}
+                </Text>
+              ) : null}
             </Box>
+          ) : (
+            <>
+              {/* Hero zone label */}
+              <Box marginTop={1}>
+                <Text color={hColor} bold>
+                  {view.heroLabel}
+                </Text>
+              </Box>
 
-            {/* Hero sub (nextAirDate, series count, etc.) */}
-            {view.heroSub ? (
-              <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
-            ) : null}
-          </>
-        )}
+              {/* Hero sub (nextAirDate, series count, etc.) */}
+              {view.heroSub ? (
+                <Text color={palette.muted}>{truncateLine(view.heroSub, bodyWidth)}</Text>
+              ) : null}
+            </>
+          )}
 
-        {/* Progress bar */}
-        {view.progressBar ? (
-          <ProgressStrip bar={view.progressBar} width={barWidth} color={hColor} />
-        ) : null}
+          {/* Progress bar */}
+          {view.progressBar ? (
+            <ProgressStrip bar={view.progressBar} width={barWidth} color={hColor} />
+          ) : null}
 
-        {/* Next-Up hero — the centerpiece, holds the one Kitty image */}
-        {view.nextUpHero ? (
-          <NextUpHeroCard
-            hero={view.nextUpHero}
-            artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
-            title={title}
-            width={bodyWidth}
-            countdownSeconds={autoNextCountdownSeconds}
-          />
-        ) : null}
-
-        {/* Action rows */}
-        <ActionRows actions={view.actions} width={bodyWidth} selectedIndex={selectedActionIndex} />
-
-        {/* Discovery picks */}
-        {showDiscovery && view.discovery.length > 0 ? (
-          <>
-            <GroupLabel label={view.discoveryHeading} width={bodyWidth} />
-            <DiscoveryCards
-              cards={view.discovery}
+          {/* Next-Up hero — the centerpiece, holds the one Kitty image */}
+          {view.nextUpHero ? (
+            <NextUpHeroCard
+              hero={view.nextUpHero}
+              artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
+              title={title}
               width={bodyWidth}
-              layout={isWide ? "cards" : "list"}
+              countdownSeconds={autoNextCountdownSeconds}
             />
-          </>
-        ) : null}
+          ) : null}
 
-        {/* Narrow: name the picks inline (calm affordance, not a punitive wall). */}
-        {!showDiscovery && recommendations.length > 0 ? (
+          {/* Action rows */}
+          <ActionRows
+            actions={view.actions}
+            width={bodyWidth}
+            selectedIndex={selectedActionIndex}
+          />
+
+          {/* Discovery picks */}
+          {showDiscovery && view.discovery.length > 0 ? (
+            <>
+              <GroupLabel label={view.discoveryHeading} width={bodyWidth} />
+              <DiscoveryCards
+                cards={view.discovery}
+                width={bodyWidth}
+                layout={isWide ? "cards" : "list"}
+              />
+            </>
+          ) : null}
+
+          {/* Narrow: name the picks inline (calm affordance, not a punitive wall). */}
+          {!showDiscovery && recommendations.length > 0 ? (
+            <Box marginTop={1}>
+              <Text color={palette.dim}>
+                {`+${recommendations.length} picks · `}
+                {truncateLine(
+                  recommendations
+                    .slice(0, 2)
+                    .map((rec) => rec.title)
+                    .join(" · "),
+                  bodyWidth - 14,
+                )}
+              </Text>
+            </Box>
+          ) : null}
+
+          {/* Live-keys footer — discoverable, premium affordance */}
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {`+${recommendations.length} picks · `}
               {truncateLine(
-                recommendations
-                  .slice(0, 2)
-                  .map((rec) => rec.title)
-                  .join(" · "),
-                bodyWidth - 14,
+                [
+                  "↑↓ move",
+                  "↵ select",
+                  recommendations.length > 0 ? "1·2·3 picks" : null,
+                  view.nextUpHero ? "x cancel" : null,
+                  "/ search",
+                ]
+                  .filter(Boolean)
+                  .join("   ·   "),
+                bodyWidth,
               )}
             </Text>
           </Box>
-        ) : null}
-
-        {/* Live-keys footer — discoverable, premium affordance */}
-        <Box marginTop={1}>
-          <Text color={palette.dim}>
-            {truncateLine(
-              [
-                "↑↓ move",
-                "↵ select",
-                recommendations.length > 0 ? "1·2·3 picks" : null,
-                view.nextUpHero ? "x cancel" : null,
-                "/ search",
-              ]
-                .filter(Boolean)
-                .join("   ·   "),
-              bodyWidth,
-            )}
-          </Text>
         </Box>
-      </Box>
 
-      {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-      {showRail ? <PostPlayRail view={view} railWidth={railWidth} /> : null}
-    </Box>
+        {/* ── Right rail (wide only) ─────────────────────────────────────── */}
+        {showRail ? <PostPlayRail view={view} railWidth={railWidth} /> : null}
+      </Box>
+    </ViewportResizeGate>
   );
 });

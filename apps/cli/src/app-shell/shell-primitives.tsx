@@ -1,11 +1,11 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { TRANSIENT_ROW_SLOTS } from "./layout-policy";
-import { truncateLine } from "./shell-text";
+import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
+import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
-import { useShellDimensions } from "./use-viewport-policy";
+import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 type InlineBadgeTone = "neutral" | "info" | "success" | "warning" | "error";
 type BadgeTone = "neutral" | "info" | "success" | "warning" | "error" | "accent";
@@ -269,6 +269,39 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
   );
 });
 
+/**
+ * Shared viewport gate: renders the standard {@link ResizeBlocker} when the
+ * terminal is below the usable minimum for `kind`, otherwise the children. Use
+ * this so every surface (overlays, post-play, setup) blocks on the SAME size
+ * threshold instead of each shell re-implementing (or skipping) the check.
+ *
+ * `tooSmall` is independent of zen mode, so the gate intentionally takes no zen
+ * option — the minimum usable size is the same in every layout track.
+ */
+export const ViewportResizeGate = React.memo(function ViewportResizeGate({
+  children,
+  kind = "picker",
+  message,
+}: {
+  children: React.ReactNode;
+  kind?: ShellViewportKind;
+  message?: string;
+}) {
+  const viewport = useDebouncedViewportPolicy(kind);
+  if (viewport.tooSmall) {
+    return (
+      <ResizeBlocker
+        columns={viewport.columns}
+        rows={viewport.rows}
+        minColumns={viewport.minColumns}
+        minRows={viewport.minRows}
+        message={message}
+      />
+    );
+  }
+  return <>{children}</>;
+});
+
 export const LocalSection = React.memo(function LocalSection({
   title,
   tone = "neutral",
@@ -381,7 +414,9 @@ export function detailRowColumns(
   labelWidth: number,
 ): { label: string; value: string } {
   const trimmed =
-    label.length > labelWidth ? truncateLine(label, labelWidth) : label.padEnd(labelWidth);
+    measureColumns(label) > labelWidth
+      ? truncateLine(label, labelWidth)
+      : padColumnsEnd(label, labelWidth);
   return { label: trimmed, value };
 }
 

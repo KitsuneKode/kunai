@@ -1,6 +1,5 @@
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import type {
-  AutoDownloadMode,
   DiscoverMode,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -16,13 +15,20 @@ import { DetailsSheetUI } from "./details-pane-ui";
 import type { DetailsPanelData } from "./details-panel";
 import { DetailsSheet } from "./details-sheet-ui";
 import type { DetailsSheetModel } from "./details-sheet.model";
+import { useSettledValue } from "./hooks/use-settled-value";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
 import { BooleanSwitch } from "./primitives/Switch";
-import { getWindowStart, truncateAtWord, truncateLine, wrapText } from "./shell-text";
+import {
+  getWindowStart,
+  padColumnsEnd,
+  truncateAtWord,
+  truncateLine,
+  wrapText,
+} from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
@@ -120,7 +126,6 @@ type SettingsAction =
   | "animeTitlePreference"
   | "showMemory"
   | "autoNext"
-  | "autoDownload"
   | "recoveryMode"
   | "startupPriority"
   | "autoCleanupWatched"
@@ -146,7 +151,6 @@ type SettingsAction =
   | "presenceConnection"
   | "downloadsEnabled"
   | "powerSaverMode"
-  | "autoDownloadNextCount"
   | "autoCleanupGraceDays"
   | "downloadPath"
   | "clearCache"
@@ -256,17 +260,6 @@ const DISCOVER_ITEM_LIMIT_OPTIONS: readonly ShellPickerOption<string>[] = [12, 2
   }),
 );
 
-const AUTO_DOWNLOAD_NEXT_COUNT_OPTIONS: readonly ShellPickerOption<string>[] = [
-  1, 2, 3, 6, 12, 24,
-].map((count) => ({
-  value: String(count),
-  label: count === 1 ? "1 episode" : `${count} episodes`,
-  detail:
-    count === 1
-      ? "Only keep the immediate next episode queued"
-      : `Keep the next ${count} released episodes queued when Auto-download is Next`,
-}));
-
 const AUTO_CLEANUP_GRACE_DAY_OPTIONS: readonly ShellPickerOption<string>[] = [
   0, 1, 3, 7, 14, 30,
 ].map((days) => ({
@@ -333,20 +326,6 @@ const PRESENCE_PRIVACY_OPTIONS: readonly ShellPickerOption<KitsuneConfig["presen
     value: "private",
     label: "Private",
     detail: "Show only that Kunai playback is active",
-  },
-];
-
-const AUTO_DOWNLOAD_OPTIONS: readonly ShellPickerOption<AutoDownloadMode>[] = [
-  { value: "off", label: "Off", detail: "Never queue future episodes automatically" },
-  {
-    value: "next",
-    label: "Next episode",
-    detail: "Queue the next available episode after playback",
-  },
-  {
-    value: "season",
-    label: "Rest of season",
-    detail: "Queue remaining unwatched episodes in the current season",
   },
 ];
 
@@ -905,13 +884,6 @@ export function buildSettingsChoiceOverlay({
           ? `${option.label}  ·  current`
           : option.label,
     }));
-  } else if (setting === "autoDownload") {
-    title = "Auto-download";
-    subtitle = `Current ${config.autoDownload}`;
-    options = AUTO_DOWNLOAD_OPTIONS.map((option) => ({
-      ...option,
-      label: option.value === config.autoDownload ? `${option.label}  ·  current` : option.label,
-    })) as readonly ShellPickerOption<string>[];
   } else if (setting === "recoveryMode") {
     title = "Recovery mode";
     subtitle = `Current ${config.recoveryMode}`;
@@ -926,16 +898,6 @@ export function buildSettingsChoiceOverlay({
       ...option,
       label: option.value === config.startupPriority ? `${option.label}  ·  current` : option.label,
     })) as readonly ShellPickerOption<string>[];
-  } else if (setting === "autoDownloadNextCount") {
-    title = "Auto-download next count";
-    subtitle = `Current ${config.autoDownloadNextCount}`;
-    options = AUTO_DOWNLOAD_NEXT_COUNT_OPTIONS.map((option) => ({
-      ...option,
-      label:
-        Number(option.value) === config.autoDownloadNextCount
-          ? `${option.label}  ·  current`
-          : option.label,
-    }));
   } else if (setting === "autoCleanupGraceDays") {
     title = "Cleanup grace";
     subtitle = `Current ${config.autoCleanupGraceDays} days`;
@@ -1117,6 +1079,9 @@ function pickerFocusAccent(type: Extract<BrowseOverlay, { filterQuery: string }>
 // Right-hand preview rail for the episode picker. The poster slot is height-
 // reserved so the metadata below it never jumps when artwork resolves (spec:
 // episode-season-picker.md). Falls back to a quiet placeholder before/without art.
+/** Shared "no poster" sentinel so suppression doesn't allocate a new object per render. */
+const POSTER_NONE: PosterResult = { kind: "none" };
+
 const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
   poster,
   posterState,
@@ -1201,15 +1166,22 @@ export function OverlayPanel({
         ? "Loading history…"
         : "Saving settings…";
   const pickerPreviewImageUrl = getOverlayPickerPreviewImageUrl(overlay);
+  // Gate the poster pipeline on the settled selection so holding ↑/↓ through the
+  // episode list never spawns a chafa/Kitty subprocess mid-navigation.
+  const settledPickerImageUrl = useSettledValue(pickerPreviewImageUrl);
+  const pickerNavigating = pickerPreviewImageUrl !== settledPickerImageUrl;
   const { poster: pickerPoster, posterState: pickerPosterState } = usePosterPreview(
-    pickerPreviewImageUrl,
+    settledPickerImageUrl,
     {
       rows: 6,
       cols: 16,
-      enabled: overlay.type === "episode-picker" && Boolean(pickerPreviewImageUrl),
-      debounceMs: 120,
+      enabled: overlay.type === "episode-picker" && Boolean(settledPickerImageUrl),
+      // `settledPickerImageUrl` already absorbs the navigation burst.
+      debounceMs: 16,
     },
   );
+  // Suppress the heavy chafa block while navigating; Kitty (out-of-band) stays.
+  const pickerPosterSuppressed = pickerNavigating && pickerPoster.kind === "text";
   // Two-pane episode picker: dense list (left) + anchored preview rail (right).
   // The rail hides first on narrow terminals (spec: responsive). When shown it
   // takes a fixed column so the list width — and every row — stays stable.
@@ -1292,9 +1264,9 @@ export function OverlayPanel({
                   option.tone === "success"
                     ? palette.ok
                     : option.tone === "warning"
-                      ? palette.warn
+                      ? semanticToneColor("warning")
                       : option.tone === "info"
-                        ? palette.info
+                        ? semanticToneColor("info")
                         : option.tone === "error"
                           ? palette.danger
                           : null;
@@ -1374,8 +1346,8 @@ export function OverlayPanel({
             </Box>
             {showPreviewRail ? (
               <EpisodePreviewRail
-                poster={pickerPoster}
-                posterState={pickerPosterState}
+                poster={pickerPosterSuppressed ? POSTER_NONE : pickerPoster}
+                posterState={pickerPosterSuppressed ? "loading" : pickerPosterState}
                 option={overlay.options[overlay.selectedIndex]}
                 width={railColumnWidth}
               />
@@ -1449,7 +1421,7 @@ export function OverlayPanel({
                 return (
                   <Box key={`${line.label}-${line.detail ?? ""}`}>
                     <Text color={resolvePanelTone(line.tone)}>
-                      {truncateLine(line.label, labelWidth).padEnd(labelWidth)}
+                      {padColumnsEnd(truncateLine(line.label, labelWidth), labelWidth)}
                     </Text>
                     <Text color={palette.dim}>{detailLines[0] ?? ""}</Text>
                   </Box>

@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { truncateLine } from "../shell-text";
+import { padColumnsEnd, truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
 import {
   normalizeActionShortcut,
@@ -32,7 +32,7 @@ function ActionRow({
     <Box>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={disabled ? palette.dim : toneColor(row.tone)} bold={!disabled}>
-        {truncateLine(row.label, 18).padEnd(18)}
+        {padColumnsEnd(truncateLine(row.label, 18), 18)}
       </Text>
       <Text color={disabled ? palette.dim : palette.muted}>
         {truncateLine(row.disabledReason ?? row.detail ?? "", detailWidth)}

@@ -11,7 +11,7 @@ import {
   getPlaybackCommandPaletteMaxVisible,
   resolveCommandPaletteWidth,
 } from "./shell-command-model";
-import { getWindowStart, truncateLine } from "./shell-text";
+import { getWindowStart, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
 
@@ -105,7 +105,7 @@ export function CommandPalette({
     const alias = `/${command.aliases[0]}`;
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
-    const detail = truncateLine(command.description, detailWidth).padEnd(detailWidth);
+    const detail = padColumnsEnd(truncateLine(command.description, detailWidth), detailWidth);
     const showReason = !command.enabled && (selected || command.reason);
     return (
       <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
@@ -119,7 +119,7 @@ export function CommandPalette({
             bold={selected && command.enabled}
             dimColor={!command.enabled}
           >
-            {truncateLine(alias, aliasWidth).padEnd(aliasWidth)}
+            {padColumnsEnd(truncateLine(alias, aliasWidth), aliasWidth)}
           </Text>
           <Text color={palette.dim}> </Text>
           <Text

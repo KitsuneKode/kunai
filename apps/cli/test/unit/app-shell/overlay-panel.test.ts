@@ -199,14 +199,6 @@ test("discover and offline settings provide bounded choice overlays", () => {
   expect(
     buildSettingsChoiceOverlay({
       config,
-      setting: "autoDownloadNextCount",
-      seriesProviderOptions: [],
-      animeProviderOptions: [],
-    }).options.map((option) => option.value),
-  ).toContain("6");
-  expect(
-    buildSettingsChoiceOverlay({
-      config,
       setting: "autoCleanupGraceDays",
       seriesProviderOptions: [],
       animeProviderOptions: [],

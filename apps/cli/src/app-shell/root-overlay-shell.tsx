@@ -20,7 +20,6 @@ import {
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
 import type {
-  AutoDownloadMode,
   DiscoverMode,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -121,7 +120,7 @@ import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-
 import { type RootOwnedOverlay } from "./root-shell-state";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
-import { ContextStrip, ShellFooter } from "./shell-primitives";
+import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import {
   createInitialTracksNav,
@@ -173,7 +172,13 @@ export function buildHelpTabRows(tab: string): readonly { key: string; desc: str
 }
 
 function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
-  return <OverlayLayoutProvider value={layout}>{node}</OverlayLayoutProvider>;
+  return (
+    <OverlayLayoutProvider value={layout}>
+      <ViewportResizeGate kind="picker" message="Resize terminal to use this panel">
+        {node}
+      </ViewportResizeGate>
+    </OverlayLayoutProvider>
+  );
 }
 
 function HelpShell({
@@ -426,22 +431,33 @@ export function RootOverlayShell({
   const { cols, rows } = useShellDimensions();
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const rawConfig = container.config.getRaw();
-  const providerOptions =
-    overlay.type === "provider_picker"
-      ? buildProviderPickerOptions({
-          providers: sortProvidersByConfigPriority({
-            providers: container.providerRegistry
-              .getAll()
-              .map((p) => p.metadata)
-              .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
-            priority: overlay.isAnime
-              ? [rawConfig.animeProvider, ...rawConfig.animeProviderPriority]
-              : [rawConfig.provider, ...rawConfig.providerPriority],
-          }),
-          currentProvider: overlay.currentProvider,
-          previewImageUrl: state.currentTitle?.posterUrl,
-        })
-      : [];
+  const providerOptions = useMemo(
+    () =>
+      overlay.type === "provider_picker"
+        ? buildProviderPickerOptions({
+            providers: sortProvidersByConfigPriority({
+              providers: container.providerRegistry
+                .getAll()
+                .map((p) => p.metadata)
+                .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
+              priority: overlay.isAnime
+                ? [rawConfig.animeProvider, ...rawConfig.animeProviderPriority]
+                : [rawConfig.provider, ...rawConfig.providerPriority],
+            }),
+            currentProvider: overlay.currentProvider,
+            previewImageUrl: state.currentTitle?.posterUrl,
+          })
+        : [],
+    [
+      overlay,
+      container.providerRegistry,
+      rawConfig.animeProvider,
+      rawConfig.provider,
+      rawConfig.animeProviderPriority,
+      rawConfig.providerPriority,
+      state.currentTitle?.posterUrl,
+    ],
+  );
   const providerInitialIndex =
     overlay.type === "provider_picker"
       ? Math.max(
@@ -640,25 +656,32 @@ export function RootOverlayShell({
             })
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
-  const genericPickerOptions =
-    overlay.type === "season_picker" ||
-    overlay.type === "episode_picker" ||
-    overlay.type === "subtitle_picker" ||
-    overlay.type === "recommendation_picker"
-      ? buildRootGenericPickerOptions(overlay)
-      : [];
-  const filteredProviderOptions = rankFuzzyMatches(providerOptions, filterQuery, (option) => [
-    { value: option.label, weight: 0 },
-    { value: option.detail, weight: 8 },
-  ]);
-  const filteredGenericPickerOptions = rankFuzzyMatches(
-    genericPickerOptions,
-    pickerFilterQuery,
-    (option) => [
-      { value: option.label, weight: 0 },
-      { value: option.detail, weight: 8 },
-      { value: option.badge, weight: 12 },
-    ],
+  const genericPickerOptions = useMemo(
+    () =>
+      overlay.type === "season_picker" ||
+      overlay.type === "episode_picker" ||
+      overlay.type === "subtitle_picker" ||
+      overlay.type === "recommendation_picker"
+        ? buildRootGenericPickerOptions(overlay)
+        : [],
+    [overlay],
+  );
+  const filteredProviderOptions = useMemo(
+    () =>
+      rankFuzzyMatches(providerOptions, filterQuery, (option) => [
+        { value: option.label, weight: 0 },
+        { value: option.detail, weight: 8 },
+      ]),
+    [providerOptions, filterQuery],
+  );
+  const filteredGenericPickerOptions = useMemo(
+    () =>
+      rankFuzzyMatches(genericPickerOptions, pickerFilterQuery, (option) => [
+        { value: option.label, weight: 0 },
+        { value: option.detail, weight: 8 },
+        { value: option.badge, weight: 12 },
+      ]),
+    [genericPickerOptions, pickerFilterQuery],
   );
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
@@ -683,34 +706,47 @@ export function RootOverlayShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
-  const settingsPanel =
-    overlay.type === "settings" && settingsDraft
-      ? settingsChoice
-        ? buildSettingsChoiceOverlay({
-            config: settingsDraft,
-            setting: settingsChoice,
-            seriesProviderOptions: settingsSeriesProviderOptions,
-            animeProviderOptions: settingsAnimeProviderOptions,
-            parentSelectedIndex: settingsParentIndex,
-          })
-        : ({
-            type: "settings",
-            title: "Settings",
-            subtitle: buildSettingsSummary(settingsDraft),
-            options: buildSettingsOptions(settingsDraft, container.presence.getSnapshot()),
-            filterQuery: "",
-            selectedIndex,
-            dirty: !settingsEqual(settingsDraft, container.config.getRaw()),
-            busy: settingsBusy,
-          } satisfies Extract<BrowseOverlay, { type: "settings" }>)
-      : null;
-  const filteredSettingsOptions = rankFuzzyMatches(
-    settingsPanel?.options ?? [],
-    filterQuery,
-    (option) => [
-      { value: option.label, weight: 0 },
-      { value: option.detail, weight: 8 },
+  const settingsPanel = useMemo(
+    () =>
+      overlay.type === "settings" && settingsDraft
+        ? settingsChoice
+          ? buildSettingsChoiceOverlay({
+              config: settingsDraft,
+              setting: settingsChoice,
+              seriesProviderOptions: settingsSeriesProviderOptions,
+              animeProviderOptions: settingsAnimeProviderOptions,
+              parentSelectedIndex: settingsParentIndex,
+            })
+          : ({
+              type: "settings",
+              title: "Settings",
+              subtitle: buildSettingsSummary(settingsDraft),
+              options: buildSettingsOptions(settingsDraft, container.presence.getSnapshot()),
+              filterQuery: "",
+              selectedIndex,
+              dirty: !settingsEqual(settingsDraft, container.config.getRaw()),
+              busy: settingsBusy,
+            } satisfies Extract<BrowseOverlay, { type: "settings" }>)
+        : null,
+    [
+      overlay.type,
+      settingsDraft,
+      settingsChoice,
+      settingsSeriesProviderOptions,
+      settingsAnimeProviderOptions,
+      settingsParentIndex,
+      selectedIndex,
+      settingsBusy,
+      container,
     ],
+  );
+  const filteredSettingsOptions = useMemo(
+    () =>
+      rankFuzzyMatches(settingsPanel?.options ?? [], filterQuery, (option) => [
+        { value: option.label, weight: 0 },
+        { value: option.detail, weight: 8 },
+      ]),
+    [settingsPanel, filterQuery],
   );
   const title = getRootOverlayTitle(overlay, state);
   const subtitle = getRootOverlaySubtitle({
@@ -1051,7 +1087,7 @@ export function RootOverlayShell({
             : resolvedAction === "restore-queue"
               ? "Queue restored"
               : resolvedAction === "download"
-                ? "Download flow opened"
+                ? "Download queued"
                 : resolvedAction === "follow"
                   ? "Following releases"
                   : resolvedAction === "mute"
@@ -1522,14 +1558,10 @@ export function RootOverlayShell({
             next.discoverMode = picked.value as DiscoverMode;
           } else if (settingsChoice === "discoverItemLimit") {
             next.discoverItemLimit = Number(picked.value);
-          } else if (settingsChoice === "autoDownload") {
-            next.autoDownload = picked.value as AutoDownloadMode;
           } else if (settingsChoice === "recoveryMode") {
             next.recoveryMode = picked.value as RecoveryMode;
           } else if (settingsChoice === "startupPriority") {
             next.startupPriority = picked.value as StartupPriority;
-          } else if (settingsChoice === "autoDownloadNextCount") {
-            next.autoDownloadNextCount = Number(picked.value);
           } else if (settingsChoice === "autoCleanupGraceDays") {
             next.autoCleanupGraceDays = Number(picked.value);
           } else if (settingsChoice === "downloadPath") {

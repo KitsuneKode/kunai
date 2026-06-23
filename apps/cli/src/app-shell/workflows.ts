@@ -1936,16 +1936,22 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
             },
           ]
         : []),
-      {
-        value: { type: "export-durable" as const },
-        label: "Export durable playlist",
-        detail: "Write a safe Kunai playlist JSON file",
-      },
-      {
-        value: { type: "import-durable" as const },
-        label: "Import durable playlist",
-        detail: "Read a Kunai playlist JSON file from the playlist exchange folder",
-      },
+      // Import/export are the "sharing" surface — gated behind the playlistSharing
+      // feature flag so the playlist exchange folder I/O only appears when enabled.
+      ...(container.featureFlags.playlistSharing
+        ? [
+            {
+              value: { type: "export-durable" as const },
+              label: "Export durable playlist",
+              detail: "Write a safe Kunai playlist JSON file",
+            },
+            {
+              value: { type: "import-durable" as const },
+              label: "Import durable playlist",
+              detail: "Read a Kunai playlist JSON file from the playlist exchange folder",
+            },
+          ]
+        : []),
       { value: { type: "refill" as const }, label: "Refill from watchlist" },
       { value: { type: "back" as const }, label: "Back" },
     ];

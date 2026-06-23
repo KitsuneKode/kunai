@@ -13,6 +13,7 @@ import type {
 } from "@/domain/lists/StatsService";
 
 import { heatBucket } from "./format/heatmap";
+import { padColumnsEnd, truncateLine } from "./shell-text";
 import { palette, resolveStatsTintColor, statsHeatCellColor } from "./shell-theme";
 
 export const STATS_TABS = ["overview", "titles"] as const;
@@ -279,7 +280,7 @@ function buildTitleRows(
     const h = Math.floor(show.totalSeconds / 3600);
     const m = Math.floor((show.totalSeconds % 3600) / 60);
     const duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
-    const titleDisplay = show.title.slice(0, titleWidth).padEnd(titleWidth);
+    const titleDisplay = padColumnsEnd(truncateLine(show.title, titleWidth), titleWidth);
     return {
       titleId: show.titleId,
       title: titleDisplay,

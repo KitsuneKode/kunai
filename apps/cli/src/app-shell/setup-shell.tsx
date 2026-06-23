@@ -5,6 +5,7 @@ import React, { useState } from "react";
 
 import { StepIndicator } from "./primitives/StepIndicator";
 import { mountRootContent } from "./root-content-state";
+import { ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { useShellDimensions } from "./use-viewport-policy";
 
@@ -617,52 +618,56 @@ function SetupShell({
   });
 
   return (
-    <Box flexDirection="column" width={cols} height={rows}>
-      {/* Slide progress indicator */}
-      <Box
-        paddingX={Math.max(2, Math.floor((cols - Math.min(cols, 80)) / 2) + 3)}
-        paddingTop={1}
-        flexDirection="column"
-        gap={1}
-      >
-        <WizStepCounter current={slideIdx} total={SLIDE_ORDER.length} />
-        <StepIndicator total={SLIDE_ORDER.length} current={slideIdx} />
-      </Box>
+    <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
+      <Box flexDirection="column" width={cols} height={rows}>
+        {/* Slide progress indicator */}
+        <Box
+          paddingX={Math.max(2, Math.floor((cols - Math.min(cols, 80)) / 2) + 3)}
+          paddingTop={1}
+          flexDirection="column"
+          gap={1}
+        >
+          <WizStepCounter current={slideIdx} total={SLIDE_ORDER.length} />
+          <StepIndicator total={SLIDE_ORDER.length} current={slideIdx} />
+        </Box>
 
-      {slide === "welcome" ? <WelcomeSlide width={cols} rows={rows - 2} /> : null}
-      {slide === "system" ? <SystemSlide width={cols} rows={rows - 2} snapshot={snapshot} /> : null}
-      {slide === "prefs-audio" ? (
-        <PickerSlide
-          width={cols}
-          rows={rows - 2}
-          title="Audio preference"
-          sub="Which audio track should Kunai prefer when multiple options exist?"
-          options={AUDIO_OPTS}
-          selectedIndex={audioIdx}
-          onMove={() => {}}
-        />
-      ) : null}
-      {slide === "prefs-subtitle" ? (
-        <PickerSlide
-          width={cols}
-          rows={rows - 2}
-          title="Subtitle preference"
-          sub="Default subtitle language — you can always change per-episode."
-          options={SUBTITLE_OPTS}
-          selectedIndex={subtitleIdx}
-          onMove={() => {}}
-        />
-      ) : null}
-      {slide === "downloads" ? (
-        <DownloadsSlide
-          width={cols}
-          rows={rows - 2}
-          ytDlpReady={snapshot.ytDlp}
-          selectedIndex={downloadsIdx}
-        />
-      ) : null}
-      {slide === "tips" ? <TipsSlide width={cols} rows={rows - 2} /> : null}
-    </Box>
+        {slide === "welcome" ? <WelcomeSlide width={cols} rows={rows - 2} /> : null}
+        {slide === "system" ? (
+          <SystemSlide width={cols} rows={rows - 2} snapshot={snapshot} />
+        ) : null}
+        {slide === "prefs-audio" ? (
+          <PickerSlide
+            width={cols}
+            rows={rows - 2}
+            title="Audio preference"
+            sub="Which audio track should Kunai prefer when multiple options exist?"
+            options={AUDIO_OPTS}
+            selectedIndex={audioIdx}
+            onMove={() => {}}
+          />
+        ) : null}
+        {slide === "prefs-subtitle" ? (
+          <PickerSlide
+            width={cols}
+            rows={rows - 2}
+            title="Subtitle preference"
+            sub="Default subtitle language — you can always change per-episode."
+            options={SUBTITLE_OPTS}
+            selectedIndex={subtitleIdx}
+            onMove={() => {}}
+          />
+        ) : null}
+        {slide === "downloads" ? (
+          <DownloadsSlide
+            width={cols}
+            rows={rows - 2}
+            ytDlpReady={snapshot.ytDlp}
+            selectedIndex={downloadsIdx}
+          />
+        ) : null}
+        {slide === "tips" ? <TipsSlide width={cols} rows={rows - 2} /> : null}
+      </Box>
+    </ViewportResizeGate>
   );
 }
 
