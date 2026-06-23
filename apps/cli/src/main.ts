@@ -24,6 +24,7 @@
 
 import { existsSync } from "node:fs";
 
+import { resolveBootstrapIntent } from "@/app/bootstrap-intent";
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import {
   applyHistorySelectionProvider,
@@ -33,6 +34,7 @@ import {
   selectContinueHistoryEntryFromRecent,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
+import { resolveSessionConfigOverrides } from "@/app/session-overrides";
 import { SessionController } from "@/app/SessionController";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer } from "@/container";
@@ -450,11 +452,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
-  // `--zen` is a transient session override: flip the in-memory config so the
-  // single-column layout renders, without persisting to the user's config file
-  // (update() mutates memory only; save() is separate and never called here).
-  if (args.zen && !config.zenMode) {
-    await config.update({ zenMode: true });
+  // `--zen` / `-m,--minimal` are transient session overrides: flip the in-memory
+  // config so the minimal/single-column layout renders, without persisting to the
+  // user's config file (update() mutates memory only; save() is never called here).
+  // `--zen` implies minimal (cli-args sets args.minimal), so a zen launch collapses
+  // the companion pane and dims chrome too — matching what each flag's name claims.
+  const sessionOverrides = resolveSessionConfigOverrides(args, config);
+  if (Object.keys(sessionOverrides).length > 0) {
+    await config.update(sessionOverrides);
   }
   await maybeRunAutoCleanupDownloads(container);
 
@@ -474,33 +479,28 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
 
-  let bootstrapQuery: string | undefined;
-  let bootstrapTitle: TitleInfo | null = null;
+  const bootstrapIntent = resolveBootstrapIntent(args);
+  const bootstrapQuery: string | undefined = bootstrapIntent.query;
+  let bootstrapTitle: TitleInfo | null = bootstrapIntent.directTitle;
   let bootstrapEpisode: EpisodeInfo | null = null;
 
-  if (args.search?.trim()) {
-    bootstrapQuery = args.search.trim();
-    logger.info("Bootstrap search requested", { query: bootstrapQuery });
-  }
-
-  if (args.id) {
-    if (args.anime) {
-      logger.warn("Direct ID bootstrap is not supported for anime mode yet", { id: args.id });
-    } else if (args.type === "movie" || args.type === "series") {
-      bootstrapTitle = {
-        id: args.id,
-        type: args.type,
-        name: `TMDB ${args.id}`,
-      };
-      logger.info("Bootstrap title requested", {
-        id: args.id,
-        type: args.type,
-      });
-    } else {
-      logger.warn("Ignoring direct ID without a supported --type", {
-        id: args.id,
-        type: args.type,
-      });
+  for (const entry of bootstrapIntent.logs) {
+    switch (entry.kind) {
+      case "search":
+        logger.info("Bootstrap search requested", { query: entry.query });
+        break;
+      case "direct-title":
+        logger.info("Bootstrap title requested", { id: entry.id, type: entry.type });
+        break;
+      case "anime-id-unsupported":
+        logger.warn("Direct ID bootstrap is not supported for anime mode yet", { id: entry.id });
+        break;
+      case "id-without-type":
+        logger.warn("Ignoring direct ID without a supported --type", {
+          id: entry.id,
+          type: entry.type,
+        });
+        break;
     }
   }
 
@@ -643,10 +643,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapTitle = target?.title ?? null;
       bootstrapEpisode = target?.episode ?? null;
     }
-    let autoPickSearchResultIndex: number | undefined = args.jump;
-    if (autoPickSearchResultIndex === undefined && args.quick && bootstrapQuery) {
-      autoPickSearchResultIndex = 1;
-    }
+    const autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
 
     await globalController.run({
       initialQuery: bootstrapQuery,
