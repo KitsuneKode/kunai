@@ -2,18 +2,19 @@ import {
   normalizeSearchIntent,
   type SearchIntent,
   type SearchIntentFilters,
-} from "../domain/search/SearchIntent";
-import { describeSearchIntentFilters } from "../domain/search/SearchIntentParser";
-import type { SearchResult, ShellMode } from "../domain/types";
-import { buildVideasyDiscoverPlan } from "../search";
-import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
-import type { SearchRegistry } from "../services/search/SearchRegistry";
+} from "@/domain/search/SearchIntent";
+import { describeSearchIntentFilters } from "@/domain/search/SearchIntentParser";
+import type { SearchResult, ShellMode } from "@/domain/types";
+import { buildVideasyDiscoverPlan } from "@/search";
+import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
+
 import { enrichAnimeSearchResultsWithAniList } from "./anime-metadata";
+import type { SearchRegistry } from "./SearchRegistry";
 
 export type SearchRoutingContext = {
   mode: ShellMode;
   providerId: string;
-  animeLanguageProfile: import("../services/persistence/ConfigService").MediaLanguageProfile;
+  animeLanguageProfile: import("@/services/persistence/ConfigService").MediaLanguageProfile;
   signal?: AbortSignal;
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
   providerRegistry: ProviderRegistry;

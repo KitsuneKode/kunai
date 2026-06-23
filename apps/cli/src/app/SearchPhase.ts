@@ -26,7 +26,6 @@ import {
 } from "@/app/launch-entry";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults, loadSurpriseResults } from "@/app/random-results";
-import { searchTitles } from "@/app/search-routing";
 import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import { effectiveFooterHints } from "@/container";
@@ -45,6 +44,7 @@ import {
 } from "@/services/catalog/ResultEnrichmentService";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import { searchTitles } from "@/services/search/SearchRoutingService";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 export type SearchPhaseInput = {

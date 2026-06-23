@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { searchTitles } from "@/app/search-routing";
 import { normalizeSearchIntent } from "@/domain/search/SearchIntent";
 import type { SearchResult, ProviderMetadata } from "@/domain/types";
+import { searchTitles } from "@/services/search/SearchRoutingService";
 
 describe("searchTitles", () => {
   test("uses provider-native anime search for anime providers", async () => {

@@ -43,7 +43,6 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
-import { searchTitles } from "./app/search-routing";
 import {
   resolveAttentionFeatureFlags,
   type AttentionFeatureFlags,
@@ -133,6 +132,7 @@ import { ReleaseReconciliationService } from "./services/release-reconciliation/
 import { SEARCH_SERVICE_DEFINITIONS } from "./services/search/definitions";
 import type { SearchRegistry } from "./services/search/SearchRegistry";
 import { SearchRegistryImpl } from "./services/search/SearchRegistry";
+import { searchTitles } from "./services/search/SearchRoutingService";
 import { AniListAdapter } from "./services/sync/AniListAdapter";
 import { SyncService } from "./services/sync/SyncService";
 import { TmdbAdapter } from "./services/sync/TmdbAdapter";

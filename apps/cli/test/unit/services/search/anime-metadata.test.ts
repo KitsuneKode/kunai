@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { enrichAnimeSearchResultsWithAniList } from "@/app/anime-metadata";
 import type { SearchResult } from "@/domain/types";
+import { enrichAnimeSearchResultsWithAniList } from "@/services/search/anime-metadata";
 
 const realFetch = globalThis.fetch;
 

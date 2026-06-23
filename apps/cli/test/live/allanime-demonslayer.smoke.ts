@@ -1,4 +1,4 @@
-import { searchTitles } from "@/app/search-routing";
+import { searchTitles } from "@/services/search/SearchRoutingService";
 
 import {
   buildProviderSmokePayload,
