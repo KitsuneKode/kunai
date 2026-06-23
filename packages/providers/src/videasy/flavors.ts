@@ -268,6 +268,16 @@ export function isVidkingFlavorDeprecated(flavorId: string): boolean {
   return getVidkingFlavor(flavorId)?.deprecated === true;
 }
 
+export function listDeprecatedVidkingEndpoints(): readonly string[] {
+  const endpoints = new Set<string>();
+  for (const flavor of FLAVORS) {
+    if (flavor.deprecated === true) {
+      endpoints.add(flavor.endpoint);
+    }
+  }
+  return [...endpoints];
+}
+
 export function isVidkingSourceDeprecated(sourceId: string): boolean {
   const normalized = sourceId.trim();
   if (!normalized) return false;

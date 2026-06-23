@@ -31,6 +31,9 @@ export function scheduleVideasyLazySourceProbes(input: {
       startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
     },
     input.mode,
+    "play",
+    "tmdb",
+    input.providerId,
   );
 
   const context: ProviderRuntimeContext = {

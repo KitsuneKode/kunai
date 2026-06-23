@@ -8,6 +8,7 @@ import {
 } from "@kunai/core";
 import type {
   CachePolicy,
+  EndpointFailureClass,
   EpisodeIdentity,
   ProviderCycleCandidate,
   ProviderCycleAttempt,
@@ -20,6 +21,7 @@ import type {
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
+  StreamPresentation,
   SubtitleCandidate,
   TitleIdentity,
 } from "@kunai/types";
@@ -105,6 +107,43 @@ function normalizeLanguageCode(value: string | undefined): string | undefined {
 
 /** Track server health with 60s cooldown after 2 consecutive failures. */
 const vidkingHealth = new HealthTracker(60_000, 2);
+
+function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
+  const port = context.endpointHealth;
+  return {
+    shouldTry(endpoint: string): boolean {
+      if (port) return port.shouldTry(VIDEOSY_PROVIDER_ID, endpoint);
+      return vidkingHealth.shouldTry(endpoint);
+    },
+    recordSuccess(endpoint: string): void {
+      if (port) {
+        port.recordSuccess(VIDEOSY_PROVIDER_ID, endpoint);
+        return;
+      }
+      vidkingHealth.recordSuccess(endpoint);
+    },
+    recordFailure(
+      endpoint: string,
+      info: { readonly class: EndpointFailureClass; readonly titleId?: string },
+    ): void {
+      if (port) {
+        port.recordFailure(VIDEOSY_PROVIDER_ID, endpoint, {
+          class: info.class,
+          titleId: info.titleId,
+          at: context.now(),
+        });
+        return;
+      }
+      vidkingHealth.recordFailure(endpoint);
+    },
+  };
+}
+
+function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
+  if (statusCode === 404 || statusCode === 410) return "route-dead";
+  if (statusCode >= 500) return "server-error";
+  return "transient";
+}
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
 type VidkingServerEndpoint = VidkingServer | (string & {});
@@ -266,7 +305,7 @@ export async function resolveVideasyDirect(
     !resolvedOptions?.customReferer;
   let activeServers: VidkingServerEndpoint[] = (
     phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_SERVERS]
-  ).filter((s) => vidkingHealth.shouldTry(s));
+  ).filter((s) => createVideasyEndpointHealth(context).shouldTry(s));
   const exhaustiveFlavorIds =
     exhaustiveRefresh && !resolvedOptions?.serverEndpoint
       ? listVidkingFlavors()
@@ -436,6 +475,9 @@ export async function resolveVideasyDirect(
     signal: context.signal,
     now: context.now,
     emit: context.emit,
+    endpointHealth: context.endpointHealth,
+    titleId: input.title.id,
+    allowTransientCandidateRetry: true,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
     shouldStopAfterFailure: (failure) =>
@@ -459,7 +501,7 @@ export async function resolveVideasyDirect(
       attributes: { preferredSourceId: preferredSourceId ?? null },
     });
     const phaseAFallbackServers = [...VIDKING_PHASE_A_SERVERS].filter((server) =>
-      vidkingHealth.shouldTry(server),
+      createVideasyEndpointHealth(context).shouldTry(server),
     );
     const fallbackCandidates = buildVidkingCycleCandidates({
       directServers: phaseAFallbackServers,
@@ -475,6 +517,9 @@ export async function resolveVideasyDirect(
       signal: context.signal,
       now: context.now,
       emit: context.emit,
+      endpointHealth: context.endpointHealth,
+      titleId: input.title.id,
+      allowTransientCandidateRetry: true,
       maxAttemptsPerCandidate: 1,
       candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
       shouldStopAfterFailure: (failure) =>
@@ -505,7 +550,7 @@ export async function resolveVideasyDirect(
 
   if (shouldRetryWithEmbedReferer) {
     const embedServers = [...VIDKING_PHASE_A_SERVERS].filter((server) =>
-      vidkingHealth.shouldTry(server),
+      createVideasyEndpointHealth(context).shouldTry(server),
     );
     const embedCandidates = buildVidkingCycleCandidates({
       directServers: [],
@@ -521,6 +566,9 @@ export async function resolveVideasyDirect(
       signal: context.signal,
       now: context.now,
       emit: context.emit,
+      endpointHealth: context.endpointHealth,
+      titleId: input.title.id,
+      allowTransientCandidateRetry: true,
       maxAttemptsPerCandidate: 1,
       candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
       shouldStopAfterFailure: (failure) =>
@@ -858,6 +906,7 @@ export function createVidkingResultFromPayload({
     sourceQualityFilter,
     flavorLabel: themedLabel,
     serverName: themedLabel,
+    engineOptions,
   });
 
   if (streams.length === 0) {
@@ -1125,6 +1174,7 @@ async function probeSelectedVidkingPayloadStream({
     sourceQualityFilter,
     flavorLabel: presentation.themeLabel,
     serverName: presentation.themeLabel,
+    engineOptions,
   });
   if (streams.length === 0) {
     return false;
@@ -1243,6 +1293,9 @@ async function tryVidkingServer(opts: {
   });
   const maxAttempts = customReferer ? Math.max(1, context.retryPolicy?.maxAttempts ?? 2) : 1;
 
+  const endpointHealth = createVideasyEndpointHealth(context);
+  const titleId = input.title.id;
+
   for (const requestServer of requestServers) {
     for (const query of queries) {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -1259,7 +1312,10 @@ async function tryVidkingServer(opts: {
           });
 
           if (!response.ok) {
-            vidkingHealth.recordFailure(server);
+            endpointHealth.recordFailure(server, {
+              class: classifyVideasyHttpFailure(response.status),
+              titleId,
+            });
             const statusCode = response.status;
             const body = await safeReadResponseText(response);
             const providerError = parseVideasyErrorPayload(body);
@@ -1292,7 +1348,7 @@ async function tryVidkingServer(opts: {
 
           const payload = (await response.text()).trim();
           if (!payload) {
-            vidkingHealth.recordFailure(server);
+            endpointHealth.recordFailure(server, { class: "transient", titleId });
             const f: ProviderFailure = {
               providerId: VIDEOSY_PROVIDER_ID,
               code: "not-found",
@@ -1308,7 +1364,7 @@ async function tryVidkingServer(opts: {
           const providerError = parseVideasyErrorPayload(payload);
           const guardedFailure = createVideasyGuardFailure(providerError, context);
           if (guardedFailure) {
-            vidkingHealth.recordFailure(server);
+            endpointHealth.recordFailure(server, { class: "transient", titleId });
             failures.push(guardedFailure);
             emitRetryIfNeeded(events, context, guardedFailure, sourceId, attempt, maxAttempts);
             return null;
@@ -1329,7 +1385,7 @@ async function tryVidkingServer(opts: {
             context,
           });
           if (!streamVerified) {
-            vidkingHealth.recordFailure(server);
+            endpointHealth.recordFailure(server, { class: "transient", titleId });
             break;
           }
 
@@ -1350,7 +1406,7 @@ async function tryVidkingServer(opts: {
             streamReachabilityVerified: true,
           });
           if (result) {
-            vidkingHealth.recordSuccess(server);
+            endpointHealth.recordSuccess(server);
             return result;
           }
 
@@ -1364,7 +1420,10 @@ async function tryVidkingServer(opts: {
           failures.push(f);
           emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
         } catch (error) {
-          vidkingHealth.recordFailure(server);
+          endpointHealth.recordFailure(server, {
+            class: isVideasyTimeoutError(error) ? "transient" : "server-error",
+            titleId,
+          });
           if (context.signal?.aborted) throw error;
           const timedOut = isVideasyTimeoutError(error);
           const f: ProviderFailure = {
@@ -1590,6 +1649,20 @@ async function withWasmDecodeLock<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+function resolveVidkingStreamPresentation(
+  engineOptions?: VidKingEngineOptions,
+  audioLanguage?: string,
+): StreamPresentation | undefined {
+  const flavor = engineOptions?.flavorId ? getVidkingFlavor(engineOptions.flavorId) : undefined;
+  const subtitle =
+    flavor?.subtitle?.toLowerCase() ?? engineOptions?.flavorArchetype?.toLowerCase() ?? "";
+  if (subtitle.includes("dub")) return "dub";
+  if (subtitle.includes("original") || subtitle.includes("sub")) return "sub";
+  if (audioLanguage === "ja") return "sub";
+  if (audioLanguage && audioLanguage !== "en" && audioLanguage !== "ja") return "dub";
+  return undefined;
+}
+
 function normalizeStreamCandidates({
   payload,
   input,
@@ -1601,6 +1674,7 @@ function normalizeStreamCandidates({
   sourceQualityFilter,
   flavorLabel,
   serverName,
+  engineOptions,
 }: {
   readonly payload: VidkingPayload;
   readonly input: ProviderResolveInput;
@@ -1612,6 +1686,7 @@ function normalizeStreamCandidates({
   readonly sourceQualityFilter?: string;
   readonly flavorLabel?: string;
   readonly serverName?: string;
+  readonly engineOptions?: VidKingEngineOptions;
 }): StreamCandidate[] {
   const seen = new Set<string>();
   const streams: StreamCandidate[] = [];
@@ -1683,6 +1758,7 @@ function normalizeStreamCandidates({
               ? "mp4"
               : "unknown",
       audioLanguages: normalizedAudioLanguage ? [normalizedAudioLanguage] : undefined,
+      presentation: resolveVidkingStreamPresentation(engineOptions, normalizedAudioLanguage),
       qualityLabel,
       qualityRank,
       languageEvidence,
