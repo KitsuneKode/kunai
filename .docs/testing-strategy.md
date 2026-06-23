@@ -43,6 +43,13 @@ worth keeping. Do not add `ink-testing-library` as a dependency.
 | `simulateTicks(node, { rounds, tick })` | Deterministic flicker probe                       | Replaces `setInterval` with a shim that fires once per `act()` round. No real timers; commit count is exactly `1 + rounds`. |
 | `render(node, { columns, rows })`       | Long-lived handle with `rerender` + `stdin`       | Use this to drive `useInput` from tests, change props, or read frame history.                                               |
 
+### Settings capture
+
+Use `bun run --cwd apps/cli capture:settings` to refresh review captures for
+the registry-driven settings shell. The harness writes main settings, relay URL
+input mode, and relay URL validation error frames under `apps/cli/test/__captures__/`.
+It is a review aid, not a default unit-test gate.
+
 ### `render()` shape
 
 Returns a `RenderHandle`:

@@ -1,0 +1,25 @@
+# settings-main · narrow (72×45)
+ Settings
+ series default  ·  discover auto  ·  series videasy  ·  anime allanime
+
+
+ GENERAL ──────────────────────────────────────────────────────────────
+ Launch mode and how much shortcut help the shell shows
+   ▸ Default startup mode ·  series
+   ▸ Footer hints ·  detailed
+
+ DISCOVER ─────────────────────────────────────────────────────────────
+ Home recommendations, /random, and startup discover tray
+   ○ off   Show discover on startup
+   ▸ Discover mode ·  auto
+   ▸ Discover tray size ·  24
+   ● on    Post-playback recommendations
+   ● on    Watch-time stats
+
+ PROVIDERS ────────────────────────────────────────────────────────────
+ Default resolver used before per-title overrides
+   ▸ Default provider ·  videasy
+   ▸ Anime provider ·  allanime
+   ▸ Series provider priority ·  videasy → vidlink → rivestream
+   ▸ Anime provider priority ·  allanime → miruro
+  ▼ ...

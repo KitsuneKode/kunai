@@ -19,20 +19,8 @@ import {
   NotificationActionRouter,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
-import type {
-  DiscoverMode,
-  KitsuneConfig,
-  QuitNearEndBehavior,
-  QuitNearEndThresholdMode,
-  RecoveryMode,
-} from "@/services/persistence/ConfigService";
-import {
-  toggleProviderRelayProvider,
-  type RelayCapableProviderId,
-} from "@/services/providers/provider-relay-settings";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { appReleasePageUrl } from "@/services/update/release-url";
-import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -68,27 +56,9 @@ import {
   notificationsFooterActions,
   queueFooterActions,
 } from "./overlay-footer-actions";
-import {
-  isOverlayCancelActive,
-  overlayDestructiveCancelMessage,
-  shouldHandleOverlayEscape,
-} from "./overlay-input-safety";
+import { isOverlayCancelActive, shouldHandleOverlayEscape } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
-import {
-  applyAnimeProviderOrder,
-  applySeriesProviderOrder,
-  buildSettingsChoiceOverlay,
-  buildSettingsOptions,
-  buildSettingsProviderOptions,
-  buildSettingsSummary,
-  type BrowseOverlay,
-  moveProviderInOrder,
-  OverlayPanel,
-  resolveAnimeProviderOrder,
-  resolveSeriesProviderOrder,
-  settingsEqual,
-  type SettingsChoiceValue,
-} from "./overlay-panel";
+import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
 import {
   buildAboutPanelLines,
   buildDiagnosticsPanelLines,
@@ -122,9 +92,7 @@ import {
 } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { type RootOwnedOverlay } from "./root-shell-state";
-import { applySettingsInlineToggle, isSettingsInlineToggle } from "./settings-inline-toggles";
-import { persistSettingsDraft } from "./settings-persist";
-import { applySettingsTextInput, isSettingsTextInputChoice } from "./settings-text-input";
+import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
@@ -278,31 +246,6 @@ function HelpShell({
       </Box>
     </Box>
   );
-}
-
-function nextSelectableIndex(
-  options: readonly { value: unknown }[],
-  from: number,
-  delta: number,
-): number {
-  const len = options.length;
-  if (len === 0) return 0;
-  let idx = (((from + delta) % len) + len) % len;
-  for (let i = 0; i < len; i++) {
-    const v = options[idx]?.value;
-    if (typeof v !== "string" || !v.startsWith("section:")) return idx;
-    idx = (((idx + delta) % len) + len) % len;
-  }
-  return from;
-}
-
-function getLatestPresenceErrorDetail(container: Container): string | null {
-  const event = container.diagnosticsStore
-    .getRecent(20)
-    .find((entry) => entry.category === "presence" && entry.context?.error);
-  const raw = event?.context?.error;
-  if (typeof raw !== "string" || raw.trim().length === 0) return null;
-  return raw.trim();
 }
 
 function readCachedHistoryNextReleases(
@@ -474,15 +417,7 @@ export function RootOverlayShell({
   const [scrollIndex, setScrollIndex] = useState(0);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(() =>
-    overlay.type === "provider_picker"
-      ? providerInitialIndex
-      : overlay.type === "settings"
-        ? nextSelectableIndex(
-            buildSettingsOptions(container.config.getRaw(), container.presence.getSnapshot()),
-            -1,
-            1,
-          )
-        : overlayInitialIndex,
+    overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
   );
   const [tracksNav, setTracksNav] = useState<TracksNavState>(() =>
     createInitialTracksNav({
@@ -513,55 +448,13 @@ export function RootOverlayShell({
         return;
       }
       setFilterQuery(nextValue);
-      if (overlay.type === "settings") {
-        const nextFiltered = rankFuzzyMatches(settingsPanel?.options ?? [], nextValue, (option) => [
-          { value: option.label, weight: 0 },
-          { value: option.detail, weight: 8 },
-        ]);
-        setSelectedIndex(nextSelectableIndex(nextFiltered, -1, 1));
-      } else {
-        setSelectedIndex(0);
-      }
+      setSelectedIndex(0);
     },
     onRedraw,
   });
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(() =>
-    overlay.type === "settings" ? container.config.getRaw() : null,
-  );
-  const commitSettingsDraft = useCallback(
-    (next: KitsuneConfig, options?: { readonly immediate?: boolean }) => {
-      setSettingsDraft(next);
-      if (options?.immediate) {
-        void persistSettingsDraft(container, next);
-      }
-    },
-    [container],
-  );
-  // Persist settings the moment they change — no separate save step. Debounce so
-  // rapid toggles coalesce; applySettingsToRuntime writes disk + syncs session state.
-  useEffect(() => {
-    if (!settingsDraft) return;
-    if (settingsEqual(settingsDraft, container.config.getRaw())) return;
-
-    const next = settingsDraft;
-    const timer = setTimeout(() => {
-      void (async () => {
-        const previous = container.config.getRaw();
-        if (settingsEqual(next, previous)) return;
-        const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
-        await applySettingsToRuntime({ container, next, previous });
-      })();
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [settingsDraft, container]);
-  const [settingsChoice, setSettingsChoice] = useState<SettingsChoiceValue | null>(null);
-  const [settingsParentIndex, setSettingsParentIndex] = useState(0);
-  const [settingsBusy, setSettingsBusy] = useState(false);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
   const [notificationActionDedupKey, setNotificationActionDedupKey] = useState<string | null>(null);
@@ -612,28 +505,6 @@ export function RootOverlayShell({
     projections: historyProjections,
     releaseSignals: historyReleaseSignals,
   };
-  const seriesProviderMetadata = sortProvidersByConfigPriority({
-    providers: container.providerRegistry
-      .getAll()
-      .map((provider) => provider.metadata)
-      .filter((metadata) => !metadata.isAnimeProvider),
-    priority: [rawConfig.provider, ...rawConfig.providerPriority],
-  });
-  const animeProviderMetadata = sortProvidersByConfigPriority({
-    providers: container.providerRegistry
-      .getAll()
-      .map((provider) => provider.metadata)
-      .filter((metadata) => metadata.isAnimeProvider),
-    priority: [rawConfig.animeProvider, ...rawConfig.animeProviderPriority],
-  });
-  const settingsSeriesProviderOptions = buildSettingsProviderOptions({
-    providers: seriesProviderMetadata,
-    currentProvider: settingsDraft?.provider ?? container.config.provider,
-  });
-  const settingsAnimeProviderOptions = buildSettingsProviderOptions({
-    providers: animeProviderMetadata,
-    currentProvider: settingsDraft?.animeProvider ?? container.config.animeProvider,
-  });
   const staticLines =
     overlay.type === "help"
       ? buildHelpPanelLines()
@@ -712,55 +583,13 @@ export function RootOverlayShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
-  const settingsPanel = useMemo(
-    () =>
-      overlay.type === "settings" && settingsDraft
-        ? settingsChoice
-          ? buildSettingsChoiceOverlay({
-              config: settingsDraft,
-              setting: settingsChoice,
-              seriesProviderOptions: settingsSeriesProviderOptions,
-              animeProviderOptions: settingsAnimeProviderOptions,
-              parentSelectedIndex: settingsParentIndex,
-            })
-          : ({
-              type: "settings",
-              title: "Settings",
-              subtitle: buildSettingsSummary(settingsDraft),
-              options: buildSettingsOptions(settingsDraft, container.presence.getSnapshot()),
-              filterQuery: "",
-              selectedIndex,
-              dirty: !settingsEqual(settingsDraft, container.config.getRaw()),
-              busy: settingsBusy,
-            } satisfies Extract<BrowseOverlay, { type: "settings" }>)
-        : null,
-    [
-      overlay.type,
-      settingsDraft,
-      settingsChoice,
-      settingsSeriesProviderOptions,
-      settingsAnimeProviderOptions,
-      settingsParentIndex,
-      selectedIndex,
-      settingsBusy,
-      container,
-    ],
-  );
-  const filteredSettingsOptions = useMemo(
-    () =>
-      rankFuzzyMatches(settingsPanel?.options ?? [], filterQuery, (option) => [
-        { value: option.label, weight: 0 },
-        { value: option.detail, weight: 8 },
-      ]),
-    [settingsPanel, filterQuery],
-  );
   const title = getRootOverlayTitle(overlay, state);
   const subtitle = getRootOverlaySubtitle({
     overlay,
     state,
-    settingsDraft,
+    settingsDraft: null,
     config: container.config.getRaw(),
-    settingsError,
+    settingsError: null,
   });
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
@@ -1121,32 +950,16 @@ export function RootOverlayShell({
       return;
     }
 
+    if (overlay.type === "settings") {
+      return;
+    }
+
     const cancelActive = isOverlayCancelActive({
       overlay,
-      settingsChoice,
-      filterQuery,
       pickerFilterQuery,
     });
 
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      const settingsDirty =
-        overlay.type === "settings" &&
-        settingsDraft !== null &&
-        !settingsEqual(settingsDraft, container.config.getRaw());
-      if (settingsDirty) {
-        if (!overlayClosePending) {
-          setOverlayClosePending(true);
-          setOverlayStatus(
-            overlayDestructiveCancelMessage({ overlay, settingsDirty: true }) ??
-              "Press Ctrl+C again to close",
-          );
-          return;
-        }
-        setOverlayClosePending(false);
-        setSettingsDraft(container.config.getRaw());
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-        return;
-      }
       setOverlayClosePending(false);
     } else if (overlayClosePending) {
       setOverlayClosePending(false);
@@ -1246,17 +1059,9 @@ export function RootOverlayShell({
       key.escape &&
       shouldHandleOverlayEscape({
         overlay,
-        settingsChoice,
-        filterQuery,
         pickerFilterQuery,
       })
     ) {
-      if (overlay.type === "settings" && settingsChoice) {
-        setSettingsChoice(null);
-        setFilterQuery("");
-        setSelectedIndex(settingsParentIndex);
-        return;
-      }
       if (overlay.type === "notifications" && notificationPlayConfirm) {
         setNotificationPlayConfirm(null);
         setFilterQuery("");
@@ -1291,17 +1096,12 @@ export function RootOverlayShell({
       // second Esc closes — same contract as the media pickers above.
       if (
         overlay.type === "history" ||
-        overlay.type === "settings" ||
         overlay.type === "provider_picker" ||
         overlay.type === "notifications"
       ) {
         if (resolveOverlayFilterEscape(filterQuery) === "clear-filter") {
           setFilterQuery("");
-          setSelectedIndex(
-            overlay.type === "settings"
-              ? nextSelectableIndex(settingsPanel?.options ?? [], -1, 1)
-              : 0,
-          );
+          setSelectedIndex(0);
           return;
         }
       }
@@ -1310,13 +1110,6 @@ export function RootOverlayShell({
       }
       if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
         resolveRootQueueSelection(null);
-      }
-      if (
-        overlay.type === "settings" &&
-        settingsDraft &&
-        !settingsEqual(settingsDraft, container.config.getRaw())
-      ) {
-        void persistSettingsDraft(container, settingsDraft);
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
@@ -1435,244 +1228,7 @@ export function RootOverlayShell({
         return;
       }
     }
-    if (
-      overlay.type === "settings" &&
-      settingsDraft &&
-      (settingsChoice === "providerPriority" || settingsChoice === "animeProviderPriority")
-    ) {
-      const reorderDirection =
-        input === "[" || (key.shift && key.upArrow)
-          ? "up"
-          : input === "]" || (key.shift && key.downArrow)
-            ? "down"
-            : null;
-      if (reorderDirection) {
-        const picked = filteredSettingsOptions[selectedIndex]?.value;
-        if (!picked) return;
-        const isAnime = settingsChoice === "animeProviderPriority";
-        const order = isAnime
-          ? resolveAnimeProviderOrder(settingsDraft)
-          : resolveSeriesProviderOrder(settingsDraft);
-        const moved = moveProviderInOrder(order, picked, reorderDirection);
-        if (moved.join("|") !== order.join("|")) {
-          setSettingsDraft(
-            isAnime
-              ? applyAnimeProviderOrder(settingsDraft, moved)
-              : applySeriesProviderOrder(settingsDraft, moved),
-          );
-          setSettingsError(null);
-        }
-        return;
-      }
-      if (key.return) {
-        return;
-      }
-    }
     if (key.return) {
-      if (overlay.type === "settings") {
-        if (settingsChoice && settingsDraft && filterQuery.trim()) {
-          const typed = applySettingsTextInput(settingsChoice, settingsDraft, filterQuery);
-          if (typed) {
-            if (typed.ok) {
-              setSettingsDraft(typed.next);
-              setSettingsChoice(null);
-              setFilterQuery("");
-              setSelectedIndex(settingsParentIndex);
-              setSettingsError(typed.message);
-            } else {
-              setSettingsError(typed.message);
-            }
-            return;
-          }
-        }
-        const picked = filteredSettingsOptions[selectedIndex];
-        if (!picked || !settingsDraft) {
-          return;
-        }
-        if (picked.value.startsWith("section:")) {
-          return;
-        }
-        if (settingsChoice) {
-          const next = { ...settingsDraft };
-          if (settingsChoice === "defaultMode") {
-            next.defaultMode = picked.value as "series" | "anime";
-          } else if (settingsChoice === "provider") {
-            next.provider = picked.value;
-          } else if (settingsChoice === "animeProvider") {
-            next.animeProvider = picked.value;
-          } else if (settingsChoice === "animeAudio") {
-            next.animeLanguageProfile = {
-              ...next.animeLanguageProfile,
-              audio: picked.value,
-            };
-          } else if (settingsChoice === "animeSubtitle") {
-            next.animeLanguageProfile = {
-              ...next.animeLanguageProfile,
-              subtitle: picked.value,
-            };
-          } else if (settingsChoice === "seriesAudio") {
-            next.seriesLanguageProfile = {
-              ...next.seriesLanguageProfile,
-              audio: picked.value,
-            };
-          } else if (settingsChoice === "seriesSubtitle") {
-            next.seriesLanguageProfile = {
-              ...next.seriesLanguageProfile,
-              subtitle: picked.value,
-            };
-          } else if (settingsChoice === "movieAudio") {
-            next.movieLanguageProfile = {
-              ...next.movieLanguageProfile,
-              audio: picked.value,
-            };
-          } else if (settingsChoice === "movieSubtitle") {
-            next.movieLanguageProfile = {
-              ...next.movieLanguageProfile,
-              subtitle: picked.value,
-            };
-          } else if (settingsChoice === "animeTitlePreference") {
-            next.animeTitlePreference = picked.value as typeof next.animeTitlePreference;
-          } else if (settingsChoice === "footerHints") {
-            next.footerHints = picked.value as "detailed" | "minimal";
-          } else if (settingsChoice === "discoverMode") {
-            next.discoverMode = picked.value as DiscoverMode;
-          } else if (settingsChoice === "discoverItemLimit") {
-            next.discoverItemLimit = Number(picked.value);
-          } else if (settingsChoice === "recoveryMode") {
-            next.recoveryMode = picked.value as RecoveryMode;
-          } else if (settingsChoice === "startupPriority") {
-            next.startupPriority = picked.value as StartupPriority;
-          } else if (settingsChoice === "autoCleanupGraceDays") {
-            next.autoCleanupGraceDays = Number(picked.value);
-          } else if (settingsChoice === "downloadPath") {
-            if (picked.value === "__clear__") {
-              next.downloadPath = "";
-            }
-          } else if (settingsChoice === "presenceProvider") {
-            next.presenceProvider = picked.value as typeof next.presenceProvider;
-          } else if (settingsChoice === "presencePrivacy") {
-            next.presencePrivacy = picked.value as typeof next.presencePrivacy;
-          } else if (settingsChoice === "presenceDiscordClientId") {
-            if (picked.value === "__clear__" || picked.value === "__env__") {
-              next.presenceDiscordClientId = "";
-            }
-          } else if (settingsChoice === "presenceDiscordOpenUrl") {
-            if (picked.value === "__clear__") {
-              next.presenceDiscordOpenUrl = "";
-            }
-          } else if (settingsChoice === "videasySessionToken") {
-            if (picked.value === "__clear__" || picked.value === "__env__") {
-              next.videasySessionToken = "";
-            }
-          } else if (settingsChoice === "providerRelayBaseUrl") {
-            if (picked.value === "__clear__") {
-              next.providerRelay = { ...next.providerRelay, baseUrl: "" };
-            }
-          } else if (settingsChoice === "providerRelayToken") {
-            if (picked.value === "__clear__" || picked.value === "__env__") {
-              next.providerRelay = { ...next.providerRelay, token: "" };
-            }
-          } else if (settingsChoice === "providerRelayProviders") {
-            next.providerRelay = toggleProviderRelayProvider(
-              settingsDraft,
-              picked.value as RelayCapableProviderId,
-            );
-            setSettingsDraft(next);
-            setSettingsError(null);
-            return;
-          } else if (settingsChoice === "videasyAppId") {
-            next.videasyAppId = picked.value === "bc-frontend" ? "bc-frontend" : "vidking";
-          } else if (settingsChoice === "quitNearEndBehavior") {
-            next.quitNearEndBehavior = picked.value as QuitNearEndBehavior;
-          } else if (settingsChoice === "quitNearEndThresholdMode") {
-            next.quitNearEndThresholdMode = picked.value as QuitNearEndThresholdMode;
-          }
-          setSettingsDraft(next);
-          setSettingsChoice(null);
-          setFilterQuery("");
-          setSelectedIndex(settingsParentIndex);
-          setSettingsError(null);
-          return;
-        }
-        if (isSettingsInlineToggle(picked.value)) {
-          const next = applySettingsInlineToggle(settingsDraft, picked.value);
-          if (next) {
-            commitSettingsDraft(next, { immediate: true });
-            setSettingsError(null);
-            return;
-          }
-        }
-        if (picked.value === "presenceConnection") {
-          if (settingsDraft.presenceProvider !== "discord") {
-            setSettingsError("Set Presence to Discord first, then retry this action.");
-            return;
-          }
-          const currentSnapshot = container.presence.getSnapshot();
-          const shouldDisconnect = currentSnapshot.status === "ready";
-          setSettingsBusy(true);
-          setSettingsError(null);
-          void (async () => {
-            try {
-              if (shouldDisconnect) {
-                const snapshot = await container.presence.disconnect("settings-disconnect");
-                setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
-              } else {
-                const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
-                await applySettingsToRuntime({
-                  container,
-                  next: settingsDraft,
-                  previous: container.config.getRaw(),
-                });
-                const snapshot = await container.presence.connect();
-                setSettingsDraft(container.config.getRaw());
-                if (snapshot.status === "ready") {
-                  setSettingsError(`Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`);
-                } else {
-                  const errorDetail = getLatestPresenceErrorDetail(container);
-                  setSettingsError(
-                    errorDetail
-                      ? `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}  ·  ${errorDetail}`
-                      : `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}  ·  Make sure Discord desktop is running, then retry connect.`,
-                  );
-                }
-              }
-            } catch (error) {
-              setSettingsError(
-                `Failed to ${shouldDisconnect ? "disconnect" : "connect"} Discord presence: ${String(error)}`,
-              );
-            } finally {
-              setSettingsBusy(false);
-            }
-          })();
-          return;
-        }
-        if (picked.value === "clearCache") {
-          void (async () => {
-            const { handleShellAction } = await import("./workflows");
-            await handleShellAction({ action: "clear-cache", container });
-          })();
-          return;
-        }
-        if (picked.value === "clearHistory") {
-          void (async () => {
-            const { handleShellAction } = await import("./workflows");
-            await handleShellAction({ action: "clear-history", container });
-          })();
-          return;
-        }
-        if (picked.value === "presenceStatus") {
-          setSettingsError(
-            `Discord presence: ${container.presence.getSnapshot().status}  ·  ${container.presence.getSnapshot().detail}`,
-          );
-          return;
-        }
-        setSettingsChoice(picked.value as SettingsChoiceValue);
-        setSettingsParentIndex(selectedIndex);
-        setFilterQuery("");
-        setSelectedIndex(0);
-        setSettingsError(null);
-        return;
-      }
       if (overlay.type === "provider_picker") {
         const picked = filteredProviderOptions[selectedIndex]?.value;
         if (picked) {
@@ -1763,20 +1319,11 @@ export function RootOverlayShell({
                   ? notificationActionDedupKey
                     ? filteredNotificationActionOptions.length
                     : filteredNotificationOptions.length
-                  : overlay.type === "settings"
-                    ? filteredSettingsOptions.length
-                    : filteredGenericPickerOptions.length;
+                  : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
-          if (overlay.type === "settings") {
-            const delta = key.upArrow ? -1 : 1;
-            setSelectedIndex((current) =>
-              nextSelectableIndex(filteredSettingsOptions, current, delta),
-            );
-          } else {
-            setSelectedIndex((current) =>
-              key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
-            );
-          }
+          setSelectedIndex((current) =>
+            key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
+          );
         }
       } else {
         if (key.upArrow) {
@@ -1788,32 +1335,6 @@ export function RootOverlayShell({
       return;
     }
     if (isRootChoiceOverlay(overlay)) {
-      if (overlay.type === "settings" && input === "\x13") {
-        if (
-          !settingsDraft ||
-          settingsBusy ||
-          settingsEqual(settingsDraft, container.config.getRaw())
-        ) {
-          return;
-        }
-        setSettingsBusy(true);
-        setSettingsError(null);
-        void (async () => {
-          try {
-            const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
-            await applySettingsToRuntime({
-              container,
-              next: settingsDraft,
-              previous: container.config.getRaw(),
-            });
-            container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-          } catch (error) {
-            setSettingsBusy(false);
-            setSettingsError(`Failed to save settings: ${String(error)}`);
-          }
-        })();
-        return;
-      }
       // Episode picker: `m` TOGGLES the highlighted episode watched/unwatched
       // (writes completed history via the shared action router — single source of
       // truth). Intercepted before the filter editor so it is an action, not a
@@ -1854,24 +1375,6 @@ export function RootOverlayShell({
                 alreadyWatched ? "unwatched" : "watched"
               }`,
             );
-          }
-        }
-        return;
-      }
-      if (
-        overlay.type === "settings" &&
-        !settingsChoice &&
-        settingsDraft &&
-        input === " " &&
-        !key.ctrl &&
-        !key.meta
-      ) {
-        const picked = filteredSettingsOptions[selectedIndex]?.value;
-        if (picked && isSettingsInlineToggle(picked)) {
-          const next = applySettingsInlineToggle(settingsDraft, picked);
-          if (next) {
-            commitSettingsDraft(next, { immediate: true });
-            setSettingsError(null);
           }
         }
         return;
@@ -1930,51 +1433,37 @@ export function RootOverlayShell({
               ),
               busy: false,
             }
-          : overlay.type === "settings" && settingsPanel
+          : overlay.type === "season_picker" ||
+              overlay.type === "episode_picker" ||
+              overlay.type === "subtitle_picker" ||
+              overlay.type === "recommendation_picker"
             ? {
-                ...settingsPanel,
+                type: "episode-picker",
+                title,
                 subtitle: effectiveSubtitle,
-                options: filteredSettingsOptions,
-                filterQuery,
+                options: filteredGenericPickerOptions,
+                filterQuery: pickerFilterQuery,
                 selectedIndex: Math.min(
-                  selectedIndex,
-                  Math.max(filteredSettingsOptions.length - 1, 0),
+                  pickerSelectedIndex,
+                  Math.max(filteredGenericPickerOptions.length - 1, 0),
                 ),
-                busy: settingsBusy,
+                busy: false,
               }
-            : overlay.type === "season_picker" ||
-                overlay.type === "episode_picker" ||
-                overlay.type === "subtitle_picker" ||
-                overlay.type === "recommendation_picker"
+            : overlay.type === "help" || overlay.type === "about" || overlay.type === "diagnostics"
               ? {
-                  type: "episode-picker",
+                  type: overlay.type,
                   title,
                   subtitle: effectiveSubtitle,
-                  options: filteredGenericPickerOptions,
-                  filterQuery: pickerFilterQuery,
-                  selectedIndex: Math.min(
-                    pickerSelectedIndex,
-                    Math.max(filteredGenericPickerOptions.length - 1, 0),
-                  ),
-                  busy: false,
+                  lines,
+                  scrollIndex,
                 }
-              : overlay.type === "help" ||
-                  overlay.type === "about" ||
-                  overlay.type === "diagnostics"
-                ? {
-                    type: overlay.type,
-                    title,
-                    subtitle: effectiveSubtitle,
-                    lines,
-                    scrollIndex,
-                  }
-                : {
-                    type: "help",
-                    title: "Help",
-                    subtitle: "Global commands, editing, filtering, and shell behavior",
-                    lines: buildHelpPanelLines(),
-                    scrollIndex: 0,
-                  };
+              : {
+                  type: "help",
+                  title: "Help",
+                  subtitle: "Global commands, editing, filtering, and shell behavior",
+                  lines: buildHelpPanelLines(),
+                  scrollIndex: 0,
+                };
 
   if (overlay.type === "downloads") {
     return wrapOverlayLayout(
@@ -2041,6 +1530,52 @@ export function RootOverlayShell({
             ]}
             mode="minimal"
             commandMode={commandMode}
+          />
+        </Box>
+      </Box>,
+    );
+  }
+
+  if (overlay.type === "settings") {
+    return wrapOverlayLayout(
+      overlayLayout,
+      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
+        <Box flexDirection="column" flexGrow={1}>
+          <ContextStrip
+            items={[
+              { label: "Settings", tone: "info" },
+              {
+                label: overlayStatus ?? "Configure providers, relay, playback, and shell behavior",
+                tone: "neutral",
+              },
+            ]}
+          />
+          <SettingsShell
+            container={container}
+            width={overlayLayout.contentColumns}
+            maxRows={maxLines}
+            commandMode={commandMode}
+            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+            onStatus={setOverlayStatus}
+            onRedraw={onRedraw}
+          />
+        </Box>
+
+        <Box flexDirection="column">
+          {commandMode ? (
+            <CommandPalette
+              input={commandInput}
+              cursor={commandCursor}
+              commands={commands}
+              highlightedIndex={highlightedIndex}
+            />
+          ) : null}
+          <ShellFooter
+            taskLabel="Settings"
+            actions={footerActions}
+            mode="detailed"
+            commandMode={commandMode}
+            terminalWidth={cols}
           />
         </Box>
       </Box>,
@@ -2284,11 +1819,9 @@ export function RootOverlayShell({
                     ? notificationActionDedupKey
                       ? `${filteredNotificationActionOptions.length} actions`
                       : `${filteredNotificationOptions.length} options`
-                    : overlay.type === "settings"
-                      ? `${filteredSettingsOptions.length} options`
-                      : isRootMediaPickerOverlay(overlay)
-                        ? `${filteredGenericPickerOptions.length} options`
-                        : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
+                    : isRootMediaPickerOverlay(overlay)
+                      ? `${filteredGenericPickerOptions.length} options`
+                      : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
             },
           ]}
         />
@@ -2316,15 +1849,9 @@ export function RootOverlayShell({
                 ? notificationActionDedupKey
                   ? "Notification actions  ·  Enter runs, Esc returns"
                   : "Notifications  ·  Enter acts, a actions, x dismisses"
-                : overlay.type === "settings"
-                  ? settingsChoice
-                    ? isSettingsTextInputChoice(settingsChoice)
-                      ? "Settings input  ·  Type value, Enter to save draft, Esc returns"
-                      : "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
-                    : "Settings  ·  Enter to edit, Space toggles switches, auto-saves, Esc closes"
-                  : isRootMediaPickerOverlay(overlay)
-                    ? title
-                    : `${title}  ·  Esc closes and returns to the previous shell state`
+                : isRootMediaPickerOverlay(overlay)
+                  ? title
+                  : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
           mode="detailed"

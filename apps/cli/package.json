@@ -65,6 +65,7 @@
     "test:vhs:offline": "vhs test/vhs/offline-library.tape",
     "test:vhs:palette": "vhs test/vhs/command-palette.tape",
     "test:vhs:all": "bun run test:vhs:setup && bun run test:vhs:offline && bun run test:vhs:palette",
+    "capture:settings": "bun run test/harness/capture-settings.tsx",
     "typecheck": "bun tsc --noEmit",
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",

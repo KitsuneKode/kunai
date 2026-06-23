@@ -1,0 +1,9 @@
+# settings-relay-url-input · medium (100×45)
+ Settings
+ series default  ·  discover auto  ·  series videasy  ·  anime allanime
+
+ Relay server URL
+ Type your relay server URL, then press Enter
+
+ Input: https://relay-server-two.vercel.app▌
+ Saved: https://relay.example.com  ·  Paste supported · Enter save · Esc cancel · Ctrl+U clear

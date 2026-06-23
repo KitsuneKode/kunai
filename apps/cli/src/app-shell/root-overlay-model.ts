@@ -1,8 +1,8 @@
 import type { SessionState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
-import { buildSettingsSummary } from "./overlay-panel";
 import type { RootOwnedOverlay } from "./root-shell-state";
+import { buildSettingsSummary } from "./settings/build-page";
 import type { ShellPickerOption } from "./types";
 
 export function isRootChoiceOverlay(

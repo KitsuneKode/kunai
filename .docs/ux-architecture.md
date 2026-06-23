@@ -86,6 +86,11 @@ This applies especially to:
 
 Search query and command input remain valid uses of text fields.
 
+Settings secret and URL fields use a dedicated `inputMode` buffer in
+`apps/cli/src/app-shell/settings/` — never the shared picker `filterQuery`.
+Enter on a text row opens edit mode; a second Enter commits; Esc cancels.
+Rows overridden by env vars show an `(env)` badge and cannot be edited in-app.
+
 ## Panels And Overlays
 
 Preferred overlay or panel flows:
@@ -169,7 +174,9 @@ Short-lived playback feedback should use mpv OSD plus shell status text for non-
 
 ## Settings Behavior
 
-- prefer staged edits with `Save` and `Cancel`
+- settings apply immediately after a row interaction commits
+- `Esc` cancels active text input, backs out of submenus, or closes the
+  settings shelf; it does not roll back values already applied to config
 - label settings by effect timing:
   - immediate
   - next playback

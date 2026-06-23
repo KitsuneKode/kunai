@@ -1,0 +1,173 @@
+import type { SettingRowDef, SettingsRegistryContext } from "../types";
+import {
+  AUTO_CLEANUP_GRACE_DAY_OPTIONS,
+  QUIT_NEAR_END_BEHAVIOR_OPTIONS,
+  QUIT_THRESHOLD_MODE_OPTIONS,
+  RECOVERY_MODE_OPTIONS,
+  STARTUP_PRIORITY_OPTIONS,
+} from "./shared";
+
+export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
+  return [
+    {
+      kind: "section",
+      id: "section:playback",
+      label: "Playback",
+      detail: "Autoplay chain, intro skip, recovery, memory panel, and offline downloads",
+    },
+    {
+      kind: "boolean",
+      id: "showMemory",
+      label: "Memory panel",
+      detail:
+        "Hidden by default. Press m during playback for app, mpv, total, heap, and swap usage",
+      read: (config) => config.showMemory,
+      write: (config, value) => ({ ...config, showMemory: value }),
+    },
+    {
+      kind: "enum",
+      id: "recoveryMode",
+      label: "Recovery mode",
+      detail: "Choose how aggressively Kunai retries and switches providers",
+      options: RECOVERY_MODE_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.recoveryMode,
+      write: (config, value) => ({ ...config, recoveryMode: value as typeof config.recoveryMode }),
+    },
+    {
+      kind: "enum",
+      id: "startupPriority",
+      label: "Startup priority",
+      detail: "Choose how long provider startup waits for richer stream choices",
+      options: STARTUP_PRIORITY_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.startupPriority,
+      write: (config, value) => ({
+        ...config,
+        startupPriority: value as typeof config.startupPriority,
+      }),
+    },
+    {
+      kind: "section",
+      id: "section:offline-continuation",
+      label: "Offline continuation",
+      detail: "Enable Keep watching offline per title; streaming never downloads automatically",
+    },
+    {
+      kind: "boolean",
+      id: "downloadsEnabled",
+      label: "Offline downloads",
+      detail: "Enable local completed downloads and the offline library surface",
+      read: (config) => config.downloadsEnabled,
+      write: (config, value) => ({ ...config, downloadsEnabled: value }),
+    },
+    {
+      kind: "boolean",
+      id: "powerSaverMode",
+      label: "Power Saver",
+      detail: "Pause speculative prefetch, passive refresh, artwork warming, and runway refills",
+      read: (config) => config.powerSaverMode,
+      write: (config, value) => ({ ...config, powerSaverMode: value }),
+    },
+    {
+      kind: "boolean",
+      id: "autoCleanupWatched",
+      label: "Auto-cleanup",
+      detail: "Flag watched completed downloads for explicit cleanup after the grace period",
+      read: (config) => config.autoCleanupWatched,
+      write: (config, value) => ({ ...config, autoCleanupWatched: value }),
+    },
+    {
+      kind: "enum",
+      id: "autoCleanupGraceDays",
+      label: "Cleanup grace",
+      detail: "How long watched downloads stay before they appear as cleanup candidates",
+      options: AUTO_CLEANUP_GRACE_DAY_OPTIONS,
+      presentation: "submenu",
+      read: (config) => String(config.autoCleanupGraceDays),
+      write: (config, value) => ({
+        ...config,
+        autoCleanupGraceDays: Number(value) || config.autoCleanupGraceDays,
+      }),
+    },
+    {
+      kind: "text",
+      id: "downloadPath",
+      label: "Download path",
+      detail: "Absolute path override for completed download files",
+      placeholder: "Type an absolute download path, then press Enter",
+      read: (config) => config.downloadPath,
+      apply: (config, value) => ({ ...config, downloadPath: value.trim() }),
+      validate: (value) =>
+        !value.trim() || value.trim().startsWith("/")
+          ? null
+          : "Type an absolute download path, or clear to use default.",
+    },
+    {
+      kind: "boolean",
+      id: "autoNext",
+      label: "Autoplay next",
+      detail: "Close mpv on EOF and continue through the next available released episode",
+      read: (config) => config.autoNext,
+      write: (config, value) => ({ ...config, autoNext: value }),
+    },
+    {
+      kind: "boolean",
+      id: "resumeStartChoicePrompt",
+      label: "Resume vs start-over prompt",
+      detail: "When autoplay resumes mid-episode, show mpv overlay (R/O) before seeking",
+      read: (config) => config.resumeStartChoicePrompt,
+      write: (config, value) => ({ ...config, resumeStartChoicePrompt: value }),
+    },
+    {
+      kind: "enum",
+      id: "quitNearEndBehavior",
+      label: "Quit near end",
+      detail: "Whether quitting mpv near the natural end can still trigger auto-next",
+      options: QUIT_NEAR_END_BEHAVIOR_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.quitNearEndBehavior,
+      write: (config, value) => ({
+        ...config,
+        quitNearEndBehavior: value as typeof config.quitNearEndBehavior,
+      }),
+    },
+    {
+      kind: "enum",
+      id: "quitNearEndThresholdMode",
+      label: "Near-end detection",
+      detail: "How Kunai decides you were close enough to the end for quit + completion",
+      options: QUIT_THRESHOLD_MODE_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.quitNearEndThresholdMode,
+      write: (config, value) => ({
+        ...config,
+        quitNearEndThresholdMode: value as typeof config.quitNearEndThresholdMode,
+      }),
+    },
+    {
+      kind: "boolean",
+      id: "skipRecap",
+      label: "Skip recaps",
+      detail: "Auto-skip recap segments when IntroDB timing exists",
+      read: (config) => config.skipRecap,
+      write: (config, value) => ({ ...config, skipRecap: value }),
+    },
+    {
+      kind: "boolean",
+      id: "skipIntro",
+      label: "Skip intros",
+      detail: "Auto-skip intro segments when IntroDB timing exists",
+      read: (config) => config.skipIntro,
+      write: (config, value) => ({ ...config, skipIntro: value }),
+    },
+    {
+      kind: "boolean",
+      id: "skipCredits",
+      label: "Skip credits",
+      detail: "Auto-skip credits segments when IntroDB or AniSkip timing exists",
+      read: (config) => config.skipCredits,
+      write: (config, value) => ({ ...config, skipCredits: value }),
+    },
+  ];
+}
