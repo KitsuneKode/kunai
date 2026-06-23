@@ -11,6 +11,7 @@ export type AnimeProviderMappingContext = {
   readonly providerRegistry: ProviderRegistry;
   readonly signal?: AbortSignal;
   readonly searchProviderNative?: typeof searchAllManga;
+  readonly persistProviderNative?: (nativeId: string) => void;
 };
 
 const ALLMANGA_API_URL = "https://api.allanime.day/api";
@@ -66,10 +67,20 @@ export async function mapAnimeDiscoveryResultToProviderNative(
       ).catch(() => []);
       const idMatch = matches.find((r) => r.aniListId === discoveryAniListId);
       if (idMatch)
-        return mergeAniListDiscoveryWithProviderResult(result, idMatch, context.providerId);
+        return mergeAniListDiscoveryWithProviderResult(
+          result,
+          idMatch,
+          context.providerId,
+          context,
+        );
       const titleMatch = chooseProviderSearchMatch(result, matches);
       if (titleMatch)
-        return mergeAniListDiscoveryWithProviderResult(result, titleMatch, context.providerId);
+        return mergeAniListDiscoveryWithProviderResult(
+          result,
+          titleMatch,
+          context.providerId,
+          context,
+        );
     }
   }
 
@@ -98,12 +109,14 @@ export async function mapAnimeDiscoveryResultToProviderNative(
           result,
           toAllMangaResult(idMatch),
           context.providerId,
+          context,
         );
       }
     }
 
     const match = chooseProviderSearchMatch(result, providerResults.map(toAllMangaResult));
-    if (match) return mergeAniListDiscoveryWithProviderResult(result, match, context.providerId);
+    if (match)
+      return mergeAniListDiscoveryWithProviderResult(result, match, context.providerId, context);
   }
 
   return result;
@@ -204,6 +217,7 @@ function mergeAniListDiscoveryWithProviderResult(
   discovery: SearchResult,
   providerResult: AllMangaSearchResult,
   providerId: string,
+  context: AnimeProviderMappingContext,
 ): SearchResult {
   const discoveryAniListId = parseInt(discovery.id, 10);
   const catalogIds = {
@@ -217,6 +231,7 @@ function mergeAniListDiscoveryWithProviderResult(
         : discovery.externalIds?.malId,
   };
   const externalIds = mergeProviderNativeId(catalogIds, providerId, providerResult.id);
+  context.persistProviderNative?.(providerResult.id);
 
   return {
     ...discovery,

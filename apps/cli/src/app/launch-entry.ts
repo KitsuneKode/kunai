@@ -1,4 +1,5 @@
 import { applyTitleProviderPreferenceToSession } from "@/app/playback-provider-switch";
+import { persistProviderNativeMapping } from "@/app/title-identity-persist";
 import type { Container } from "@/container";
 import { isAnimeContent } from "@/domain/media/content-kind";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
@@ -102,7 +103,7 @@ function isAnimeHistoryEntry(entry: HistoryProgress): boolean {
 }
 
 export async function prepareReplayTitleForProvider(
-  container: Pick<Container, "config" | "providerRegistry" | "stateManager">,
+  container: Pick<Container, "config" | "providerRegistry" | "stateManager" | "historyRepository">,
   title: TitleInfo,
   entry?: HistoryProgress,
 ): Promise<TitleInfo> {
@@ -140,11 +141,30 @@ export async function prepareReplayTitleForProvider(
     providerId: activeProvider,
     animeLanguageProfile: container.config.animeLanguageProfile,
     providerRegistry: container.providerRegistry,
+    persistProviderNative: (nativeId) => {
+      persistProviderNativeMapping(
+        container.historyRepository,
+        title,
+        activeProvider,
+        nativeId,
+        "anime",
+      );
+    },
   });
-  return {
+  const replayTitle = {
     ...titleInfoFromSearchResult(mapped, title.name),
     launchSource: title.launchSource ?? "history",
   };
+  if (mapped.id !== discovery.id && mapped.id !== title.id) {
+    persistProviderNativeMapping(
+      container.historyRepository,
+      { ...title, externalIds: mapped.externalIds ?? title.externalIds },
+      activeProvider,
+      mapped.id,
+      "anime",
+    );
+  }
+  return replayTitle;
 }
 
 export function episodeFromHistorySelection(
