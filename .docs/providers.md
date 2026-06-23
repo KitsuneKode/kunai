@@ -95,6 +95,16 @@ bun run test:live:relay-allanime
 
 Use `apps/relay-server/README.md` for Vercel deployment and security notes.
 
+### Endpoint quarantine (dead mirrors)
+
+Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endpointHealth`:
+
+- **route-dead** (HTTP 404/410): quarantine ~24h in `provider_endpoint_health` (cache DB).
+- **server-error** (persistent 5xx across ≥2 distinct titles): quarantine ~1h.
+- **transient** (timeout/network): in-memory cooldown only; never persisted.
+
+`runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.
+
 Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.

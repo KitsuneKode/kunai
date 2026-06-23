@@ -9,7 +9,8 @@
 - **Source presentation:** providers emit `source.label` (themed name), `metadata.flavorArchetype` (subtitle), stable `source:videasy:videasy:{endpoint}` ids — shell does not map endpoints.
 - **Title health:** advisory only; does not reorder resolve (see `.docs/title-provider-health-and-cache-reset.md`).
 - **Query parity:** `tmdbId`, season/episode, `year`, `imdbId`, `_t` on Videasy requests.
-- **Handoff docs:** `.docs/flavor-naming-and-source-inventory-ux.md`, `.plans/vidking-videasy-health-and-sources-implementation.md`
+- **Preferred source fallback:** when a pinned flavor fails, resolve falls back to Phase A mirrors before embed-referer retry.
+- **Endpoint quarantine:** deprecated routes (`1movies`/Sanji) are seeded into shared `endpointHealth`; HTTP 404/410 and persistent 5xx are quarantined at runtime (persisted in cache DB). Preferred pins on quarantined endpoints are cleared automatically.
 
 ## Summary
 

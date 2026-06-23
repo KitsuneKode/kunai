@@ -194,3 +194,4 @@ After the table:
 - Do not bypass Cloudflare protections. Use public browser-visible evidence for research and direct supported endpoints for runtime.
 - Do not switch production to `theanimecommunity.com` as a stream backend on current evidence.
 - Do not assume `kiwi = hardsub` and `bee = softsub` forever; let source payloads and subtitles decide.
+- **Runtime:** when `audioCategory === "sub"` and the pipe returns **zero** subtitle tracks, Kunai sets `subtitleDelivery: "hardcoded"` plus `hardSubLanguage` from the user subtitle preference (default `en`). When pipe subtitles exist, delivery is `embedded`/`external` with languages parsed from each track — no duplicate external rows for the same embedded tracks.
