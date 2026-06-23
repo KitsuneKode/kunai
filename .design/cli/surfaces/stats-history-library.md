@@ -195,6 +195,9 @@ Preview rail should show:
 - last watched
 - next available episode if known
 - primary action: continue/open
+- when both local and stream are available: quiet `[l] local · [s] stream` override under the resume card
+
+Continue source default is controlled by `continueSourcePreference` in settings (`auto`, `local`, `stream`, `ask`). `/continue` opens this tab directly.
 
 Footer:
 
