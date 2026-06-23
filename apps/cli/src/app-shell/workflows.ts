@@ -833,7 +833,7 @@ async function handleHistory(container: Container): Promise<"handled"> {
 }
 
 async function handleContinue(container: Container): Promise<"handled"> {
-  await openRootOwnedOverlay(container, { type: "continue" });
+  await openRootOwnedOverlay(container, { type: "history", initialFilterMode: "watching" });
   return "handled";
 }
 

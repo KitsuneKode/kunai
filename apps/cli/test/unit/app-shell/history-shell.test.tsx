@@ -29,6 +29,7 @@ function row(
     badge,
     progress: pct === null ? null : { percentage: pct, completed: false },
     resumeAction: "resume where you left off",
+    dualSourceAvailable: false,
   };
 }
 

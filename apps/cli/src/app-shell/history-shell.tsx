@@ -162,7 +162,12 @@ export function HistoryShell({
       ) : null}
 
       {selectedRow ? (
-        <ResumeCard label={selectedRow.resumeAction} action="↵ enter" width={effectiveRowWidth} />
+        <Box flexDirection="column">
+          <ResumeCard label={selectedRow.resumeAction} action="↵ enter" width={effectiveRowWidth} />
+          {selectedRow.dualSourceAvailable ? (
+            <Text color={palette.dim}>[l] local · [s] stream</Text>
+          ) : null}
+        </Box>
       ) : null}
     </Box>
   );

@@ -7,19 +7,13 @@ import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
-import type { MediaActionId } from "@/domain/media/media-action-policy";
-import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
-import type {
-  ContinuationHubPrimaryAction,
-  ContinuationHubRow,
-  ContinuationSignals,
-} from "@/services/continuation/ContinueWatchingService";
+import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   historyContentType,
   readLatestHistoryByTitle,
@@ -36,8 +30,6 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
-import { ContinueHubShell } from "./continue-hub-shell";
-import { buildContinueHubView } from "./continue-hub-view";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
 import {
@@ -366,91 +358,6 @@ function readCachedHistoryProjections(
   return projections;
 }
 
-function readContinueSignalsFromHistoryContext(
-  titleId: string,
-  context: HistoryPickerOptionsContext,
-): ContinuationSignals {
-  const nextRelease = context.nextReleases?.get(titleId);
-  const release = context.releaseSignals?.get(titleId);
-  const projection = context.projections?.get(titleId);
-  return {
-    nextRelease:
-      nextRelease?.season !== undefined && nextRelease.episode !== undefined
-        ? {
-            season: nextRelease.season,
-            episode: nextRelease.episode,
-            released: nextRelease.status === "released",
-            availableAt: nextRelease.releaseAt ?? undefined,
-          }
-        : null,
-    releaseProgress:
-      release && release.newEpisodeCount > 0 ? { newEpisodeCount: release.newEpisodeCount } : null,
-    offline:
-      projection?.kind === "offline-ready"
-        ? {
-            enrolled: true,
-            readyNextEpisodes: [
-              {
-                season: projection.season,
-                episode: projection.episode,
-                jobId:
-                  projection.primaryAction?.kind === "play-local"
-                    ? projection.primaryAction.jobId
-                    : undefined,
-              },
-            ],
-          }
-        : null,
-  };
-}
-
-function rootHistorySelectionFromContinueRow(
-  row: ContinuationHubRow,
-  action: ContinuationHubPrimaryAction | undefined,
-): RootHistorySelection | null {
-  if (!action || action.kind === "ask-inline") return null;
-  const selection: RootHistorySelection = {
-    titleId: row.id,
-    entry: row.target.sourceEntry,
-  };
-  if (row.target.mediaKind !== "series") return selection;
-  if (action.kind === "play-local") {
-    return {
-      ...selection,
-      localJobId: action.jobId,
-      targetEpisode: {
-        season: action.target.season ?? 1,
-        episode: action.target.episode ?? 1,
-        reason: "offline-ready",
-      },
-    };
-  }
-  if (action.kind === "resume-online" || action.kind === "select-online") {
-    return {
-      ...selection,
-      targetEpisode: {
-        season: action.target.season ?? 1,
-        episode: action.target.episode ?? 1,
-        reason: action.kind === "resume-online" ? "resume" : "new-episode",
-      },
-    };
-  }
-  return selection;
-}
-
-function mediaItemFromContinueRow(row: ContinuationHubRow): MediaItemIdentity {
-  return {
-    titleId: row.target.titleId,
-    title: row.target.title,
-    mediaKind: row.target.mediaKind,
-    season: row.target.mediaKind === "movie" ? undefined : (row.target.season ?? 1),
-    episode: row.target.mediaKind === "movie" ? undefined : (row.target.episode ?? 1),
-    providerHints: row.target.sourceEntry.providerId
-      ? [{ providerId: row.target.sourceEntry.providerId }]
-      : undefined,
-  };
-}
-
 export function RootOverlayShell({
   overlay,
   state,
@@ -551,9 +458,7 @@ export function RootOverlayShell({
     onRedraw,
   });
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
-  const [loadingAsyncLines, setLoadingAsyncLines] = useState(
-    overlay.type === "history" || overlay.type === "continue",
-  );
+  const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<string | null>(null);
   const [overlayClosePending, setOverlayClosePending] = useState(false);
@@ -562,7 +467,7 @@ export function RootOverlayShell({
     readonly dedupKey: string;
     readonly actionId: NotificationActionId;
   } | null>(null);
-  const [continueSourceChoiceRowId, setContinueSourceChoiceRowId] = useState<string | null>(null);
+  const [historySourceChoiceTitleId, setHistorySourceChoiceTitleId] = useState<string | null>(null);
   const [notifTab, setNotifTab] = useState<"active" | "archive">("active");
   const [notifPage, setNotifPage] = useState(0);
   const [notifTick, setNotifTick] = useState(0);
@@ -606,23 +511,8 @@ export function RootOverlayShell({
     projections: historyProjections,
     releaseSignals: historyReleaseSignals,
   };
-  const continueRows = useMemo(
-    () =>
-      overlay.type === "continue"
-        ? container.continueWatchingService.hubRows({
-            signalsByTitle: (titleId) =>
-              readContinueSignalsFromHistoryContext(titleId, historyPickerContext),
-          })
-        : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- historyPickerContext is a local aggregate of these maps
-    [
-      container.continueWatchingService,
-      overlay.type,
-      historyNextReleases,
-      historyProjections,
-      historyReleaseSignals,
-    ],
-  );
+  const continueSourcePreference: ContinueSourcePreference =
+    rawConfig.continueSourcePreference ?? "auto";
   const staticLines =
     overlay.type === "help"
       ? buildHelpPanelLines()
@@ -711,7 +601,6 @@ export function RootOverlayShell({
   });
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
-      overlay.type === "continue" ||
       overlay.type === "history" ||
       overlay.type === "tracks_panel") &&
     overlayStatus
@@ -753,17 +642,15 @@ export function RootOverlayShell({
                 currentProvider: state.provider,
                 isAnime: state.mode === "anime",
               }
-            : action === "history"
-              ? { type: "history" as const }
-              : action === "continue"
-                ? { type: "continue" as const }
-                : action === "notifications"
-                  ? { type: "notifications" as const }
-                  : action === "downloads"
-                    ? { type: "downloads" as const }
-                    : action === "settings" || action === "presence"
-                      ? { type: "settings" as const }
-                      : { type: action };
+            : action === "history" || action === "continue"
+              ? { type: "history" as const, initialFilterMode: "watching" as const }
+              : action === "notifications"
+                ? { type: "notifications" as const }
+                : action === "downloads"
+                  ? { type: "downloads" as const }
+                  : action === "settings" || action === "presence"
+                    ? { type: "settings" as const }
+                    : { type: action };
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
           container.stateManager.dispatch({
@@ -803,10 +690,7 @@ export function RootOverlayShell({
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
-    overlay.type === "continue" ||
-    overlay.type === "history" ||
-    overlay.type === "queue" ||
-    overlay.type === "downloads";
+    overlay.type === "history" || overlay.type === "queue" || overlay.type === "downloads";
   const overlayHostChromeRows = getOverlayHostChromeRows({
     commandMode,
     dedicatedShell: overlayDedicatedShell,
@@ -868,16 +752,6 @@ export function RootOverlayShell({
       selectedIndex,
     ],
   );
-  const continueView = useMemo(
-    () =>
-      buildContinueHubView({
-        rows: continueRows,
-        selectedIndex,
-        maxVisible: maxLines,
-        filterQuery,
-      }),
-    [continueRows, filterQuery, maxLines, selectedIndex],
-  );
   // notifTick forces a fresh service read after mutations (read/archive/mark-all).
   void notifTick;
   const notificationRecordsAll =
@@ -934,12 +808,12 @@ export function RootOverlayShell({
   ];
 
   useEffect(() => {
-    if (overlay.type !== "history" && overlay.type !== "continue") return;
+    if (overlay.type !== "history") return;
     setSelectedIndex(0);
   }, [historyTab, overlay.type]);
 
   useEffect(() => {
-    if (overlay.type !== "history" && overlay.type !== "continue") {
+    if (overlay.type !== "history") {
       return;
     }
 
@@ -1081,37 +955,6 @@ export function RootOverlayShell({
     })();
   };
 
-  const runContinueHubAction = (row: ContinuationHubRow | null, actionId: MediaActionId): void => {
-    if (!row) return;
-    const item = mediaItemFromContinueRow(row);
-    void (async () => {
-      try {
-        await createContainerMediaActionRouter(container, {
-          onDownloadQueued: (queuedItem) => {
-            setOverlayStatus(`Queued download for ${queuedItem.title}`);
-          },
-        }).run({
-          actionId,
-          item,
-          source: "continue-hub",
-          confirmedProviderResolution: actionId === "download",
-        });
-        setOverlayStatus(
-          actionId === "queue-next"
-            ? `Queued ${item.title}`
-            : actionId === "mark-watched"
-              ? `Marked ${item.title} watched`
-              : actionId === "download"
-                ? `Queued offline copy for ${item.title}`
-                : "Action complete",
-        );
-        onRedraw();
-      } catch (error) {
-        setOverlayStatus(`Continue action failed: ${String(error)}`);
-      }
-    })();
-  };
-
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1236,7 +1079,7 @@ export function RootOverlayShell({
         confirmationActive:
           (overlay.type === "notifications" &&
             Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
-          (overlay.type === "continue" && continueSourceChoiceRowId !== null),
+          (overlay.type === "history" && historySourceChoiceTitleId !== null),
         pickerOverlay: isRootMediaPickerOverlay(overlay),
         surfaceOwnsEscape: overlay.type === "library" || overlay.type === "downloads",
       });
@@ -1256,8 +1099,8 @@ export function RootOverlayShell({
       }
 
       if (backAction === "cancel-confirmation") {
-        if (overlay.type === "continue" && continueSourceChoiceRowId !== null) {
-          setContinueSourceChoiceRowId(null);
+        if (overlay.type === "history" && historySourceChoiceTitleId !== null) {
+          setHistorySourceChoiceTitleId(null);
           setOverlayStatus(null);
         }
         if (overlay.type === "notifications" && notificationPlayConfirm) {
@@ -1279,10 +1122,7 @@ export function RootOverlayShell({
         return;
       }
 
-      if (
-        (overlay.type === "history" || overlay.type === "continue") &&
-        hasPendingRootHistorySelection()
-      ) {
+      if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
       }
       if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
@@ -1290,50 +1130,6 @@ export function RootOverlayShell({
       }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
-    }
-    if (overlay.type === "continue") {
-      const row = continueView.flatRows[selectedIndex]?.hubRow ?? null;
-      const chooseAction = (action: ContinuationHubPrimaryAction | undefined) => {
-        if (!row) return;
-        const selection = rootHistorySelectionFromContinueRow(row, action);
-        if (!selection) return;
-        resolveRootHistorySelection(selection);
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-      };
-      if (continueSourceChoiceRowId && row?.id === continueSourceChoiceRowId) {
-        const action = row.primaryAction;
-        if (action?.kind === "ask-inline") {
-          if (input.toLowerCase() === "l") {
-            chooseAction(action.localAction);
-            return;
-          }
-          if (input.toLowerCase() === "s") {
-            chooseAction(action.onlineAction);
-            return;
-          }
-        }
-      }
-      if (input.toLowerCase() === "q" && !key.ctrl && !key.meta) {
-        runContinueHubAction(row, "queue-next");
-        return;
-      }
-      if (input.toLowerCase() === "m" && !key.ctrl && !key.meta) {
-        runContinueHubAction(row, "mark-watched");
-        return;
-      }
-      if (input.toLowerCase() === "d" && !key.ctrl && !key.meta) {
-        runContinueHubAction(row, "download");
-        return;
-      }
-      if (key.return) {
-        if (row?.primaryAction?.kind === "ask-inline") {
-          setContinueSourceChoiceRowId(row.id);
-          setOverlayStatus("Choose source: l local, s stream, Esc cancel");
-          return;
-        }
-        chooseAction(row?.primaryAction);
-        return;
-      }
     }
     if (overlay.type === "history") {
       if (
@@ -1343,11 +1139,32 @@ export function RootOverlayShell({
           historySelections,
           historyPickerContext,
           selectedIndex,
+          sourceChoiceTitleId: historySourceChoiceTitleId,
+          sourcePreference: continueSourcePreference,
+          setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
           setHistoryTypeFilter,
           setHistoryTab,
           setSelectedIndex,
-          setOverlayStatus,
+          setOverlayStatus: (status) => setOverlayStatus(status),
           onRedraw,
+          onConfirmSelection: (selection, options) => {
+            if (selection) {
+              void import("@/services/continuation/continuation-diagnostics").then(
+                ({ recordContinuationSourceResolution }) =>
+                  recordContinuationSourceResolution(container, {
+                    surface: "history",
+                    selection,
+                    preference: continueSourcePreference,
+                    override: options?.sourceOverride,
+                    resolved: selection.localJobId ? "local" : "stream",
+                  }),
+              );
+            }
+            resolveRootHistorySelection(selection);
+            if (selection) {
+              container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+            }
+          },
         }) === "handled"
       ) {
         return;
@@ -1461,18 +1278,6 @@ export function RootOverlayShell({
             });
           })();
         }
-      } else if (overlay.type === "history") {
-        const picked = historyView.flatRows[selectedIndex]?.titleId ?? null;
-        const selected = historySelections.find((entry) => entry.titleId === picked) ?? null;
-        resolveRootHistorySelection(
-          selected
-            ? buildRootHistorySelection(
-                selected,
-                historyPickerContext.nextReleases,
-                historyPickerContext.projections,
-              )
-            : null,
-        );
       } else if (overlay.type === "notifications") {
         if (notificationPlayConfirm) {
           const choice = notificationPlayConfirmOptions[selectedIndex]?.value ?? "cancel";
@@ -1534,15 +1339,13 @@ export function RootOverlayShell({
             ? filteredProviderOptions.length
             : overlay.type === "queue"
               ? queueView.rows.length
-              : overlay.type === "continue"
-                ? continueView.flatRows.length
-                : overlay.type === "history"
-                  ? historyView.flatRows.length
-                  : overlay.type === "notifications"
-                    ? notificationActionDedupKey
-                      ? filteredNotificationActionOptions.length
-                      : filteredNotificationOptions.length
-                    : filteredGenericPickerOptions.length;
+              : overlay.type === "history"
+                ? historyView.flatRows.length
+                : overlay.type === "notifications"
+                  ? notificationActionDedupKey
+                    ? filteredNotificationActionOptions.length
+                    : filteredNotificationOptions.length
+                  : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
           setSelectedIndex((current) =>
             key.upArrow ? (current - 1 + optionCount) % optionCount : (current + 1) % optionCount,
@@ -1907,63 +1710,6 @@ export function RootOverlayShell({
     );
   }
 
-  if (overlay.type === "continue") {
-    const {
-      innerWidth,
-      listWidth: pickerListWidth,
-      rowWidth,
-    } = getPickerLayout(overlayLayout.contentColumns, overlayLayout.contentRows);
-    const listWidth = pickerListWidth ?? innerWidth;
-
-    return wrapOverlayLayout(
-      overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip
-            items={[
-              { label: title, tone: "info" },
-              {
-                label: loadingAsyncLines
-                  ? "loading continue hub"
-                  : `${continueView.totalRows} titles · ${effectiveSubtitle}`,
-                tone: "neutral",
-              },
-            ]}
-          />
-          <ContinueHubShell view={continueView} rowWidth={Math.min(rowWidth, listWidth)} />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel={
-              continueSourceChoiceRowId ? "Continue  ·  l local, s stream, Esc cancel" : "Continue"
-            }
-            actions={[
-              { key: "enter", label: "open", primary: true },
-              { key: "l/s", label: "source" },
-              { key: "q", label: "queue" },
-              { key: "m", label: "watched" },
-              { key: "d", label: "offline" },
-              { key: "/", label: "commands", action: "command-mode" },
-              { key: "esc", label: "close", action: "quit" },
-            ]}
-            mode="detailed"
-            commandMode={commandMode}
-            terminalWidth={cols}
-          />
-        </Box>
-      </Box>,
-    );
-  }
-
   if (overlay.type === "history") {
     const {
       innerWidth,
@@ -2005,7 +1751,9 @@ export function RootOverlayShell({
             />
           ) : null}
           <ShellFooter
-            taskLabel="History"
+            taskLabel={
+              historySourceChoiceTitleId ? "History · l local, s stream, Esc cancel" : "History"
+            }
             actions={historyFooterActions()}
             mode="detailed"
             commandMode={commandMode}

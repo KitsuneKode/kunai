@@ -10,7 +10,6 @@ export type RootOwnedOverlay = Extract<
       | "downloads"
       | "library"
       | "provider_picker"
-      | "continue"
       | "history"
       | "queue"
       | "notifications"
@@ -39,7 +38,6 @@ function isRootOwnedOverlay(overlay: OverlayState | null | undefined): overlay i
     overlay?.type === "downloads" ||
     overlay?.type === "library" ||
     overlay?.type === "provider_picker" ||
-    overlay?.type === "continue" ||
     overlay?.type === "history" ||
     overlay?.type === "queue" ||
     overlay?.type === "notifications" ||

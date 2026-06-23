@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 
 import { buildHistoryView } from "@/app-shell/history-view";
+import { historyBucketFor } from "@/app-shell/panel-data";
+import { buildRootHistorySelection } from "@/app-shell/root-history-bridge";
+import { projectContinuationState } from "@/services/continuation/continuation-policy";
+import {
+  resolveContinueSourceAction,
+  resumeLabelForProjection,
+} from "@/services/continuation/continuation-source";
 import type { HistoryProgress } from "@kunai/storage";
 
 const DAY_MS = 86_400_000;
@@ -238,4 +245,93 @@ test("history view keeps a finished movie out of the Continue tab", () => {
     context: {},
   });
   expect(completedView.flatRows.map((r) => r.titleId)).toContain("tmdb:movie");
+});
+
+test("history bucket placement agrees with projection-derived resume action", () => {
+  const unfinished = progress({
+    titleId: "resume",
+    positionSeconds: 420,
+    completed: false,
+  });
+  const fresh = progress({
+    titleId: "fresh",
+    season: 1,
+    episode: 8,
+    positionSeconds: 1200,
+    durationSeconds: 1200,
+    completed: true,
+    updatedAt: "2026-05-01T00:00:00.000Z",
+  });
+  const context = {
+    releaseSignals: new Map([
+      [
+        "fresh",
+        {
+          status: "new-episodes" as const,
+          newEpisodeCount: 1,
+          latestKnownReleaseAt: "2026-05-08T00:00:00.000Z",
+        },
+      ],
+    ]),
+  };
+
+  for (const [titleId, entry] of [
+    ["resume", unfinished],
+    ["fresh", fresh],
+  ] as const) {
+    const projection = projectContinuationState({
+      titleId,
+      entries: [[titleId, entry]],
+      releaseProgress: titleId === "fresh" ? { newEpisodeCount: 1 } : null,
+      nextRelease: titleId === "fresh" ? { season: 1, episode: 9, released: true } : null,
+    });
+    const bucket = historyBucketFor(titleId, entry, {
+      ...context,
+      projections: new Map([[titleId, projection]]),
+    });
+    const tab =
+      bucket === "continue" ? "continue" : bucket === "new-episodes" ? "new-episodes" : "completed";
+    const view = buildHistoryView({
+      entries: [[titleId, entry]],
+      tab,
+      filterQuery: "",
+      selectedIndex: 0,
+      maxVisible: 50,
+      narrow: true,
+      context: {
+        ...context,
+        projections: new Map([[titleId, projection]]),
+      },
+    });
+    const row = view.flatRows[0];
+    expect(row?.resumeAction).toBe(resumeLabelForProjection(projection, bucket));
+    const selection = buildRootHistorySelection(
+      { titleId, entry },
+      titleId === "fresh"
+        ? new Map([
+            [
+              titleId,
+              {
+                status: "released" as const,
+                season: 1,
+                episode: 9,
+                releaseAt: null,
+              },
+            ],
+          ])
+        : undefined,
+      new Map([[titleId, projection]]),
+      { sourcePreference: "auto" },
+    );
+    const action = resolveContinueSourceAction(projection, "auto");
+    if (action) {
+      expect(action.kind).toBeTruthy();
+    }
+    if (bucket === "continue") {
+      expect(selection.targetEpisode?.reason).toMatch(/resume|offline-ready/);
+    }
+    if (bucket === "new-episodes") {
+      expect(selection.targetEpisode?.reason).toBe("new-episode");
+    }
+  }
 });

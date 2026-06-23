@@ -46,18 +46,18 @@ function createContainer(): {
 }
 
 describe("history workflow action", () => {
-  test("continue opens the dedicated Continue Hub overlay", async () => {
+  test("continue opens history on the Continue tab", async () => {
     const { container, dispatches, closeTopOverlay } = createContainer();
 
     const result = handleShellAction({ action: "continue", container });
     await Promise.resolve();
 
-    expect(dispatches).toEqual(["open:continue"]);
+    expect(dispatches).toEqual(["open:history"]);
 
     closeTopOverlay();
 
     await expect(result).resolves.toBe("handled");
-    expect(dispatches).toEqual(["open:continue", "close"]);
+    expect(dispatches).toEqual(["open:history", "close"]);
   });
 
   test("opens one root-owned history overlay and resolves when it closes", async () => {

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
+import type { RootHistorySelection } from "@/app-shell/root-history-bridge";
 import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input";
+import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryProgress } from "@kunai/storage";
 
 function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
@@ -18,6 +20,43 @@ function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
     updatedAt: "2026-06-22T00:00:00.000Z",
     createdAt: "2026-06-22T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+const dualProjection: ContinuationProjection = {
+  kind: "offline-ready",
+  titleId: "tmdb:1",
+  title: "Example",
+  season: 1,
+  episode: 3,
+  sourceEntry: history({ completed: true }),
+  primaryAction: { kind: "play-local", season: 1, episode: 3, jobId: "job-3" },
+  secondaryActions: [{ kind: "select-online", season: 1, episode: 3 }],
+};
+
+function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {}) {
+  const confirmations: Array<{ localJobId?: string }> = [];
+  return {
+    ctx: {
+      container: {} as never,
+      historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: true }] },
+      historySelections: [{ titleId: "tmdb:1", entry: history() }],
+      historyPickerContext: { projections: new Map([["tmdb:1", dualProjection]]) },
+      selectedIndex: 0,
+      sourceChoiceTitleId: null,
+      sourcePreference: "auto" as const,
+      setSourceChoiceTitleId: () => {},
+      setHistoryTypeFilter: () => {},
+      setHistoryTab: () => {},
+      setSelectedIndex: () => {},
+      setOverlayStatus: () => {},
+      onRedraw: () => {},
+      onConfirmSelection: (selection: RootHistorySelection | null) => {
+        confirmations.push({ localJobId: selection?.localJobId });
+      },
+      ...overrides,
+    },
+    confirmations,
   };
 }
 
@@ -51,15 +90,19 @@ describe("handleHistoryOverlayInput", () => {
       {},
       {
         container: container as never,
-        historyView: { flatRows: [{ titleId: "tmdb:1" }] },
+        historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
         historySelections: [{ titleId: "tmdb:1", entry: history() }],
         historyPickerContext: {},
         selectedIndex: 0,
+        sourceChoiceTitleId: null,
+        sourcePreference: "auto",
+        setSourceChoiceTitleId: () => {},
         setHistoryTypeFilter: () => {},
         setHistoryTab: () => {},
         setSelectedIndex: () => {},
         setOverlayStatus: (status) => calls.push(`status:${status}`),
         onRedraw: () => calls.push("redraw"),
+        onConfirmSelection: () => {},
       },
     );
 
@@ -76,5 +119,39 @@ describe("handleHistoryOverlayInput", () => {
       "status:Queued from history",
       "redraw",
     ]);
+  });
+
+  test("auto preference confirms local when dual sources exist", () => {
+    const { ctx, confirmations } = baseCtx();
+    expect(handleHistoryOverlayInput("", { return: true }, ctx)).toBe("handled");
+    expect(confirmations[0]?.localJobId).toBe("job-3");
+  });
+
+  test("stream preference confirms online target", () => {
+    const { ctx, confirmations } = baseCtx({ sourcePreference: "stream" });
+    expect(handleHistoryOverlayInput("", { return: true }, ctx)).toBe("handled");
+    expect(confirmations[0]?.localJobId).toBeUndefined();
+  });
+
+  test("ask preference prompts before confirming", () => {
+    const statuses: Array<string | null> = [];
+    const { ctx } = baseCtx({
+      sourcePreference: "ask",
+      setOverlayStatus: (status) => statuses.push(status),
+    });
+    expect(handleHistoryOverlayInput("", { return: true }, ctx)).toBe("handled");
+    expect(statuses[0]).toContain("Choose source");
+  });
+
+  test("l override forces local on dual-source rows", () => {
+    const { ctx, confirmations } = baseCtx({ sourcePreference: "stream" });
+    expect(handleHistoryOverlayInput("l", {}, ctx)).toBe("handled");
+    expect(confirmations[0]?.localJobId).toBe("job-3");
+  });
+
+  test("s override forces stream on dual-source rows", () => {
+    const { ctx, confirmations } = baseCtx({ sourcePreference: "local" });
+    expect(handleHistoryOverlayInput("s", {}, ctx)).toBe("handled");
+    expect(confirmations[0]?.localJobId).toBeUndefined();
   });
 });

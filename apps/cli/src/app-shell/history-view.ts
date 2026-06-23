@@ -8,6 +8,10 @@ import { reconcileContinueHistory } from "@/domain/continuation/history-reconcil
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import {
+  hasDualContinueSources,
+  resumeLabelForProjection,
+} from "@/services/continuation/continuation-source";
+import {
   correctedHistoryMediaKind,
   historyContentType,
 } from "@/services/continuation/history-progress";
@@ -67,6 +71,7 @@ export type HistoryViewRow = {
   readonly tone?: ShellStatusTone;
   readonly progress: { readonly percentage: number; readonly completed: boolean } | null;
   readonly resumeAction: string;
+  readonly dualSourceAvailable: boolean;
 };
 
 export type HistoryRenderItem =
@@ -208,22 +213,8 @@ function deriveResumeAction(
   if (historyContentType(entry) === "movie") {
     return isHistoryCompleted(entry) ? "Restart" : "Resume";
   }
-  const projection = context.projections?.get(titleId);
-  if (projection?.kind === "offline-ready") return "Play local";
-  const decision = reconcileContinueHistory({
-    titleId,
-    entries: [[titleId, entry]],
-    nextRelease: context.nextReleases?.get(titleId) ?? null,
-  });
-  // Only call it "Play next" when the authoritative bucket agrees it is new-episodes;
-  // reconcile fabricates new-episode for finished/missing-data titles otherwise.
-  if (
-    decision.kind === "new-episode" &&
-    historyBucketFor(titleId, entry, context) === "new-episodes"
-  )
-    return "Play next";
-  if (decision.kind === "resume") return "Continue";
-  return "Open";
+  const bucket = historyBucketFor(titleId, entry, context);
+  return resumeLabelForProjection(context.projections?.get(titleId), bucket);
 }
 
 function shellOptionToHistoryRow(
@@ -239,7 +230,10 @@ function shellOptionToHistoryRow(
   const detailParts = (option.detail ?? "").split("·").map((part) => part.trim());
   const recencyLabel = detailParts[detailParts.length - 1] ?? "";
   const progress = option.historyProgress ?? null;
+  const projection = context.projections?.get(titleId);
+  const bucket = historyBucketFor(titleId, entry, context);
   const statusLabel =
+    projection?.badge ??
     option.badge ??
     (progress?.completed ? "done" : progress ? `${progress.percentage}%` : (detailParts[0] ?? ""));
   const decision = reconcileContinueHistory({
@@ -247,8 +241,7 @@ function shellOptionToHistoryRow(
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
   });
-  const isNewEpisode =
-    decision.kind === "new-episode" && historyBucketFor(titleId, entry, context) === "new-episodes";
+  const isNewEpisode = decision.kind === "new-episode" && bucket === "new-episodes";
   let statusColor = semanticToneColor(option.tone);
   if (isNewEpisode) statusColor = palette.ok;
   if (progress && !progress.completed) statusColor = palette.accentDeep;
@@ -266,6 +259,7 @@ function shellOptionToHistoryRow(
     tone: option.tone,
     progress,
     resumeAction: deriveResumeAction(titleId, entry, context),
+    dualSourceAvailable: hasDualContinueSources(projection),
   };
 }
 

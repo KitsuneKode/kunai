@@ -98,7 +98,9 @@ async function openRootHistorySelection(
   const selectionPromise = waitForRootHistorySelection();
   await openRootOwnedOverlay(
     container,
-    reason === "continue" ? { type: "continue" } : { type: "history", initialFilterMode: "all" },
+    reason === "continue"
+      ? { type: "history", initialFilterMode: "watching" }
+      : { type: "history", initialFilterMode: "all" },
   );
   const selection = await selectionPromise;
   if (!selection) return "handled";
