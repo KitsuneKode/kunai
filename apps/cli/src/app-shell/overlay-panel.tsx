@@ -7,6 +7,14 @@ import type {
 } from "@/services/persistence/ConfigService";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
+import {
+  describeProviderRelayEnabled,
+  describeProviderRelayFallback,
+  describeProviderRelayProviders,
+  describeProviderRelayToken,
+  describeProviderRelayUrl,
+  RELAY_CAPABLE_PROVIDER_OPTIONS,
+} from "@/services/providers/provider-relay-settings";
 import type { StartupPriority } from "@kunai/types";
 import { Box, Text } from "ink";
 import React from "react";
@@ -22,6 +30,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import type { PosterResult, PosterState } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
 import { BooleanSwitch } from "./primitives/Switch";
+import { isSettingsTextInputChoice, settingsTextInputPlaceholder } from "./settings-text-input";
 import {
   getWindowStart,
   padColumnsEnd,
@@ -147,6 +156,11 @@ type SettingsAction =
   | "presenceDiscordClientId"
   | "presenceDiscordOpenUrl"
   | "videasySessionToken"
+  | "providerRelayEnabled"
+  | "providerRelayBaseUrl"
+  | "providerRelayToken"
+  | "providerRelayFallbackToDirect"
+  | "providerRelayProviders"
   | "videasyAppId"
   | "presenceConnection"
   | "downloadsEnabled"
@@ -518,6 +532,37 @@ export function buildSettingsOptions(
       label: `▸ ${configLabel("videasySessionToken")}  ·  ${describeVideasySessionToken(config)}`,
       detail:
         "Optional — only if Videasy blocks resolves. Mint once on cineplay.to; resolution stays direct HTTP (no browser at playback)",
+    },
+    {
+      value: "section:relay",
+      label: "Provider relay",
+      detail: "User-owned RPC relay for geo-blocked provider metadata; playback stays direct",
+    },
+    {
+      value: "providerRelayEnabled",
+      label: `Relay enabled  ·  ${describeProviderRelayEnabled(config)}`,
+      detail:
+        "Master switch — off uses direct provider fetches even when a relay URL is configured",
+    },
+    {
+      value: "providerRelayBaseUrl",
+      label: `▸ Relay server URL  ·  ${describeProviderRelayUrl(config)}`,
+      detail: "https:// user-owned relay endpoint, or local http://127.0.0.1 for dev",
+    },
+    {
+      value: "providerRelayToken",
+      label: `▸ Relay token  ·  ${describeProviderRelayToken(config)}`,
+      detail: "Bearer token when your relay requires authentication",
+    },
+    {
+      value: "providerRelayFallbackToDirect",
+      label: `Relay fallback  ·  ${describeProviderRelayFallback(config)}`,
+      detail: "On: retry direct fetch when relay RPC fails. Off: fail the resolve instead",
+    },
+    {
+      value: "providerRelayProviders",
+      label: `▸ Relay providers  ·  ${describeProviderRelayProviders(config)}`,
+      detail: "Choose which relay-capable providers route metadata through your relay",
     },
     {
       value: "section:language",
@@ -1011,6 +1056,63 @@ export function buildSettingsChoiceOverlay({
           ]
         : []),
     ];
+  } else if (setting === "providerRelayBaseUrl") {
+    title = "Provider relay URL";
+    subtitle = config.providerRelay.baseUrl?.trim()
+      ? `Current ${config.providerRelay.baseUrl.trim()}`
+      : "No relay URL configured yet";
+    options = [
+      {
+        value: "__keep__",
+        label: "Keep current relay URL",
+        detail: "Or type a new URL in the input line below, then press Enter",
+      },
+      {
+        value: "__clear__",
+        label: "Clear relay URL",
+        detail: "Remove the relay URL while keeping other relay preferences",
+      },
+    ];
+  } else if (setting === "providerRelayToken") {
+    title = "Provider relay token";
+    subtitle =
+      describeProviderRelayToken(config) === "env"
+        ? "Using KUNAI_RELAY_TOKEN unless a config value is typed here"
+        : `Current ${describeProviderRelayToken(config)}`;
+    options = [
+      {
+        value: "__keep__",
+        label: "Keep current value",
+        detail: "Type a relay bearer token to filter, then press Enter to draft it",
+      },
+      {
+        value: "__clear__",
+        label: "Clear configured token",
+        detail: "Fall back to KUNAI_RELAY_TOKEN, or no token if the env var is unset",
+      },
+      ...(process.env.KUNAI_RELAY_TOKEN?.trim()
+        ? [
+            {
+              value: "__env__",
+              label: "Use environment token",
+              detail: "Keep config empty and read KUNAI_RELAY_TOKEN at resolve time",
+            },
+          ]
+        : []),
+    ];
+  } else if (setting === "providerRelayProviders") {
+    title = "Relay providers";
+    subtitle = "Enter toggles relay metadata routing per provider; S saves";
+    options = RELAY_CAPABLE_PROVIDER_OPTIONS.map((option) => {
+      const enabled = config.providerRelay.providers?.[option.value]?.enabled !== false;
+      return {
+        value: option.value,
+        label: `${option.label}  ·  ${enabled ? "relay" : "direct"}`,
+        detail: enabled
+          ? "Metadata requests route through your relay when relay is active"
+          : "Always use direct fetch for this provider",
+      };
+    });
   } else if (setting === "videasyAppId") {
     title = "Videasy app id";
     subtitle = `Current ${config.videasyAppId}`;
@@ -1224,6 +1326,8 @@ export function OverlayPanel({
                   Tab cycle
                 </Text>
               </Box>
+            ) : overlay.type === "settings-choice" && isSettingsTextInputChoice(overlay.setting) ? (
+              <Text color={palette.dim}>{settingsTextInputPlaceholder(overlay.setting)}</Text>
             ) : (
               <Text color={palette.dim}>
                 {overlay.type === "provider"
@@ -1367,10 +1471,10 @@ export function OverlayPanel({
           {overlay.type === "settings" ? (
             <Box marginTop={1}>
               <Text color={overlay.dirty ? palette.accent : palette.dim}>
-                {overlay.dirty ? "s save" : "s close"}
+                {overlay.dirty ? "syncing…" : "auto-save on"}
               </Text>
               <Text color={palette.dim}>{"  "}</Text>
-              <Text color={palette.dim}>{overlay.dirty ? "esc discard" : "esc close"}</Text>
+              <Text color={palette.dim}>esc close</Text>
             </Box>
           ) : null}
         </>

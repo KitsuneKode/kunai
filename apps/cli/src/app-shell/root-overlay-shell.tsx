@@ -26,6 +26,10 @@ import type {
   QuitNearEndThresholdMode,
   RecoveryMode,
 } from "@/services/persistence/ConfigService";
+import {
+  toggleProviderRelayProvider,
+  type RelayCapableProviderId,
+} from "@/services/providers/provider-relay-settings";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { appReleasePageUrl } from "@/services/update/release-url";
 import type { StartupPriority } from "@kunai/types";
@@ -118,6 +122,9 @@ import {
 } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { type RootOwnedOverlay } from "./root-shell-state";
+import { applySettingsInlineToggle, isSettingsInlineToggle } from "./settings-inline-toggles";
+import { persistSettingsDraft } from "./settings-persist";
+import { applySettingsTextInput, isSettingsTextInputChoice } from "./settings-text-input";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
@@ -287,20 +294,6 @@ function nextSelectableIndex(
     idx = (((idx + delta) % len) + len) % len;
   }
   return from;
-}
-
-function isSafeDiscordOpenUrl(value: string): boolean {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "kunai:";
-  } catch {
-    return false;
-  }
-}
-
-function isLikelyVideasySessionToken(value: string): boolean {
-  return value.length >= 16 && !/\s/.test(value);
 }
 
 function getLatestPresenceErrorDetail(container: Container): string | null {
@@ -537,6 +530,15 @@ export function RootOverlayShell({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(() =>
     overlay.type === "settings" ? container.config.getRaw() : null,
+  );
+  const commitSettingsDraft = useCallback(
+    (next: KitsuneConfig, options?: { readonly immediate?: boolean }) => {
+      setSettingsDraft(next);
+      if (options?.immediate) {
+        void persistSettingsDraft(container, next);
+      }
+    },
+    [container],
   );
   // Persist settings the moment they change — no separate save step. Debounce so
   // rapid toggles coalesce; applySettingsToRuntime writes disk + syncs session state.
@@ -1309,6 +1311,13 @@ export function RootOverlayShell({
       if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
         resolveRootQueueSelection(null);
       }
+      if (
+        overlay.type === "settings" &&
+        settingsDraft &&
+        !settingsEqual(settingsDraft, container.config.getRaw())
+      ) {
+        void persistSettingsDraft(container, settingsDraft);
+      }
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
@@ -1461,56 +1470,23 @@ export function RootOverlayShell({
     }
     if (key.return) {
       if (overlay.type === "settings") {
+        if (settingsChoice && settingsDraft && filterQuery.trim()) {
+          const typed = applySettingsTextInput(settingsChoice, settingsDraft, filterQuery);
+          if (typed) {
+            if (typed.ok) {
+              setSettingsDraft(typed.next);
+              setSettingsChoice(null);
+              setFilterQuery("");
+              setSelectedIndex(settingsParentIndex);
+              setSettingsError(typed.message);
+            } else {
+              setSettingsError(typed.message);
+            }
+            return;
+          }
+        }
         const picked = filteredSettingsOptions[selectedIndex];
         if (!picked || !settingsDraft) {
-          if (settingsChoice === "presenceDiscordClientId" && settingsDraft) {
-            const typedClientId = filterQuery.trim();
-            if (/^\d{12,32}$/.test(typedClientId)) {
-              setSettingsDraft({ ...settingsDraft, presenceDiscordClientId: typedClientId });
-              setSettingsChoice(null);
-              setFilterQuery("");
-              setSelectedIndex(settingsParentIndex);
-              setSettingsError("Discord client id saved in draft. Press S to save settings.");
-              return;
-            }
-            setSettingsError("Type a numeric Discord application client id, or Esc to cancel.");
-          }
-          if (settingsChoice === "downloadPath" && settingsDraft) {
-            const typedPath = filterQuery.trim();
-            if (typedPath.startsWith("/")) {
-              setSettingsDraft({ ...settingsDraft, downloadPath: typedPath });
-              setSettingsChoice(null);
-              setFilterQuery("");
-              setSelectedIndex(settingsParentIndex);
-              setSettingsError("Download path saved in draft. Press S to save settings.");
-              return;
-            }
-            setSettingsError("Type an absolute download path, or Esc to cancel.");
-          }
-          if (settingsChoice === "presenceDiscordOpenUrl" && settingsDraft) {
-            const typedUrl = filterQuery.trim();
-            if (isSafeDiscordOpenUrl(typedUrl)) {
-              setSettingsDraft({ ...settingsDraft, presenceDiscordOpenUrl: typedUrl });
-              setSettingsChoice(null);
-              setFilterQuery("");
-              setSelectedIndex(settingsParentIndex);
-              setSettingsError("Discord open URL saved in draft. Press S to save settings.");
-              return;
-            }
-            setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
-          }
-          if (settingsChoice === "videasySessionToken" && settingsDraft) {
-            const typedToken = filterQuery.trim();
-            if (isLikelyVideasySessionToken(typedToken)) {
-              setSettingsDraft({ ...settingsDraft, videasySessionToken: typedToken });
-              setSettingsChoice(null);
-              setFilterQuery("");
-              setSelectedIndex(settingsParentIndex);
-              setSettingsError("Videasy session token saved in draft. Press S to save settings.");
-              return;
-            }
-            setSettingsError("Type a Videasy session token, or Esc to cancel.");
-          }
           return;
         }
         if (picked.value.startsWith("section:")) {
@@ -1569,57 +1545,41 @@ export function RootOverlayShell({
           } else if (settingsChoice === "autoCleanupGraceDays") {
             next.autoCleanupGraceDays = Number(picked.value);
           } else if (settingsChoice === "downloadPath") {
-            const typedPath = filterQuery.trim();
-            if (typedPath.startsWith("/")) {
-              next.downloadPath = typedPath;
-            } else if (picked.value === "__clear__") {
+            if (picked.value === "__clear__") {
               next.downloadPath = "";
-            } else if (picked.value === "__keep__") {
-              // Keep the existing draft value.
-            } else {
-              setSettingsError("Type an absolute download path, or Esc to cancel.");
-              return;
             }
           } else if (settingsChoice === "presenceProvider") {
             next.presenceProvider = picked.value as typeof next.presenceProvider;
           } else if (settingsChoice === "presencePrivacy") {
             next.presencePrivacy = picked.value as typeof next.presencePrivacy;
           } else if (settingsChoice === "presenceDiscordClientId") {
-            const typedClientId = filterQuery.trim();
-            if (/^\d{12,32}$/.test(typedClientId)) {
-              next.presenceDiscordClientId = typedClientId;
-            } else if (picked.value === "__clear__" || picked.value === "__env__") {
+            if (picked.value === "__clear__" || picked.value === "__env__") {
               next.presenceDiscordClientId = "";
-            } else if (picked.value === "__keep__") {
-              // Keep the existing draft value.
-            } else {
-              setSettingsError("Type a numeric Discord application client id, or Esc to cancel.");
-              return;
             }
           } else if (settingsChoice === "presenceDiscordOpenUrl") {
-            const typedUrl = filterQuery.trim();
-            if (isSafeDiscordOpenUrl(typedUrl)) {
-              next.presenceDiscordOpenUrl = typedUrl;
-            } else if (picked.value === "__clear__") {
+            if (picked.value === "__clear__") {
               next.presenceDiscordOpenUrl = "";
-            } else if (picked.value === "__keep__") {
-              // Keep the existing draft value.
-            } else {
-              setSettingsError("Type a safe https:// or kunai:// URL, or Esc to cancel.");
-              return;
             }
           } else if (settingsChoice === "videasySessionToken") {
-            const typedToken = filterQuery.trim();
-            if (isLikelyVideasySessionToken(typedToken)) {
-              next.videasySessionToken = typedToken;
-            } else if (picked.value === "__clear__" || picked.value === "__env__") {
+            if (picked.value === "__clear__" || picked.value === "__env__") {
               next.videasySessionToken = "";
-            } else if (picked.value === "__keep__") {
-              // Keep the existing draft value.
-            } else {
-              setSettingsError("Type a Videasy session token, or Esc to cancel.");
-              return;
             }
+          } else if (settingsChoice === "providerRelayBaseUrl") {
+            if (picked.value === "__clear__") {
+              next.providerRelay = { ...next.providerRelay, baseUrl: "" };
+            }
+          } else if (settingsChoice === "providerRelayToken") {
+            if (picked.value === "__clear__" || picked.value === "__env__") {
+              next.providerRelay = { ...next.providerRelay, token: "" };
+            }
+          } else if (settingsChoice === "providerRelayProviders") {
+            next.providerRelay = toggleProviderRelayProvider(
+              settingsDraft,
+              picked.value as RelayCapableProviderId,
+            );
+            setSettingsDraft(next);
+            setSettingsError(null);
+            return;
           } else if (settingsChoice === "videasyAppId") {
             next.videasyAppId = picked.value === "bc-frontend" ? "bc-frontend" : "vidking";
           } else if (settingsChoice === "quitNearEndBehavior") {
@@ -1634,77 +1594,13 @@ export function RootOverlayShell({
           setSettingsError(null);
           return;
         }
-        if (picked.value === "showMemory") {
-          setSettingsDraft({ ...settingsDraft, showMemory: !settingsDraft.showMemory });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "autoNext") {
-          setSettingsDraft({ ...settingsDraft, autoNext: !settingsDraft.autoNext });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "discoverShowOnStartup") {
-          setSettingsDraft({
-            ...settingsDraft,
-            discoverShowOnStartup: !settingsDraft.discoverShowOnStartup,
-          });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "recommendationRailEnabled") {
-          setSettingsDraft({
-            ...settingsDraft,
-            recommendationRailEnabled: !settingsDraft.recommendationRailEnabled,
-          });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "downloadsEnabled") {
-          setSettingsDraft({ ...settingsDraft, downloadsEnabled: !settingsDraft.downloadsEnabled });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "powerSaverMode") {
-          setSettingsDraft({ ...settingsDraft, powerSaverMode: !settingsDraft.powerSaverMode });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "autoCleanupWatched") {
-          setSettingsDraft({
-            ...settingsDraft,
-            autoCleanupWatched: !settingsDraft.autoCleanupWatched,
-          });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "resumeStartChoicePrompt") {
-          setSettingsDraft({
-            ...settingsDraft,
-            resumeStartChoicePrompt: !settingsDraft.resumeStartChoicePrompt,
-          });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "skipRecap") {
-          setSettingsDraft({ ...settingsDraft, skipRecap: !settingsDraft.skipRecap });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "skipIntro") {
-          setSettingsDraft({ ...settingsDraft, skipIntro: !settingsDraft.skipIntro });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "skipCredits") {
-          setSettingsDraft({ ...settingsDraft, skipCredits: !settingsDraft.skipCredits });
-          setSettingsError(null);
-          return;
-        }
-        if (picked.value === "skipPreview") {
-          setSettingsDraft({ ...settingsDraft, skipPreview: !settingsDraft.skipPreview });
-          setSettingsError(null);
-          return;
+        if (isSettingsInlineToggle(picked.value)) {
+          const next = applySettingsInlineToggle(settingsDraft, picked.value);
+          if (next) {
+            commitSettingsDraft(next, { immediate: true });
+            setSettingsError(null);
+            return;
+          }
         }
         if (picked.value === "presenceConnection") {
           if (settingsDraft.presenceProvider !== "discord") {
@@ -1958,6 +1854,24 @@ export function RootOverlayShell({
                 alreadyWatched ? "unwatched" : "watched"
               }`,
             );
+          }
+        }
+        return;
+      }
+      if (
+        overlay.type === "settings" &&
+        !settingsChoice &&
+        settingsDraft &&
+        input === " " &&
+        !key.ctrl &&
+        !key.meta
+      ) {
+        const picked = filteredSettingsOptions[selectedIndex]?.value;
+        if (picked && isSettingsInlineToggle(picked)) {
+          const next = applySettingsInlineToggle(settingsDraft, picked);
+          if (next) {
+            commitSettingsDraft(next, { immediate: true });
+            setSettingsError(null);
           }
         }
         return;
@@ -2404,8 +2318,10 @@ export function RootOverlayShell({
                   : "Notifications  ·  Enter acts, a actions, x dismisses"
                 : overlay.type === "settings"
                   ? settingsChoice
-                    ? "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
-                    : "Settings  ·  Type to filter, Enter to edit, saved automatically, Esc closes"
+                    ? isSettingsTextInputChoice(settingsChoice)
+                      ? "Settings input  ·  Type value, Enter to save draft, Esc returns"
+                      : "Settings choice  ·  Type to filter, Enter to apply, Esc returns"
+                    : "Settings  ·  Enter to edit, Space toggles switches, auto-saves, Esc closes"
                   : isRootMediaPickerOverlay(overlay)
                     ? title
                     : `${title}  ·  Esc closes and returns to the previous shell state`

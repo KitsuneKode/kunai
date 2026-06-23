@@ -1,19 +1,13 @@
 import type { SettingsChoiceValue } from "./overlay-panel";
 import type { RootOwnedOverlay } from "./root-shell-state";
+import { isSettingsTextInputChoice } from "./settings-text-input";
 
-const SETTINGS_TEXT_INPUT_CHOICES = new Set<SettingsChoiceValue>([
-  "downloadPath",
-  "presenceDiscordClientId",
-  "presenceDiscordOpenUrl",
-  "videasySessionToken",
-  "videasyAppId",
-]);
-
-export function isSettingsTextInputChoice(
-  choice: SettingsChoiceValue | null | undefined,
-): choice is SettingsChoiceValue {
-  return choice !== null && choice !== undefined && SETTINGS_TEXT_INPUT_CHOICES.has(choice);
-}
+export {
+  applySettingsTextInput,
+  isSettingsTextInputChoice,
+  SETTINGS_TEXT_INPUT_CHOICES,
+  settingsTextInputPlaceholder,
+} from "./settings-text-input";
 
 /**
  * When false, overlay-level Esc / destructive cancel handlers should defer to
