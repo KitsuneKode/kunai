@@ -1,7 +1,7 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import { movePickerModelSelection } from "@/domain/session/picker-model";
 import { useInput } from "ink";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { routeShellInput } from "./input-router";
@@ -38,6 +38,13 @@ export function useShellInput({
       setHighlightedIndex(0);
     },
   });
+
+  useEffect(() => {
+    if (!disabled) return;
+    setCommandMode(false);
+    setCommandInput("");
+    setHighlightedIndex(0);
+  }, [disabled]);
 
   useInput((input, key) => {
     if (disabled) {
@@ -115,7 +122,9 @@ export function useShellInput({
       if (letterKeysHandledExternally) {
         return;
       }
-      onResolve(footerAction.action);
+      if (footerAction.action) {
+        onResolve(footerAction.action);
+      }
     }
   });
 
