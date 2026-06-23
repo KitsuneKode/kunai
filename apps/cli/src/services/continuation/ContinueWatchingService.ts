@@ -80,19 +80,21 @@ export class ContinueWatchingService {
     const anchors = groupLatestByTitle(
       this.historyRepository.listRecent(options.scanLimit ?? 500),
     ).slice(0, options.limit ?? 25);
-    return anchors.map((anchor) =>
-      this.toViewDecision(
+    return anchors.map((anchor) => {
+      const signals = options.signalsByTitle?.(anchor.titleId);
+      return this.toViewDecision(
         projectContinuation({
           titleId: anchor.titleId,
           rows: [anchor],
-          ...options.signalsByTitle?.(anchor.titleId),
+          ...signals,
         }),
-      ),
-    );
+        signals,
+      );
+    });
   }
 
   titleDecision(titleId: string, signals: ContinuationSignals = {}): ContinuationViewDecision {
-    return this.toViewDecision(this.projectTitle(titleId, signals));
+    return this.toViewDecision(this.projectTitle(titleId, signals), signals);
   }
 
   /** Continuation decision for a single title, anchored on its most-recent episode. */
@@ -125,7 +127,10 @@ export class ContinueWatchingService {
     return this.historyRepository.listByTitle(titleId);
   }
 
-  private toViewDecision(decision: ContinuationDecision): ContinuationViewDecision {
+  private toViewDecision(
+    decision: ContinuationDecision,
+    signals: ContinuationSignals = {},
+  ): ContinuationViewDecision {
     const anchor = decision.anchor;
     if (!anchor) {
       return { state: decision.state, target: null, secondaryActions: [], freshness: "cached" };
@@ -165,7 +170,7 @@ export class ContinueWatchingService {
         detail: decision.state === "resume" ? "resume where you left off" : "next episode ready",
         primaryAction: onlineAction,
         secondaryActions: [],
-        freshness: "cached",
+        freshness: freshnessForSignals(signals),
       };
     }
 
@@ -177,7 +182,11 @@ export class ContinueWatchingService {
         decision.state === "airing-weekly" ? "next release is not provider-confirmed" : undefined,
       primaryAction: undefined,
       secondaryActions: [],
-      freshness: "cached",
+      freshness: freshnessForSignals(signals),
     };
   }
+}
+
+function freshnessForSignals(signals: ContinuationSignals): "local" | "cached" | "stale" {
+  return signals.releaseProgress?.stale ? "stale" : "cached";
 }

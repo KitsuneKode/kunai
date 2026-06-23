@@ -23,6 +23,7 @@ export type ContinuationAction =
 
 export type ContinuationPresentation = {
   readonly badge?: string;
+  readonly detail?: string;
   readonly primaryAction?: ContinuationAction;
   readonly secondaryActions?: readonly ContinuationAction[];
   readonly freshness?: "local" | "cached" | "stale";
@@ -117,39 +118,144 @@ export function projectionFromViewDecision(
 ): ContinuationProjection {
   if (!decision.target) return { kind: "empty", titleId: "unknown" };
   const { target } = decision;
+  const season = target.season ?? 1;
+  const episode = target.episode ?? 1;
+  const titleId = target.titleId;
+  const title = target.title;
+  const sourceEntry = target.sourceEntry;
 
-  if (decision.primaryAction?.kind === "play-local") {
-    return {
-      kind: "offline-ready",
-      titleId: target.titleId,
-      title: target.title,
-      season: target.season ?? 1,
-      episode: target.episode ?? 1,
-      sourceEntry: target.sourceEntry,
-      badge: decision.badge,
-      primaryAction: {
-        kind: "play-local",
-        season: target.season ?? 1,
-        episode: target.episode ?? 1,
-        jobId: decision.primaryAction.jobId,
-      },
-      secondaryActions: decision.secondaryActions.map((action) =>
-        action.kind === "select-online" || action.kind === "resume-online"
-          ? {
-              kind: action.kind === "resume-online" ? "resume" : "select-online",
-              season: action.target.season ?? 1,
-              episode: action.target.episode ?? 1,
-            }
-          : { kind: "manage-offline" },
-      ),
-      freshness: decision.freshness,
-    };
+  switch (decision.state) {
+    case "empty":
+      return { kind: "empty", titleId };
+    case "resume":
+      return {
+        kind: "resume-unfinished",
+        titleId,
+        title,
+        season,
+        episode,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    case "offline-ready":
+      return {
+        kind: "offline-ready",
+        titleId,
+        title,
+        season,
+        episode,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    case "next-up":
+      return {
+        kind: "next-released",
+        titleId,
+        title,
+        season,
+        episode,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    case "new-episodes":
+      return {
+        kind: "new-episodes",
+        titleId,
+        title,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    case "airing-weekly":
+      return {
+        kind: "upcoming",
+        titleId,
+        title,
+        season,
+        episode,
+        availableAt: undefined,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    case "up-to-date":
+      return {
+        kind: "up-to-date",
+        titleId,
+        title,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
+    default:
+      return {
+        kind: "up-to-date",
+        titleId,
+        title,
+        sourceEntry,
+        badge: decision.badge,
+        detail: decision.detail,
+        primaryAction: mapPrimaryAction(decision.primaryAction),
+        secondaryActions: decision.secondaryActions.map(mapSecondaryAction),
+        freshness: decision.freshness,
+      };
   }
+}
 
-  return projectContinuationState({
-    titleId: target.titleId,
-    entries: [[target.titleId, target.sourceEntry]],
-  });
+function mapPrimaryAction(
+  action: ContinuationViewDecision["primaryAction"],
+): ContinuationAction | undefined {
+  if (!action) return undefined;
+  return mapSecondaryAction(action);
+}
+
+function mapSecondaryAction(
+  action: ContinuationViewDecision["secondaryActions"][number],
+): ContinuationAction {
+  switch (action.kind) {
+    case "resume-online":
+      return {
+        kind: "resume",
+        season: action.target.season ?? 1,
+        episode: action.target.episode ?? 1,
+      };
+    case "select-online":
+      return {
+        kind: "select-online",
+        season: action.target.season ?? 1,
+        episode: action.target.episode ?? 1,
+      };
+    case "play-local":
+      return {
+        kind: "play-local",
+        season: action.target.season ?? 1,
+        episode: action.target.episode ?? 1,
+        jobId: action.jobId,
+      };
+    case "manage-offline":
+      return { kind: "manage-offline" };
+  }
 }
 
 function projectionFromDecision(

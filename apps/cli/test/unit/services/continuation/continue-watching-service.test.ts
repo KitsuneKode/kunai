@@ -115,6 +115,27 @@ test("startupCandidate exposes offline-ready as local primary with online second
   );
 });
 
+test("titleDecision preserves stale freshness from release progress", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.titleDecision("tmdb:1", {
+    releaseProgress: { newEpisodeCount: 2, stale: true },
+  });
+
+  expect(decision.state).toBe("new-episodes");
+  expect(decision.badge).toBe("2 new");
+  expect(decision.freshness).toBe("stale");
+});
+
 test("episodeProgress returns every stored episode for the title", () => {
   const repo = makeRepo();
   for (const episode of [1, 2, 3]) {

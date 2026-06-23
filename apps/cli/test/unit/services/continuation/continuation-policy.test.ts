@@ -209,8 +209,81 @@ test("projectionFromViewDecision preserves offline-ready local action and online
     season: 1,
     episode: 6,
     badge: "downloaded",
+    detail: "downloaded copy ready",
     primaryAction: { kind: "play-local", season: 1, episode: 6, jobId: "job-6" },
     secondaryActions: [{ kind: "select-online", season: 1, episode: 6 }],
     freshness: "local",
+  });
+});
+
+test("projectionFromViewDecision preserves next-up decision details and freshness", () => {
+  const projection = projectionFromViewDecision({
+    state: "next-up",
+    target: {
+      titleId: "tmdb:1",
+      title: "Weekly Show",
+      mediaKind: "series",
+      season: 1,
+      episode: 6,
+      sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    },
+    badge: "next",
+    detail: "next episode ready",
+    primaryAction: {
+      kind: "select-online",
+      target: {
+        titleId: "tmdb:1",
+        title: "Weekly Show",
+        mediaKind: "series",
+        season: 1,
+        episode: 6,
+        sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+      },
+    },
+    secondaryActions: [],
+    freshness: "stale",
+  });
+
+  expect(projection).toEqual({
+    kind: "next-released",
+    titleId: "tmdb:1",
+    title: "Weekly Show",
+    season: 1,
+    episode: 6,
+    sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    badge: "next",
+    detail: "next episode ready",
+    primaryAction: { kind: "select-online", season: 1, episode: 6 },
+    secondaryActions: [],
+    freshness: "stale",
+  });
+});
+
+test("projectionFromViewDecision preserves new-episodes badge and freshness", () => {
+  const projection = projectionFromViewDecision({
+    state: "new-episodes",
+    target: {
+      titleId: "tmdb:1",
+      title: "Weekly Show",
+      mediaKind: "series",
+      season: 1,
+      episode: 5,
+      sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    },
+    badge: "3 new",
+    detail: undefined,
+    primaryAction: undefined,
+    secondaryActions: [],
+    freshness: "stale",
+  });
+
+  expect(projection).toEqual({
+    kind: "new-episodes",
+    titleId: "tmdb:1",
+    title: "Weekly Show",
+    sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    badge: "3 new",
+    secondaryActions: [],
+    freshness: "stale",
   });
 });
