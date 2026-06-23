@@ -51,5 +51,7 @@ Kunai already has strong provider orchestration and a real session reducer. The 
 - Provider-aware media materialization moved from `infra/player` to `services/playback`.
 - Active playback commands route through a tested dispatcher seam.
 - Global, player, and post-play shortcuts now resolve through keybinding runtime helpers before surface fallbacks.
+- Post-play recommendation queue/details/download actions now execute through `MediaActionRouter` while preserving confirmation and anime mapping.
+- Continuation projection policy now delegates to the pure continuation engine for shared resume/offline/next/new-episode decisions.
 - Provider background probe concurrency is policy-backed and injectable.
 - Memory guard default/policy now handles long-running sessions less aggressively while preserving emergency protection.

@@ -165,10 +165,11 @@ Decisions:
 
 ### History, Continuation, Release, Queue
 
-Current continuation has overlapping authorities:
+Current continuation still has overlapping entrypoints, but the projection
+policy now delegates to the pure continuation engine for its decision core:
 
 - newer pure continuation engine,
-- older continuation projection policy,
+- continuation projection policy adapter,
 - history reconciliation helper used by history UI/enrichment.
 
 Risks:
@@ -180,8 +181,8 @@ Risks:
   and Enter target can drift.
 - Notification media actions advertise more than the root overlay wires. Missing
   optional deps can silently no-op after showing success copy.
-- Post-play recommendation actions hand-code queue/download/details instead of
-  using the generic media action router.
+- Post-play recommendation actions preserve their confirmation/detail UI, but
+  queue/download/details now execute through the generic media action router.
 - Queue and playlist language is muddy: runtime up-next queue and durable saved
   playlists use overlapping copy and commands.
 - Queue recovery is startup/crash-biased, but clean shutdown does not clearly
@@ -409,13 +410,21 @@ packages/storage
    - Shared hooks.
 
 8. `refactor(app): unify history and continuation entrypoints`
-   - Status: Not started
+   - Status: In progress
+   - Done: `continuation-policy.ts` now delegates projection decisions to
+     `continuation-engine.ts`, including release-progress-only new episode
+     signals.
    - One continuation read model for `--continue`, history picker, search
      continue rows, result enrichment, and post-play.
    - Keep release reconciliation as the freshness source, not a UI concern.
+   - Remaining: migrate startup `--continue`, history row Enter targets, result
+     enrichment, and root history selection to service-owned adapters.
 
 9. `refactor(app): unify queue and media actions`
-   - Status: Not started
+   - Status: In progress
+   - Done: post-play recommendation queue/details/download actions route through
+     `MediaActionRouter`; post-play download keeps the existing confirmation
+     gate and anime provider-native mapping through a router override.
    - Route queue/download/follow/list actions through a single media action
      boundary where possible.
    - Add explicit unsupported-action results when displayed actions lack an
@@ -614,7 +623,8 @@ Task:
 
 - Migrate startup continue, history rows, result badges, and root history
   selection to one continuation decision boundary.
-- Route post-play/search/notification media actions through `MediaActionRouter`.
+- Route remaining search/notification media actions through `MediaActionRouter`
+  where gaps remain; post-play recommendation execution already uses it.
 - Add `UpNextDecision` planner if not handled by Playback Worker.
 
 ### Test/Docs Worker
