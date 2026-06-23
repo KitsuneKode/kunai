@@ -13,42 +13,14 @@ import {
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
+import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { palette } from "./shell-theme";
-import { usePosterPreview } from "./use-poster-preview";
 
 /** Width reserved at the start of a schedule row for the mini-poster + new dot. */
 const CALENDAR_ROW_LEAD_WIDTH = 7;
-
-/**
- * Text mini-poster for a calendar row; falls back to title initials when no art.
- * The async poster fetch only runs for the focused row (`enabled`) — fetching one
- * per visible row caused navigation lag and dropped keypresses, since every scroll
- * remounted a dozen concurrent fetches. Unfocused rows render cheap initials.
- */
-function CalendarMini({
-  url,
-  title,
-  enabled,
-}: {
-  readonly url?: string;
-  readonly title: string;
-  readonly enabled: boolean;
-}) {
-  const { poster } = usePosterPreview(url, {
-    rows: 2,
-    cols: 4,
-    enabled: enabled && Boolean(url),
-    variant: "preview",
-    inkEmbedded: true,
-    preserveTerminalImages: true,
-    debounceMs: 160,
-  });
-  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
-  return <Text color={palette.dim}>{title.slice(0, 2).toUpperCase()}</Text>;
-}
 
 export function CalendarScheduleStatus({
   model,
@@ -202,15 +174,8 @@ function CalendarScheduleRowInner<T>({
     glyph ? `${glyph} ${status}` : status,
     layout.statusWidth,
   );
-  const kind = option.calendar?.contentKind;
-  const epColor =
-    kind === "anime"
-      ? palette.typeAnime
-      : kind === "movie"
-        ? palette.typeMovie
-        : kind === "series"
-          ? palette.typeSeries
-          : palette.muted;
+  // Episode code is secondary context — color must not encode content type.
+  const epColor = palette.muted;
 
   const columns = buildCalendarRowColumns({
     timeLabel,
@@ -233,7 +198,7 @@ function CalendarScheduleRowInner<T>({
       ) : null}
       <Box flexDirection="row">
         <Box width={5}>
-          <CalendarMini url={posterUrl} title={option.label} enabled={selected} />
+          <MiniPosterTile url={posterUrl} title={option.label} enabled={selected} />
         </Box>
         <Text color={isNew ? palette.accent : palette.ok}>
           {isNew ? "● " : tracked ? "● " : "  "}

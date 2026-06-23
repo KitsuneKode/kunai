@@ -1,4 +1,6 @@
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
+import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
+import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import type { SearchResult } from "@/domain/types";
@@ -81,8 +83,16 @@ import {
 } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
+import { computeMediaListRowLayout } from "./primitives/list-row-layout";
+import { ListRow } from "./primitives/ListRow";
+import {
+  listRowStatusColumn,
+  listRowTitleColumn,
+  type ListRowColumn,
+} from "./primitives/ListRow.model";
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
+import { StateBlock } from "./primitives/StateBlock";
 import { mountRootContent } from "./root-content-state";
 import {
   getNotificationDetailsPending,
@@ -97,14 +107,8 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import {
-  getWindowStart,
-  measureColumns,
-  padColumnsEnd,
-  padColumnsStart,
-  truncateLine,
-} from "./shell-text";
-import { contentTintColor, palette } from "./shell-theme";
+import { getWindowStart, measureColumns } from "./shell-text";
+import { palette } from "./shell-theme";
 import { SkeletonRows } from "./skeleton";
 import {
   toShellAction,
@@ -112,16 +116,16 @@ import {
   type BrowseShellOption,
   type BrowseShellResult,
   type BrowseShellSearchResponse,
-  type ShellPanelLine,
-  type ShellPickerOption,
   type ShellAction,
-  type ShellFooterMode,
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 /** Minimum loaded results before local narrow mode is worth its space. */
 const MIN_RESULTS_FOR_LOCAL_FILTER = 12;
+
+/** Rendered height of the companion poster; reserved so the slot never reflows. */
+const PREVIEW_POSTER_ROWS = 9;
 
 function clearShellScreen() {
   if (process.stdout.isTTY) {
@@ -168,20 +172,10 @@ export function BrowseShell<T>({
   initialCalendarTypeTab,
   placeholder,
   commands,
-  providerOptions: _providerOptions,
-  loadHistoryPanel: _loadHistoryPanel,
-  loadDiagnosticsPanel: _loadDiagnosticsPanel,
-  loadHelpPanel: _loadHelpPanel,
-  loadAboutPanel: _loadAboutPanel,
-  onChangeProvider: _onChangeProvider,
   onSearch,
   onLoadDiscovery,
   onLoadRecommendations,
-  footerMode: _footerMode = "detailed",
-  settings: _settings,
-  settingsSeriesProviderOptions: _settingsSeriesProviderOptions,
-  settingsAnimeProviderOptions: _settingsAnimeProviderOptions,
-  onSaveSettings: _onSaveSettings,
+  settings,
   onQueueSelected,
   onFollowSelected,
   onPlayTrailer,
@@ -200,20 +194,10 @@ export function BrowseShell<T>({
   initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
-  providerOptions?: readonly ShellPickerOption<string>[];
-  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
-  onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
-  footerMode?: ShellFooterMode;
   settings?: KitsuneConfig;
-  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
-  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
-  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
@@ -223,8 +207,9 @@ export function BrowseShell<T>({
   onCancel: () => void;
   idleContext?: import("./types").BrowseIdleContext;
 }) {
+  recordRender("browse");
   const viewport = useDebouncedViewportPolicy("browse", {
-    zen: _settings?.zenMode,
+    zen: settings?.zenMode,
   });
   const [query, setQuery] = useState(initialQuery ?? "");
   const [commandMode, setCommandMode] = useState(false);
@@ -275,15 +260,26 @@ export function BrowseShell<T>({
   const [filterModeOpen, setFilterModeOpen] = useState(false);
   // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
   // See browse-focus-zone.ts and .docs/ux-architecture.md.
-  const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() =>
-    createInitialBrowseFocusZone({
+  const [focusZone, setFocusZone] = useState<BrowseFocusZone>(() => {
+    // The calendar surface has no search box, so the `query` zone is a dead zone:
+    // arrows would only switch the (invisible) zone and the FIRST ↑/↓ would do
+    // nothing visible. Boot straight into `list` so the schedule owns the keyboard
+    // immediately. Mirrored by the focus effect below for route-loaded calendars.
+    const bootsIntoCalendar =
+      (initialResults ?? []).some(
+        (opt) => opt.calendar !== undefined || opt.previewGroup !== undefined,
+      ) ||
+      (initialResultSubtitle ?? "").includes("schedule") ||
+      (initialResultSubtitle ?? "").includes("airing today");
+    if (bootsIntoCalendar) return "list";
+    return createInitialBrowseFocusZone({
       startIdle: !!(
-        _settings?.minimalMode &&
+        settings?.minimalMode &&
         idleContext?.continueWatching?.titleId &&
         (!initialResults || initialResults.length === 0)
       ),
-    }),
-  );
+    });
+  });
   const [idleSelectedIndex, setIdleSelectedIndex] = useState(0);
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
@@ -541,6 +537,23 @@ export function BrowseShell<T>({
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
   const selectedOption = displayOptions[boundedSelectedIndex];
 
+  // Preview-side work — network poster fetch + chafa/kitty render and secondary
+  // detail resolution — is deferred until the selection settles. During rapid
+  // ↑/↓ only the highlight (boundedSelectedIndex) moves, which is cheap; the heavy
+  // per-row work must NOT fire on every intermediate row or it floods the main
+  // thread and Ink's frame writes, making navigation feel blocked and dropping
+  // keypresses. Calendar feels this worst: its lists are large (the "All" tab
+  // aggregates everything) and every row carries a poster, so without this gate
+  // the highlight appears stuck while the side panel/poster churn catches up.
+  // `selectedOption` stays live for input handlers (Enter/details/follow/queue);
+  // only the preview surface reads `settledOption`. The settle window (see
+  // PREVIEW_SETTLE_MS) means a run of ↑/↓ presses spawns no poster subprocess
+  // until navigation rests, keeping the event loop free to service keypresses.
+  const settledOption = useSettledValue(selectedOption);
+  // True while the highlight is ahead of the settled preview, i.e. actively
+  // navigating. Used to suppress the heavy poster block from intermediate frames.
+  const navigating = selectedOption !== settledOption;
+
   const openDetailsOverlay = useCallback(
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
@@ -699,14 +712,25 @@ export function BrowseShell<T>({
     }
   }, [displayOptions.length, focusZone]);
 
+  // Calendar owns the keyboard: there is no search box to focus, so `query` is a
+  // dead zone where the first arrow key only flips an invisible focus state and
+  // appears to do nothing. Whenever the schedule is showing rows, force `list`
+  // focus so ↑/↓ navigate on the first press and re-entering from a closed
+  // details overlay (which sets `query`) never strands navigation again.
   useEffect(() => {
-    const primaryData = buildDetailsPanelDataFromBrowseOption(selectedOption);
+    if (isCalendarView && displayOptions.length > 0 && !isBrowseListFocused(focusZone)) {
+      setFocusZone("list");
+    }
+  }, [isCalendarView, displayOptions.length, focusZone]);
+
+  useEffect(() => {
+    const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
     setCompanionDetails(primaryData);
     let cancelled = false;
     void (async () => {
       await Bun.sleep(32);
       if (cancelled) return;
-      const secondary = resolveBrowseDetailsSecondary(selectedOption, { providerName: provider });
+      const secondary = resolveBrowseDetailsSecondary(settledOption, { providerName: provider });
       setCompanionDetails((current) => ({
         ...current,
         primary: primaryData.primary,
@@ -716,7 +740,7 @@ export function BrowseShell<T>({
     return () => {
       cancelled = true;
     };
-  }, [provider, selectedOption]);
+  }, [provider, settledOption]);
 
   const { compact, ultraCompact, minColumns, minRows } = viewport;
   // Short terminals: collapse schedule chrome margins so the list keeps its rows.
@@ -734,6 +758,9 @@ export function BrowseShell<T>({
         : innerWidth;
   const listWidth = showCompanionLayout ? Math.max(48, innerWidth - previewWidth - 4) : innerWidth;
   const rowWidth = Math.max(20, listWidth - 4);
+  // Browse option rows share the history/library row primitive: flex title +
+  // optional right-aligned meta. No episode/recency columns here.
+  const browseRowLayout = computeMediaListRowLayout(rowWidth, { hasEpisode: false });
   // The "Series"/"Movie" type is a quiet column only when the result set is
   // actually mixed; an all-series list never repeats "Series" on every row.
   const resultsAreMixed =
@@ -745,26 +772,28 @@ export function BrowseShell<T>({
   // rows or get clipped against the bottom of the viewport.
   const showCompanion = showCompanionLayout && !compact && !commandMode && Boolean(selectedOption);
   const { poster, posterState: posterPreviewState } = usePosterPreview(
-    selectedOption?.previewImageUrl ?? undefined,
+    settledOption?.previewImageUrl ?? undefined,
     {
-      rows: 9,
+      rows: PREVIEW_POSTER_ROWS,
       cols: Math.max(14, Math.min(20, previewWidth - 6)),
-      enabled: Boolean(selectedOption?.previewImageUrl),
-      debounceMs: 90,
+      enabled: Boolean(settledOption?.previewImageUrl),
+      // `settledOption` already absorbs the rapid-navigation burst, so the poster
+      // hook only needs a tiny guard rather than re-debouncing on top of it.
+      debounceMs: 16,
       variant: "detail",
     },
   );
   const mappedPosterState = mapPosterPreviewState({
-    hasPosterPath: Boolean(selectedOption?.previewImageUrl),
+    hasPosterPath: Boolean(settledOption?.previewImageUrl),
     poster,
     posterState: posterPreviewState,
   });
   const previewRailModel = isCalendarView
     ? buildCalendarPreviewRailModel(
-        selectedOption as BrowseShellOption<SearchResult> | undefined,
+        settledOption as BrowseShellOption<SearchResult> | undefined,
         mappedPosterState,
       )
-    : buildPreviewRailModelFromBrowseOption(selectedOption, mappedPosterState);
+    : buildPreviewRailModelFromBrowseOption(settledOption, mappedPosterState);
   const showPreviewRail =
     showCompanion &&
     viewport.previewRail &&
@@ -807,7 +836,7 @@ export function BrowseShell<T>({
   // so that work blocked keypress handling and made calendar nav feel laggy / drop
   // arrows. Selection is intentionally NOT a dependency: navigation only re-slices the
   // window + flips the `selected` flag below, both cheap.
-  const lastCalendarVisitAt = _settings?.lastCalendarVisitAt ?? 0;
+  const lastCalendarVisitAt = settings?.lastCalendarVisitAt ?? 0;
   const calendarRenderRows = useMemo(
     () =>
       isCalendarView
@@ -831,6 +860,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);
     }
@@ -1107,9 +1137,19 @@ export function BrowseShell<T>({
     if (key.escape) {
       // Layered step-back: results focus → query focus → clear results → clear
       // query → cancel. Esc first hands the list's focus back to the search box.
-      if (isCalendarView && calendarDayFilter !== null) {
-        setCalendarDay(null);
-        setSelectedIndex(0);
+      //
+      // Calendar is self-contained: it has no query box to fall back into (the
+      // focus effect above keeps it in `list`). So Esc clears a day filter first,
+      // then backs out of the schedule entirely — it must NOT route to `query`,
+      // or the focus effect would instantly pull it back to `list` and Esc would
+      // appear to do nothing.
+      if (isCalendarView) {
+        if (calendarDayFilter !== null) {
+          setCalendarDay(null);
+          setSelectedIndex(0);
+          return;
+        }
+        clearResults();
         return;
       }
       if (resultFilterFocused || filterModeOpen) {
@@ -1344,15 +1384,6 @@ export function BrowseShell<T>({
           </Text>
         </Box>
 
-        {searchState === "error" && errorMessage && !calendarSurfaceActive ? (
-          <Box marginTop={1} flexDirection="column" flexGrow={1}>
-            <Text color={palette.danger}>{errorMessage}</Text>
-            <Text color={palette.muted} dimColor>
-              Press Enter to retry or Esc to clear
-            </Text>
-          </Box>
-        ) : null}
-
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
             <CalendarTypeTabs
@@ -1419,75 +1450,28 @@ export function BrowseShell<T>({
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
                     const selected = optionIndex === boundedSelectedIndex;
-                    // The type column (Series/Movie/Anime) gets its palette tint so a
-                    // mixed result set reads by kind at a glance; a previewBadge
-                    // (new / wl / …) keeps the neutral row color.
+                    // The type column (Series/Movie/Anime) reads as quiet muted meta
+                    // when the set is mixed; a previewBadge (new / wl / …) takes
+                    // precedence. Identity/focus is carried by the row, not a tint.
                     const badge = option.previewBadge;
                     const typeMeta =
                       !badge && resultsAreMixed ? option.previewMeta?.[0] : undefined;
                     const metaText = badge ?? typeMeta;
-                    const metaWidth = metaText
-                      ? Math.min(12, Math.max(6, measureColumns(metaText)))
-                      : 0;
-                    const titleBudget = Math.max(12, rowWidth - metaWidth - 6);
-                    const titleText = padColumnsEnd(
-                      truncateLine(option.label, titleBudget),
-                      titleBudget,
-                    );
-                    const metaSegment = metaText
-                      ? padColumnsStart(truncateLine(metaText, metaWidth), metaWidth)
-                      : "";
-                    const titleColor = selected
-                      ? listFocused
-                        ? palette.text
-                        : palette.muted
-                      : palette.textDim;
-                    const typeKind = typeMeta?.toLowerCase();
-                    const metaColor = typeMeta
-                      ? contentTintColor(
-                          typeKind === "movie"
-                            ? "movie"
-                            : typeKind === "anime"
-                              ? "anime"
-                              : "series",
-                        )
-                      : titleColor;
-
+                    const columns: ListRowColumn[] = [
+                      listRowTitleColumn(option.label, browseRowLayout.titleWidth),
+                    ];
+                    if (metaText) {
+                      const metaWidth = Math.min(12, Math.max(6, measureColumns(metaText)));
+                      columns.push(listRowStatusColumn(metaText, metaWidth, palette.muted, true));
+                    }
                     return (
-                      <Box
+                      <ListRow
                         key={`${option.label}-${option.detail ?? ""}`}
-                        flexDirection="column"
-                        width={rowWidth}
-                      >
-                        <Box width={rowWidth}>
-                          <Text wrap="truncate">
-                            <Text
-                              bold={selected && listFocused}
-                              color={
-                                selected
-                                  ? listFocused
-                                    ? palette.accent
-                                    : palette.muted
-                                  : palette.dim
-                              }
-                            >
-                              {selected ? "▌ " : "  "}
-                            </Text>
-                            <Text
-                              bold={selected && listFocused}
-                              dimColor={!selected}
-                              color={titleColor}
-                            >
-                              {titleText}
-                            </Text>
-                            {metaText ? (
-                              <Text dimColor={!selected} color={metaColor}>
-                                {` ${metaSegment}`}
-                              </Text>
-                            ) : null}
-                          </Text>
-                        </Box>
-                      </Box>
+                        selected={selected && listFocused}
+                        rowWidth={rowWidth}
+                        flexColumnIndex={browseRowLayout.flexColumnIndex}
+                        columns={columns}
+                      />
                     );
                   })}
               {(
@@ -1502,13 +1486,31 @@ export function BrowseShell<T>({
             {/* Companion pane */}
             {showCompanion ? (
               <Box
-                key={`browse-companion-${boundedSelectedIndex}-${selectedOption?.label ?? "none"}`}
+                // Stable key: a selection-derived key here force-UNMOUNTED and
+                // remounted the whole preview pane (PreviewRail + poster + details)
+                // on every ↑/↓, synchronously on the keypress path — a primary
+                // cause of calendar nav feeling like it "registers late". The pane
+                // is now reconciled (cheap, memoized) and the poster hook clears
+                // stale images on fetch, so no remount is needed for correctness.
+                key="browse-companion"
                 marginLeft={2}
                 flexDirection="column"
                 width={previewWidth}
               >
                 {showPreviewRail && previewRailModel ? (
-                  <PreviewRail model={previewRailModel} width={previewWidth} poster={poster} />
+                  <PreviewRail
+                    model={previewRailModel}
+                    width={previewWidth}
+                    // While navigating, suppress the heavy chafa color block: the
+                    // companion shares output lines with the (shifting) list, so Ink
+                    // re-emits the whole block on every keystroke. Kitty posters are
+                    // a tiny placeholder drawn out-of-band, so they are left in place
+                    // (suppressing them would orphan the on-screen image). reserveRows
+                    // keeps the slot height fixed so the placeholder -> image swap on
+                    // settle does not reflow the panel.
+                    poster={navigating && poster.kind === "text" ? undefined : poster}
+                    reserveRows={PREVIEW_POSTER_ROWS}
+                  />
                 ) : (
                   <DetailsSheetUI
                     data={companionDetails}
@@ -1552,6 +1554,21 @@ export function BrowseShell<T>({
             <Text color={palette.dim} dimColor>
               try a different title or browse by genre
             </Text>
+          </Box>
+        ) : searchState === "error" ? (
+          <Box marginTop={1} flexGrow={1}>
+            <StateBlock
+              model={{
+                kind: "error",
+                title: "Search failed",
+                detail: errorMessage ?? "Something went wrong while loading results.",
+                actions: [
+                  { id: "retry", label: "Retry search", shortcut: "Enter" },
+                  { id: "clear", label: "Clear and start over", shortcut: "Esc", tone: "muted" },
+                ],
+              }}
+              width={Math.min(innerWidth, 72)}
+            />
           </Box>
         ) : (
           <Box marginTop={1} flexGrow={1} flexDirection="column">
@@ -1606,7 +1623,7 @@ export function BrowseShell<T>({
         />
       ) : null}
 
-      {_settings?.discoverShowOnStartup && (
+      {settings?.discoverShowOnStartup && (
         <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
@@ -1681,20 +1698,10 @@ export function openBrowseShell<T>({
   initialCalendarTypeTab,
   placeholder,
   commands,
-  providerOptions,
-  loadHistoryPanel,
-  loadDiagnosticsPanel,
-  loadHelpPanel,
-  loadAboutPanel,
-  onChangeProvider,
   onSearch,
   onLoadDiscovery,
   onLoadRecommendations,
-  footerMode,
   settings,
-  settingsSeriesProviderOptions,
-  settingsAnimeProviderOptions,
-  onSaveSettings,
   onQueueSelected,
   onFollowSelected,
   onPlayTrailer,
@@ -1710,20 +1717,10 @@ export function openBrowseShell<T>({
   initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
-  providerOptions?: readonly ShellPickerOption<string>[];
-  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
-  onChangeProvider?: (providerId: string) => Promise<void>;
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
-  footerMode?: ShellFooterMode;
   settings?: KitsuneConfig;
-  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
-  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
-  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
@@ -1743,20 +1740,10 @@ export function openBrowseShell<T>({
         initialCalendarTypeTab={initialCalendarTypeTab}
         placeholder={placeholder}
         commands={commands}
-        providerOptions={providerOptions}
-        loadHistoryPanel={loadHistoryPanel}
-        loadDiagnosticsPanel={loadDiagnosticsPanel}
-        loadHelpPanel={loadHelpPanel}
-        loadAboutPanel={loadAboutPanel}
-        onChangeProvider={onChangeProvider}
         onSearch={onSearch}
         onLoadDiscovery={onLoadDiscovery}
         onLoadRecommendations={onLoadRecommendations}
-        footerMode={footerMode}
         settings={settings}
-        settingsSeriesProviderOptions={settingsSeriesProviderOptions}
-        settingsAnimeProviderOptions={settingsAnimeProviderOptions}
-        onSaveSettings={onSaveSettings}
         onQueueSelected={onQueueSelected}
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}

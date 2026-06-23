@@ -36,8 +36,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { dispatchAppCommand } from "./app-command-dispatcher";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { recordRender } from "./diagnostics/render-trace";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
+import { useSettledValue } from "./hooks/use-settled-value";
 import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import { LoadingShell } from "./loading-shell";
@@ -84,7 +86,7 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { InputField, ShellFrame } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
-import { getWindowStart, truncateLine, wrapText } from "./shell-text";
+import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import {
   buildStatsView,
@@ -331,6 +333,10 @@ export function useSessionState(stateManager: SessionStateManager) {
  */
 
 function AppRoot({ container }: { container: Container }) {
+  // Counts root-shell commits. With no keystroke recorded for this surface, the
+  // tracer flags every AppRoot render as an "idle render", so `--debug` exposes
+  // background-timer-driven full-frame redraws while parked on /calendar.
+  recordRender("ink-shell");
   const { stateManager } = container;
   const state = useSessionState(stateManager);
   const rootOverlay = useSessionSelector(stateManager, getRootOwnedOverlay);
@@ -1403,7 +1409,10 @@ function PlaybackShell({
       inputLocked={overlayBlocksInput}
       escapeAction="back-to-results"
       onUnhandledInput={(input, key) => {
-        if (overlayBlocksInput) return;
+        // No overlay re-check here: ShellFrame already suppresses onUnhandledInput
+        // while `inputLocked` (= overlayBlocksInput) is set — proven by
+        // shell-frame-input-bridge.test.tsx. The resolver below still receives
+        // `blockedByOverlay` as a defensive pure-function guard for direct callers.
         if (key.upArrow || input === "k") {
           setSelectedActionIndex((index) => Math.max(0, index - 1));
           return;
@@ -1578,6 +1587,11 @@ function ListShell<T>({
   }, [filteredOptions.length]);
 
   const selectedOption = filteredOptions[index];
+  // Label/detail stay live (cheap text) so the highlight reads instantly; only the
+  // heavy poster pipeline is gated on the settled selection so a run of ↑/↓ never
+  // spawns a chafa/Kitty subprocess mid-navigation.
+  const settledOption = useSettledValue(selectedOption);
+  const navigating = selectedOption !== settledOption;
 
   const { ultraCompact, tooSmall, minColumns, minRows } = viewport;
   const maxVisible = getPickerListMaxVisible(
@@ -1604,12 +1618,18 @@ function ListShell<T>({
       ? "Use ↑↓ to move through results"
       : "No matching results. Keep typing or press Esc to clear the filter.");
   const detailLines = wrapText(selectedDetail, Math.max(20, companionWidth - 2), 7);
-  const { poster, posterState } = usePosterPreview(selectedOption?.previewImageUrl, {
+  const { poster, posterState } = usePosterPreview(settledOption?.previewImageUrl, {
     rows: 9,
     cols: Math.max(18, Math.min(30, companionWidth - 4)),
-    enabled: showCompanion,
-    debounceMs: 120,
+    enabled: showCompanion && Boolean(settledOption?.previewImageUrl),
+    // `settledOption` already absorbs the rapid-navigation burst; the hook only
+    // needs a tiny guard on top rather than re-debouncing.
+    debounceMs: 16,
   });
+  // Suppress the heavy chafa block while navigating (the companion shares output
+  // lines with the shifting list, so Ink re-emits it every keystroke). Kitty
+  // posters are tiny out-of-band placeholders, so leave them in place.
+  const showHeavyPoster = poster.kind !== "none" && !(navigating && poster.kind === "text");
 
   const windowStart = getWindowStart(index, filteredOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, filteredOptions.length);
@@ -1795,7 +1815,7 @@ function ListShell<T>({
                         dimColor={!selected && !isConfirmed}
                       >
                         <Text color={itemTone}>{`${itemPrefix} `}</Text>
-                        {rowText.padEnd(rowWidth - 2)}
+                        {padColumnsEnd(rowText, rowWidth - 2)}
                       </Text>
                     </Box>
                   );
@@ -1805,11 +1825,12 @@ function ListShell<T>({
               {!ultraCompact && showCompanion ? (
                 <Box marginLeft={2} flexDirection="column" width={companionWidth}>
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
-                    {poster.kind !== "none" ? (
+                    {showHeavyPoster ? (
                       <Box flexDirection="column" marginBottom={1}>
                         <Text>{poster.placeholder}</Text>
                       </Box>
-                    ) : selectedOption?.previewImageUrl && posterState === "loading" ? (
+                    ) : selectedOption?.previewImageUrl &&
+                      (navigating || posterState === "loading") ? (
                       <Box marginBottom={1}>
                         <Text color={palette.muted} dimColor>
                           Loading artwork…
