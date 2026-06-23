@@ -121,9 +121,9 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
             item.tone === "success"
               ? palette.ok
               : item.tone === "warning"
-                ? palette.warn
+                ? statusColor("warning")
                 : item.tone === "info"
-                  ? palette.info
+                  ? statusColor("info")
                   : palette.dim
           }
           dimColor={item.tone === "neutral"}
@@ -621,7 +621,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   )}
                   {showStallPrompt && (
                     <Box flexDirection="column" marginTop={1}>
-                      <Text color={palette.warn} bold>
+                      <Text color={statusColor("warning")} bold>
                         Source not responding
                       </Text>
                       <Text color={palette.dim}>

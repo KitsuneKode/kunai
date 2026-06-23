@@ -11,8 +11,8 @@ import {
   wrapSynopsis,
 } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
-import { truncateAtWord, truncateLine } from "./shell-text";
-import { palette } from "./shell-theme";
+import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
+import { palette, semanticToneColor } from "./shell-theme";
 import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -48,18 +48,15 @@ function FactRow({ label, value, width }: { label: string; value: string; width:
   const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
   return (
     <Box>
-      <Text color={palette.dim}>{truncateLine(label, labelWidth).padEnd(labelWidth)}</Text>
+      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
       <Text color={palette.text}>{truncateLine(value, width - labelWidth - 2)}</Text>
     </Box>
   );
 }
 
 function sheetLineColor(tone: ShellPanelLine["tone"]): string {
-  if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.warn;
-  if (tone === "error") return palette.danger;
-  if (tone === "info") return palette.info;
-  return palette.text;
+  if (!tone || tone === "neutral") return palette.text;
+  return semanticToneColor(tone);
 }
 
 export function DetailsSheetUI({
@@ -119,7 +116,10 @@ export function DetailsSheetUI({
           ) : (
             <Box key={`${line.label}:${line.detail ?? ""}`}>
               <Text color={palette.dim}>
-                {truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH).padEnd(DETAIL_FACT_LABEL_WIDTH)}
+                {padColumnsEnd(
+                  truncateLine(line.label, DETAIL_FACT_LABEL_WIDTH),
+                  DETAIL_FACT_LABEL_WIDTH,
+                )}
               </Text>
               <Text color={sheetLineColor(line.tone)}>
                 {truncateLine(line.detail ?? "", width - DETAIL_FACT_LABEL_WIDTH - 2)}
@@ -267,11 +267,15 @@ function DetailFact({
   readonly tone?: "success" | "warning" | "muted";
 }) {
   const valueColor =
-    tone === "success" ? palette.ok : tone === "warning" ? palette.warn : palette.text;
+    tone === "success"
+      ? palette.ok
+      : tone === "warning"
+        ? semanticToneColor("warning")
+        : palette.text;
   const displayValue = value === "—" ? value : truncateLine(value, valueWidth);
   return (
     <Box>
-      <Text color={palette.dim}>{truncateLine(label, labelWidth).padEnd(labelWidth)}</Text>
+      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)}</Text>
       <Text color={value === "—" ? palette.dim : valueColor} dimColor={value === "—"}>
         {displayValue}
       </Text>

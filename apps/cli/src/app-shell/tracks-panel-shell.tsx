@@ -9,6 +9,7 @@ import {
 import { Box, Text } from "ink";
 import React from "react";
 
+import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { chunkSubtitleGrid, tracksCountsHeader } from "./tracks-panel-layout";
@@ -122,7 +123,14 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
   if (groups.length === 0) {
     return (
       <Box paddingX={1}>
-        <Text color={palette.muted}>No stream details available for this title yet.</Text>
+        <StateBlock
+          model={{
+            kind: "empty",
+            title: "No stream details yet",
+            detail: "Track and subtitle inventory appears once playback resolves a source.",
+          }}
+          width={width}
+        />
       </Box>
     );
   }

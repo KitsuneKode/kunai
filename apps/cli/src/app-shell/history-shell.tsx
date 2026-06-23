@@ -3,6 +3,7 @@ import React from "react";
 
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
+import { useRailPoster } from "./hooks/use-rail-poster";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -12,7 +13,6 @@ import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { RETURN_LOOP_HISTORY_NEW_EMPTY, RETURN_LOOP_HISTORY_SUBTITLE } from "./return-loop-copy";
 import { palette } from "./shell-theme";
-import { usePosterPreview } from "./use-poster-preview";
 
 export function HistoryShell({
   view,
@@ -29,10 +29,10 @@ export function HistoryShell({
   // Resolve the selected row's stored poster for the preview rail (same mechanism
   // as browse). Wide-only; the URL now comes from history (persisted on watch).
   const railPosterUrl = view.rail?.posterUrl;
-  const { poster: railPoster } = usePosterPreview(railPosterUrl, {
+  const { poster: railPoster } = useRailPoster(railPosterUrl, {
     rows: 12,
     cols: 26,
-    enabled: Boolean(railPosterUrl) && columns >= 124,
+    enabled: columns >= 124,
   });
   const selectedItem = view.items.find(
     (item): item is Extract<HistoryView["items"][number], { kind: "row" }> =>

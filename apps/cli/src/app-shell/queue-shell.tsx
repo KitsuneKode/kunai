@@ -1,44 +1,15 @@
-import { Box, Text } from "ink";
+import { Box } from "ink";
 import React from "react";
 
+import { useRailPoster } from "./hooks/use-rail-poster";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
+import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
 import { palette } from "./shell-theme";
-import { usePosterPreview } from "./use-poster-preview";
-
-function initialsOf(title: string): string {
-  return (
-    title
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => word[0]?.toUpperCase() ?? "")
-      .slice(0, 2)
-      .join("") || "?"
-  );
-}
-
-/**
- * Text-mode mini-poster: `inkEmbedded` produces chafa symbols inside Ink (not a
- * Kitty placement), so many can coexist with the single Kitty hero in the rail;
- * `preserveTerminalImages` keeps a row render from wiping that hero.
- */
-function MiniPoster({ url, title }: { readonly url?: string; readonly title: string }) {
-  const { poster } = usePosterPreview(url, {
-    rows: 2,
-    cols: 4,
-    enabled: Boolean(url),
-    variant: "preview",
-    inkEmbedded: true,
-    preserveTerminalImages: true,
-    debounceMs: 160,
-  });
-  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
-  return <Text color={palette.dim}>{initialsOf(title)}</Text>;
-}
 
 function QueueRow({
   row,
@@ -57,7 +28,7 @@ function QueueRow({
   return (
     <Box flexDirection="row">
       <Box width={5}>
-        <MiniPoster url={row.posterUrl} title={row.title} />
+        <MiniPosterTile url={row.posterUrl} title={row.title} enabled={selected} />
       </Box>
       <Box flexGrow={1}>
         <ListRow
@@ -90,10 +61,10 @@ export function QueueShell({
   readonly rowWidth: number;
 }) {
   // Single Kitty hero for the selected item (same mechanism as history's rail).
-  const { poster: railPoster } = usePosterPreview(view.rail?.posterUrl, {
+  const { poster: railPoster } = useRailPoster(view.rail?.posterUrl, {
     rows: 12,
     cols: 26,
-    enabled: Boolean(view.rail?.posterUrl) && columns >= 124,
+    enabled: columns >= 124,
     variant: "detail",
   });
 

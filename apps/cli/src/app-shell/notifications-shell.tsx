@@ -2,27 +2,11 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { NotificationRow, NotificationsView } from "./notifications-view";
+import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
-import { usePosterPreview } from "./use-poster-preview";
-
-// Text-mode mini-poster (chafa inside Ink) for new-episode rows — coexists with
-// any single Kitty image and degrades to title initials when no poster URL.
-function NotifMini({ url, title }: { readonly url?: string; readonly title: string }) {
-  const { poster } = usePosterPreview(url, {
-    rows: 2,
-    cols: 4,
-    enabled: Boolean(url),
-    variant: "preview",
-    inkEmbedded: true,
-    preserveTerminalImages: true,
-    debounceMs: 160,
-  });
-  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
-  return <Text color={palette.dim}>{title.slice(0, 2).toUpperCase()}</Text>;
-}
 
 function Row({
   row,
@@ -40,7 +24,7 @@ function Row({
       <Text color={palette.accent}>{row.unread ? "● " : "  "}</Text>
       {row.usePoster ? (
         <Box width={5}>
-          <NotifMini url={row.posterUrl} title={row.title} />
+          <MiniPosterTile url={row.posterUrl} title={row.title} enabled={selected} />
         </Box>
       ) : (
         <Text color={palette.muted}>{row.glyph} </Text>

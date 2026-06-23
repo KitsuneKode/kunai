@@ -3,7 +3,7 @@ import React from "react";
 
 import type { PlaybackPlayingRailView } from "./playback-playing-view";
 import type { PostPlayRailFact, PostPlayUpNextCard } from "./post-play-view";
-import { truncateLine } from "./shell-text";
+import { padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -42,7 +42,9 @@ function RailFacts({
     <Box flexDirection="column" marginTop={1}>
       {facts.map((fact) => (
         <Box key={`${fact.label}:${fact.value}`} flexDirection="row" flexWrap="nowrap">
-          <Text color={palette.muted}>{fact.label.padEnd(labelWidth).slice(0, labelWidth)} </Text>
+          <Text color={palette.muted}>
+            {padColumnsEnd(truncateLine(fact.label, labelWidth), labelWidth)}{" "}
+          </Text>
           <Text color={fact.tone === "success" ? palette.ok : palette.textDim}>
             {truncateLine(fact.value, valueWidth)}
           </Text>
