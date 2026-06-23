@@ -22,6 +22,7 @@ import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import {
+  resolveProviderCatalogIdentity,
   type ProviderEngine,
   type ProviderEngineEvent,
   type ProviderEngineResolveAttempt,
@@ -42,15 +43,18 @@ import type {
   ProviderSelectionDecision,
   StartupPriority,
 } from "@kunai/types";
+import { isProviderResolveResultResolved } from "@kunai/types";
 
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { planProviderCandidates } from "./ProviderCandidatePlanner";
+import type { ProviderEndpointHealthService } from "./ProviderEndpointHealthService";
 import {
   decideResolveResultCommit,
   type ResolveCancellationReason,
 } from "./ResolveResultCommitPolicy";
 import type { SourceInventoryService } from "./SourceInventoryService";
 import { StreamHealthService } from "./StreamHealthService";
+import type { TitlePlaybackSourceService } from "./TitlePlaybackSourceService";
 import type {
   CountableTitleProviderFailure,
   TitleProviderHealthService,
@@ -198,17 +202,20 @@ export class PlaybackResolveService {
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete">;
       readonly getProviderPriority?: () => ProviderPriorityInput;
-      readonly titleProviderHealth?: Pick<
+      titleProviderHealth?: Pick<
         TitleProviderHealthService,
         "recordFailure" | "recordCleanSuccess"
       > &
         Partial<Pick<TitleProviderHealthService, "getSwitchSuggestion">>;
+      readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
+      readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
     },
   ) {}
 
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveOutput> {
     const manifest = this.deps.engine.getManifest(input.providerId);
     const providerName = manifest?.displayName ?? input.providerId;
+    const catalogIdentity = manifest ? resolveProviderCatalogIdentity(manifest) : undefined;
 
     if (input.prefetchedStream) {
       return {
@@ -303,6 +310,8 @@ export class PlaybackResolveService {
       },
       input.mode,
       input.resolveIntent ?? "play",
+      catalogIdentity,
+      input.providerId,
     );
 
     const inventoryInput = {
@@ -503,6 +512,7 @@ export class PlaybackResolveService {
     emitAttempts(engineResult.attempts);
     let combinedAttempts = [...engineResult.attempts];
     let resolvedStream: StreamInfo | null = null;
+    const refreshedProviders = new Set<ProviderId>();
     while (engineResult.result) {
       const resolvedProviderId = engineResult.providerId ?? input.providerId;
       const selection = providerScopedSelection(input, resolvedProviderId);
@@ -571,6 +581,28 @@ export class PlaybackResolveService {
         undefined,
         "dead-stream",
       );
+
+      if (!refreshedProviders.has(resolvedProviderId as ProviderId)) {
+        refreshedProviders.add(resolvedProviderId as ProviderId);
+        input.onFeedback?.({
+          detail: `Refreshing ${this.deps.engine.getManifest(resolvedProviderId)?.displayName ?? resolvedProviderId}`,
+          note: "Resolved stream was not reachable — requesting a fresh manifest before switching providers.",
+        });
+        const refreshResult = await this.deps.engine.resolve(
+          { ...resolveInput, intent: "refresh" },
+          resolvedProviderId as ProviderId,
+          input.signal,
+          (event) => input.onEvent?.({ type: "provider-engine-event", event }),
+        );
+        if (isProviderResolveResultResolved(refreshResult)) {
+          engineResult = {
+            result: refreshResult,
+            providerId: resolvedProviderId,
+            attempts: combinedAttempts,
+          };
+          continue;
+        }
+      }
 
       const triedProviders = new Set([
         input.providerId as ProviderId,
@@ -696,6 +728,8 @@ export class PlaybackResolveService {
       );
     }
 
+    await this.clearQuarantinedTitleSourcePin(input);
+
     if (cachedStream && input.preserveCachedStreamOnFreshFailure === true) {
       input.onEvent?.({ type: "fresh-source-failed-using-cache", providerId: input.providerId });
       return {
@@ -779,6 +813,28 @@ export class PlaybackResolveService {
       });
     } catch {
       // Health persistence is best-effort
+    }
+  }
+
+  private async clearQuarantinedTitleSourcePin(input: PlaybackResolveInput): Promise<void> {
+    if (!input.selectedSourceId || !this.deps.endpointHealth || !this.deps.titlePlaybackSource) {
+      return;
+    }
+
+    for (const endpoint of endpointCandidatesForPinnedSource(
+      input.providerId,
+      input.selectedSourceId,
+    )) {
+      if (!this.deps.endpointHealth.isQuarantined(input.providerId as ProviderId, endpoint)) {
+        continue;
+      }
+      await this.deps.titlePlaybackSource
+        .delete({ providerId: input.providerId, titleId: input.title.id })
+        .catch(() => undefined);
+      input.onFeedback?.({
+        note: "Preferred source unavailable — using default mirrors",
+      });
+      return;
     }
   }
 
@@ -1058,4 +1114,21 @@ function buildProviderTimeline(
   }
 
   return timeline.snapshot();
+}
+
+function endpointCandidatesForPinnedSource(
+  providerId: string,
+  sourceId: string,
+): readonly string[] {
+  const normalized = sourceId.trim();
+  if (!normalized) return [];
+  const candidates = new Set<string>([normalized]);
+  const prefix = `source:${providerId}:`;
+  if (normalized.startsWith(prefix)) {
+    candidates.add(normalized.slice(prefix.length));
+  }
+  if (providerId === "videasy" || providerId === "vidking") {
+    candidates.add(normalized.replace(/^source:(videasy|vidking):/, ""));
+  }
+  return [...candidates];
 }

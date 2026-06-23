@@ -87,6 +87,16 @@ function createHarnessEngine(onCandidateIds: (ids: readonly ProviderId[]) => voi
   } as unknown as ProviderEngine;
 }
 
+function recentDownHealth(providerId: ProviderId): ProviderHealth {
+  return {
+    providerId,
+    status: "down",
+    checkedAt: new Date().toISOString(),
+    recentFailureRate: 1,
+    consecutiveFailures: 5,
+  };
+}
+
 function resolveInput(
   providerId: string,
   recoveryMode: "guided" | "fallback-first" | "manual" = "guided",
@@ -111,15 +121,7 @@ describe("provider fallback harness", () => {
         candidates = ids;
       }),
       cacheStore: createMemoryCache(),
-      providerHealth: createProviderHealth([
-        {
-          providerId: "fallback-down" as ProviderId,
-          status: "down",
-          checkedAt: "2026-05-16T00:00:00.000Z",
-          recentFailureRate: 1,
-          consecutiveFailures: 5,
-        },
-      ]),
+      providerHealth: createProviderHealth([recentDownHealth("fallback-down" as ProviderId)]),
     });
 
     await service.resolve(resolveInput("primary"));
@@ -149,15 +151,7 @@ describe("provider fallback harness", () => {
         candidates = ids;
       }),
       cacheStore: createMemoryCache(),
-      providerHealth: createProviderHealth([
-        {
-          providerId: "fallback-down" as ProviderId,
-          status: "down",
-          checkedAt: "2026-05-16T00:00:00.000Z",
-          recentFailureRate: 1,
-          consecutiveFailures: 5,
-        },
-      ]),
+      providerHealth: createProviderHealth([recentDownHealth("fallback-down" as ProviderId)]),
     });
 
     await service.resolve(resolveInput("fallback-down", "manual"));

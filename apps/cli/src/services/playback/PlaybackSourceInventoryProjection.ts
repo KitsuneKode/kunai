@@ -307,12 +307,29 @@ function describeSourceSelectionReason(
   source: ProviderSourceCandidate,
   streams: readonly StreamCandidate[],
 ): string | undefined {
+  if (source.status === "failed" || source.status === "exhausted" || source.status === "skipped") {
+    if (typeof source.metadata?.failureReason === "string") {
+      return source.metadata.failureReason;
+    }
+    if (source.metadata?.reason === "deprecated-endpoint") {
+      return "Endpoint unavailable — try another source.";
+    }
+    if (source.metadata?.reason === "quarantined") {
+      return "Source temporarily unavailable — try another mirror.";
+    }
+    if (source.status === "failed") {
+      return "Source failed during resolve — try another mirror.";
+    }
+    if (source.status === "exhausted") {
+      return "Source exhausted during resolve — try another mirror.";
+    }
+  }
   if (streams.length > 0) return undefined;
   if (typeof source.metadata?.failureReason === "string") {
     return source.metadata.failureReason;
   }
   if (typeof source.metadata?.pickerHint === "string") {
-    return "Fresh resolve required to try this source.";
+    return source.metadata.pickerHint;
   }
   return "No playable stream was exposed for this source.";
 }
@@ -392,6 +409,9 @@ function mapSourceStateForStreams(
   status: ProviderSourceCandidate["status"],
   streams: readonly StreamCandidate[],
 ): PlaybackInventoryOptionState {
+  if (status === "failed" || status === "exhausted" || status === "skipped") {
+    return mapSourceState(status);
+  }
   if (streams.some((stream) => typeof stream.url === "string" && stream.url.length > 0)) {
     return "available";
   }
@@ -519,7 +539,7 @@ function projectQualityOptions(
   const groups = new Map<string, MutableQualityOption>();
   for (const stream of result.streams) {
     const label = stream.qualityLabel ?? stream.container ?? stream.protocol ?? stream.id;
-    const id = `quality:${label}`;
+    const id = `quality:${stream.sourceId ?? "unknown"}:${stream.variantId ?? label}`;
     const option = groups.get(id) ?? {
       id,
       label,

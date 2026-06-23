@@ -240,14 +240,14 @@ test("adds known VidKing flavor sources to the source picker model", () => {
     view.sourceGroups.find((group) => group.id === flavorSourceId("videasy-hindi")),
   ).toMatchObject({
     label: "Chopper",
-    state: "available",
+    state: "skipped",
     audioLanguages: ["hi"],
     disabledReason: "Fresh resolve required to try this source.",
     hints: expect.arrayContaining(["Hindi · dub"]),
   });
 });
 
-test("keeps provider-failed source selectable when playable streams exist", () => {
+test("marks provider-failed alternate sources non-selectable even when streams exist", () => {
   const view = projectPlaybackSourceInventory({
     status: "resolved",
     providerId: "vidking",
@@ -288,10 +288,10 @@ test("keeps provider-failed source selectable when playable streams exist", () =
   expect(view.sourceGroups.map((group) => [group.id, group.state])).toEqual(
     expect.arrayContaining([
       ["sanji", "selected"],
-      ["robin", "available"],
+      ["robin", "failed"],
     ]),
   );
-  expect(view.sourceGroups.find((group) => group.id === "robin")?.disabledReason).toBeUndefined();
+  expect(view.sourceGroups.find((group) => group.id === "robin")?.disabledReason).toBeDefined();
 });
 
 test("falls back to stream source ids when provider source inventory is missing", () => {
@@ -482,7 +482,7 @@ test("surfaces exhausted provider failures as warnings and disabled retry contro
   });
   expect(view.sourceGroups.find((group) => group.id === "blocked-source")).toMatchObject({
     state: "failed",
-    disabledReason: "No playable stream was exposed for this source.",
+    disabledReason: "Source failed during resolve — try another mirror.",
   });
 });
 

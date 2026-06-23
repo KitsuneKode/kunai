@@ -18,6 +18,11 @@ import type {
 } from "@/services/playback/PlaybackSourceInventoryView";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
+function isPlayableStreamCandidate(stream: StreamCandidate): boolean {
+  if (typeof stream.url === "string" && stream.url.length > 0) return true;
+  return typeof stream.deferredLocator === "string" && stream.deferredLocator.length > 0;
+}
+
 type SourceOption = {
   readonly value: string;
   readonly label: string;
@@ -154,7 +159,7 @@ export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOpt
   const sourcesById = new Map((result.sources ?? []).map((source) => [source.id, source]));
 
   const options = result.streams
-    .filter((candidate) => typeof candidate.url === "string" && candidate.url.length > 0)
+    .filter((candidate) => isPlayableStreamCandidate(candidate))
     .map((candidate) => {
       const source = candidate.sourceId ? sourcesById.get(candidate.sourceId) : undefined;
       const sourceLabel = source?.label ?? source?.host ?? candidate.sourceId ?? result.providerId;
@@ -273,7 +278,7 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
 
   const projection = buildPlaybackSourceInventoryView(result);
   return result.streams
-    .filter((candidate) => typeof candidate.url === "string" && candidate.url.length > 0)
+    .filter((candidate) => isPlayableStreamCandidate(candidate))
     .map((candidate) => {
       const option = projection.qualityOptions.find((qualityOption) =>
         qualityOption.streamIds.includes(candidate.id),
@@ -316,8 +321,8 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
   const projection = buildPlaybackSourceInventoryView(result, {
     selectedSubtitleUrl: stream.subtitle,
   });
-  const playableStreams = result.streams.filter(
-    (candidate) => typeof candidate.url === "string" && candidate.url.length > 0,
+  const playableStreams = result.streams.filter((candidate) =>
+    isPlayableStreamCandidate(candidate),
   );
   const qualityLabels = uniqueStrings(
     playableStreams.map((candidate) => candidate.qualityLabel ?? candidate.container),
