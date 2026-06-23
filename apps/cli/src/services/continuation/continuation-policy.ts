@@ -1,6 +1,7 @@
 import type { HistoryProgress } from "@kunai/storage";
 
 import { projectContinuation, type ContinuationDecision } from "./continuation-engine";
+import type { ContinuationViewDecision } from "./ContinueWatchingService";
 
 export type ContinuationNextRelease = {
   readonly season: number;
@@ -109,6 +110,46 @@ export function projectContinuationState(input: {
     }),
     input,
   );
+}
+
+export function projectionFromViewDecision(
+  decision: ContinuationViewDecision,
+): ContinuationProjection {
+  if (!decision.target) return { kind: "empty", titleId: "unknown" };
+  const { target } = decision;
+
+  if (decision.primaryAction?.kind === "play-local") {
+    return {
+      kind: "offline-ready",
+      titleId: target.titleId,
+      title: target.title,
+      season: target.season ?? 1,
+      episode: target.episode ?? 1,
+      sourceEntry: target.sourceEntry,
+      badge: decision.badge,
+      primaryAction: {
+        kind: "play-local",
+        season: target.season ?? 1,
+        episode: target.episode ?? 1,
+        jobId: decision.primaryAction.jobId,
+      },
+      secondaryActions: decision.secondaryActions.map((action) =>
+        action.kind === "select-online" || action.kind === "resume-online"
+          ? {
+              kind: action.kind === "resume-online" ? "resume" : "select-online",
+              season: action.target.season ?? 1,
+              episode: action.target.episode ?? 1,
+            }
+          : { kind: "manage-offline" },
+      ),
+      freshness: decision.freshness,
+    };
+  }
+
+  return projectContinuationState({
+    titleId: target.titleId,
+    entries: [[target.titleId, target.sourceEntry]],
+  });
 }
 
 function projectionFromDecision(

@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { projectContinuationState } from "@/services/continuation/continuation-policy";
+import {
+  projectionFromViewDecision,
+  projectContinuationState,
+} from "@/services/continuation/continuation-policy";
 
 const baseEntry = {
   key: "k",
@@ -157,5 +160,57 @@ test("continuation policy surfaces release-progress-only new episodes", () => {
     title: "Weekly Show",
     badge: "3 new",
     freshness: "cached",
+  });
+});
+
+test("projectionFromViewDecision preserves offline-ready local action and online secondary", () => {
+  const projection = projectionFromViewDecision({
+    state: "offline-ready",
+    target: {
+      titleId: "tmdb:1",
+      title: "Weekly Show",
+      mediaKind: "series",
+      season: 1,
+      episode: 6,
+      sourceEntry: baseEntry,
+    },
+    badge: "downloaded",
+    detail: "downloaded copy ready",
+    primaryAction: {
+      kind: "play-local",
+      jobId: "job-6",
+      target: {
+        titleId: "tmdb:1",
+        title: "Weekly Show",
+        mediaKind: "series",
+        season: 1,
+        episode: 6,
+        sourceEntry: baseEntry,
+      },
+    },
+    secondaryActions: [
+      {
+        kind: "select-online",
+        target: {
+          titleId: "tmdb:1",
+          title: "Weekly Show",
+          mediaKind: "series",
+          season: 1,
+          episode: 6,
+          sourceEntry: baseEntry,
+        },
+      },
+    ],
+    freshness: "local",
+  });
+
+  expect(projection).toMatchObject({
+    kind: "offline-ready",
+    season: 1,
+    episode: 6,
+    badge: "downloaded",
+    primaryAction: { kind: "play-local", season: 1, episode: 6, jobId: "job-6" },
+    secondaryActions: [{ kind: "select-online", season: 1, episode: 6 }],
+    freshness: "local",
   });
 });

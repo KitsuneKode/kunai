@@ -19,27 +19,32 @@ export type HistoryLaunchSelection = {
 export function selectContinueHistoryEntry(
   entries: Record<string, HistoryProgress>,
 ): HistoryLaunchSelection | null {
-  const unfinished = Object.entries(entries)
-    .filter(([, entry]) => !isFinished(entry))
-    .sort(
-      (a, b) =>
-        (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
-    );
-  const selected = unfinished[0];
-  return selected ? { titleId: selected[0], entry: selected[1] } : null;
+  return selectNewestUnfinishedAnchor(Object.entries(entries));
 }
 
 export function selectContinueHistoryEntryFromRecent(
   entries: readonly [string, HistoryProgress][],
 ): HistoryLaunchSelection | null {
-  const unfinished = entries
-    .filter(([, entry]) => !isFinished(entry))
-    .sort(
-      (a, b) =>
-        (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
-    );
-  const selected = unfinished[0];
-  return selected ? { titleId: selected[0], entry: selected[1] } : null;
+  return selectNewestUnfinishedAnchor(entries);
+}
+
+function selectNewestUnfinishedAnchor(
+  entries: readonly [string, HistoryProgress][],
+): HistoryLaunchSelection | null {
+  const latestByTitle = new Map<string, HistoryProgress>();
+  for (const [titleId, entry] of entries) {
+    const current = latestByTitle.get(titleId);
+    if (!current || Date.parse(entry.updatedAt) > Date.parse(current.updatedAt)) {
+      latestByTitle.set(titleId, entry);
+    }
+  }
+
+  for (const [titleId, entry] of [...latestByTitle.entries()].sort(
+    ([, left], [, right]) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0),
+  )) {
+    if (!isFinished(entry)) return { titleId, entry };
+  }
+  return null;
 }
 
 export function titleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {

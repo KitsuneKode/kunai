@@ -52,7 +52,7 @@ describe("launch entry helpers", () => {
     });
   });
 
-  test("selectContinueHistoryEntryFromRecent keeps older unfinished episodes reachable", () => {
+  test("selectContinueHistoryEntryFromRecent does not scan back to older abandoned episodes", () => {
     const selected = selectContinueHistoryEntryFromRecent([
       [
         "demo-show",
@@ -80,10 +80,7 @@ describe("launch entry helpers", () => {
       ],
     ]);
 
-    expect(selected).toEqual({
-      titleId: "demo-show",
-      entry: expect.objectContaining({ season: 1, episode: 7, completed: false }),
-    });
+    expect(selected).toBeNull();
   });
 
   test("titleFromHistorySelection rebuilds a playback title without provider work", () => {

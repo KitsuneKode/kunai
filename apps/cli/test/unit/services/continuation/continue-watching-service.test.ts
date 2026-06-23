@@ -58,6 +58,63 @@ test("recentRow returns one anchor per title, recency-ordered", () => {
   expect(rows.map((r) => r.titleId)).toEqual(["b", "a"]);
 });
 
+test("startupCandidate anchors on the most recent row and resumes unfinished progress", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 420,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.startupCandidate({ scanLimit: 50 });
+
+  expect(decision?.state).toBe("resume");
+  expect(decision?.primaryAction).toMatchObject({
+    kind: "resume-online",
+    target: { titleId: "tmdb:1", season: 1, episode: 3 },
+  });
+});
+
+test("startupCandidate exposes offline-ready as local primary with online secondary", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.startupCandidate({
+    signalsByTitle: () => ({
+      offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 4, jobId: "job-4" }] },
+    }),
+  });
+
+  expect(decision?.state).toBe("offline-ready");
+  expect(decision?.primaryAction).toMatchObject({ kind: "play-local", jobId: "job-4" });
+  expect(decision?.secondaryActions).toContainEqual(
+    expect.objectContaining({
+      kind: "select-online",
+      target: expect.objectContaining({ episode: 4 }),
+    }),
+  );
+});
+
 test("episodeProgress returns every stored episode for the title", () => {
   const repo = makeRepo();
   for (const episode of [1, 2, 3]) {
