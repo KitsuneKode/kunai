@@ -22,11 +22,11 @@
     "test": "bun test test"
   },
   "dependencies": {
-    "@assemblyscript/loader": "^0.28.18",
+    "@assemblyscript/loader": "catalog:providers",
     "@kunai/core": "workspace:*",
     "@kunai/types": "workspace:*",
-    "@types/crypto-js": "^4.2.2",
-    "crypto-js": "^4.2.0"
+    "@types/crypto-js": "catalog:providers",
+    "crypto-js": "catalog:providers"
   },
   "devDependencies": {
     "@types/bun": "catalog:"

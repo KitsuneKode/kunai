@@ -86,8 +86,8 @@
     "postinstall": "bun run scripts/postinstall.ts"
   },
   "dependencies": {
-    "commander": "^15.0.0",
-    "ink": "^7.1.0",
+    "commander": "catalog:cli",
+    "ink": "catalog:cli",
     "react": "catalog:"
   },
   "devDependencies": {

@@ -25,10 +25,14 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 `package.json` to pin shared versions once:
 
 - `catalog:` — TypeScript, React, `@types/bun`, `@types/node`, Zod
+- `catalog:cli` — `commander`, `ink` (CLI runtime)
 - `catalog:lint` — `oxlint`, `oxfmt` (referenced from each workspace package)
-- `catalog:web` — Next.js, Fumadocs, Tailwind, `lucide-react` (docs app)
+- `catalog:providers` — `@assemblyscript/loader`, `crypto-js`, `@types/crypto-js`
+- `catalog:repo` — `turbo` (root orchestration only)
+- `catalog:web` — Next.js, Fumadocs, Tailwind, Radix, Motion, docs UI helpers
 
-Root `overrides` dedupe known transitive drift (`lucide-react`, `@types/node`).
+Root `overrides` dedupe known transitive drift (`lucide-react`, `@types/node`,
+`fumadocs-core`, `fumadocs-ui`).
 
 `apps/experiments` is **outside** the default workspace. Main installs stay lean;
 research deps install only via `bun run experiments:install` (standalone
