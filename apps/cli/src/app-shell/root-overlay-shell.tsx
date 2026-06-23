@@ -516,6 +516,7 @@ export function RootOverlayShell({
   });
   const [asyncLines, setAsyncLines] = useState<readonly ShellPanelLine[] | null>(null);
   const [loadingAsyncLines, setLoadingAsyncLines] = useState(overlay.type === "history");
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<KitsuneConfig | null>(() =>
     overlay.type === "settings" ? container.config.getRaw() : null,
   );
@@ -853,9 +854,11 @@ export function RootOverlayShell({
           releaseSignals: historyReleaseSignals,
         },
         loading: overlay.type === "history" ? loadingAsyncLines : false,
+        error: overlay.type === "history" ? historyError : null,
       }),
     [
       filterQuery,
+      historyError,
       historyNextReleases,
       historyProjections,
       historyReleaseSignals,
@@ -935,6 +938,7 @@ export function RootOverlayShell({
     }
 
     let cancelled = false;
+    setHistoryError(null);
 
     void reloadHistoryOverlay()
       .then((historyEntries) => {
@@ -951,6 +955,11 @@ export function RootOverlayShell({
           },
         );
         return undefined;
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setHistoryError(error instanceof Error ? error.message : String(error));
+        }
       })
       .finally(() => {
         if (!cancelled) {

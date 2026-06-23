@@ -23,7 +23,7 @@ import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewR
 import { RETURN_LOOP_HISTORY_NEW_SECTION } from "./return-loop-copy";
 import { describeHistoryReturnLoopDetail, formatNewSinceEpisodeLabel } from "./root-history-bridge";
 import { getWindowStart } from "./shell-text";
-import { palette } from "./shell-theme";
+import { palette, semanticToneColor } from "./shell-theme";
 import type { ShellPickerOption, ShellStatusTone } from "./types";
 
 const HISTORY_TABS = ["continue", "completed", "new-episodes", "all"] as const;
@@ -52,7 +52,7 @@ function matchesHistoryTypeFilter(entry: HistoryProgress, filter: HistoryTypeFil
   return filter === "all" || correctedHistoryMediaKind(entry) === filter;
 }
 
-export type HistoryViewState = "loading" | "empty" | "success";
+export type HistoryViewState = "loading" | "empty" | "success" | "error";
 
 export type HistoryViewRow = {
   readonly titleId: string;
@@ -80,6 +80,8 @@ export type HistoryRenderItem =
 
 export type HistoryView = {
   readonly state: HistoryViewState;
+  /** Present only when `state === "error"`; the user-facing failure detail. */
+  readonly errorMessage?: string;
   readonly tab: HistoryTab;
   readonly tabLabels: readonly string[];
   readonly tabIndex: number;
@@ -198,14 +200,6 @@ function filterHistoryEntries(
   );
 }
 
-function toneColor(tone: ShellStatusTone | undefined): string {
-  if (tone === "success") return palette.ok;
-  if (tone === "warning") return palette.warn;
-  if (tone === "error") return palette.danger;
-  if (tone === "info") return palette.info;
-  return palette.textDim;
-}
-
 function deriveResumeAction(
   titleId: string,
   entry: HistoryProgress,
@@ -255,7 +249,7 @@ function shellOptionToHistoryRow(
   });
   const isNewEpisode =
     decision.kind === "new-episode" && historyBucketFor(titleId, entry, context) === "new-episodes";
-  let statusColor = toneColor(option.tone);
+  let statusColor = semanticToneColor(option.tone);
   if (isNewEpisode) statusColor = palette.ok;
   if (progress && !progress.completed) statusColor = palette.accentDeep;
 
@@ -416,9 +410,26 @@ export function buildHistoryView(input: {
   readonly narrow: boolean;
   readonly context: HistoryPickerOptionsContext;
   readonly loading?: boolean;
+  readonly error?: string | null;
 }): HistoryView {
   const typeFilter = input.typeFilter ?? "all";
   const typeFilterView = historyTypeFilterView(typeFilter);
+  if (input.error && !input.loading) {
+    return {
+      state: "error",
+      errorMessage: input.error,
+      tab: input.tab,
+      tabLabels: historyTabLabels(),
+      tabIndex: historyTabIndex(input.tab),
+      ...typeFilterView,
+      flatRows: [],
+      items: [],
+      rail: null,
+      filterQuery: input.filterQuery,
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
   if (input.loading) {
     return {
       state: "loading",

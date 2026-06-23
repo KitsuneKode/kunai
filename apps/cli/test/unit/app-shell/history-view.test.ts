@@ -78,6 +78,39 @@ test("history view keeps flatRows order identical to the displayed item order", 
   expect(view.flatRows.map((row) => row.titleId)).toEqual(rowItems.map((item) => item.row.titleId));
 });
 
+test("history view surfaces an error state with the failure detail", () => {
+  const view = buildHistoryView({
+    entries: [],
+    tab: "all",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+    error: "database is locked",
+  });
+
+  expect(view.state).toBe("error");
+  expect(view.errorMessage).toBe("database is locked");
+  expect(view.flatRows).toHaveLength(0);
+});
+
+test("history view prefers loading over a stale error while reloading", () => {
+  const view = buildHistoryView({
+    entries: [],
+    tab: "all",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {},
+    error: "transient blip",
+    loading: true,
+  });
+
+  expect(view.state).toBe("loading");
+});
+
 const viewFor = (
   entry: HistoryProgress,
   tab: "continue" | "completed" | "new-episodes",

@@ -80,6 +80,18 @@ export function HistoryShell({
         />
       ) : null}
 
+      {view.state === "error" ? (
+        <StateBlock
+          model={{
+            kind: "error",
+            title: "Couldn't load watch history",
+            detail: view.errorMessage ?? "The local history store could not be read.",
+            actions: [{ id: "retry", label: "Reopen history to retry", shortcut: "Esc" }],
+          }}
+          width={rowWidth}
+        />
+      ) : null}
+
       {view.state === "empty" ? (
         <StateBlock
           model={{
