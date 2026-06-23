@@ -21,7 +21,8 @@ describe("release npm bundle build", () => {
 
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("[build] dist/kunai.js");
+    expect(stdout).toContain("[build] npm release artifact");
+    expect(stdout).toContain("dist/kunai.js");
     expect(existsSync(BIN)).toBe(true);
     expect(readFileSync(BIN, "utf8").startsWith("#!/usr/bin/env bun\n")).toBe(true);
   }, 120_000);
