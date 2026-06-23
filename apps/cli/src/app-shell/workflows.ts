@@ -52,12 +52,11 @@ import {
 import { isFinished } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { getKunaiPaths, historyProgressToInput, type DownloadJobRecord } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
 
 import { resolveCommands } from "./commands";
-import { openHistoryShell, relativeHistoryDate } from "./history-workflows";
+import { relativeHistoryDate } from "./history-workflows";
 import { buildDiagnosticsPanelLines } from "./panel-data";
 import { openProviderPicker } from "./picker-workflows";
 export {
@@ -825,22 +824,7 @@ const withOverlay = async <T>(
 };
 
 async function handleHistory(container: Container): Promise<"handled"> {
-  const { stateManager, historyStore, historyRepository, releaseProgressCache, queueService } =
-    container;
-  void historyStore.getAll().then((history) => {
-    enqueueReleaseReconciliation(container, Object.values(history), "history");
-    return undefined;
-  });
-  await withOverlay(stateManager, { type: "history" }, () =>
-    openHistoryShell(
-      historyStore,
-      historyRepository,
-      buildPickerActionContext({ container, taskLabel: "Watch history" }),
-      releaseProgressCache,
-      stateManager,
-      queueService,
-    ),
-  );
+  await openRootOwnedOverlay(container, { type: "history" });
   return "handled";
 }
 
