@@ -7,6 +7,7 @@ import type {
   ProviderRetryPolicy,
   ProviderRuntime,
   ProviderRuntimeContext,
+  ProviderTitleBridgePort,
   ProviderTraceEvent,
 } from "@kunai/types";
 
@@ -31,6 +32,7 @@ export function createProviderRuntimeContext({
   fetch,
   auth,
   endpointHealth,
+  titleBridge,
   emit,
 }: {
   readonly now?: () => string;
@@ -40,6 +42,7 @@ export function createProviderRuntimeContext({
   readonly fetch?: ProviderFetchPort;
   readonly auth?: ProviderAuthPort;
   readonly endpointHealth?: EndpointHealthPort;
+  readonly titleBridge?: ProviderTitleBridgePort;
   readonly emit?: (event: ProviderTraceEvent) => void;
 } = {}): ProviderRuntimeContext {
   return {
@@ -50,6 +53,7 @@ export function createProviderRuntimeContext({
     fetch,
     auth,
     endpointHealth,
+    titleBridge,
     emit,
   };
 }

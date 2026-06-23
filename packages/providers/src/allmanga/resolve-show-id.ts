@@ -36,12 +36,23 @@ export async function resolveAllMangaShowId(
 ): Promise<string> {
   const rawId = input.title.id.replace(/^allanime:/, "").trim();
   const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId ?? undefined;
+  const providerId = context.providerId ?? "allanime";
+
+  const storedNative = input.title.externalIds?.providerNativeIds?.[providerId];
+  if (storedNative) return storedNative;
 
   if (rawId && looksLikeAllMangaOpaqueShowId(rawId)) {
     return rawId;
   }
 
   if (anilistId) {
+    const durable = context.titleBridge?.get({
+      providerId,
+      catalogKind: "anime",
+      catalogId: anilistId,
+    });
+    if (durable) return durable;
+
     const cached = anilistBridgeCache.get(`anilist:${anilistId}`);
     if (cached) return cached;
   }
@@ -58,6 +69,12 @@ export async function resolveAllMangaShowId(
   );
   if (bridged) {
     anilistBridgeCache.set(`anilist:${anilistId}`, bridged);
+    context.titleBridge?.set({
+      providerId,
+      catalogKind: "anime",
+      catalogId: anilistId,
+      nativeId: bridged,
+    });
     return bridged;
   }
 

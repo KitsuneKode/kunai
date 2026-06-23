@@ -496,6 +496,21 @@ export interface ProviderAuthPort {
   getSecret(providerId: ProviderId, key: string): string | undefined;
 }
 
+/** Durable catalog-id → provider-native id bridge (SQLite cache adapter in CLI). */
+export interface ProviderTitleBridgePort {
+  get(input: {
+    readonly providerId: ProviderId;
+    readonly catalogKind: MediaKind;
+    readonly catalogId: string;
+  }): string | undefined;
+  set(input: {
+    readonly providerId: ProviderId;
+    readonly catalogKind: MediaKind;
+    readonly catalogId: string;
+    readonly nativeId: string;
+  }): void;
+}
+
 export interface ProviderRuntimeContext {
   readonly providerId?: ProviderId;
   readonly signal?: AbortSignal;
@@ -503,6 +518,7 @@ export interface ProviderRuntimeContext {
   readonly fetch?: ProviderFetchPort;
   readonly auth?: ProviderAuthPort;
   readonly endpointHealth?: EndpointHealthPort;
+  readonly titleBridge?: ProviderTitleBridgePort;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }

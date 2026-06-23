@@ -7,6 +7,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderTitleBridgePort,
   ProviderTraceEvent,
 } from "@kunai/types";
 import { isProviderResolveResultResolved } from "@kunai/types";
@@ -36,6 +37,7 @@ export interface ProviderEngineOptions {
   readonly auth?: ProviderAuthPort;
   readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
   readonly endpointHealth?: EndpointHealthPort;
+  readonly titleBridge?: ProviderTitleBridgePort;
 }
 
 export type ProviderFetchPortFactory = (providerId: ProviderId) => ProviderFetchPort | undefined;
@@ -105,6 +107,7 @@ export class ProviderEngine {
   private readonly auth?: ProviderAuthPort;
   private readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
   private readonly endpointHealth?: EndpointHealthPort;
+  private readonly titleBridge?: ProviderTitleBridgePort;
 
   constructor(opts: ProviderEngineOptions) {
     this.modules = opts.modules;
@@ -115,6 +118,7 @@ export class ProviderEngine {
     this.auth = opts.auth;
     this.fetch = opts.fetch;
     this.endpointHealth = opts.endpointHealth;
+    this.titleBridge = opts.titleBridge;
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -149,6 +153,7 @@ export class ProviderEngine {
       fetch: resolveFetchPort(this.fetch, providerId),
       auth: this.auth,
       endpointHealth: this.endpointHealth,
+      titleBridge: this.titleBridge,
     });
   }
 
@@ -338,6 +343,8 @@ export class ProviderEngine {
       },
       fetch: resolveFetchPort(this.fetch, module.providerId),
       auth: this.auth,
+      endpointHealth: this.endpointHealth,
+      titleBridge: this.titleBridge,
       emit: (event) => traceEvents.push(event),
     });
 

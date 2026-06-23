@@ -4,6 +4,7 @@ import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
+  ProviderTitleBridgePort,
 } from "@kunai/types";
 
 import {
@@ -34,6 +35,26 @@ const TEST_CONTEXT: ProviderRuntimeContext = {
 };
 
 describe("resolveAllMangaShowId", () => {
+  test("returns stored providerNativeIds without bridging", async () => {
+    const showId = await resolveAllMangaShowId(
+      {
+        title: {
+          id: "20431",
+          kind: "anime",
+          title: "Hozuki",
+          externalIds: {
+            anilistId: "20431",
+            providerNativeIds: { allanime: "bxCKTstored" },
+          },
+        },
+        preferredAudioLanguage: "original",
+      },
+      TEST_CONTEXT,
+    );
+
+    expect(showId).toBe("bxCKTstored");
+  });
+
   test("keeps opaque provider-native ids without bridging", async () => {
     const showId = await resolveAllMangaShowId(
       {
@@ -124,6 +145,37 @@ describe("resolveAllMangaShowId", () => {
     expect(looksLikeAllMangaOpaqueShowId("bxCKTnota29uSRnZw")).toBe(true);
     expect(looksLikeAllMangaOpaqueShowId("20431")).toBe(false);
     expect(isCatalogIdPassedAsShowId("20431", "20431")).toBe(true);
+  });
+
+  test("reads durable bridge cache via titleBridge port after in-process cache clear", async () => {
+    clearAllMangaAnilistBridgeCacheForTest();
+    const durable = new Map<string, string>();
+    durable.set("allanime:anime:20431", "bxCKTdurable");
+    const context: ProviderRuntimeContext = {
+      ...TEST_CONTEXT,
+      titleBridge: {
+        get: ({ providerId, catalogKind, catalogId }) =>
+          durable.get(`${providerId}:${catalogKind}:${catalogId}`),
+        set: ({ providerId, catalogKind, catalogId, nativeId }) => {
+          durable.set(`${providerId}:${catalogKind}:${catalogId}`, nativeId);
+        },
+      } satisfies ProviderTitleBridgePort,
+    };
+
+    const showId = await resolveAllMangaShowId(
+      {
+        title: {
+          id: "20431",
+          kind: "anime",
+          title: "Hozuki",
+          externalIds: { anilistId: "20431" },
+        },
+        preferredAudioLanguage: "original",
+      },
+      context,
+    );
+
+    expect(showId).toBe("bxCKTdurable");
   });
 });
 
