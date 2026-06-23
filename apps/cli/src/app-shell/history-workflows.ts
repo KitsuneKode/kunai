@@ -5,6 +5,7 @@ import {
 } from "@/app-shell/pickers";
 import { markEntryWatched } from "@/app/history-actions";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import type { QueueService } from "@/domain/queue/QueueService";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { ContentType } from "@/domain/types";
@@ -12,6 +13,7 @@ import {
   historyContentType,
   isFinished as isProgressFinished,
 } from "@/services/continuation/history-progress";
+import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
 import {
   formatTimestamp,
   isFinished,
@@ -75,6 +77,55 @@ export async function openHistoryShell(
   stateManager?: SessionStateManager,
   queueService?: QueueService,
 ): Promise<void> {
+  const mediaActions = new MediaActionRouter({
+    queue: queueService
+      ? {
+          enqueueMediaItem: (item, options) => {
+            queueService.enqueueMediaItem(item, options);
+          },
+        }
+      : undefined,
+    history: historyRepository
+      ? {
+          markWatched: (item) => {
+            const latest = historyRepository.getProgress(
+              {
+                id: item.titleId,
+                kind: item.mediaKind === "movie" ? "movie" : "series",
+                title: item.title,
+              },
+              item.mediaKind === "movie"
+                ? undefined
+                : {
+                    season: item.season ?? 1,
+                    episode: item.episode ?? item.absoluteEpisode ?? 1,
+                  },
+            );
+            if (latest) {
+              historyRepository.upsertProgress(historyProgressToInput(markEntryWatched(latest)));
+              return;
+            }
+            historyRepository.upsertProgress({
+              title: {
+                id: item.titleId,
+                kind: item.mediaKind === "movie" ? "movie" : "series",
+                title: item.title,
+              },
+              episode:
+                item.mediaKind === "movie"
+                  ? undefined
+                  : {
+                      season: item.season ?? 1,
+                      episode: item.episode ?? item.absoluteEpisode ?? 1,
+                    },
+              positionSeconds: 0,
+              completed: true,
+            });
+          },
+        }
+      : undefined,
+  });
+
   while (true) {
     const entries = Object.entries(await historyStore.getAll()).sort(
       (a, b) =>
@@ -220,26 +271,37 @@ export async function openHistoryShell(
 
     if (action === "queue" && queueService) {
       const entry = await historyStore.get(picked.id);
-      queueService.enqueueMediaItem(
-        {
-          titleId: picked.id,
-          title: picked.title,
-          mediaKind: picked.entryType,
-          season: entry ? (entry.season ?? 1) : undefined,
-          episode:
-            entry?.episode !== undefined && historyContentType(entry) === "series"
-              ? entry.episode + 1
-              : undefined,
-        },
-        { placement: "end", source: "history" },
-      );
+      await mediaActions.run({
+        actionId: "queue-end",
+        item: entry
+          ? {
+              titleId: picked.id,
+              title: picked.title,
+              mediaKind: picked.entryType,
+              season: entry.season ?? 1,
+              episode:
+                entry.episode !== undefined && historyContentType(entry) === "series"
+                  ? entry.episode + 1
+                  : undefined,
+            }
+          : {
+              titleId: picked.id,
+              title: picked.title,
+              mediaKind: picked.entryType,
+            },
+        source: "history",
+      });
       continue;
     }
 
     if (action === "mark-watched") {
       const latest = await historyStore.get(picked.id);
       if (latest && historyRepository) {
-        historyRepository.upsertProgress(historyProgressToInput(markEntryWatched(latest)));
+        await mediaActions.run({
+          actionId: "mark-watched",
+          item: mediaItemFromHistoryEntry(picked.id, latest),
+          source: "history",
+        });
         stateManager?.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Marked ${picked.title} as watched.`,

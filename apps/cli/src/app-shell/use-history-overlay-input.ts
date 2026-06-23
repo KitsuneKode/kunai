@@ -8,6 +8,7 @@ import {
 } from "@/app-shell/root-history-bridge";
 import type { Container } from "@/container";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 
 export type HistoryOverlayInputContext = {
   readonly container: Container;
@@ -63,12 +64,24 @@ export function handleHistoryOverlayInput(
                 : false,
           }
         : historySelection.entry;
-      ctx.container.queueService.enqueueMediaItem(
-        mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
-        { placement: "end", source: "history" },
-      );
-      ctx.setOverlayStatus("Queued from history");
-      ctx.onRedraw();
+      void createContainerMediaActionRouter(ctx.container)
+        .run({
+          actionId: "queue-end",
+          item: mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
+          source: "history",
+        })
+        .then(() => {
+          ctx.setOverlayStatus("Queued from history");
+          ctx.onRedraw();
+          return undefined;
+        })
+        .catch((error: unknown) => {
+          ctx.setOverlayStatus(
+            error instanceof Error ? error.message : "Unable to queue from history",
+          );
+          ctx.onRedraw();
+          return undefined;
+        });
     }
     return "handled";
   }
