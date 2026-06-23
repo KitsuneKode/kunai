@@ -213,6 +213,15 @@ function deriveResumeAction(
   if (historyContentType(entry) === "movie") {
     return isHistoryCompleted(entry) ? "Restart" : "Resume";
   }
+  const decision = reconcileContinueHistory({
+    titleId,
+    entries: [[titleId, entry]],
+    nextRelease: context.nextReleases?.get(titleId) ?? null,
+  });
+  if (decision.kind === "new-episode") {
+    const bucket = historyBucketFor(titleId, entry, context);
+    if (bucket === "continue" || bucket === "new-episodes") return "Play next";
+  }
   const bucket = historyBucketFor(titleId, entry, context);
   return resumeLabelForProjection(context.projections?.get(titleId), bucket);
 }
@@ -232,19 +241,30 @@ function shellOptionToHistoryRow(
   const progress = option.historyProgress ?? null;
   const projection = context.projections?.get(titleId);
   const bucket = historyBucketFor(titleId, entry, context);
-  const statusLabel =
-    projection?.badge ??
-    option.badge ??
-    (progress?.completed ? "done" : progress ? `${progress.percentage}%` : (detailParts[0] ?? ""));
   const decision = reconcileContinueHistory({
     titleId,
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
   });
+  const hasContinueNext =
+    decision.kind === "new-episode" &&
+    typeof decision.episode === "number" &&
+    bucket === "continue";
+  const statusLabel =
+    projection?.badge ??
+    option.badge ??
+    (hasContinueNext
+      ? "next"
+      : progress?.completed
+        ? "done"
+        : progress
+          ? `${progress.percentage}%`
+          : (detailParts[0] ?? ""));
   const isNewEpisode = decision.kind === "new-episode" && bucket === "new-episodes";
   let statusColor = semanticToneColor(option.tone);
   if (isNewEpisode) statusColor = palette.ok;
-  if (progress && !progress.completed) statusColor = palette.accentDeep;
+  if (hasContinueNext) statusColor = palette.accentDeep;
+  if (progress && !progress.completed && !hasContinueNext) statusColor = palette.accentDeep;
 
   return {
     titleId,

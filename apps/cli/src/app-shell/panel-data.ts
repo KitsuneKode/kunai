@@ -1096,7 +1096,11 @@ function buildHistoryOptionRow(
   // optimistic. Without this, completed shows render "new" (the reported bug).
   const isNewEpisodeRow =
     decision.kind === "new-episode" && historyBucketFor(id, entry, context) === "new-episodes";
-  if (isNewEpisodeRow) {
+  const isContinueNextRow =
+    decision.kind === "new-episode" &&
+    typeof decision.episode === "number" &&
+    historyBucketFor(id, entry, context) === "continue";
+  if (isNewEpisodeRow || isContinueNextRow) {
     const nextEpisode =
       typeof decision.episode === "number"
         ? formatSeriesEpisode(decision.season ?? entrySeason, decision.episode)
@@ -1114,7 +1118,7 @@ function buildHistoryOptionRow(
       value: id,
       label: `${entry.title}  ·  ${nextEpisode}`,
       detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.providerId ?? "unknown"}  ·  ${timeAgo}`,
-      badge: projection?.badge ?? "new",
+      badge: isNewEpisodeRow ? (projection?.badge ?? "new") : "next",
       tone: "success",
       posterTitle: entry.title,
     };

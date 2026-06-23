@@ -213,6 +213,49 @@ test("history view puts an aired backlog in Continue, not New", () => {
   expect(viewFor(watched, "new-episodes", backlog).state).toBe("empty");
 });
 
+test("history view labels finished anchor with next episode as next instead of done", () => {
+  const watched = progress({
+    titleId: "native-rampart",
+    title: "The Ramparts of Ice",
+    mediaKind: "anime",
+    providerId: "allanime",
+    season: 1,
+    episode: 8,
+    positionSeconds: 1500,
+    durationSeconds: 1500,
+    completed: true,
+    updatedAt: "2026-05-22T00:00:00.000Z",
+  });
+  const view = buildHistoryView({
+    entries: [["native-rampart", watched]],
+    tab: "continue",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {
+      projections: new Map([
+        [
+          "native-rampart",
+          {
+            kind: "new-episodes",
+            titleId: "native-rampart",
+            title: "The Ramparts of Ice",
+            sourceEntry: watched,
+            primaryAction: { kind: "select-online", season: 1, episode: 9 },
+          },
+        ],
+      ]),
+    },
+  });
+
+  expect(view.state).toBe("success");
+  const row = view.flatRows[0];
+  expect(row?.statusLabel).toBe("next");
+  expect(row?.episodeCode).toContain("E09");
+  expect(row?.resumeAction).toBe("Play next");
+});
+
 // A finished movie is genuinely done — it stays out of Continue (Restart lives in Completed).
 test("history view keeps a finished movie out of the Continue tab", () => {
   const finishedMovie = progress({
