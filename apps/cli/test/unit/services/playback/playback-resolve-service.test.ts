@@ -1025,6 +1025,63 @@ test("PlaybackResolveService filters fallback providers by media kind and down h
   expect(observedCandidates).toEqual([["primary", "anime-ok"]]);
 });
 
+test("PlaybackResolveService emits provider-health-skipped when down providers are excluded", async () => {
+  const cache = createMemoryCache(null);
+  const events: Array<{ type: string; providerId?: string }> = [];
+  const feedback: string[] = [];
+  const providerHealth = createMemoryProviderHealth([
+    {
+      providerId: "anime-down" as ProviderId,
+      status: "down",
+      checkedAt: new Date().toISOString(),
+      consecutiveFailures: 5,
+    },
+  ]);
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    {
+      modules: [
+        {
+          providerId: "primary" as ProviderId,
+          manifest: createManifest("primary" as ProviderId, ["anime"]),
+        },
+        {
+          providerId: "anime-down" as ProviderId,
+          manifest: createManifest("anime-down" as ProviderId, ["anime"]),
+        },
+      ],
+    },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    providerHealth: providerHealth as never,
+  });
+
+  await service.resolve({
+    title: { ...title, type: "series" },
+    episode: { season: 1, episode: 2 },
+    mode: "anime",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    onEvent: (event) => events.push(event),
+    onFeedback: (payload) => {
+      if (payload.note) feedback.push(payload.note);
+    },
+  });
+
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "provider-health-skipped",
+      providerId: "anime-down",
+      effectiveStatus: "down",
+    }),
+  );
+  expect(feedback.some((note) => note.includes("/reset-provider-health"))).toBe(true);
+});
+
 test("PlaybackResolveService reads provider priority at resolve time", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];

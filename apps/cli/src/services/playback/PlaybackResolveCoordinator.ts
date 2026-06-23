@@ -165,6 +165,27 @@ export class PlaybackResolveCoordinator {
       return;
     }
 
+    if (event.type === "provider-health-skipped") {
+      this.deps.diagnostics.record({
+        ...input.correlation,
+        category: "provider",
+        operation: "provider.health.skipped",
+        level: "warn",
+        message: `Provider skipped in auto-fallback: ${event.providerId}`,
+        providerId: event.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          effectiveStatus: event.effectiveStatus,
+          storedStatus: event.storedStatus,
+          consecutiveFailures: event.consecutiveFailures ?? null,
+          healedByTtl: event.healedByTtl,
+        },
+      });
+      return;
+    }
+
     if (event.type === "provider-resolve-started") {
       this.deps.diagnostics.record({
         ...input.correlation,

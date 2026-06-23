@@ -5,12 +5,15 @@ import { planProviderCandidates } from "@/services/playback/ProviderCandidatePla
 import type { MediaKind, ProviderHealth, ProviderId } from "@kunai/types";
 
 describe("ProviderCandidatePlanner", () => {
+  const now = () => new Date("2026-06-23T12:00:00.000Z");
+
   test("filters fallback providers by media kind and down health", () => {
     expect(
       planProviderCandidates({
         primaryProviderId: "primary" as ProviderId,
         mediaKind: "anime",
         recoveryMode: "fallback-first",
+        now,
         modules: [
           module("primary", ["anime"]),
           module("anime-ok", ["anime"]),
@@ -22,13 +25,48 @@ describe("ProviderCandidatePlanner", () => {
             ? {
                 providerId,
                 status: "down",
-                checkedAt: "2026-05-28T00:00:00.000Z",
+                checkedAt: "2026-06-23T11:00:00.000Z",
+                consecutiveFailures: 5,
               }
             : undefined,
       }),
     ).toEqual({
       candidateIds: ["primary", "anime-ok"],
       hasCompatibleFallback: true,
+      skippedFallbackProviders: [
+        {
+          providerId: "anime-down",
+          effectiveHealth: expect.objectContaining({
+            effectiveStatus: "down",
+            consecutiveFailures: 5,
+          }),
+        },
+      ],
+    });
+  });
+
+  test("includes down providers after TTL auto-heal", () => {
+    expect(
+      planProviderCandidates({
+        primaryProviderId: "primary" as ProviderId,
+        mediaKind: "anime",
+        recoveryMode: "fallback-first",
+        now,
+        modules: [module("primary", ["anime"]), module("anime-down", ["anime"])],
+        getProviderHealth: (providerId) =>
+          providerId === "anime-down"
+            ? {
+                providerId,
+                status: "down",
+                checkedAt: "2026-06-23T03:00:00.000Z",
+                consecutiveFailures: 7,
+              }
+            : undefined,
+      }),
+    ).toEqual({
+      candidateIds: ["primary", "anime-down"],
+      hasCompatibleFallback: true,
+      skippedFallbackProviders: [],
     });
   });
 
@@ -39,6 +77,7 @@ describe("ProviderCandidatePlanner", () => {
         mediaKind: "series",
         recoveryMode: "fallback-first",
         ignoreProviderHealth: true,
+        now,
         modules: [
           module("primary", ["series"]),
           module("fallback-down", ["series"]),
@@ -49,13 +88,14 @@ describe("ProviderCandidatePlanner", () => {
             ? {
                 providerId,
                 status: "down",
-                checkedAt: "2026-05-28T00:00:00.000Z",
+                checkedAt: "2026-06-23T11:00:00.000Z",
               }
             : undefined,
       }),
     ).toEqual({
       candidateIds: ["primary", "fallback-down", "fallback-ok"],
       hasCompatibleFallback: true,
+      skippedFallbackProviders: [],
     });
   });
 
@@ -65,6 +105,7 @@ describe("ProviderCandidatePlanner", () => {
         primaryProviderId: "primary" as ProviderId,
         mediaKind: "series",
         recoveryMode: "guided",
+        now,
         modules: [
           module("primary", ["series"]),
           module("fallback-a", ["series"]),
@@ -78,6 +119,7 @@ describe("ProviderCandidatePlanner", () => {
     ).toEqual({
       candidateIds: ["primary", "fallback-a", "fallback-b"],
       hasCompatibleFallback: true,
+      skippedFallbackProviders: [],
     });
   });
 
@@ -87,11 +129,13 @@ describe("ProviderCandidatePlanner", () => {
         primaryProviderId: "primary" as ProviderId,
         mediaKind: "series",
         recoveryMode: "manual",
+        now,
         modules: [module("primary", ["series"]), module("fallback", ["series"])],
       }),
     ).toEqual({
       candidateIds: ["primary"],
       hasCompatibleFallback: true,
+      skippedFallbackProviders: [],
     });
   });
 });

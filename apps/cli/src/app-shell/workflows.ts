@@ -772,6 +772,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
     return Promise.resolve("handled");
   },
   "clear-cache": (c) => handleClearCache(c),
+  "reset-provider-health": (c) => handleResetProviderHealth(c),
   "clear-history": (c) => handleClearHistory(c),
   "export-diagnostics": (c) => handleExportDiagnostics(c),
   "report-issue": (c) => handleReportIssue(c),
@@ -936,6 +937,8 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
     releaseSummary: container.releaseProgressCache.summarizeActive(),
     releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
     presenceSnapshot: container.presence.getSnapshot(),
+    providers: container.providerRegistry.getAll().map((provider) => provider.metadata),
+    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
   });
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
     openStaticInfoShell({
@@ -983,6 +986,15 @@ async function handleSettings(container: Container): Promise<"handled"> {
   return "handled";
 }
 
+async function handleResetProviderHealth(container: Container): Promise<"handled"> {
+  const { applyProviderHealthResetScope, chooseProviderHealthResetScope } =
+    await import("@/services/playback/provider-health-reset");
+  const scope = await chooseProviderHealthResetScope(container);
+  if (!scope) return "handled";
+  await applyProviderHealthResetScope(container, scope);
+  return "handled";
+}
+
 async function handleClearCache(container: Container): Promise<"handled"> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
@@ -992,16 +1004,19 @@ async function handleClearCache(container: Container): Promise<"handled"> {
       ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
       : null;
 
-  const choice = await chooseFromListShell<"episode" | "title" | "streams" | "all" | false>({
+  const choice = await chooseFromListShell<
+    "episode" | "title" | "streams" | "provider-memory" | "all" | false
+  >({
     title: "Clear cache?",
-    subtitle: "Stream cache holds resolved URLs. Provider memory remembers per-title failures.",
+    subtitle:
+      "Stream cache = saved m3u8 URLs. Provider memory = failure history that can skip fallbacks.",
     options: [
       ...(title && episode
         ? [
             {
               value: "episode" as const,
-              label: `Purge episode cache${episodeCode ? `  ·  ${episodeCode}` : ""}`,
-              detail: `Drop cached resolve + source inventory for ${title.name}`,
+              label: `Purge episode stream cache${episodeCode ? `  ·  ${episodeCode}` : ""}`,
+              detail: `Drop cached URLs and source inventory for ${title.name}`,
             },
           ]
         : []),
@@ -1009,37 +1024,72 @@ async function handleClearCache(container: Container): Promise<"handled"> {
         ? [
             {
               value: "title" as const,
-              label: `Purge title cache  ·  ${title.name}`,
-              detail: "Drop cached resolves for every watched episode of this title",
+              label: `Purge title stream cache  ·  ${title.name}`,
+              detail: "Drop cached stream URLs for every episode you've watched on this title",
             },
           ]
         : []),
-      { value: "streams", label: "Clear entire stream cache" },
-      { value: "all", label: "Clear stream cache and provider memory" },
+      {
+        value: "streams",
+        label: "Clear entire stream cache",
+        detail: "All cached m3u8 URLs and resolve results — provider memory is kept",
+      },
+      {
+        value: "provider-memory",
+        label: "Reset provider health memory…",
+        detail: "Opens scoped reset for down/degraded providers and per-show failures",
+      },
+      {
+        value: "all",
+        label: "Clear stream cache + all provider memory",
+        detail: "Nuclear option — cached URLs plus all global and per-show failure memory",
+      },
       { value: false, label: "Cancel" },
     ],
   });
 
+  if (choice === "provider-memory") {
+    return handleResetProviderHealth(container);
+  }
+
   if (choice === "episode" && title && episode) {
     const { purgeEpisodePlaybackCache } = await import("@/app/playback-cache-purge");
     await purgeEpisodePlaybackCache(container, title, episode);
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Stream cache cleared for ${title.name} ${episodeCode ?? ""}.`.trim(),
+    });
     return "handled";
   }
   if (choice === "title" && title) {
     const { purgeTitlePlaybackCaches } = await import("@/app/playback-cache-purge");
     await purgeTitlePlaybackCaches(container, title, episode ? [episode] : undefined);
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Stream cache cleared for ${title.name}.`,
+    });
     return "handled";
   }
-  if (choice === "streams" || choice === "all") {
+  if (choice === "streams") {
     await container.cacheStore.clear();
     container.diagnosticsService.record({ category: "cache", message: "Stream cache cleared" });
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Entire stream cache cleared. Provider failure memory was not changed.",
+    });
+    return "handled";
   }
   if (choice === "all") {
+    await container.cacheStore.clear();
     container.providerHealth.clearAll();
     container.titleProviderHealth.clearAll();
     container.diagnosticsService.record({
       category: "cache",
       message: "Stream cache and provider memory cleared",
+    });
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Stream cache and all provider failure memory cleared.",
     });
   }
   return "handled";

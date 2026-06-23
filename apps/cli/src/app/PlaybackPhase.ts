@@ -3361,7 +3361,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 });
               }
               continue postPlayback;
-            } else if (postAction === "clear-cache" || postAction === "clear-history") {
+            } else if (
+              postAction === "clear-cache" ||
+              postAction === "reset-provider-health" ||
+              postAction === "clear-history"
+            ) {
               await handleShellAction({ action: postAction, container });
               continue postPlayback;
             } else if (routedAction === "pick-episode" && title.type === "series") {

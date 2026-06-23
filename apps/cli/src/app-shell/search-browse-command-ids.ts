@@ -25,6 +25,8 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "toggle-mode",
   "provider",
   "diagnostics",
+  "clear-cache",
+  "reset-provider-health",
   "export-diagnostics",
   "help",
   "about",

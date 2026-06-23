@@ -51,6 +51,7 @@ export type AppCommandId =
   | "previous"
   | "next-season"
   | "clear-cache"
+  | "reset-provider-health"
   | "clear-history"
   | "export-diagnostics"
   | "report-issue"
@@ -134,6 +135,8 @@ export const COMMAND_CONTEXTS = {
     "diagnostics",
     "export-diagnostics",
     "report-issue",
+    "clear-cache",
+    "reset-provider-health",
     "docs",
     "settings",
     "presence",
@@ -186,6 +189,8 @@ export const COMMAND_CONTEXTS = {
     "diagnostics",
     "export-diagnostics",
     "report-issue",
+    "clear-cache",
+    "reset-provider-health",
     "docs",
     "settings",
     "presence",
@@ -526,7 +531,13 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "clear-cache",
     label: "Clear Cache",
     aliases: ["clear-cache", "purge-cache", "flush-cache"],
-    description: "Remove all cached stream URLs",
+    description: "Clear stream URL cache (and optionally provider failure memory)",
+  },
+  {
+    id: "reset-provider-health",
+    label: "Reset Provider Health",
+    aliases: ["reset-provider-health", "clear-provider-memory", "forget-provider-failures"],
+    description: "Forget provider failures so auto-fallback can retry down providers",
   },
   {
     id: "clear-history",
@@ -767,6 +778,7 @@ function resolveCommandState(
     case "about":
     case "update":
     case "clear-cache":
+    case "reset-provider-health":
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":

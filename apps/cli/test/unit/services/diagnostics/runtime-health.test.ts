@@ -172,4 +172,21 @@ describe("runtime health diagnostics", () => {
       tone: "success",
     });
   });
+
+  test("merges persisted provider health into the runtime provider line", () => {
+    const health = buildRuntimeHealthSnapshot({
+      currentProvider: "miruro",
+      recentEvents: [],
+      persistedProviderHealth: {
+        providerId: "miruro",
+        status: "down",
+        checkedAt: new Date().toISOString(),
+        consecutiveFailures: 7,
+      },
+    });
+
+    expect(health.provider.detail).toContain("memory:");
+    expect(health.provider.detail).toContain("down");
+    expect(health.provider.tone).toBe("error");
+  });
 });

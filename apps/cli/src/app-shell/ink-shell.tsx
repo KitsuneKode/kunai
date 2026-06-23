@@ -31,6 +31,7 @@ import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
+import type { ProviderId } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -1070,19 +1071,22 @@ function AppRoot({ container }: { container: Container }) {
                 trace: playbackTrace,
                 showMemory: container.config.showMemory,
                 posterUrl: state.currentTitle?.posterUrl,
-                getRuntimeHealth: () =>
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? buildRuntimeHealthSnapshot({
-                        recentEvents: container.diagnosticsStore.getRecent(25),
-                        currentProvider: state.provider,
-                      }).network
-                    : buildRuntimeHealthSnapshot({
-                        recentEvents: container.diagnosticsStore.getRecent(25),
-                        currentProvider: state.provider,
-                      }).provider,
+                getRuntimeHealth: () => {
+                  const persisted = state.provider
+                    ? container.providerHealth.get(state.provider as ProviderId)
+                    : undefined;
+                  const snapshot = buildRuntimeHealthSnapshot({
+                    recentEvents: container.diagnosticsStore.getRecent(25),
+                    currentProvider: state.provider,
+                    persistedProviderHealth: persisted,
+                  });
+                  return state.playbackStatus === "playing" ||
+                    state.playbackStatus === "buffering" ||
+                    state.playbackStatus === "seeking" ||
+                    state.playbackStatus === "stalled"
+                    ? snapshot.network
+                    : snapshot.provider;
+                },
                 fallbackAvailable: Boolean(fallbackProvider),
                 fallbackProviderName:
                   fallbackProvider?.metadata.name ?? fallbackProvider?.metadata.id,

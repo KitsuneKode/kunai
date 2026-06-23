@@ -69,6 +69,7 @@ export type ShellAction =
   | "previous"
   | "next-season"
   | "clear-cache"
+  | "reset-provider-health"
   | "clear-history"
   | "export-diagnostics"
   | "report-issue"
@@ -373,6 +374,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "previous":
     case "next-season":
     case "clear-cache":
+    case "reset-provider-health":
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":

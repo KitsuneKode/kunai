@@ -709,6 +709,63 @@ describe("panel-data", () => {
     ]);
   });
 
+  test("buildProviderPickerOptions surfaces effective health badges", () => {
+    const options = buildProviderPickerOptions({
+      currentProvider: "miruro",
+      providers: [
+        {
+          id: "miruro",
+          name: "Miruro",
+          description: "Anime provider",
+          recommended: false,
+          isAnimeProvider: true,
+        },
+      ],
+      getProviderHealth: () => ({
+        providerId: "miruro",
+        status: "down",
+        checkedAt: new Date().toISOString(),
+        consecutiveFailures: 7,
+      }),
+    });
+
+    expect(options[0]?.detail).toContain("Health:");
+    expect(options[0]?.detail).toContain("down");
+    expect(options[0]?.detail).toContain("skipped in auto-fallback");
+    expect(options[0]?.label).toContain("down");
+    expect(options[0]?.label).toContain("skipped in auto-fallback");
+  });
+
+  test("buildDiagnosticsPanelLines includes provider memory section", () => {
+    const state = createInitialState("miruro", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "en" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const lines = buildDiagnosticsPanelLines({
+      state: { ...state, mode: "anime" },
+      recentEvents: [],
+      providers: [
+        {
+          id: "miruro",
+          name: "Miruro",
+          description: "Anime provider",
+          recommended: false,
+          isAnimeProvider: true,
+        },
+      ],
+      getProviderHealth: () => ({
+        providerId: "miruro",
+        status: "down",
+        checkedAt: new Date().toISOString(),
+        consecutiveFailures: 5,
+      }),
+    });
+
+    expect(lines.find((line) => line.label === "Provider memory")).toBeDefined();
+    expect(lines.some((line) => line.detail?.includes("skipped in auto-fallback"))).toBe(true);
+  });
+
   test("buildHistoryPickerOptions sorts newest entries first and keeps ids", () => {
     const options = buildHistoryPickerOptions([
       [

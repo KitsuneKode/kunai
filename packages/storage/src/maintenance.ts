@@ -51,7 +51,7 @@ export function runDatabaseMaintenance(
       ? pruneCacheTables(db, {
           now: options.now ?? new Date(),
           maxResolveTraces: options.maxResolveTraces ?? 200,
-          providerHealthRetentionDays: options.providerHealthRetentionDays ?? 30,
+          providerHealthRetentionDays: options.providerHealthRetentionDays ?? 7,
         })
       : EMPTY_PRUNE_COUNTS;
 

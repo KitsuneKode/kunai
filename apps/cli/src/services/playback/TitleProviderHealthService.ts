@@ -2,7 +2,7 @@ import type { TitleProviderHealthRepository } from "@kunai/storage";
 
 import { decideProviderHealthWrite, type ProviderHealthEvidence } from "./ProviderHealthEvidence";
 
-const NORMAL_RETENTION_MS = 24 * 60 * 60 * 1000;
+const NORMAL_RETENTION_MS = 12 * 60 * 60 * 1000;
 const SEVERE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 type Repository = Pick<

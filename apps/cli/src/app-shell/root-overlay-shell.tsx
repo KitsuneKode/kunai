@@ -446,11 +446,13 @@ export function RootOverlayShell({
             }),
             currentProvider: overlay.currentProvider,
             previewImageUrl: state.currentTitle?.posterUrl,
+            getProviderHealth: (providerId) => container.providerHealth.get(providerId),
           })
         : [],
     [
       overlay,
       container.providerRegistry,
+      container.providerHealth,
       rawConfig.animeProvider,
       rawConfig.provider,
       rawConfig.animeProviderPriority,
@@ -653,6 +655,8 @@ export function RootOverlayShell({
               releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
               presenceSnapshot: container.presence.getSnapshot(),
               memorySamples: getRuntimeMemorySamples(),
+              providers: container.providerRegistry.getAll().map((provider) => provider.metadata),
+              getProviderHealth: (providerId) => container.providerHealth.get(providerId),
             })
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;

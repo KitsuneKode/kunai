@@ -20,11 +20,17 @@ import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+import {
+  formatProviderHealthBadge,
+  formatProviderHealthPickerLabelSuffix,
+  isProviderFallbackEligible,
+  resolveEffectiveProviderHealth,
+} from "@/services/playback/provider-health-policy";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
 import type { CapabilitySnapshot } from "@/ui";
-import type { ReleaseProgressDiagnosticsSummary } from "@kunai/storage";
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress, ReleaseProgressDiagnosticsSummary } from "@kunai/storage";
+import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
@@ -254,6 +260,8 @@ export function buildDiagnosticsPanelLines({
   releaseDiagnostics,
   presenceSnapshot,
   memorySamples,
+  providers,
+  getProviderHealth,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
@@ -263,6 +271,8 @@ export function buildDiagnosticsPanelLines({
   releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   presenceSnapshot?: PresenceSnapshot | null;
   memorySamples?: readonly RuntimeMemorySample[];
+  providers?: readonly ProviderMetadata[];
+  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
   const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
@@ -290,7 +300,16 @@ export function buildDiagnosticsPanelLines({
     recentEvents,
     currentProvider: state.provider,
     memorySamples,
+    persistedProviderHealth: getProviderHealth?.(state.provider as ProviderId),
   });
+  const providerMemoryLines =
+    providers && getProviderHealth
+      ? buildProviderMemoryPanelLines({
+          providers,
+          getProviderHealth,
+          mode: state.mode,
+        })
+      : [];
   const healthSummary = buildDiagnosticsHealthSummary({
     state,
     recentEvents,
@@ -402,6 +421,7 @@ export function buildDiagnosticsPanelLines({
       detail: providerVerdictDetail,
       tone: providerVerdictTone,
     },
+    ...providerMemoryLines,
     {
       label: "Resolve trace",
       detail: (() => {
@@ -1192,24 +1212,84 @@ export function sortProvidersByConfigPriority({
   );
 }
 
+export function buildProviderMemoryPanelLines(input: {
+  readonly providers: readonly ProviderMetadata[];
+  readonly getProviderHealth: (providerId: ProviderId) => ProviderHealth | undefined;
+  readonly mode: SessionState["mode"];
+}): readonly ShellPanelLine[] {
+  const laneProviders = input.providers.filter(
+    (provider) => provider.isAnimeProvider === (input.mode === "anime"),
+  );
+  if (laneProviders.length === 0) {
+    return [{ label: "Provider memory", detail: "No providers registered for this mode" }];
+  }
+
+  const lines: ShellPanelLine[] = [
+    {
+      label: "Provider memory",
+      detail: `Active ${input.mode} lane · use /reset-provider-health to forget failures`,
+      tone: "info",
+    },
+  ];
+
+  for (const provider of laneProviders) {
+    const effective = resolveEffectiveProviderHealth(
+      input.getProviderHealth(provider.id as ProviderId),
+    );
+    const badge = formatProviderHealthBadge(effective ?? undefined);
+    const fallbackNote =
+      effective && !isProviderFallbackEligible(effective) ? " · skipped in auto-fallback" : "";
+    lines.push({
+      label: formatProviderName(provider),
+      detail: badge ? `${badge}${fallbackNote}` : "no failure memory",
+      tone:
+        effective?.effectiveStatus === "down"
+          ? "error"
+          : effective?.effectiveStatus === "degraded"
+            ? "warning"
+            : "neutral",
+    });
+  }
+
+  lines.push({
+    label: "Recovery tips",
+    detail: "/recompute ignores health for one attempt · degraded heals after ~1h · down after ~8h",
+    tone: "neutral",
+  });
+
+  return lines;
+}
+
 export function buildProviderPickerOptions({
   providers,
   currentProvider,
   previewImageUrl,
+  getProviderHealth,
 }: {
   providers: readonly ProviderMetadata[];
   currentProvider: string;
   previewImageUrl?: string;
+  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
 }): readonly ShellPickerOption<string>[] {
-  return providers.map((provider) => ({
-    value: provider.id,
-    label:
+  return providers.map((provider) => {
+    const effective = getProviderHealth
+      ? resolveEffectiveProviderHealth(getProviderHealth(provider.id as ProviderId))
+      : undefined;
+    const healthBadge = formatProviderHealthBadge(effective ?? undefined);
+    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined);
+    const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
+    const baseDetail = formatProviderDetail(provider);
+    const baseLabel =
       provider.id === currentProvider
         ? `${formatProviderName(provider)}  ·  current`
-        : formatProviderName(provider),
-    detail: formatProviderDetail(provider),
-    previewImageUrl,
-  }));
+        : formatProviderName(provider);
+    return {
+      value: provider.id,
+      label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
+      detail: [baseDetail, healthDetail].filter(Boolean).join("  ·  "),
+      previewImageUrl,
+    };
+  });
 }
 
 function formatProviderName(provider: ProviderMetadata): string {

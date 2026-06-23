@@ -7,6 +7,11 @@ import {
   type RuntimeMemorySample,
   type RuntimeMemorySnapshot,
 } from "@/services/diagnostics/runtime-memory";
+import {
+  formatProviderHealthBadge,
+  resolveEffectiveProviderHealth,
+} from "@/services/playback/provider-health-policy";
+import type { ProviderHealth } from "@kunai/types";
 
 export type RuntimeHealthTone = "neutral" | "info" | "success" | "warning" | "error";
 
@@ -357,10 +362,39 @@ export function buildRuntimeHealthSnapshot(input: {
   readonly currentProvider?: string | null;
   readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
+  readonly persistedProviderHealth?: ProviderHealth;
 }): RuntimeHealthSnapshot {
+  const telemetryProvider = summarizeProviderHealth(input.recentEvents, input.currentProvider);
+  const effective = resolveEffectiveProviderHealth(input.persistedProviderHealth);
+  const persistedBadge = formatProviderHealthBadge(effective ?? undefined);
+  const provider =
+    persistedBadge && telemetryProvider.tone === "neutral"
+      ? {
+          label: telemetryProvider.label,
+          detail: `${telemetryProvider.detail}  ·  memory: ${persistedBadge}`,
+          tone:
+            effective?.effectiveStatus === "down"
+              ? ("error" as const)
+              : effective?.effectiveStatus === "degraded"
+                ? ("warning" as const)
+                : telemetryProvider.tone,
+        }
+      : persistedBadge
+        ? {
+            ...telemetryProvider,
+            detail: `${telemetryProvider.detail}  ·  memory: ${persistedBadge}`,
+            tone:
+              effective?.effectiveStatus === "down"
+                ? ("error" as const)
+                : effective?.effectiveStatus === "degraded"
+                  ? ("warning" as const)
+                  : telemetryProvider.tone,
+          }
+        : telemetryProvider;
+
   return {
     network: summarizePlaybackNetworkHealth(input.recentEvents),
-    provider: summarizeProviderHealth(input.recentEvents, input.currentProvider),
+    provider,
     memory: summarizeRuntimeMemoryHealth(input.memorySnapshot),
     memoryTrend: summarizeRuntimeMemoryTrendHealth(input.memorySamples),
   };

@@ -43,6 +43,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
+import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { planProviderCandidates } from "./ProviderCandidatePlanner";
 import {
   decideResolveResultCommit,
@@ -134,6 +135,14 @@ export type PlaybackResolveEvent =
       readonly type: "title-provider-suggestion";
       readonly providerId: string;
       readonly suggestedProviderId: string;
+    }
+  | {
+      readonly type: "provider-health-skipped";
+      readonly providerId: string;
+      readonly effectiveStatus: string;
+      readonly storedStatus: string;
+      readonly consecutiveFailures?: number;
+      readonly healedByTtl: boolean;
     };
 
 export type PlaybackResolveInput = {
@@ -369,10 +378,15 @@ export class PlaybackResolveService {
     }
 
     const recoveryMode = input.recoveryMode ?? "guided";
-    const primaryHealth =
+    const primaryStoredHealth =
       input.ignoreProviderHealth === true
         ? undefined
         : this.deps.providerHealth?.get(input.providerId);
+    const primaryEffectiveHealth = resolveEffectiveProviderHealth(primaryStoredHealth);
+    const primaryHealth =
+      primaryEffectiveHealth && primaryEffectiveHealth.effectiveStatus !== "unknown"
+        ? { status: primaryEffectiveHealth.effectiveStatus as "healthy" | "degraded" | "down" }
+        : undefined;
     const titleSuggestion =
       input.ignoreTitleHealthSuggestion === true
         ? null
@@ -413,6 +427,29 @@ export class PlaybackResolveService {
         type: "title-provider-suggestion",
         providerId: titleSuggestion.providerId,
         suggestedProviderId: titleSuggestion.suggestedProviderId,
+      });
+    }
+
+    for (const skipped of candidatePlan.skippedFallbackProviders) {
+      input.onEvent?.({
+        type: "provider-health-skipped",
+        providerId: skipped.providerId,
+        effectiveStatus: skipped.effectiveHealth.effectiveStatus,
+        storedStatus: skipped.effectiveHealth.stored?.status ?? "unknown",
+        consecutiveFailures: skipped.effectiveHealth.consecutiveFailures,
+        healedByTtl: skipped.effectiveHealth.healedByTtl,
+      });
+    }
+    if (candidatePlan.skippedFallbackProviders.length > 0) {
+      const skippedNames = candidatePlan.skippedFallbackProviders
+        .map((skipped) => {
+          const name =
+            this.deps.engine.getManifest(skipped.providerId)?.displayName ?? skipped.providerId;
+          return `${name} (${skipped.effectiveHealth.effectiveStatus})`;
+        })
+        .join(", ");
+      input.onFeedback?.({
+        note: `${skippedNames} skipped in auto-fallback — /reset-provider-health to retry`,
       });
     }
 
