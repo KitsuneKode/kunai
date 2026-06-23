@@ -109,6 +109,11 @@ Short, precise, a little dry. "Finds the playable stream." "Nothing fabricated."
 - `kunai-mark.svg` — logo mark (fox + blade)
 - `kunai-mascot.svg` / `kunai-mascot-animated.svg` — pixel kitsune
 - `generate-mascot.mjs` — mascot source (ASCII grid → SVG)
+- `generate-social-cards.mjs` — docs OG + GitHub social SVG/PNG exports
+- `kunai-social-docs.svg` / `kunai-social-docs.png` — docs Open Graph master (1200×630)
+- `kunai-social-github.svg` — GitHub social master (1280×640)
+- `kunai-mascot-og.png` — mascot raster for dynamic OG renders
 - `palette-board.mjs` → `palette-current.svg` / `palette-proposed.svg` — token comparison board
 - `kunai-brand-system.md` — this file
-- `image-prompts.md` — raster prompts for hero/OG/GIF (run via nano-banana / codex / cursor)
+- `image-prompts.md` — optional raster prompts (hero/GIF); social cards are generated in-repo
+- `.github/social-preview.png` — upload to GitHub repo Settings → Social preview

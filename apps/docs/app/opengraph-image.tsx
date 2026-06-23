@@ -1,42 +1,33 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { KunaiSocialCard } from "@/lib/brand/social-card";
 import { ImageResponse } from "next/og";
 
-export const alt = "Kunai Docs";
+export const alt = "Kunai Docs — terminal-first playback guides";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+function mascotDataUrl(): string | undefined {
+  try {
+    const pngPath = join(process.cwd(), "../../.design/brand/kunai-mascot-og.png");
+    const png = readFileSync(pngPath);
+    return `data:image/png;base64,${png.toString("base64")}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function OpenGraphImage() {
   return new ImageResponse(
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
-        padding: 80,
-        background: "linear-gradient(135deg, #100b0f 0%, #2a2030 100%)",
-        color: "#f6eff4",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 28,
-          letterSpacing: "0.2em",
-          textTransform: "uppercase",
-          color: "#ff8fb0",
-          marginBottom: 24,
-        }}
-      >
-        Kunai Docs
-      </div>
-      <div style={{ fontSize: 64, fontWeight: 300, lineHeight: 1.1, maxWidth: 900 }}>
-        Terminal-first playback guides
-      </div>
-      <div style={{ fontSize: 28, marginTop: 32, color: "#cabfca", maxWidth: 800 }}>
-        Search, resolve direct streams, hand off to mpv, and recover without losing your place.
-      </div>
-    </div>,
+    <KunaiSocialCard
+      eyebrow="KUNAI DOCS"
+      headline={["Terminal-first", "playback guides"]}
+      subline="Search · resolve streams · mpv handoff · clean recovery"
+      command='kunai -S "Your title"'
+      footer="docs · kunai"
+      mascotSrc={mascotDataUrl()}
+    />,
     { ...size },
   );
 }

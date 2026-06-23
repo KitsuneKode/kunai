@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     siteName: "Kunai Docs",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Kunai Docs",
     description:
       "A terminal-first Kunai guide for playable streams, mpv playback, recovery, offline use, and diagnostics.",

@@ -1,3 +1,5 @@
+import { KunaiMark } from "@/lib/brand/kunai-mark";
+import { kunaiBrand } from "@/lib/brand/tokens";
 import { ImageResponse } from "next/og";
 
 export const size = { width: 180, height: 180 };
@@ -12,14 +14,12 @@ export default function AppleIcon() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(135deg, #100b0f, #2a2030)",
+        background: `linear-gradient(145deg, ${kunaiBrand.bg}, ${kunaiBrand.surfaceElevated})`,
         borderRadius: 36,
-        color: "#ff8fb0",
-        fontSize: 96,
-        fontWeight: 300,
+        border: `1px solid ${kunaiBrand.line}`,
       }}
     >
-      K
+      <KunaiMark size={118} />
     </div>,
     { ...size },
   );

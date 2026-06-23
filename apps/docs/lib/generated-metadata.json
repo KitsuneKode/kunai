@@ -1,5 +1,5 @@
 {
-  "syncedAt": "2026-06-23T08:59:06.521Z",
+  "syncedAt": "2026-06-23T09:40:44.767Z",
   "version": "0.2.5",
   "cliVersion": "0.2.5",
   "commandCount": 66,
@@ -667,6 +667,12 @@
       "description": "Optional social status integration with setup wizard support."
     },
     {
+      "id": "provider-geo-relay",
+      "label": "User-owned provider geo relay",
+      "status": "beta",
+      "description": "Optional metadata/API relay template for geo-blocked providers; video remains direct."
+    },
+    {
       "id": "install-scripts",
       "label": "install.sh / install.ps1",
       "status": "beta",
@@ -682,7 +688,7 @@
       "id": "hosted-streams",
       "label": "Hosted stream relay",
       "status": "planned",
-      "description": "No cloud proxy or hosted transcoding in beta v1."
+      "description": "No Kunai-operated video proxy or hosted transcoding in beta v1."
     }
   ],
   "runtimeBaseline": {

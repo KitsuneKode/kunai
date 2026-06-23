@@ -1,3 +1,5 @@
+import { KunaiMark } from "@/lib/brand/kunai-mark";
+import { kunaiBrand } from "@/lib/brand/tokens";
 import { ImageResponse } from "next/og";
 
 export const size = { width: 32, height: 32 };
@@ -12,14 +14,12 @@ export default function Icon() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#100b0f",
+        background: kunaiBrand.surface,
         borderRadius: 8,
-        color: "#ff8fb0",
-        fontSize: 20,
-        fontWeight: 700,
+        border: `1px solid ${kunaiBrand.line}`,
       }}
     >
-      K
+      <KunaiMark size={24} />
     </div>,
     { ...size },
   );
