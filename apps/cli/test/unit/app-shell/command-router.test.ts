@@ -41,6 +41,31 @@ describe("routePlaybackShellAction", () => {
       }),
     ).resolves.toBe("handled");
   });
+
+  test("notifications action reports disabled attention inbox without opening overlay", async () => {
+    const dispatched: unknown[] = [];
+    const container = {
+      featureFlags: { attentionInbox: false },
+      stateManager: {
+        dispatch: (action: unknown) => {
+          dispatched.push(action);
+        },
+      },
+    };
+
+    const result = await routeSearchShellAction({
+      action: "notifications",
+      container: container as never,
+    });
+
+    expect(result).toBe("handled");
+    expect(dispatched).toEqual([
+      {
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: "Attention inbox is disabled.",
+      },
+    ]);
+  });
 });
 
 describe("resolveCommandContext scoped surfaces", () => {

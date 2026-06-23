@@ -16,6 +16,30 @@ import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
 
 export type CommandPaletteSurface = "browse" | "playback" | "list" | "post-play";
 
+/**
+ * Opens the attention inbox, honoring the `attentionInbox` feature flag. When the
+ * flag is disabled the inbox surface is suppressed and the user is told why,
+ * rather than silently doing nothing.
+ */
+async function routeNotificationsInbox(container: Container): Promise<RoutedActionResult> {
+  if (!container.featureFlags.attentionInbox) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Attention inbox is disabled.",
+    });
+    return "handled";
+  }
+  const { playback } = await openNotificationsOverlay(container);
+  if (playback) {
+    return {
+      type: "history-entry",
+      title: playback.title,
+      episode: playback.episode,
+    };
+  }
+  return "handled";
+}
+
 export function resolveCommandsForPaletteSurface(
   state: SessionState,
   surface: CommandPaletteSurface,
@@ -164,15 +188,7 @@ export async function routeSearchShellAction({
     return "handled";
   }
   if (action === "notifications") {
-    const { playback } = await openNotificationsOverlay(container);
-    if (playback) {
-      return {
-        type: "history-entry",
-        title: playback.title,
-        episode: playback.episode,
-      };
-    }
-    return "handled";
+    return routeNotificationsInbox(container);
   }
   if (action === "provider") return "provider";
   if (action === "playlist") return openRootQueueSelection(container);
@@ -239,15 +255,7 @@ export async function routePlaybackShellAction({
     return "handled";
   }
   if (action === "notifications") {
-    const { playback } = await openNotificationsOverlay(container);
-    if (playback) {
-      return {
-        type: "history-entry",
-        title: playback.title,
-        episode: playback.episode,
-      };
-    }
-    return "handled";
+    return routeNotificationsInbox(container);
   }
   if (action === "provider") return "provider";
   if (action === "playlist") return openRootQueueSelection(container);
