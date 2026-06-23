@@ -26,6 +26,10 @@ function posterPreviewReducer(
     case "reset":
       return { poster: { kind: "none" }, posterState: action.posterState };
     case "loading":
+      // Already loading: return the SAME reference so React bails out of the
+      // re-render. Without this, holding ↑/↓ dispatches "loading" on every
+      // keystroke and each new object forces an extra render during navigation.
+      if (state.posterState === "loading") return state;
       // Preserve previous poster while loading to avoid flash when switching episodes
       return { poster: state.poster, posterState: "loading" };
     case "resolved":

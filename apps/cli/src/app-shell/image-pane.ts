@@ -1,6 +1,7 @@
 import { detectImageCapability } from "@/image";
 import { useEffect } from "react";
 
+import { recordPosterFetch } from "./diagnostics/render-trace";
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
 import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import type { PosterResult } from "./poster-types";
@@ -8,7 +9,11 @@ import type { PosterResult } from "./poster-types";
 // LRU-style cache keyed by "url:WxH"
 const posterCache = new Map<string, PosterResult>();
 const posterInflight = new Map<string, Promise<PosterResult>>();
-const MAX_CACHE = 12;
+// Sized for navigation: stepping through a calendar/search list and back must not
+// constantly evict + re-spawn chafa for rows just visited. 12 was small enough that
+// a single screen of scrolling thrashed the cache; 64 keeps a comfortable window
+// of recently-rendered posters resident.
+const MAX_CACHE = 64;
 const runtime = {
   detectImageCapability,
 };
@@ -98,13 +103,19 @@ export async function fetchPoster(
   const key = `${resolved}:${rows}x${cols}:${rendererKey}`;
 
   const cached = posterCache.get(key);
-  if (cached) return cached;
+  if (cached) {
+    recordPosterFetch({ cacheHit: true, renderer: rendererKey });
+    return cached;
+  }
 
   const inflight = posterInflight.get(key);
   if (inflight) {
+    // Deduped against an in-flight render — no new subprocess is spawned.
+    recordPosterFetch({ cacheHit: true, renderer: rendererKey });
     return inflight;
   }
 
+  recordPosterFetch({ cacheHit: false, spawned: true, renderer: rendererKey });
   const task = (async (): Promise<PosterResult> => {
     let result: PosterResult;
     try {

@@ -34,6 +34,14 @@ describe("usePosterPreview reducer", () => {
     expect(next.poster.kind).toBe("kitty");
   });
 
+  test("repeat loading returns the SAME state reference so React bails the re-render", () => {
+    const loadingOnce = posterPreviewReducer(initialPosterPreviewState, { type: "loading" });
+    const loadingTwice = posterPreviewReducer(loadingOnce, { type: "loading" });
+    // Identity, not just equality: this is what lets a held ↑/↓ burst dispatch
+    // "loading" every keystroke without forcing an extra commit per key.
+    expect(loadingTwice).toBe(loadingOnce);
+  });
+
   test("resolved maps none result to unavailable state", () => {
     const next = posterPreviewReducer(initialPosterPreviewState, {
       type: "resolved",

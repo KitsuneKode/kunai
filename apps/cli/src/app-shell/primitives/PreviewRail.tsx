@@ -22,11 +22,18 @@ export function PreviewRail({
   model,
   width = 32,
   poster,
+  reserveRows = 6,
 }: {
   readonly model: PreviewRailModel;
   readonly width?: number;
   /** Rendered poster (chafa/Kitty placeholder). When ready, shown instead of the letter tile. */
   readonly poster?: PosterResult;
+  /**
+   * Fixed height (in rows) for the poster slot. Both the resolved image and the
+   * placeholder tile reserve this height so the placeholder -> image swap (e.g. on
+   * selection settle) never reflows the metadata below it.
+   */
+  readonly reserveRows?: number;
 }) {
   const facts = visiblePreviewFacts(model.facts).slice(0, 4);
   const posterLabel = getPreviewPosterLabel(model);
@@ -40,12 +47,12 @@ export function PreviewRail({
           framed placeholder tile (initials centred in a poster-shaped frame) so it
           reads as "art pending" instead of two letters floating in empty space. */}
       {hasPosterImage ? (
-        <Box minHeight={undefined} justifyContent="center">
+        <Box minHeight={reserveRows} justifyContent="center">
           <Text>{poster.placeholder}</Text>
         </Box>
       ) : (
         <Box
-          minHeight={6}
+          minHeight={reserveRows}
           width={bodyWidth}
           justifyContent="center"
           alignItems="center"
