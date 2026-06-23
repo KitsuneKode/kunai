@@ -1,3 +1,4 @@
+import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
   reconcileContinueHistory,
   type ContinueHistoryRelease,
@@ -13,8 +14,9 @@ export function continuationSignalsForHistoryEntry(input: {
   readonly nextRelease: ContinueHistoryRelease | null | undefined;
   readonly releaseProgress?: ReleaseProgressProjection;
   readonly offline?: ContinuationSignals["offline"];
+  readonly catalogBounds?: CatalogEpisodeBounds | null;
 }): ContinuationSignals {
-  const { titleId, entry, nextRelease, releaseProgress, offline } = input;
+  const { titleId, entry, nextRelease, releaseProgress, offline, catalogBounds } = input;
 
   const cachedNextRelease =
     nextRelease &&
@@ -46,6 +48,7 @@ export function continuationSignalsForHistoryEntry(input: {
     titleId,
     entries: [[titleId, entry]],
     nextRelease: nextRelease ?? null,
+    catalogBounds,
   });
   if (
     reconcile.kind === "new-episode" &&

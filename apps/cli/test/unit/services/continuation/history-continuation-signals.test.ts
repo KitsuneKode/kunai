@@ -33,6 +33,17 @@ test("continuationSignalsForHistoryEntry supplies optimistic next episode withou
   expect(signals.nextRelease).toMatchObject({ season: 1, episode: 9, released: true });
 });
 
+test("continuationSignalsForHistoryEntry skips optimistic next when catalog is complete", () => {
+  const signals = continuationSignalsForHistoryEntry({
+    titleId: "barakamon",
+    entry: entry({ titleId: "barakamon", episode: 12 }),
+    nextRelease: null,
+    catalogBounds: { season: 1, latestEpisode: 12 },
+  });
+  expect(signals.releaseProgress).toBeNull();
+  expect(signals.nextRelease).toBeNull();
+});
+
 test("continuationSignalsForHistoryEntry keeps cached release progress authoritative", () => {
   const signals = continuationSignalsForHistoryEntry({
     titleId: "tmdb:1",

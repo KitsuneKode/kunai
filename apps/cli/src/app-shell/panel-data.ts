@@ -1,4 +1,5 @@
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
   classifyHistoryBucket,
   type HistoryBucket,
@@ -1028,6 +1029,7 @@ export type HistoryPickerOptionsContext = {
   // sourced directly from the ReleaseProgressProjection cache — NOT the lossy
   // ContinueHistoryRelease — so the `caught-up` signal survives for bucketing.
   readonly releaseSignals?: ReadonlyMap<string, HistoryReleaseSignal>;
+  readonly catalogBounds?: ReadonlyMap<string, CatalogEpisodeBounds>;
 };
 
 /**
@@ -1048,6 +1050,7 @@ export function historyBucketFor(
     entry,
     release: context.releaseSignals?.get(id) ?? null,
     hasKnownNextToPlay,
+    catalogBounds: context.catalogBounds?.get(id) ?? null,
   });
 }
 
@@ -1089,6 +1092,7 @@ function buildHistoryOptionRow(
     titleId: id,
     entries: [[id, entry]],
     nextRelease: context.nextReleases?.get(id) ?? null,
+    catalogBounds: context.catalogBounds?.get(id) ?? null,
   });
   // Gate the legacy reconcile's "new-episode" through the authoritative bucket so a
   // finished/caught-up title (or one with missing/stale release data) never shows a

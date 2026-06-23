@@ -213,6 +213,48 @@ test("history view puts an aired backlog in Continue, not New", () => {
   expect(viewFor(watched, "new-episodes", backlog).state).toBe("empty");
 });
 
+test("history view keeps finished series with known catalog end out of Continue", () => {
+  const watched = progress({
+    titleId: "barakamon",
+    title: "Barakamon",
+    mediaKind: "anime",
+    providerId: "allanime",
+    season: 1,
+    episode: 12,
+    positionSeconds: 1371,
+    durationSeconds: 1371,
+    completed: true,
+    updatedAt: "2026-05-04T00:00:00.000Z",
+  });
+  const bounds = new Map([["barakamon", { season: 1, latestEpisode: 12 }]]);
+  const continueView = buildHistoryView({
+    entries: [["barakamon", watched]],
+    tab: "continue",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: { catalogBounds: bounds },
+  });
+  expect(continueView.state).toBe("empty");
+
+  const completedView = buildHistoryView({
+    entries: [["barakamon", watched]],
+    tab: "completed",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 50,
+    narrow: true,
+    context: {
+      catalogBounds: bounds,
+      releaseSignals: new Map([
+        ["barakamon", { status: "caught-up", newEpisodeCount: 0, latestAiredEpisode: 12 }],
+      ]),
+    },
+  });
+  expect(completedView.flatRows.map((row) => row.titleId)).toContain("barakamon");
+});
+
 test("history view labels finished anchor with next episode as next instead of done", () => {
   const watched = progress({
     titleId: "native-rampart",

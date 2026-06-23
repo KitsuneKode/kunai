@@ -20,6 +20,7 @@ import {
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
+import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import {
   NotificationActionRouter,
@@ -288,6 +289,10 @@ function readCachedHistoryProjections(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
   container: Container,
   cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+  catalogBounds: ReadonlyMap<
+    string,
+    import("@/domain/continuation/catalog-episode-bounds").CatalogEpisodeBounds
+  >,
 ): NonNullable<HistoryPickerOptionsContext["projections"]> {
   const titleIds = entries.map(([titleId]) => titleId);
   const policies = new Map(
@@ -341,6 +346,7 @@ function readCachedHistoryProjections(
             nextRelease,
             releaseProgress,
             offline,
+            catalogBounds: catalogBounds.get(titleId) ?? null,
           }),
         ),
       ),
@@ -472,6 +478,9 @@ export function RootOverlayShell({
   const [historyReleaseSignals, setHistoryReleaseSignals] = useState<
     NonNullable<HistoryPickerOptionsContext["releaseSignals"]>
   >(new Map());
+  const [historyCatalogBounds, setHistoryCatalogBounds] = useState<
+    NonNullable<HistoryPickerOptionsContext["catalogBounds"]>
+  >(new Map());
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
   const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
   const reloadHistoryOverlay = useCallback(async () => {
@@ -486,13 +495,24 @@ export function RootOverlayShell({
     const cachedProgress = container.releaseProgressCache.getByTitleIds(
       historyEntries.map(([titleId]) => titleId),
     );
+    const catalogBounds = readCatalogBoundsForHistoryEntries(
+      historyEntries,
+      cachedProgress,
+      container.historyCatalogEpisodeCounts,
+    );
     const nextReleases = readCachedHistoryNextReleases(historyEntries, cachedProgress);
-    const projections = readCachedHistoryProjections(historyEntries, container, cachedProgress);
+    const projections = readCachedHistoryProjections(
+      historyEntries,
+      container,
+      cachedProgress,
+      catalogBounds,
+    );
     const releaseSignals = readCachedHistoryReleaseSignals(historyEntries, cachedProgress);
     setAsyncLines(buildHistoryPanelLines(historyEntries));
     setHistoryNextReleases(nextReleases);
     setHistoryProjections(projections);
     setHistoryReleaseSignals(releaseSignals);
+    setHistoryCatalogBounds(catalogBounds);
     return historyEntries;
   }, [container]);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
@@ -501,6 +521,7 @@ export function RootOverlayShell({
     nextReleases: historyNextReleases,
     projections: historyProjections,
     releaseSignals: historyReleaseSignals,
+    catalogBounds: historyCatalogBounds,
   };
   const continueSourcePreference: ContinueSourcePreference =
     rawConfig.continueSourcePreference ?? "auto";

@@ -217,6 +217,7 @@ function deriveResumeAction(
     titleId,
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
+    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
   });
   if (decision.kind === "new-episode") {
     const bucket = historyBucketFor(titleId, entry, context);
@@ -245,6 +246,7 @@ function shellOptionToHistoryRow(
     titleId,
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
+    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
   });
   const hasContinueNext =
     decision.kind === "new-episode" &&
@@ -339,6 +341,7 @@ function buildHistoryPreviewRailModel(
     titleId,
     entries: [[titleId, entry]],
     nextRelease: context.nextReleases?.get(titleId) ?? null,
+    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
   });
   const returnLoopDetail = describeHistoryReturnLoopDetail({
     entry,
