@@ -57,7 +57,11 @@ import {
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView } from "./notifications-view";
-import { isOverlayCancelActive, overlayDestructiveCancelMessage } from "./overlay-input-safety";
+import {
+  isOverlayCancelActive,
+  overlayDestructiveCancelMessage,
+  shouldHandleOverlayEscape,
+} from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import {
   applyAnimeProviderOrder,
@@ -1172,7 +1176,15 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape && !cancelActive) {
+    if (
+      key.escape &&
+      shouldHandleOverlayEscape({
+        overlay,
+        settingsChoice,
+        filterQuery,
+        pickerFilterQuery,
+      })
+    ) {
       if (overlay.type === "settings" && settingsChoice) {
         setSettingsChoice(null);
         setFilterQuery("");

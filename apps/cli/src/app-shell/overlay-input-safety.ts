@@ -12,7 +12,7 @@ const SETTINGS_TEXT_INPUT_CHOICES = new Set<SettingsChoiceValue>([
 export function isSettingsTextInputChoice(
   choice: SettingsChoiceValue | null | undefined,
 ): choice is SettingsChoiceValue {
-  return choice != null && SETTINGS_TEXT_INPUT_CHOICES.has(choice);
+  return choice !== null && choice !== undefined && SETTINGS_TEXT_INPUT_CHOICES.has(choice);
 }
 
 /**
@@ -36,6 +36,15 @@ export function isOverlayCancelActive(input: {
     return false;
   }
   return true;
+}
+
+export function shouldHandleOverlayEscape(input: {
+  readonly overlay: RootOwnedOverlay;
+  readonly settingsChoice: SettingsChoiceValue | null;
+  readonly filterQuery: string;
+  readonly pickerFilterQuery: string;
+}): boolean {
+  return isOverlayCancelActive(input);
 }
 
 export function overlayDestructiveCancelMessage(input: {
