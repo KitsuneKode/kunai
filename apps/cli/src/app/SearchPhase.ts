@@ -43,6 +43,10 @@ import {
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
+import {
+  readCatalogBoundsForHistoryEntries,
+  seedCaughtUpReleaseProgressFromCatalogCount,
+} from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles } from "@/services/search/SearchRoutingService";
@@ -242,10 +246,31 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   context.signal,
                 );
                 if (healed.length === 0) return;
-                const healedSet = new Set(healed);
+                const latestByTitle = new Map(
+                  historyForHeal.map((row) => [row.titleId, row] as const),
+                );
+                const now = new Date().toISOString();
+                for (const outcome of healed) {
+                  if (outcome.episodeCount) {
+                    container.historyCatalogEpisodeCounts.set(
+                      outcome.titleId,
+                      outcome.episodeCount,
+                    );
+                    const entry = latestByTitle.get(outcome.titleId);
+                    if (entry) {
+                      seedCaughtUpReleaseProgressFromCatalogCount(
+                        container.releaseProgressWriter,
+                        entry,
+                        outcome.episodeCount,
+                        now,
+                      );
+                    }
+                  }
+                }
+                const healedIds = new Set(healed.map((outcome) => outcome.titleId));
                 enqueueReleaseReconciliation(
                   container,
-                  historyForHeal.filter((row) => healedSet.has(row.titleId)),
+                  historyForHeal.filter((row) => healedIds.has(row.titleId)),
                   "history",
                   context.signal,
                 );

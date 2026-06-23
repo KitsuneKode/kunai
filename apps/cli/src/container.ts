@@ -218,6 +218,8 @@ export interface Container {
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
   readonly historyMetadataHealer: HistoryMetadataHealer;
+  /** Session-scoped catalog episode totals learned from metadata heal (titleId → count). */
+  readonly historyCatalogEpisodeCounts: Map<string, number>;
   readonly updateService: UpdateService;
   readonly binaryAutoUpdater: BinaryAutoUpdater;
 
@@ -665,6 +667,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
         : null,
     ttlMs: 5 * 60 * 1000,
   });
+  const historyCatalogEpisodeCounts = new Map<string, number>();
   const historyMetadataHealer = new HistoryMetadataHealer({
     repo: historyRepository,
     resolver: createHistoryMetadataResolver({
@@ -760,6 +763,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     timelineService,
     resultEnrichmentService,
     historyMetadataHealer,
+    historyCatalogEpisodeCounts,
     updateService,
     binaryAutoUpdater,
     listRepository,

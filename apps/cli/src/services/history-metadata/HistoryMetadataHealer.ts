@@ -18,6 +18,12 @@ import { selectHistoryHealTargets, type HistoryHealTarget } from "./select-heal-
 export type ResolvedHistoryMetadata = {
   readonly posterUrl?: string;
   readonly externalIds?: ProviderExternalIds;
+  readonly episodeCount?: number;
+};
+
+export type HistoryHealOutcome = {
+  readonly titleId: string;
+  readonly episodeCount?: number;
 };
 
 export interface HistoryMetadataResolver {
@@ -49,9 +55,9 @@ export class HistoryMetadataHealer {
   async heal(
     entries: readonly HistoryProgress[],
     signal?: AbortSignal,
-  ): Promise<readonly string[]> {
+  ): Promise<readonly HistoryHealOutcome[]> {
     const targets = selectHistoryHealTargets(entries, { limit: this.deps.limit });
-    const healed: string[] = [];
+    const healed: HistoryHealOutcome[] = [];
 
     for (const target of targets) {
       if (signal?.aborted) break;
@@ -78,14 +84,20 @@ export class HistoryMetadataHealer {
       }
 
       const posterUrl = target.needsPoster ? resolved?.posterUrl : undefined;
-      if (!posterUrl && !hasExternalIds(externalIds)) continue;
+      const episodeCount = resolved?.episodeCount;
+      if (!posterUrl && !hasExternalIds(externalIds) && !episodeCount) continue;
 
-      this.deps.repo.backfillTitleMetadata(target.titleId, {
-        posterUrl,
-        externalIds:
-          target.needsExternalIds || target.needsProviderNativeMapping ? externalIds : undefined,
+      if (posterUrl || hasExternalIds(externalIds)) {
+        this.deps.repo.backfillTitleMetadata(target.titleId, {
+          posterUrl,
+          externalIds:
+            target.needsExternalIds || target.needsProviderNativeMapping ? externalIds : undefined,
+        });
+      }
+      healed.push({
+        titleId: target.titleId,
+        episodeCount,
       });
-      healed.push(target.titleId);
     }
 
     return healed;

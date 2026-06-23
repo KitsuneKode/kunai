@@ -50,7 +50,7 @@ describe("HistoryMetadataHealer", () => {
     expect(backfills).toEqual([
       { titleId: "a", posterUrl: "https://img/a.jpg", externalIds: { anilistId: "103223" } },
     ]);
-    expect(healed).toEqual(["a"]);
+    expect(healed).toEqual([{ titleId: "a", episodeCount: undefined }]);
   });
 
   it("skips titles the resolver cannot match (no backfill, not reported healed)", async () => {
@@ -73,7 +73,7 @@ describe("HistoryMetadataHealer", () => {
       }),
     ]);
 
-    expect(healed).toEqual(["Frp8xJDSeLh6wEHNk"]);
+    expect(healed).toEqual([{ titleId: "Frp8xJDSeLh6wEHNk", episodeCount: undefined }]);
     expect(backfills[0]?.externalIds).toMatchObject({
       anilistId: "186497",
       providerNativeIds: { allanime: "Frp8xJDSeLh6wEHNk" },

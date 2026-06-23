@@ -42,10 +42,15 @@ function isPlausibleMatch(historyTitle: string, candidateTitle: string): boolean
 function resolvedMetadataFromSearchResult(match: SearchResult): ResolvedHistoryMetadata | null {
   const posterUrl = toPosterUrl(match.posterPath);
   const externalIds = match.externalIds;
-  if (!posterUrl && !externalIds) return null;
+  const episodeCount =
+    typeof match.episodeCount === "number" && match.episodeCount > 0
+      ? match.episodeCount
+      : undefined;
+  if (!posterUrl && !externalIds && !episodeCount) return null;
   return {
     ...(posterUrl ? { posterUrl } : {}),
     ...(externalIds ? { externalIds } : {}),
+    ...(episodeCount ? { episodeCount } : {}),
   };
 }
 
