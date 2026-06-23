@@ -12,6 +12,7 @@ import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
+import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
 import { historyContentType } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
@@ -316,38 +317,38 @@ function readCachedHistoryProjections(
     const policy = policies.get(titleId);
     projections.set(
       titleId,
-      container.continuationProjectionService.project({
-        titleId,
-        entries,
-        nextRelease:
-          nextRelease &&
-          nextRelease.season !== undefined &&
-          nextRelease.episode !== undefined &&
-          historyContentType(entry) === "series"
+      projectionFromViewDecision(
+        container.continueWatchingService.titleDecision(titleId, {
+          nextRelease:
+            nextRelease &&
+            nextRelease.season !== undefined &&
+            nextRelease.episode !== undefined &&
+            historyContentType(entry) === "series"
+              ? {
+                  season: nextRelease.season,
+                  episode: nextRelease.episode,
+                  released: nextRelease.status === "released",
+                  availableAt: nextRelease.releaseAt ?? undefined,
+                }
+              : null,
+          releaseProgress: releaseProgress
             ? {
-                season: nextRelease.season,
-                episode: nextRelease.episode,
-                released: nextRelease.status === "released",
-                availableAt: nextRelease.releaseAt ?? undefined,
+                newEpisodeCount: releaseProgress.newEpisodeCount,
+                stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
               }
             : null,
-        releaseProgress: releaseProgress
-          ? {
-              newEpisodeCount: releaseProgress.newEpisodeCount,
-              stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
-            }
-          : null,
-        offline:
-          policy || nextReadyByTitle.has(titleId)
-            ? {
-                enrolled: policy?.enrolled === true,
-                readyNextEpisodes: (() => {
-                  const nextReady = nextReadyByTitle.get(titleId);
-                  return nextReady ? [nextReady] : [];
-                })(),
-              }
-            : null,
-      }),
+          offline:
+            policy || nextReadyByTitle.has(titleId)
+              ? {
+                  enrolled: policy?.enrolled === true,
+                  readyNextEpisodes: (() => {
+                    const nextReady = nextReadyByTitle.get(titleId);
+                    return nextReady ? [nextReady] : [];
+                  })(),
+                }
+              : null,
+        }),
+      ),
     );
   }
   return projections;

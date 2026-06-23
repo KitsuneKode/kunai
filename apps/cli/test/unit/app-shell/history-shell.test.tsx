@@ -32,7 +32,14 @@ function row(
   };
 }
 
-function renderHistory(): string {
+function renderHistory(
+  overrides: Partial<Pick<HistoryView, "rail">> = {},
+  layout: {
+    readonly columns?: number;
+    readonly listWidth?: number;
+    readonly rowWidth?: number;
+  } = {},
+): string {
   const rows: HistoryViewRow[] = [
     row("Teach You a Lesson", "S01E11", "new", 22, "1w ago", "new"),
     row("Pro Bono", "S01E02", "8%", 8, "2w ago"),
@@ -51,11 +58,19 @@ function renderHistory(): string {
     showScrollUp: false,
     showScrollDown: false,
     rail: null,
+    ...overrides,
     items: rows.map((r, i) => ({ kind: "row" as const, row: r, flatIndex: i, selected: i === 2 })),
   };
-  return captureFrame(<HistoryShell view={view} columns={120} listWidth={80} rowWidth={76} />, {
-    columns: 120,
-  }).replace(ANSI, "");
+  const columns = layout.columns ?? 120;
+  return captureFrame(
+    <HistoryShell
+      view={view}
+      columns={columns}
+      listWidth={layout.listWidth ?? 80}
+      rowWidth={layout.rowWidth ?? 76}
+    />,
+    { columns },
+  ).replace(ANSI, "");
 }
 
 test("progress renders inline in the row, never on a detached line", () => {
@@ -78,4 +93,25 @@ test("a badge row keeps its badge as status, even with progress (no meter)", () 
   expect(badgeRow).toBeDefined();
   expect(badgeRow).toContain("new");
   expect(badgeRow).not.toContain("▰");
+});
+
+test("wide history rail clamps list rows inside terminal width", () => {
+  const columns = 130;
+  const frame = renderHistory(
+    {
+      rail: {
+        title: "The Eminence in Shadow",
+        subtitle: "S01E07",
+        overview: "A selected history item with a right-hand preview rail.",
+        posterState: "none",
+        facts: [{ label: "Next", value: "resume where you left off", tone: "success" }],
+      },
+    },
+    { columns, listWidth: 124, rowWidth: 120 },
+  );
+
+  const overflowing = frame
+    .split("\n")
+    .filter((line) => line.trim().length > 0 && line.length > columns);
+  expect(overflowing).toHaveLength(0);
 });

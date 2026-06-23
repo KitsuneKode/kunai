@@ -5,6 +5,7 @@ import {
   ResultEnrichmentService,
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
+import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
 import type { HistoryProgress } from "@kunai/storage";
 
 function result(patch: Partial<SearchResult> = {}): SearchResult {
@@ -97,6 +98,40 @@ describe("ResultEnrichmentService", () => {
         }),
       }).badges,
     ).toEqual([{ label: "continue S02E07 · 30:00 (50%)", tone: "warning" }]);
+  });
+
+  test("enrichment badge comes from the shared continuation decision", async () => {
+    const sourceEntry = history({
+      titleId: "title-1",
+      completed: false,
+      positionSeconds: 300,
+    });
+    const decision: ContinuationViewDecision = {
+      state: "new-episodes",
+      target: {
+        titleId: "title-1",
+        title: "Demo",
+        mediaKind: "series",
+        season: 1,
+        episode: 1,
+        sourceEntry,
+      },
+      badge: "4 new",
+      detail: "release cache moved ahead",
+      secondaryActions: [],
+      freshness: "cached",
+    };
+    const service = new ResultEnrichmentService({
+      historyStore: { getAll: async () => ({ "title-1": sourceEntry }) },
+      offlineLibraryService: { peekRecordedArtifactStatuses: async () => [] },
+      continueWatchingService: {
+        titleDecision: () => decision,
+      },
+    });
+
+    const enrichments = await service.enrichResults([result()]);
+
+    expect(enrichments.get("series:title-1")?.badges).toEqual([{ label: "4 new", tone: "info" }]);
   });
 
   test("prefers a new episode badge over watched when cached release data moved ahead", () => {

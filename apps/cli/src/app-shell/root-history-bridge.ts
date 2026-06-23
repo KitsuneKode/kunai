@@ -113,6 +113,16 @@ export function buildRootHistorySelection(
       localJobId: action.jobId,
     };
   }
+  if (action?.kind === "select-online" || action?.kind === "resume") {
+    return {
+      ...selection,
+      targetEpisode: {
+        season: action.season,
+        episode: action.episode,
+        reason: action.kind === "select-online" ? "new-episode" : "resume",
+      },
+    };
+  }
   const decision = reconcileContinueHistory({
     titleId: selection.titleId,
     entries: [[selection.titleId, selection.entry]],

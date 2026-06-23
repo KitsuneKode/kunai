@@ -29,9 +29,8 @@ import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
+  historyLaunchSelectionFromContinuation,
   recordLocalHistorySourceDecision,
-  selectContinueHistoryEntry,
-  selectContinueHistoryEntryFromRecent,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
 import { resolveSessionConfigOverrides } from "@/app/session-overrides";
@@ -46,6 +45,7 @@ import {
 } from "@/services/download/download-cleanup-policy";
 import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
 import { checkDeps } from "@/ui";
+import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
 import packageJson from "../package.json" with { type: "json" };
 
@@ -160,43 +160,137 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
-  const recentEntries = await container.historyStore.listRecent(500).catch(() => []);
-  const selection =
-    selectContinueHistoryEntryFromRecent(recentEntries) ??
-    selectContinueHistoryEntry(await container.historyStore.getAll());
-  if (!selection) {
+  const recentEntries = container.historyRepository.listRecent(500);
+  const titleIds = [...new Set(recentEntries.map((entry) => entry.titleId))];
+  const releaseProgress = container.releaseProgressCache.getByTitleIds(titleIds);
+  const offlinePolicies = new Map(
+    container.offlineTitlePolicies
+      .listByTitleIds(titleIds)
+      .map((policy) => [policy.titleId, policy]),
+  );
+  const nextReadyByTitle = readNextReadyOfflineEpisodes(recentEntries, container);
+  const decision = container.continueWatchingService.startupCandidate({
+    scanLimit: 500,
+    signalsByTitle: (titleId) =>
+      buildStartupContinuationSignals({
+        releaseProgress: releaseProgress.get(titleId),
+        offlineEnrolled: offlinePolicies.get(titleId)?.enrolled === true,
+        nextReady: nextReadyByTitle.get(titleId),
+      }),
+  });
+  if (!decision?.target || !decision.primaryAction) {
     container.diagnosticsService.record({
       category: "session",
-      message: "Continue requested but no unfinished history entry was available",
+      message: "Continue requested but no playable continuation decision was available",
     });
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "No unfinished history entry to continue yet.",
+      note: "No unfinished or ready continuation target yet.",
     });
     return null;
   }
+  const selection = historyLaunchSelectionFromContinuation(decision);
   applyHistorySelectionProvider(container, selection);
-  const continuation = container.continuationProjectionService.project({
-    titleId: selection.titleId,
-    entries: recentEntries.length
-      ? recentEntries
-      : Object.entries(await container.historyStore.getAll()),
-  });
   container.diagnosticsService.record({
     category: "session",
     operation: "continuation.project",
-    message: "Continue target projected from local history",
+    message: "Continue target selected from shared continuation decision",
     titleId: selection.titleId,
     context: {
-      kind: continuation.kind,
-      season: "season" in continuation ? continuation.season : undefined,
-      episode: "episode" in continuation ? continuation.episode : undefined,
+      kind: decision.state,
+      action: decision.primaryAction.kind,
+      season: decision.target.season,
+      episode: decision.target.episode,
+      freshness: decision.freshness,
     },
   });
   await recordLocalHistorySourceDecision(container, selection, "continue");
   return {
     title: titleFromHistorySelection(selection),
     episode: episodeFromHistorySelection(selection),
+  };
+}
+
+function readNextReadyOfflineEpisodes(
+  entries: readonly HistoryProgress[],
+  container: Awaited<ReturnType<typeof createContainer>>,
+): ReadonlyMap<string, { season: number; episode: number; jobId?: string }> {
+  const cursors = entries
+    .filter((entry) => entry.mediaKind !== "movie")
+    .map((entry) => ({
+      titleId: entry.titleId,
+      season: entry.season ?? 1,
+      episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    }));
+  const readyAssets = container.offlineAssetService.listNextReadyByTitleCursors(cursors);
+  const readyByTitle = new Map<string, { season: number; episode: number; jobId?: string }>();
+  for (const asset of readyAssets) {
+    if (asset.season === undefined || asset.episode === undefined) continue;
+    readyByTitle.set(asset.titleId, {
+      season: asset.season,
+      episode: asset.episode,
+      jobId: asset.originJobId,
+    });
+  }
+  return readyByTitle;
+}
+
+function buildStartupContinuationSignals(input: {
+  readonly releaseProgress?: ReleaseProgressProjection;
+  readonly offlineEnrolled: boolean;
+  readonly nextReady?: {
+    readonly season: number;
+    readonly episode: number;
+    readonly jobId?: string;
+  };
+}) {
+  const releaseProgress = input.releaseProgress;
+  return {
+    nextRelease: releaseProgressToContinuationNextRelease(releaseProgress),
+    newSeason: releaseProgress?.newSeason?.season
+      ? {
+          season: releaseProgress.newSeason.season,
+          availableAt: releaseProgress.newSeason.nextAiringAt,
+        }
+      : null,
+    releaseProgress: releaseProgress
+      ? {
+          newEpisodeCount: releaseProgress.newEpisodeCount,
+          stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
+        }
+      : null,
+    offline:
+      input.offlineEnrolled || input.nextReady
+        ? {
+            enrolled: input.offlineEnrolled,
+            readyNextEpisodes: input.nextReady ? [input.nextReady] : [],
+          }
+        : null,
+  };
+}
+
+function releaseProgressToContinuationNextRelease(
+  projection: ReleaseProgressProjection | undefined,
+) {
+  if (!projection) return null;
+  if (projection.status === "new-episodes" && projection.newEpisodeCount > 0) {
+    const season = projection.anchorSeason ?? projection.latestAiredSeason;
+    if (season === undefined) return null;
+    return {
+      season,
+      episode: projection.anchorEpisode + 1,
+      released: true,
+      availableAt: projection.latestKnownReleaseAt,
+    };
+  }
+  if (projection.nextAiringSeason === undefined || projection.nextAiringEpisode === undefined) {
+    return null;
+  }
+  return {
+    season: projection.nextAiringSeason,
+    episode: projection.nextAiringEpisode,
+    released: projection.status === "new-episodes",
+    availableAt: projection.nextAiringAt,
   };
 }
 

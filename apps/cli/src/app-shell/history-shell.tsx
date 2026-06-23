@@ -8,6 +8,7 @@ import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { ResumeCard } from "./primitives/ResumeCard";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
@@ -25,7 +26,17 @@ export function HistoryShell({
   readonly listWidth: number;
   readonly rowWidth: number;
 }) {
-  const rowLayout = computeMediaListRowLayout(rowWidth, { hasEpisode: true, hasRecency: true });
+  const railWidth = 32;
+  const railGap = 2;
+  const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
+  const effectiveListWidth = showRail
+    ? Math.min(listWidth, Math.max(36, columns - railWidth - railGap - 4))
+    : listWidth;
+  const effectiveRowWidth = Math.min(rowWidth, Math.max(20, effectiveListWidth - 4));
+  const rowLayout = computeMediaListRowLayout(effectiveRowWidth, {
+    hasEpisode: true,
+    hasRecency: true,
+  });
   // Resolve the selected row's stored poster for the preview rail (same mechanism
   // as browse). Wide-only; the URL now comes from history (persisted on watch).
   const railPosterUrl = view.rail?.posterUrl;
@@ -55,15 +66,15 @@ export function HistoryShell({
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
-            hint={listWidth >= 100 ? "⇥ Tab cycles filter" : undefined}
-            maxWidth={listWidth}
+            hint={effectiveListWidth >= 100 ? "⇥ Tab cycles filter" : undefined}
+            maxWidth={effectiveListWidth}
             dense
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
             activeIndex={view.typeFilterIndex}
-            hint={listWidth >= 100 ? "⇧⇥ type" : undefined}
-            maxWidth={listWidth}
+            hint={effectiveListWidth >= 100 ? "⇧⇥ type" : undefined}
+            maxWidth={effectiveListWidth}
             dense
           />
         </Box>
@@ -76,7 +87,7 @@ export function HistoryShell({
             title: "Loading watch history",
             detail: "Reading local playback positions.",
           }}
-          width={rowWidth}
+          width={effectiveRowWidth}
         />
       ) : null}
 
@@ -88,7 +99,7 @@ export function HistoryShell({
             detail: view.errorMessage ?? "The local history store could not be read.",
             actions: [{ id: "retry", label: "Reopen history to retry", shortcut: "Esc" }],
           }}
-          width={rowWidth}
+          width={effectiveRowWidth}
         />
       ) : null}
 
@@ -106,7 +117,7 @@ export function HistoryShell({
                     ? "Nothing marked complete yet."
                     : "Playback positions appear here after mpv reports progress.",
           }}
-          width={rowWidth}
+          width={effectiveRowWidth}
         />
       ) : null}
 
@@ -132,7 +143,7 @@ export function HistoryShell({
               <ListRow
                 key={`${row.titleId}-${item.flatIndex}`}
                 selected={selected}
-                rowWidth={rowWidth}
+                rowWidth={effectiveRowWidth}
                 flexColumnIndex={rowLayout.flexColumnIndex}
                 columns={buildMediaListRowColumns({
                   title: row.title,
@@ -151,7 +162,7 @@ export function HistoryShell({
       ) : null}
 
       {selectedRow ? (
-        <ResumeCard label={selectedRow.resumeAction} action="↵ enter" width={rowWidth} />
+        <ResumeCard label={selectedRow.resumeAction} action="↵ enter" width={effectiveRowWidth} />
       ) : null}
     </Box>
   );
@@ -164,10 +175,10 @@ export function HistoryShell({
       <Text color={palette.dim}>{RETURN_LOOP_HISTORY_SUBTITLE}</Text>
       <MediaListShell
         columns={columns}
-        listWidth={listWidth}
+        listWidth={effectiveListWidth}
         list={list}
         railModel={view.rail}
-        railWidth={32}
+        railWidth={railWidth}
         poster={railPoster}
       />
     </Box>

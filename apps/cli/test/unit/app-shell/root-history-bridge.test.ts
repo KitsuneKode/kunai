@@ -116,6 +116,33 @@ describe("root history bridge return loop", () => {
     expect(selection.localJobId).toBe("job-6");
   });
 
+  test("buildRootHistorySelection uses shared continuation next-up actions", () => {
+    const entry = seriesEntry();
+    const projection: ContinuationProjection = {
+      titleId: "anilist:1",
+      kind: "next-released",
+      title: "Test Anime",
+      badge: "next",
+      detail: "next episode ready",
+      season: 1,
+      episode: 9,
+      sourceEntry: entry,
+      primaryAction: { kind: "select-online", season: 1, episode: 9 },
+      secondaryActions: [],
+      freshness: "cached",
+    };
+    const selection = buildRootHistorySelection(
+      { titleId: "anilist:1", entry },
+      undefined,
+      new Map([["anilist:1", projection]]),
+    );
+    expect(selection.targetEpisode).toEqual({
+      season: 1,
+      episode: 9,
+      reason: "new-episode",
+    });
+  });
+
   test("release projections target the first unwatched aired episode without altering history", () => {
     const release = releaseProgressToContinueHistoryRelease({
       titleId: "anilist:1",

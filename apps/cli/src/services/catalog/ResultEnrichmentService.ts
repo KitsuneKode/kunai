@@ -5,6 +5,11 @@ import {
 } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SearchResult } from "@/domain/types";
+import type {
+  ContinuationSignals,
+  ContinuationViewDecision,
+  ContinueWatchingService,
+} from "@/services/continuation/ContinueWatchingService";
 import { historyContentType } from "@/services/continuation/history-progress";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
 import type { HistoryStore } from "@/services/persistence/HistoryStore";
@@ -26,6 +31,7 @@ export type ResultEnrichment = {
 export type ResultEnrichmentServiceDeps = {
   readonly historyStore: Pick<HistoryStore, "getAll">;
   readonly offlineLibraryService: Pick<OfflineLibraryService, "peekRecordedArtifactStatuses">;
+  readonly continueWatchingService?: Pick<ContinueWatchingService, "titleDecision">;
   readonly getCachedNextRelease?: (result: SearchResult) => ContinueHistoryRelease | null;
   readonly now?: () => number;
   readonly ttlMs?: number;
@@ -89,12 +95,26 @@ export class ResultEnrichmentService {
         historyEntry && isFinished(historyEntry)
           ? (this.deps.getCachedNextRelease?.(result) ?? null)
           : null;
-      const enrichment = buildResultEnrichment({
-        result,
-        historyEntry,
-        nextRelease,
-        offlineStatuses: offlineByTitleId.get(result.id) ?? [],
-      });
+      const offlineStatuses = offlineByTitleId.get(result.id) ?? [];
+      const decision =
+        historyEntry && this.deps.continueWatchingService
+          ? this.deps.continueWatchingService.titleDecision(result.id, {
+              nextRelease: nextReleaseToContinuationSignal(nextRelease),
+              offline: offlineStatusesToSignals(offlineStatuses),
+            })
+          : null;
+      const enrichment = decision
+        ? buildResultEnrichmentFromContinuation({
+            result,
+            decision,
+            offlineStatuses,
+          })
+        : buildResultEnrichment({
+            result,
+            historyEntry,
+            nextRelease,
+            offlineStatuses,
+          });
       const key = resultEnrichmentKey(result);
       this.cache.set(key, { expiresAt: this.now() + this.ttlMs, value: enrichment });
       output.set(key, enrichment);
@@ -123,6 +143,24 @@ function groupOfflineStatusesByTitleId(
   return grouped;
 }
 
+function nextReleaseToContinuationSignal(
+  release: ContinueHistoryRelease | null,
+): ContinuationSignals["nextRelease"] {
+  if (!release || release.season === undefined || release.episode === undefined) return null;
+  return {
+    season: release.season,
+    episode: release.episode,
+    released: release.status === "released",
+    availableAt: release.releaseAt ?? undefined,
+  };
+}
+
+function offlineStatusesToSignals(statuses: readonly string[]): ContinuationSignals["offline"] {
+  const readyCount = statuses.filter((status) => status === "ready").length;
+  if (readyCount === 0) return null;
+  return { enrolled: true, readyNextEpisodes: [] };
+}
+
 export function buildResultEnrichment(input: {
   readonly result: SearchResult;
   readonly historyEntry?: Awaited<ReturnType<HistoryStore["get"]>> | null;
@@ -139,24 +177,20 @@ export function buildResultEnrichment(input: {
       ),
     );
   }
-  const readyCount = input.offlineStatuses?.filter((status) => status === "ready").length ?? 0;
-  if (readyCount > 0) {
-    // Show how much is local so "3 downloaded, rest stream" is visible at a glance.
-    const total = input.result.episodeCount;
-    const label =
-      input.result.type === "movie" || readyCount === 1
-        ? "downloaded"
-        : total && total > readyCount
-          ? `↓ ${readyCount}/${total}`
-          : `↓ ${readyCount}`;
-    badges.push({ label, tone: "success" });
-  } else if (
-    input.offlineStatuses?.some(
-      (status) => status === "missing" || status === "invalid-file" || status === "repairable",
-    )
-  ) {
-    badges.push({ label: "offline issue", tone: "warning" });
-  }
+  badges.push(...badgesForOfflineStatuses(input.result, input.offlineStatuses ?? []));
+  return { badges };
+}
+
+export function buildResultEnrichmentFromContinuation(input: {
+  readonly result: SearchResult;
+  readonly decision: ContinuationViewDecision;
+  readonly offlineStatuses?: readonly string[];
+}): ResultEnrichment {
+  const badges: ResultEnrichmentBadge[] = [];
+  const providerReleaseBadge = badgeForProviderRelease(input.result.release);
+  if (providerReleaseBadge) badges.push(providerReleaseBadge);
+  badges.push(...badgesForContinuationDecision(input.decision));
+  badges.push(...badgesForOfflineStatuses(input.result, input.offlineStatuses ?? []));
   return { badges };
 }
 
@@ -207,6 +241,69 @@ function badgesForHistoryDecision(
     case "empty":
       return [];
   }
+}
+
+function badgesForContinuationDecision(
+  decision: ContinuationViewDecision,
+): ResultEnrichmentBadge[] {
+  switch (decision.state) {
+    case "resume":
+      return decision.target
+        ? [{ label: formatContinueBadge(decision.target.sourceEntry), tone: "warning" }]
+        : [];
+    case "offline-ready":
+      return [{ label: decision.badge ?? "downloaded", tone: "success" }];
+    case "next-up":
+      return [
+        {
+          label: formatEpisodeBadge("new", decision.target?.season, decision.target?.episode),
+          tone: "info",
+        },
+      ];
+    case "new-episodes":
+      return [{ label: decision.badge ?? "new episodes", tone: "info" }];
+    case "airing-weekly":
+      return decision.target
+        ? [
+            {
+              label: formatEpisodeBadge("next", decision.target.season, decision.target.episode),
+              tone: "info",
+            },
+          ]
+        : [];
+    case "new-season":
+      return [{ label: decision.badge ?? "new season", tone: "info" }];
+    case "up-to-date":
+      return [{ label: "watched", tone: "success" }];
+    case "empty":
+      return [];
+  }
+}
+
+function badgesForOfflineStatuses(
+  result: SearchResult,
+  statuses: readonly string[],
+): ResultEnrichmentBadge[] {
+  const readyCount = statuses.filter((status) => status === "ready").length;
+  if (readyCount > 0) {
+    // Show how much is local so "3 downloaded, rest stream" is visible at a glance.
+    const total = result.episodeCount;
+    const label =
+      result.type === "movie" || readyCount === 1
+        ? "downloaded"
+        : total && total > readyCount
+          ? `↓ ${readyCount}/${total}`
+          : `↓ ${readyCount}`;
+    return [{ label, tone: "success" }];
+  }
+  if (
+    statuses.some(
+      (status) => status === "missing" || status === "invalid-file" || status === "repairable",
+    )
+  ) {
+    return [{ label: "offline issue", tone: "warning" }];
+  }
+  return [];
 }
 
 function formatEpisodeBadge(prefix: string, season?: number, episode?: number): string {
