@@ -11,6 +11,7 @@ import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
+import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { historyContentType } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
@@ -27,6 +28,7 @@ import type {
   RecoveryMode,
 } from "@/services/persistence/ConfigService";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import { appReleasePageUrl } from "@/services/update/release-url";
 import type { StartupPriority } from "@kunai/types";
 import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -1009,6 +1011,11 @@ export function RootOverlayShell({
           },
         },
       }),
+      appUpdate: {
+        openReleasePage: (latestVersion) => {
+          openExternalUrl(appReleasePageUrl(latestVersion));
+        },
+      },
       notifications: {
         dismiss: (key) => container.notificationService.archive(key),
       },
@@ -1040,7 +1047,9 @@ export function RootOverlayShell({
                         ? "Starting playback"
                         : resolvedAction === "open-details"
                           ? "Opening details"
-                          : "Action queued",
+                          : resolvedAction === "update-app"
+                            ? "Opening release page in your browser"
+                            : "Action queued",
         );
         setNotifTick((tick) => tick + 1);
         onRedraw();
