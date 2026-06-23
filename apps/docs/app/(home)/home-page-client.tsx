@@ -1,9 +1,6 @@
 "use client";
 
-import { CliCommandBuilder } from "@/components/home/cli-command-builder";
 import { GuideLinkGrid } from "@/components/home/guide-link-grid";
-import { ProvidersCatalog } from "@/components/home/providers-catalog";
-import { TerminalSimulator } from "@/components/home/terminal-simulator";
 import type {
   HomeCliOption,
   HomeCommandMetadata,
@@ -14,8 +11,30 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { homeFlow, homeHero, homeHighlights, homeProof, homeSections } from "@/lib/home-content";
 import { ArrowRight, Check } from "lucide-react";
 import { motion } from "motion/react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
+
+const TerminalSimulator = dynamic(
+  () => import("@/components/home/terminal-simulator").then((mod) => mod.TerminalSimulator),
+  {
+    ssr: false,
+    loading: () => <div className="kunai-terminal-shell min-h-[420px] animate-pulse rounded-2xl" />,
+  },
+);
+
+const CliCommandBuilder = dynamic(
+  () => import("@/components/home/cli-command-builder").then((mod) => mod.CliCommandBuilder),
+  { ssr: false },
+);
+
+const ProvidersCatalog = dynamic(
+  () => import("@/components/home/providers-catalog").then((mod) => mod.ProvidersCatalog),
+  {
+    ssr: false,
+    loading: () => <div className="bg-fd-card/40 min-h-[280px] animate-pulse rounded-2xl" />,
+  },
+);
 
 type HomePageClientProps = {
   readonly providers: readonly HomeProviderMetadata[];
@@ -23,6 +42,8 @@ type HomePageClientProps = {
   readonly flags: readonly HomeCliOption[];
   readonly commandCount: number;
   readonly providerCount: number;
+  readonly cliVersion: string;
+  readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 };
 
 export default function HomePageClient({
@@ -31,26 +52,19 @@ export default function HomePageClient({
   flags,
   commandCount,
   providerCount,
+  cliVersion,
+  runtimeBaseline,
 }: HomePageClientProps) {
   const [activeProviderId, setActiveProviderId] = useState<string>(providers[0]?.id ?? "miruro");
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
   const selectedFlagSet = useMemo(() => new Set(selectedFlags), [selectedFlags]);
   const [searchWord, setSearchWord] = useState("Dune");
-  const [copiedText, setCopiedText] = useState<string | null>(null);
   const [activeOs, setActiveOs] = useState<"linux" | "macos" | "windows">("linux");
 
   const toggleFlag = useCallback((flagLong: string) => {
     setSelectedFlags((prev) =>
       prev.includes(flagLong) ? prev.filter((f) => f !== flagLong) : [...prev, flagLong],
     );
-  }, []);
-
-  const copyToClipboard = useCallback((text: string, label: string) => {
-    void navigator.clipboard.writeText(text);
-    setCopiedText(label);
-    setTimeout(() => {
-      setCopiedText(null);
-    }, 1800);
   }, []);
 
   const buildCommandLine = useCallback(() => {
@@ -119,8 +133,8 @@ export default function HomePageClient({
           primaryCtaLabel={homeHero.primaryCta.label}
           secondaryCtaHref={homeHero.secondaryCta.href}
           secondaryCtaLabel={homeHero.secondaryCta.label}
-          copyToClipboard={copyToClipboard}
-          copiedText={copiedText}
+          cliVersion={cliVersion}
+          runtimeBaseline={runtimeBaseline}
         />
       </section>
 
@@ -175,12 +189,7 @@ export default function HomePageClient({
                   {prereqCommand ? (
                     <code className="kunai-code-row">
                       <span>{prereqCommand}</span>
-                      <CopyButton
-                        text={prereqCommand}
-                        label={`${activeOs}-prereq`}
-                        copiedText={copiedText}
-                        onCopy={copyToClipboard}
-                      />
+                      <CopyButton text={prereqCommand} label={`${activeOs}-prereq`} />
                     </code>
                   ) : (
                     <div className="kunai-callout-warn">
@@ -225,12 +234,7 @@ export default function HomePageClient({
                 </div>
                 <code className="kunai-code-row">
                   <span>bun install -g @kitsunekode/kunai</span>
-                  <CopyButton
-                    text="bun install -g @kitsunekode/kunai"
-                    label="global-install"
-                    copiedText={copiedText}
-                    onCopy={copyToClipboard}
-                  />
+                  <CopyButton text="bun install -g @kitsunekode/kunai" label="global-install" />
                 </code>
               </div>
 
@@ -248,12 +252,7 @@ export default function HomePageClient({
                 </div>
                 <code className="kunai-code-row">
                   <span>kunai --setup</span>
-                  <CopyButton
-                    text="kunai --setup"
-                    label="setup-cli"
-                    copiedText={copiedText}
-                    onCopy={copyToClipboard}
-                  />
+                  <CopyButton text="kunai --setup" label="setup-cli" />
                 </code>
               </div>
             </div>
@@ -299,8 +298,6 @@ export default function HomePageClient({
           searchWord={searchWord}
           setSearchWord={setSearchWord}
           buildCommandLine={buildCommandLine}
-          copyToClipboard={copyToClipboard}
-          copiedText={copiedText}
         />
       </section>
 
@@ -376,7 +373,7 @@ export default function HomePageClient({
       </section>
 
       <section className="kunai-proof-section">
-        <SectionHeading eyebrow="Reliability posture" title="Insightful metadata telemetry." />
+        <SectionHeading eyebrow="Reliability posture" title="Synced from the running CLI." />
         <div className="kunai-proof-grid grid grid-cols-3 gap-6 max-lg:grid-cols-1">
           {proofItems.map((item) => (
             <article

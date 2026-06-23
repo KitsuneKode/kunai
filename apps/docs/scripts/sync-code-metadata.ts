@@ -244,6 +244,77 @@ function syncCliOptionsFromHelp(): CliOptionMetadata[] {
   });
 }
 
+type FeatureStatusEntry = {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "shipped" | "beta" | "planned";
+  readonly description: string;
+};
+
+type RuntimeBaseline = {
+  readonly bun: string;
+  readonly mpv: string;
+};
+
+function parseFeatureStatusYaml(content: string): FeatureStatusEntry[] {
+  const features: FeatureStatusEntry[] = [];
+  const allowed = new Set(["shipped", "beta", "planned"]);
+  let current: Partial<FeatureStatusEntry> | null = null;
+
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line === "features:") continue;
+
+    const listMatch = line.match(/^- id:\s*(.+)$/);
+    if (listMatch) {
+      if (current?.id && current.label && current.status && current.description) {
+        features.push(current as FeatureStatusEntry);
+      }
+      current = { id: listMatch[1] };
+      continue;
+    }
+
+    if (!current) continue;
+    const propMatch = line.match(/^(label|status|description):\s*(.+)$/);
+    if (!propMatch) continue;
+    const [, key, value] = propMatch;
+    if (key === "label") current.label = value;
+    if (key === "status") {
+      if (!allowed.has(value)) {
+        throw new Error(`Invalid feature status "${value}" for ${current.id}`);
+      }
+      current.status = value as FeatureStatusEntry["status"];
+    }
+    if (key === "description") current.description = value;
+  }
+
+  if (current?.id && current.label && current.status && current.description) {
+    features.push(current as FeatureStatusEntry);
+  }
+
+  return features;
+}
+
+function syncFeatureStatus(): FeatureStatusEntry[] {
+  const yamlPath = path.join(ROOT_DIR, "docs/feature-status.yaml");
+  if (!fs.existsSync(yamlPath)) {
+    throw new Error(`Missing feature status file: ${yamlPath}`);
+  }
+  return parseFeatureStatusYaml(fs.readFileSync(yamlPath, "utf-8"));
+}
+
+function syncRuntimeBaseline(): RuntimeBaseline {
+  const docsPkg = JSON.parse(
+    fs.readFileSync(path.join(ROOT_DIR, "apps/docs/package.json"), "utf-8"),
+  ) as { engines?: { bun?: string } };
+  const bunEngine = docsPkg.engines?.bun?.replace(/^>=/, "") ?? "1.3.9";
+  return {
+    bun: bunEngine,
+    mpv: "0.38+",
+  };
+}
+
 function readPackageVersion(): string {
   const pkgPath = path.join(ROOT_DIR, "apps/cli/package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
@@ -256,15 +327,20 @@ function main() {
   const commands = syncCommands();
   const cliOptions = syncCliOptionsFromHelp();
   const version = readPackageVersion();
+  const featureStatus = syncFeatureStatus();
+  const runtimeBaseline = syncRuntimeBaseline();
 
   const metadata = {
     syncedAt: new Date().toISOString(),
     version,
+    cliVersion: version,
     commandCount: commands.length,
     providerIds: providers.map((p) => p.id),
     providers,
     commands,
     cliOptions,
+    featureStatus,
+    runtimeBaseline,
   };
 
   const outputPath = path.join(DOCS_LIB_DIR, "generated-metadata.json");

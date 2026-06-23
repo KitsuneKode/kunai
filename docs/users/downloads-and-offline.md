@@ -73,5 +73,4 @@ Inside a normal session:
 - Network handoff stays explicit: if the local shelf is exhausted, Kunai points you toward online search instead of silently switching modes.
 
 More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
-Continue Watching behavior is covered in
-[`continue-watching-and-new-episodes.mdx`](./continue-watching-and-new-episodes.mdx).
+Continue Watching behavior is covered in [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes).

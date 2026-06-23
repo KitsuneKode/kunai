@@ -1,5 +1,6 @@
 import HomePageClient from "@/app/(home)/home-page-client";
 import { codeMetadata } from "@/lib/code-metadata";
+import { websiteJsonLd } from "@/lib/json-ld";
 import { docsSiteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 
@@ -29,13 +30,23 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
+  const jsonLd = websiteJsonLd();
+
   return (
-    <HomePageClient
-      providers={codeMetadata.providers}
-      commands={codeMetadata.commands}
-      flags={codeMetadata.cliOptions}
-      commandCount={codeMetadata.commandCount}
-      providerCount={codeMetadata.providerIds.length}
-    />
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <HomePageClient
+        providers={codeMetadata.providers}
+        commands={codeMetadata.commands}
+        flags={codeMetadata.cliOptions}
+        commandCount={codeMetadata.commandCount}
+        providerCount={codeMetadata.providerIds.length}
+        cliVersion={codeMetadata.cliVersion}
+        runtimeBaseline={codeMetadata.runtimeBaseline}
+      />
+    </>
   );
 }

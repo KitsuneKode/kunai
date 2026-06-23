@@ -1,0 +1,164 @@
+---
+title: What You Can Do
+description: A capability map of Kunai — search, play, recover, continue, discover, offline, and diagnostics.
+status: shipped
+---
+
+Kunai is a terminal-first media shell. You search for a title, Kunai resolves a direct-provider stream locally, hands playback to `mpv`, and keeps the shell alive so you can recover, continue, or pick something else without restarting.
+
+This page is the capability narrative. For flag-level detail, see [CLI reference](/docs/users/cli-reference). For a generated command and provider inventory, see [Feature tour](/docs/users/feature-tour).
+
+<ScopeCallout variant="beta" />
+
+## Search and pick
+
+Kunai searches TMDB-backed catalogs for movies and series, and anime-specific providers when you launch in anime mode.
+
+<Steps>
+<Step>
+### Open the shell and search
+
+```sh
+kunai
+kunai -S "Dune"
+kunai -a -S "Attack on Titan"
+```
+
+`-S` runs search and lands on results. It does not auto-play unless you add `--jump 1` or `-q`.
+</Step>
+<Step>
+### Bootstrap a known title
+
+```sh
+kunai -i 438631 -t movie
+```
+
+Use TMDB ids for movies and series. Anime mode uses provider-native ids through the anime flow.
+</Step>
+<Step>
+### Inspect before you commit
+
+Browse results support filters, details sheets, and provider hints before playback starts. Episode numbers in the UI are **1-based**.
+</Step>
+</Steps>
+
+More: [Getting started](/docs/users/getting-started), [Media selection](/docs/users/media-selection).
+
+## Play
+
+Playback always goes through `mpv`. Kunai resolves stream URLs, headers, and subtitle attachments, then supervises the player through IPC.
+
+- Kunai does **not** host video files or replace `mpv`.
+- Source, quality, audio, and subtitle pickers appear when the resolved inventory has more than one useful choice.
+- Preferred language profiles differ for anime, series, and movies — see [Customization](/docs/users/customization).
+
+During playback, hotkeys and commands stay available:
+
+| Action | Keys / command |
+| --- | --- |
+| Recover current stream | `r` or `/recover` |
+| Next compatible provider | `f` or `/fallback` |
+| Source / quality / subtitles | `k` or `/source` |
+| Next / previous episode | `n` / `p` |
+| Queue for offline | `d` or `/download` |
+
+More: [Playback and recovery](/docs/users/playback-and-recovery), [Commands and shortcuts](/docs/users/commands-and-shortcuts).
+
+## Recover when streams fail
+
+Provider catalogs drift. Recovery is normal usage, not a sign the app is broken.
+
+Kunai separates three ideas:
+
+1. **Recover** — refresh the current playback intent on the active provider (new resolve evidence, cache revalidation, or mpv reload).
+2. **Retry** — provider-local cycling through sources, servers, or variants before giving up on that provider.
+3. **Fallback provider** — move to the next compatible provider in your priority list after the active provider is exhausted.
+
+Use `/diagnostics` to see which path Kunai took. Recovery mode (`guided`, `fallback-first`, `manual`) is configurable in Settings.
+
+More: [Providers](/docs/users/providers), [Troubleshooting](/docs/users/troubleshooting).
+
+## Continue watching
+
+Local watch history drives resume and continue flows. Nothing is uploaded unless you opt into sync integrations.
+
+```sh
+kunai --continue
+kunai --history
+```
+
+- `--continue` opens the newest unfinished history entry.
+- `/history` lets you pick any previous title manually.
+- Continue Watching surfaces unfinished episodes and newly released episodes when schedule data is available.
+
+More: [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes).
+
+## Discover and browse beyond search
+
+Kunai includes recommendation and schedule surfaces that do not auto-play:
+
+```sh
+kunai --discover
+kunai --calendar
+kunai --random
+```
+
+| Surface | Purpose |
+| --- | --- |
+| `/discover` | Personalized recommendations from local history and catalog signals |
+| `/calendar` | Releases airing today with cached schedule data |
+| `/random` | Small explained surprise tray — rerollable, never auto-plays |
+| `/recommendation` | Same family as discover from the command palette |
+
+Discover mode policy (`auto`, unified, anime-only, series-only) is configurable. See [Customization](/docs/users/customization).
+
+## Offline library and downloads
+
+Downloads are **opt-in** and local-first. Completed artifacts live on disk; the offline library reads SQLite and filesystem facts only.
+
+```sh
+kunai --offline
+kunai --zen --offline
+```
+
+- `/downloads` — active queue (queued, running, failed jobs).
+- `/library` or `/offline` — completed local media ready to play.
+- `kunai --download -S "Title"` — download-only launch path (no shell queue UI).
+
+Opening the offline library never calls providers. Repair and re-download are explicit user actions.
+
+More: [Downloads and offline](/docs/users/downloads-and-offline).
+
+## Diagnostics and support
+
+Diagnostics are local-first and redacted by default.
+
+```text
+/diagnostics
+/export-diagnostics
+/report-issue
+```
+
+- `/diagnostics` — runtime panel with provider timeline, cache provenance, mpv state, and network snapshot.
+- `/export-diagnostics` — redacted JSON bundle (no stream URLs, tokens, or private paths).
+- `--debug`, `--debug-json`, `--debug-session` — verbose logging and structured traces for deeper investigation.
+
+Review exported bundles before sharing publicly.
+
+More: [Diagnostics and reporting](/docs/users/diagnostics-and-reporting), [Reliability and privacy](/docs/users/reliability-and-privacy).
+
+## What Kunai does not do
+
+Kunai does not host streams, mirror content, or guarantee third-party catalog stability. Browser-based scraping (Playwright) is archive-only reference — not part of the active beta runtime.
+
+See [Supported and unsupported](/docs/users/supported-and-unsupported) for the full matrix.
+
+## Related guides
+
+| I want to… | Start here |
+| --- | --- |
+| Install and verify dependencies | [Getting started](/docs/users/getting-started) |
+| Tune providers and mpv | [Customization](/docs/users/customization) |
+| Fix a specific failure | [Troubleshooting](/docs/users/troubleshooting) |
+| Understand provider fallback | [Providers](/docs/users/providers) |
+| Know beta boundaries | [Supported and unsupported](/docs/users/supported-and-unsupported) |

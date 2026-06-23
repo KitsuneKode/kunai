@@ -15,6 +15,35 @@ description: Install Kunai, learn the terminal shell, recover playback, and cont
 
 <DocsRootCards />
 
+## I want to…
+
+| Goal | Start here |
+| --- | --- |
+| Install Kunai and run first playback | [Getting started](/docs/users/getting-started) |
+| See everything Kunai can do | [What you can do](/docs/users/what-you-can-do) |
+| Understand beta scope and limits | [Supported and unsupported](/docs/users/supported-and-unsupported) |
+| Fix provider or playback failures | [Troubleshooting](/docs/users/troubleshooting) |
+| Tune providers, mpv, and presence | [Customization](/docs/users/customization) |
+| Understand fallback and recovery | [Providers](/docs/users/providers) · [Playback and recovery](/docs/users/playback-and-recovery) |
+| Export diagnostics for a bug report | [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) |
+| Manage offline downloads | [Downloads and offline](/docs/users/downloads-and-offline) |
+| Contribute code or docs | [Contribute](/docs/developer/contribute) |
+| Debug as a developer | [Debugging workflow](/docs/developer/debugging-workflow) |
+
+## What you can do
+
+Kunai is built around a single persistent shell session:
+
+- **Search** TMDB-backed catalogs and anime providers, then inspect results before playing
+- **Play** through `mpv` with source, quality, and subtitle pickers when inventory allows
+- **Recover** stalled streams (`r`) or **fallback** to the next provider (`f`) when catalogs drift
+- **Continue** from local watch history (`--continue`, `/history`)
+- **Discover** recommendations, release calendar, and random picks without auto-play
+- **Download** for offline viewing (opt-in beta) and play from a local library (`--offline`)
+- **Diagnose** with `/diagnostics`, redacted `/export-diagnostics`, and structured `--debug-session` traces
+
+Full capability narrative: [What you can do](/docs/users/what-you-can-do).
+
 ## What Kunai is
 
 - A Bun CLI with an Ink shell for search, pickers, history, and playback supervision.
@@ -26,22 +55,28 @@ description: Install Kunai, learn the terminal shell, recover playback, and cont
 
 <ScopeCallout variant="providers" />
 
-Kunai does not store video on a Kunai server, mirror or redistribute content, guarantee third-party catalog stability, or require accounts for core playback. Copyright notices belong to the hosting provider, not Kunai.
+Kunai does not store video on a Kunai server, mirror or redistribute content, guarantee third-party catalog stability, or require accounts for core playback. Browser/Playwright scraping is archive-only — not part of the active beta runtime. Copyright notices belong to the hosting provider, not Kunai.
+
+Details: [Supported and unsupported](/docs/users/supported-and-unsupported).
 
 ## Recommended reading order
 
 <Steps>
 <Step>
 ### Install and verify
-Read [Getting Started](/docs/users/getting-started), then [Platforms](/docs/users/platforms) for OS-specific tools.
+Read [Getting started](/docs/users/getting-started), then [Platforms](/docs/users/platforms) for OS-specific tools. Binary installs via `install.sh` / `install.ps1` are beta supported — see [Install and update](/docs/users/install-and-update).
 </Step>
 <Step>
 ### Learn the shell
-Use the [Feature Tour](/docs/users/feature-tour) for live command/provider tables and [Commands and shortcuts](/docs/users/commands-and-shortcuts) for daily palette work.
+Use [What you can do](/docs/users/what-you-can-do) for the capability map, the [Feature tour](/docs/users/feature-tour) for live command/provider tables, and [Commands and shortcuts](/docs/users/commands-and-shortcuts) for daily palette work.
 </Step>
 <Step>
 ### Plan for failure
-[Playback and recovery](/docs/users/playback-and-recovery) explains recover vs fallback. [Diagnostics](/docs/users/diagnostics-and-reporting) shows how to export evidence safely.
+[Playback and recovery](/docs/users/playback-and-recovery) and [Providers](/docs/users/providers) explain recover vs fallback. [Troubleshooting](/docs/users/troubleshooting) indexes common symptoms. [Diagnostics](/docs/users/diagnostics-and-reporting) shows how to export evidence safely.
+</Step>
+<Step>
+### Tune and extend
+[Customization](/docs/users/customization) covers config, mpv, and Discord presence. Developers: [Contribute](/docs/developer/contribute).
 </Step>
 </Steps>
 

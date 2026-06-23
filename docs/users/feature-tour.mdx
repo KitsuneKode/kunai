@@ -84,7 +84,7 @@ from the CLI command registry — it updates when you run `bun run generate` in 
 - First-party streaming service authentication
 - Content hosting or redistribution
 - Native GUI outside the terminal
-- Packaged OS installers during beta (install via Bun + mpv)
+- Native app store packages (use `install.sh` / `install.ps1` or package managers instead)
 - Silent mode-switching between online and offline
 - Stream URLs in unredacted support bundles
 
@@ -120,11 +120,13 @@ See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for the u
 
 ## Platform support
 
-| Platform | Playback | Downloads | Poster previews |
-| --- | --- | --- | --- |
-| Linux | mpv | yt-dlp + ffprobe | Kitty / chafa |
-| macOS | mpv | yt-dlp + ffprobe | chafa |
-| Windows | mpv | yt-dlp | chafa (limited) |
+Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) are **beta supported**. They embed the Bun runtime — you do not need Bun installed to run them. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update).
+
+| Platform | Install | Playback | Downloads | Poster previews |
+| --- | --- | --- | --- | --- |
+| Linux | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | Kitty / chafa |
+| macOS | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | chafa |
+| Windows | `install.ps1` or bun/npm global | mpv | yt-dlp | chafa (limited) |
 
 ## Storage architecture
 

@@ -3,5 +3,5 @@
   "description": "Debug playback, maintain docs, and extend Kunai safely.",
   "icon": "Wrench",
   "root": true,
-  "pages": ["index", "debugging-workflow", "docs-maintenance"]
+  "pages": ["index", "debugging-workflow", "contribute", "docs-maintenance"]
 }

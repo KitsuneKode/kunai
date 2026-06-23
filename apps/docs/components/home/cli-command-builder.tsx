@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Copy, Sliders } from "lucide-react";
+import { CopyButton } from "@/components/ui/copy-button";
+import { Check, Sliders } from "lucide-react";
 import { memo } from "react";
 
 import type { HomeCliOption } from "./types";
@@ -12,8 +13,6 @@ interface CliCommandBuilderProps {
   readonly searchWord: string;
   readonly setSearchWord: (word: string) => void;
   readonly buildCommandLine: () => string;
-  readonly copyToClipboard: (text: string, label: string) => void;
-  readonly copiedText: string | null;
 }
 
 const CliCommandBuilder = memo(function CliCommandBuilder({
@@ -23,10 +22,9 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
   searchWord,
   setSearchWord,
   buildCommandLine,
-  copyToClipboard,
-  copiedText,
 }: CliCommandBuilderProps) {
   const showSearchParam = selectedFlags.includes("-S") || selectedFlags.includes("--search");
+  const commandLine = buildCommandLine();
 
   return (
     <div className="grid grid-cols-[1fr_0.9fr] gap-8 max-lg:grid-cols-1">
@@ -39,24 +37,28 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
               key={flag.long}
               className={`flag-checkbox-wrapper flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-left transition-colors duration-200 ${
                 isChecked
-                  ? "border-[#f09cb5] bg-[#f09cb5]/5"
-                  : "border-[#f4d8e4]/5 bg-[#130f17]/40 hover:border-[#f4d8e4]/15"
+                  ? "border-[var(--kunai-accent)] bg-[color-mix(in_oklab,var(--kunai-accent)_5%,transparent)]"
+                  : "border-fd-border bg-fd-card/40 hover:border-fd-primary/30"
               }`}
               onClick={() => toggleFlag(flag.long)}
             >
               <div
                 className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-                  isChecked ? "border-[#f09cb5] bg-[#f09cb5] text-white" : "border-[#f4d8e4]/20"
+                  isChecked
+                    ? "border-[var(--kunai-accent)] bg-[var(--kunai-accent)] text-white"
+                    : "border-fd-border"
                 }`}
               >
                 {isChecked ? <Check className="h-2.5 w-2.5 stroke-[4]" /> : null}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-white">
-                  {flag.short ? <span className="text-[#f09cb5]">{flag.short}</span> : null}
+                <div className="text-fd-foreground flex items-center gap-1.5 font-mono text-xs font-bold">
+                  {flag.short ? (
+                    <span className="text-[var(--kunai-accent)]">{flag.short}</span>
+                  ) : null}
                   <span>{flag.long}</span>
                 </div>
-                <div className="mt-1 line-clamp-2 font-sans text-[10px] leading-normal font-light text-[#f4d8e4]/40">
+                <div className="text-fd-muted-foreground mt-1 line-clamp-2 font-sans text-[10px] leading-normal">
                   {flag.description || "CLI parameter option"}
                 </div>
               </div>
@@ -65,27 +67,27 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
         })}
       </div>
 
-      <div className="flag-builder-shell flex flex-col justify-between rounded-2xl border border-[#f4d8e4]/10 bg-[#130f17]/60 p-6 shadow-xl backdrop-blur-md">
+      <div className="flag-builder-shell border-fd-border bg-fd-card/60 flex flex-col justify-between rounded-2xl border p-6 shadow-xl backdrop-blur-md">
         <div>
-          <div className="mb-4 flex items-center gap-2 border-b border-[#f4d8e4]/5 pb-3">
-            <Sliders className="h-4 w-4 text-[#f09cb5]" />
-            <h4 className="text-[11px] font-bold tracking-wider text-zinc-400 uppercase">
-              Command Compiler Output
+          <div className="border-fd-border mb-4 flex items-center gap-2 border-b pb-3">
+            <Sliders className="h-4 w-4 text-[var(--kunai-accent)]" />
+            <h4 className="text-fd-muted-foreground text-[11px] font-bold tracking-wider uppercase">
+              Command output
             </h4>
           </div>
 
           {showSearchParam ? (
-            <div className="mb-5 rounded-xl border border-[#f4d8e4]/10 bg-[#0b070e]/80 p-4">
+            <div className="border-fd-border bg-fd-background/80 mb-5 rounded-xl border p-4">
               <label
                 htmlFor="search-query-field"
-                className="mb-2 block text-[10px] font-bold tracking-wider text-[#f09cb5] uppercase"
+                className="mb-2 block text-[10px] font-bold tracking-wider text-[var(--kunai-accent)] uppercase"
               >
-                Edit search query parameter
+                Search query
               </label>
               <input
                 id="search-query-field"
                 type="text"
-                className="w-full rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-3 py-2 font-mono text-xs text-white transition-colors outline-none focus:border-[#f09cb5]"
+                className="border-fd-border bg-fd-card text-fd-foreground w-full rounded-lg border px-3 py-2 font-mono text-xs transition-colors outline-none focus:border-[var(--kunai-accent)]"
                 value={searchWord}
                 onChange={(e) => setSearchWord(e.target.value)}
                 aria-label="Edit command search query parameter value"
@@ -93,35 +95,17 @@ const CliCommandBuilder = memo(function CliCommandBuilder({
             </div>
           ) : null}
 
-          <p className="font-sans text-xs leading-relaxed font-light text-[#f4d8e4]/60">
-            Select runtime configurations on the left to automatically construct a CLI call string.
-            The Kunai compiler loads config parameters synchronously and pipes results directly to
-            mpv.
+          <p className="text-fd-muted-foreground text-xs leading-relaxed">
+            Select flags on the left to build a launch command you can paste into your shell.
           </p>
         </div>
 
         <div className="mt-6">
-          <div className="flag-cmd-preview flex items-center justify-between rounded-xl border border-[#f09cb5]/30 bg-[#0b070e] p-4 shadow-inner">
-            <span className="font-mono text-xs font-semibold break-all text-white select-all">
-              {buildCommandLine()}
+          <div className="flag-cmd-preview border-fd-primary/30 bg-fd-background flex items-center justify-between rounded-xl border p-4 shadow-inner">
+            <span className="text-fd-foreground font-mono text-xs font-semibold break-all select-all">
+              {commandLine}
             </span>
-            <button
-              type="button"
-              onClick={() => copyToClipboard(buildCommandLine(), "cmd-line")}
-              className="ml-3 flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#f4d8e4]/10 bg-[#130f17] px-3 py-1.5 text-xs text-[#f09cb5] transition-colors hover:border-[#f09cb5] hover:text-white active:scale-[0.96]"
-            >
-              {copiedText === "cmd-line" ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-[#8de4c2]" />
-                  <span className="text-[#8de4c2]">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5" />
-                  <span>Copy</span>
-                </>
-              )}
-            </button>
+            <CopyButton text={commandLine} label="cmd-line" className="ml-3 shrink-0" />
           </div>
         </div>
       </div>

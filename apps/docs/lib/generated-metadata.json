@@ -1,7 +1,8 @@
 {
-  "syncedAt": "2026-06-22T20:31:35.369Z",
+  "syncedAt": "2026-06-23T08:59:06.521Z",
   "version": "0.2.5",
-  "commandCount": 65,
+  "cliVersion": "0.2.5",
+  "commandCount": 66,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro"],
   "providers": [
     {
@@ -406,7 +407,13 @@
       "id": "clear-cache",
       "label": "Clear Cache",
       "aliases": ["clear-cache", "purge-cache", "flush-cache"],
-      "description": "Remove all cached stream URLs"
+      "description": "Clear stream URL cache (and optionally provider failure memory)"
+    },
+    {
+      "id": "reset-provider-health",
+      "label": "Reset Provider Health",
+      "aliases": ["reset-provider-health", "clear-provider-memory", "forget-provider-failures"],
+      "description": "Forget provider failures so auto-fallback can retry down providers"
     },
     {
       "id": "clear-history",
@@ -627,5 +634,59 @@
       "long": "--version",
       "description": "Print the version"
     }
-  ]
+  ],
+  "featureStatus": [
+    {
+      "id": "cli-shell",
+      "label": "Terminal shell",
+      "status": "shipped",
+      "description": "Persistent Ink shell with search, playback, and recovery workflows."
+    },
+    {
+      "id": "direct-providers",
+      "label": "Direct provider resolution",
+      "status": "shipped",
+      "description": "HTTP scrapers in packages/providers without browser automation."
+    },
+    {
+      "id": "mpv-playback",
+      "label": "mpv playback",
+      "status": "shipped",
+      "description": "Kunai resolves streams; mpv is the playback engine."
+    },
+    {
+      "id": "offline-downloads",
+      "label": "Offline downloads",
+      "status": "beta",
+      "description": "Queue downloads and play completed artifacts without provider calls."
+    },
+    {
+      "id": "discord-presence",
+      "label": "Discord Rich Presence",
+      "status": "beta",
+      "description": "Optional social status integration with setup wizard support."
+    },
+    {
+      "id": "install-scripts",
+      "label": "install.sh / install.ps1",
+      "status": "beta",
+      "description": "OS installer scripts for global Bun package setup."
+    },
+    {
+      "id": "browser-providers",
+      "label": "Browser / Playwright providers",
+      "status": "planned",
+      "description": "Archived reference only; not part of active beta runtime."
+    },
+    {
+      "id": "hosted-streams",
+      "label": "Hosted stream relay",
+      "status": "planned",
+      "description": "No cloud proxy or hosted transcoding in beta v1."
+    }
+  ],
+  "runtimeBaseline": {
+    "bun": "1.3.9",
+    "mpv": "0.38+"
+  }
 }

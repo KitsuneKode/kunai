@@ -10,12 +10,17 @@
     "commands-and-shortcuts",
     "cli-reference",
     "feature-tour",
+    "what-you-can-do",
     "playback-and-recovery",
+    "media-selection",
+    "providers",
     "continue-watching-and-new-episodes",
     "downloads-and-offline",
-    "media-selection",
+    "customization",
     "runtime-feedback",
     "diagnostics-and-reporting",
+    "troubleshooting",
+    "supported-and-unsupported",
     "reliability-and-privacy",
     "install-and-update"
   ]

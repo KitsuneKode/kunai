@@ -13,6 +13,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 1,
     },
+    {
+      url: `${docsSiteUrl}/releases`,
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
     ...pages.map((page) => ({
       url: `${docsSiteUrl}${page.url}`,
       lastModified: page.data.lastModified,

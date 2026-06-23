@@ -25,14 +25,29 @@ export type CliOptionMetadata = {
   readonly description: string;
 };
 
+export type FeatureStatusMetadata = {
+  readonly id: string;
+  readonly label: string;
+  readonly status: "shipped" | "beta" | "planned";
+  readonly description: string;
+};
+
+export type RuntimeBaselineMetadata = {
+  readonly bun: string;
+  readonly mpv: string;
+};
+
 export type CodeMetadata = {
   readonly syncedAt: string;
   readonly version: string;
+  readonly cliVersion: string;
   readonly commandCount: number;
   readonly providerIds: readonly string[];
   readonly providers: readonly ProviderMetadata[];
   readonly commands: readonly CommandMetadata[];
   readonly cliOptions: readonly CliOptionMetadata[];
+  readonly featureStatus: readonly FeatureStatusMetadata[];
+  readonly runtimeBaseline: RuntimeBaselineMetadata;
 };
 
 export const codeMetadata = generated as CodeMetadata;

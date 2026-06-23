@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unassigned-import */
 import "./global.css";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
 import { docsSiteUrl } from "@/lib/site";
@@ -17,7 +18,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07050b",
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#100b0f",
   colorScheme: "dark",
 };
 
@@ -36,7 +39,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
             enableSystem: false,
           }}
         >
-          {children}
+          <TooltipProvider>{children}</TooltipProvider>
         </RootProvider>
       </body>
     </html>

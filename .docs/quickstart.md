@@ -172,3 +172,11 @@ Next, previous, replay, source change, and picker-launched unwatched episodes sh
 **Anime playback broke after an upstream change**
 
 Check the invariants in [`packages/providers/src/allmanga/api-client.ts`](../packages/providers/src/allmanga/api-client.ts) against the current ani-cli behavior before changing anything.
+
+## Docs site deploy
+
+The public docs app lives in `apps/docs`. Set `DOCS_SITE_URL` to your production origin (for example `https://docs.kunai.example`) before `next build` so canonical URLs, sitemap, Open Graph, and `llms.txt` resolve correctly.
+
+```sh
+DOCS_SITE_URL=https://docs.kunai.example bun run --cwd apps/docs build
+```

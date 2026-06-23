@@ -3,9 +3,16 @@
 import { CopyButton } from "@/components/ui/copy-button";
 import { homeHero } from "@/lib/home-content";
 import { Terminal as TerminalIcon, ArrowRight, Sparkles, Check } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import {
+  motion,
+  AnimatePresence,
+  useMotionValue,
+  useMotionTemplate,
+  useReducedMotion,
+  useSpring,
+} from "motion/react";
 import Link from "next/link";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import { HeroHeadline } from "./hero-headline";
 import type { HomeCommandMetadata, HomeLogEntry, HomeProviderMetadata } from "./types";
@@ -18,8 +25,8 @@ interface TerminalSimulatorProps {
   readonly primaryCtaLabel: string;
   readonly secondaryCtaHref: string;
   readonly secondaryCtaLabel: string;
-  readonly copyToClipboard: (text: string, label: string) => void;
-  readonly copiedText: string | null;
+  readonly cliVersion: string;
+  readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 }
 
 const TerminalSimulator = memo(function TerminalSimulator({
@@ -30,12 +37,15 @@ const TerminalSimulator = memo(function TerminalSimulator({
   primaryCtaLabel,
   secondaryCtaHref,
   secondaryCtaLabel,
-  copyToClipboard,
-  copiedText,
+  cliVersion,
+  runtimeBaseline,
 }: TerminalSimulatorProps) {
   const [terminalLogs, setTerminalLogs] = useState<readonly HomeLogEntry[]>([
-    { id: "welcome-1", text: "▌ Kunai Shell v0.1.0" },
-    { id: "welcome-2", text: "System verified. Dependencies: mpv 0.38, bun 1.3.12" },
+    { id: "welcome-1", text: `▌ Kunai Shell v${cliVersion}` },
+    {
+      id: "welcome-2",
+      text: `System verified. Dependencies: mpv ${runtimeBaseline.mpv}, bun ${runtimeBaseline.bun}`,
+    },
     { id: "welcome-3", text: "Ready. Type '/' or click a preset below to try." },
   ]);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -49,16 +59,37 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
 
-  // 3D Card Hover States
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
+  // Decorative 3D tilt — driven off the React render cycle via motion values
+  // so pointer movement never re-renders this heavy client tree (F16).
+  const prefersReducedMotion = useReducedMotion();
+  const rotateXValue = useMotionValue(0);
+  const rotateYValue = useMotionValue(0);
+  const glareX = useMotionValue(50);
+  const glareY = useMotionValue(50);
+  const rotateX = useSpring(rotateXValue, { stiffness: 350, damping: 28 });
+  const rotateY = useSpring(rotateYValue, { stiffness: 350, damping: 28 });
+  const glareBackground = useMotionTemplate`radial-gradient(350px circle at ${glareX}% ${glareY}%, var(--kunai-mesh-a), transparent 80%)`;
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    setMousePos({ x, y });
-  };
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (prefersReducedMotion) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      rotateYValue.set(x * 6);
+      rotateXValue.set(-y * 6);
+      glareX.set((x + 0.5) * 100);
+      glareY.set((y + 0.5) * 100);
+    },
+    [glareX, glareY, prefersReducedMotion, rotateXValue, rotateYValue],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    rotateXValue.set(0);
+    rotateYValue.set(0);
+    glareX.set(50);
+    glareY.set(50);
+  }, [glareX, glareY, rotateXValue, rotateYValue]);
 
   // Auto-scroll terminal
   useEffect(() => {
@@ -325,12 +356,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               <span className="kunai-text-accent opacity-70 select-none">$</span>
               <span>bun install -g @kitsunekode/kunai</span>
             </div>
-            <CopyButton
-              text="bun install -g @kitsunekode/kunai"
-              label="hero-install"
-              copiedText={copiedText}
-              onCopy={copyToClipboard}
-            />
+            <CopyButton text="bun install -g @kitsunekode/kunai" label="hero-install" />
           </div>
           <div className="kunai-step-meta flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="flex items-center gap-1">
@@ -382,31 +408,17 @@ const TerminalSimulator = memo(function TerminalSimulator({
         <motion.aside
           ref={terminalStageRef}
           onMouseMove={handleMouseMove}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => {
-            setIsHovered(false);
-            setMousePos({ x: 0, y: 0 });
-          }}
-          animate={{
-            rotateY: mousePos.x * 6,
-            rotateX: -mousePos.y * 6,
-            z: isHovered ? 8 : 0,
-          }}
-          transition={{ type: "spring", stiffness: 350, damping: 28 }}
+          onMouseLeave={handleMouseLeave}
           className={`kunai-terminal-stage group relative w-full overflow-hidden select-none ${
             commandPaletteOpen ? "is-focused" : ""
           }`}
-          style={{ transformStyle: "preserve-3d" }}
+          style={{ transformStyle: "preserve-3d", rotateX, rotateY }}
           aria-label="Kunai terminal preview"
         >
           {/* Radial spotlight glare inside terminal */}
-          <div
+          <motion.div
             className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-            style={{
-              background: `radial-gradient(350px circle at ${((mousePos.x + 0.5) * 100).toFixed(
-                0,
-              )}% ${((mousePos.y + 0.5) * 100).toFixed(0)}%, var(--kunai-mesh-a), transparent 80%)`,
-            }}
+            style={{ background: glareBackground }}
           />
 
           <div className="kunai-terminal-top">
@@ -524,12 +536,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               {installCommands.map((command) => (
                 <code key={command} className="kunai-code-row text-[11px]">
                   <span>{command}</span>
-                  <CopyButton
-                    text={command}
-                    label={command}
-                    copiedText={copiedText}
-                    onCopy={copyToClipboard}
-                  />
+                  <CopyButton text={command} label={command} />
                 </code>
               ))}
             </div>

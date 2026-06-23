@@ -1,0 +1,192 @@
+---
+title: Contribute
+description: Fork Kunai, run tests, opt into live provider smokes, and open PRs with evidence.
+status: shipped
+---
+
+Thank you for contributing to Kunai. The project is Bun-first, terminal-first, and evidence-driven — PRs that include reproduction steps or test coverage are easier to review.
+
+## Before you start
+
+Read the repo entry points:
+
+- `CLAUDE.md` / `AGENTS.md` — routing, hard boundaries, commands
+- [.docs/architecture.md](https://github.com/KitsuneKode/kunai/blob/main/.docs/architecture.md) — playback flow, data ownership (in-repo deep doc)
+- [Debugging workflow](/docs/developer/debugging-workflow) — traces and diagnostics for bug reports
+
+<Callout type="info" title="Provider changes need extra care">
+Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare against the local ani-cli reference checkout documented in `CLAUDE.md`. Provider modules live in `packages/providers/src/*/direct.ts`; the production registry is `apps/cli/src/container.ts`.
+</Callout>
+
+## Fork and setup
+
+<Steps>
+<Step>
+### Fork and clone
+
+```sh
+git clone https://github.com/YOUR_USER/kunai.git
+cd kunai
+```
+
+</Step>
+<Step>
+### Install dependencies
+
+```sh
+bun install
+```
+
+Bun is the supported runtime for development. Use `bun run dev -- <flags>` to launch the CLI from source.
+
+</Step>
+<Step>
+### Link globally (optional)
+
+```sh
+bun run link:global
+kunai --setup
+```
+
+</Step>
+<Step>
+### Verify the baseline
+
+```sh
+bun run typecheck
+bun run lint
+bun run test
+```
+
+All four should pass before you open a PR.
+
+</Step>
+</Steps>
+
+## Project layout (quick map)
+
+| Path | Purpose |
+| --- | --- |
+| `apps/cli/src/main.ts` | Canonical CLI entrypoint |
+| `apps/cli/src/app-shell/` | Ink shell, command bar, overlays |
+| `apps/cli/src/container.ts` | Production provider registry |
+| `packages/providers/` | Direct provider modules |
+| `packages/storage/` | SQLite history, cache, downloads |
+| `apps/cli/test/unit/` | Unit tests |
+| `apps/cli/test/integration/` | Integration tests |
+| `apps/cli/test/live/` | Opt-in live provider smokes |
+| `docs/` | User and developer documentation (this site) |
+
+## Running tests
+
+```sh
+bun run test           # full test suite (preferred entry)
+bun run typecheck      # TypeScript across monorepo
+bun run lint           # ESLint
+bun run fmt            # format check
+bun run build          # release build — run before large features
+```
+
+Unit tests live under `apps/cli/test/unit/`. Integration tests under `apps/cli/test/integration/`. Do **not** use `bun test` directly — use `bun run test`.
+
+Docs changes:
+
+```sh
+bun run --cwd apps/docs generate
+bun run --cwd apps/docs typecheck
+bun run --cwd apps/docs build
+```
+
+See [Docs maintenance](/docs/developer/docs-maintenance).
+
+## Live provider smokes (opt-in)
+
+Live tests hit real provider endpoints. They are **manual** release checks — not default CI.
+
+```sh
+bun run test:live:vidking 1 2 2> debug.log
+bun run test:live:rivestream
+bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
+bun run test:live:miruro
+```
+
+Each smoke creates an isolated temp profile under `/tmp/kunai-live-*`. Do not run live smokes in a tight loop while debugging — use unit tests and `--debug-json` traces for iteration, then one live smoke to confirm provider reality.
+
+Use `KITSUNE_CLEAR_CACHE=1` only when you need a cold-cache proof.
+
+## Debugging your change
+
+```sh
+# Structured trace
+KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Dune" --debug-json
+
+# Full session trace
+bun run dev -- -S "Dune" --debug-session
+
+# Breakpoint debugging
+bun --inspect-brk apps/cli/src/main.ts --debug-session -S "Dune"
+```
+
+Inside the shell: `/diagnostics`, `/export-diagnostics`. See [Debugging workflow](/docs/developer/debugging-workflow).
+
+## PR expectations
+
+### Scope and style
+
+- Minimize diff scope — one logical change per PR when possible.
+- Match surrounding naming, types, and patterns.
+- Extract shared logic when duplicate code would smell across files.
+- Do not add noisy `console.log` in Ink render paths — use diagnostics events.
+
+### Required checks
+
+Before requesting review:
+
+```sh
+bun run fmt
+bun run lint
+bun run typecheck
+bun run test
+```
+
+Run `bun run build` for features that touch build-only paths or release packaging.
+
+### PR description should include
+
+1. **What** changed (user-visible behavior first).
+2. **Why** — bug fix, provider drift, UX gap, etc.
+3. **How to test** — exact commands and flags.
+4. **Evidence** — diagnostics bundle path, trace excerpt, or test output for provider/playback changes.
+
+### Provider PRs additionally
+
+- Note which live smoke you ran (if any).
+- Do not register candidate providers in `container.ts` until they pass the quality gate.
+- Document temporary divergence from ani-cli parity in provider docs or plans when unavoidable.
+
+### Docs PRs
+
+- User-facing behavior before implementation detail.
+- Use `/docs/users/...` absolute paths for internal links — never `../../.docs` or `../../.plans`.
+- Register new pages in the nearest `meta.json`.
+- Run `bun run --cwd apps/docs generate` when commands or providers change.
+
+## Hard boundaries (do not violate)
+
+- `apps/cli/index.ts` is a compatibility wrapper — new runtime work goes in `apps/cli/src/main.ts`.
+- Episode numbers are **1-based** in the UI.
+- Browser/Playwright legacy code is archive reference only — not active beta runtime.
+- Diagnostics exports must not include raw stream URLs, tokens, or private home paths.
+- Do not commit secrets (`.env`, tokens, session captures).
+
+## Getting help
+
+- Open a draft PR early for large changes.
+- Attach redacted `/export-diagnostics` bundles to issue reports.
+- Use `/report-issue` from Kunai for the guided GitHub flow.
+
+## Related
+
+- [Docs maintenance](/docs/developer/docs-maintenance) — add pages, codegen, drift tests
+- [Debugging workflow](/docs/developer/debugging-workflow) — symptom triage for developers
+- [Supported and unsupported](/docs/users/supported-and-unsupported) — beta scope boundaries

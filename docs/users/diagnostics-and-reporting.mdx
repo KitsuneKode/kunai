@@ -1,0 +1,213 @@
+---
+title: Diagnostics And Reporting
+description: Use diagnostics, support bundles, traces, and issue reports without leaking private data.
+status: shipped
+---
+
+Diagnostics are local-first. Kunai records enough runtime context to explain failures without automatically uploading anything. You choose when to export or share evidence.
+
+## Quick reference
+
+| Command / flag | Purpose |
+| --- | --- |
+| `/diagnostics` | Runtime panel — provider timeline, cache, mpv, network |
+| `/export-diagnostics` | Redacted JSON bundle near cwd |
+| `/report-issue` | GitHub issue flow with bundle guidance |
+| `--debug` | Verbose logging to `./logs.txt` |
+| `--debug-json` | Structured JSONL event stream |
+| `--debug-session` | Full session trace with path printed on stderr |
+
+Launch example:
+
+```sh
+kunai --debug -S "Title"
+KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-json
+```
+
+## Opening the diagnostics panel
+
+Press `/` and choose diagnostics, or type:
+
+```text
+/diagnostics
+```
+
+The panel typically includes:
+
+- **Capabilities** — mpv, yt-dlp, ffprobe, poster renderer detection at startup
+- **Provider** — resolve stages, failure classes, fallback timeline
+- **Cache** — hit/miss, stale revalidation, stream health events
+- **Subtitles** — attachment evidence and active track
+- **Playback / mpv** — player state, IPC events, exit reasons
+- **Network** — connectivity snapshot (does not mark providers unhealthy alone)
+- **Presence** — Discord connect/clear status
+- **Download / offline** — queue failures, artifact validation
+- **Updates** — background check results
+
+Provider attempts in progress show as retry/fallback progress — not always final errors.
+
+## Exporting a support bundle
+
+```text
+/export-diagnostics
+```
+
+The bundle is **redacted by design**. It should include:
+
+- Runtime metadata and version
+- Capability detection results
+- Provider attempt timeline (ids and failure classes, not URLs)
+- Cache provenance summaries
+- Player failure classifications
+- Recent diagnostic events by category
+
+It must **not** include:
+
+- Raw stream URLs or signed query parameters
+- Cookies, authorization headers, or session tokens
+- Private home-directory paths (redacted to placeholders)
+
+<Callout type="warning" title="Review before sharing">
+Open the exported JSON locally before attaching to a public issue or chat. If something sensitive slipped through, redact it manually and note the omission in your report.
+</Callout>
+
+## Reporting an issue
+
+```text
+/report-issue
+```
+
+The flow should:
+
+1. Preview what will be included
+2. Ask for confirmation
+3. Write a redacted diagnostics bundle
+4. Open the GitHub issue page with a safe prefilled summary
+
+If browser open fails, Kunai shows the issue URL and local bundle path.
+
+For developers contributing fixes, also see [Contribute](/docs/developer/contribute).
+
+## Structured traces (advanced)
+
+For reproducible provider or playback bugs, use scoped traces:
+
+```sh
+KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Dune" --debug-json
+```
+
+Full developer session:
+
+```sh
+bun run dev -- -S "Dune" --debug-session
+```
+
+Useful trace categories:
+
+| Category | When to include |
+| --- | --- |
+| `provider` | Resolve failures, fallback decisions |
+| `playback` | mpv lifecycle, IPC errors |
+| `cache` | Stale inventory, health checks |
+| `subtitle` | Attachment and track switching |
+| `download` | yt-dlp jobs and validation |
+| `offline` | Local library selection |
+| `network` | Connectivity classification |
+
+`--debug-session` keeps normal playback behavior while recording JSONL. The trace path appears in diagnostics and on stderr.
+
+Developers: [Debugging workflow](/docs/developer/debugging-workflow).
+
+## What diagnostics cover (by category)
+
+### Startup capabilities
+
+Recorded once per session:
+
+- mpv found on PATH
+- yt-dlp / ffprobe availability
+- Terminal poster support (Kitty vs chafa)
+- Platform opener availability
+
+Missing optional tools degrade gracefully — setup explains gaps.
+
+### Provider resolve
+
+- Which provider was tried and in what order
+- Provider-local retry cycles (sources/variants)
+- Global fallback transitions
+- Failure class per attempt (timeout, empty, HTTP, offline)
+
+See [Providers](/docs/users/providers).
+
+### Playback and mpv
+
+- Launch parameters classification (not raw URLs)
+- IPC command outcomes
+- `expired-stream`, `network-buffering`, `player-exited` events
+- In-process reconnect attempts when enabled
+
+### Cache and stream health
+
+- Cache hit vs cold resolve
+- Revalidation after health failure
+- Whether stale cache was kept when fresh lookup failed but old stream still playable
+
+### Presence
+
+- Discord connect/disconnect/clear outcomes
+- Privacy mode in effect
+- Unavailability reasons (missing client id, IPC unreachable)
+
+Configure presence in `/settings` — [Customization](/docs/users/customization).
+
+### Downloads and offline
+
+- Job state transitions (queued, running, failed, completed)
+- Artifact validation results (size, ffprobe duration)
+- Offline library source selection (local-only path)
+
+## Good smoke tests
+
+From a source checkout, exercise major surfaces:
+
+```sh
+bun run dev -- -S "Dune"
+bun run dev -- -S "Attack on Titan" -a
+bun run dev -- -S "Dune" --debug
+bun run dev -- --discover
+bun run dev -- --random
+bun run dev -- --calendar
+bun run dev -- --offline
+bun run dev -- --zen --offline
+```
+
+After each run, spot-check `/diagnostics` or export a bundle if something looked wrong.
+
+## Privacy and reliability expectations
+
+Diagnostics stay on disk until you export them. Kunai does not phone home with traces.
+
+Support bundles align with [Reliability and privacy](/docs/users/reliability-and-privacy):
+
+- Durable user data (history, lists, downloads) is never deleted by cache maintenance
+- Cache rows are disposable and may be pruned at startup
+- Provider health is not poisoned by local network outages alone
+
+## When to use which tool
+
+| Situation | Tool |
+| --- | --- |
+| Quick state while in app | `/diagnostics` |
+| Shareable artifact for a bug | `/export-diagnostics` |
+| Compare two runs programmatically | `--debug-json` or `--debug-session` |
+| GitHub issue with guidance | `/report-issue` |
+| Verbose text log | `--debug` → `./logs.txt` |
+
+Symptom index: [Troubleshooting](/docs/users/troubleshooting).
+
+## Related
+
+- [Feature tour](/docs/users/feature-tour#diagnostics-flow) — diagnostics command summary
+- [Playback and recovery](/docs/users/playback-and-recovery) — recover vs fallback
+- [Supported and unsupported](/docs/users/supported-and-unsupported) — what diagnostics will not contain

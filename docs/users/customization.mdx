@@ -1,0 +1,227 @@
+---
+title: Customization
+description: Configure Kunai through config.json, provider overrides, mpv forwarding, shell density, and Discord presence.
+status: shipped
+---
+
+Kunai stores preferences locally. Most settings are editable from `/settings` or `/setup` inside the shell. Advanced users can edit JSON directly.
+
+<Callout type="info" title="Config locations">
+| File | Purpose |
+| --- | --- |
+| `~/.config/kunai/config.json` | User preferences, provider priority, language profiles, presence, downloads |
+| `~/.config/kunai/providers.json` | Optional per-provider base domain overrides |
+| `~/.config/kunai/install.json` | Install channel metadata (binary / npm / bun) |
+</Callout>
+
+## config.json
+
+The main config file is created on first run or after `kunai --setup`. Kunai merges saved values with defaults on load — you do not need every key present.
+
+### Mode and providers
+
+| Key | What it controls |
+| --- | --- |
+| `defaultMode` | `series` or `anime` startup mode |
+| `provider` | Default movie/series provider for new sessions |
+| `animeProvider` | Default anime provider |
+| `providerPriority` | Fallback order for movie/series providers (empty = registry default) |
+| `animeProviderPriority` | Fallback order for anime providers |
+| `titleProviderPreferences` | Per-title provider override chosen explicitly by the user |
+
+Unknown provider ids in priority arrays are ignored. Providers not listed remain available after configured entries.
+
+More on fallback behavior: [Providers](/docs/users/providers).
+
+### Language and media profiles
+
+Kunai uses separate profiles for anime, series, and movies:
+
+```json
+{
+  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080" },
+  "seriesLanguageProfile": { "audio": "en", "subtitle": "en" },
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en" }
+}
+```
+
+- `animeTitlePreference` — display English, romaji, native, or provider-native titles.
+- `favoriteSources` — pin preferred source/server names to the top of pickers.
+
+See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv.
+
+### Playback and recovery
+
+| Key | What it controls |
+| --- | --- |
+| `autoNext` | Autoplay next episode when available |
+| `autoplayRecommendations` | YouTube-style continue into top recommendation when caught up |
+| `skipIntro`, `skipRecap`, `skipPreview`, `skipCredits` | Auto-skip segments when timing metadata exists |
+| `recoveryMode` | `guided`, `fallback-first`, or `manual` |
+| `resumeStartChoicePrompt` | Resume vs start-over overlay when resuming mid-episode |
+| `quitNearEndBehavior` | What happens when you quit mpv near the natural end |
+
+### Shell density and chrome
+
+| Key / flag | Effect |
+| --- | --- |
+| `zenMode` / `--zen` | Single-column, minimal chrome — all features still key-reachable |
+| `minimalMode` / `--minimal` | Collapse companion pane and dim header status |
+| `footerHints` | `detailed` or `minimal` footer guidance |
+| `discoverShowOnStartup` | Faint discover hint in browse footer when history exists |
+| `powerSaverMode` | Suppress background network and speculative work |
+
+Kunai ships with the Sakura design system baked into the terminal UI. There is no separate theme picker today — density modes (`zen`, `minimal`) are how you reduce visual chrome.
+
+### Downloads and offline
+
+| Key | What it controls |
+| --- | --- |
+| `downloadsEnabled` | Gate for download features (off until opted in) |
+| `downloadPath` | Custom download directory (empty = app data default) |
+| `maxConcurrentDownloads` | Parallel download jobs (clamped 1–5) |
+| `offlineFreeSpaceReserveBytes` | Reserved disk space before accepting new downloads |
+| `autoCleanupWatched` | Surface watched downloads as cleanup candidates |
+
+See [Downloads and offline](/docs/users/downloads-and-offline).
+
+### Sync integrations (opt-in)
+
+```json
+{
+  "sync": {
+    "anilist": { "enabled": false, "trackWatched": false, "syncList": false },
+    "tmdb": { "enabled": false, "trackWatched": false, "syncList": false }
+  }
+}
+```
+
+Tokens are stored separately. Sync never runs unless explicitly enabled.
+
+## providers.json overrides
+
+Advanced users can override provider base domains without editing code:
+
+```json
+{
+  "videasy": "https://mirror.example",
+  "vidlink": "https://alt.example"
+}
+```
+
+- File path: `~/.config/kunai/providers.json`
+- Keys match provider ids from the production registry.
+- `vidking` remains accepted as a legacy alias for `videasy`.
+- Overrides affect URL construction only — they do not add new providers.
+
+<Callout type="warning" title="Overrides do not fix broken providers">
+Domain overrides help when a provider moves mirrors. They do not bypass DRM, add authentication, or guarantee stream availability.
+</Callout>
+
+## mpv flags and bridge options
+
+Kunai always launches `mpv` for playback. You can forward diagnostic flags for a single run:
+
+| Flag | Effect |
+| --- | --- |
+| `--mpv-debug` | Verbose mpv logging |
+| `--mpv-clean` | Minimal mpv config for isolation testing |
+| `--no-user-mpv-config` | Ignore user mpv.conf for this run |
+| `--mpv-log-file <path>` | Write mpv log to a specific file |
+
+These are process flags — see [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
+
+### Persistent mpv bridge settings
+
+Config keys tune the Kunai Lua bridge script:
+
+| Key | Purpose |
+| --- | --- |
+| `mpvKunaiScriptPath` | Custom path to `kunai-bridge.lua` (empty = auto-resolve) |
+| `mpvKunaiScriptOpts` | `--script-opts` entries for the bridge (e.g. `margin_bottom`, `chip_width`) |
+| `mpvInProcessStreamReconnect` | Reload same URL after network-read-dead stalls |
+| `mpvInProcessStreamReconnectMaxAttempts` | Max reload attempts per playback cycle |
+
+Example `mpvKunaiScriptOpts`:
+
+```json
+{
+  "mpvKunaiScriptOpts": {
+    "margin_bottom": "130",
+    "prompt_seconds": "8"
+  }
+}
+```
+
+Kunai still passes provider-required headers (referrer, user-agent) and subtitle attachments automatically. Do not expect arbitrary mpv CLI passthrough from config today — use the flags above for debugging.
+
+## Discord presence setup
+
+Discord Rich Presence is **off by default** and local-only.
+
+<Steps>
+<Step>
+### Open presence settings
+
+```text
+/presence
+```
+
+Or use `/settings` and navigate to Presence.
+</Step>
+<Step>
+### Choose provider and privacy
+
+- Set **Presence** to `discord`.
+- Set **Presence privacy** to `full` (title/episode detail) or `private` (generic activity).
+</Step>
+<Step>
+### Provide a Discord application client id
+
+Enter a numeric Discord application client id in Settings, or set:
+
+```sh
+export KUNAI_DISCORD_CLIENT_ID="your_app_id"
+```
+
+Create an application at [Discord Developer Portal](https://discord.com/developers/applications) if you need a new id.
+</Step>
+<Step>
+### Connect and verify
+
+Use **Connect Discord now** in Settings. Kunai connects through Discord's local IPC pipe — no cloud relay.
+
+While playing, Kunai updates episode cards and progress timestamps. Paused playback shows static text; activity clears after a configurable idle delay.
+</Step>
+</Steps>
+
+Diagnostics record presence connect/clear failures. Check `/diagnostics` if Discord shows `unavailable` or `error`.
+
+More: [Diagnostics and reporting](/docs/users/diagnostics-and-reporting).
+
+## Editing config safely
+
+<Tabs items={["In-shell", "Manual edit"]}>
+<Tab value="In-shell">
+
+Use `/settings` or `/setup` for guided changes. Settings persist immediately to `config.json`.
+
+</Tab>
+<Tab value="Manual edit">
+
+1. Quit Kunai (or edit while idle — avoid editing mid-playback).
+2. Edit `~/.config/kunai/config.json` with valid JSON.
+3. Restart Kunai. Invalid JSON falls back to defaults with a stderr warning.
+
+</Tab>
+</Tabs>
+
+<Callout type="idea" title="Reset without uninstall">
+Delete `config.json` to reset preferences. Use `kunai uninstall --purge` only when you want config, history, and cache removed together.
+</Callout>
+
+## Related
+
+- [Providers](/docs/users/providers) — fallback chains and priority
+- [Media selection](/docs/users/media-selection) — language profiles in practice
+- [Troubleshooting](/docs/users/troubleshooting) — when config changes do not fix playback

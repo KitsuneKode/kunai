@@ -1,36 +1,167 @@
 ---
 title: Media Selection
 description: How Kunai picks providers, sources, streams, audio, subtitles, and quality.
+status: shipped
 ---
 
-Kunai separates provider facts from player state so stream choices can stay available without cluttering the playback view.
+Kunai separates **provider inventory** (what the provider reported) from **mpv state** (what is actually playing). That split lets you switch streams quickly when inventory is cached, while still supporting fresh lookup when needed.
+
+This guide explains what each picker means and when Kunai shows it.
 
 ## Profiles by mode
 
-Anime, series, and movie playback each has its own media profile:
+Anime, series, and movie playback each has its own media profile in `config.json`:
 
-- Anime uses the anime audio, subtitle, quality, and title-name preferences.
-- Series uses the series audio, subtitle, and quality preferences.
-- Movies use the movie audio, subtitle, and quality preferences.
+| Mode | Config key | Typical fields |
+| --- | --- | --- |
+| Anime | `animeLanguageProfile` | audio, subtitle, quality |
+| Series | `seriesLanguageProfile` | audio, subtitle, quality |
+| Movies | `movieLanguageProfile` | audio, subtitle, quality |
 
-These preferences are passed into provider resolution and then into mpv as player hints. Episode numbers remain 1-based in the UI.
+Example:
+
+```json
+{
+  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080" },
+  "seriesLanguageProfile": { "audio": "en", "subtitle": "en" },
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en" }
+}
+```
+
+These preferences flow into provider resolution first, then into mpv as player hints. Episode numbers remain **1-based** in the UI.
+
+Additional anime display preference:
+
+- `animeTitlePreference` — English, romaji, native, or provider-native title labels
+- `favoriteSources` — pin preferred source/server names to the top of pickers
+
+Configure in `/settings`. See [Customization](/docs/users/customization).
 
 ## What the pickers mean
 
-- Source picker chooses a provider source or mirror family when the provider reported more than one.
-- Stream picker shows the full playable stream inventory.
-- Quality picker narrows the stream inventory by quality labels and ranks.
-- Subtitle picker switches soft subtitles when they are already known, or asks for provider lookup when needed.
-- Audio and hardsub changes prefer cached stream inventory first, then provider lookup only when no matching stream is known.
+Kunai only shows controls when inventory has more than one useful choice. A title with one stream and one subtitle should not grow a noisy menu.
 
-Kunai only shows these controls when the inventory says they are useful. A title with one stream and one subtitle should not grow a noisy menu.
+| Picker | What it chooses |
+| --- | --- |
+| **Provider** | Which registered provider resolves the title (before or during playback) |
+| **Source** | Provider source or mirror family when multiple exist |
+| **Stream** | Full playable stream inventory for the current episode |
+| **Quality** | Narrow streams by quality label or rank |
+| **Subtitle** | Soft subtitle track when already known; may trigger lookup if not |
+| **Audio / hardsub** | Language or hardsub variant within cached inventory |
+
+Open the grouped panel during playback:
+
+```text
+/source
+/tracks
+/k
+```
+
+Jump directly when a section has alternatives:
+
+```text
+/quality
+```
+
+## Resolution vs playback state
+
+```text
+Provider resolve
+  → source inventory (sources, streams, subtitles, trace)
+  → selected stream candidate
+  → mpv launch (active track, position, headers)
+  → mpv state (what player reports back)
+```
+
+Diagnostics shows both layers without exposing signed URLs:
+
+- **Inventory** — what Kunai knows from the last resolve
+- **mpv state** — what is actively playing or stalled
+
+When you switch a known stream, Kunai prefers cached inventory. When you ask for a language or quality not yet discovered, Kunai may run provider lookup again.
 
 ## Anime vs series/movie behavior
 
-Anime providers often expose sub, dub, hardsub, and source-family differences as different streams. Series/movie providers more often expose quality and subtitle differences. Kunai treats both through the same inventory model:
+<Tabs items={["Anime", "Series / movies"]}>
+<Tab value="Anime">
 
-- Provider inventory stores sources, stream candidates, subtitle candidates, selected stream, and trace evidence.
-- mpv state stores what is actually active in the player.
-- Diagnostics shows the difference without exposing signed URLs.
+Anime providers often expose:
 
-This lets Kunai switch a known stream quickly, while still falling back to provider lookup when a language or quality was not discovered yet.
+- Sub vs dub as separate streams
+- Hardsub variants
+- Multiple source families (fansub groups, official mirrors)
+
+Kunai treats each as stream candidates in the same inventory model. The anime language profile selects defaults; pickers let you override per session.
+
+Default provider and fallback: `animeProvider`, `animeProviderPriority` — see [Providers](/docs/users/providers).
+
+</Tab>
+<Tab value="Series / movies">
+
+Series and movie providers more often expose:
+
+- Quality tiers (720p, 1080p, etc.)
+- Subtitle language differences
+- Fewer distinct source families
+
+The same picker model applies — Kunai does not force a different UI per provider type.
+
+Default provider and fallback: `provider`, `providerPriority`.
+
+</Tab>
+</Tabs>
+
+## Auto-selection rules
+
+When multiple streams match your profile, Kunai ranks by:
+
+1. User favorites (`favoriteSources`)
+2. Profile language and quality match
+3. Provider default ranking and health signals
+4. Cached selection from previous watch on same title
+
+You can always override before or during playback.
+
+## Switching during playback
+
+| Situation | Best action |
+| --- | --- |
+| Wrong subtitle language | `/source` → subtitle section |
+| Want higher quality | `/quality` if alternatives exist in inventory |
+| Stream stalled | `r` recover first; then `/source` if inventory has alternates |
+| Provider exhausted | `f` fallback — see [Providers](/docs/users/providers) |
+| Inventory looks stale | `/recompute` bypasses cache for current episode |
+
+<Callout type="info" title="Inventory-bound switching">
+Switching source/quality/subtitle from pickers avoids full re-resolve when the provider already reported those candidates. If nothing matches, Kunai fetches fresh inventory.
+</Callout>
+
+## Provider priority and per-title overrides
+
+Session default provider comes from config. Per-title overrides (`titleProviderPreferences`) win on resume when you explicitly picked a provider earlier.
+
+Example flow:
+
+1. Start "Show X" with Videasy.
+2. Playback fails; you fallback to VidLink and continue.
+3. Kunai may store VidLink preference for "Show X" on explicit pick.
+
+See [Customization](/docs/users/customization).
+
+## Diagnostics for selection issues
+
+When pickers look empty or wrong:
+
+1. `/diagnostics` → provider timeline (did resolve return inventory?)
+2. Check failure class — empty inventory vs filtered-out streams
+3. `/recompute` if cache may be stale
+4. `/export-diagnostics` if reporting upstream
+
+More: [Diagnostics and reporting](/docs/users/diagnostics-and-reporting), [Troubleshooting](/docs/users/troubleshooting#provider-resolve-failed).
+
+## Related
+
+- [Providers](/docs/users/providers) — fallback and resolve behavior
+- [Playback and recovery](/docs/users/playback-and-recovery) — hotkeys and recover flow
+- [Customization](/docs/users/customization) — language profiles and favorites

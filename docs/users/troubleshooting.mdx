@@ -1,0 +1,225 @@
+---
+title: Troubleshooting
+description: Symptom index for provider failures, playback crashes, network issues, offline library problems, and missing mpv.
+status: shipped
+---
+
+Use this page when something fails during normal use. Start with `/diagnostics` inside Kunai — it shows provider timelines, cache state, mpv status, and network snapshots without exposing stream URLs.
+
+For exportable evidence, run `/export-diagnostics` before closing the shell. See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for privacy rules.
+
+## Quick triage
+
+<Steps>
+<Step>
+### Reproduce with diagnostics open
+
+Launch with `--debug` if the failure happens at startup:
+
+```sh
+kunai --debug -S "Title"
+```
+
+Then open `/diagnostics` during or after the failure.
+</Step>
+<Step>
+### Try recovery before reconfiguring
+
+- `r` or `/recover` — refresh current provider stream
+- `f` or `/fallback` — next compatible provider
+- `/recompute` — bypass stale cache for current episode
+</Step>
+<Step>
+### Export evidence if you need help
+
+```text
+/export-diagnostics
+/report-issue
+```
+
+Review the bundle locally before sharing. It must not contain raw stream URLs or tokens.
+</Step>
+</Steps>
+
+---
+
+## Provider resolve failed
+
+**Symptoms:** Search works but playback never starts; resolve spinner stops with a provider error; `/diagnostics` shows failed resolve stages.
+
+### What to try
+
+1. Open `/diagnostics` and read the **provider attempt timeline**.
+2. Note the failure class (timeout, empty inventory, HTTP error, offline/network).
+3. Press `f` or `/fallback` to try the next provider in your priority list.
+4. If one provider always fails, check [Customization](/docs/users/customization) for `providerPriority` / `animeProviderPriority`.
+5. For domain drift, verify `~/.config/kunai/providers.json` overrides are still valid.
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| Provider id and failure class | `/diagnostics` → provider timeline |
+| Fallback path (which provider recovered) | `/diagnostics` → provider timeline |
+| Cache provenance (hit, stale, refetch) | `/diagnostics` → cache section |
+| Structured trace | `--debug-json` or `--debug-session` output path |
+| Title, mode, episode | Shell header or history entry |
+
+<Callout type="info" title="Retry is not always an error">
+If Kunai is still cycling sources or retrying within one provider, the UI may show progress rather than a final failure. Wait for the timeline to complete before assuming total failure.
+</Callout>
+
+More: [Providers](/docs/users/providers), [Supported and unsupported](/docs/users/supported-and-unsupported).
+
+---
+
+## Playback started but died
+
+**Symptoms:** mpv opens then exits; buffering never recovers; "stream expired" or IPC errors in diagnostics.
+
+### What to try
+
+1. Check **mpv/player** section in `/diagnostics` for `expired-stream`, `network-buffering`, `player-exited`, or IPC failures.
+2. Press `r` to recover — Kunai may reload the URL or re-resolve depending on failure class.
+3. If recovery loops, try `/fallback` for a different provider.
+4. Test mpv in isolation with `--mpv-clean --no-user-mpv-config` to rule out local mpv.conf conflicts.
+5. Enable in-process reconnect in Settings if network-read-dead stalls are common (`mpvInProcessStreamReconnect`).
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| Player exit reason | `/diagnostics` → mpv/player |
+| Stream health events | `/diagnostics` → cache / playback events |
+| mpv log | `--mpv-log-file /tmp/kunai-mpv.log` |
+| Whether cache was stale | `/diagnostics` → cache provenance |
+| Subtitle attachment state | `/diagnostics` → subtitle evidence |
+
+---
+
+## Network unavailable
+
+**Symptoms:** Diagnostics shows offline or unreachable network; provider errors mention connectivity; downloads stall.
+
+### What to try
+
+1. Confirm general connectivity outside Kunai (browser, ping).
+2. Open `/diagnostics` and check the **network snapshot**.
+3. Do **not** assume every provider is down — Kunai avoids marking providers unhealthy from local network evidence alone.
+4. Switch to offline library if you have completed downloads:
+
+   ```sh
+   kunai --offline
+   ```
+
+5. Retry online playback when connectivity returns — use `/recover` rather than restarting Kunai.
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| Network snapshot status | `/diagnostics` → network |
+| Whether offline mode was active | Shell mode indicator |
+| Download job errors | `/downloads` overlay |
+| Timestamp of failure | `--debug` log in `./logs.txt` |
+
+<Callout type="warning" title="Offline library does not auto-repair online">
+Opening `/library` or `/offline` never calls providers. Re-download and repair are explicit actions.
+</Callout>
+
+More: [Downloads and offline](/docs/users/downloads-and-offline).
+
+---
+
+## Offline library issues
+
+**Symptoms:** Completed download missing from library; playback fails for local file; artifact marked invalid; wrong duration or resume position.
+
+### What to try
+
+1. Open `/library` or `/offline` and check artifact status: **ready**, **missing**, or **invalid**.
+2. Use **reveal folder** to confirm the file exists on disk.
+3. Run **repair** or **re-download** from the title group — Kunai uses saved download intent when available.
+4. Confirm `ffprobe` is installed if duration metadata looks wrong (optional but helpful).
+5. Verify free disk space meets `offlineFreeSpaceReserveBytes` if new downloads fail.
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| Artifact validation result | `/diagnostics` → download/offline section |
+| Local file size and duration | `/library` title details |
+| Download job history | `/downloads` → failed/completed jobs |
+| `downloadPath` setting | `/settings` or `config.json` |
+
+---
+
+## mpv missing or not found
+
+**Symptoms:** Setup warns mpv is missing; playback never launches; diagnostics shows player unavailable.
+
+### What to try
+
+<Tabs items={["Linux", "macOS", "Windows"]}>
+<Tab value="Linux">
+
+```sh
+# Debian/Ubuntu
+sudo apt install mpv
+
+# Fedora
+sudo dnf install mpv
+
+# Arch
+sudo pacman -S mpv
+```
+
+Verify: `which mpv && mpv --version`
+
+</Tab>
+<Tab value="macOS">
+
+```sh
+brew install mpv
+which mpv && mpv --version
+```
+
+</Tab>
+<Tab value="Windows">
+
+Install mpv from [mpv.io](https://mpv.io) or a package manager. Ensure `mpv.exe` is on your PATH in the same terminal session where you run Kunai.
+
+</Tab>
+</Tabs>
+
+After installing mpv:
+
+1. Run `kunai --setup` again to refresh capability detection.
+2. Launch with `--debug` and confirm mpv appears in startup capabilities.
+3. Test a simple file: `mpv /path/to/local/file.mkv` to isolate Kunai from player issues.
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| mpv detected at startup | `/diagnostics` → capabilities |
+| PATH in terminal | `which mpv` output |
+| Setup wizard result | `kunai --setup` transcript |
+| mpv version | `mpv --version` first line |
+
+More: [Platforms](/docs/users/platforms), [Getting started](/docs/users/getting-started).
+
+---
+
+## Still stuck?
+
+1. Run a structured trace session:
+
+   ```sh
+   KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-session
+   ```
+
+2. Export diagnostics before exit: `/export-diagnostics`
+3. Open an issue via `/report-issue` with the bundle attached (after reviewing redaction).
+
+Developers: [Debugging workflow](/docs/developer/debugging-workflow).

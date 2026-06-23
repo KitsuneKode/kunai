@@ -1,0 +1,34 @@
+# Feature status for docs codegen — allowed: shipped | beta | planned
+features:
+  - id: cli-shell
+    label: Terminal shell
+    status: shipped
+    description: Persistent Ink shell with search, playback, and recovery workflows.
+  - id: direct-providers
+    label: Direct provider resolution
+    status: shipped
+    description: HTTP scrapers in packages/providers without browser automation.
+  - id: mpv-playback
+    label: mpv playback
+    status: shipped
+    description: Kunai resolves streams; mpv is the playback engine.
+  - id: offline-downloads
+    label: Offline downloads
+    status: beta
+    description: Queue downloads and play completed artifacts without provider calls.
+  - id: discord-presence
+    label: Discord Rich Presence
+    status: beta
+    description: Optional social status integration with setup wizard support.
+  - id: install-scripts
+    label: install.sh / install.ps1
+    status: beta
+    description: OS installer scripts for global Bun package setup.
+  - id: browser-providers
+    label: Browser / Playwright providers
+    status: planned
+    description: Archived reference only; not part of active beta runtime.
+  - id: hosted-streams
+    label: Hosted stream relay
+    status: planned
+    description: No cloud proxy or hosted transcoding in beta v1.

@@ -1,0 +1,163 @@
+---
+title: Providers
+description: How Kunai chooses providers, retries, recovers, and falls back — without scraper internals.
+status: shipped
+---
+
+Kunai resolves playable streams through direct HTTP provider adapters. You pick a title; Kunai asks registered providers for stream inventory; playback goes to `mpv`.
+
+This page explains **user-visible provider behavior**. It does not document scraper internals, crypto constants, or site-specific extraction logic.
+
+<ScopeCallout variant="providers" />
+
+## Active providers
+
+The production registry lists providers available at runtime. See the live table on [Feature tour](/docs/users/feature-tour#active-providers) — it syncs from the CLI container when docs are generated.
+
+Typical split:
+
+| Mode | Default providers | Notes |
+| --- | --- | --- |
+| Movies / series | Videasy, VidLink, Rivestream | Rivestream is beta candidate |
+| Anime | AllManga-compatible client, Miruro | Miruro is beta candidate |
+
+Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
+
+## How resolution works (user view)
+
+<Steps>
+<Step>
+### You select a title and episode
+
+Kunai builds a resolve request from your mode, language profiles, and any per-title provider preference.
+</Step>
+<Step>
+### Kunai tries the default provider first
+
+Your `provider` or `animeProvider` config key sets the session default. Startup priority policy may influence first pick.
+</Step>
+<Step>
+### Provider-local cycling
+
+Within one provider, Kunai may try multiple sources, servers, or variants before giving up. Diagnostics shows this as retry progress — not necessarily an error.
+</Step>
+<Step>
+### Global fallback
+
+If the active provider is exhausted, skipped, or unhealthy for this request, Kunai moves to the next id in your priority list.
+</Step>
+<Step>
+### Stream handoff
+
+The winning stream becomes mpv input with required headers and subtitle attachments. Inventory is cached for faster re-selection.
+</Step>
+</Steps>
+
+More detail on pickers: [Media selection](/docs/users/media-selection).
+
+## Fallback chain configuration
+
+Configure order in `/settings` or `~/.config/kunai/config.json`:
+
+```json
+{
+  "provider": "videasy",
+  "providerPriority": ["videasy", "vidlink", "rivestream"],
+  "animeProvider": "allanime",
+  "animeProviderPriority": ["allanime", "miruro"]
+}
+```
+
+Rules:
+
+- Empty priority arrays use registry default order.
+- Unknown ids in the list are ignored.
+- Providers not listed remain available **after** configured entries.
+- Per-title overrides in `titleProviderPreferences` win over history provider on resume.
+
+See [Customization](/docs/users/customization).
+
+## Retry vs recover vs fallback
+
+Kunai uses three distinct user-facing actions. They are not interchangeable.
+
+| Action | Keys / command | What happens |
+| --- | --- | --- |
+| **Recover** | `r`, `/recover` | Refresh current playback intent on the **active** provider — new resolve, cache revalidation, or mpv reload |
+| **Retry** (automatic) | — | Provider-local cycling through sources/variants before global fallback; shown in diagnostics timeline |
+| **Fallback provider** | `f`, `/fallback` | Stop active provider; global engine picks **next compatible provider** |
+| **Recompute** | `/recompute` | Bypass stream cache and provider health memory for current episode |
+
+<Callout type="idea" title="Recover before fallback">
+When a stream dies mid-playback, try recover first. Fallback switches providers and may change source quality or subtitles.
+</Callout>
+
+### Recovery mode setting
+
+`recoveryMode` in config changes default aggressiveness:
+
+| Mode | Behavior |
+| --- | --- |
+| `guided` (default) | Explain failures; suggest recover then fallback |
+| `fallback-first` | Prefer moving to next provider sooner after classified failures |
+| `manual` | Minimal automatic fallback; user drives `/recover` and `/fallback` |
+
+## Provider health and cache
+
+Kunai remembers provider health locally to avoid hammering known-bad paths. Health updates come from resolve outcomes — not from your home network being offline.
+
+- **Cache hit** — reuse recent stream inventory when still valid.
+- **Stale cache** — revalidate before play when health checks fail.
+- **Cold resolve** — full provider lookup when no usable cache exists.
+
+`/diagnostics` shows cache provenance and health deltas without exposing signed URLs.
+
+Network-unavailable failures stop cycling early. Kunai does not mark unrelated providers as unhealthy because your Wi-Fi dropped.
+
+## Domain overrides
+
+Advanced users can point providers at alternate base domains via `~/.config/kunai/providers.json`:
+
+```json
+{
+  "videasy": "https://mirror.example"
+}
+```
+
+Overrides affect URL construction only. They do not register new providers or bypass site authentication.
+
+## When providers fail (expected behavior)
+
+Provider catalogs drift. Failure is operational, not exceptional.
+
+1. Diagnostics records failure class and stage.
+2. Kunai attempts provider-local retries when inventory exists.
+3. Global fallback runs when configured and appropriate.
+4. You stay in the shell with context intact — search, history, and offline library remain available.
+
+If **all** providers fail, Kunai explains why in diagnostics and the shell footer. Collect evidence with `/export-diagnostics` — see [Troubleshooting](/docs/users/troubleshooting).
+
+## What Kunai does not do with providers
+
+- No browser/Playwright scraping in the active beta runtime
+- No Kunai-hosted proxy or stream relay
+- No guarantee of subtitle language, quality tier, or dub availability
+- No silent provider switching without user action (except configured automatic fallback within policy)
+
+See [Supported and unsupported](/docs/users/supported-and-unsupported).
+
+## Picking a provider manually
+
+Before playback starts:
+
+- Provider picker in the starting-episode flow when multiple providers are compatible.
+- `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
+
+After explicit pick, Kunai stores per-title preference for future resume.
+
+## Related
+
+- [Playback and recovery](/docs/users/playback-and-recovery) — resume, replay, hotkeys
+- [Troubleshooting](/docs/users/troubleshooting) — provider resolve failed
+- [Customization](/docs/users/customization) — priority lists and overrides
+- [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) — attempt timelines

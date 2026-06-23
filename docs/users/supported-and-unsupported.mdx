@@ -1,0 +1,162 @@
+---
+title: Supported And Unsupported
+description: What Kunai supports in beta, what is experimental, and what is explicitly out of scope.
+status: shipped
+---
+
+Kunai is a terminal-first CLI in beta. This page states observable boundaries — not a roadmap promise.
+
+<ScopeCallout variant="beta" />
+
+## Support matrix
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Terminal shell (Ink) | **Shipped** | Search, pickers, history, overlays, command palette |
+| Direct HTTP providers | **Shipped** | Videasy, VidLink, AllManga-compatible, Rivestream, Miruro — quality varies by title |
+| mpv playback | **Required** | Kunai does not embed a player; mpv must be on PATH |
+| Watch history and resume | **Shipped** | Local SQLite; 1-based episode numbers in UI |
+| Continue Watching | **Shipped** | Unfinished entries + new episode detection when schedule data exists |
+| Release calendar | **Shipped** | Cached schedule data; availability checked after selection |
+| Recommendations / discover | **Shipped** | Does not auto-play |
+| Diagnostics panel | **Shipped** | `/diagnostics`, redacted `/export-diagnostics` |
+| Discord Rich Presence | **Shipped** | Opt-in; off by default |
+| AniList / TMDB sync | **Shipped** | Opt-in account sync |
+| Offline downloads | **Beta** | Opt-in; requires `yt-dlp`; artifact validation when `ffprobe` available |
+| Release binaries (`install.sh` / `install.ps1`) | **Beta supported** | Unsigned; SmartScreen/Gatekeeper may warn |
+| Zen / minimal chrome | **Beta** | `--zen`, `--minimal` — layout still settling |
+| Browser / Playwright scraping | **Not supported** | Archive-only reference code; not active runtime |
+| Hosted Kunai streams | **Not supported** | No Kunai CDN or proxy for video |
+| First-party streaming auth | **Not supported** | No Netflix/Disney+/etc. login flows |
+| Native GUI (non-terminal) | **Not supported** | Terminal-first by design |
+| DRM bypass | **Not supported** | Kunai plays what direct providers expose |
+| Cloud telemetry / auto-upload | **Not supported** | Diagnostics export is user-initiated |
+
+## CLI and install channels
+
+<Tabs items={["Binary install", "Package managers", "Source"]}>
+<Tab value="Binary install">
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+```
+
+Windows:
+
+```powershell
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+```
+
+**Beta supported.** Binaries embed the Bun runtime — you do not need Bun installed to run them. Releases are unsigned; see [Install and update](/docs/users/install-and-update).
+
+</Tab>
+<Tab value="Package managers">
+
+```sh
+bun install -g @kitsunekode/kunai
+npm install -g @kitsunekode/kunai
+```
+
+**Beta supported.** Bun is the primary tested runtime for JS bundle installs.
+
+</Tab>
+<Tab value="Source">
+
+```sh
+git clone https://github.com/KitsuneKode/kunai.git
+cd kunai && bun install && bun run link:global
+```
+
+**Supported for contributors.** Requires Bun.
+
+</Tab>
+</Tabs>
+
+## Providers
+
+Production providers are registered in the CLI container. The [Feature tour](/docs/users/feature-tour) embeds a live table synced from the registry.
+
+| Provider family | Typical use | Status |
+| --- | --- | --- |
+| Videasy (`videasy`, legacy `vidking` alias) | Movies and series | Shipped |
+| VidLink | Movies and series | Shipped |
+| AllManga-compatible (`allanime` id) | Anime | Shipped |
+| Rivestream | Movies and series | Beta — candidate; quality varies |
+| Miruro | Anime | Beta — candidate; quality varies |
+| Cineby | — | Not in production engine (research module) |
+| Playwright / browser providers | — | Not supported in active runtime |
+
+Provider availability can change without notice. Fallback chains and recovery are expected — see [Providers](/docs/users/providers).
+
+## Playback requirements
+
+| Requirement | Required? | If missing |
+| --- | --- | --- |
+| mpv | **Yes** | Playback cannot start |
+| Terminal with reasonable size | **Yes** | Shell may block with resize message |
+| Network (online playback) | **Yes** for streaming | Use offline library for local files |
+| yt-dlp | No (online only) | Downloads disabled; online playback unaffected |
+| ffprobe | No | Offline duration validation skipped |
+| chafa / Kitty graphics | No | Poster previews degraded or hidden |
+
+## Downloads and offline
+
+| Capability | Status |
+| --- | --- |
+| Download queue (`/downloads`) | Beta — opt-in via setup |
+| Offline library (`/library`, `--offline`) | Beta |
+| Launch download-only (`--download`) | Beta |
+| Silent online/offline mode switch | **Not supported** — mode changes are explicit |
+| Automatic season batch download | **Not supported** — per-title enrollment |
+
+See [Downloads and offline](/docs/users/downloads-and-offline).
+
+## Diagnostics and privacy
+
+| Capability | Status |
+| --- | --- |
+| Local diagnostics (`/diagnostics`) | Shipped |
+| Redacted export (`/export-diagnostics`) | Shipped |
+| Issue reporting guide (`/report-issue`) | Shipped |
+| Raw stream URLs in exports | **Not supported** — redacted by design |
+| Automatic crash upload | **Not supported** |
+
+See [Reliability and privacy](/docs/users/reliability-and-privacy).
+
+## Platform support
+
+| Platform | Playback | Binary install | Notes |
+| --- | --- | --- | --- |
+| Linux (glibc) | mpv | `install.sh` | x64 and arm64 |
+| Linux (musl/Alpine) | mpv | musl binaries | |
+| macOS | mpv | `install.sh` | x64 and Apple Silicon; Gatekeeper may block unsigned binary |
+| Windows | mpv | `install.ps1` | x64 and arm64; SmartScreen may warn |
+| FreeBSD / BSD | Source only | Not published | |
+
+Poster previews: Kitty/chafa on Linux, chafa on macOS, limited on Windows.
+
+More: [Platforms](/docs/users/platforms).
+
+## Legal and content boundaries
+
+Kunai does not host, store, mirror, or redistribute video content. All playable media comes from third-party providers. Kunai does not guarantee:
+
+- Provider uptime or catalog completeness
+- Legal availability in your jurisdiction
+- Subtitle accuracy or language coverage
+
+Copyright notices belong to the hosting provider, not Kunai.
+
+## What is explicitly not planned for beta CLI
+
+- Browser automation in the production resolver
+- Kunai-operated stream proxy or CDN
+- Replacing mpv with an embedded player
+- Account requirements for core playback
+- Silent background provider probing
+
+## Related
+
+- [What you can do](/docs/users/what-you-can-do) — capability overview
+- [Troubleshooting](/docs/users/troubleshooting) — when something breaks
+- [Customization](/docs/users/customization) — tune behavior within supported bounds

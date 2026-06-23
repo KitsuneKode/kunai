@@ -5,6 +5,7 @@ import { QuickStartSteps } from "@/components/docs/quick-start-steps";
 import { ScopeCallout } from "@/components/docs/scope-callout";
 import { CliFlagsTable } from "@/components/reference/cli-flags-table";
 import { CommandReference } from "@/components/reference/command-reference";
+import { FeatureStatusTable } from "@/components/reference/feature-status-table";
 import { ProviderTable } from "@/components/reference/provider-table";
 import { SyncedAt } from "@/components/reference/synced-at";
 import { Step, Steps } from "fumadocs-ui/components/steps";
@@ -23,6 +24,7 @@ const kunaiMdxComponents = {
   ProviderTable,
   CommandReference,
   CliFlagsTable,
+  FeatureStatusTable,
   SyncedAt,
   DocSectionCards,
   DocsRootCards,

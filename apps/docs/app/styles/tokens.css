@@ -1,37 +1,56 @@
 :root {
-  /* OLED editorial base — deep rose terminal */
-  --color-fd-background: #07050b;
-  --color-fd-foreground: #f3e8ee;
-  --color-fd-primary: #e894ad;
-  --color-fd-primary-foreground: #07050b;
-  --color-fd-border: color-mix(in oklab, #efd9e3 10%, transparent);
-  --color-fd-muted: #100d14;
-  --color-fd-muted-foreground: color-mix(in oklab, #efd9e3 56%, transparent);
-  --color-fd-accent: #18121f;
-  --color-fd-accent-foreground: #f0c0d0;
-  --color-fd-popover: #120e17;
-  --color-fd-popover-foreground: #f3e8ee;
-  --color-fd-card: #110d15;
-  --color-fd-card-foreground: #f3e8ee;
-  --color-fd-secondary: #17121f;
-  --color-fd-secondary-foreground: #f3e8ee;
-  --color-fd-ring: #e894ad;
-  --color-fd-overlay: rgba(4, 3, 6, 0.62);
+  /* Ember Dusk — synced from packages/design/src/tokens.ts */
+  --color-fd-background: #100b0f;
+  --color-fd-foreground: #f6eff4;
+  --color-fd-primary: #ff8fb0;
+  --color-fd-primary-foreground: #100b0f;
+  --color-fd-border: color-mix(in oklab, #473b51 70%, transparent);
+  --color-fd-muted: #1c1620;
+  --color-fd-muted-foreground: #968a98;
+  --color-fd-accent: #2a2030;
+  --color-fd-accent-foreground: #f6eff4;
+  --color-fd-popover: #1c1620;
+  --color-fd-popover-foreground: #f6eff4;
+  --color-fd-card: #1c1620;
+  --color-fd-card-foreground: #f6eff4;
+  --color-fd-secondary: #281f2e;
+  --color-fd-secondary-foreground: #f6eff4;
+  --color-fd-ring: #ff8fb0;
+  --color-fd-overlay: rgba(8, 5, 9, 0.72);
   --fd-layout-width: 92rem;
+
+  /* shadcn semantic aliases */
+  --background: var(--color-fd-background);
+  --foreground: var(--color-fd-foreground);
+  --primary: var(--color-fd-primary);
+  --primary-foreground: var(--color-fd-primary-foreground);
+  --muted: var(--color-fd-muted);
+  --muted-foreground: var(--color-fd-muted-foreground);
+  --accent: var(--color-fd-accent);
+  --accent-foreground: var(--color-fd-accent-foreground);
+  --border: var(--color-fd-border);
+  --ring: var(--color-fd-ring);
+  --card: var(--color-fd-card);
+  --card-foreground: var(--color-fd-card-foreground);
+  --popover: var(--color-fd-popover);
+  --popover-foreground: var(--color-fd-popover-foreground);
+  --secondary: var(--color-fd-secondary);
+  --secondary-foreground: var(--color-fd-secondary-foreground);
 
   /* Kunai aliases */
   --kunai-bg: var(--color-fd-background);
   --kunai-surface: var(--color-fd-card);
   --kunai-surface-strong: var(--color-fd-secondary);
-  --kunai-surface-elevated: #221a2a;
+  --kunai-surface-elevated: #2a2030;
   --kunai-line: var(--color-fd-border);
   --kunai-accent: var(--color-fd-primary);
-  --kunai-accent-deep: #b85f7a;
-  --kunai-accent-soft: color-mix(in oklab, var(--kunai-accent) 18%, var(--kunai-bg));
-  --kunai-accent-glow: color-mix(in oklab, var(--kunai-accent) 12%, transparent);
-  --kunai-ok: #84dcc2;
-  --kunai-warning: #dfbc82;
-  --kunai-danger: #f08084;
+  --kunai-accent-deep: #d85f86;
+  --kunai-accent-soft: #ffc6d8;
+  --kunai-accent-glow: rgba(255, 143, 176, 0.1);
+  --kunai-ok: #54d6a0;
+  --kunai-warning: #f59a3c;
+  --kunai-danger: #ff5d5d;
+  --kunai-info: #5fb6ff;
 
   /* Ambient mesh */
   --kunai-mesh-a: color-mix(in oklab, var(--kunai-accent) 7%, transparent);
@@ -66,9 +85,25 @@
   --kunai-shadow-diffuse: 0 24px 64px -20px color-mix(in oklab, var(--kunai-accent) 8%, transparent);
   --kunai-card-shadow: var(--kunai-shadow-md);
 
-  /* Motion */
-  --kunai-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --kunai-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --kunai-duration-fast: 150ms;
-  --kunai-duration-ui: 220ms;
+  /* Motion — Emil design-eng tokens */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-press: 140ms;
+  --dur-pop: 180ms;
+  --dur-panel: 240ms;
+  --kunai-ease-out: var(--ease-out);
+  --kunai-ease-drawer: var(--ease-drawer);
+  --kunai-duration-fast: var(--dur-press);
+  --kunai-duration-ui: var(--dur-pop);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-press: 0ms;
+    --dur-pop: 0ms;
+    --dur-panel: 0ms;
+    --kunai-duration-fast: 0ms;
+    --kunai-duration-ui: 0ms;
+  }
 }

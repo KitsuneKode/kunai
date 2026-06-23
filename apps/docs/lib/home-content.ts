@@ -1,3 +1,6 @@
+import { codeMetadata } from "./code-metadata";
+import { homeSectionsFromNav } from "./doc-navigation";
+
 export type HomeLink = {
   readonly title: string;
   readonly href: string;
@@ -27,7 +30,7 @@ export const homeHero = {
   eyebrow: "Kunai CLI",
   title: "A calm command shell for playable streams.",
   description:
-    "Search, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place. Five active providers, local decryption, no browser required.",
+    "Search, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place. Local decryption, no browser required.",
   installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
   primaryCta: {
     label: "Read the docs",
@@ -39,10 +42,12 @@ export const homeHero = {
   },
 } as const;
 
+const providerCount = codeMetadata.providerIds.length;
+
 export const homeHighlights = [
   {
     label: "Provider truth",
-    detail: "5 active provider modules resolved locally. No cloud proxies, no Playwright.",
+    detail: `${providerCount} active provider modules resolved locally. No cloud proxies, no Playwright.`,
   },
   {
     label: "Fast return loop",
@@ -109,101 +114,4 @@ export const homeProof: readonly HomeProof[] = [
   },
 ] as const;
 
-export const homeSections: readonly HomeSection[] = [
-  {
-    title: "Set up",
-    eyebrow: "First run",
-    description: "Install once, check runtime dependencies, then launch playback with guardrails.",
-    items: [
-      {
-        title: "Getting Started",
-        href: "/docs/users/getting-started",
-        description: "Install Kunai, check dependencies, and start playback safely.",
-      },
-      {
-        title: "Platforms",
-        href: "/docs/users/platforms",
-        description: "Linux, macOS, Windows, source checkout, and optional tool notes.",
-      },
-      {
-        title: "Commands And Shortcuts",
-        href: "/docs/users/commands-and-shortcuts",
-        description: "Palette commands, playback actions, overlays, and reporting shortcuts.",
-      },
-      {
-        title: "Feature Tour",
-        href: "/docs/users/feature-tour",
-        description: "A compact map of the terminal-first playback experience.",
-      },
-    ],
-  },
-  {
-    title: "Watch",
-    eyebrow: "Daily use",
-    description:
-      "Understand how playback, recovery, local downloads, and continuation fit together.",
-    items: [
-      {
-        title: "Playback And Recovery",
-        href: "/docs/users/playback-and-recovery",
-        description: "Recover, replay, resume, fallback, and playback guardrails.",
-      },
-      {
-        title: "Downloads And Offline",
-        href: "/docs/users/downloads-and-offline",
-        description: "Offline playback without mixing cache facts into user data.",
-      },
-      {
-        title: "Media Selection",
-        href: "/docs/users/media-selection",
-        description: "Sources, streams, audio, subtitles, quality, and when pickers appear.",
-      },
-      {
-        title: "Continue Watching And New Episodes",
-        href: "/docs/users/continue-watching-and-new-episodes",
-        description: "History reconciliation, release signals, and continuation shelves.",
-      },
-    ],
-  },
-  {
-    title: "Understand",
-    eyebrow: "Know what is happening",
-    description:
-      "Read the shell signals that explain slow providers, buffering, Discord presence, and memory.",
-    items: [
-      {
-        title: "Runtime Feedback",
-        href: "/docs/users/runtime-feedback",
-        description:
-          "Playback memory, network health, app/mpv RSS, and when to export diagnostics.",
-      },
-      {
-        title: "Diagnostics And Reporting",
-        href: "/docs/users/diagnostics-and-reporting",
-        description: "Debug context that stays useful and privacy-safe.",
-      },
-      {
-        title: "Reliability And Privacy",
-        href: "/docs/users/reliability-and-privacy",
-        description: "Release gates, storage boundaries, and safe support bundles.",
-      },
-    ],
-  },
-  {
-    title: "Build",
-    eyebrow: "For contributors",
-    description: "Keep features documented, tested, and easy for future agents to extend.",
-    items: [
-      {
-        title: "Debugging Workflow",
-        href: "/docs/developer/debugging-workflow",
-        description: "Trace playback, providers, diagnostics, storage, and release issues.",
-      },
-      {
-        title: "Docs Maintenance",
-        href: "/docs/developer/docs-maintenance",
-        description: "Add pages, keep docs maintainable, and preserve Turbo build boundaries.",
-      },
-    ],
-  },
-];
+export const homeSections = homeSectionsFromNav();

@@ -1,69 +1,88 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Check, Copy } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 type CopyButtonProps = {
   readonly text: string;
-  readonly label: string;
-  readonly copiedText: string | null;
-  readonly onCopy: (text: string, label: string) => void;
+  readonly label?: string;
   readonly className?: string;
   readonly children?: ReactNode;
+  /** @deprecated Use local state — kept for gradual migration */
+  readonly copiedText?: string | null;
+  /** @deprecated Use local state — kept for gradual migration */
+  readonly onCopy?: (text: string, label: string) => void;
 };
-
-const baseClassName =
-  "copy-btn relative inline-flex min-h-10 min-w-10 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-lg border border-fd-border bg-fd-secondary/70 px-2.5 py-1 text-[10px] font-medium text-fd-primary transition-[transform,border-color,color,background-color] duration-150 ease-out hover:border-fd-primary hover:text-fd-foreground active:scale-[0.96]";
 
 export function CopyButton({
   text,
-  label,
-  copiedText,
-  onCopy,
-  className = baseClassName,
+  label = "copy",
+  className,
   children,
+  copiedText: externalCopied,
+  onCopy: externalOnCopy,
 }: CopyButtonProps) {
-  const copied = copiedText === label;
+  const [localCopied, setLocalCopied] = useState(false);
+  const copied = externalCopied !== undefined ? externalCopied === label : localCopied;
+
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard.writeText(text);
+    if (externalOnCopy) {
+      externalOnCopy(text, label);
+      return;
+    }
+    setLocalCopied(true);
+    window.setTimeout(() => setLocalCopied(false), 1800);
+  }, [externalOnCopy, label, text]);
 
   return (
-    <button
-      type="button"
-      onClick={() => onCopy(text, label)}
-      className={className}
-      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
-    >
-      {children ?? (
-        <span className="relative inline-flex h-4 w-10 items-center justify-center">
-          <AnimatePresence mode="wait" initial={false}>
-            {copied ? (
-              <motion.span
-                key="copied"
-                initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-                className="inline-flex items-center gap-1 text-[var(--kunai-ok)]"
-              >
-                <Check className="h-3 w-3" />
-                <span>Copied</span>
-              </motion.span>
-            ) : (
-              <motion.span
-                key="copy"
-                initial={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, scale: 0.25, filter: "blur(4px)" }}
-                transition={{ type: "spring", duration: 0.3, bounce: 0 }}
-                className="inline-flex items-center gap-1"
-              >
-                <Copy className="h-3 w-3" />
-                <span>Copy</span>
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </span>
-      )}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleCopy}
+          className={className}
+          aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+        >
+          {children ?? (
+            <span className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums">
+              <AnimatePresence mode="wait" initial={false}>
+                {copied ? (
+                  <motion.span
+                    key="copied"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="inline-flex items-center gap-1 text-[var(--kunai-ok)]"
+                  >
+                    <Check className="h-3 w-3" />
+                    <span className="text-[10px]">Copied</span>
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="copy"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="inline-flex items-center gap-1"
+                  >
+                    <Copy className="h-3 w-3" />
+                    <span className="text-[10px]">Copy</span>
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </span>
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">Copy command</TooltipContent>
+    </Tooltip>
   );
 }
