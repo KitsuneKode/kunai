@@ -1,5 +1,6 @@
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { SearchResult, TitleInfo } from "@/domain/types";
+import { resolveHistoryLookupTitleId } from "@kunai/core";
 
 export function searchResultFromTitleInfo(title: TitleInfo): SearchResult {
   return {
@@ -38,4 +39,35 @@ export function titleInfoFromSearchResult(
     languageEvidence: result.languageEvidence,
     isAnime: result.isAnime,
   };
+}
+
+/** Map TitleInfo + shell mode to the canonical history lookup id. */
+export function resolveTitleHistoryLookupId(
+  title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
+  mode?: "series" | "anime",
+): string {
+  const kind =
+    mode === "anime" || title.isAnime
+      ? ("anime" as const)
+      : title.type === "movie"
+        ? ("movie" as const)
+        : ("series" as const);
+  return resolveHistoryLookupTitleId({
+    id: title.id,
+    kind,
+    externalIds: title.externalIds,
+  });
+}
+
+/** Map a history row to a TitleIdentity-shaped lookup key. */
+export function resolveHistoryEntryLookupId(entry: {
+  readonly titleId: string;
+  readonly mediaKind: import("@kunai/types").MediaKind;
+  readonly externalIds?: import("@kunai/types").ProviderExternalIds;
+}): string {
+  return resolveHistoryLookupTitleId({
+    id: entry.titleId,
+    kind: entry.mediaKind,
+    externalIds: entry.externalIds,
+  });
 }

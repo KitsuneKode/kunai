@@ -1,3 +1,4 @@
+import { resolveTitleHistoryLookupId } from "@/app/title-info";
 import type { Container } from "@/container";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -7,23 +8,39 @@ import { invalidateEpisodePlaybackCaches } from "./playback-source-cache-invalid
 export function resolveTitleProviderPreference(
   config: Pick<KitsuneConfig, "titleProviderPreferences">,
   titleId: string,
+  alternateTitleId?: string,
 ): string | undefined {
-  return config.titleProviderPreferences[titleId];
+  const prefs = config.titleProviderPreferences;
+  return prefs[titleId] ?? (alternateTitleId ? prefs[alternateTitleId] : undefined);
+}
+
+export function resolveTitleProviderPreferenceForTitle(
+  config: Pick<KitsuneConfig, "titleProviderPreferences">,
+  title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
+  mode?: ShellMode,
+): string | undefined {
+  const canonicalId = resolveTitleHistoryLookupId(title, mode);
+  return resolveTitleProviderPreference(config, canonicalId, title.id);
 }
 
 async function persistTitleProviderPreference(
   container: Pick<Container, "config">,
-  titleId: string,
+  title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
   providerId: string,
+  mode?: ShellMode,
 ): Promise<void> {
   const raw = container.config.getRaw();
-  if (raw.titleProviderPreferences[titleId] === providerId) return;
-  await container.config.update({
-    titleProviderPreferences: {
-      ...raw.titleProviderPreferences,
-      [titleId]: providerId,
-    },
-  });
+  const canonicalId = resolveTitleHistoryLookupId(title, mode);
+  const nextPrefs = { ...raw.titleProviderPreferences };
+
+  if (canonicalId !== title.id) {
+    delete nextPrefs[title.id];
+  }
+
+  if (nextPrefs[canonicalId] === providerId) return;
+
+  nextPrefs[canonicalId] = providerId;
+  await container.config.update({ titleProviderPreferences: nextPrefs });
   await container.config.save();
 }
 
@@ -38,8 +55,12 @@ async function persistTitleProviderPreference(
 export function applyTitleProviderPreferenceToSession(
   container: Pick<Container, "config" | "stateManager" | "providerRegistry">,
   titleId: string,
+  title?: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
+  mode?: ShellMode,
 ): boolean {
-  const preferred = resolveTitleProviderPreference(container.config.getRaw(), titleId);
+  const preferred = title
+    ? resolveTitleProviderPreferenceForTitle(container.config.getRaw(), title, mode)
+    : resolveTitleProviderPreference(container.config.getRaw(), titleId);
   if (!preferred) return false;
 
   const state = container.stateManager.getState();
@@ -90,8 +111,12 @@ export async function applyUserProviderSwitch(input: {
   });
 
   if (title) {
-    await persistTitleProviderPreference(container, title.id, toProviderId);
-    container.titleProviderHealth.clear(title.id);
+    await persistTitleProviderPreference(container, title, toProviderId, mode);
+    const canonicalId = resolveTitleHistoryLookupId(title, mode);
+    container.titleProviderHealth.clear(canonicalId);
+    if (canonicalId !== title.id) {
+      container.titleProviderHealth.clear(title.id);
+    }
   }
 
   if (title && episode) {

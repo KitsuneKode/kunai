@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyProviderPickerSelection,
   applyUserProviderSwitch,
+  resolveTitleProviderPreferenceForTitle,
 } from "@/app/playback-provider-switch";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -96,6 +97,70 @@ describe("playback provider switch", () => {
     expect(deletedProviders.sort()).toEqual(["rivestream", "vidking"]);
     expect(configUpdates.at(-1)?.titleProviderPreferences).toEqual({
       "1396": "rivestream",
+    });
+  });
+
+  test("resolveTitleProviderPreferenceForTitle reads canonical key when session id is opaque", () => {
+    const prefs = {
+      "20431": "allanime",
+      opaque123: "miruro",
+    };
+    expect(
+      resolveTitleProviderPreferenceForTitle(
+        { titleProviderPreferences: prefs },
+        {
+          id: "bxCKTnota29uSRnZw",
+          type: "series",
+          externalIds: { anilistId: "20431" },
+          isAnime: true,
+        },
+        "anime",
+      ),
+    ).toBe("allanime");
+  });
+
+  test("applyUserProviderSwitch persists preference under canonical id and drops opaque key", async () => {
+    const configUpdates: Array<Partial<KitsuneConfig>> = [];
+    const container = {
+      stateManager: {
+        getState: () => ({ mode: "anime" as const, provider: "miruro" }),
+        dispatch: () => {},
+      },
+      config: {
+        getRaw: () => ({
+          ...config,
+          titleProviderPreferences: { bxCKTnota29uSRnZw: "miruro" },
+          ...configUpdates.at(-1),
+        }),
+        update: async (partial: Partial<KitsuneConfig>) => {
+          configUpdates.push(partial);
+        },
+        save: async () => {},
+      },
+      cacheStore: { delete: async () => {} },
+      sourceInventory: { delete: async () => {} },
+      titleProviderHealth: { clear: () => {} },
+      providerRegistry: { getCompatible: () => [] },
+      diagnosticsService: { record: () => {} },
+    } as never;
+
+    await applyUserProviderSwitch({
+      container,
+      fromProviderId: "miruro",
+      toProviderId: "allanime",
+      title: {
+        id: "bxCKTnota29uSRnZw",
+        type: "series",
+        name: "Hozuki",
+        externalIds: { anilistId: "20431" },
+        isAnime: true,
+      },
+      episode: { season: 1, episode: 1 },
+      mode: "anime",
+    });
+
+    expect(configUpdates.at(-1)?.titleProviderPreferences).toEqual({
+      "20431": "allanime",
     });
   });
 

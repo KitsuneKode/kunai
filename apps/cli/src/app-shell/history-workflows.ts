@@ -194,6 +194,19 @@ export async function openHistoryShell(
 
     type EntryAction = "search" | "episodes" | "queue" | "mark-watched" | "remove" | "back";
     const isSeries = picked.entryType === "series";
+    const pickedEntry = entries.find(([id]) => id === picked.id)?.[1];
+    const lookupTitle = pickedEntry
+      ? {
+          id: pickedEntry.titleId,
+          kind: pickedEntry.mediaKind,
+          title: pickedEntry.title,
+          externalIds: pickedEntry.externalIds,
+        }
+      : {
+          id: picked.id,
+          kind: picked.entryType === "movie" ? ("movie" as const) : ("series" as const),
+          title: picked.title,
+        };
     const subOptions: ShellOption<EntryAction>[] = [
       {
         value: "search",
@@ -234,7 +247,7 @@ export async function openHistoryShell(
     const action = await chooseFromListShell({
       title: picked.title,
       subtitle: formatHistoryDetail(
-        historyRepository.getLatestForTitle(picked.id) ?? {
+        historyRepository.getLatestForTitleIdentity(lookupTitle) ?? {
           key: "",
           titleId: picked.id,
           mediaKind: picked.entryType,
@@ -267,7 +280,7 @@ export async function openHistoryShell(
     }
 
     if (action === "queue" && queueService) {
-      const entry = historyRepository.getLatestForTitle(picked.id);
+      const entry = historyRepository.getLatestForTitleIdentity(lookupTitle);
       const result = await mediaActions.run({
         actionId: "queue-end",
         item: entry
@@ -295,7 +308,7 @@ export async function openHistoryShell(
     }
 
     if (action === "mark-watched") {
-      const latest = historyRepository.getLatestForTitle(picked.id);
+      const latest = historyRepository.getLatestForTitleIdentity(lookupTitle);
       if (latest) {
         const result = await mediaActions.run({
           actionId: "mark-watched",

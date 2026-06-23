@@ -137,6 +137,7 @@ import {
 import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
 import { titleInfoFromSearchResult } from "@/app/title-info";
+import { resolveTitleHistoryLookupId } from "@/app/title-info";
 import { applyTrackPickRestart } from "@/app/track-pick-restart";
 import { buildTrackPickTransitionContext } from "@/app/tracks-panel-pick";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
@@ -203,7 +204,6 @@ import {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
-import { resolveCanonicalCatalogTitleId } from "@kunai/core";
 import type { ResolveAttempt } from "@kunai/core";
 
 // Re-exported for tests that import it from this module's public surface.
@@ -704,7 +704,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       if (title.type === "series") {
         // Check history for resume
-        const history = historyRepository.getLatestForTitle(title.id) ?? null;
+        const history =
+          historyRepository.getLatestForTitleIdentity({
+            id: title.id,
+            kind: stateManager.getState().mode === "anime" || title.isAnime ? "anime" : "series",
+            externalIds: title.externalIds,
+          }) ?? null;
         if (history) {
           logger.info("History found", {
             season: history.season,
@@ -715,7 +720,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const { applyTitleProviderPreferenceToSession } =
           await import("@/app/playback-provider-switch");
-        applyTitleProviderPreferenceToSession(container, title.id);
+        applyTitleProviderPreferenceToSession(
+          container,
+          title.id,
+          title,
+          stateManager.getState().mode,
+        );
         providerSwitchSeqBeforeEpisodePicker = stateManager.getState().providerSwitchSeq;
 
         // Session-flow owns the current season/episode selection rules until the
@@ -757,7 +767,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         // Movies have no season/episode axis but still carry saved progress.
         // Offer Resume/Restart when there is a resumable position; otherwise play
         // from the beginning (no menu). Previously movies started at 0 always.
-        const movieHistory = historyRepository.getLatestForTitle(title.id) ?? null;
+        const movieHistory =
+          historyRepository.getLatestForTitleIdentity({
+            id: title.id,
+            kind: "movie",
+            externalIds: title.externalIds,
+          }) ?? null;
         const { chooseMovieStartingPoint } = await import("@/session-flow");
         const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {
@@ -1979,11 +1994,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
               providerId: resolvedProviderId,
             });
-            const historyTitleId = resolveCanonicalCatalogTitleId({
-              id: title.id,
-              kind: persistedKind,
-              externalIds: title.externalIds,
-            });
+            const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
             container.historyRepository.upsertProgress({
               title: {
                 id: title.id,
