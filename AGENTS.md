@@ -70,6 +70,7 @@ Kunai is a terminal-first Bun CLI that finds playable direct-provider video stre
 ```text
 apps/cli/src/main.ts                 canonical runtime entrypoint and refactored session controller
 apps/cli/index.ts                    temporary compatibility wrapper into apps/cli/src/main.ts
+apps/cli/src/app-shell/settings/*      registry-driven settings overlay (SettingsShell, controller, components)
 apps/cli/src/app-shell/*             Ink shell, command bar, list pickers, settings/history workflows
 apps/cli/src/search.ts               legacy TMDB/Videasy search helper; new search routing lives in app/services
 apps/cli/src/mpv.ts                  mpv launch + Lua position reporting
