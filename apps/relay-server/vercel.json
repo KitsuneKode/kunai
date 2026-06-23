@@ -1,0 +1,15 @@
+{
+  "regions": ["iad1"],
+  "rewrites": [
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/rpc/:providerId", "destination": "/api/rpc/:providerId" }
+  ],
+  "functions": {
+    "api/rpc/[providerId].ts": {
+      "maxDuration": 30
+    },
+    "api/health.ts": {
+      "maxDuration": 5
+    }
+  }
+}

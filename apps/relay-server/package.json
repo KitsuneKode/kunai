@@ -1,0 +1,30 @@
+{
+  "name": "@kunai/relay-server",
+  "private": true,
+  "description": "Deployable user-owned Kunai provider RPC relay.",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/dev-server.ts",
+    "build": "bun tsc --noEmit",
+    "typecheck": "bun tsc --noEmit",
+    "lint": "oxlint .",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check .",
+    "test": "bun test test",
+    "vercel:bundle-output": "bun run scripts/bundle-vercel-output.ts",
+    "vercel:build": "vercel build --yes && bun run vercel:bundle-output",
+    "vercel:build:prod": "vercel build --prod --yes && bun run vercel:bundle-output",
+    "verify:deploy": "bun run scripts/verify-relay-deploy.ts"
+  },
+  "dependencies": {
+    "@kunai/providers": "workspace:*",
+    "@kunai/relay": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "@types/node": "^25.9.2"
+  },
+  "peerDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
