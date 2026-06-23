@@ -44,6 +44,19 @@ bun install
 bun run link:global   # optional: installs local CLI command
 ```
 
+Provider research scratchpads live in `apps/experiments` and are **not** installed by
+default (keeps Playwright and other lab deps out of the main workspace). Opt in when
+you need them:
+
+```sh
+bun run experiments:install
+bun run experiments:list
+```
+
+Shared dependency versions are managed with [Bun catalogs](https://bun.sh/docs/pm/catalogs)
+in the root `package.json` (`catalog:`, `catalog:lint`, `catalog:web`). Bump versions
+there, then run `bun install`.
+
 ## Run
 
 ```sh
@@ -129,6 +142,9 @@ Bitcine sessions.
 cd apps/experiments
 bun run videasy:mint tv 61700 1 3   # opens bitcine.tv; complete Turnstile if prompted
 ```
+
+From a fresh clone, run `bun run experiments:install` once at the repo root before
+using `apps/experiments` scripts.
 
 Or from DevTools while [bitcine.tv](https://www.bitcine.tv) playback works:
 

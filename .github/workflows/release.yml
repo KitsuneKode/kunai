@@ -57,6 +57,16 @@ jobs:
         with:
           bun-version-file: package.json
 
+      - name: Cache Bun install
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -111,6 +121,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
+
+      - name: Cache Bun install
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

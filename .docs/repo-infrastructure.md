@@ -19,6 +19,24 @@ Repo infrastructure from the May 2026 superpowers plan is implemented.
 | PR template               | `.github/pull_request_template.md`    | Implemented |
 | Issue template config     | `.github/ISSUE_TEMPLATE/config.yml`   | Implemented |
 
+## Workspace Dependencies
+
+The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
+`package.json` to pin shared versions once:
+
+- `catalog:` — TypeScript, React, `@types/bun`, `@types/node`, Zod
+- `catalog:lint` — `oxlint`, `oxfmt` (referenced from each workspace package)
+- `catalog:web` — Next.js, Fumadocs, Tailwind, `lucide-react` (docs app)
+
+Root `overrides` dedupe known transitive drift (`lucide-react`, `@types/node`).
+
+`apps/experiments` is **outside** the default workspace. Main installs stay lean;
+research deps install only via `bun run experiments:install` (standalone
+`apps/experiments/bun.lock`).
+
+Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
+`packages/*`.
+
 ## Local Hooks
 
 `bun install` runs the root `prepare` script and installs Husky hooks.
@@ -41,16 +59,32 @@ bun run test
 
 ## CI
 
-Pull requests and pushes to `main` run:
+Pull requests and pushes to `main` run checks with Bun install caching and Turborepo
+task caching (`TURBO_TOKEN` / `TURBO_TEAM` on `main` for optional remote cache).
+
+**Pull requests**
 
 ```sh
-bun run ci
+bun install --frozen-lockfile
+bun run ci:affected    # turbo run typecheck lint fmt:check test --affected
+```
+
+CLI build and `pkg:check` run only when CLI-related paths change. Docs build runs in
+a separate `checks-docs` job when `apps/docs` or `packages/design` change.
+
+**Main branch**
+
+```sh
+bun install --frozen-lockfile
+bun run ci             # full workspace sweep
 bun run build
-bun run build:docs
 bun run pkg:check
 ```
 
-`TURBO_TOKEN` and `TURBO_TEAM` are exposed from repo secrets for optional Turborepo remote caching.
+Docs build runs in `checks-docs` (same path filter as PRs).
+
+Install cache key: `bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}` covering
+`~/.bun/install/cache` and `node_modules`.
 
 ## Release guardrails
 

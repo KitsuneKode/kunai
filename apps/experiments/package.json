@@ -2,7 +2,7 @@
   "name": "@kunai/experiments",
   "version": "0.1.0",
   "private": true,
-  "description": "Private Kunai provider research lab. Not imported by production runtime.",
+  "description": "Private Kunai provider research lab. Not imported by production runtime. Install with `bun run experiments:install` from the repo root.",
   "type": "module",
   "scripts": {
     "list": "find scratchpads -maxdepth 1 -mindepth 1 -type d | sort",
@@ -20,6 +20,11 @@
     "miruro:probe-search": "bun scratchpads/provider-miruro/probe-pipe-search.ts",
     "providers:browser-harvest": "bun scratchpads/browser-evidence-harvest.ts"
   },
+  "dependencies": {
+    "@assemblyscript/loader": "^0.28.18",
+    "crypto-js": "^4.2.0",
+    "hashids": "^2.3.0"
+  },
   "devDependencies": {
     "@movie-web/providers": "2.4.13",
     "@types/bun": "1.3.14",
@@ -28,10 +33,5 @@
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "rebrowser-playwright-core": "^1.52.0"
-  },
-  "dependencies": {
-    "@assemblyscript/loader": "^0.28.18",
-    "crypto-js": "^4.2.0",
-    "hashids": "^2.3.0"
   }
 }

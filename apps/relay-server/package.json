@@ -21,10 +21,10 @@
     "@kunai/relay": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "1.3.14",
-    "@types/node": "^25.9.2"
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:"
   },
   "peerDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "catalog:"
   }
 }

@@ -2,10 +2,39 @@
   "name": "kunai",
   "private": true,
   "description": "Kunai monorepo workspace.",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "apps/cli",
+      "apps/docs",
+      "apps/relay-server",
+      "packages/*"
+    ],
+    "catalog": {
+      "typescript": "^6.0.3",
+      "@types/bun": "1.3.14",
+      "@types/node": "^25.9.3",
+      "@types/react": "^19.2.17",
+      "@types/react-dom": "^19.2.3",
+      "react": "^19.2.7",
+      "react-dom": "^19.2.7",
+      "zod": "^4.4.3"
+    },
+    "catalogs": {
+      "lint": {
+        "oxfmt": "^0.56.0",
+        "oxlint": "^1.71.0"
+      },
+      "web": {
+        "next": "^16.2.9",
+        "lucide-react": "^1.21.0",
+        "tailwindcss": "^4.3.0",
+        "@tailwindcss/postcss": "^4.3.0",
+        "fumadocs-core": "^16.9.3",
+        "fumadocs-mdx": "^15.0.11",
+        "fumadocs-ui": "^16.9.3"
+      }
+    }
+  },
   "scripts": {
     "dev": "bun run --cwd apps/cli dev",
     "dev:relay": "bun run --cwd apps/relay-server dev",
@@ -30,6 +59,7 @@
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:vidking": "bun run --cwd apps/cli test:live:videasy",
     "ci": "turbo run typecheck lint fmt:check test --summarize",
+    "ci:affected": "turbo run typecheck lint fmt:check test --affected --summarize",
     "build": "turbo run build --filter=@kitsunekode/kunai",
     "brand:social": "bun .design/brand/generate-social-cards.mjs",
     "build:binaries": "bun run typecheck && bun run --cwd apps/cli build:binaries",
@@ -37,6 +67,7 @@
     "build:docs": "turbo run build --filter=@kunai/docs",
     "check": "turbo run check",
     "clean": "turbo run clean",
+    "experiments:install": "bun install --cwd apps/experiments",
     "experiments:list": "bun run --cwd apps/experiments list",
     "pkg:check": "bun run --cwd apps/cli pkg:check",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
@@ -54,16 +85,20 @@
     "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts"
   },
   "dependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "catalog:"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
-    "oxfmt": "^0.56.0",
-    "oxlint": "^1.71.0",
+    "oxfmt": "catalog:lint",
+    "oxlint": "catalog:lint",
     "turbo": "^2.9.17"
+  },
+  "overrides": {
+    "@types/node": "catalog:",
+    "lucide-react": "catalog:web"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
