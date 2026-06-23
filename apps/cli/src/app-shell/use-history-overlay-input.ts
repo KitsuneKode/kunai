@@ -70,8 +70,10 @@ export function handleHistoryOverlayInput(
           item: mediaItemFromHistoryEntry(historySelection.titleId, queueEntry),
           source: "history",
         })
-        .then(() => {
-          ctx.setOverlayStatus("Queued from history");
+        .then((result) => {
+          ctx.setOverlayStatus(
+            result.status === "unsupported" ? result.reason : "Queued from history",
+          );
           ctx.onRedraw();
           return undefined;
         })

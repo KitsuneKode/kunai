@@ -1,6 +1,9 @@
 import type { MediaActionId } from "@/domain/media/media-action-policy";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
-import type { RunMediaActionInput } from "@/services/media-actions/MediaActionRouter";
+import type {
+  MediaActionRunResult,
+  RunMediaActionInput,
+} from "@/services/media-actions/MediaActionRouter";
 import type { NotificationRecord } from "@kunai/storage";
 
 export type NotificationActionId =
@@ -14,7 +17,9 @@ export interface NotificationActionRouterDeps {
     readonly restoreRecoverableSession: (sourceSessionId: string) => number | Promise<number>;
   };
   readonly mediaActions?: {
-    readonly run: (input: RunMediaActionInput) => Promise<void> | void;
+    readonly run: (
+      input: RunMediaActionInput,
+    ) => Promise<MediaActionRunResult> | MediaActionRunResult;
   };
   readonly appUpdate?: {
     /** Open the release page for the advertised version (null when unknown). */

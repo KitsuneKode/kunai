@@ -51,6 +51,7 @@ test("episode notification actions delegate to media action routing", async () =
     mediaActions: {
       run: async (input) => {
         calls.push(`${input.actionId}:${input.item.title}:${input.source}`);
+        return { status: "handled", actionId: input.actionId };
       },
     },
     notifications: {

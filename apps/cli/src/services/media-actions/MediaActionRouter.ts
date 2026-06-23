@@ -44,10 +44,14 @@ export interface RunMediaActionInput {
   readonly confirmedProviderResolution?: boolean;
 }
 
+export type MediaActionRunResult =
+  | { readonly status: "handled"; readonly actionId: MediaActionId }
+  | { readonly status: "unsupported"; readonly actionId: MediaActionId; readonly reason: string };
+
 export class MediaActionRouter {
   constructor(private readonly deps: MediaActionRouterDeps) {}
 
-  async run(input: RunMediaActionInput): Promise<void> {
+  async run(input: RunMediaActionInput): Promise<MediaActionRunResult> {
     if (
       input.actionId === "play-now" &&
       input.playbackActive === true &&
@@ -57,30 +61,39 @@ export class MediaActionRouter {
     }
 
     switch (input.actionId) {
-      case "play-now":
-        await requireAction(this.deps.playback?.playNow, "play-now")(input.item);
-        return;
-      case "queue-next":
-        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-next")(input.item, {
+      case "play-now": {
+        const executor = this.deps.playback?.playNow;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "queue-next": {
+        const executor = this.deps.queue?.enqueueMediaItem;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item, {
           placement: "next",
           source: input.source,
         });
-        return;
-      case "queue-after-current-chain":
-        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-after-current-chain")(
-          input.item,
-          {
-            placement: "after-current-chain",
-            source: input.source,
-          },
-        );
-        return;
-      case "queue-end":
-        await requireAction(this.deps.queue?.enqueueMediaItem, "queue-end")(input.item, {
+        return handled(input.actionId);
+      }
+      case "queue-after-current-chain": {
+        const executor = this.deps.queue?.enqueueMediaItem;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item, {
+          placement: "after-current-chain",
+          source: input.source,
+        });
+        return handled(input.actionId);
+      }
+      case "queue-end": {
+        const executor = this.deps.queue?.enqueueMediaItem;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item, {
           placement: "end",
           source: input.source,
         });
-        return;
+        return handled(input.actionId);
+      }
       case "download": {
         if (
           requiresProviderResolutionConfirmation(input.source) &&
@@ -88,48 +101,69 @@ export class MediaActionRouter {
         ) {
           throw new Error("download requires provider resolution confirmation");
         }
-        await requireAction(this.deps.downloads?.queueDownload, "download")(input.item);
-        return;
+        const executor = this.deps.downloads?.queueDownload;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
       }
-      case "add-to-playlist":
-        await requireAction(this.deps.playlists?.addToPlaylist, "add-to-playlist")(input.item);
-        return;
-      case "follow":
-        await requireAction(this.deps.attention?.follow, "follow")(input.item);
-        return;
-      case "mute":
-        await requireAction(this.deps.attention?.mute, "mute")(input.item);
-        return;
-      case "mark-watched":
-        await requireAction(this.deps.history?.markWatched, "mark-watched")(input.item);
-        return;
-      case "mark-unwatched":
-        await requireAction(this.deps.history?.markUnwatched, "mark-unwatched")(input.item);
-        return;
-      case "open-details":
-        await requireAction(this.deps.details?.open, "open-details")(input.item);
-        return;
-      case "dismiss":
-        await requireAction(this.deps.notifications?.dismissByItem, "dismiss")(input.item);
-        return;
+      case "add-to-playlist": {
+        const executor = this.deps.playlists?.addToPlaylist;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "follow": {
+        const executor = this.deps.attention?.follow;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "mute": {
+        const executor = this.deps.attention?.mute;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "mark-watched": {
+        const executor = this.deps.history?.markWatched;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "mark-unwatched": {
+        const executor = this.deps.history?.markUnwatched;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "open-details": {
+        const executor = this.deps.details?.open;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "dismiss": {
+        const executor = this.deps.notifications?.dismissByItem;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
       default: {
         // Exhaustiveness guard: a displayed action with no router branch must fail
         // loudly rather than resolve as a silent no-op success.
-        const unsupported: never = input.actionId;
-        throw new Error(`media action is unsupported: ${String(unsupported)}`);
+        const unsupportedAction: never = input.actionId;
+        throw new Error(`media action is unsupported: ${String(unsupportedAction)}`);
       }
     }
   }
 }
 
-function requireAction<TArgs extends readonly unknown[]>(
-  fn: ((...args: TArgs) => Promise<void> | void) | undefined,
-  actionId: MediaActionId,
-): (...args: TArgs) => Promise<void> | void {
-  if (!fn) {
-    throw new Error(`media action is unavailable: ${actionId}`);
-  }
-  return fn;
+function handled(actionId: MediaActionId): MediaActionRunResult {
+  return { status: "handled", actionId };
+}
+
+function unsupported(actionId: MediaActionId): MediaActionRunResult {
+  return { status: "unsupported", actionId, reason: `No executor registered for ${actionId}` };
 }
 
 function requiresProviderResolutionConfirmation(source: string): boolean {

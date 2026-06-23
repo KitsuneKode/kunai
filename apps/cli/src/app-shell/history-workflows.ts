@@ -271,7 +271,7 @@ export async function openHistoryShell(
 
     if (action === "queue" && queueService) {
       const entry = await historyStore.get(picked.id);
-      await mediaActions.run({
+      const result = await mediaActions.run({
         actionId: "queue-end",
         item: entry
           ? {
@@ -291,21 +291,28 @@ export async function openHistoryShell(
             },
         source: "history",
       });
+      if (result.status === "unsupported") {
+        stateManager?.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+      }
       continue;
     }
 
     if (action === "mark-watched") {
       const latest = await historyStore.get(picked.id);
       if (latest && historyRepository) {
-        await mediaActions.run({
+        const result = await mediaActions.run({
           actionId: "mark-watched",
           item: mediaItemFromHistoryEntry(picked.id, latest),
           source: "history",
         });
-        stateManager?.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: `Marked ${picked.title} as watched.`,
-        });
+        if (result.status === "unsupported") {
+          stateManager?.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
+        } else {
+          stateManager?.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: `Marked ${picked.title} as watched.`,
+          });
+        }
       }
       continue;
     }

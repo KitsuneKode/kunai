@@ -27,9 +27,10 @@ test("queue action delegates to queue service without playing immediately", asyn
     },
   });
 
-  await router.run({ actionId: "queue-next", item, source: "notification" });
+  const result = await router.run({ actionId: "queue-next", item, source: "notification" });
 
   expect(calls).toEqual(["queue"]);
+  expect(result).toEqual({ status: "handled", actionId: "queue-next" });
 });
 
 test("mark-watched delegates to the history port with the item", async () => {
@@ -42,9 +43,10 @@ test("mark-watched delegates to the history port with the item", async () => {
     },
   });
 
-  await router.run({ actionId: "mark-watched", item, source: "episode-picker" });
+  const result = await router.run({ actionId: "mark-watched", item, source: "episode-picker" });
 
   expect(marked).toEqual([item]);
+  expect(result).toEqual({ status: "handled", actionId: "mark-watched" });
 });
 
 test("mark-unwatched delegates to the history port with the item", async () => {
@@ -142,9 +144,32 @@ test("durable media actions delegate to their owning services", async () => {
 test("unsupported media actions fail clearly instead of silently doing nothing", async () => {
   const router = new MediaActionRouter({});
 
-  await expect(router.run({ actionId: "queue-end", item, source: "history" })).rejects.toThrow(
-    "media action is unavailable: queue-end",
-  );
+  await expect(router.run({ actionId: "queue-end", item, source: "history" })).resolves.toEqual({
+    status: "unsupported",
+    actionId: "queue-end",
+    reason: "No executor registered for queue-end",
+  });
+});
+
+test("returns unsupported when a displayed action has no executor", async () => {
+  const router = new MediaActionRouter({});
+
+  await expect(router.run({ actionId: "follow", item, source: "history" })).resolves.toEqual({
+    status: "unsupported",
+    actionId: "follow",
+    reason: "No executor registered for follow",
+  });
+});
+
+test("returns handled when follow executor runs", async () => {
+  const router = new MediaActionRouter({
+    attention: { follow: async () => {}, mute: async () => {} },
+  });
+
+  await expect(router.run({ actionId: "follow", item, source: "history" })).resolves.toEqual({
+    status: "handled",
+    actionId: "follow",
+  });
 });
 
 test("unknown action ids fail loudly instead of resolving as a silent no-op", async () => {

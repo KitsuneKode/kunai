@@ -39,6 +39,7 @@ import {
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -1597,13 +1598,24 @@ async function handleAttentionPreference(
     return "handled";
   }
 
-  container.followedTitleRepository.upsert({
-    titleId: title.id,
-    mediaKind: resolveCurrentMediaKind(state),
-    title: title.name,
-    preference,
-    updatedAt: new Date().toISOString(),
+  const result = await createContainerMediaActionRouter(container).run({
+    actionId: preference === "following" ? "follow" : "mute",
+    item: {
+      mediaKind: resolveCurrentMediaKind(state),
+      titleId: title.id,
+      title: title.name,
+      season: state.currentEpisode?.season,
+      episode: state.currentEpisode?.episode,
+    },
+    source: "shell-action",
   });
+  if (result.status === "unsupported") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: result.reason,
+    });
+    return "handled";
+  }
 
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
@@ -1826,13 +1838,23 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     }
 
     if (sub === "follow" || sub === "mute") {
-      container.followedTitleRepository.upsert({
-        titleId: picked.titleId,
-        mediaKind: items.find((item) => item.titleId === picked.titleId)?.mediaKind ?? "series",
-        title: picked.title,
-        preference: sub === "follow" ? "following" : "muted",
-        updatedAt: new Date().toISOString(),
+      const pickedItem = items.find((item) => item.titleId === picked.titleId);
+      const result = await createContainerMediaActionRouter(container).run({
+        actionId: sub === "follow" ? "follow" : "mute",
+        item: {
+          mediaKind: pickedItem?.mediaKind ?? "series",
+          titleId: picked.titleId,
+          title: picked.title,
+        },
+        source: "watchlist",
       });
+      if (result.status === "unsupported") {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: result.reason,
+        });
+        continue;
+      }
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note:
