@@ -2,6 +2,7 @@ import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
+import { resolveTitleHistoryLookupId } from "@/app/title-info";
 import type {
   EpisodeInfo,
   PlaybackTimingMetadata,
@@ -229,8 +230,9 @@ export class DownloadService {
     if (!eligibility.allowed) {
       throw new DownloadEnqueueRejectedError(eligibility.code, eligibility.reason);
     }
+    const canonicalTitleId = resolveTitleHistoryLookupId(input.title, input.mode);
     const existing = this.deps.repo.findBlockingEpisodeIntent({
-      titleId: input.title.id,
+      titleId: canonicalTitleId,
       season: input.episode?.season,
       episode: input.episode?.episode,
     });
@@ -258,7 +260,7 @@ export class DownloadService {
 
     this.deps.repo.enqueue({
       id,
-      titleId: input.title.id,
+      titleId: canonicalTitleId,
       titleName: input.title.name,
       mediaKind: input.title.type,
       season: input.episode?.season,

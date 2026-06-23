@@ -22,7 +22,10 @@ function isArtifactCacheFresh(job: DownloadJobRecord): boolean {
 
 export type OfflineLibraryServiceDeps = {
   readonly downloadService: DownloadService;
-  readonly historyRepository: Pick<HistoryRepository, "upsertProgress">;
+  readonly historyRepository: Pick<
+    HistoryRepository,
+    "upsertProgress" | "getLatestForTitleIdentity"
+  >;
   readonly offlineAssetService?: OfflineAssetService;
 };
 
@@ -102,13 +105,24 @@ export class OfflineLibraryService {
     const timing = source.timing ?? null;
     if (!shouldPersistHistory(result, timing)) return false;
 
+    const mediaKind = source.mediaKind === "movie" ? "movie" : "series";
+    const historyAnchor = this.deps.historyRepository.getLatestForTitleIdentity({
+      id: source.titleId,
+      kind: mediaKind,
+    });
+
     this.deps.historyRepository.upsertProgress({
-      title: { id: source.titleId, kind: source.mediaKind, title: source.titleName },
+      title: {
+        id: source.titleId,
+        kind: historyAnchor?.mediaKind ?? mediaKind,
+        title: source.titleName,
+        externalIds: historyAnchor?.externalIds,
+      },
       episode: { season: source.season ?? 1, episode: source.episode ?? 1 },
       positionSeconds: toHistoryTimestamp(result, timing),
       durationSeconds: result.duration,
       completed: didPlaybackReachCompletionThreshold(result, timing),
-      providerId: `local:${source.providerId}`,
+      providerId: source.providerId,
       updatedAt: new Date().toISOString(),
     });
     return true;

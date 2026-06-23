@@ -50,7 +50,10 @@ describe("OfflineLibraryService", () => {
         listCompleted: () => [older, newer],
         markArtifactValidated: () => {},
       } as unknown as DownloadService,
-      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
     });
 
     const entries = await service.listCompletedEntries();
@@ -72,7 +75,10 @@ describe("OfflineLibraryService", () => {
           throw new Error("validation must not delete records");
         },
       } as unknown as DownloadService,
-      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
     });
 
     const entries = await service.validateCompletedArtifacts();
@@ -91,7 +97,10 @@ describe("OfflineLibraryService", () => {
           validations += 1;
         },
       } as unknown as DownloadService,
-      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
     });
 
     const entries = await service.peekRecordedArtifactStatuses(["title-1", "title-2"]);
@@ -118,7 +127,10 @@ describe("OfflineLibraryService", () => {
         getJob: () => record,
         listCompleted: () => [record],
       } as unknown as DownloadService,
-      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
     });
 
     const playable = await service.getPlayableSource(record.id);
@@ -148,7 +160,10 @@ describe("OfflineLibraryService", () => {
       downloadService: {
         getJob: () => record,
       } as unknown as DownloadService,
-      historyRepository: {} as Pick<HistoryRepository, "upsertProgress">,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
     });
 
     const playable = await service.getPlayableSource(record.id);
@@ -161,6 +176,7 @@ describe("OfflineLibraryService", () => {
     const service = new OfflineLibraryService({
       downloadService: {} as DownloadService,
       historyRepository: {
+        getLatestForTitleIdentity: () => undefined,
         upsertProgress: (input: HistoryProgressInput) => saves.push(input),
       },
     });
@@ -183,7 +199,7 @@ describe("OfflineLibraryService", () => {
       title: { id: "title-1", title: "Demo", kind: "series" },
       episode: { season: 1, episode: 2 },
       positionSeconds: 600,
-      providerId: "local:vidking",
+      providerId: "vidking",
     });
   });
 });
