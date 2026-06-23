@@ -49,6 +49,7 @@ export type {
   OfflineMaintenanceStatus,
 } from "./repositories/offline-maintenance-jobs";
 export { ProviderHealthRepository } from "./repositories/provider-health";
+export { ProviderEndpointHealthRepository } from "./repositories/provider-endpoint-health";
 export { TitleProviderHealthRepository } from "./repositories/title-provider-health";
 export type { TitleProviderHealthRecord } from "./repositories/title-provider-health";
 export { ResolveTraceRepository } from "./repositories/resolve-trace";

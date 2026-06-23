@@ -1,4 +1,5 @@
 import type {
+  EndpointHealthPort,
   ProviderFailure,
   ProviderId,
   ProviderAuthPort,
@@ -34,6 +35,7 @@ export interface ProviderEngineOptions {
   readonly now?: () => string;
   readonly auth?: ProviderAuthPort;
   readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
+  readonly endpointHealth?: EndpointHealthPort;
 }
 
 export type ProviderFetchPortFactory = (providerId: ProviderId) => ProviderFetchPort | undefined;
@@ -102,6 +104,7 @@ export class ProviderEngine {
   private readonly now: () => string;
   private readonly auth?: ProviderAuthPort;
   private readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
+  private readonly endpointHealth?: EndpointHealthPort;
 
   constructor(opts: ProviderEngineOptions) {
     this.modules = opts.modules;
@@ -111,6 +114,7 @@ export class ProviderEngine {
     this.now = opts.now ?? (() => new Date().toISOString());
     this.auth = opts.auth;
     this.fetch = opts.fetch;
+    this.endpointHealth = opts.endpointHealth;
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -144,6 +148,7 @@ export class ProviderEngine {
       },
       fetch: resolveFetchPort(this.fetch, providerId),
       auth: this.auth,
+      endpointHealth: this.endpointHealth,
     });
   }
 

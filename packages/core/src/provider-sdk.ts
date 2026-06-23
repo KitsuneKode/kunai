@@ -1,4 +1,5 @@
 import type {
+  EndpointHealthPort,
   ProviderAuthPort,
   ProviderFetchPort,
   ProviderId,
@@ -29,6 +30,7 @@ export function createProviderRuntimeContext({
   retryPolicy = DEFAULT_PROVIDER_RETRY_POLICY,
   fetch,
   auth,
+  endpointHealth,
   emit,
 }: {
   readonly now?: () => string;
@@ -37,6 +39,7 @@ export function createProviderRuntimeContext({
   readonly retryPolicy?: ProviderRetryPolicy;
   readonly fetch?: ProviderFetchPort;
   readonly auth?: ProviderAuthPort;
+  readonly endpointHealth?: EndpointHealthPort;
   readonly emit?: (event: ProviderTraceEvent) => void;
 } = {}): ProviderRuntimeContext {
   return {
@@ -46,6 +49,7 @@ export function createProviderRuntimeContext({
     retryPolicy,
     fetch,
     auth,
+    endpointHealth,
     emit,
   };
 }

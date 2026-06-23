@@ -43,6 +43,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
     resolveTraces: 1,
     providerHealth: 1,
     titleProviderHealth: 0,
+    providerEndpointHealth: 0,
     releaseProgress: 0,
   });
   expect(count(dataDb, "history_progress")).toBe(2);

@@ -19,6 +19,7 @@ export interface CacheMaintenancePruneCounts {
   readonly resolveTraces: number;
   readonly providerHealth: number;
   readonly titleProviderHealth: number;
+  readonly providerEndpointHealth: number;
   readonly releaseProgress: number;
 }
 
@@ -37,6 +38,7 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   resolveTraces: 0,
   providerHealth: 0,
   titleProviderHealth: 0,
+  providerEndpointHealth: 0,
   releaseProgress: 0,
 };
 
@@ -124,6 +126,14 @@ function pruneCacheTables(
       "DELETE FROM title_provider_health WHERE expires_at <= ?",
       nowIso,
     );
+    const providerEndpointHealth = deleteRows(
+      db,
+      `
+        DELETE FROM provider_endpoint_health
+        WHERE quarantined_until IS NOT NULL AND quarantined_until <= ?
+      `,
+      nowIso,
+    );
     const releaseProgress = deleteRows(
       db,
       "DELETE FROM release_progress_cache WHERE stale_after_at <= ?",
@@ -138,6 +148,7 @@ function pruneCacheTables(
       resolveTraces,
       providerHealth,
       titleProviderHealth,
+      providerEndpointHealth,
       releaseProgress,
     };
   });

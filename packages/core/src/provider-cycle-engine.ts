@@ -1,4 +1,6 @@
 import type {
+  EndpointFailureClass,
+  EndpointHealthPort,
   ProviderCycleAttempt,
   ProviderCycleCandidate,
   ProviderCycleFailure,
@@ -28,6 +30,9 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
   readonly signal?: AbortSignal;
   readonly now?: () => string;
   readonly emit?: (event: ProviderTraceEvent) => void;
+  readonly endpointHealth?: EndpointHealthPort;
+  readonly titleId?: string;
+  readonly allowTransientCandidateRetry?: boolean;
   readonly resolveCandidate: (
     candidate: ProviderCycleCandidate,
     context: ProviderCycleCandidateContext,
@@ -101,7 +106,28 @@ export async function runProviderCycle<TResolved>(
   const candidateTimeoutMs = input.candidateTimeoutMs ?? DEFAULT_CANDIDATE_TIMEOUT_MS;
   const retryDelayMs = input.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
 
+  let skippedQuarantined = 0;
+  let attemptedCandidates = 0;
+
   for (const candidate of orderCycleCandidates(input.candidates)) {
+    const endpoint = candidate.serverId;
+    if (
+      endpoint &&
+      input.endpointHealth &&
+      !input.endpointHealth.shouldTry(input.providerId, endpoint)
+    ) {
+      skippedQuarantined += 1;
+      emit(
+        createCycleTraceEvent("source:skipped", candidate, now(), {
+          reason: "quarantined",
+          endpoint,
+        }),
+      );
+      continue;
+    }
+
+    attemptedCandidates += 1;
+
     for (let attemptNumber = 1; attemptNumber <= maxAttemptsPerCandidate; attemptNumber++) {
       if (input.signal?.aborted) {
         return {
@@ -135,6 +161,9 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("source:success", candidate, endedAt, { attempt: attemptNumber }),
         );
+        if (endpoint && input.endpointHealth) {
+          input.endpointHealth.recordSuccess(input.providerId, endpoint);
+        }
         return {
           selected,
           selectedCandidate: candidate,
@@ -156,6 +185,17 @@ export async function runProviderCycle<TResolved>(
             failureClass: failure.failureClass,
           }),
         );
+
+        if (endpoint && input.endpointHealth) {
+          const endpointFailureClass = classifyEndpointFailureFromCycleFailure(failure);
+          if (endpointFailureClass) {
+            input.endpointHealth.recordFailure(input.providerId, endpoint, {
+              class: endpointFailureClass,
+              titleId: input.titleId,
+              at: failure.at,
+            });
+          }
+        }
 
         if (failure.failureClass === "candidate-user-cancelled") {
           return {
@@ -188,6 +228,23 @@ export async function runProviderCycle<TResolved>(
         }
 
         if (!failure.retryable || attemptNumber >= maxAttemptsPerCandidate) {
+          if (
+            input.allowTransientCandidateRetry === true &&
+            attemptNumber < 2 &&
+            (failure.failureClass === "candidate-timeout" ||
+              failure.failureClass === "candidate-network")
+          ) {
+            emit(
+              createCycleTraceEvent("retry:scheduled", candidate, now(), {
+                attempt: attemptNumber,
+                reason: "transient-endpoint",
+              }),
+            );
+            if (retryDelayMs > 0) {
+              await sleepWithAbort(retryDelayMs, input.signal);
+            }
+            continue;
+          }
           break;
         }
 
@@ -199,6 +256,16 @@ export async function runProviderCycle<TResolved>(
         }
       }
     }
+  }
+
+  if (attemptedCandidates === 0 && skippedQuarantined > 0) {
+    return {
+      attempts,
+      events,
+      stopReason: "all-quarantined",
+      fallbackRequested: false,
+      cancelled: false,
+    };
   }
 
   return {
@@ -303,6 +370,18 @@ function createCancelledFailure(
     retryable: false,
     at: now(),
   };
+}
+
+export function classifyEndpointFailureFromCycleFailure(
+  failure: ProviderCycleFailure,
+): EndpointFailureClass | null {
+  switch (failure.failureClass) {
+    case "candidate-timeout":
+    case "candidate-network":
+      return "transient";
+    default:
+      return null;
+  }
 }
 
 export function classifyProviderCycleError(error: unknown): {

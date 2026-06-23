@@ -16,6 +16,7 @@ export const defaultTtlMsByClass: Readonly<Record<CacheTtlClass, number>> = {
   "catalog-static": 14 * DAY,
   "catalog-trending": 30 * MINUTE,
   "provider-health": 5 * MINUTE,
+  "endpoint-quarantine": 24 * HOUR,
 };
 
 export function getDefaultTtlMs(ttlClass: CacheTtlClass): number {

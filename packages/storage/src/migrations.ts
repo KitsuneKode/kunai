@@ -675,6 +675,26 @@ export const cacheMigrations: readonly Migration[] = [
         ON calendar_archive(release_at);
     `,
   },
+  {
+    id: "011_cache_provider_endpoint_health",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS provider_endpoint_health (
+        provider_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        health_json TEXT NOT NULL,
+        quarantined_until TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (provider_id, endpoint)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_provider_endpoint_health_quarantined_until
+        ON provider_endpoint_health(quarantined_until ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_provider_endpoint_health_updated_at
+        ON provider_endpoint_health(updated_at DESC);
+    `,
+  },
 ];
 
 export function runMigrations(
