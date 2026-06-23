@@ -7,6 +7,12 @@ import type {
 } from "@kunai/types";
 
 import {
+  clearAllMangaAnilistBridgeCacheForTest,
+  isCatalogIdPassedAsShowId,
+  looksLikeAllMangaOpaqueShowId,
+  resolveAllMangaShowId,
+} from "../src/allmanga/resolve-show-id";
+import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
   buildStreamHeaders,
@@ -26,6 +32,100 @@ const TEST_CONTEXT: ProviderRuntimeContext = {
   providerId: "allanime",
   now: () => new Date().toISOString(),
 };
+
+describe("resolveAllMangaShowId", () => {
+  test("keeps opaque provider-native ids without bridging", async () => {
+    const showId = await resolveAllMangaShowId(
+      {
+        title: {
+          id: "bxCKTnota29uSRnZw",
+          kind: "anime",
+          title: "Hoozuki no Reitetsu",
+          externalIds: { anilistId: "20431" },
+        },
+        preferredAudioLanguage: "original",
+      },
+      TEST_CONTEXT,
+    );
+
+    expect(showId).toBe("bxCKTnota29uSRnZw");
+  });
+
+  test("bridges catalog anilist ids to opaque show ids via search", async () => {
+    clearAllMangaAnilistBridgeCacheForTest();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input, _init) => {
+      const url = String(input);
+      if (url.includes("graphql.anilist.co")) {
+        return jsonResponse({
+          data: {
+            Media: {
+              title: {
+                romaji: "Hoozuki no Reitetsu",
+                english: "Hozuki's Coolheadedness",
+              },
+            },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          shows: {
+            edges: [
+              {
+                _id: "bxCKTnota29uSRnZw",
+                name: "Hoozuki no Reitetsu",
+                aniListId: 20431,
+                availableEpisodes: { sub: 13, dub: 0 },
+              },
+            ],
+          },
+        },
+      });
+    }) as typeof fetch;
+
+    try {
+      const showId = await resolveAllMangaShowId(
+        {
+          title: {
+            id: "20431",
+            kind: "anime",
+            title: "Hozuki's Coolheadedness",
+            anilistId: "20431",
+            externalIds: { anilistId: "20431" },
+          },
+          preferredAudioLanguage: "original",
+        },
+        TEST_CONTEXT,
+      );
+
+      expect(showId).toBe("bxCKTnota29uSRnZw");
+      const cached = await resolveAllMangaShowId(
+        {
+          title: {
+            id: "20431",
+            kind: "anime",
+            title: "Hozuki's Coolheadedness",
+            anilistId: "20431",
+            externalIds: { anilistId: "20431" },
+          },
+          preferredAudioLanguage: "original",
+        },
+        TEST_CONTEXT,
+      );
+      expect(cached).toBe("bxCKTnota29uSRnZw");
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearAllMangaAnilistBridgeCacheForTest();
+    }
+  });
+
+  test("detects catalog ids masquerading as show ids", () => {
+    expect(looksLikeAllMangaOpaqueShowId("bxCKTnota29uSRnZw")).toBe(true);
+    expect(looksLikeAllMangaOpaqueShowId("20431")).toBe(false);
+    expect(isCatalogIdPassedAsShowId("20431", "20431")).toBe(true);
+  });
+});
 
 describe("decodeTobeparsed", () => {
   test("decodes the current versioned allmanga blob layout", async () => {
@@ -253,9 +353,9 @@ describe("AllManga provider evidence fixtures", () => {
       nativeLabel: expected.dubResolve.nativeLabel,
       normalizedLanguage: expected.dubResolve.audioLanguage,
     });
-    expect(sub.sources?.[0]?.metadata?.sourceFamily).toBe("fm-hls");
+    expect(sub.sources?.[0]?.metadata?.sourceFamily).toBe("default");
     expect(sub.sources?.[0]).toMatchObject({
-      label: "FM HLS",
+      label: "Default",
       host: expect.any(String),
       metadata: expect.objectContaining({
         qualityLabels: expect.any(String),
@@ -265,7 +365,7 @@ describe("AllManga provider evidence fixtures", () => {
       normalizedLanguage: expected.subResolve.audioLanguage,
     });
     expect(sub.sources?.[0]?.sourceEvidence?.[0]).toMatchObject({
-      nativeLabel: "FM HLS",
+      nativeLabel: "Default",
     });
     expect(dub.streams[0]?.url).toContain("/dub/");
     expect(sub.externalIds).toEqual(expected.search.externalIds);
