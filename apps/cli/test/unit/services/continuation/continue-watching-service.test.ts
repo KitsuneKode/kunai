@@ -136,6 +136,31 @@ test("titleDecision preserves stale freshness from release progress", () => {
   expect(decision.freshness).toBe("stale");
 });
 
+test("titleDecision resolves new-episodes to a concrete released playback target", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.titleDecision("tmdb:1", {
+    releaseProgress: { newEpisodeCount: 2 },
+    nextRelease: { season: 1, episode: 4, released: true },
+  });
+
+  expect(decision.state).toBe("new-episodes");
+  expect(decision.target).toMatchObject({ season: 1, episode: 4 });
+  expect(decision.primaryAction).toMatchObject({
+    kind: "select-online",
+    target: { season: 1, episode: 4 },
+  });
+});
+
 test("titleDecision preserves airing-weekly availableAt metadata", () => {
   const repo = makeRepo();
   repo.upsertProgress({
@@ -161,6 +186,85 @@ test("titleDecision preserves airing-weekly availableAt metadata", () => {
     state: "airing-weekly",
     availableAt: "2026-01-03T12:00:00.000Z",
   });
+});
+
+test("hubRows defaults local plus online availability to ask inline", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const [row] = service.hubRows({
+    signalsByTitle: () => ({
+      offline: { enrolled: true, readyNextEpisodes: [{ season: 1, episode: 4, jobId: "job-4" }] },
+    }),
+  });
+
+  expect(row?.group).toBe("offline-ready");
+  expect(row?.sourceAvailability.kind).toBe("both-ready");
+  expect(row?.primaryAction).toMatchObject({
+    kind: "ask-inline",
+    localAction: { kind: "play-local", jobId: "job-4" },
+    onlineAction: { kind: "select-online", target: { season: 1, episode: 4 } },
+  });
+  expect(row?.secondaryActions.map((action) => action.kind)).toEqual([
+    "play-local",
+    "select-online",
+    "queue",
+    "mark-watched",
+    "manage-offline",
+  ]);
+});
+
+test("hubRows groups resume, new episodes, and tracked rows for the Continue Hub", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "resume", kind: "series", title: "Resume" },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 420,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-01-04T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "new", kind: "series", title: "New" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-03T00:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "tracked", kind: "series", title: "Tracked" },
+    episode: { season: 1, episode: 9 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const rows = service.hubRows({
+    signalsByTitle: (titleId) =>
+      titleId === "new"
+        ? {
+            releaseProgress: { newEpisodeCount: 1 },
+            nextRelease: { season: 1, episode: 4, released: true },
+          }
+        : {},
+  });
+
+  expect(rows.map((row) => [row.id, row.group, row.badge])).toEqual([
+    ["resume", "resume", "continue"],
+    ["new", "new-episodes", "1 new"],
+    ["tracked", "up-to-date", "tracked"],
+  ]);
 });
 
 test("episodeProgress returns every stored episode for the title", () => {

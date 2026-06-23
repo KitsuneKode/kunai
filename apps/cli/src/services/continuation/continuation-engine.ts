@@ -108,6 +108,8 @@ export function projectContinuation(input: ProjectContinuationInput): Continuati
       state: "new-episodes",
       titleId: input.titleId,
       title: anchor.title,
+      season: input.nextRelease?.released ? input.nextRelease.season : undefined,
+      episode: input.nextRelease?.released ? input.nextRelease.episode : undefined,
       newEpisodeCount: input.releaseProgress.newEpisodeCount,
       anchor,
     };
