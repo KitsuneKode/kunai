@@ -74,19 +74,18 @@ export function usePosterPreview(
     }
 
     let cancelled = false;
+    if (!preserveTerminalImages) clearRenderedPosterImages();
     dispatch({ type: "loading" });
 
     const timer = setTimeout(() => {
       fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
         .then((result) => {
           if (cancelled) return undefined;
-          if (!preserveTerminalImages) clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
           if (cancelled) return;
-          if (!preserveTerminalImages) clearRenderedPosterImages();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
     }, debounceMs);
