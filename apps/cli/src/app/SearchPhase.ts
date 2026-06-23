@@ -11,7 +11,6 @@ import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
-import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import type { BrowseShellOption } from "@/app-shell/types";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
@@ -28,7 +27,6 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults, loadSurpriseResults } from "@/app/random-results";
 import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
 import { titleInfoFromSearchResult } from "@/app/title-info";
-import { effectiveFooterHints } from "@/container";
 import {
   episodeInfoFromQueueEntry,
   mediaItemFromSearchResult,
@@ -216,8 +214,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
         }
 
-        const shellRuntime = buildShellRuntimeBindings(container);
-
         let allHistory: Record<string, HistoryProgress> = {};
         try {
           allHistory = await container.historyStore.getAll();
@@ -276,7 +272,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         const outcome = await openBrowseShell({
           mode: currentState.mode,
           provider: currentState.provider,
-          ...shellRuntime,
+          settings: container.config.getRaw(),
           initialCalendarTypeTab,
           initialQuery: currentState.searchQuery,
           initialResults: currentState.searchResults.map((r) =>
@@ -291,7 +287,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
           placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
-          footerMode: effectiveFooterHints(container),
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
           idleContext,
           onQueueSelected: async (result) => {
