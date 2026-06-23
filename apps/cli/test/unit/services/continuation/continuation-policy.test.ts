@@ -143,3 +143,19 @@ test("continuation policy prefers ready offline continuation while retaining cat
     freshness: "cached",
   });
 });
+
+test("continuation policy surfaces release-progress-only new episodes", () => {
+  const projection = projectContinuationState({
+    titleId: "tmdb:1",
+    entries: [["tmdb:1", { ...baseEntry, episode: 5, positionSeconds: 1200, completed: true }]],
+    releaseProgress: { newEpisodeCount: 3 },
+  });
+
+  expect(projection).toMatchObject({
+    kind: "new-episodes",
+    titleId: "tmdb:1",
+    title: "Weekly Show",
+    badge: "3 new",
+    freshness: "cached",
+  });
+});

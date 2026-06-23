@@ -1,5 +1,6 @@
-import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
+
+import { projectContinuation, type ContinuationDecision } from "./continuation-engine";
 
 export type ContinuationNextRelease = {
   readonly season: number;
@@ -52,6 +53,12 @@ export type ContinuationProjection = (
       readonly sourceEntry: HistoryProgress;
     }
   | {
+      readonly kind: "new-episodes";
+      readonly titleId: string;
+      readonly title: string;
+      readonly sourceEntry: HistoryProgress;
+    }
+  | {
       readonly kind: "upcoming";
       readonly titleId: string;
       readonly title: string;
@@ -92,88 +99,122 @@ export function projectContinuationState(input: {
     .map(([, entry]) => entry)
     .sort(compareHistoryEntryRecency);
 
-  // Netflix/Crunchyroll anchor rule: decide off the MOST-RECENT episode, never
-  // scan back to an older abandoned one. Resume it if unfinished, else advance.
-  const latest = entries[0];
-  if (!latest) return { kind: "empty", titleId: input.titleId };
+  return projectionFromDecision(
+    projectContinuation({
+      titleId: input.titleId,
+      rows: entries,
+      nextRelease: input.nextRelease,
+      releaseProgress: input.releaseProgress,
+      offline: input.offline,
+    }),
+    input,
+  );
+}
 
-  const latestSeason = latest.season ?? 1;
-  const latestEpisode = latest.episode ?? latest.absoluteEpisode ?? 1;
+function projectionFromDecision(
+  decision: ContinuationDecision,
+  input: {
+    readonly releaseProgress?: {
+      readonly newEpisodeCount: number;
+      readonly stale?: boolean;
+    } | null;
+    readonly offline?: { readonly enrolled: boolean } | null;
+  },
+): ContinuationProjection {
+  const sourceEntry = decision.anchor;
+  if (!sourceEntry) return { kind: "empty", titleId: decision.titleId };
 
-  if (!isFinished(latest)) {
+  if (decision.state === "resume") {
+    const season = decision.season ?? sourceEntry.season ?? 1;
+    const episode = decision.episode ?? sourceEntry.episode ?? sourceEntry.absoluteEpisode ?? 1;
     return enrichProjection(
       {
         kind: "resume-unfinished",
-        titleId: input.titleId,
-        title: latest.title,
-        season: latestSeason,
-        episode: latestEpisode,
-        sourceEntry: latest,
+        titleId: decision.titleId,
+        title: decision.title ?? sourceEntry.title,
+        season,
+        episode,
+        sourceEntry,
       },
       input,
-      { kind: "resume", season: latestSeason, episode: latestEpisode },
+      { kind: "resume", season, episode },
     );
   }
 
-  const localNext = input.offline?.readyNextEpisodes
-    .filter((episode) => isEpisodeAfter(episode, latest))
-    .sort((left, right) => left.season - right.season || left.episode - right.episode)[0];
-  if (localNext) {
+  if (decision.state === "offline-ready") {
+    const season = decision.season ?? sourceEntry.season ?? 1;
+    const episode = decision.episode ?? sourceEntry.episode ?? sourceEntry.absoluteEpisode ?? 1;
     return enrichProjection(
       {
         kind: "offline-ready",
-        titleId: input.titleId,
-        title: latest.title,
-        season: localNext.season,
-        episode: localNext.episode,
-        sourceEntry: latest,
+        titleId: decision.titleId,
+        title: decision.title ?? sourceEntry.title,
+        season,
+        episode,
+        sourceEntry,
       },
       input,
       {
         kind: "play-local",
-        season: localNext.season,
-        episode: localNext.episode,
-        jobId: localNext.jobId,
+        season,
+        episode,
+        jobId: decision.jobId,
       },
     );
   }
 
-  if (input.nextRelease?.released) {
+  if (decision.state === "new-episodes") {
+    return enrichProjection(
+      {
+        kind: "new-episodes",
+        titleId: decision.titleId,
+        title: decision.title ?? sourceEntry.title,
+        sourceEntry,
+      },
+      input,
+    );
+  }
+
+  if (decision.state === "next-up") {
+    const season = decision.season ?? sourceEntry.season ?? 1;
+    const episode = decision.episode ?? sourceEntry.episode ?? sourceEntry.absoluteEpisode ?? 1;
     return enrichProjection(
       {
         kind: "next-released",
-        titleId: input.titleId,
-        title: latest.title,
-        season: input.nextRelease.season,
-        episode: input.nextRelease.episode,
-        sourceEntry: latest,
+        titleId: decision.titleId,
+        title: decision.title ?? sourceEntry.title,
+        season,
+        episode,
+        sourceEntry,
       },
       input,
       {
         kind: "select-online",
-        season: input.nextRelease.season,
-        episode: input.nextRelease.episode,
+        season,
+        episode,
       },
     );
   }
 
-  if (input.nextRelease) {
+  if (decision.state === "airing-weekly") {
+    const season = decision.season ?? sourceEntry.season ?? 1;
+    const episode = decision.episode ?? sourceEntry.episode ?? sourceEntry.absoluteEpisode ?? 1;
     return {
       kind: "upcoming",
-      titleId: input.titleId,
-      title: latest.title,
-      season: input.nextRelease.season,
-      episode: input.nextRelease.episode,
-      availableAt: input.nextRelease.availableAt,
-      sourceEntry: latest,
+      titleId: decision.titleId,
+      title: decision.title ?? sourceEntry.title,
+      season,
+      episode,
+      availableAt: decision.availableAt,
+      sourceEntry,
     };
   }
 
   return {
     kind: "up-to-date",
-    titleId: input.titleId,
-    title: latest.title,
-    sourceEntry: latest,
+    titleId: decision.titleId,
+    title: decision.title ?? sourceEntry.title,
+    sourceEntry,
   };
 }
 
@@ -186,7 +227,7 @@ function enrichProjection<T extends ContinuationProjection>(
     } | null;
     readonly offline?: { readonly enrolled: boolean } | null;
   },
-  action: ContinuationAction,
+  action?: ContinuationAction,
 ): T {
   if (!input.releaseProgress && !input.offline) return projection;
   const badge =
@@ -196,22 +237,10 @@ function enrichProjection<T extends ContinuationProjection>(
   return {
     ...projection,
     badge,
-    primaryAction: action,
+    ...(action ? { primaryAction: action } : {}),
     secondaryActions: input.offline?.enrolled ? [{ kind: "manage-offline" }] : [],
     freshness: input.releaseProgress?.stale ? "stale" : input.releaseProgress ? "cached" : "local",
   };
-}
-
-function isEpisodeAfter(
-  episode: { readonly season: number; readonly episode: number },
-  history: HistoryProgress,
-): boolean {
-  const historySeason = history.season ?? 1;
-  const historyEpisode = history.episode ?? history.absoluteEpisode ?? 1;
-  return (
-    episode.season > historySeason ||
-    (episode.season === historySeason && episode.episode > historyEpisode)
-  );
 }
 
 function compareHistoryEntryRecency(left: HistoryProgress, right: HistoryProgress): number {
