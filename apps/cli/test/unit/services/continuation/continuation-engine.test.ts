@@ -115,3 +115,22 @@ test("groupLatestByTitle keeps one most-recent row per title, recency-ordered", 
   expect(grouped.map((r) => r.titleId)).toEqual(["a", "b"]);
   expect(grouped[0]?.updatedAt).toBe("2026-05-04T00:00:00.000Z");
 });
+
+test("groupLatestByTitle dedupes forked rows that share the same catalog id", () => {
+  const grouped = groupLatestByTitle([
+    row({
+      titleId: "bxCKTopaque",
+      externalIds: { anilistId: "20431" },
+      mediaKind: "anime",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    }),
+    row({
+      titleId: "20431",
+      externalIds: { anilistId: "20431" },
+      mediaKind: "anime",
+      updatedAt: "2026-05-04T00:00:00.000Z",
+    }),
+  ]);
+  expect(grouped).toHaveLength(1);
+  expect(grouped[0]?.titleId).toBe("20431");
+});

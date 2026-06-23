@@ -152,16 +152,29 @@ export function projectContinuation(input: ProjectContinuationInput): Continuati
   return { state: "up-to-date", titleId: input.titleId, title: anchor.title, anchor };
 }
 
-/** One most-recent row per titleId, ordered newest-first by updatedAt. */
+/** One most-recent row per title identity bucket, ordered newest-first by updatedAt. */
 export function groupLatestByTitle(rows: readonly HistoryProgress[]): HistoryProgress[] {
   const latest = new Map<string, HistoryProgress>();
   for (const row of rows) {
-    const current = latest.get(row.titleId);
+    const bucketKey = catalogIdentityBucketKey(row);
+    const current = latest.get(bucketKey);
     if (!current || Date.parse(row.updatedAt) > Date.parse(current.updatedAt)) {
-      latest.set(row.titleId, row);
+      latest.set(bucketKey, row);
     }
   }
   return [...latest.values()].sort(byUpdatedAtDesc);
+}
+
+function catalogIdentityBucketKey(row: HistoryProgress): string {
+  const anilistId = row.externalIds?.anilistId;
+  if (anilistId && (row.mediaKind === "anime" || row.mediaKind === "series")) {
+    return `anilist:${anilistId}`;
+  }
+  const tmdbId = row.externalIds?.tmdbId;
+  if (tmdbId && (row.mediaKind === "series" || row.mediaKind === "movie")) {
+    return `tmdb:${tmdbId}`;
+  }
+  return row.titleId;
 }
 
 function byUpdatedAtDesc(left: HistoryProgress, right: HistoryProgress): number {
