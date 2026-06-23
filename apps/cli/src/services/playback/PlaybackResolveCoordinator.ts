@@ -18,8 +18,10 @@ import {
   type PlaybackResolveOutput,
   type StreamHealthChecker,
 } from "./PlaybackResolveService";
+import type { ProviderEndpointHealthService } from "./ProviderEndpointHealthService";
 import type { SourceInventoryService } from "./SourceInventoryService";
 import type { StreamHealthService } from "./StreamHealthService";
+import type { TitlePlaybackSourceService } from "./TitlePlaybackSourceService";
 import type { TitleProviderHealthService } from "./TitleProviderHealthService";
 
 export type PlaybackResolveProvenance =
@@ -47,6 +49,8 @@ export type PlaybackResolveCoordinatorDeps = {
     TitleProviderHealthService,
     "recordFailure" | "recordCleanSuccess"
   >;
+  readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
+  readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
 };
 
 export class PlaybackResolveCoordinator {
@@ -88,6 +92,8 @@ export class PlaybackResolveCoordinator {
       streamHealthService: this.deps.streamHealthService,
       sourceInventory: this.deps.sourceInventory,
       titleProviderHealth: this.deps.titleProviderHealth,
+      endpointHealth: this.deps.endpointHealth,
+      titlePlaybackSource: this.deps.titlePlaybackSource,
       getProviderPriority: this.deps.getProviderPriority,
     });
   }

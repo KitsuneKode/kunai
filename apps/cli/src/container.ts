@@ -18,6 +18,7 @@ import { allmangaProviderModule } from "@kunai/providers/allmanga";
 import { miruroProviderModule } from "@kunai/providers/miruro";
 import { rivestreamProviderModule } from "@kunai/providers/rivestream";
 import { videasyProviderModule } from "@kunai/providers/videasy";
+import { listDeprecatedVidkingEndpoints } from "@kunai/providers/videasy";
 import { vidlinkProviderModule } from "@kunai/providers/vidlink";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import {
@@ -34,6 +35,7 @@ import {
   QueueRepository,
   PlaylistsRepository,
   ProviderHealthRepository,
+  ProviderEndpointHealthRepository,
   TitleProviderHealthRepository,
   RecommendationCacheRepository,
   ReleaseProgressCacheRepository,
@@ -112,6 +114,7 @@ import { MediaTrackService } from "./services/playback/MediaTrackService";
 import { PlaybackResolveCoordinator } from "./services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "./services/playback/PlaybackResolveWorkService";
 import { resolveProviderAttemptTimeoutMs } from "./services/playback/provider-resolve-budget-policy";
+import { ProviderEndpointHealthService } from "./services/playback/ProviderEndpointHealthService";
 import { SourceInventoryService } from "./services/playback/SourceInventoryService";
 import { StreamHealthService } from "./services/playback/StreamHealthService";
 import { TitlePlaybackSourceService } from "./services/playback/TitlePlaybackSourceService";
@@ -183,6 +186,7 @@ export interface Container {
   readonly mediaTrackService: MediaTrackService;
   readonly featureFlags: AttentionFeatureFlags;
   readonly providerHealth: ProviderHealthRepository;
+  readonly endpointHealth: ProviderEndpointHealthService;
   readonly titleProviderHealth: TitleProviderHealthService;
   readonly downloadService: DownloadService;
   readonly offlineAssetService: OfflineAssetService;
@@ -297,6 +301,15 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
+  const endpointHealth = new ProviderEndpointHealthService(
+    new ProviderEndpointHealthRepository(cacheDb),
+    () => new Date(),
+    listDeprecatedVidkingEndpoints().map((endpoint) => ({
+      providerId: "videasy",
+      endpoint,
+      failureClass: "route-dead" as const,
+    })),
+  );
   const titleProviderHealth = new TitleProviderHealthService(
     new TitleProviderHealthRepository(cacheDb),
   );
@@ -432,6 +445,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
     fetch: createProviderFetchPort,
+    endpointHealth,
     auth: {
       getSecret(providerId, key) {
         if (providerId !== "videasy" && providerId !== "vidking") return undefined;
@@ -461,6 +475,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       streamHealthService,
       sourceInventory,
       titleProviderHealth,
+      endpointHealth,
+      titlePlaybackSource: titlePlaybackSource,
       diagnostics: diagnosticsService,
       getProviderPriority: () => createProviderPrioritySnapshot(config),
     }),
@@ -705,6 +721,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     mediaTrackService,
     featureFlags,
     providerHealth,
+    endpointHealth,
     titleProviderHealth,
     downloadService,
     offlineAssetService,
