@@ -34,8 +34,7 @@ export function scheduleVideasyLazySourceProbes(input: {
   );
 
   const context: ProviderRuntimeContext = {
-    now: () => new Date().toISOString(),
-    signal: input.signal,
+    ...input.container.engine.createRuntimeContext(VIDKING_PROVIDER_ID, input.signal),
     retryPolicy: { maxAttempts: 1, backoff: "none", delayMs: 0 },
   };
 

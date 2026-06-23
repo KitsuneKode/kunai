@@ -19,6 +19,7 @@ import { miruroProviderModule } from "@kunai/providers/miruro";
 import { rivestreamProviderModule } from "@kunai/providers/rivestream";
 import { videasyProviderModule } from "@kunai/providers/videasy";
 import { vidlinkProviderModule } from "@kunai/providers/vidlink";
+import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import {
   DownloadJobsRepository,
   FollowedTitleRepository,
@@ -420,9 +421,21 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     ],
     providerPriority,
   );
+  const relayRegistry = buildProviderRelayRegistry(providerModules);
+  const createProviderFetchPort = (providerId: (typeof providerModules)[number]["providerId"]) =>
+    createRelayFetchPort({
+      providerId,
+      registry: relayRegistry,
+      relayConfig: config.getRaw().providerRelay,
+      env: {
+        baseUrl: process.env.KUNAI_RELAY_BASE_URL,
+        token: process.env.KUNAI_RELAY_TOKEN,
+      },
+    });
   const engine = createProviderEngine({
     modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
+    fetch: createProviderFetchPort,
     auth: {
       getSecret(providerId, key) {
         if (providerId !== "videasy" && providerId !== "vidking") return undefined;

@@ -4,7 +4,7 @@
 // Manages user configuration and preferences.
 // =============================================================================
 
-import type { StartupPriority } from "@kunai/types";
+import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 import type { TuningConfig } from "./tuning";
 
@@ -115,6 +115,8 @@ export interface KitsuneConfig {
   presenceDiscordOpenUrl: string;
   /** Optional Videasy browser session token. Empty string = read KUNAI_VIDEASY_SESSION_TOKEN. */
   videasySessionToken: string;
+  /** Optional user-owned provider RPC relay. Empty baseUrl = direct provider fetches only. */
+  providerRelay: ProviderRelayConfig;
   /** Epoch ms when the cached Videasy browser session expires. 0 = unknown/manual. */
   videasySessionExpiresAt: number;
   /** Videasy frontend app id paired with the session token. */

@@ -99,6 +99,11 @@ test("ProviderRegistry wires provider-owned search and episode hooks without pro
     modules: [module],
     getProviderIds: () => ["hooked"],
     getManifest: () => manifest,
+    createRuntimeContext: (_providerId: string, signal?: AbortSignal) => ({
+      providerId: "hooked",
+      now: () => new Date().toISOString(),
+      signal,
+    }),
   } as unknown as ProviderEngine);
   const provider = registry.get("hooked");
   const controller = new AbortController();

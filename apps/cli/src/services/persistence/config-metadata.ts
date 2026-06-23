@@ -185,6 +185,15 @@ export const CONFIG_METADATA = [
     envOverride: "KUNAI_VIDEASY_SESSION_TOKEN",
   },
   {
+    key: "providerRelay",
+    label: "Provider relay",
+    section: "providers",
+    effect: "next-resolve",
+    privacy: "sensitive",
+    editable: true,
+    envOverride: "KUNAI_RELAY_BASE_URL",
+  },
+  {
     key: "videasySessionExpiresAt",
     label: "Videasy session expires",
     section: "providers",

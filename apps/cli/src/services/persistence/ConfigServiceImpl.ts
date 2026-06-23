@@ -9,7 +9,8 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import { migrateLegacyProviderId } from "@kunai/providers";
-import type { StartupPriority } from "@kunai/types";
+import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
+import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 import type {
   ConfigService,
@@ -85,6 +86,38 @@ function normalizeTitleProviderPreferences(
   return normalized;
 }
 
+function normalizeProviderRelayConfig(value: unknown): ProviderRelayConfig {
+  if (!value || typeof value !== "object") return DEFAULT_CONFIG.providerRelay;
+  const raw = value as Partial<ProviderRelayConfig>;
+  const baseUrl = normalizeRelayBaseUrl(raw.baseUrl);
+  const providers: Record<string, { enabled?: boolean; videoFallback?: boolean }> = {};
+  if (raw.providers && typeof raw.providers === "object") {
+    for (const [providerId, providerConfig] of Object.entries(raw.providers)) {
+      if (!providerId.trim() || !providerConfig || typeof providerConfig !== "object") continue;
+      providers[providerId.trim()] = {
+        ...(typeof providerConfig.enabled === "boolean"
+          ? { enabled: providerConfig.enabled }
+          : null),
+        ...(typeof providerConfig.videoFallback === "boolean"
+          ? { videoFallback: providerConfig.videoFallback }
+          : null),
+      };
+    }
+  }
+  return {
+    ...(typeof raw.enabled === "boolean" ? { enabled: raw.enabled } : null),
+    baseUrl,
+    token: normalizeOptionalSecret(raw.token),
+    fallbackToDirect: raw.fallbackToDirect !== false,
+    providers,
+  };
+}
+
+function normalizeRelayBaseUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return normalizeRelayBaseUrlValue(value) ?? "";
+}
+
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -141,6 +174,7 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.videasyAppId,
         normalizeOptionalSecret(loaded.videasySessionToken),
       ),
+      providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
     };
     if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
@@ -282,6 +316,13 @@ export class ConfigServiceImpl implements ConfigService {
   get videasySessionToken(): string {
     if (isExpiredVideasySession(this.config.videasySessionExpiresAt)) return "";
     return this.config.videasySessionToken;
+  }
+
+  get providerRelay(): ProviderRelayConfig {
+    return {
+      ...this.config.providerRelay,
+      providers: { ...this.config.providerRelay.providers },
+    };
   }
 
   get videasySessionExpiresAt(): number {
@@ -519,6 +560,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.videasySessionToken !== undefined
         ? { videasySessionToken: normalizeOptionalSecret(partial.videasySessionToken) }
+        : null),
+      ...(partial.providerRelay !== undefined
+        ? { providerRelay: normalizeProviderRelayConfig(partial.providerRelay) }
         : null),
       ...(partial.videasySessionExpiresAt !== undefined
         ? {

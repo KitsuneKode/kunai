@@ -41,6 +41,7 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         : ("dub" as const);
     for (const query of providerSearchQueries(result)) {
       const matches = await searchProviderNative(
+        { providerId: "allanime", now: () => new Date().toISOString(), signal: context.signal },
         ALLMANGA_API_URL,
         ALLMANGA_REFERER,
         ALLMANGA_UA,

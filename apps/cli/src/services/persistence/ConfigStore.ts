@@ -63,6 +63,13 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   presenceDiscordClientId: "",
   presenceDiscordOpenUrl: "",
   videasySessionToken: "",
+  providerRelay: {
+    enabled: true,
+    baseUrl: "",
+    token: "",
+    fallbackToDirect: true,
+    providers: {},
+  },
   videasySessionExpiresAt: 0,
   videasyAppId: "bc-frontend",
   downloadsEnabled: false,

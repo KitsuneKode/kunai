@@ -32,6 +32,7 @@
         "@kunai/core": "workspace:*",
         "@kunai/design": "workspace:*",
         "@kunai/providers": "workspace:*",
+        "@kunai/relay": "workspace:*",
         "@kunai/storage": "workspace:*",
         "@kunai/types": "workspace:*",
         "@types/bun": "1.3.14",
@@ -99,6 +100,20 @@
         "rebrowser-playwright-core": "^1.52.0",
       },
     },
+    "apps/relay-server": {
+      "name": "@kunai/relay-server",
+      "dependencies": {
+        "@kunai/providers": "workspace:*",
+        "@kunai/relay": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+        "@types/node": "^25.9.2",
+      },
+      "peerDependencies": {
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/core": {
       "name": "@kunai/core",
       "version": "0.1.0",
@@ -131,6 +146,20 @@
         "@kunai/types": "workspace:*",
         "@types/crypto-js": "^4.2.2",
         "crypto-js": "^4.2.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.3.14",
+      },
+      "peerDependencies": {
+        "typescript": "^6.0.3",
+      },
+    },
+    "packages/relay": {
+      "name": "@kunai/relay",
+      "version": "0.1.0",
+      "dependencies": {
+        "@kunai/core": "workspace:*",
+        "@kunai/types": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "1.3.14",
@@ -364,6 +393,10 @@
     "@kunai/experiments": ["@kunai/experiments@workspace:apps/experiments"],
 
     "@kunai/providers": ["@kunai/providers@workspace:packages/providers"],
+
+    "@kunai/relay": ["@kunai/relay@workspace:packages/relay"],
+
+    "@kunai/relay-server": ["@kunai/relay-server@workspace:apps/relay-server"],
 
     "@kunai/schemas": ["@kunai/schemas@workspace:packages/schemas"],
 

@@ -45,7 +45,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                   preferredAudioLanguage: opts.audioPreference,
                   preferredSubtitleLanguage: opts.subtitlePreference,
                 },
-                { now: () => new Date().toISOString(), signal },
+                this.engine.createRuntimeContext(module.providerId, signal),
               );
               if (!results) return null;
               return results.map((r): import("@/domain/types").SearchResult => ({
@@ -88,7 +88,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                     title: request.title.name,
                   },
                 },
-                { now: () => new Date().toISOString(), signal },
+                this.engine.createRuntimeContext(module.providerId, signal),
               );
               return episodes ? [...episodes] : null;
             }
