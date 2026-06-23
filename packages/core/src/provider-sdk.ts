@@ -1,4 +1,6 @@
 import type {
+  ProviderAuthPort,
+  ProviderFetchPort,
   ProviderId,
   ProviderModule,
   ProviderRetryPolicy,
@@ -22,19 +24,28 @@ export const DEFAULT_PROVIDER_RETRY_POLICY: ProviderRetryPolicy = {
 
 export function createProviderRuntimeContext({
   now = () => new Date().toISOString(),
+  providerId,
   signal,
   retryPolicy = DEFAULT_PROVIDER_RETRY_POLICY,
+  fetch,
+  auth,
   emit,
 }: {
   readonly now?: () => string;
+  readonly providerId?: ProviderId;
   readonly signal?: AbortSignal;
   readonly retryPolicy?: ProviderRetryPolicy;
+  readonly fetch?: ProviderFetchPort;
+  readonly auth?: ProviderAuthPort;
   readonly emit?: (event: ProviderTraceEvent) => void;
 } = {}): ProviderRuntimeContext {
   return {
+    providerId,
     now,
     signal,
     retryPolicy,
+    fetch,
+    auth,
     emit,
   };
 }

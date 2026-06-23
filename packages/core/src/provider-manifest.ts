@@ -4,6 +4,7 @@ import type {
   ProviderCapability,
   ProviderId,
   ProviderRuntimePort,
+  RelayProfile,
 } from "@kunai/types";
 
 /** How a provider keys titles for search, episode list, and stream resolve. */
@@ -22,6 +23,7 @@ export interface CoreProviderManifest {
   readonly cachePolicy: CachePolicy;
   readonly browserSafe: boolean;
   readonly relaySafe: boolean;
+  readonly relayProfile?: RelayProfile;
   readonly status: ProviderManifestStatus;
   /** When omitted, anime providers default to `anilist`; others default to `tmdb`. */
   readonly catalogIdentity?: ProviderCatalogIdentity;

@@ -2,6 +2,7 @@ import type {
   ProviderFailure,
   ProviderId,
   ProviderAuthPort,
+  ProviderFetchPort,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
@@ -10,6 +11,7 @@ import type {
 import { isProviderResolveResultResolved } from "@kunai/types";
 
 import type { CoreProviderModule } from "./provider-sdk";
+import { createProviderRuntimeContext } from "./provider-sdk";
 import {
   createProviderResolveFailureError,
   ProviderResolveAbortError,
@@ -31,7 +33,10 @@ export interface ProviderEngineOptions {
   readonly retryDelayMs?: number;
   readonly now?: () => string;
   readonly auth?: ProviderAuthPort;
+  readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
 }
+
+export type ProviderFetchPortFactory = (providerId: ProviderId) => ProviderFetchPort | undefined;
 
 export interface ProviderEngineResolveAttempt {
   readonly providerId: ProviderId;
@@ -96,6 +101,7 @@ export class ProviderEngine {
   private readonly retryDelayMs: number;
   private readonly now: () => string;
   private readonly auth?: ProviderAuthPort;
+  private readonly fetch?: ProviderFetchPort | ProviderFetchPortFactory;
 
   constructor(opts: ProviderEngineOptions) {
     this.modules = opts.modules;
@@ -104,6 +110,7 @@ export class ProviderEngine {
     this.retryDelayMs = opts.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.now = opts.now ?? (() => new Date().toISOString());
     this.auth = opts.auth;
+    this.fetch = opts.fetch;
 
     for (const module of opts.modules) {
       if (this.modulesById.has(module.providerId)) {
@@ -123,6 +130,21 @@ export class ProviderEngine {
 
   getProviderIds(): ProviderId[] {
     return [...this.modulesById.keys()];
+  }
+
+  createRuntimeContext(providerId: ProviderId, signal?: AbortSignal): ProviderRuntimeContext {
+    return createProviderRuntimeContext({
+      now: this.now,
+      providerId,
+      signal,
+      retryPolicy: {
+        maxAttempts: this.maxAttempts,
+        backoff: "none",
+        delayMs: this.retryDelayMs,
+      },
+      fetch: resolveFetchPort(this.fetch, providerId),
+      auth: this.auth,
+    });
   }
 
   async resolve(
@@ -300,17 +322,19 @@ export class ProviderEngine {
     const onParentAbort = () => attemptController.abort(signal?.reason);
     signal?.addEventListener("abort", onParentAbort, { once: true });
 
-    const context: ProviderRuntimeContext = {
+    const context: ProviderRuntimeContext = createProviderRuntimeContext({
       now: this.now,
+      providerId: module.providerId,
       signal: attemptSignal,
       retryPolicy: {
         maxAttempts: this.maxAttempts,
         backoff: "none",
         delayMs: this.retryDelayMs,
       },
+      fetch: resolveFetchPort(this.fetch, module.providerId),
       auth: this.auth,
       emit: (event) => traceEvents.push(event),
-    };
+    });
 
     const operation = module.resolve(input, context);
     let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -463,6 +487,14 @@ const OFFLINE_NETWORK_PATTERNS = [
   "err_internet_disconnected",
   "err_name_not_resolved",
 ];
+
+function resolveFetchPort(
+  fetchPort: ProviderFetchPort | ProviderFetchPortFactory | undefined,
+  providerId: ProviderId,
+): ProviderFetchPort | undefined {
+  if (!fetchPort) return undefined;
+  return typeof fetchPort === "function" ? fetchPort(providerId) : fetchPort;
+}
 
 export function createProviderEngine(opts: ProviderEngineOptions): ProviderEngine {
   return new ProviderEngine(opts);
