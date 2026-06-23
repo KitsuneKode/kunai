@@ -126,6 +126,36 @@ Advanced users can point providers at alternate base domains via `~/.config/kuna
 
 Overrides affect URL construction only. They do not register new providers or bypass site authentication.
 
+## Provider geo relay
+
+Some provider metadata APIs are geo-blocked from some countries while the final
+video CDN still works globally. Kunai supports an optional **user-owned**
+provider relay for those metadata calls.
+
+What it does:
+
+- Routes provider API/search/source JSON through your relay when
+  `providerRelay.baseUrl` is set.
+- Keeps playback direct: mpv receives the final stream URL and fetches it from
+  your network.
+- Uses provider manifest allowlists, so it is not an arbitrary URL proxy.
+
+What it does not do:
+
+- Kunai does not operate a public relay for you.
+- Kunai does not proxy or host video by default.
+- The relay does not bypass provider login or DRM.
+
+Local contributor smoke:
+
+```sh
+bun run dev:relay
+KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787 bun run test:live:relay-allanime
+```
+
+Deploy/config details live in `apps/relay-server/README.md` for source
+checkouts.
+
 ## When providers fail (expected behavior)
 
 Provider catalogs drift. Failure is operational, not exceptional.
@@ -140,7 +170,7 @@ If **all** providers fail, Kunai explains why in diagnostics and the shell foote
 ## What Kunai does not do with providers
 
 - No browser/Playwright scraping in the active beta runtime
-- No Kunai-hosted proxy or stream relay
+- No Kunai-hosted proxy or stream relay; the optional provider geo relay is user-owned and metadata-only by default
 - No guarantee of subtitle language, quality tier, or dub availability
 - No silent provider switching without user action (except configured automatic fallback within policy)
 

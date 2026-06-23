@@ -33,6 +33,29 @@ Unknown provider ids in priority arrays are ignored. Providers not listed remain
 
 More on fallback behavior: [Providers](/docs/users/providers).
 
+### Provider relay
+
+`providerRelay` is optional. Leave `baseUrl` empty for direct provider fetches
+only. Set it when you run your own relay for provider metadata APIs that are
+geo-blocked from your network.
+
+```json
+{
+  "providerRelay": {
+    "baseUrl": "https://your-relay.example",
+    "token": "",
+    "fallbackToDirect": true,
+    "providers": {
+      "allanime": { "enabled": true }
+    }
+  }
+}
+```
+
+`KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` override local config for smoke
+tests and temporary sessions. The relay is metadata-only by default; Kunai does
+not proxy video unless a provider explicitly supports and enables video fallback.
+
 ### Language and media profiles
 
 Kunai uses separate profiles for anime, series, and movies:

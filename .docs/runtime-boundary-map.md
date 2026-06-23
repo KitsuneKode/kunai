@@ -24,6 +24,7 @@ why the overlap is temporary.
 | `packages/schemas`            | Runtime validation for untrusted or persisted data                                                           | Business decisions                          |
 | `packages/core`               | Provider SDK contracts, resolver primitives, cache-key policy, fallback abstractions, trace models           | Ink UI, mpv IPC, history writes             |
 | `packages/providers`          | Provider-specific source extraction, mirror/source retry, decryption, language/source evidence               | Global fallback UX, history, app settings   |
+| `packages/relay`              | Provider RPC relay validation, host allowlists, client fetch-port adapter, relay server shared handler       | Provider scraping logic, app settings UI    |
 | `packages/storage`            | SQLite paths, migrations, repositories, TTL helpers                                                          | UI behavior, provider scraping              |
 | `apps/cli/src/services`       | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration | Ink rendering, raw mpv sockets              |
 | `apps/cli/src/app`            | Session phases, playback/search policy, user-intent semantics, history decisions                             | Provider internals, terminal drawing        |
@@ -121,6 +122,22 @@ adapter:
 
 The fallback controller should prefer cached healthy inventory when possible and
 should expose provider/source exhaustion in diagnostics.
+
+## Provider Relay Ownership
+
+Provider geo-relay is a transport seam, not a provider runtime:
+
+- `packages/relay` owns request validation, header filtering, redirect checks,
+  request/response limits, registry building from manifests, and the
+  `ProviderFetchPort` implementation.
+- `packages/providers` owns provider-specific URLs and calls `providerFetch`
+  instead of raw `fetch` for relay-eligible metadata work.
+- `packages/core` injects provider-aware runtime context into resolve/search/list
+  calls.
+- `apps/cli` owns user config (`providerRelay`) and settings/env wiring.
+- `apps/relay-server` is only a deployable HTTP adapter over `@kunai/relay`.
+
+Do not add a generic `?url=` proxy or per-provider relay server routes.
 
 ## Legacy Quarantine
 

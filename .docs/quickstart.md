@@ -113,6 +113,8 @@ Filters stack in one structured state. Unsupported filters are reported as local
 | `KITSUNE_DEBUG=1`             | Enable debug JSON logs to stderr                                  |
 | `KUNAI_DISCORD_CLIENT_ID`     | Discord application id for optional `presenceProvider: "discord"` |
 | `KUNAI_VIDEASY_SESSION_TOKEN` | Optional user-provided Videasy browser session token for VidKing  |
+| `KUNAI_RELAY_BASE_URL`        | Optional user-owned provider RPC relay base URL for metadata APIs |
+| `KUNAI_RELAY_TOKEN`           | Optional bearer token for the user-owned provider relay           |
 
 VidKing may report `Videasy requires a valid browser session` when Videasy's
 guarded API requires a session created by the website. Kunai can use a token you
@@ -140,6 +142,27 @@ Verify the API gate (no token → blocked):
 curl -sS "https://api.videasy.net/mb-flix/sources-with-title?tmdbId=61700&mediaType=tv&seasonId=1&episodeId=3&title=test"
 # {"error":"session_missing"}
 ```
+
+### Provider Geo Relay
+
+If provider metadata APIs are geo-blocked from your network (for example
+AllAnime returning `NEED_CAPTCHA`), run a user-owned relay instead of routing
+video through Kunai. The relay handles small provider API/search/source JSON;
+mpv still fetches the final CDN URL directly.
+
+Local smoke:
+
+```sh
+# Terminal 1
+bun run dev:relay
+
+# Terminal 2
+export KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787
+bun run test:live:relay-allanime
+```
+
+For internet deployments, see `apps/relay-server/README.md`. Leave
+`providerRelay.baseUrl` empty to use direct provider fetches only.
 
 ## Common Issues
 

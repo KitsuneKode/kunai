@@ -61,7 +61,7 @@ If a user is watching on a plane with no Wi-Fi via the local TUI daemon:
 
 - 100% free forever.
 - Uses their own local CLI/Desktop daemon (BYOC) to scrape.
-- Uses the free Cloudflare CORS proxy for 0-RAM providers on the Web App.
+- Uses a narrow provider RPC relay for browser-safe 0-RAM provider metadata; no arbitrary `?url=` proxy and no video relay by default.
 
 **Premium Tier ($3-$5/mo) - The Convenience Ecosystem:**
 

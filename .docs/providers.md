@@ -65,6 +65,36 @@ User-control semantics:
 - fallback provider: stop the active provider and let global fallback choose the next compatible provider
 - cancel: abort resolution without marking the provider unhealthy
 
+### Provider Geo Relay
+
+Kunai supports an optional user-owned provider RPC relay for regions where
+provider metadata APIs are geo-blocked or return captcha placeholders such as
+AllAnime `NEED_CAPTCHA`.
+
+Important boundaries:
+
+- The relay is **metadata-only by default**. Provider API/search/source JSON can
+  route through `/rpc/:providerId`, but mpv still receives the final CDN URL and
+  streams directly from the nearest CDN edge.
+- Kunai ships no shared public relay URL. Users deploy `apps/relay-server`
+  themselves, usually to a US Vercel region.
+- The relay is not a generic proxy. Every upstream URL must match the selected
+  provider manifest `relayProfile.upstreamHosts`.
+- `providerRelay.baseUrl` empty means direct fetches only and zero relay
+  overhead.
+- `KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` can override local config for
+  smoke tests without persisting secrets.
+
+Local smoke flow:
+
+```sh
+bun run dev:relay
+export KUNAI_RELAY_BASE_URL=http://127.0.0.1:8787
+bun run test:live:relay-allanime
+```
+
+Use `apps/relay-server/README.md` for Vercel deployment and security notes.
+
 Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.

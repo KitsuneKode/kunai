@@ -20,6 +20,10 @@ features:
     label: Discord Rich Presence
     status: beta
     description: Optional social status integration with setup wizard support.
+  - id: provider-geo-relay
+    label: User-owned provider geo relay
+    status: beta
+    description: Optional metadata/API relay template for geo-blocked providers; video remains direct.
   - id: install-scripts
     label: install.sh / install.ps1
     status: beta
@@ -31,4 +35,4 @@ features:
   - id: hosted-streams
     label: Hosted stream relay
     status: planned
-    description: No cloud proxy or hosted transcoding in beta v1.
+    description: No Kunai-operated video proxy or hosted transcoding in beta v1.

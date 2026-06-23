@@ -22,11 +22,12 @@ Kunai is a terminal-first CLI in beta. This page states observable boundaries â€
 | Diagnostics panel | **Shipped** | `/diagnostics`, redacted `/export-diagnostics` |
 | Discord Rich Presence | **Shipped** | Opt-in; off by default |
 | AniList / TMDB sync | **Shipped** | Opt-in account sync |
+| User-owned provider geo relay | **Beta** | Optional metadata/API relay for geo-blocked providers; no Kunai-hosted relay URL |
 | Offline downloads | **Beta** | Opt-in; requires `yt-dlp`; artifact validation when `ffprobe` available |
 | Release binaries (`install.sh` / `install.ps1`) | **Beta supported** | Unsigned; SmartScreen/Gatekeeper may warn |
 | Zen / minimal chrome | **Beta** | `--zen`, `--minimal` â€” layout still settling |
 | Browser / Playwright scraping | **Not supported** | Archive-only reference code; not active runtime |
-| Hosted Kunai streams | **Not supported** | No Kunai CDN or proxy for video |
+| Hosted Kunai streams | **Not supported** | No Kunai CDN or proxy for video; provider geo relay is metadata-only and user-owned |
 | First-party streaming auth | **Not supported** | No Netflix/Disney+/etc. login flows |
 | Native GUI (non-terminal) | **Not supported** | Terminal-first by design |
 | DRM bypass | **Not supported** | Kunai plays what direct providers expose |
@@ -151,6 +152,7 @@ Copyright notices belong to the hosting provider, not Kunai.
 
 - Browser automation in the production resolver
 - Kunai-operated stream proxy or CDN
+- Kunai-operated public provider relay URL
 - Replacing mpv with an embedded player
 - Account requirements for core playback
 - Silent background provider probing

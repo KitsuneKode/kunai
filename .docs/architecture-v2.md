@@ -93,6 +93,10 @@ packages/schemas
   NPM package name: `@kunai/schemas`.
   Zod schemas for config, cache rows, IPC payloads, relay payloads, sync events, and imported mapping data.
 
+packages/relay
+  NPM package name: `@kunai/relay`.
+  Provider RPC relay registry, fail-closed validation, metadata forwarding, client fetch-port adapter, and geo-block detection.
+
 packages/core
   NPM package name: `@kunai/core`.
   Provider contracts, capability manifests, runtime ports, cache-key policy, resolver orchestration, source ranking, and resolve tracing.
@@ -164,6 +168,14 @@ Unpaired web paths:
 - signed-in sync/home surfaces when available
 - clear source confidence, disabled reasons, and upgrade/pairing prompts
 
+CLI geo-relay path (implemented):
+
+- `providerRelay.baseUrl` enables a **user-owned** relay for provider metadata APIs that are geo-blocked from the local network.
+- `@kunai/relay` is the shared implementation; `apps/relay-server` is a thin Vercel/Bun adapter.
+- Relay profiles live on provider manifests (`relayProfile.upstreamHosts`), not in server route forks.
+- mpv playback remains direct by default; the relay returns metadata/source JSON only, then mpv fetches the final CDN URL from the user's network.
+- No Kunai-hosted public relay URL is configured by default.
+
 Paired web paths:
 
 - local daemon resolution
@@ -213,6 +225,7 @@ The daemon must be explicit and scoped:
 ## Execution Order
 
 **Completed (Beta Scope):**
+
 1. Move repo to the minimal Turborepo shape without changing behavior.
 2. Establish the true root shell in `apps/cli` so browse, picker, loading, playback, overlays, and post-playback are content states inside one mounted app.
 3. Complete Phase 1.8 so browse, loading, playback, and post-playback share one mounted content tree instead of helper-shell sessions.
@@ -222,9 +235,7 @@ The daemon must be explicit and scoped:
 7. Add `ResolveTrace` and provider health as first-class outputs, accessible via diagnostics overlay.
 8. Harden Ink shell performance (O(1) list rendering, strict minimal footer) to ensure a premium TUI feel.
 
-**Future (Post-Beta):**
-9. Build daemon pairing only after cache and provider contracts are stable.
-10. Start web as static-first and capability-aware, not compute-first.
+**Future (Post-Beta):** 9. Build daemon pairing only after cache and provider contracts are stable. 10. Start web as static-first and capability-aware, not compute-first.
 
 Phase 2 completion means shared contracts compile, schemas validate serialized forms, root verification includes the shared packages, and the CLI emits one typed `ResolveTrace` stub for diagnostics. Providers have successfully moved into `@kunai/providers`.
 
