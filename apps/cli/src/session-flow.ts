@@ -7,10 +7,10 @@ import {
   openProviderPicker,
 } from "@/app-shell/workflows";
 import { purgeEpisodePlaybackCache, purgeTitlePlaybackCaches } from "@/app/playback-cache-purge";
-import { resolveEpisodeAvailability } from "@/app/playback-policy";
 import { applyUserProviderSwitch } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { resolveEpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";

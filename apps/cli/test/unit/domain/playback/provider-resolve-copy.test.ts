@@ -4,7 +4,7 @@ import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
   describeProviderResolveProviderNote,
-} from "@/app/provider-resolve-copy";
+} from "@/domain/playback/provider-resolve-copy";
 
 describe("provider resolve copy", () => {
   test("does not talk about skipping retries on the first attempt", () => {

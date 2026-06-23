@@ -1,8 +1,8 @@
 import {
   didPlaybackReachCompletionThreshold,
   type QuitNearEndThresholdMode,
-} from "@/app/playback-policy";
-export { toHistoryTimestamp } from "@/app/playback-progress-policy";
+} from "@/domain/playback/playback-policy";
+export { toHistoryTimestamp } from "@/domain/playback/playback-progress-policy";
 import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 
 export function shouldPersistHistory(

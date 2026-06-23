@@ -5,7 +5,7 @@ import {
   type EpisodeAvailability,
   type PlaybackEndPolicy,
   DEFAULT_PLAYBACK_END_POLICY,
-} from "@/app/playback-policy";
+} from "@/domain/playback/playback-policy";
 import type {
   EpisodeInfo,
   PlaybackResult,

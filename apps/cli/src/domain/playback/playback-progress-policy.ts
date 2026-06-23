@@ -1,7 +1,7 @@
 import {
   didPlaybackReachCompletionThreshold,
   type QuitNearEndThresholdMode,
-} from "@/app/playback-policy";
+} from "@/domain/playback/playback-policy";
 import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 
 export type PlaybackProgressPoint = {

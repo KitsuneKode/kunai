@@ -1,5 +1,5 @@
-import type { EpisodeAvailability } from "@/app/playback-policy";
-import { formatCatalogAirDateLabel } from "@/app/playback-policy";
+import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
+import { formatCatalogAirDateLabel } from "@/domain/playback/playback-policy";
 import type { PostPlayInput } from "@/domain/playback/post-play-state";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { QueueEntry } from "@kunai/storage";

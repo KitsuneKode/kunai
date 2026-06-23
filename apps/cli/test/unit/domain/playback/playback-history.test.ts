@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
+import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 
 const creditsTiming: PlaybackTimingMetadata = {

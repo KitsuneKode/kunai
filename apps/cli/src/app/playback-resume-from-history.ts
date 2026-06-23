@@ -1,5 +1,5 @@
-import type { QuitNearEndThresholdMode } from "@/app/playback-policy";
-import { resumeSecondsFromProgressPoint } from "@/app/playback-progress-policy";
+import type { QuitNearEndThresholdMode } from "@/domain/playback/playback-policy";
+import { resumeSecondsFromProgressPoint } from "@/domain/playback/playback-progress-policy";
 import type { EpisodeInfo } from "@/domain/types";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { HistoryRepository } from "@kunai/storage";

@@ -1,4 +1,4 @@
-import type { EpisodeAvailability } from "@/app/playback-policy";
+import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 type HistoryEntryRoute = {

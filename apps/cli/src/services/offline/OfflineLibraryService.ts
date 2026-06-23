@@ -1,5 +1,5 @@
-import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
-import { didPlaybackReachCompletionThreshold } from "@/app/playback-policy";
+import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
+import { didPlaybackReachCompletionThreshold } from "@/domain/playback/playback-policy";
 import type { PlaybackResult } from "@/domain/types";
 import type { DownloadService } from "@/services/download/DownloadService";
 import type { DownloadJobRecord, HistoryRepository } from "@kunai/storage";

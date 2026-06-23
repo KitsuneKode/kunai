@@ -6,7 +6,7 @@ import {
   getAutoAdvanceEpisode,
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
-} from "@/app/playback-policy";
+} from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
 
 const SERIES_TITLE: TitleInfo = {

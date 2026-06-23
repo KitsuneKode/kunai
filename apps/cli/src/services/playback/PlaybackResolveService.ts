@@ -1,4 +1,4 @@
-import { describeProviderResolveProviderNote } from "@/app/provider-resolve-copy";
+import { describeProviderResolveProviderNote } from "@/domain/playback/provider-resolve-copy";
 import {
   createProviderAttemptTimeline,
   type ProviderAttemptTimelineSnapshot,

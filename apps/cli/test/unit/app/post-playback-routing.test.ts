@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EpisodeAvailability } from "@/app/playback-policy";
 import {
   resolvePostPlaybackEpisodeNavigationRoute,
   resolvePostPlaybackExitOutcome,
   resolvePostPlaybackTrackPanelSection,
 } from "@/app/post-playback-routing";
+import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 
 const availability: EpisodeAvailability = {
   previousEpisode: { season: 1, episode: 4 },

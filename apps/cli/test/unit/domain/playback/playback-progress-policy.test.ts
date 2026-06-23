@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { resumeSecondsFromProgressPoint, toHistoryTimestamp } from "@/app/playback-progress-policy";
+import {
+  resumeSecondsFromProgressPoint,
+  toHistoryTimestamp,
+} from "@/domain/playback/playback-progress-policy";
 import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 
 function resultAt(

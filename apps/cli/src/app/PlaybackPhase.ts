@@ -42,13 +42,6 @@ import {
   buildEpisodeNavigationTransitionContext,
 } from "@/app/playback-episode-navigation";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
-import { shouldPersistHistory, toHistoryTimestamp } from "@/app/playback-history";
-import {
-  didPlaybackEndNearNaturalEnd,
-  didPlaybackReachCompletionThreshold,
-  resolveEpisodeAvailability,
-  toEpisodeNavigationState,
-} from "@/app/playback-policy";
 import {
   preparePostPlaybackSurface,
   teardownPlaybackForPostPlayExit,
@@ -126,10 +119,6 @@ import {
   resolvePostPlaybackTrackPanelSection,
 } from "@/app/post-playback-routing";
 import {
-  describeProviderResolveAttemptDetail,
-  describeProviderResolveAttemptNote,
-} from "@/app/provider-resolve-copy";
-import {
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
   type RecentPlaybackStreamProvenance,
@@ -153,12 +142,23 @@ import { applyTrackPickRestart } from "@/app/track-pick-restart";
 import { buildTrackPickTransitionContext } from "@/app/tracks-panel-pick";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
+import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
+import {
+  didPlaybackEndNearNaturalEnd,
+  didPlaybackReachCompletionThreshold,
+  resolveEpisodeAvailability,
+  toEpisodeNavigationState,
+} from "@/domain/playback/playback-policy";
 import {
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
+import {
+  describeProviderResolveAttemptDetail,
+  describeProviderResolveAttemptNote,
+} from "@/domain/playback/provider-resolve-copy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 import type {

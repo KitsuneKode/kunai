@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EpisodeAvailability } from "@/app/playback-policy";
 import {
   createPlaybackSessionState,
   explainAutoplayBlockReason,
@@ -12,6 +11,7 @@ import {
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
 } from "@/app/playback-session-controller";
+import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { PlaybackResult, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 
 const seriesTitle: TitleInfo = {
