@@ -39,6 +39,10 @@ import { SessionController } from "@/app/SessionController";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer } from "@/container";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
+import {
+  recordContinuationProjectDecision,
+  recordContinuationSourceResolution,
+} from "@/services/continuation/continuation-diagnostics";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   parseOfflineTitleCleanupPreference,
@@ -196,18 +200,21 @@ async function maybeResolveContinueTitle(
   }
   const selection = historyLaunchSelectionFromContinuation(decision);
   applyHistorySelectionProvider(container, selection);
-  container.diagnosticsService.record({
-    category: "session",
-    operation: "continuation.project",
-    message: "Continue target selected from shared continuation decision",
+  const preference = container.config.continueSourcePreference ?? "auto";
+  recordContinuationProjectDecision(container, {
+    surface: "startup",
     titleId: selection.titleId,
-    context: {
-      kind: decision.state,
-      action: decision.primaryAction.kind,
-      season: decision.target.season,
-      episode: decision.target.episode,
-      freshness: decision.freshness,
-    },
+    state: decision.state,
+    actionKind: decision.primaryAction.kind,
+    season: decision.target.season,
+    episode: decision.target.episode,
+    freshness: decision.freshness,
+  });
+  recordContinuationSourceResolution(container, {
+    surface: "startup",
+    selection,
+    preference,
+    resolved: decision.primaryAction.kind === "play-local" ? "local" : "stream",
   });
   await recordLocalHistorySourceDecision(container, selection, "continue");
   return {

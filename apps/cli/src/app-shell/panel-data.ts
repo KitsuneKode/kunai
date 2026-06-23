@@ -286,6 +286,10 @@ export function buildDiagnosticsPanelLines({
   const playbackStartupEvent = recentEvents.find(
     (event) => event.operation === "playback.startup.timeline",
   );
+  const continuationEvents = recentEvents.filter(
+    (event) =>
+      event.operation === "continuation.project" || event.operation === "continuation.source",
+  );
   const releaseReconciliationEvent = recentEvents.find(
     (event) => event.operation === "release-reconciliation.refresh",
   );
@@ -410,6 +414,11 @@ export function buildDiagnosticsPanelLines({
       label: "Session",
       detail: sessionVerdictDetail,
       tone: sessionVerdictTone,
+    },
+    {
+      label: "Continue decision",
+      detail: formatContinuationDecisionTimeline(continuationEvents),
+      tone: continuationEvents.length > 0 ? "info" : "neutral",
     },
     {
       label: "Mode",
@@ -704,6 +713,28 @@ function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string
   ]
     .filter(Boolean)
     .join("  ·  ");
+}
+
+function formatContinuationDecisionTimeline(events: readonly DiagnosticEvent[]): string {
+  if (events.length === 0) {
+    return "No continuation project/source events yet · startup --continue, History Continue, or Calendar continue-ready";
+  }
+  const latestProject = [...events]
+    .reverse()
+    .find((event) => event.operation === "continuation.project");
+  const latestSource = [...events]
+    .reverse()
+    .find((event) => event.operation === "continuation.source");
+  const parts = [
+    latestProject
+      ? `project ${String(latestProject.context?.surface ?? "unknown")} · ${String(latestProject.context?.kind ?? latestProject.message)}`
+      : null,
+    latestSource
+      ? `source ${String(latestSource.context?.resolved ?? "?")} via ${String(latestSource.context?.preference ?? "auto")}`
+      : null,
+    `${events.length} event${events.length === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  return parts.join("  ·  ");
 }
 
 function formatPlaybackStartupTimelineEvent(event: DiagnosticEvent | undefined): string {

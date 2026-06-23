@@ -44,6 +44,7 @@ export type DiagnosticsBundleCorrelation = {
 };
 
 export type DiagnosticsBundleInsights = {
+  readonly continuationDecision?: DiagnosticsEventInsight;
   readonly providerResolve?: DiagnosticsEventInsight;
   readonly resolveWork?: ResolveWorkDiagnosticsInsight;
   readonly sourceInventoryCache?: DiagnosticsEventInsight;
@@ -130,6 +131,7 @@ function buildBundleInsights(
   resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[],
 ): DiagnosticsBundleInsights {
   const insights: {
+    continuationDecision?: DiagnosticsEventInsight;
     providerResolve?: DiagnosticsEventInsight;
     resolveWork?: ResolveWorkDiagnosticsInsight;
     sourceInventoryCache?: DiagnosticsEventInsight;
@@ -137,6 +139,11 @@ function buildBundleInsights(
     downloadRepair?: DiagnosticsEventInsight;
     offlineContinuity?: DiagnosticsEventInsight;
   } = {};
+  const continuationDecision = buildOperationInsight(events, [
+    "continuation.project",
+    "continuation.source",
+  ]);
+  if (continuationDecision) insights.continuationDecision = continuationDecision;
   const providerResolve = buildOperationPrefixInsight(events, "provider.resolve.");
   if (providerResolve) insights.providerResolve = providerResolve;
   const resolveWork = buildResolveWorkDiagnosticsInsight(resolveWorkLedgers);
