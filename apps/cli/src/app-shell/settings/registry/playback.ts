@@ -1,6 +1,7 @@
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   AUTO_CLEANUP_GRACE_DAY_OPTIONS,
+  CONTINUE_SOURCE_PREFERENCE_OPTIONS,
   QUIT_NEAR_END_BEHAVIOR_OPTIONS,
   QUIT_THRESHOLD_MODE_OPTIONS,
   RECOVERY_MODE_OPTIONS,
@@ -102,6 +103,19 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         !value.trim() || value.trim().startsWith("/")
           ? null
           : "Type an absolute download path, or clear to use default.",
+    },
+    {
+      kind: "enum",
+      id: "continueSourcePreference",
+      label: "Continue source",
+      detail: "Default local-vs-stream behavior on History Continue rows",
+      options: CONTINUE_SOURCE_PREFERENCE_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.continueSourcePreference,
+      write: (config, value) => ({
+        ...config,
+        continueSourcePreference: value as typeof config.continueSourcePreference,
+      }),
     },
     {
       kind: "boolean",

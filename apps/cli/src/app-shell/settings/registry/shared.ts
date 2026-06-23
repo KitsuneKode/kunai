@@ -48,6 +48,29 @@ export const QUIT_NEAR_END_BEHAVIOR_OPTIONS: readonly EnumOption[] = [
   },
 ];
 
+export const CONTINUE_SOURCE_PREFERENCE_OPTIONS: readonly EnumOption[] = [
+  {
+    value: "auto",
+    label: "Auto",
+    detail: "Prefer ready local copy when available, otherwise stream",
+  },
+  {
+    value: "local",
+    label: "Local",
+    detail: "Prefer offline playback when a ready download exists",
+  },
+  {
+    value: "stream",
+    label: "Stream",
+    detail: "Prefer online playback when a stream source exists",
+  },
+  {
+    value: "ask",
+    label: "Ask",
+    detail: "Prompt for local vs stream when both sources are available",
+  },
+];
+
 export const QUIT_THRESHOLD_MODE_OPTIONS: readonly EnumOption[] = [
   {
     value: "credits-or-90-percent" satisfies QuitNearEndThresholdMode,

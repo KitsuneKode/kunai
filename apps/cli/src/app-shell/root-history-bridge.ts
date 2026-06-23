@@ -3,6 +3,10 @@ import {
   type ContinueHistoryRelease,
 } from "@/domain/continuation/history-reconciliation";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
+import {
+  resolveContinueSourceAction,
+  type ContinueSourcePreference,
+} from "@/services/continuation/continuation-source";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
@@ -99,9 +103,17 @@ export function buildRootHistorySelection(
   selection: RootHistorySelection,
   nextReleases: ReadonlyMap<string, ContinueHistoryRelease> | undefined,
   projections?: ReadonlyMap<string, ContinuationProjection>,
+  options?: {
+    readonly sourcePreference?: ContinueSourcePreference;
+    readonly sourceOverride?: "local" | "stream";
+  },
 ): RootHistorySelection {
-  if (historyContentType(selection.entry) !== "series") return selection;
-  const action = projections?.get(selection.titleId)?.primaryAction;
+  const projection = projections?.get(selection.titleId);
+  const action = resolveContinueSourceAction(
+    projection,
+    options?.sourcePreference ?? "auto",
+    options?.sourceOverride,
+  );
   if (action?.kind === "play-local") {
     return {
       ...selection,
@@ -123,6 +135,7 @@ export function buildRootHistorySelection(
       },
     };
   }
+  if (historyContentType(selection.entry) !== "series") return selection;
   const decision = reconcileContinueHistory({
     titleId: selection.titleId,
     entries: [[selection.titleId, selection.entry]],

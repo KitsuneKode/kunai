@@ -2,6 +2,7 @@
 // Config Service Implementation
 // =============================================================================
 
+import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import { normalizeAutoDownloadNextCount } from "@/services/download/download-scope-policy";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
@@ -161,6 +162,7 @@ export class ConfigServiceImpl implements ConfigService {
       offlineDefaultRunwayTarget: normalizeRunwayTarget(loaded.offlineDefaultRunwayTarget),
       protectedDownloadJobIds: normalizeStringList(loaded.protectedDownloadJobIds),
       recoveryMode: normalizeRecoveryMode(loaded.recoveryMode),
+      continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -357,6 +359,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.recoveryMode;
   }
 
+  get continueSourcePreference(): KitsuneConfig["continueSourcePreference"] {
+    return this.config.continueSourcePreference;
+  }
+
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
   }
@@ -548,6 +554,13 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.recoveryMode !== undefined
         ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
         : null),
+      ...(partial.continueSourcePreference !== undefined
+        ? {
+            continueSourcePreference: normalizeContinueSourcePreference(
+              partial.continueSourcePreference,
+            ),
+          }
+        : null),
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
         : null),
@@ -669,6 +682,10 @@ function normalizeVideasyAppId(value: unknown, sessionToken = ""): KitsuneConfig
 
 function normalizeRecoveryMode(value: unknown): RecoveryMode {
   return value === "fallback-first" || value === "manual" ? value : "guided";
+}
+
+function normalizeContinueSourcePreference(value: unknown): ContinueSourcePreference {
+  return value === "local" || value === "stream" || value === "ask" ? value : "auto";
 }
 
 function normalizeStartupPriority(value: unknown): StartupPriority {

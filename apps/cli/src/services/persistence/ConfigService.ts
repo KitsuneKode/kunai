@@ -4,6 +4,7 @@
 // Manages user configuration and preferences.
 // =============================================================================
 
+import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 import type { TuningConfig } from "./tuning";
@@ -86,6 +87,11 @@ export interface KitsuneConfig {
   footerHints: "detailed" | "minimal";
   /** When user quits mpv near the natural end, whether auto-next may still advance. */
   quitNearEndBehavior: QuitNearEndBehavior;
+  /**
+   * Default local-vs-stream resolution for History Continue rows when both sources exist.
+   * `auto` prefers ready local copy, else stream; `ask` prompts on Enter.
+   */
+  continueSourcePreference: ContinueSourcePreference;
   /** How “near the end” is detected for quit + completion thresholds. */
   quitNearEndThresholdMode: QuitNearEndThresholdMode;
   /**
