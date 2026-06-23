@@ -22,6 +22,11 @@
 //     (nothing new to watch right now)                     → completed
 // =============================================================================
 
+import {
+  anchorEpisodeRef,
+  isAtOrPastCatalogEnd,
+  type CatalogEpisodeBounds,
+} from "@/domain/continuation/catalog-episode-bounds";
 import { projectSeriesProgress } from "@/domain/continuation/watch-progress";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { ReleaseProgressStatus } from "@kunai/storage";
@@ -59,6 +64,7 @@ export function classifyHistoryBucket(input: {
   readonly release: HistoryReleaseSignal | null | undefined;
   /** A genuinely known, playable next episode (offline-ready or confirmed released). */
   readonly hasKnownNextToPlay?: boolean;
+  readonly catalogBounds?: CatalogEpisodeBounds | null;
 }): HistoryBucket {
   const { entry, release } = input;
 
@@ -67,6 +73,11 @@ export function classifyHistoryBucket(input: {
 
   // A finished movie is simply done.
   if (historyContentType(entry) === "movie") return "completed";
+
+  const anchor = anchorEpisodeRef(entry);
+  if (isAtOrPastCatalogEnd(anchor, input.catalogBounds)) {
+    return "completed";
+  }
 
   // Finished series episode — decide off the authoritative release status.
   if (release && release.status === "new-episodes" && release.newEpisodeCount > 0) {

@@ -1,3 +1,8 @@
+import {
+  anchorEpisodeRef,
+  optimisticNextEpisodeWithinBounds,
+  type CatalogEpisodeBounds,
+} from "@/domain/continuation/catalog-episode-bounds";
 import type { CatalogReleaseStatus } from "@/services/catalog/CatalogScheduleService";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
@@ -39,6 +44,7 @@ export function reconcileContinueHistory(input: {
   readonly titleId: string;
   readonly entries: readonly [string, HistoryProgress][];
   readonly nextRelease?: ContinueHistoryRelease | null;
+  readonly catalogBounds?: CatalogEpisodeBounds | null;
 }): ContinueHistoryReconciliationDecision {
   const entries = input.entries
     .filter(([titleId]) => titleId === input.titleId)
@@ -82,12 +88,22 @@ export function reconcileContinueHistory(input: {
     input.nextRelease?.status === "released" ||
     input.nextRelease?.status === "caught-up";
   if (historyContentType(latest) === "series" && !hasAuthoritativeRelease) {
+    const anchor = anchorEpisodeRef(latest);
+    const next = optimisticNextEpisodeWithinBounds(anchor, input.catalogBounds);
+    if (!next) {
+      return {
+        kind: "up-to-date",
+        titleId: input.titleId,
+        entry: latest,
+        nextRelease: input.nextRelease ?? undefined,
+      };
+    }
     return {
       kind: "new-episode",
       titleId: input.titleId,
       titleName: latest.title,
-      season: latest.season ?? 1,
-      episode: (latest.episode ?? latest.absoluteEpisode ?? 1) + 1,
+      season: next.season,
+      episode: next.episode,
       previousCompleted: latest,
       releaseAt: null,
     };

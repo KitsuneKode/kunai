@@ -115,3 +115,14 @@ test("new-episodes delta with unknown release time → continue (don't flood New
   });
   expect(classifyHistoryBucket({ entry: seriesEntry(), release })).toBe("continue");
 });
+
+test("finished series at known catalog end → completed even without release cache", () => {
+  const entry = seriesEntry({ episode: 12, completed: true });
+  expect(
+    classifyHistoryBucket({
+      entry,
+      release: null,
+      catalogBounds: { season: 1, latestEpisode: 12 },
+    }),
+  ).toBe("completed");
+});
