@@ -1,4 +1,9 @@
-import { mergeBackfillExternalIds, resolvePersistedHistoryTitle } from "@kunai/core";
+import {
+  mergeBackfillExternalIds,
+  resolveCanonicalCatalogTitleId,
+  resolveHistoryLookupTitleId,
+  resolvePersistedHistoryTitle,
+} from "@kunai/core";
 import type {
   EpisodeIdentity,
   MediaKind,
@@ -136,6 +141,36 @@ export class HistoryRepository {
     return row === null ? undefined : mapHistoryRow(row);
   }
 
+  /**
+   * Resolve the latest history row for a title identity. Tries the canonical catalog
+   * id first, then falls back to the raw session id for legacy opaque rows.
+   */
+  getLatestForTitleIdentity(
+    title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
+  ): HistoryProgress | undefined {
+    const canonicalId = resolveHistoryLookupTitleId(title);
+    const canonical = this.getLatestForTitle(canonicalId);
+    if (canonical) return canonical;
+    if (canonicalId !== title.id) {
+      return this.getLatestForTitle(title.id);
+    }
+    return undefined;
+  }
+
+  getProgressForTitleIdentity(
+    title: Pick<TitleIdentity, "id" | "kind" | "title" | "externalIds">,
+    episode?: EpisodeIdentity,
+  ): HistoryProgress | undefined {
+    const canonicalId = resolveHistoryLookupTitleId(title);
+    const canonicalTitle: TitleIdentity = { ...title, id: canonicalId };
+    const progress = this.getProgress(canonicalTitle, episode);
+    if (progress) return progress;
+    if (canonicalId !== title.id) {
+      return this.getProgress(title, episode);
+    }
+    return undefined;
+  }
+
   /** Manual reclassification override — fix a wrongly-classified title across all its history rows. */
   setMediaKind(titleId: string, mediaKind: MediaKind): void {
     this.db
@@ -228,6 +263,38 @@ export class HistoryRepository {
       )
       .all(titleId, limit)
       .map(mapHistoryRow);
+  }
+
+  listAllProgress(): readonly HistoryProgress[] {
+    return this.db
+      .query<HistoryProgressRow, []>("SELECT * FROM history_progress")
+      .all()
+      .map(mapHistoryRow);
+  }
+
+  rekeyProgressRow(oldKey: string, newTitleId: string, newKey: string): void {
+    this.db
+      .query("UPDATE history_progress SET key = ?, title_id = ? WHERE key = ?")
+      .run(newKey, newTitleId, oldKey);
+  }
+
+  deleteProgressByKey(key: string): void {
+    this.db.query("DELETE FROM history_progress WHERE key = ?").run(key);
+  }
+
+  updateProgressExternalIdsByKey(key: string, externalIds: ProviderExternalIds): void {
+    const externalIdsJson = serializeExternalIds(externalIds);
+    if (!externalIdsJson) return;
+    this.db
+      .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
+      .run(externalIdsJson, key);
+  }
+
+  getProgressByKey(key: string): HistoryProgress | undefined {
+    const row = this.db
+      .query<HistoryProgressRow, [string]>("SELECT * FROM history_progress WHERE key = ?")
+      .get(key);
+    return row === null ? undefined : mapHistoryRow(row);
   }
 
   deleteTitle(titleId: string): void {

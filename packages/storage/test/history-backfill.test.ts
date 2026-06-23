@@ -91,6 +91,46 @@ test("upsertProgress persists canonical title id and provider native map", () =>
   });
 });
 
+test("getLatestForTitleIdentity finds canonical row when session id is opaque", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: {
+      id: "bxCKTnota29uSRnZw",
+      kind: "anime",
+      title: "Hozuki's Coolheadedness",
+      externalIds: { anilistId: "20431" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 120,
+    providerId: "allanime",
+  });
+
+  const found = r.getLatestForTitleIdentity({
+    id: "bxCKTnota29uSRnZw",
+    kind: "anime",
+    externalIds: { anilistId: "20431" },
+  });
+
+  expect(found?.titleId).toBe("20431");
+  expect(found?.positionSeconds).toBe(120);
+});
+
+test("getLatestForTitleIdentity falls back to legacy opaque title_id", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: { id: "legacy-opaque", kind: "anime", title: "Legacy" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 42,
+  });
+
+  const found = r.getLatestForTitleIdentity({
+    id: "legacy-opaque",
+    kind: "anime",
+  });
+
+  expect(found?.positionSeconds).toBe(42);
+});
+
 test("backfillTitleMetadata merges provider native ids without clobbering catalog ids", () => {
   const r = repo();
   r.upsertProgress({

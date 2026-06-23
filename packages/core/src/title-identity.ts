@@ -37,6 +37,13 @@ export function resolveCanonicalCatalogTitleId(
   return anilistId ?? malId ?? id;
 }
 
+/** Canonical title id for history / prefs / continuation lookups (alias for clarity at call sites). */
+export function resolveHistoryLookupTitleId(
+  title: Pick<TitleIdentityInput, "id" | "kind" | "externalIds">,
+): string {
+  return resolveCanonicalCatalogTitleId(title);
+}
+
 export function looksLikeOpaqueProviderNativeId(
   id: string,
   externalIds?: ProviderExternalIds,
