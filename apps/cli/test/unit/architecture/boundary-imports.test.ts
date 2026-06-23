@@ -69,6 +69,7 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "../app-shell/workflows",
     ],
   ],
+  ["apps/cli/src/app/calendar-continue-launch.ts", ["@/app-shell/root-history-bridge"]],
   ["apps/cli/src/app/browse-option-mappers.ts", ["@/app-shell/types"]],
   [
     "apps/cli/src/app/download-episode-checklist.ts",

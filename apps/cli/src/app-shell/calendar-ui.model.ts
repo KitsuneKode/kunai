@@ -469,7 +469,7 @@ export function buildCalendarPreviewRailModel(
       state === "resolving" || state === "missed"
         ? "This episode has aired on the schedule. Kunai will not offer playback until a provider source is available."
         : state === "continue-ready"
-          ? "This release matches your continuation state. Enter uses the same continuation decision as the Continue Hub."
+          ? "This release matches your continuation state. Enter uses the same continuation decision as History's Continue tab."
           : option.previewBody,
     posterUrl: option.previewImageUrl,
     posterState,

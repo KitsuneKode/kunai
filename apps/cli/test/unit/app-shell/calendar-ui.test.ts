@@ -459,7 +459,7 @@ test("buildCalendarPreviewRailModel explains continuation-ready rows", () => {
     },
   });
   const model = buildCalendarPreviewRailModel(option, "none");
-  expect(model?.overview).toContain("same continuation decision as the Continue Hub");
+  expect(model?.overview).toContain("same continuation decision as History's Continue tab");
   expect(model?.facts).toContainEqual({
     label: "Action",
     value: "Enter to continue",

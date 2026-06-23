@@ -14,6 +14,7 @@ import { chooseFromListShell } from "@/app-shell/pickers";
 import type { BrowseShellOption } from "@/app-shell/types";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
+import { launchCalendarContinue } from "@/app/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/calendar-results";
 import { playTrailer } from "@/app/details-trailer";
 import { loadDiscoverResults } from "@/app/discover-results";
@@ -599,6 +600,16 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         const originalSelected = outcome.value;
+        if (
+          isCalendarSearchResult(originalSelected) &&
+          originalSelected.calendar?.continuation?.playable
+        ) {
+          const launch = await launchCalendarContinue(container, originalSelected);
+          if (launch) {
+            stateManager.dispatch({ type: "SELECT_TITLE", title: launch.title });
+            return { status: "success", value: launch.title };
+          }
+        }
         const deferAnimeProviderMapping =
           !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;
         const selectionMode = applySearchSelectionSessionRouting(container, originalSelected);
