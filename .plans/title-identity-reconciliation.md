@@ -1,6 +1,6 @@
 # Title Identity Reconciliation Plan
 
-Status: Proposed (not yet landed)
+Status: Landed (slices 1–6); hardening complete (2026-06-24)
 
 Read this before changing title identity, `externalIds`, anime provider mapping, resolve-input construction, history/continuation replay, or cross-provider routing.
 
