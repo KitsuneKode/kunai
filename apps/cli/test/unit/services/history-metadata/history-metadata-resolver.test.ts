@@ -10,6 +10,7 @@ function target(over: Partial<HistoryHealTarget> & { title: string }): HistoryHe
     mediaKind: over.mediaKind ?? "anime",
     needsPoster: over.needsPoster ?? true,
     needsExternalIds: over.needsExternalIds ?? true,
+    needsProviderNativeMapping: over.needsProviderNativeMapping ?? false,
     ...over,
   };
 }

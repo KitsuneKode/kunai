@@ -8,8 +8,9 @@
 // picks the titles worth re-resolving, most-recent first, capped to throttle work.
 // =============================================================================
 
+import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
 import type { HistoryProgress } from "@kunai/storage";
-import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+import type { MediaKind, ProviderExternalIds, ProviderId } from "@kunai/types";
 
 export type HistoryHealTarget = {
   readonly titleId: string;
@@ -20,9 +21,20 @@ export type HistoryHealTarget = {
   readonly anchorEpisode?: number;
   readonly needsPoster: boolean;
   readonly needsExternalIds: boolean;
+  readonly needsProviderNativeMapping: boolean;
+  readonly providerId?: ProviderId;
 };
 
 const DEFAULT_HEAL_LIMIT = 8;
+const PROVIDER_NATIVE_HISTORY_PROVIDERS = new Set<ProviderId>(["allanime", "miruro"]);
+
+function needsProviderNativeMapping(anchor: HistoryProgress): boolean {
+  const providerId = anchor.providerId;
+  if (!providerId || !PROVIDER_NATIVE_HISTORY_PROVIDERS.has(providerId)) return false;
+  if (!anchor.externalIds?.anilistId) return false;
+  if (anchor.externalIds.providerNativeIds?.[providerId]) return false;
+  return looksLikeOpaqueProviderNativeId(anchor.titleId, anchor.externalIds);
+}
 
 function hasExternalIds(externalIds: ProviderExternalIds | undefined): boolean {
   return Boolean(externalIds && Object.values(externalIds).some(Boolean));
@@ -45,7 +57,8 @@ export function selectHistoryHealTargets(
   for (const anchor of latestByTitle.values()) {
     const needsPoster = !anchor.posterUrl;
     const needsExternalIds = !hasExternalIds(anchor.externalIds);
-    if (!needsPoster && !needsExternalIds) continue;
+    const needsProviderNative = needsProviderNativeMapping(anchor);
+    if (!needsPoster && !needsExternalIds && !needsProviderNative) continue;
     targets.push({
       titleId: anchor.titleId,
       title: anchor.title,
@@ -55,6 +68,8 @@ export function selectHistoryHealTargets(
       anchorEpisode: anchor.episode,
       needsPoster,
       needsExternalIds,
+      needsProviderNativeMapping: needsProviderNative,
+      providerId: anchor.providerId,
     });
   }
 

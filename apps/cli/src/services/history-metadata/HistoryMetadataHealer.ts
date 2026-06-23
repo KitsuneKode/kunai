@@ -9,6 +9,7 @@
 // the orchestration stays pure-testable.
 // =============================================================================
 
+import { mergeProviderNativeId } from "@kunai/core";
 import type { HistoryProgress } from "@kunai/storage";
 import type { ProviderExternalIds } from "@kunai/types";
 
@@ -61,11 +62,23 @@ export class HistoryMetadataHealer {
         this.deps.onHealError?.(target.titleId, error);
         continue;
       }
-      if (!resolved || (!resolved.posterUrl && !hasExternalIds(resolved.externalIds))) continue;
+      if (!resolved && !target.needsProviderNativeMapping) {
+        continue;
+      }
+
+      let externalIds = target.needsExternalIds ? resolved?.externalIds : target.externalIds;
+      if (target.needsProviderNativeMapping && target.providerId) {
+        const nativeId = target.titleId.replace(/^allanime:/, "").trim();
+        externalIds = mergeProviderNativeId(externalIds, target.providerId, nativeId);
+      }
+
+      const posterUrl = target.needsPoster ? resolved?.posterUrl : undefined;
+      if (!posterUrl && !hasExternalIds(externalIds)) continue;
 
       this.deps.repo.backfillTitleMetadata(target.titleId, {
-        posterUrl: target.needsPoster ? resolved.posterUrl : undefined,
-        externalIds: target.needsExternalIds ? resolved.externalIds : undefined,
+        posterUrl,
+        externalIds:
+          target.needsExternalIds || target.needsProviderNativeMapping ? externalIds : undefined,
       });
       healed.push(target.titleId);
     }
