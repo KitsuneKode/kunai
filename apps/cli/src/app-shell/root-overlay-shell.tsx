@@ -14,6 +14,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
+import { continuationSignalsForHistoryEntry } from "@/services/continuation/history-continuation-signals";
 import {
   historyContentType,
   readLatestHistoryByTitle,
@@ -319,39 +320,29 @@ function readCachedHistoryProjections(
     const releaseProgress = cachedProgress.get(titleId);
     const nextRelease = releaseProgressToContinueHistoryRelease(releaseProgress);
     const policy = policies.get(titleId);
+    const offline =
+      policy || nextReadyByTitle.has(titleId)
+        ? {
+            enrolled: policy?.enrolled === true,
+            readyNextEpisodes: (() => {
+              const nextReady = nextReadyByTitle.get(titleId);
+              return nextReady ? [nextReady] : [];
+            })(),
+          }
+        : null;
     projections.set(
       titleId,
       projectionFromViewDecision(
-        container.continueWatchingService.titleDecision(titleId, {
-          nextRelease:
-            nextRelease &&
-            nextRelease.season !== undefined &&
-            nextRelease.episode !== undefined &&
-            historyContentType(entry) === "series"
-              ? {
-                  season: nextRelease.season,
-                  episode: nextRelease.episode,
-                  released: nextRelease.status === "released",
-                  availableAt: nextRelease.releaseAt ?? undefined,
-                }
-              : null,
-          releaseProgress: releaseProgress
-            ? {
-                newEpisodeCount: releaseProgress.newEpisodeCount,
-                stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
-              }
-            : null,
-          offline:
-            policy || nextReadyByTitle.has(titleId)
-              ? {
-                  enrolled: policy?.enrolled === true,
-                  readyNextEpisodes: (() => {
-                    const nextReady = nextReadyByTitle.get(titleId);
-                    return nextReady ? [nextReady] : [];
-                  })(),
-                }
-              : null,
-        }),
+        container.continueWatchingService.titleDecision(
+          titleId,
+          continuationSignalsForHistoryEntry({
+            titleId,
+            entry,
+            nextRelease,
+            releaseProgress,
+            offline,
+          }),
+        ),
       ),
     );
   }
