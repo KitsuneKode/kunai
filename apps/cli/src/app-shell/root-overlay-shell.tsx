@@ -54,7 +54,7 @@ import {
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView } from "./notifications-view";
-import { resolveOverlayFilterEscape } from "./overlay-filter-escape";
+import { resolveOverlayBackStack } from "./overlay-back-stack";
 import {
   historyFooterActions,
   notificationsFooterActions,
@@ -1000,12 +1000,16 @@ export function RootOverlayShell({
       const focusedGroup = trackGroups[tracksNav.sectionIndex];
 
       if (key.escape) {
-        if (tracksNav.focusedPane === "options") {
+        const backAction = resolveOverlayBackStack({
+          nestedPaneActive: tracksNav.focusedPane === "options",
+          pickerOverlay: true,
+        });
+        if (backAction === "exit-pane") {
           setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "exit-section" }, navCtx));
-          return;
+        } else if (backAction === "cancel-picker") {
+          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         }
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         return;
       }
       if (key.leftArrow && tracksNav.focusedPane === "options") {
@@ -1059,56 +1063,54 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (
-      key.escape &&
-      shouldHandleOverlayEscape({
-        overlay,
-        pickerFilterQuery,
-      })
-    ) {
-      if (overlay.type === "notifications" && notificationPlayConfirm) {
-        setNotificationPlayConfirm(null);
-        setFilterQuery("");
-        setSelectedIndex(0);
-        return;
-      }
-      if (overlay.type === "notifications" && notificationActionDedupKey) {
-        setNotificationActionDedupKey(null);
-        setFilterQuery("");
-        setSelectedIndex(0);
-        return;
-      }
-      if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-        if ((overlay.filterQuery ?? "").length > 0) {
+    if (key.escape) {
+      const backAction = resolveOverlayBackStack({
+        cancelActive: shouldHandleOverlayEscape({
+          overlay,
+          pickerFilterQuery,
+        }),
+        filterQuery: isRootMediaPickerOverlay(overlay) ? (overlay.filterQuery ?? "") : filterQuery,
+        confirmationActive:
+          overlay.type === "notifications" &&
+          Boolean(notificationPlayConfirm || notificationActionDedupKey),
+        pickerOverlay: isRootMediaPickerOverlay(overlay),
+        surfaceOwnsEscape: overlay.type === "library" || overlay.type === "downloads",
+      });
+
+      if (backAction === "clear-filter") {
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({
             type: "UPDATE_PICKER_FILTER",
             id: overlay.id,
             filterQuery: "",
           });
-          return;
+        } else {
+          setFilterQuery("");
+          setSelectedIndex(0);
         }
+        return;
+      }
+
+      if (backAction === "cancel-confirmation") {
+        if (overlay.type === "notifications" && notificationPlayConfirm) {
+          setNotificationPlayConfirm(null);
+        }
+        if (overlay.type === "notifications" && notificationActionDedupKey) {
+          setNotificationActionDedupKey(null);
+        }
+        setSelectedIndex(0);
+        return;
+      }
+
+      if (backAction === "cancel-picker" && isRootMediaPickerOverlay(overlay) && overlay.id) {
         container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
         return;
       }
-      // Library / Downloads are self-contained shells that own Esc themselves
-      // (clear an armed delete-confirm or switch sub-state first, then close via
-      // their onClose). Let their own useInput handle it instead of closing here.
-      if (overlay.type === "library" || overlay.type === "downloads") {
+
+      if (backAction === "defer-to-surface" || backAction === "no-op") {
         return;
       }
-      // Double-Esc on filterable overlays: first Esc clears a non-empty filter,
-      // second Esc closes — same contract as the media pickers above.
-      if (
-        overlay.type === "history" ||
-        overlay.type === "provider_picker" ||
-        overlay.type === "notifications"
-      ) {
-        if (resolveOverlayFilterEscape(filterQuery) === "clear-filter") {
-          setFilterQuery("");
-          setSelectedIndex(0);
-          return;
-        }
-      }
+
       if (overlay.type === "history" && hasPendingRootHistorySelection()) {
         resolveRootHistorySelection(null);
       }
