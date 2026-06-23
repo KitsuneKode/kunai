@@ -31,7 +31,6 @@ import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -104,8 +103,6 @@ import {
   type ShellFooterMode,
   type PlaybackShellState,
   type PlaybackShellResult,
-  type ShellPanelLine,
-  type ShellPickerOption,
   type ShellAction,
   type ShellStatusTone,
 } from "./types";
@@ -1265,36 +1262,10 @@ export async function shutdownSessionApp(): Promise<void> {
 function PlaybackShell({
   container,
   state,
-  episodePickerOptions: _episodePickerOptions,
-  episodePickerSubtitle: _episodePickerSubtitle,
-  episodePickerInitialIndex: _episodePickerInitialIndex = 0,
-  providerOptions: _providerOptions,
-  settings: _settings,
-  settingsSeriesProviderOptions: _settingsSeriesProviderOptions,
-  settingsAnimeProviderOptions: _settingsAnimeProviderOptions,
-  onSaveSettings: _onSaveSettings,
-  loadHistoryPanel: _loadHistoryPanel,
-  loadDiagnosticsPanel: _loadDiagnosticsPanel,
-  loadHelpPanel: _loadHelpPanel,
-  loadAboutPanel: _loadAboutPanel,
-  onChangeProvider: _onChangeProvider,
   onResolve,
 }: {
   container: Container;
   state: PlaybackShellState;
-  providerOptions?: readonly ShellPickerOption<string>[];
-  episodePickerOptions?: readonly ShellPickerOption<string>[];
-  episodePickerSubtitle?: string;
-  episodePickerInitialIndex?: number;
-  settings?: KitsuneConfig;
-  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
-  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
-  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
-  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
-  onChangeProvider?: (providerId: string) => Promise<void>;
   onResolve: (result: PlaybackShellResult) => void;
 }) {
   usePosterSurfaceBoundaryCleanup(true);
@@ -1510,57 +1481,14 @@ function PlaybackShell({
 export function openPlaybackShell({
   state,
   container,
-  providerOptions,
-  episodePickerOptions,
-  episodePickerSubtitle,
-  episodePickerInitialIndex,
-  settings,
-  settingsSeriesProviderOptions,
-  settingsAnimeProviderOptions,
-  onSaveSettings,
-  loadHistoryPanel,
-  loadDiagnosticsPanel,
-  loadHelpPanel,
-  loadAboutPanel,
-  onChangeProvider,
 }: {
   state: PlaybackShellState;
   container: Container;
-  providerOptions?: readonly ShellPickerOption<string>[];
-  episodePickerOptions?: readonly ShellPickerOption<string>[];
-  episodePickerSubtitle?: string;
-  episodePickerInitialIndex?: number;
-  settings?: KitsuneConfig;
-  settingsSeriesProviderOptions?: readonly ShellPickerOption<string>[];
-  settingsAnimeProviderOptions?: readonly ShellPickerOption<string>[];
-  onSaveSettings?: (next: KitsuneConfig) => Promise<void>;
-  loadHistoryPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadDiagnosticsPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadHelpPanel?: () => Promise<readonly ShellPanelLine[]>;
-  loadAboutPanel?: () => Promise<readonly ShellPanelLine[]>;
-  onChangeProvider?: (providerId: string) => Promise<void>;
 }): Promise<PlaybackShellResult> {
   const session = mountRootContent<PlaybackShellResult>({
     kind: "playback",
     renderContent: (finish) => (
-      <PlaybackShell
-        container={container}
-        state={state}
-        providerOptions={providerOptions}
-        episodePickerOptions={episodePickerOptions}
-        episodePickerSubtitle={episodePickerSubtitle}
-        episodePickerInitialIndex={episodePickerInitialIndex}
-        settings={settings}
-        settingsSeriesProviderOptions={settingsSeriesProviderOptions}
-        settingsAnimeProviderOptions={settingsAnimeProviderOptions}
-        onSaveSettings={onSaveSettings}
-        loadHistoryPanel={loadHistoryPanel}
-        loadDiagnosticsPanel={loadDiagnosticsPanel}
-        loadHelpPanel={loadHelpPanel}
-        loadAboutPanel={loadAboutPanel}
-        onChangeProvider={onChangeProvider}
-        onResolve={finish}
-      />
+      <PlaybackShell container={container} state={state} onResolve={finish} />
     ),
     fallbackValue: "quit",
   });

@@ -48,7 +48,7 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     [
       "@/app-shell/command-router",
       "@/app-shell/commands",
-      "@/app-shell/runtime-bindings",
+      "@/app-shell/playback-shell-error-capture",
       "@/app-shell/workflows",
       "../app-shell/ink-shell",
     ],
@@ -62,7 +62,6 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/commands",
       "@/app-shell/ink-shell",
       "@/app-shell/pickers",
-      "@/app-shell/runtime-bindings",
       "@/app-shell/search-browse-command-ids",
       "@/app-shell/types",
       "../app-shell/workflows",

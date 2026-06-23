@@ -8,7 +8,6 @@
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
 import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
-import { buildShellRuntimeBindings } from "@/app-shell/runtime-bindings";
 import {
   openTracksPanel,
   buildPickerActionContext,
@@ -2688,7 +2687,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // Post-playback menu — inner loop so unavailable navigation
           // actions stay in the menu instead of re-resolving the stream.
           const { openPlaybackShell } = await import("../app-shell/ink-shell");
-          const shellRuntime = buildShellRuntimeBindings(container);
 
           // Loaded once per post-play session when the synchronous seed is empty.
           // null = not yet attempted; [] = attempted (within budget) but empty.
@@ -3044,19 +3042,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 })),
                 commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
               },
-              providerOptions: shellRuntime.providerOptions,
-              episodePickerOptions: shellEpisodePicker.options,
-              episodePickerSubtitle: shellEpisodePicker.subtitle,
-              episodePickerInitialIndex: shellEpisodePicker.initialIndex,
-              settings: shellRuntime.settings,
-              settingsSeriesProviderOptions: shellRuntime.settingsSeriesProviderOptions,
-              settingsAnimeProviderOptions: shellRuntime.settingsAnimeProviderOptions,
-              onChangeProvider: shellRuntime.onChangeProvider,
-              onSaveSettings: shellRuntime.onSaveSettings,
-              loadHelpPanel: shellRuntime.loadHelpPanel,
-              loadAboutPanel: shellRuntime.loadAboutPanel,
-              loadDiagnosticsPanel: shellRuntime.loadDiagnosticsPanel,
-              loadHistoryPanel: shellRuntime.loadHistoryPanel,
             });
 
             if (typeof postAction === "object") {
