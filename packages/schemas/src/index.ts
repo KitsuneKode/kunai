@@ -4,6 +4,7 @@ import type {
   ProviderExternalIds,
   ProviderFailure,
   ProviderHealth,
+  ProviderEndpointHealthRecord,
   ProviderLanguageEvidence,
   ProviderRelayConfig,
   ProviderReleaseInfo,
@@ -111,6 +112,7 @@ export const providerExternalIdsSchema = z.object({
   tmdbId: z.string().min(1).optional(),
   imdbId: z.string().min(1).optional(),
   malId: z.string().min(1).optional(),
+  providerNativeIds: z.record(z.string(), z.string().min(1)).optional(),
 }) satisfies z.ZodType<ProviderExternalIds>;
 
 export const providerReleaseInfoSchema = z.object({
@@ -363,3 +365,14 @@ export const providerHealthSchema = z.object({
   subtitleSuccessRate: z.number().min(0).max(1).optional(),
   streamSurvivalRate: z.number().min(0).max(1).optional(),
 }) satisfies z.ZodType<ProviderHealth>;
+
+export const providerEndpointHealthSchema = z.object({
+  providerId: z.string().min(1),
+  endpoint: z.string().min(1),
+  failureClass: z.enum(["route-dead", "server-error", "transient"]).optional(),
+  consecutiveFailures: z.number().int().nonnegative(),
+  distinctTitleIds: z.array(z.string().min(1)),
+  quarantinedUntil: z.iso.datetime().optional(),
+  lastFailureAt: z.iso.datetime().optional(),
+  updatedAt: z.iso.datetime(),
+}) satisfies z.ZodType<ProviderEndpointHealthRecord>;

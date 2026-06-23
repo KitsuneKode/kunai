@@ -22,6 +22,7 @@ export type ProviderCycleIntent =
 export type ProviderCycleStopReason =
   | "resolved"
   | "exhausted"
+  | "all-quarantined"
   | "network-offline"
   | "fallback-requested"
   | "cancelled";

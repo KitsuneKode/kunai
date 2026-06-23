@@ -50,7 +50,8 @@ export type CacheTtlClass =
   | "provider-metadata"
   | "catalog-static"
   | "catalog-trending"
-  | "provider-health";
+  | "provider-health"
+  | "endpoint-quarantine";
 
 export type StreamPresentation = "sub" | "dub" | "raw";
 
@@ -91,6 +92,8 @@ export interface ProviderExternalIds {
   readonly tmdbId?: string;
   readonly imdbId?: string;
   readonly malId?: string;
+  /** Provider-owned title ids discovered at resolve/search time (e.g. AllAnime opaque _id). */
+  readonly providerNativeIds?: Readonly<Partial<Record<ProviderId, string>>>;
 }
 
 export interface ProviderReleaseInfo {
@@ -364,6 +367,31 @@ export interface ProviderHealthDelta {
   readonly at: string;
 }
 
+export type EndpointFailureClass = "route-dead" | "server-error" | "transient";
+
+export interface EndpointHealthFailureInfo {
+  readonly class: EndpointFailureClass;
+  readonly titleId?: string;
+  readonly at: string;
+}
+
+export interface ProviderEndpointHealthRecord {
+  readonly providerId: ProviderId;
+  readonly endpoint: string;
+  readonly failureClass?: EndpointFailureClass;
+  readonly consecutiveFailures: number;
+  readonly distinctTitleIds: readonly string[];
+  readonly quarantinedUntil?: string;
+  readonly lastFailureAt?: string;
+  readonly updatedAt: string;
+}
+
+export interface EndpointHealthPort {
+  shouldTry(providerId: ProviderId, endpoint: string): boolean;
+  recordFailure(providerId: ProviderId, endpoint: string, info: EndpointHealthFailureInfo): void;
+  recordSuccess(providerId: ProviderId, endpoint: string): void;
+}
+
 export interface ProviderRuntimePort {
   readonly runtime: ProviderRuntime;
   readonly operations: readonly ProviderOperation[];
@@ -474,6 +502,7 @@ export interface ProviderRuntimeContext {
   readonly retryPolicy?: ProviderRetryPolicy;
   readonly fetch?: ProviderFetchPort;
   readonly auth?: ProviderAuthPort;
+  readonly endpointHealth?: EndpointHealthPort;
   now(): string;
   emit?(event: ProviderTraceEvent): void;
 }
