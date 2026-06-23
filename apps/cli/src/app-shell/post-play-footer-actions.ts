@@ -56,28 +56,10 @@ export function buildPostPlayFooterActions(
   postPlayState: PostPlayState,
   options: PostPlayFooterOptions,
 ): readonly FooterAction[] {
-  const {
-    canResume,
-    autoplayPaused = false,
-    autoskipPaused = false,
-    stopAfterCurrent = false,
-    bindings = KEYBINDINGS,
-  } = options;
+  const { canResume, bindings = KEYBINDINGS } = options;
 
   const command = commandAction(bindings);
   const quit = quitAction(bindings);
-  const autoplay = actionFromBinding("player-autoplay", "toggle-autoplay", {
-    bindings,
-    label: autoplayPaused ? "autoplay on" : "autoplay off",
-  });
-  const autoskip = actionFromBinding("player-autoskip", "toggle-autoskip", {
-    bindings,
-    label: autoskipPaused ? "autoskip on" : "autoskip off",
-  });
-  const stopAfter = actionFromBinding("player-stop-after-current", "stop-after-current", {
-    bindings,
-    label: stopAfterCurrent ? "resume chain" : "stop after",
-  });
   const source = actionFromBinding("post-source", "source", { bindings });
 
   switch (postPlayState.kind) {
@@ -125,15 +107,15 @@ export function buildPostPlayFooterActions(
       ];
     case "mid-series":
     default:
+      // Autoplay/autoskip/stop-after toggles are demoted to the command palette
+      // (still reachable via their direct keybindings) so the persistent footer
+      // stays glanceable instead of a wall of session toggles.
       return [
         actionFromBinding("post-continue", canResume ? "resume" : "next", {
           bindings,
           label: "continue",
           primary: true,
         }),
-        autoplay,
-        autoskip,
-        stopAfter,
         source,
         actionFromBinding("post-replay", "replay", { bindings }),
         command,

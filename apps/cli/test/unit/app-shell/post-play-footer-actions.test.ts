@@ -28,7 +28,7 @@ describe("buildPostPlayFooterActions", () => {
     ]);
   });
 
-  test("builds dynamic mid-series session controls", () => {
+  test("keeps mid-series footer glanceable by demoting toggles to the palette", () => {
     const actions = buildPostPlayFooterActions(
       { kind: "mid-series" },
       {
@@ -41,13 +41,18 @@ describe("buildPostPlayFooterActions", () => {
 
     expect(actions.map((action) => `${action.key}:${action.label}:${action.action}`)).toEqual([
       "n:continue:resume",
-      "a:autoplay on:toggle-autoplay",
-      "u:autoskip off:toggle-autoskip",
-      "x:resume chain:stop-after-current",
       "o:source:source",
       "r:replay:replay",
       "/:commands:command-mode",
     ]);
+
+    const toggleActions = actions.filter(
+      (action) =>
+        action.action === "toggle-autoplay" ||
+        action.action === "toggle-autoskip" ||
+        action.action === "stop-after-current",
+    );
+    expect(toggleActions).toHaveLength(0);
   });
 
   test("season finale exposes next season through a registry-backed key", () => {
