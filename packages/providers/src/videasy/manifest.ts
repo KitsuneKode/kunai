@@ -43,6 +43,15 @@ export const videasyManifest = defineProviderManifest({
   },
   browserSafe: false,
   relaySafe: false,
+  relayProfile: {
+    upstreamHosts: [
+      "api.videasy.to",
+      "db.videasy.to",
+      "player.videasy.to",
+      "www.vidking.net",
+      "www.cineplay.to",
+    ],
+  },
   notes: [
     "Current CLI implementation uses the direct api.videasy.to payload/decryption path only.",
     "Cineplay (bc-frontend) is the default Videasy client profile; vidking.net remains an override.",

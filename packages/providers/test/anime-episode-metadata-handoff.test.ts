@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import type { ProviderRuntimeContext } from "@kunai/types";
+
 import {
   clearAllMangaProviderCachesForTest,
   fetchAllMangaEpisodeCatalog,
@@ -12,6 +14,10 @@ import {
 } from "../src/shared/anime-metadata";
 
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
+const TEST_CONTEXT: ProviderRuntimeContext = {
+  providerId: "allanime",
+  now: () => new Date().toISOString(),
+};
 
 afterEach(() => {
   clearAllMangaProviderCachesForTest();
@@ -33,7 +39,7 @@ describe("AllManga episode metadata handoff", () => {
 
     const externalHosts: string[] = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (input) => {
       const url = String(input);
       if (url.includes("graphql.anilist.co") || url.includes("api.jikan.moe")) {
         externalHosts.push(url);
@@ -47,6 +53,7 @@ describe("AllManga episode metadata handoff", () => {
 
     try {
       const episodes = await fetchAllMangaEpisodeCatalog({
+        context: TEST_CONTEXT,
         apiUrl: "https://api.allanime.day/api",
         referer: "https://youtu-chan.com",
         ua: "Mozilla/5.0",
@@ -74,7 +81,7 @@ describe("AllManga episode metadata handoff", () => {
 
     let anilistCalled = false;
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (input, init) => {
+    globalThis.fetch = (async (input) => {
       const url = String(input);
       if (url.includes("graphql.anilist.co")) {
         anilistCalled = true;
@@ -106,6 +113,7 @@ describe("AllManga episode metadata handoff", () => {
 
     try {
       const episodes = await fetchAllMangaEpisodeCatalog({
+        context: TEST_CONTEXT,
         apiUrl: "https://api.allanime.day/api",
         referer: "https://youtu-chan.com",
         ua: "Mozilla/5.0",

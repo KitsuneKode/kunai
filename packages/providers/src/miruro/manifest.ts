@@ -39,6 +39,9 @@ export const miruroManifest = defineProviderManifest({
   },
   browserSafe: false,
   relaySafe: true,
+  relayProfile: {
+    upstreamHosts: ["miruro.bz", "miruro.ru", "miruro.tv", "www.miruro.tv"],
+  },
   status: "candidate",
   notes: [
     "Uses miruro.tv pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",

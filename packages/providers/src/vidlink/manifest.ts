@@ -37,6 +37,9 @@ export const vidlinkManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
+  relayProfile: {
+    upstreamHosts: ["vidlink.pro", "enc-dec.app"],
+  },
   notes: [
     "Browserless: TMDB id is encrypted via enc-dec.app, then sources are fetched from vidlink.pro/api/b.",
     "Returns a multi-quality HLS playlist (mpv selects the rendition) plus provider subtitles.",

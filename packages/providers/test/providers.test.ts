@@ -1308,9 +1308,12 @@ test("miruro episode lookup preserves network failures as provider evidence", as
   }) as unknown as typeof fetch;
 
   try {
-    await expect(getMiruroEpisodesResponse("999001")).rejects.toThrow(
-      "Miruro pipe network request failed",
-    );
+    await expect(
+      getMiruroEpisodesResponse(
+        { providerId: "miruro", now: () => new Date().toISOString() },
+        "999001",
+      ),
+    ).rejects.toThrow("Miruro pipe network request failed");
   } finally {
     globalThis.fetch = originalFetch;
   }

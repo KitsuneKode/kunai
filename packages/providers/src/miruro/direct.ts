@@ -23,6 +23,7 @@ import type {
 } from "@kunai/types";
 
 import { miruroInventorySourceId } from "../catalogs/miruro";
+import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
@@ -690,6 +691,7 @@ function resolveMiruroAnilistId(title: ProviderEpisodeListInput["title"]): strin
 
 /** Shared episode list fetch for listEpisodes + resolve (30m TTL). */
 export async function getMiruroEpisodesResponse(
+  context: ProviderRuntimeContext,
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<MiruroEpisodesResponse | null> {
@@ -698,6 +700,7 @@ export async function getMiruroEpisodesResponse(
   if (cached) return cached;
 
   const epData = (await pipeCall(
+    context,
     "episodes",
     { anilistId: Number(anilistId) },
     signal,
@@ -734,10 +737,11 @@ function readMiruroMappingMalId(mappings: Record<string, unknown> | undefined): 
 }
 
 export async function fetchMiruroEpisodeCatalog(
+  context: ProviderRuntimeContext,
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<readonly ProviderEpisodeOption[] | null> {
-  const epData = await getMiruroEpisodesResponse(anilistId, signal);
+  const epData = await getMiruroEpisodesResponse(context, anilistId, signal);
   const entries = selectMiruroEpisodeCatalogEntries(epData);
   if (entries.length === 0) return null;
 
@@ -789,6 +793,7 @@ export async function fetchMiruroEpisodeCatalog(
 }
 
 async function pipeCall(
+  context: ProviderRuntimeContext,
   path: string,
   query: Record<string, string | number>,
   signal?: AbortSignal,
@@ -804,7 +809,7 @@ async function pipeCall(
   for (const url of createMiruroPipeRequestUrls(encoded)) {
     const baseUrl = new URL(url).origin;
     try {
-      const candidate = await fetch(url, {
+      const candidate = await providerFetch(context, url, {
         signal: signal ?? AbortSignal.timeout(20_000),
         headers: {
           "User-Agent": USER_AGENT,
@@ -853,7 +858,7 @@ export const miruroProviderModule: CoreProviderModule = {
   async listEpisodes(input, context) {
     const anilistId = resolveMiruroAnilistId(input.title);
     if (!anilistId) return null;
-    return fetchMiruroEpisodeCatalog(anilistId, context.signal);
+    return fetchMiruroEpisodeCatalog(context, anilistId, context.signal);
   },
   async resolve(input, context) {
     if (input.mediaKind !== "anime") {
@@ -902,7 +907,7 @@ export const miruroProviderModule: CoreProviderModule = {
     });
 
     try {
-      const epData = await getMiruroEpisodesResponse(anilistId, context.signal);
+      const epData = await getMiruroEpisodesResponse(context, anilistId, context.signal);
       if (!epData?.providers || Object.keys(epData.providers).length === 0) {
         return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
           code: "not-found",
@@ -949,6 +954,7 @@ export const miruroProviderModule: CoreProviderModule = {
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
             srcData = (await pipeCall(
+              context,
               "sources",
               {
                 episodeId: metadata.episodeId,

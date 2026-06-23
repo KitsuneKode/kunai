@@ -1,3 +1,6 @@
+import type { ProviderRuntimeContext } from "@kunai/types";
+
+import { providerFetch } from "../runtime/fetch";
 import {
   allMangaEpisodeMetadataCacheKey,
   enrichEpisodeOptionsWithAnimeMetadata,
@@ -379,18 +382,20 @@ function createTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number)
 }
 
 export async function loadAvailableEpisodesDetail(
+  context: ProviderRuntimeContext,
   apiUrl: string,
   referer: string,
   ua: string,
   showId: string,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown[]>> {
-  const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId, signal);
+  const info = await loadShowCatalogInfo(context, apiUrl, referer, ua, showId, signal);
   return info.detail;
 }
 
 /** Fetch show metadata + episode detail in one GraphQL call. */
 export async function loadShowCatalogInfo(
+  context: ProviderRuntimeContext,
   apiUrl: string,
   referer: string,
   ua: string,
@@ -412,7 +417,7 @@ export async function loadShowCatalogInfo(
     }
   }`;
 
-  let data = (await gqlPost(apiUrl, referer, ua, query, { id: showId }, signal)) as
+  let data = (await gqlPost(context, apiUrl, referer, ua, query, { id: showId }, signal)) as
     | {
         data: {
           show: {
@@ -430,6 +435,7 @@ export async function loadShowCatalogInfo(
 
   if (!data?.data?.show?.availableEpisodesDetail) {
     data = (await gqlPost(
+      context,
       apiUrl,
       "https://youtu-chan.com",
       ua,
@@ -455,6 +461,7 @@ export async function loadShowCatalogInfo(
 }
 
 export async function gqlPost(
+  context: ProviderRuntimeContext,
   apiUrl: string,
   referer: string,
   ua: string,
@@ -463,7 +470,7 @@ export async function gqlPost(
   signal?: AbortSignal,
 ): Promise<unknown | null> {
   try {
-    const response = await fetch(apiUrl, {
+    const response = await providerFetch(context, apiUrl, {
       method: "POST",
       signal: createTimeoutSignal(signal, 20_000),
       headers: { "Content-Type": "application/json", Referer: referer, "User-Agent": ua },
@@ -477,6 +484,7 @@ export async function gqlPost(
 }
 
 export async function gqlRaw(
+  context: ProviderRuntimeContext,
   apiUrl: string,
   referer: string,
   ua: string,
@@ -485,7 +493,7 @@ export async function gqlRaw(
   signal?: AbortSignal,
 ): Promise<string | null> {
   try {
-    const response = await fetch(apiUrl, {
+    const response = await providerFetch(context, apiUrl, {
       method: "POST",
       signal: createTimeoutSignal(signal, 20_000),
       headers: { "Content-Type": "application/json", Referer: referer, "User-Agent": ua },
@@ -499,6 +507,7 @@ export async function gqlRaw(
 }
 
 export async function resolveEpisodeSources(opts: {
+  readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
   readonly referer: string;
   readonly ua: string;
@@ -508,7 +517,7 @@ export async function resolveEpisodeSources(opts: {
   readonly sourceLane?: AllMangaSourceLane;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
-  const { apiUrl, referer, ua, showId, epStr, mode, signal } = opts;
+  const { context, apiUrl, referer, ua, showId, epStr, mode, signal } = opts;
   const sourceLane = opts.sourceLane ?? "baseline";
 
   // Check source cache (episode string + mode → StreamLink[])
@@ -532,7 +541,7 @@ export async function resolveEpisodeSources(opts: {
   let rawText: string | null = null;
 
   try {
-    const getRes = await fetch(getUrl, {
+    const getRes = await providerFetch(context, getUrl, {
       signal: createTimeoutSignal(signal, 12_000),
       headers: {
         Referer: "https://youtu-chan.com",
@@ -545,7 +554,7 @@ export async function resolveEpisodeSources(opts: {
 
   if (!rawText || !rawText.includes('"tobeparsed"')) {
     try {
-      const postRes = await fetch(apiUrl, {
+      const postRes = await providerFetch(context, apiUrl, {
         method: "POST",
         signal: createTimeoutSignal(signal, 15_000),
         headers: {
@@ -607,7 +616,7 @@ export async function resolveEpisodeSources(opts: {
           ? fetchAkLinks
           : fetchStreamLinks;
     apiJobs.push(
-      fetcher(decoded, referer, ua, signal)
+      fetcher(decoded, referer, ua, context, signal)
         .then((links) => links.map((link) => ({ ...link, quality: link.quality || sourceName })))
         .catch(() => [] as StreamLink[]),
     );
@@ -629,6 +638,7 @@ function acceptsSourceForLane(sourceName: string, lane: AllMangaSourceLane): boo
 }
 
 export async function fetchAllMangaEpisodeCatalog(opts: {
+  readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
   readonly referer: string;
   readonly ua: string;
@@ -636,8 +646,8 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
   readonly mode: "sub" | "dub";
   readonly signal?: AbortSignal;
 }): Promise<AllMangaEpisodeOption[]> {
-  const { apiUrl, referer, ua, showId, mode, signal } = opts;
-  const info = await loadShowCatalogInfo(apiUrl, referer, ua, showId, signal);
+  const { context, apiUrl, referer, ua, showId, mode, signal } = opts;
+  const info = await loadShowCatalogInfo(context, apiUrl, referer, ua, showId, signal);
   const episodeStrings = (info.detail[mode] ?? []) as string[];
 
   const baseEpisodes = [...episodeStrings]
@@ -701,6 +711,7 @@ export async function fetchAllMangaEpisodeCatalog(opts: {
 }
 
 export async function searchAllManga(
+  context: ProviderRuntimeContext,
   apiUrl: string,
   referer: string,
   ua: string,
@@ -734,6 +745,7 @@ export async function searchAllManga(
     }
   }`;
   const data = (await gqlPost(
+    context,
     apiUrl,
     referer,
     ua,
@@ -837,9 +849,10 @@ async function fetchStreamLinks(
   apiPath: string,
   referer: string,
   ua: string,
+  context: ProviderRuntimeContext,
   signal?: AbortSignal,
 ): Promise<StreamLink[]> {
-  const response = await fetch(`https://allanime.day${apiPath}`, {
+  const response = await providerFetch(context, `https://allanime.day${apiPath}`, {
     signal: createTimeoutSignal(signal, 15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
@@ -895,6 +908,7 @@ async function fetchStreamLinks(
         if (linkIsMasterPlaylist(link.link)) {
           links.push(
             ...(await fetchM3u8Variants({
+              context,
               url: link.link,
               referer: m3u8Referer,
               ua,
@@ -961,9 +975,10 @@ async function fetchAkLinks(
   apiPath: string,
   referer: string,
   ua: string,
+  context: ProviderRuntimeContext,
   signal?: AbortSignal,
 ): Promise<StreamLink[]> {
-  const response = await fetch(`https://allanime.day${apiPath}`, {
+  const response = await providerFetch(context, `https://allanime.day${apiPath}`, {
     signal: createTimeoutSignal(signal, 15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
@@ -1083,19 +1098,21 @@ function normalizeAkSubtitles(
 }
 
 async function fetchM3u8Variants({
+  context,
   url,
   referer,
   ua,
   subtitle,
   signal,
 }: {
+  readonly context: ProviderRuntimeContext;
   readonly url: string;
   readonly referer: string;
   readonly ua: string;
   readonly subtitle?: string;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
-  const response = await fetch(url, {
+  const response = await providerFetch(context, url, {
     signal: createTimeoutSignal(signal, 15_000),
     headers: { Referer: referer, "User-Agent": ua },
   });
@@ -1135,10 +1152,11 @@ async function fetchFilemoonLinks(
   apiPath: string,
   referer: string,
   ua: string,
+  context: ProviderRuntimeContext,
   signal?: AbortSignal,
 ): Promise<StreamLink[]> {
   try {
-    const res = await fetch(`https://allanime.day${apiPath}`, {
+    const res = await providerFetch(context, `https://allanime.day${apiPath}`, {
       signal: createTimeoutSignal(signal, 15_000),
       headers: { Referer: referer, "User-Agent": ua },
     });

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ProviderResolveInput, ProviderResolveResult } from "@kunai/types";
+import type {
+  ProviderResolveInput,
+  ProviderResolveResult,
+  ProviderRuntimeContext,
+} from "@kunai/types";
 
 import {
   allmangaProviderModule,
@@ -18,6 +22,10 @@ import {
 
 const TEST_KEY_RAW = "Xot36i3lK3:v1";
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
+const TEST_CONTEXT: ProviderRuntimeContext = {
+  providerId: "allanime",
+  now: () => new Date().toISOString(),
+};
 
 describe("decodeTobeparsed", () => {
   test("decodes the current versioned allmanga blob layout", async () => {
@@ -79,6 +87,7 @@ describe("AllManga HTTP helpers", () => {
 
     try {
       await gqlPost(
+        TEST_CONTEXT,
         "https://api.example/graphql",
         "https://referer.example",
         "ua",
@@ -120,6 +129,7 @@ describe("AllManga HTTP helpers", () => {
 
     try {
       await searchAllManga(
+        TEST_CONTEXT,
         "https://api.example/graphql",
         "https://referer.example",
         "ua",
@@ -128,6 +138,7 @@ describe("AllManga HTTP helpers", () => {
         parent.signal,
       );
       await fetchAllMangaEpisodeCatalog({
+        context: TEST_CONTEXT,
         apiUrl: "https://api.example/graphql",
         referer: "https://referer.example",
         ua: "ua",
@@ -621,6 +632,7 @@ async function collectEvidenceLinksForStartup(
       },
     },
     {
+      context: TEST_CONTEXT,
       apiUrl: "https://api.allanime.day/api",
       referer: "https://youtu-chan.com",
       ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",

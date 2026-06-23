@@ -47,6 +47,13 @@ export const allanimeManifest = defineProviderManifest({
   },
   browserSafe: false,
   relaySafe: false,
+  relayProfile: {
+    upstreamHosts: ["api.allanime.day", "allanime.day", "wp.youtube-anime.com"],
+    videoRelayHosts: ["fast4speed.rsvp", "tools.fast4speed.rsvp"],
+    defaultHeaders: {
+      Referer: "https://youtu-chan.com",
+    },
+  },
   notes: [
     "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
     "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",

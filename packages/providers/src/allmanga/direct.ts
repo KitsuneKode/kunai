@@ -121,6 +121,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       input.preferredAudioLanguage ?? "original",
     ).catalogMode;
     const results = await searchAllManga(
+      context,
       ALLANIME_API_URL,
       ALLANIME_REFERER,
       DEFAULT_UA,
@@ -186,6 +187,7 @@ export const allmangaProviderModule: CoreProviderModule = {
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
     const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
     return fetchAllMangaEpisodeCatalog({
+      context,
       apiUrl: ALLANIME_API_URL,
       referer: ALLANIME_REFERER,
       ua: DEFAULT_UA,
@@ -246,6 +248,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       // Same GQL catalog as listEpisodes (showCatalogCache, 45s TTL in api-client).
       const detail = await loadAvailableEpisodesDetail(
+        context,
         ALLANIME_API_URL,
         ALLANIME_REFERER,
         DEFAULT_UA,
@@ -272,6 +275,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       const epStr = resolveAnimeEpisodeString(episodes, episodeNum);
       const startupPriority = input.startupPriority ?? "balanced";
       const linkResult = await collectAllMangaLinksForStartup(input, {
+        context,
         apiUrl: ALLANIME_API_URL,
         referer: ALLANIME_REFERER,
         ua: DEFAULT_UA,
@@ -450,6 +454,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
       if (streams.length === 0 && !triedAk) {
         links = await resolveEpisodeSources({
+          context,
           apiUrl: ALLANIME_API_URL,
           referer: ALLANIME_REFERER,
           ua: DEFAULT_UA,
@@ -521,6 +526,7 @@ export const allmangaProviderModule: CoreProviderModule = {
       let selectedStream = cycleResult.selected;
       if (!selectedStream && !triedAk) {
         links = await resolveEpisodeSources({
+          context,
           apiUrl: ALLANIME_API_URL,
           referer: ALLANIME_REFERER,
           ua: DEFAULT_UA,

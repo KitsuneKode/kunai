@@ -28,5 +28,8 @@ export const rgshowsManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
+  relayProfile: {
+    upstreamHosts: ["api.rgshows.ru", "rgshows.ru", "www.rgshows.ru"],
+  },
   notes: ["Browserless fallback: TMDB-keyed GET to api.rgshows.ru returning a direct HLS stream."],
 });

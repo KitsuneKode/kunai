@@ -5,6 +5,7 @@ import type {
   ProviderRuntimeContext,
 } from "@kunai/types";
 
+import { providerFetch } from "../runtime/fetch";
 import {
   directStreamFetchSignal,
   resolveDirectStreamSource,
@@ -55,13 +56,13 @@ export function resolveVidlinkDirect(
     context,
     resolveGateProbe: true,
     fetchPayload: async ({ tmdbId, season, episode, input: resolveInput, context: ctx }) => {
-      const encryptedId = await encryptTmdbId(tmdbId, ctx.signal);
+      const encryptedId = await encryptTmdbId(ctx, tmdbId, ctx.signal);
       const path =
         resolveInput.mediaKind === "movie"
           ? `movie/${encryptedId}`
           : `tv/${encryptedId}/${season}/${episode}`;
 
-      const response = await fetch(`${VIDLINK_API_BASE}/${path}`, {
+      const response = await providerFetch(ctx, `${VIDLINK_API_BASE}/${path}`, {
         headers: {
           accept: "*/*",
           "accept-language": "en-US,en;q=0.9",
@@ -107,8 +108,12 @@ export function resolveVidlinkDirect(
 }
 
 /** Encrypt the TMDB id via enc-dec.app, which VidLink requires for its source path. */
-async function encryptTmdbId(tmdbId: number, signal: AbortSignal | undefined): Promise<string> {
-  const response = await fetch(`${ENC_DEC_BASE}/enc-vidlink?text=${tmdbId}`, {
+async function encryptTmdbId(
+  context: ProviderRuntimeContext,
+  tmdbId: number,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  const response = await providerFetch(context, `${ENC_DEC_BASE}/enc-vidlink?text=${tmdbId}`, {
     headers: { accept: "application/json", "user-agent": USER_AGENT },
     signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
   });

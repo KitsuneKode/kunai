@@ -29,6 +29,9 @@ export const vidrockManifest = defineProviderManifest({
   },
   browserSafe: true,
   relaySafe: true,
+  relayProfile: {
+    upstreamHosts: ["vidrock.net", "cdn.vidrock.store"],
+  },
   notes: [
     "Browserless fallback: AES-CBC encrypts the TMDB id, fetches vidrock.net/api, and returns direct HLS/MP4 server URLs.",
   ],
