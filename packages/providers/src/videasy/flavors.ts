@@ -33,6 +33,8 @@ export type VidkingFlavorDefinition = {
   readonly audioLanguage: string;
   readonly moviesOnly?: boolean;
   readonly phaseAOrder?: number;
+  /** API route removed from api.videasy.to — skip probes and preferred-source resolve. */
+  readonly deprecated?: boolean;
 };
 
 const FLAVORS: readonly VidkingFlavorDefinition[] = [
@@ -70,6 +72,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     cinebyAlias: "Sage",
     endpoint: "1movies",
     audioLanguage: "en",
+    deprecated: true,
   },
   {
     id: "videasy-breach",
@@ -261,6 +264,25 @@ export function listVidkingFlavors(): readonly VidkingFlavorDefinition[] {
   return FLAVORS;
 }
 
+export function isVidkingFlavorDeprecated(flavorId: string): boolean {
+  return getVidkingFlavor(flavorId)?.deprecated === true;
+}
+
+export function isVidkingSourceDeprecated(sourceId: string): boolean {
+  const normalized = sourceId.trim();
+  if (!normalized) return false;
+  for (const flavor of FLAVORS) {
+    if (flavor.deprecated !== true) continue;
+    if (
+      flavorSourceId(flavor.id) === normalized ||
+      vidkingSourceIdForEndpoint(flavor.endpoint) === normalized
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function listEligibleVidkingFlavorIds(
   mediaKind?: "movie" | "series",
 ): readonly VidkingFlavorId[] {
@@ -301,6 +323,7 @@ export function resolveFlavorEngineOptions(flavorId: string): VidKingEngineOptio
 export function listPhaseBLazyProbeFlavorIds(mediaKind?: "movie" | "series"): VidkingFlavorId[] {
   return FLAVORS.filter((flavor) => {
     if (flavor.phaseAOrder !== undefined) return false;
+    if (flavor.deprecated === true) return false;
     if (mediaKind === "series" && flavor.moviesOnly) return false;
     return true;
   }).map((flavor) => flavor.id);

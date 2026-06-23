@@ -36,10 +36,13 @@ describe("vidking flavors", () => {
     });
   });
 
+  test("phase B excludes deprecated Sanji mirror", () => {
+    expect(listPhaseBLazyProbeFlavorIds()).not.toContain("videasy-mirror-c");
+  });
+
   test("phase B includes every mapped non-blocking flavor in order", () => {
     const ids = listPhaseBLazyProbeFlavorIds();
     expect(ids).toEqual([
-      "videasy-mirror-c",
       "videasy-breach",
       "videasy-english-alt",
       "videasy-german",

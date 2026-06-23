@@ -56,6 +56,7 @@ import {
   getPhaseAVidkingFlavorIds,
   listEligibleVidkingFlavorIds,
   listVidkingFlavors,
+  isVidkingSourceDeprecated,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
   vidkingEngineOptionsForEndpoint,
@@ -241,12 +242,15 @@ export async function resolveVideasyDirect(
   });
 
   const exhaustiveRefresh = input.intent === "refresh";
-  const preferredSourceId = input.preferredSourceId
-    ? normalizeLegacyVideasySourceId(input.preferredSourceId)
-    : undefined;
+  const preferredSourceId =
+    input.preferredSourceId &&
+    !isVidkingSourceDeprecated(normalizeLegacyVideasySourceId(input.preferredSourceId))
+      ? normalizeLegacyVideasySourceId(input.preferredSourceId)
+      : undefined;
   const preferredFlavorIds =
     !exhaustiveRefresh && !resolvedOptions?.serverEndpoint && preferredSourceId
       ? listVidkingFlavors()
+          .filter((flavor) => flavor.deprecated !== true)
           .filter(
             (flavor) =>
               flavorSourceId(flavor.id) === preferredSourceId ||
@@ -320,18 +324,20 @@ export async function resolveVideasyDirect(
   for (const flavorId of inventoryFlavorIds) {
     const sourceOptions = resolveFlavorEngineOptions(flavorId);
     if (!sourceOptions?.serverEndpoint) continue;
+    const flavor = getVidkingFlavor(flavorId);
     const server = sourceOptions.serverEndpoint;
     const presentation = resolveVidkingPresentation(server, sourceOptions);
     const sid = vidkingSourceIdForPresentation(server, sourceOptions);
     const phase = phaseAFlavorIds.has(flavorId) ? "A" : "B";
+    const deprecated = flavor?.deprecated === true;
     sources.push({
       id: sid,
       providerId: VIDEOSY_PROVIDER_ID,
       kind: "provider-api",
       label: presentation.themeLabel,
       host: "api.videasy.to",
-      status: phase === "A" ? "probing" : "pending",
-      confidence: phase === "A" ? 0.8 : 0.5,
+      status: deprecated ? "failed" : phase === "A" ? "probing" : "pending",
+      confidence: deprecated ? 0 : phase === "A" ? 0.8 : 0.5,
       cachePolicy,
       metadata: {
         server,
@@ -339,6 +345,9 @@ export async function resolveVideasyDirect(
         flavorArchetype: presentation.subtitle,
         flavorLabel: presentation.themeLabel,
         phase,
+        ...(deprecated
+          ? { failureClass: "candidate-unsupported", reason: "deprecated-endpoint" }
+          : {}),
       },
     });
   }
@@ -434,24 +443,77 @@ export async function resolveVideasyDirect(
     resolveCandidate: resolveVidkingCycleCandidate,
   });
 
+  const shouldFallbackFromPreferredSource =
+    !cycleResult.selected &&
+    !cycleResult.cancelled &&
+    preferredFlavorIds.length > 0 &&
+    !resolvedOptions.serverEndpoint &&
+    !resolvedOptions.customReferer;
+
+  if (shouldFallbackFromPreferredSource) {
+    emitTraceEvent(events, context, {
+      type: "source:skipped",
+      providerId: VIDEOSY_PROVIDER_ID,
+      sourceId: preferredSourceId ?? createSourceId("preferred"),
+      message: `Preferred Videasy source unavailable; falling back to Phase A mirrors`,
+      attributes: { preferredSourceId: preferredSourceId ?? null },
+    });
+    const phaseAFallbackServers = [...VIDKING_PHASE_A_SERVERS].filter((server) =>
+      vidkingHealth.shouldTry(server),
+    );
+    const fallbackCandidates = buildVidkingCycleCandidates({
+      directServers: phaseAFallbackServers,
+      embedServers: [],
+      flavorIds: [],
+      embedReferer: undefined,
+      engineOptions: resolvedOptions,
+      preferredSourceId: undefined,
+    });
+    const fallbackCycleResult = await runProviderCycle({
+      providerId: VIDEOSY_PROVIDER_ID,
+      candidates: fallbackCandidates,
+      signal: context.signal,
+      now: context.now,
+      emit: context.emit,
+      maxAttemptsPerCandidate: 1,
+      candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
+      shouldStopAfterFailure: (failure) =>
+        failure.failureClass === "candidate-blocked" &&
+        isVideasySessionGuardMessage(failure.message),
+      resolveCandidate: resolveVidkingCycleCandidate,
+    });
+    if (fallbackCycleResult.selected) {
+      cycleResult = fallbackCycleResult;
+    } else if (!fallbackCycleResult.cancelled) {
+      cycleResult = {
+        ...cycleResult,
+        attempts: [...cycleResult.attempts, ...fallbackCycleResult.attempts],
+        events: [...cycleResult.events, ...fallbackCycleResult.events],
+        stopReason: fallbackCycleResult.stopReason,
+      };
+    }
+  }
+
   const shouldRetryWithEmbedReferer =
     !cycleResult.selected &&
     !cycleResult.cancelled &&
-    phaseAOnly &&
+    (phaseAOnly || shouldFallbackFromPreferredSource) &&
     !resolvedOptions.customReferer &&
     !resolvedOptions.serverEndpoint &&
-    preferredFlavorIds.length === 0 &&
     exhaustiveFlavorIds.length === 0 &&
     embedReferer;
 
   if (shouldRetryWithEmbedReferer) {
+    const embedServers = [...VIDKING_PHASE_A_SERVERS].filter((server) =>
+      vidkingHealth.shouldTry(server),
+    );
     const embedCandidates = buildVidkingCycleCandidates({
       directServers: [],
-      embedServers: activeServers.length > 0 ? activeServers : [...VIDKING_SERVERS],
+      embedServers: embedServers.length > 0 ? embedServers : [...VIDKING_SERVERS],
       flavorIds: [],
       embedReferer,
       engineOptions: resolvedOptions,
-      preferredSourceId: input.preferredSourceId,
+      preferredSourceId: undefined,
     });
     const embedCycleResult = await runProviderCycle({
       providerId: VIDEOSY_PROVIDER_ID,
