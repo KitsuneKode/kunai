@@ -25,7 +25,10 @@ import {
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
-import { normalizeProviderDisplayLabel } from "../shared/source-inventory";
+import {
+  normalizeProviderDisplayLabel,
+  finalizeCycleSourceInventory,
+} from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
@@ -38,6 +41,7 @@ import {
   searchAllManga,
 } from "./api-client";
 import { allanimeManifest, ALLANIME_PROVIDER_ID } from "./manifest";
+import { resolveAllMangaShowId } from "./resolve-show-id";
 
 export { ALLANIME_PROVIDER_ID };
 
@@ -186,12 +190,13 @@ export const allmangaProviderModule: CoreProviderModule = {
   },
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
     const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
+    const showId = await resolveAllMangaShowId(input, context);
     return fetchAllMangaEpisodeCatalog({
       context,
       apiUrl: ALLANIME_API_URL,
       referer: ALLANIME_REFERER,
       ua: DEFAULT_UA,
-      showId: input.title.id.replace("allanime:", ""),
+      showId,
       mode,
       signal: context.signal,
     });
@@ -213,9 +218,8 @@ export const allmangaProviderModule: CoreProviderModule = {
       });
     }
 
-    // We expect the core to map to the internal allanime _id. If it's missing, we fail.
-    // But actually, AllAnime search returned `id`. Let's assume input.title.id is the allanime internal ID.
-    const showId = input.title.id.replace("allanime:", "");
+    // Provider-native opaque id; catalog ids (e.g. AniList) are bridged in resolveAllMangaShowId.
+    const showId = await resolveAllMangaShowId(input, context);
     if (!showId) {
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
@@ -303,16 +307,39 @@ export const allmangaProviderModule: CoreProviderModule = {
 
           const qualityStr = link.quality || "auto";
           const protocol = link.protocol ?? (link.url.includes(".m3u8") ? "hls" : "mp4");
-          const sourceName =
-            protocol === "dash"
+          const apiSourceName =
+            link.sourceName ??
+            (protocol === "dash"
               ? "Ak"
               : qualityStr.includes("HLS") || protocol === "hls"
                 ? "FM-HLS"
-                : "VID-MP4";
-          const sourceLabel = normalizeProviderDisplayLabel(sourceName) ?? sourceName;
-          const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceName.toLowerCase()}`;
+                : "VID-MP4");
+          const sourceKey = apiSourceName.toLowerCase();
+          const sourceLabel = normalizeProviderDisplayLabel(apiSourceName) ?? apiSourceName;
+          const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceKey}`;
           const sourceSubtitle =
             mode === "sub" ? "Japanese · hardsub" : mode === "dub" ? "English · dub" : "AllManga";
+          const hasExternalSubs =
+            Boolean(link.subtitle) ||
+            (link.subtitles?.some((subtitle) => Boolean(subtitle.src)) ?? false);
+          const subtitleLanguages = hasExternalSubs
+            ? [
+                ...new Set(
+                  (link.subtitles ?? [])
+                    .map((subtitle) => normalizeIsoLanguageCode(subtitle.lang))
+                    .filter((language): language is string => Boolean(language)),
+                ),
+              ]
+            : mode === "sub"
+              ? ["en"]
+              : undefined;
+          const subtitleDelivery =
+            mode === "sub"
+              ? hasExternalSubs
+                ? ("external" as const)
+                : ("hardcoded" as const)
+              : undefined;
+          const hardSubLanguage = mode === "sub" && !hasExternalSubs ? "en" : undefined;
 
           const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
           const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
@@ -332,9 +359,9 @@ export const allmangaProviderModule: CoreProviderModule = {
               link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
             audioLanguages: mode === "sub" ? ["ja"] : mode === "dub" ? ["en"] : [],
             presentation: mode,
-            hardSubLanguage: mode === "sub" ? "en" : undefined,
-            subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
-            subtitleLanguages: mode === "sub" ? ["en"] : undefined,
+            hardSubLanguage,
+            subtitleDelivery,
+            subtitleLanguages,
             qualityLabel: qualityStr,
             qualityRank: parseInt(qualityStr) || 0,
             languageEvidence: [
@@ -346,11 +373,11 @@ export const allmangaProviderModule: CoreProviderModule = {
                 confidence: 0.85,
                 metadata: { translationType: mode },
               },
-              ...(mode === "sub"
+              ...(mode === "sub" && hardSubLanguage
                 ? [
                     {
                       role: "hardsub" as const,
-                      normalizedLanguage: "en",
+                      normalizedLanguage: hardSubLanguage,
                       nativeLabel: mode,
                       sourceId,
                       confidence: 0.75,
@@ -387,8 +414,8 @@ export const allmangaProviderModule: CoreProviderModule = {
               link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
             audioLanguages: mode === "sub" ? ["ja"] : ["en"],
             presentation: mode,
-            hardSubLanguage: mode === "sub" ? "en" : undefined,
-            subtitleDelivery: mode === "sub" ? "hardcoded" : undefined,
+            hardSubLanguage,
+            subtitleDelivery,
             streamIds: [streamId],
             confidence: protocol === "hls" ? 0.95 : 0.85,
             languageEvidence: [
@@ -580,11 +607,12 @@ export const allmangaProviderModule: CoreProviderModule = {
         favoriteSourceNames: input.favoriteSourceNames,
         requiredFallback: requiredAkFallback,
       });
-      const sourceCandidates = buildAllmangaSourceCandidates(
+      const sourceCandidates = finalizeCycleSourceInventory({
+        sources: buildAllmangaSourceInventorySeeds(streams, cachePolicy),
+        attempts: cycleResult.attempts,
         streams,
-        selection.selected.sourceId,
-        cachePolicy,
-      );
+        selectedStreamId: selection.selected.id,
+      });
 
       emitTraceEvent(events, context, {
         type: "provider:success",
@@ -708,9 +736,8 @@ export function buildAllmangaCycleCandidates(
   });
 }
 
-export function buildAllmangaSourceCandidates(
+export function buildAllmangaSourceInventorySeeds(
   streams: readonly StreamCandidate[],
-  selectedSourceId: string | undefined,
   cachePolicy: StreamCandidate["cachePolicy"],
 ): ProviderSourceCandidate[] {
   const streamsBySource = new Map<string, StreamCandidate[]>();
@@ -729,7 +756,7 @@ export function buildAllmangaSourceCandidates(
       kind: "provider-api",
       label,
       host: representative?.sourceEvidence?.[0]?.host ?? "api.allanime.day",
-      status: sourceId === selectedSourceId ? "selected" : "available",
+      status: "pending",
       confidence: Math.max(...sourceStreams.map((stream) => stream.confidence)),
       requiresRuntime: "direct-http",
       cachePolicy,
@@ -748,6 +775,18 @@ export function buildAllmangaSourceCandidates(
       },
     };
   });
+}
+
+/** @deprecated Use buildAllmangaSourceInventorySeeds + finalizeCycleSourceInventory */
+export function buildAllmangaSourceCandidates(
+  streams: readonly StreamCandidate[],
+  selectedSourceId: string | undefined,
+  cachePolicy: StreamCandidate["cachePolicy"],
+): ProviderSourceCandidate[] {
+  return buildAllmangaSourceInventorySeeds(streams, cachePolicy).map((source) => ({
+    ...source,
+    status: source.id === selectedSourceId ? "selected" : "available",
+  }));
 }
 
 function formatAllmangaSourceLabel(sourceId: string): string {

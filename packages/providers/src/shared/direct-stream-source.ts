@@ -34,6 +34,9 @@ export interface DirectStreamInput {
   readonly url: string;
   /** Quality hint such as "1080", "720p", "4k" — used for label + ranking. */
   readonly qualityHint?: string;
+  readonly serverLabel?: string;
+  readonly audioLanguages?: readonly string[];
+  readonly presentation?: import("@kunai/types").StreamPresentation;
 }
 
 export interface DirectSubtitleInput {
@@ -354,7 +357,10 @@ function normalizeStreams(
       container: containerForProtocol(protocol),
       qualityLabel,
       qualityRank,
-      serverName: label,
+      serverName: entry.serverLabel ?? label,
+      flavorLabel: entry.serverLabel ?? label,
+      audioLanguages: entry.audioLanguages,
+      presentation: entry.presentation,
       headers,
       confidence: qualityRank > 0 ? 0.9 : 0.82,
       cachePolicy,

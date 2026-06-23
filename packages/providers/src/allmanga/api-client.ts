@@ -51,6 +51,8 @@ export type AllMangaEpisodeOption = {
 export type StreamLink = {
   readonly url: string;
   readonly quality: string;
+  /** API source family (Default, Yt-mp4, Ak, …) when known. */
+  readonly sourceName?: string;
   readonly referer?: string;
   readonly subtitle?: string;
   /** All subtitles from the API response with language metadata. */
@@ -599,6 +601,7 @@ export async function resolveEpisodeSources(opts: {
       direct.push({
         url: decoded,
         quality: source.sourceName,
+        sourceName: source.sourceName,
         referer: decoded.includes("tools.fast4speed.rsvp") ? referer : undefined,
       });
       continue;
@@ -617,7 +620,13 @@ export async function resolveEpisodeSources(opts: {
           : fetchStreamLinks;
     apiJobs.push(
       fetcher(decoded, referer, ua, context, signal)
-        .then((links) => links.map((link) => ({ ...link, quality: link.quality || sourceName })))
+        .then((links) =>
+          links.map((link) => ({
+            ...link,
+            quality: link.quality || sourceName,
+            sourceName: link.sourceName ?? sourceName,
+          })),
+        )
         .catch(() => [] as StreamLink[]),
     );
   }

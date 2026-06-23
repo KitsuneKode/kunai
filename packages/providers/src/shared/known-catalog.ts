@@ -44,9 +44,16 @@ export function mergeKnownCatalogSources({
       kind: entry.kind ?? "provider-api",
       label: entry.label,
       host: entry.host,
-      status: "available",
+      status: "skipped",
       confidence: entry.confidence ?? 0.4,
       cachePolicy,
+      metadata: {
+        flavorLabel: entry.label,
+        flavorArchetype: entry.subtitle,
+        phase: "known",
+        pickerHint: "Fresh resolve required to try this source.",
+        ...entry.metadata,
+      },
       languageEvidence: entry.audioLanguage
         ? [
             {
@@ -58,13 +65,6 @@ export function mergeKnownCatalogSources({
             },
           ]
         : undefined,
-      metadata: {
-        flavorLabel: entry.label,
-        flavorArchetype: entry.subtitle,
-        phase: "known",
-        pickerHint: "fresh resolve required",
-        ...entry.metadata,
-      },
     });
   }
 

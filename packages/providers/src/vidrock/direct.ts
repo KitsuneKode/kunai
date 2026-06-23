@@ -74,10 +74,14 @@ export function resolveVidrockDirect(
         if (name === "Atlas" || url.includes("cdn.vidrock.store/playlist/")) {
           const playlist = await fetchPlaylist(url, ctx.signal, headers);
           for (const item of playlist)
-            streams.push({ url: item.url, qualityHint: item.resolution });
+            streams.push({
+              url: item.url,
+              qualityHint: item.resolution,
+              serverLabel: `${name} ${item.resolution}`.trim(),
+            });
           continue;
         }
-        streams.push({ url });
+        streams.push({ url, serverLabel: name });
       }
 
       const payload: DirectStreamPayload = {

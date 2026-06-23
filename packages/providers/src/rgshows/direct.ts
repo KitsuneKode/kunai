@@ -67,7 +67,7 @@ export function resolveRgshowsDirect(
       if (!url) return null;
 
       const payload: DirectStreamPayload = {
-        streams: [{ url }],
+        streams: [{ url, qualityHint: "auto" }],
         headers: {
           referer: STREAM_REFERER,
           origin: STREAM_ORIGIN,

@@ -457,7 +457,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
   }
 });
 
-test("vidking preferred source targets that flavor without broad server probing", async () => {
+test("vidking preferred source targets that flavor then falls back to Phase A mirrors", async () => {
   const requestedUrls: string[] = [];
   const result = await resolveVidkingDirect(
     {
@@ -489,10 +489,9 @@ test("vidking preferred source targets that flavor without broad server probing"
 
   expect(result?.status).toBe("exhausted");
   const resolveUrls = videasyResolveUrls(requestedUrls);
-  expect(resolveUrls).toHaveLength(1);
+  expect(resolveUrls.length).toBeGreaterThanOrEqual(2);
   expect(resolveUrls[0]).toContain("/hdmovie/sources-with-title?");
-  expect(resolveUrls[0]).not.toContain("/mb-flix/");
-  expect(resolveUrls[0]).not.toContain("/cdn/");
+  expect(resolveUrls.some((url) => url.includes("/mb-flix/"))).toBe(true);
 });
 
 test("vidking stops source fanout after a provider-wide session guard failure", async () => {
@@ -1112,8 +1111,9 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
   });
   expect(result?.streams[0]).toMatchObject({
     audioLanguages: [expected.audioLanguage],
-    hardSubLanguage: expected.hardSubLanguage,
     presentation: expected.presentation,
+    subtitleDelivery: "embedded",
+    subtitleLanguages: [expected.subtitleLanguage],
     artwork: { seekBarVttUrl: expected.seekBarVttUrl },
     metadata: {
       intro: { start: 90, end: 180 },
@@ -1126,6 +1126,49 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
     reason: "balanced-1080",
     selectedQualityRank: 1080,
   });
+});
+
+test("miruro infers hardsub when sub stream has no pipe subtitles", async () => {
+  const result = createMiruroResultFromPayload({
+    input: {
+      title: {
+        id: "anilist:999",
+        anilistId: "999",
+        kind: "anime",
+        title: "Evidence Fox",
+      },
+      episode: { episode: 1 },
+      mediaKind: "anime",
+      startupPriority: "balanced",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+      preferredSubtitleLanguage: "en",
+    },
+    sourceData: {
+      streams: [
+        {
+          url: "https://cdn.miruro.example/kiwi/1080/index.m3u8",
+          type: "hls",
+          quality: "1080p",
+        },
+      ],
+      subtitles: [],
+    },
+    audioCategory: "sub",
+    serverProfile: {
+      id: "kiwi",
+      label: "Kiwi hardsub",
+      subtitleDelivery: "unknown",
+    },
+    context: { now: () => "2026-05-19T00:00:00.000Z" },
+  });
+
+  expect(result?.streams[0]).toMatchObject({
+    presentation: "sub",
+    subtitleDelivery: "hardcoded",
+    hardSubLanguage: "en",
+  });
+  expect(result?.subtitles).toHaveLength(0);
 });
 
 test("miruro fixture fast startup keeps the first ready stream", async () => {

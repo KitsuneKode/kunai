@@ -211,15 +211,29 @@ export function createMiruroResultFromPayload({
     sourceData.streams?.filter((s) => s.type === "hls" && s.url) ?? [],
   );
   if (rawStreams.length === 0) return null;
-  const displaySourceLabel = displayMiruroSourceLabel(serverProfile, audioCategory);
-  const subtitleDelivery = inferMiruroSubtitleDelivery(serverProfile, sourceData);
+  const subtitlePresentation = resolveMiruroSubtitlePresentation(
+    audioCategory,
+    sourceData,
+    input.preferredSubtitleLanguage,
+  );
+  const resolvedServerProfile: MiruroServerProfile = {
+    ...serverProfile,
+    subtitleDelivery: subtitlePresentation.subtitleDelivery,
+    hardSubLanguage: subtitlePresentation.hardSubLanguage,
+  };
+  const displaySourceLabel = displayMiruroSourceLabel(resolvedServerProfile, audioCategory);
+  const subtitleDelivery = subtitlePresentation.subtitleDelivery;
+  const playbackHost = resolveMiruroPlaybackHost(rawStreams[0]?.url);
+  const flavorArchetype = `${resolvedServerProfile.label} · Miruro`;
 
   const seekBarVttUrl = firstMiruroThumbnailUrl(sourceData.thumbnails);
   const artwork = seekBarVttUrl ? { seekBarVttUrl } : undefined;
   const timingMetadata = createMiruroTimingMetadata(sourceData);
   const streams: StreamCandidate[] = [];
   const variants: ProviderVariantCandidate[] = [];
-  const subtitles = createMiruroSubtitles(sourceData.subtitles, sourceId, policy);
+  const subtitles = subtitlePresentation.includeExternalSubtitles
+    ? createMiruroSubtitles(sourceData.subtitles, sourceId, policy)
+    : [];
   const languageEvidence = [
     {
       role: "audio" as const,
@@ -227,17 +241,17 @@ export function createMiruroResultFromPayload({
       nativeLabel: audioCategory,
       sourceId,
       confidence: 0.85,
-      metadata: { server: serverProfile.id },
+      metadata: { server: resolvedServerProfile.id },
     },
-    ...(serverProfile.hardSubLanguage
+    ...(resolvedServerProfile.hardSubLanguage
       ? [
           {
             role: "hardsub" as const,
-            normalizedLanguage: serverProfile.hardSubLanguage,
-            nativeLabel: serverProfile.label,
+            normalizedLanguage: resolvedServerProfile.hardSubLanguage,
+            nativeLabel: resolvedServerProfile.label,
             sourceId,
             confidence: 0.8,
-            metadata: { server: serverProfile.id },
+            metadata: { server: resolvedServerProfile.id },
           },
         ]
       : []),
@@ -245,9 +259,9 @@ export function createMiruroResultFromPayload({
   const sourceEvidence = [
     {
       sourceId,
-      serverId: serverProfile.id,
-      nativeLabel: serverProfile.label,
-      host: "www.miruro.tv",
+      serverId: resolvedServerProfile.id,
+      nativeLabel: resolvedServerProfile.label,
+      host: playbackHost,
       confidence: 0.9,
       metadata: {
         audioCategory,
@@ -258,10 +272,15 @@ export function createMiruroResultFromPayload({
 
   for (const raw of rawStreams) {
     if (!raw.url) continue;
-    const qualityStr = raw.quality || "auto";
+    const qualityStr = miruroQualityLabel(raw);
+    const qualityRank = qualityRankFromMiruroStream(raw);
     const streamId = `stream:${MIRURO_PROVIDER_ID}:${Bun.hash(raw.url).toString(36)}`;
     const variantId = `variant:${MIRURO_PROVIDER_ID}:${sourceId}:${qualityStr}`;
     const streamReferer = raw.referer || MIRURO_REFERER;
+    const streamSubtitleDelivery =
+      subtitleDelivery === "unknown"
+        ? undefined
+        : (subtitleDelivery as "hardcoded" | "embedded" | "external");
 
     streams.push({
       id: streamId,
@@ -273,13 +292,14 @@ export function createMiruroResultFromPayload({
       container: "m3u8",
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
-      hardSubLanguage: serverProfile.hardSubLanguage,
-      subtitleDelivery: subtitleDelivery === "unknown" ? undefined : subtitleDelivery,
-      subtitleLanguages: subtitleDelivery === "embedded" ? ["en"] : undefined,
-      flavorArchetype: "Miruro animals",
+      hardSubLanguage: resolvedServerProfile.hardSubLanguage,
+      subtitleDelivery: streamSubtitleDelivery,
+      subtitleLanguages: subtitlePresentation.subtitleLanguages,
+      serverName: resolvedServerProfile.label,
+      flavorArchetype,
       flavorLabel: displaySourceLabel,
       qualityLabel: qualityStr,
-      qualityRank: parseInt(qualityStr) || 0,
+      qualityRank,
       languageEvidence,
       sourceEvidence,
       artwork,
@@ -297,15 +317,15 @@ export function createMiruroResultFromPayload({
       providerId: MIRURO_PROVIDER_ID,
       sourceId,
       qualityLabel: qualityStr,
-      qualityRank: parseInt(qualityStr) || 0,
+      qualityRank,
       protocol: "hls",
       container: "m3u8",
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
-      hardSubLanguage: serverProfile.hardSubLanguage,
-      subtitleDelivery: subtitleDelivery === "unknown" ? undefined : subtitleDelivery,
-      subtitleLanguages: subtitleDelivery === "embedded" ? ["en"] : undefined,
-      flavorArchetype: "Miruro animals",
+      hardSubLanguage: resolvedServerProfile.hardSubLanguage,
+      subtitleDelivery: streamSubtitleDelivery,
+      subtitleLanguages: subtitlePresentation.subtitleLanguages,
+      flavorArchetype,
       flavorLabel: displaySourceLabel,
       streamIds: [streamId],
       subtitleIds: subtitles.map((subtitle) => subtitle.id),
@@ -447,6 +467,7 @@ export function buildMiruroCycleCandidates({
   episodeNum,
   targetAudio,
   fallbackAudio,
+  preferredSubtitleDelivery,
   preferredSourceId,
 }: {
   readonly providers?: Record<string, MiruroProviderEntry | undefined>;
@@ -475,6 +496,8 @@ export function buildMiruroCycleCandidates({
       if (!episodeEntry?.id) continue;
       const serverProfile = createMiruroServerProfile(providerKey);
       const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
+      const subtitlePriorityBoost =
+        preferredSubtitleDelivery === "hardcoded" && audioCategory === "sub" ? -5_000 : 0;
       candidates.push({
         id: `candidate:${sourceId}:${audioCategory}:${episodeEntry.id}`,
         providerId: MIRURO_PROVIDER_ID,
@@ -486,7 +509,8 @@ export function buildMiruroCycleCandidates({
         normalizedAudioLanguage: audioCategory === "sub" ? "ja" : "en",
         normalizedSubtitleLanguage: serverProfile.hardSubLanguage,
         presentation: audioCategory,
-        priority: sourceId === preferredSourceId ? priority - 10_000 : priority,
+        priority:
+          (sourceId === preferredSourceId ? priority - 10_000 : priority) + subtitlePriorityBoost,
         metadata: {
           audioCategory,
           episodeId: episodeEntry.id,
@@ -634,12 +658,67 @@ function normalizeMiruroProviderLabel(providerKey: string): string {
   return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function inferMiruroSubtitleDelivery(
-  serverProfile: MiruroServerProfile,
+function resolveMiruroSubtitlePresentation(
+  audioCategory: MiruroAudioCategory,
   sourceData: MiruroSourcesResponse,
-): MiruroSubtitleDelivery {
-  if (sourceData.subtitles?.some((subtitle) => subtitle.url || subtitle.file)) return "embedded";
-  return serverProfile.subtitleDelivery;
+  preferredSubtitleLanguage?: string,
+): {
+  readonly subtitleDelivery: MiruroSubtitleDelivery;
+  readonly hardSubLanguage?: string;
+  readonly subtitleLanguages?: readonly string[];
+  readonly includeExternalSubtitles: boolean;
+} {
+  const pipeSubtitles = (sourceData.subtitles ?? []).filter(
+    (subtitle) => subtitle.url || subtitle.file,
+  );
+  if (pipeSubtitles.length > 0) {
+    const subtitleLanguages = [
+      ...new Set(
+        pipeSubtitles
+          .map((subtitle) =>
+            normalizeIsoLanguageCode(
+              subtitle.lang ?? subtitle.language ?? subtitle.label ?? "unknown",
+            ),
+          )
+          .filter((language): language is string => Boolean(language)),
+      ),
+    ];
+    return {
+      subtitleDelivery: "embedded",
+      subtitleLanguages,
+      includeExternalSubtitles: true,
+    };
+  }
+
+  if (audioCategory === "sub") {
+    return {
+      subtitleDelivery: "hardcoded",
+      hardSubLanguage: normalizeIsoLanguageCode(preferredSubtitleLanguage ?? "en") ?? "en",
+      includeExternalSubtitles: false,
+    };
+  }
+
+  return {
+    subtitleDelivery: "unknown",
+    includeExternalSubtitles: false,
+  };
+}
+
+function miruroQualityLabel(stream: MiruroPipeStream): string {
+  const quality = stream.quality?.trim();
+  if (quality && quality !== "auto") return quality;
+  const height = stream.resolution?.height;
+  if (typeof height === "number" && height > 0) return `${height}p`;
+  return "unknown";
+}
+
+function resolveMiruroPlaybackHost(streamUrl: string | undefined): string {
+  if (!streamUrl) return "www.miruro.tv";
+  try {
+    return new URL(streamUrl).hostname;
+  } catch {
+    return "www.miruro.tv";
+  }
 }
 
 function rankMiruroStreams(streams: readonly MiruroPipeStream[]): MiruroPipeStream[] {

@@ -33,10 +33,11 @@ export function getMiruroKnownCatalog(
     };
     for (const audioCategory of audioCategories) {
       const themeLabel = audioCategory === "dub" ? labels.dub : labels.sub;
+      const serverLabel = serverId.charAt(0).toUpperCase() + serverId.slice(1).toLowerCase();
       entries.push({
         sourceId: miruroInventorySourceId(serverId, audioCategory),
-        label: themeLabel,
-        subtitle: `${audioCategory === "dub" ? "Dub" : "Sub"} · ${serverId}`,
+        label: `${audioCategory === "dub" ? "Dub" : "Sub"} · ${serverLabel} · subtitles unknown`,
+        subtitle: themeLabel,
         audioLanguage: audioCategory === "dub" ? "en" : "ja",
         host: "www.miruro.tv",
         metadata: {
