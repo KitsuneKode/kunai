@@ -486,6 +486,12 @@ export const dataMigrations: readonly Migration[] = [
         );
     `,
   },
+  {
+    id: "023_data_history_identity_consolidation",
+    database: "data",
+    // TypeScript consolidator runs at CLI bootstrap; this marker reserves the slot.
+    sql: "",
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
@@ -695,6 +701,24 @@ export const cacheMigrations: readonly Migration[] = [
         ON provider_endpoint_health(updated_at DESC);
     `,
   },
+  {
+    id: "012_cache_provider_title_bridge",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS provider_title_bridge (
+        provider_id TEXT NOT NULL,
+        catalog_kind TEXT NOT NULL,
+        catalog_id TEXT NOT NULL,
+        native_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (provider_id, catalog_kind, catalog_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_provider_title_bridge_expires_at
+        ON provider_title_bridge(expires_at);
+    `,
+  },
 ];
 
 export function runMigrations(
@@ -720,7 +744,9 @@ export function runMigrations(
   );
 
   const applyMigration = db.transaction((migration: Migration, now: string) => {
-    db.exec(migration.sql);
+    if (migration.sql.trim()) {
+      db.exec(migration.sql);
+    }
     db.query("INSERT INTO __kunai_migrations (id, database_name, applied_at) VALUES (?, ?, ?)").run(
       migration.id,
       migration.database,
@@ -735,4 +761,37 @@ export function runMigrations(
 
     applyMigration(migration, new Date().toISOString());
   }
+}
+
+const CONSOLIDATOR_MIGRATION_ID = "history_identity_consolidator_v1";
+
+export function isDataMigrationApplied(db: KunaiDatabase, migrationId: string): boolean {
+  const row = db
+    .query<{ id: string }, [string]>("SELECT id FROM __kunai_migrations WHERE id = ?")
+    .get(migrationId);
+  return row !== null;
+}
+
+export function markDataMigrationApplied(db: KunaiDatabase, migrationId: string): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS __kunai_migrations (
+      id TEXT PRIMARY KEY,
+      database_name TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+  `);
+  if (isDataMigrationApplied(db, migrationId)) return;
+  db.query("INSERT INTO __kunai_migrations (id, database_name, applied_at) VALUES (?, ?, ?)").run(
+    migrationId,
+    "data",
+    new Date().toISOString(),
+  );
+}
+
+export function isHistoryIdentityConsolidatorApplied(db: KunaiDatabase): boolean {
+  return isDataMigrationApplied(db, CONSOLIDATOR_MIGRATION_ID);
+}
+
+export function markHistoryIdentityConsolidatorApplied(db: KunaiDatabase): void {
+  markDataMigrationApplied(db, CONSOLIDATOR_MIGRATION_ID);
 }

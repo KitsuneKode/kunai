@@ -2,6 +2,12 @@ export { createStreamCacheKey, stableKey } from "./cache-key";
 export type { StreamCacheKeyInput } from "./cache-key";
 export { cacheMigrations, dataMigrations, runMigrations } from "./migrations";
 export type { Migration, MigrationDatabase } from "./migrations";
+export {
+  isDataMigrationApplied,
+  isHistoryIdentityConsolidatorApplied,
+  markDataMigrationApplied,
+  markHistoryIdentityConsolidatorApplied,
+} from "./migrations";
 export { runDatabaseMaintenance } from "./maintenance";
 export type {
   CacheMaintenancePruneCounts,
@@ -63,6 +69,7 @@ export type {
   ReleaseProgressSummary,
   ReleaseProgressDiagnosticsSummary,
 } from "./repositories/release-progress-cache";
+export { ProviderTitleBridgeRepository } from "./repositories/provider-title-bridge";
 export { ScheduleCacheRepository } from "./repositories/schedule-cache";
 export type { ScheduleCacheEntry, ScheduleCacheSetOptions } from "./repositories/schedule-cache";
 export { CalendarArchiveRepository } from "./repositories/calendar-archive";
