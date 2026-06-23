@@ -69,6 +69,11 @@ test("buildContinueHubView groups rows and labels ask-inline source choice", () 
           localAction: { kind: "play-local", target: localTarget, jobId: "job-1" },
           onlineAction: { kind: "select-online", target: localTarget },
         },
+        secondaryActions: [
+          { kind: "queue", target: localTarget },
+          { kind: "mark-watched", target: localTarget },
+          { kind: "manage-offline", target: localTarget },
+        ],
       }),
       row({ id: "new", group: "new-episodes", badge: "1 new" }),
       row({ id: "tracked", group: "up-to-date", badge: "tracked" }),
@@ -80,4 +85,9 @@ test("buildContinueHubView groups rows and labels ask-inline source choice", () 
   );
   expect(view.flatRows[0]?.actionLabel).toBe("choose source");
   expect(view.flatRows[0]?.sourceLabel).toBe("local + stream");
+  expect(view.flatRows[0]?.secondaryActionLabels).toEqual([
+    "queue",
+    "mark watched",
+    "manage offline",
+  ]);
 });

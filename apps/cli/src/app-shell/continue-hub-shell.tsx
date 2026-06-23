@@ -69,7 +69,12 @@ export function ContinueHubShell({
       ) : null}
 
       {selected ? (
-        <ResumeCard label={selected.actionLabel} action="↵ enter" width={effectiveRowWidth} />
+        <Box flexDirection="column">
+          <ResumeCard label={selected.actionLabel} action="↵ enter" width={effectiveRowWidth} />
+          {selected.secondaryActionLabels.length > 0 ? (
+            <Text color={palette.dim}>{selected.secondaryActionLabels.join("  ·  ")}</Text>
+          ) : null}
+        </Box>
       ) : null}
     </Box>
   );

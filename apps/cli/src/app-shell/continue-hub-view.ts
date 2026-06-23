@@ -1,6 +1,7 @@
 import type {
   ContinuationHubPrimaryAction,
   ContinuationHubRow,
+  ContinuationHubSecondaryAction,
 } from "@/services/continuation/ContinueWatchingService";
 
 import { palette } from "./shell-theme";
@@ -24,6 +25,7 @@ export type ContinueHubViewRow = {
   readonly recencyLabel: string;
   readonly actionLabel: string;
   readonly sourceLabel: string;
+  readonly secondaryActionLabels: readonly string[];
   readonly hubRow: ContinuationHubRow;
 };
 
@@ -90,6 +92,7 @@ function toViewRow(row: ContinuationHubRow): ContinueHubViewRow {
     recencyLabel: sourceLabel(row),
     actionLabel: actionLabel(row.primaryAction),
     sourceLabel: sourceLabel(row),
+    secondaryActionLabels: row.secondaryActions.map(actionLabel),
     hubRow: row,
   };
 }
@@ -116,7 +119,9 @@ function sourceLabel(row: ContinuationHubRow): string {
   }
 }
 
-function actionLabel(action: ContinuationHubPrimaryAction | undefined): string {
+function actionLabel(
+  action: ContinuationHubPrimaryAction | ContinuationHubSecondaryAction | undefined,
+): string {
   if (!action) return "view";
   switch (action.kind) {
     case "ask-inline":
@@ -129,6 +134,10 @@ function actionLabel(action: ContinuationHubPrimaryAction | undefined): string {
       return "stream";
     case "manage-offline":
       return "manage offline";
+    case "queue":
+      return "queue";
+    case "mark-watched":
+      return "mark watched";
   }
 }
 

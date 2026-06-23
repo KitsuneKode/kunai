@@ -7,6 +7,8 @@ import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
+import type { MediaActionId } from "@/domain/media/media-action-policy";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
@@ -434,6 +436,19 @@ function rootHistorySelectionFromContinueRow(
     };
   }
   return selection;
+}
+
+function mediaItemFromContinueRow(row: ContinuationHubRow): MediaItemIdentity {
+  return {
+    titleId: row.target.titleId,
+    title: row.target.title,
+    mediaKind: row.target.mediaKind,
+    season: row.target.mediaKind === "movie" ? undefined : (row.target.season ?? 1),
+    episode: row.target.mediaKind === "movie" ? undefined : (row.target.episode ?? 1),
+    providerHints: row.target.sourceEntry.providerId
+      ? [{ providerId: row.target.sourceEntry.providerId }]
+      : undefined,
+  };
 }
 
 export function RootOverlayShell({
@@ -1066,6 +1081,37 @@ export function RootOverlayShell({
     })();
   };
 
+  const runContinueHubAction = (row: ContinuationHubRow | null, actionId: MediaActionId): void => {
+    if (!row) return;
+    const item = mediaItemFromContinueRow(row);
+    void (async () => {
+      try {
+        await createContainerMediaActionRouter(container, {
+          onDownloadQueued: (queuedItem) => {
+            setOverlayStatus(`Queued download for ${queuedItem.title}`);
+          },
+        }).run({
+          actionId,
+          item,
+          source: "continue-hub",
+          confirmedProviderResolution: actionId === "download",
+        });
+        setOverlayStatus(
+          actionId === "queue-next"
+            ? `Queued ${item.title}`
+            : actionId === "mark-watched"
+              ? `Marked ${item.title} watched`
+              : actionId === "download"
+                ? `Queued offline copy for ${item.title}`
+                : "Action complete",
+        );
+        onRedraw();
+      } catch (error) {
+        setOverlayStatus(`Continue action failed: ${String(error)}`);
+      }
+    })();
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1266,6 +1312,18 @@ export function RootOverlayShell({
             return;
           }
         }
+      }
+      if (input.toLowerCase() === "q" && !key.ctrl && !key.meta) {
+        runContinueHubAction(row, "queue-next");
+        return;
+      }
+      if (input.toLowerCase() === "m" && !key.ctrl && !key.meta) {
+        runContinueHubAction(row, "mark-watched");
+        return;
+      }
+      if (input.toLowerCase() === "d" && !key.ctrl && !key.meta) {
+        runContinueHubAction(row, "download");
+        return;
       }
       if (key.return) {
         if (row?.primaryAction?.kind === "ask-inline") {
@@ -1891,6 +1949,9 @@ export function RootOverlayShell({
             actions={[
               { key: "enter", label: "open", primary: true },
               { key: "l/s", label: "source" },
+              { key: "q", label: "queue" },
+              { key: "m", label: "watched" },
+              { key: "d", label: "offline" },
               { key: "/", label: "commands", action: "command-mode" },
               { key: "esc", label: "close", action: "quit" },
             ]}
