@@ -90,6 +90,7 @@ export type OverlayState =
       favorites: readonly string[];
       providerLabel?: string;
     }
+  | { type: "continue" }
   | { type: "history"; initialFilterMode?: "all" | "watching" | "completed" }
   | { type: "notifications" }
   | { type: "queue" }

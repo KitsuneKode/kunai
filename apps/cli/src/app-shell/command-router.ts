@@ -96,10 +96,10 @@ async function openRootHistorySelection(
 ): Promise<RoutedActionResult> {
   const { stateManager } = container;
   const selectionPromise = waitForRootHistorySelection();
-  await openRootOwnedOverlay(container, {
-    type: "history",
-    initialFilterMode: reason === "continue" ? "watching" : "all",
-  });
+  await openRootOwnedOverlay(
+    container,
+    reason === "continue" ? { type: "continue" } : { type: "history", initialFilterMode: "all" },
+  );
   const selection = await selectionPromise;
   if (!selection) return "handled";
   if (selection.localJobId) {

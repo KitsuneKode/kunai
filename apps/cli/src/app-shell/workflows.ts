@@ -752,6 +752,7 @@ type ActionHandler = (container: Container) => Promise<ShellWorkflowResult>;
 
 const actionHandlers: Record<string, ActionHandler | undefined> = {
   quit: (c) => resolveQuitWithDownloadQueue(c),
+  continue: (c) => handleContinue(c),
   history: (c) => handleHistory(c),
   download: (c) => {
     void downloadSelectedResult(c);
@@ -828,6 +829,11 @@ const withOverlay = async <T>(
 
 async function handleHistory(container: Container): Promise<"handled"> {
   await openRootOwnedOverlay(container, { type: "history" });
+  return "handled";
+}
+
+async function handleContinue(container: Container): Promise<"handled"> {
+  await openRootOwnedOverlay(container, { type: "continue" });
   return "handled";
 }
 

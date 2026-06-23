@@ -10,6 +10,7 @@ export function isRootChoiceOverlay(
 ): overlay is Extract<
   RootOwnedOverlay,
   | { type: "provider_picker" }
+  | { type: "continue" }
   | { type: "history" }
   | { type: "queue" }
   | { type: "notifications" }
@@ -21,6 +22,7 @@ export function isRootChoiceOverlay(
 > {
   return (
     overlay.type === "provider_picker" ||
+    overlay.type === "continue" ||
     overlay.type === "history" ||
     overlay.type === "queue" ||
     overlay.type === "notifications" ||
@@ -82,6 +84,7 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "diagnostics") return "Diagnostics";
   if (overlay.type === "downloads") return "Downloads";
   if (overlay.type === "library") return "Library";
+  if (overlay.type === "continue") return "Continue";
   if (overlay.type === "history") return "History";
   if (overlay.type === "queue") return "Up Next";
   if (overlay.type === "notifications") return "Notifications";
@@ -114,6 +117,8 @@ export function getRootOverlaySubtitle({
     return "Live download queue, failed retries, and completed jobs";
   if (overlay.type === "library")
     return "Offline library · resume-ready downloads · queue and cleanup controls";
+  if (overlay.type === "continue")
+    return "Resume, downloaded, new, and tracked titles from one decision model";
   if (overlay.type === "history")
     return "Resume-first · new since last watched · continue without leaving the shell";
   if (overlay.type === "queue")
