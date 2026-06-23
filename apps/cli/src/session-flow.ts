@@ -16,7 +16,7 @@ import type { EpisodePickerOption } from "@/domain/types";
 import { cyan, dim, yellow } from "@/menu";
 import { formatEpisodePickerLabel } from "@/services/catalog/episode-display";
 import { isFinished } from "@/services/continuation/history-progress";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 import { fetchEpisodes, fetchSeriesData, type EpisodeInfo as TmdbEpisodeInfo } from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
 

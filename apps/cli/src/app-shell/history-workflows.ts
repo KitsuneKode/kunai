@@ -10,15 +10,13 @@ import type { QueueService } from "@/domain/queue/QueueService";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { ContentType } from "@/domain/types";
 import {
+  formatTimestamp,
   historyContentType,
+  latestHistoryByTitle,
+  isFinished,
   isFinished as isProgressFinished,
 } from "@/services/continuation/history-progress";
 import { MediaActionRouter } from "@/services/media-actions/MediaActionRouter";
-import {
-  formatTimestamp,
-  isFinished,
-  type HistoryStore,
-} from "@/services/persistence/HistoryStore";
 import {
   historyProgressToInput,
   type HistoryProgress,
@@ -70,8 +68,7 @@ function formatHistoryDetail(entry: HistoryProgress, newEpisodeCount = 0): strin
 }
 
 export async function openHistoryShell(
-  historyStore: HistoryStore,
-  historyRepository: HistoryRepository | undefined,
+  historyRepository: HistoryRepository,
   actionContext?: ListShellActionContext,
   releaseProgressCache?: ReleaseProgressCacheReader,
   stateManager?: SessionStateManager,
@@ -85,49 +82,49 @@ export async function openHistoryShell(
           },
         }
       : undefined,
-    history: historyRepository
-      ? {
-          markWatched: (item) => {
-            const latest = historyRepository.getProgress(
-              {
-                id: item.titleId,
-                kind: item.mediaKind === "movie" ? "movie" : "series",
-                title: item.title,
-              },
-              item.mediaKind === "movie"
-                ? undefined
-                : {
-                    season: item.season ?? 1,
-                    episode: item.episode ?? item.absoluteEpisode ?? 1,
-                  },
-            );
-            if (latest) {
-              historyRepository.upsertProgress(historyProgressToInput(markEntryWatched(latest)));
-              return;
-            }
-            historyRepository.upsertProgress({
-              title: {
-                id: item.titleId,
-                kind: item.mediaKind === "movie" ? "movie" : "series",
-                title: item.title,
-              },
-              episode:
-                item.mediaKind === "movie"
-                  ? undefined
-                  : {
-                      season: item.season ?? 1,
-                      episode: item.episode ?? item.absoluteEpisode ?? 1,
-                    },
-              positionSeconds: 0,
-              completed: true,
-            });
+    history: {
+      markWatched: (item) => {
+        const latest = historyRepository.getProgress(
+          {
+            id: item.titleId,
+            kind: item.mediaKind === "movie" ? "movie" : "series",
+            title: item.title,
           },
+          item.mediaKind === "movie"
+            ? undefined
+            : {
+                season: item.season ?? 1,
+                episode: item.episode ?? item.absoluteEpisode ?? 1,
+              },
+        );
+        if (latest) {
+          historyRepository.upsertProgress(historyProgressToInput(markEntryWatched(latest)));
+          return;
         }
-      : undefined,
+        historyRepository.upsertProgress({
+          title: {
+            id: item.titleId,
+            kind: item.mediaKind === "movie" ? "movie" : "series",
+            title: item.title,
+          },
+          episode:
+            item.mediaKind === "movie"
+              ? undefined
+              : {
+                  season: item.season ?? 1,
+                  episode: item.episode ?? item.absoluteEpisode ?? 1,
+                },
+          positionSeconds: 0,
+          completed: true,
+        });
+      },
+    },
   });
 
   while (true) {
-    const entries = Object.entries(await historyStore.getAll()).sort(
+    const entries = Object.entries(
+      latestHistoryByTitle(historyRepository.listLatestByTitle()),
+    ).sort(
       (a, b) =>
         (new Date(b[1].updatedAt).getTime() || 0) - (new Date(a[1].updatedAt).getTime() || 0),
     );
@@ -191,7 +188,7 @@ export async function openHistoryShell(
           { value: false, label: "Cancel" },
         ],
       });
-      if (confirm) await historyStore.clear();
+      if (confirm) historyRepository.clear();
       continue;
     }
 
@@ -237,7 +234,7 @@ export async function openHistoryShell(
     const action = await chooseFromListShell({
       title: picked.title,
       subtitle: formatHistoryDetail(
-        (await historyStore.get(picked.id)) ?? {
+        historyRepository.getLatestForTitle(picked.id) ?? {
           key: "",
           titleId: picked.id,
           mediaKind: picked.entryType,
@@ -265,12 +262,12 @@ export async function openHistoryShell(
     }
 
     if (action === "episodes") {
-      await openEpisodeHistoryShell(historyStore, picked.id, picked.title, actionContext);
+      await openEpisodeHistoryShell(historyRepository, picked.id, picked.title, actionContext);
       continue;
     }
 
     if (action === "queue" && queueService) {
-      const entry = await historyStore.get(picked.id);
+      const entry = historyRepository.getLatestForTitle(picked.id);
       const result = await mediaActions.run({
         actionId: "queue-end",
         item: entry
@@ -298,8 +295,8 @@ export async function openHistoryShell(
     }
 
     if (action === "mark-watched") {
-      const latest = await historyStore.get(picked.id);
-      if (latest && historyRepository) {
+      const latest = historyRepository.getLatestForTitle(picked.id);
+      if (latest) {
         const result = await mediaActions.run({
           actionId: "mark-watched",
           item: mediaItemFromHistoryEntry(picked.id, latest),
@@ -327,18 +324,18 @@ export async function openHistoryShell(
           { value: false, label: "Keep entry" },
         ],
       });
-      if (confirm) await historyStore.delete(picked.id);
+      if (confirm) historyRepository.deleteTitle(picked.id);
     }
   }
 }
 
 async function openEpisodeHistoryShell(
-  historyStore: HistoryStore,
+  historyRepository: HistoryRepository,
   titleId: string,
   titleName: string,
   actionContext?: ListShellActionContext,
 ): Promise<void> {
-  const allEpisodes = await historyStore.listByTitle(titleId);
+  const allEpisodes = historyRepository.listByTitle(titleId);
   if (allEpisodes.length === 0) return;
 
   const sorted = [...allEpisodes].sort((a, b) => {

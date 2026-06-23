@@ -142,7 +142,8 @@ async function pickSingleDownloadEpisodeFallback({
     animeEpisodeCount: title.episodeCount,
     animeEpisodes: undefined,
     flags: {},
-    getHistoryEntry: () => container.historyStore.get(title.id),
+    getHistoryEntry: () =>
+      Promise.resolve(container.historyRepository.getLatestForTitle(title.id) ?? null),
     container,
   });
   if (!selected) return null;

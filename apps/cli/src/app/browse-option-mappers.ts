@@ -4,8 +4,11 @@ import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
-import { historyContentType, isFinished } from "@/services/continuation/history-progress";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
+import {
+  formatTimestamp,
+  historyContentType,
+  isFinished,
+} from "@/services/continuation/history-progress";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";

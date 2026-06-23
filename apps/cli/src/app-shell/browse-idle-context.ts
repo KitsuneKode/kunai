@@ -1,11 +1,14 @@
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
 
 type IdleContextContainer = Pick<
   Container,
-  "queueService" | "releaseProgressCache" | "offlineAssetService" | "historyStore"
+  "queueService" | "releaseProgressCache" | "offlineAssetService" | "historyRepository"
 >;
 
 export async function buildBrowseIdleContext(
@@ -26,7 +29,8 @@ export async function buildBrowseIdleContext(
   let calendarNudge: BrowseIdleContext["calendarNudge"];
 
   try {
-    const allHistory = options?.preloadedHistory ?? (await container.historyStore.getAll());
+    const allHistory =
+      options?.preloadedHistory ?? readLatestHistoryByTitle(container.historyRepository);
     const entries = Object.entries(allHistory);
     const sortedByRecency = [...entries].sort(
       ([, left], [, right]) =>

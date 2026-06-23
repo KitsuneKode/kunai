@@ -5,12 +5,15 @@ import type {
   CatalogScheduleItem,
   CatalogScheduleMode,
 } from "@/services/catalog/CatalogScheduleService";
-import { historyContentType } from "@/services/continuation/history-progress";
-import type { HistoryStore } from "@/services/persistence/HistoryStore";
+import {
+  historyContentType,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import type { ReleaseProgressWriter } from "@/services/release-reconciliation/ReleaseProgressWriter";
 import type {
   CalendarArchiveRepository,
   HistoryProgress,
+  HistoryRepository,
   ReleaseProgressCacheRepository,
   ReleaseProgressProjection,
 } from "@kunai/storage";
@@ -25,7 +28,7 @@ export type CalendarResultBundle = {
 };
 
 type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "listService"> & {
-  readonly historyStore?: Pick<HistoryStore, "getAll">;
+  readonly historyRepository?: Pick<HistoryRepository, "listLatestByTitle">;
   readonly releaseProgressCache?: Pick<ReleaseProgressCacheRepository, "getByTitleIds" | "upsert">;
   readonly releaseProgressWriter?: Pick<ReleaseProgressWriter, "upsertOptimistic">;
   readonly calendarArchive?: Pick<
@@ -57,8 +60,11 @@ export async function loadCalendarResults(
     string,
     { readonly titleId: string; readonly entry: HistoryProgress }
   >();
-  if (container.historyStore) {
-    historyMatches = matchCalendarHistory(sorted, await container.historyStore.getAll());
+  if (container.historyRepository) {
+    historyMatches = matchCalendarHistory(
+      sorted,
+      readLatestHistoryByTitle(container.historyRepository),
+    );
   }
   const projectionIds = [
     ...new Set([
@@ -68,7 +74,7 @@ export async function loadCalendarResults(
   ];
   const storedProgress = container.releaseProgressCache?.getByTitleIds(projectionIds) ?? new Map();
   let releaseProgress = projectProgressForCalendarItems(sorted, historyMatches, storedProgress);
-  if (container.releaseProgressWriter && container.historyStore) {
+  if (container.releaseProgressWriter && container.historyRepository) {
     for (const item of sorted) {
       const match = historyMatches.get(item.titleId);
       const entry = match?.entry;

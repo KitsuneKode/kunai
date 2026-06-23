@@ -58,7 +58,7 @@ export function resolvePostPlaybackRecommendationLoadMode(input: {
 export async function loadPostPlaybackRecommendationNames(
   container: Pick<
     Container,
-    "recommendationService" | "historyStore" | "stateManager" | "providerRegistry"
+    "recommendationService" | "historyRepository" | "stateManager" | "providerRegistry"
   >,
   title: TitleInfo,
   mode: ShellMode,
@@ -71,7 +71,7 @@ export async function loadPostPlaybackRecommendationNames(
 export async function loadPostPlaybackRecommendationItems(
   container: Pick<
     Container,
-    "recommendationService" | "historyStore" | "stateManager" | "providerRegistry"
+    "recommendationService" | "historyRepository" | "stateManager" | "providerRegistry"
   >,
   title: TitleInfo,
   mode: ShellMode,

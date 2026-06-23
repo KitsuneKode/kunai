@@ -19,7 +19,7 @@ export async function loadDiscoverResults(
     Container,
     | "recommendationService"
     | "stateManager"
-    | "historyStore"
+    | "historyRepository"
     | "providerRegistry"
     | "config"
     | "resultEnrichmentService"

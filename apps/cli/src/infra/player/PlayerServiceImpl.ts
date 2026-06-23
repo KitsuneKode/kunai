@@ -10,10 +10,10 @@ import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";

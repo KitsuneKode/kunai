@@ -42,6 +42,8 @@ describe("command registry contexts", () => {
       "diagnostics",
       "export-diagnostics",
       "report-issue",
+      "clear-cache",
+      "reset-provider-health",
       "docs",
       "settings",
       "presence",
@@ -54,7 +56,6 @@ describe("command registry contexts", () => {
 
     expect(COMMAND_CONTEXTS.activePlayback).not.toContain("search");
     expect(COMMAND_CONTEXTS.activePlayback).not.toContain("clear-history");
-    expect(COMMAND_CONTEXTS.activePlayback).not.toContain("clear-cache");
   });
 
   test("resolves context commands through the same availability policy", () => {
@@ -128,6 +129,8 @@ describe("command registry contexts", () => {
       "diagnostics",
       "export-diagnostics",
       "report-issue",
+      "clear-cache",
+      "reset-provider-health",
       "docs",
       "settings",
       "presence",

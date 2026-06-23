@@ -37,6 +37,8 @@ const APP_SHELL_FORBIDDEN_IMPORT =
 const APP_SHELL_IMPORT = /^(?:@\/app-shell|(?:\.\.\/)+app-shell|\.\/app-shell)(?:\/|$)/;
 const INK_IMPORT = /^ink(?:\/|$)/;
 const PROVIDER_PACKAGE_IMPORT = /^@kunai\/providers(?:\/|$)|packages\/providers/;
+const HISTORY_STORE_ADAPTER_IMPORT =
+  /^@\/services\/persistence\/(?:HistoryStore|SqliteHistoryStoreImpl)$/;
 
 const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   [
@@ -189,6 +191,16 @@ describe("runtime boundary imports", () => {
     const offenders = collectSourceFiles("apps/cli/src/infra").flatMap((file) =>
       collectImports(file)
         .filter((specifier) => PROVIDER_PACKAGE_IMPORT.test(specifier))
+        .map((specifier) => `${file} -> ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("active runtime code does not depend on the retired history store adapter", () => {
+    const offenders = collectSourceFiles("apps/cli/src").flatMap((file) =>
+      collectImports(file)
+        .filter((specifier) => HISTORY_STORE_ADAPTER_IMPORT.test(specifier))
         .map((specifier) => `${file} -> ${specifier}`),
     );
 

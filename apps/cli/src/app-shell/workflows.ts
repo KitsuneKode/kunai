@@ -24,7 +24,9 @@ import { copyToClipboard, readClipboard } from "@/infra/clipboard";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import {
+  readLatestHistoryByTitle,
   historyContentType,
+  isFinished,
   isFinished as isProgressFinished,
 } from "@/services/continuation/history-progress";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
@@ -50,7 +52,6 @@ import {
   resolveOfflineArtifactStatus,
   resolveOfflineJobPreviewImage,
 } from "@/services/offline/offline-library";
-import { isFinished } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { getKunaiPaths, historyProgressToInput, type DownloadJobRecord } from "@kunai/storage";
@@ -988,9 +989,14 @@ async function handleSettings(container: Container): Promise<"handled"> {
 }
 
 async function handleResetProviderHealth(container: Container): Promise<"handled"> {
-  const { applyProviderHealthResetScope, chooseProviderHealthResetScope } =
+  const { applyProviderHealthResetScope, buildProviderHealthResetOptions } =
     await import("@/services/playback/provider-health-reset");
-  const scope = await chooseProviderHealthResetScope(container);
+  const scope = await chooseFromListShell({
+    title: "Reset provider health?",
+    subtitle:
+      "Forgets down/degraded status so auto-fallback can try those providers again. Does not clear cached stream URLs.",
+    options: buildProviderHealthResetOptions(container),
+  });
   if (!scope) return "handled";
   await applyProviderHealthResetScope(container, scope);
   return "handled";
@@ -1106,7 +1112,7 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
     ],
   });
   if (confirm) {
-    await container.historyStore.clear();
+    container.historyRepository.clear();
     container.diagnosticsService.record({ category: "session", message: "Watch history cleared" });
   }
   return "handled";
@@ -1705,7 +1711,7 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
 }
 
 async function handleWatchlist(container: Container): Promise<"handled"> {
-  const { listService, historyStore, releaseProgressCache } = container;
+  const { listService, historyRepository, releaseProgressCache } = container;
   const actionContext = buildPickerActionContext({ container, taskLabel: "Watchlist" });
 
   while (true) {
@@ -1715,7 +1721,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const progressMap = new Map<string, string>();
     const nextEpisodeMap = new Map<string, string>();
     const newEpisodeMap = new Map<string, number>();
-    const history = await historyStore.getAll();
+    const history = readLatestHistoryByTitle(historyRepository);
     const releaseProjections = releaseProgressCache.getByTitleIds(
       items.map((item) => item.titleId),
     );

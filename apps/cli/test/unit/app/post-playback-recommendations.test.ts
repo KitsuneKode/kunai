@@ -120,7 +120,7 @@ test("post-playback recommendations use direct TMDB title recommendations for se
           return { label: "", reason: "trending", items: [] };
         },
       },
-      historyStore: { getAll: async () => ({}) },
+      historyRepository: { listLatestByTitle: () => [] },
       stateManager: { getState: () => ({ mode: "series" }) },
       providerRegistry: { getAll: () => [] },
     } as never,
@@ -177,9 +177,9 @@ test("post-playback recommendations avoid provider-native anime ids and use anim
         getPersonalizedByHistory: async () => ({ label: "", reason: "genre-affinity", items: [] }),
         getTrending: async () => ({ label: "", reason: "trending", items: [] }),
       },
-      historyStore: {
-        getAll: async () => ({
-          "allanime:ramparts": {
+      historyRepository: {
+        listLatestByTitle: () => [
+          {
             key: "k",
             titleId: "allanime:ramparts",
             title: "The Ramparts of Ice",
@@ -193,7 +193,7 @@ test("post-playback recommendations avoid provider-native anime ids and use anim
             updatedAt: "2026-05-15T10:00:00.000Z",
             createdAt: "2026-05-15T10:00:00.000Z",
           },
-        }),
+        ],
       },
       stateManager: { getState: () => ({ mode: "anime" }) },
       providerRegistry: {
@@ -263,7 +263,7 @@ test("post-playback recommendation items preserve playable identity for queue ac
         getPersonalizedByHistory: async () => ({ label: "", reason: "genre-affinity", items: [] }),
         getTrending: async () => ({ label: "", reason: "trending", items: [] }),
       },
-      historyStore: { getAll: async () => ({}) },
+      historyRepository: { listLatestByTitle: () => [] },
       stateManager: { getState: () => ({ mode: "series" }) },
       providerRegistry: { getAll: () => [] },
     } as never,

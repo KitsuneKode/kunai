@@ -38,10 +38,16 @@ function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   };
 }
 
+function historyRepository(entries: readonly HistoryProgress[] = []) {
+  return {
+    listLatestByTitle: () => entries,
+  };
+}
+
 describe("ResultEnrichmentService", () => {
   test("builds next-episode and downloaded badges from local state", async () => {
     const service = new ResultEnrichmentService({
-      historyStore: { getAll: async () => ({ "title-1": history() }) },
+      historyRepository: historyRepository([history({ titleId: "title-1" })]),
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => [
           {
@@ -66,9 +72,9 @@ describe("ResultEnrichmentService", () => {
 
   test("keeps enrichment non-blocking when one source fails", async () => {
     const service = new ResultEnrichmentService({
-      historyStore: {
-        getAll: async () => ({ "title-1": history({ completed: false, positionSeconds: 300 }) }),
-      },
+      historyRepository: historyRepository([
+        history({ titleId: "title-1", completed: false, positionSeconds: 300 }),
+      ]),
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => {
           throw new Error("offline unavailable");
@@ -122,7 +128,7 @@ describe("ResultEnrichmentService", () => {
       freshness: "cached",
     };
     const service = new ResultEnrichmentService({
-      historyStore: { getAll: async () => ({ "title-1": sourceEntry }) },
+      historyRepository: historyRepository([sourceEntry]),
       offlineLibraryService: { peekRecordedArtifactStatuses: async () => [] },
       continueWatchingService: {
         titleDecision: () => decision,
@@ -152,7 +158,7 @@ describe("ResultEnrichmentService", () => {
   test("uses provider release metadata without probing schedule cache", async () => {
     const releaseLookups: string[] = [];
     const service = new ResultEnrichmentService({
-      historyStore: { getAll: async () => ({}) },
+      historyRepository: historyRepository(),
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => [],
       },
@@ -183,11 +189,7 @@ describe("ResultEnrichmentService", () => {
   test("uses cached next-release data without probing schedules for unrelated results", async () => {
     const releaseLookups: string[] = [];
     const service = new ResultEnrichmentService({
-      historyStore: {
-        getAll: async () => ({
-          "anilist:1": history({ episode: 5 }),
-        }),
-      },
+      historyRepository: historyRepository([history({ titleId: "anilist:1", episode: 5 })]),
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => [],
       },
@@ -216,13 +218,13 @@ describe("ResultEnrichmentService", () => {
     expect(enrichments.get("series:anilist:2")?.badges).toEqual([]);
   });
 
-  test("skips historyStore.getAll when preloaded history is supplied", async () => {
+  test("skips repository history read when preloaded history is supplied", async () => {
     let historyCalls = 0;
     const service = new ResultEnrichmentService({
-      historyStore: {
-        getAll: async () => {
+      historyRepository: {
+        listLatestByTitle: () => {
           historyCalls += 1;
-          return {};
+          return [];
         },
       },
       offlineLibraryService: {
@@ -242,7 +244,7 @@ describe("ResultEnrichmentService", () => {
   test("uses recorded artifact statuses once within the ttl without validating files", async () => {
     let offlineCalls = 0;
     const service = new ResultEnrichmentService({
-      historyStore: { getAll: async () => ({}) },
+      historyRepository: historyRepository(),
       offlineLibraryService: {
         peekRecordedArtifactStatuses: async () => {
           offlineCalls += 1;

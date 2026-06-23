@@ -283,6 +283,48 @@ test("history repository round trips latest progress", () => {
   });
   expect(repo.listRecent(1)[0]?.key).toContain("tmdb:1");
   expect(repo.listByTitle("tmdb:1")).toHaveLength(1);
+  expect(repo.listLatestByTitle()).toMatchObject([{ titleId: "tmdb:1", episode: 2 }]);
+
+  db.close();
+});
+
+test("history repository lists one latest row per title", () => {
+  const db = migratedDataDb();
+  const repo = new HistoryRepository(db);
+
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Example" },
+    episode: { season: 1, episode: 7 },
+    positionSeconds: 600,
+    durationSeconds: 1200,
+    completed: false,
+    providerId: "vidking",
+    updatedAt: "2026-04-29T00:00:00.000Z",
+  });
+
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Example" },
+    episode: { season: 1, episode: 6 },
+    positionSeconds: 1200,
+    durationSeconds: 1200,
+    completed: true,
+    providerId: "vidking",
+    updatedAt: "2026-04-30T00:00:00.000Z",
+  });
+
+  repo.upsertProgress({
+    title: { id: "tmdb:2", kind: "movie", title: "Movie" },
+    positionSeconds: 60,
+    durationSeconds: 600,
+    completed: false,
+    providerId: "videasy",
+    updatedAt: "2026-04-28T00:00:00.000Z",
+  });
+
+  expect(repo.listLatestByTitle()).toMatchObject([
+    { titleId: "tmdb:1", episode: 6, completed: true },
+    { titleId: "tmdb:2", completed: false },
+  ]);
 
   db.close();
 });

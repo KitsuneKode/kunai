@@ -7,7 +7,7 @@
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType } from "@/domain/types";
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
 
 const FINISHED_RATIO = 0.95;
@@ -48,6 +48,24 @@ export function correctedHistoryMediaKind(
  */
 export function historyContentType(progress: HistoryProgress): ContentType {
   return progress.mediaKind === "movie" ? "movie" : "series";
+}
+
+export function latestHistoryByTitle(
+  entries: readonly HistoryProgress[],
+): Record<string, HistoryProgress> {
+  const historyByTitle: Record<string, HistoryProgress> = {};
+  for (const entry of entries) {
+    if (!historyByTitle[entry.titleId]) {
+      historyByTitle[entry.titleId] = entry;
+    }
+  }
+  return historyByTitle;
+}
+
+export function readLatestHistoryByTitle(
+  historyRepository: Pick<HistoryRepository, "listLatestByTitle">,
+): Record<string, HistoryProgress> {
+  return latestHistoryByTitle(historyRepository.listLatestByTitle());
 }
 
 /**

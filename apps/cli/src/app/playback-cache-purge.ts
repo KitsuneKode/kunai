@@ -46,7 +46,7 @@ export async function purgeTitlePlaybackCaches(
   episodes?: readonly EpisodeInfo[],
 ): Promise<void> {
   const state = container.stateManager.getState();
-  const fromHistory = (await container.historyStore.listByTitle(title.id)).map((entry) => ({
+  const fromHistory = container.historyRepository.listByTitle(title.id).map((entry) => ({
     season: entry.season ?? 1,
     episode: entry.episode ?? 1,
   }));

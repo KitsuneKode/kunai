@@ -1,4 +1,3 @@
-import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { Container } from "@/container";
 import type { ProviderMetadata } from "@/domain/types";
 import {
@@ -25,6 +24,12 @@ const RESET_SCOPE_LABELS: Record<Exclude<ProviderHealthResetScope, false>, strin
   all: "all providers and shows",
 };
 
+export type ProviderHealthResetOption = {
+  readonly value: ProviderHealthResetScope;
+  readonly label: string;
+  readonly detail?: string;
+};
+
 function describeResetResult(
   scope: Exclude<ProviderHealthResetScope, false>,
   clearedGlobal: number,
@@ -48,9 +53,9 @@ function describeResetResult(
   return `${parts.join(". ")}. Retry playback or /recompute.`;
 }
 
-export async function chooseProviderHealthResetScope(
+export function buildProviderHealthResetOptions(
   container: Container,
-): Promise<ProviderHealthResetScope> {
+): readonly ProviderHealthResetOption[] {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
   const providerName =
@@ -82,41 +87,34 @@ export async function chooseProviderHealthResetScope(
         },
       ];
 
-  const choice = await chooseFromListShell<ProviderHealthResetScope>({
-    title: "Reset provider health?",
-    subtitle:
-      "Forgets down/degraded status so auto-fallback can try those providers again. Does not clear cached stream URLs.",
-    options: [
-      {
-        value: "current-provider" as const,
-        label: `Forget failures for ${providerName}`,
-        detail: "Global memory — removes down/degraded status for the active provider",
-      },
-      ...(title
-        ? [
-            {
-              value: "current-title" as const,
-              label: `Forget all provider memory for ${title.name}`,
-              detail:
-                "Per-show memory — clears failure suggestions for every provider on this title",
-            },
-            {
-              value: "current-title-provider" as const,
-              label: `Forget ${providerName} on ${title.name}`,
-              detail: "Per-show memory — only this provider on the current title",
-            },
-          ]
-        : []),
-      ...laneOptions,
-      {
-        value: "all" as const,
-        label: "Forget all provider failure memory",
-        detail: "Global + per-show memory — use when multiple providers feel stuck",
-      },
-      { value: false, label: "Cancel" },
-    ],
-  });
-  return choice ?? false;
+  return [
+    {
+      value: "current-provider" as const,
+      label: `Forget failures for ${providerName}`,
+      detail: "Global memory — removes down/degraded status for the active provider",
+    },
+    ...(title
+      ? [
+          {
+            value: "current-title" as const,
+            label: `Forget all provider memory for ${title.name}`,
+            detail: "Per-show memory — clears failure suggestions for every provider on this title",
+          },
+          {
+            value: "current-title-provider" as const,
+            label: `Forget ${providerName} on ${title.name}`,
+            detail: "Per-show memory — only this provider on the current title",
+          },
+        ]
+      : []),
+    ...laneOptions,
+    {
+      value: "all" as const,
+      label: "Forget all provider failure memory",
+      detail: "Global + per-show memory — use when multiple providers feel stuck",
+    },
+    { value: false, label: "Cancel" },
+  ];
 }
 
 export async function applyProviderHealthResetScope(

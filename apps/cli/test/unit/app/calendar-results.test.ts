@@ -7,7 +7,7 @@ function withCalendarServices(input: {
   readonly timelineService: Record<string, unknown>;
   readonly releaseProgressCache?: Record<string, unknown>;
   readonly releaseProgressWriter?: Record<string, unknown>;
-  readonly historyStore?: Record<string, unknown>;
+  readonly historyRepository?: Record<string, unknown>;
 }) {
   return {
     ...input,
@@ -212,21 +212,23 @@ test("loadCalendarResults projects already-loaded released rows without another 
             : [],
         loadMovieReleaseWindow: async () => [],
       },
-      historyStore: {
-        getAll: async () => ({
-          "anilist:21": {
+      historyRepository: {
+        listLatestByTitle: () => [
+          {
+            key: "anime:anilist:21:1:28:none",
+            titleId: "anilist:21",
             title: "Frieren",
-            type: "series",
             mediaKind: "anime",
             season: 1,
             episode: 28,
-            timestamp: 1200,
-            duration: 1400,
+            positionSeconds: 1200,
+            durationSeconds: 1400,
             completed: true,
-            provider: "allmanga",
-            watchedAt: "2026-05-20T00:00:00.000Z",
+            providerId: "allmanga",
+            updatedAt: "2026-05-20T00:00:00.000Z",
+            createdAt: "2026-05-20T00:00:00.000Z",
           },
-        }),
+        ],
       },
       releaseProgressCache: {
         getByTitleIds: () => new Map(),
@@ -265,22 +267,24 @@ test("loadCalendarResults joins AniList schedule rows to provider-native history
             : [],
         loadMovieReleaseWindow: async () => [],
       },
-      historyStore: {
-        getAll: async () => ({
-          "allmanga:opaque": {
+      historyRepository: {
+        listLatestByTitle: () => [
+          {
+            key: "anime:allmanga:opaque:1:28:none",
+            titleId: "allmanga:opaque",
             title: "Frieren",
-            type: "series",
             mediaKind: "anime",
             externalIds: { anilistId: "21" },
             season: 1,
             episode: 28,
-            timestamp: 1200,
-            duration: 1400,
+            positionSeconds: 1200,
+            durationSeconds: 1400,
             completed: true,
-            provider: "allmanga",
-            watchedAt: "2026-05-20T00:00:00.000Z",
+            providerId: "allmanga",
+            updatedAt: "2026-05-20T00:00:00.000Z",
+            createdAt: "2026-05-20T00:00:00.000Z",
           },
-        }),
+        ],
       },
       releaseProgressCache: {
         getByTitleIds: () => new Map(),

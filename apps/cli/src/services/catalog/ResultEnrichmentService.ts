@@ -10,11 +10,14 @@ import type {
   ContinuationViewDecision,
   ContinueWatchingService,
 } from "@/services/continuation/ContinueWatchingService";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  formatTimestamp,
+  historyContentType,
+  isFinished,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import type { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
-import type { HistoryStore } from "@/services/persistence/HistoryStore";
-import { formatTimestamp, isFinished } from "@/services/persistence/HistoryStore";
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
 import type { ProviderReleaseInfo } from "@kunai/types";
 
 export type ResultEnrichmentBadgeTone = "success" | "info" | "warning" | "neutral";
@@ -29,7 +32,7 @@ export type ResultEnrichment = {
 };
 
 export type ResultEnrichmentServiceDeps = {
-  readonly historyStore: Pick<HistoryStore, "getAll">;
+  readonly historyRepository: Pick<HistoryRepository, "listLatestByTitle">;
   readonly offlineLibraryService: Pick<OfflineLibraryService, "peekRecordedArtifactStatuses">;
   readonly continueWatchingService?: Pick<ContinueWatchingService, "titleDecision">;
   readonly getCachedNextRelease?: (result: SearchResult) => ContinueHistoryRelease | null;
@@ -59,7 +62,7 @@ export class ResultEnrichmentService {
   async enrichResults(
     results: readonly SearchResult[],
     options?: {
-      /** Skip a redundant historyStore.getAll() when the caller already loaded history. */
+      /** Skip a redundant repository history read when the caller already loaded history. */
       readonly preloadedHistory?: Record<string, HistoryProgress>;
     },
   ): Promise<ReadonlyMap<string, ResultEnrichment>> {
@@ -79,7 +82,7 @@ export class ResultEnrichmentService {
     const [historyResult, offlineResult] = await Promise.allSettled([
       options?.preloadedHistory !== undefined
         ? Promise.resolve(options.preloadedHistory)
-        : this.deps.historyStore.getAll(),
+        : Promise.resolve(readLatestHistoryByTitle(this.deps.historyRepository)),
       this.deps.offlineLibraryService.peekRecordedArtifactStatuses(
         missing.map((result) => result.id),
         300,
@@ -163,7 +166,7 @@ function offlineStatusesToSignals(statuses: readonly string[]): ContinuationSign
 
 export function buildResultEnrichment(input: {
   readonly result: SearchResult;
-  readonly historyEntry?: Awaited<ReturnType<HistoryStore["get"]>> | null;
+  readonly historyEntry?: HistoryProgress | null;
   readonly nextRelease?: ContinueHistoryRelease | null;
   readonly offlineStatuses?: readonly string[];
 }): ResultEnrichment {

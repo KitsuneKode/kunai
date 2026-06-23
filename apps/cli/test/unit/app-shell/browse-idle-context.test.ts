@@ -28,8 +28,8 @@ describe("buildBrowseIdleContext", () => {
           },
         ],
       },
-      historyStore: {
-        getAll: async () => ({}),
+      historyRepository: {
+        listLatestByTitle: () => [],
       },
     };
 

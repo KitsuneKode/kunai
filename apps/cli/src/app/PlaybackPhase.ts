@@ -187,12 +187,12 @@ import {
   PlaybackTimingAggregator,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -591,7 +591,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       providerRegistry,
       stateManager,
       logger,
-      historyStore,
       historyRepository,
       config,
       cacheStore,
@@ -704,7 +703,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       if (title.type === "series") {
         // Check history for resume
-        const history = await historyStore.get(title.id);
+        const history = historyRepository.getLatestForTitle(title.id) ?? null;
         if (history) {
           logger.info("History found", {
             season: history.season,
@@ -757,7 +756,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         // Movies have no season/episode axis but still carry saved progress.
         // Offer Resume/Restart when there is a resumable position; otherwise play
         // from the beginning (no menu). Previously movies started at 0 always.
-        const movieHistory = await historyStore.get(title.id);
+        const movieHistory = historyRepository.getLatestForTitle(title.id) ?? null;
         const { chooseMovieStartingPoint } = await import("@/session-flow");
         const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
         if (!selection) {

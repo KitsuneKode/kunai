@@ -13,7 +13,10 @@ import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import {
@@ -479,7 +482,7 @@ export function RootOverlayShell({
   const [historyTab, setHistoryTab] = useState<HistoryTab>(initialHistoryTab);
   const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>("all");
   const reloadHistoryOverlay = useCallback(async () => {
-    const entries = await container.historyStore.getAll();
+    const entries = readLatestHistoryByTitle(container.historyRepository);
     const historyEntries = Object.entries(entries);
     setHistorySelections(
       historyEntries.map(([titleId, entry]) => ({

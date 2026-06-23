@@ -23,7 +23,11 @@ import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
-import { historyContentType, isFinished } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  isFinished,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
 import type { ListItem } from "@kunai/storage";
 import { Box, Text, useInput } from "ink";
@@ -161,7 +165,7 @@ function LibraryTab({ container }: { container: Container }) {
     let cancelled = false;
     Promise.all([
       container.offlineLibraryService.listCompletedEntries(200),
-      container.historyStore.getAll(),
+      Promise.resolve(readLatestHistoryByTitle(container.historyRepository)),
     ])
       .then(([result, history]) => {
         if (cancelled) return undefined;

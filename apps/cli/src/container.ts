@@ -104,9 +104,7 @@ import type { ConfigService } from "./services/persistence/ConfigService";
 import { ConfigServiceImpl } from "./services/persistence/ConfigServiceImpl";
 import type { ConfigStore } from "./services/persistence/ConfigStore";
 import { ConfigStoreImpl } from "./services/persistence/ConfigStoreImpl";
-import type { HistoryStore } from "./services/persistence/HistoryStore";
 import { SqliteCacheStoreImpl } from "./services/persistence/SqliteCacheStoreImpl";
-import { SqliteHistoryStoreImpl } from "./services/persistence/SqliteHistoryStoreImpl";
 import { StorageMaintenanceService } from "./services/persistence/StorageMaintenanceService";
 import { SyncTokenStore } from "./services/persistence/SyncTokenStore";
 import { EpisodePlaybackSelectionService } from "./services/playback/EpisodePlaybackSelectionService";
@@ -170,7 +168,6 @@ export interface Container {
   readonly storage: StorageService;
 
   // Persistence stores
-  readonly historyStore: HistoryStore;
   /** Raw SQLite repository — use when you need HistoryProgress directly (no adapter mapping). */
   readonly historyRepository: HistoryRepository;
   readonly configStore: ConfigStore;
@@ -296,7 +293,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   // Persistence layer
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
-  const historyStore = new SqliteHistoryStoreImpl(historyRepository);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
@@ -626,7 +622,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   });
   const timelineService = new TimelineService(catalogScheduleService);
   const resultEnrichmentService = new ResultEnrichmentService({
-    historyStore,
+    historyRepository,
     offlineLibraryService,
     continueWatchingService,
     getCachedNextRelease: (result) =>
@@ -695,7 +691,6 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     playerControl,
     workControl,
     storage,
-    historyStore,
     historyRepository,
     configStore,
     cacheStore,

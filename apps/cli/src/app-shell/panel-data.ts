@@ -13,12 +13,12 @@ import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import { historyContentType } from "@/services/continuation/history-progress";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { formatTimestamp } from "@/services/persistence/HistoryStore";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import {
   formatProviderHealthBadge,

@@ -40,6 +40,7 @@ import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
+import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles } from "@/services/search/SearchRoutingService";
@@ -216,7 +217,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         let allHistory: Record<string, HistoryProgress> = {};
         try {
-          allHistory = await container.historyStore.getAll();
+          allHistory = readLatestHistoryByTitle(container.historyRepository);
           enqueueReleaseReconciliation(
             container,
             Object.values(allHistory),
@@ -775,7 +776,14 @@ async function loadBrowseDisplayContext(
   options?: { readonly preloadedHistory?: Record<string, HistoryProgress> },
 ): Promise<BrowseDisplayContext> {
   const historyMap =
-    options?.preloadedHistory ?? (await container.historyStore.getAll().catch(() => ({})));
+    options?.preloadedHistory ??
+    (() => {
+      try {
+        return readLatestHistoryByTitle(container.historyRepository);
+      } catch {
+        return {};
+      }
+    })();
   const enrichments = await container.resultEnrichmentService
     .enrichResults(results, { preloadedHistory: historyMap })
     .catch(() => new Map<string, ResultEnrichment>());

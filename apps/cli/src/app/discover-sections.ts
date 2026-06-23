@@ -7,7 +7,10 @@
 
 import { loadDiscoveryList } from "@/app/discovery-lists";
 import type { Container } from "@/container";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  readLatestHistoryByTitle,
+} from "@/services/continuation/history-progress";
 import type { RecommendationSection } from "@/services/recommendations/RecommendationService";
 
 export type DiscoverSectionsOptions = {
@@ -22,11 +25,11 @@ export type DiscoverSectionsOptions = {
 export async function buildDiscoverSections(
   container: Pick<
     Container,
-    "historyStore" | "recommendationService" | "stateManager" | "providerRegistry"
+    "historyRepository" | "recommendationService" | "stateManager" | "providerRegistry"
   >,
   options: DiscoverSectionsOptions = {},
 ): Promise<readonly RecommendationSection[]> {
-  const history = await container.historyStore.getAll();
+  const history = readLatestHistoryByTitle(container.historyRepository);
   const mode = container.stateManager.getState().mode;
   const animeProviders = new Set(
     container.providerRegistry

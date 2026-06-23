@@ -175,6 +175,27 @@ export class HistoryRepository {
       .map(mapHistoryRow);
   }
 
+  listLatestByTitle(limit = 500): readonly HistoryProgress[] {
+    return this.db
+      .query<HistoryProgressRow, [number]>(
+        `
+          SELECT *
+          FROM history_progress AS history
+          WHERE history.key = (
+            SELECT latest.key
+            FROM history_progress AS latest
+            WHERE latest.title_id = history.title_id
+            ORDER BY latest.updated_at DESC, latest.created_at DESC, latest.key DESC
+            LIMIT 1
+          )
+          ORDER BY history.updated_at DESC, history.created_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(limit)
+      .map(mapHistoryRow);
+  }
+
   listByTitle(titleId: string, limit = 500): readonly HistoryProgress[] {
     return this.db
       .query<HistoryProgressRow, [string, number]>(
