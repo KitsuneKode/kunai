@@ -8,7 +8,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { initLogger } from "@/logger";
+import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import {
   createProviderEngine,
   orderProviderModulesByPriority,
@@ -34,6 +36,7 @@ import {
   openKunaiDatabase,
   QueueRepository,
   PlaylistsRepository,
+  ProviderTitleBridgeRepository,
   ProviderHealthRepository,
   ProviderEndpointHealthRepository,
   TitleProviderHealthRepository,
@@ -41,6 +44,8 @@ import {
   ReleaseProgressCacheRepository,
   CalendarArchiveRepository,
   runMigrations,
+  isHistoryIdentityConsolidatorApplied,
+  markHistoryIdentityConsolidatorApplied,
   ScheduleCacheRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
@@ -294,6 +299,16 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   runMigrations(dataDb, "data");
   runMigrations(cacheDb, "cache");
 
+  if (!isHistoryIdentityConsolidatorApplied(dataDb)) {
+    runHistoryIdentityConsolidator(dataDb, {
+      dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
+      log: debug ? (message) => logger.info(message) : undefined,
+    });
+    if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
+      markHistoryIdentityConsolidatorApplied(dataDb);
+    }
+  }
+
   // Persistence layer
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
@@ -314,6 +329,8 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     new TitleProviderHealthRepository(cacheDb),
   );
   const scheduleCache = new ScheduleCacheRepository(cacheDb);
+  const providerTitleBridge = new ProviderTitleBridgeRepository(cacheDb);
+  const titleBridgePort = createProviderTitleBridgePort(providerTitleBridge);
   const releaseProgressCache = new ReleaseProgressCacheRepository(cacheDb);
   const calendarArchive = new CalendarArchiveRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
@@ -446,6 +463,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
     fetch: createProviderFetchPort,
     endpointHealth,
+    titleBridge: titleBridgePort,
     auth: {
       getSecret(providerId, key) {
         if (providerId !== "videasy" && providerId !== "vidking") return undefined;
