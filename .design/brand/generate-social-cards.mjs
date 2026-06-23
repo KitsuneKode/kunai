@@ -39,25 +39,16 @@ const markPaths = readFileSync(join(HERE, "kunai-mark.svg"), "utf8")
   .replace(/<\/svg>[\s\S]*/u, "")
   .trim();
 
-function noiseFilter(id) {
-  return `
-  <filter id="${id}" x="0" y="0" width="100%" height="100%">
-    <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="4" stitchTiles="stitch" result="noise"/>
-    <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.035 0"/>
-    <feBlend in="SourceGraphic" in2="noise" mode="overlay"/>
-  </filter>`;
-}
-
 function gridOverlay(width, height) {
   const lines = [];
   for (let x = 80; x < width; x += 80) {
     lines.push(
-      `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="${PALETTE.lineSoft}" stroke-width="1" opacity="0.35"/>`,
+      `<line x1="${x}" y1="0" x2="${x}" y2="${height}" stroke="${PALETTE.lineSoft}" stroke-width="1" opacity="0.12"/>`,
     );
   }
   for (let y = 80; y < height; y += 80) {
     lines.push(
-      `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="${PALETTE.lineSoft}" stroke-width="1" opacity="0.35"/>`,
+      `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="${PALETTE.lineSoft}" stroke-width="1" opacity="0.12"/>`,
     );
   }
   return lines.join("\n    ");
@@ -106,7 +97,6 @@ function docsSocialCard(width, height) {
       <stop offset="0%" stop-color="${PALETTE.accentGlow}"/>
       <stop offset="100%" stop-color="transparent"/>
     </radialGradient>
-    ${noiseFilter("grain")}
   </defs>
   <rect width="${width}" height="${height}" fill="url(#bg)"/>
   <rect width="${width}" height="${height}" fill="url(#glow)"/>
@@ -124,7 +114,6 @@ function docsSocialCard(width, height) {
   ${terminalStrip({ x: textX, y: 372, width: 680, command: 'kunai -S "Your title"' })}
   ${kindDots(textX, height - 54)}
   <text x="${width - 72}" y="${height - 48}" text-anchor="end" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="14" fill="${PALETTE.muted}">docs · kunai</text>
-  <rect width="${width}" height="${height}" fill="transparent" filter="url(#grain)"/>
 </svg>`;
 }
 
@@ -146,12 +135,11 @@ function githubSocialCard(width, height) {
       <stop offset="0%" stop-color="${PALETTE.accentGlow}"/>
       <stop offset="100%" stop-color="transparent"/>
     </radialGradient>
-    ${noiseFilter("grain")}
   </defs>
   <rect width="${width}" height="${height}" fill="url(#bg)"/>
   <rect width="${width}" height="${height}" fill="url(#glow)"/>
   ${gridOverlay(width, height)}
-  <rect x="${panelX - 24}" y="56" width="${panelW + 48}" height="${height - 112}" rx="18" fill="${PALETTE.surface}" stroke="${PALETTE.line}" stroke-width="1" opacity="0.92"/>
+  <rect x="${panelX - 24}" y="56" width="${panelW + 48}" height="${height - 112}" rx="18" fill="${PALETTE.surface}" stroke="${PALETTE.line}" stroke-width="1"/>
   <g transform="translate(${mascotX} ${mascotY}) scale(${mascotScale})" shape-rendering="crispEdges">
     ${mascotBody}
   </g>
@@ -169,7 +157,6 @@ function githubSocialCard(width, height) {
   ${kindDots(panelX, height - 58)}
   <text x="${width - 88}" y="${height - 52}" text-anchor="end" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="15" fill="${PALETTE.info}">github.com/KitsuneKode/kunai</text>
   <text x="88" y="${height - 52}" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace" font-size="13" letter-spacing="4" fill="${PALETTE.muted}">EMBER DUSK · SAKURA</text>
-  <rect width="${width}" height="${height}" fill="transparent" filter="url(#grain)"/>
 </svg>`;
 }
 
@@ -182,12 +169,47 @@ function exportPng(svgPath, pngPath, width) {
   }
 }
 
+/** GitHub social preview must stay under 1 MB. Prefer crisp PNG; fall back to high-quality JPEG. */
+function exportGithubSocialUpload(pngPath, githubJpgPath) {
+  const oxipng = spawnSync("oxipng", ["-o", "4", "-strip", "all", "-out", pngPath, pngPath], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+  const pngSize = readFileSync(pngPath).length;
+  if (pngSize <= 1_000_000) {
+    return { format: "png", path: pngPath, bytes: pngSize, optimized: oxipng.status === 0 };
+  }
+
+  const qualities = [95, 92, 88];
+  let lastSize = 0;
+  for (const quality of qualities) {
+    const result = spawnSync(
+      "magick",
+      [pngPath, "-strip", "-sampling-factor", "4:4:4", "-quality", String(quality), githubJpgPath],
+      { stdio: "inherit" },
+    );
+    if (result.status !== 0) {
+      throw new Error("magick failed while exporting GitHub social preview JPEG");
+    }
+    lastSize = readFileSync(githubJpgPath).length;
+    if (lastSize <= 1_000_000) {
+      return { format: "jpg", path: githubJpgPath, bytes: lastSize, quality };
+    }
+  }
+
+  throw new Error(
+    `GitHub social preview still exceeds 1 MB after JPEG compression (${lastSize} bytes).`,
+  );
+}
+
 const docsSvg = docsSocialCard(1200, 630);
 const githubSvg = githubSocialCard(1280, 640);
 
 const docsSvgPath = join(HERE, "kunai-social-docs.svg");
 const githubSvgPath = join(HERE, "kunai-social-github.svg");
 const githubPngPath = join(REPO, ".github/social-preview.png");
+const githubJpgPath = join(REPO, ".github/social-preview.jpg");
 const docsPngPath = join(HERE, "kunai-social-docs.png");
 
 writeFileSync(docsSvgPath, docsSvg);
@@ -200,9 +222,15 @@ exportPng(docsSvgPath, docsPngPath, 1200);
 exportPng(githubSvgPath, githubPngPath, 1280);
 exportPng(mascotSvgPath, mascotOgPngPath, 320);
 
+const githubUpload = exportGithubSocialUpload(githubPngPath, githubJpgPath);
+
 console.log("Wrote:");
 console.log(`  ${docsSvgPath}`);
 console.log(`  ${docsPngPath}`);
 console.log(`  ${githubSvgPath}`);
-console.log(`  ${githubPngPath}`);
 console.log(`  ${mascotOgPngPath}`);
+console.log(
+  `  GitHub upload: ${githubUpload.path} (${githubUpload.format}, ${githubUpload.bytes} bytes` +
+    (githubUpload.quality ? `, q${githubUpload.quality}` : "") +
+    ")",
+);

@@ -116,4 +116,4 @@ Short, precise, a little dry. "Finds the playable stream." "Nothing fabricated."
 - `palette-board.mjs` → `palette-current.svg` / `palette-proposed.svg` — token comparison board
 - `kunai-brand-system.md` — this file
 - `image-prompts.md` — optional raster prompts (hero/GIF); social cards are generated in-repo
-- `.github/social-preview.png` — upload to GitHub repo Settings → Social preview
+- `.github/social-preview.png` — upload to GitHub repo Settings → Social preview (PNG, under 1 MB)
