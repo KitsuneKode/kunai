@@ -68,3 +68,52 @@ test("backfillTitleMetadata does NOT clobber an existing poster", () => {
 
   expect(r.getLatestForTitle("opaque-1")?.posterUrl).toBe("https://img/original.jpg");
 });
+
+test("upsertProgress persists canonical title id and provider native map", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: {
+      id: "bxCKTnota29uSRnZw",
+      kind: "anime",
+      title: "Hozuki's Coolheadedness",
+      externalIds: { anilistId: "20431" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 120,
+    providerId: "allanime",
+  });
+
+  const row = r.getLatestForTitle("20431");
+  expect(row?.titleId).toBe("20431");
+  expect(row?.externalIds).toEqual({
+    anilistId: "20431",
+    providerNativeIds: { allanime: "bxCKTnota29uSRnZw" },
+  });
+});
+
+test("backfillTitleMetadata merges provider native ids without clobbering catalog ids", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: {
+      id: "20431",
+      kind: "anime",
+      title: "Hozuki's Coolheadedness",
+      externalIds: { anilistId: "20431", providerNativeIds: { miruro: "20431" } },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 120,
+    providerId: "miruro",
+  });
+
+  r.backfillTitleMetadata("20431", {
+    externalIds: {
+      anilistId: "99999",
+      providerNativeIds: { allanime: "bxCKTnota29uSRnZw" },
+    },
+  });
+
+  expect(r.getLatestForTitle("20431")?.externalIds).toEqual({
+    anilistId: "20431",
+    providerNativeIds: { miruro: "20431", allanime: "bxCKTnota29uSRnZw" },
+  });
+});

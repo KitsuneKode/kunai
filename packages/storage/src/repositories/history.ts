@@ -1,3 +1,4 @@
+import { mergeBackfillExternalIds, resolvePersistedHistoryTitle } from "@kunai/core";
 import type {
   EpisodeIdentity,
   MediaKind,
@@ -59,7 +60,10 @@ export class HistoryRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
   upsertProgress(input: HistoryProgressInput): void {
-    const key = createHistoryKey(input.title, input.episode);
+    const persistedTitle = input.providerId
+      ? resolvePersistedHistoryTitle(input.title, input.providerId)
+      : input.title;
+    const key = createHistoryKey(persistedTitle, input.episode);
     const now = input.updatedAt ?? new Date().toISOString();
 
     this.db
@@ -97,9 +101,9 @@ export class HistoryRepository {
       )
       .run(
         key,
-        input.title.id,
-        input.title.kind,
-        input.title.title,
+        persistedTitle.id,
+        persistedTitle.kind,
+        persistedTitle.title,
         input.episode?.season ?? null,
         input.episode?.episode ?? null,
         input.episode?.absoluteEpisode ?? null,
@@ -107,7 +111,7 @@ export class HistoryRepository {
         input.durationSeconds === undefined ? null : Math.max(0, Math.trunc(input.durationSeconds)),
         input.completed === true ? 1 : 0,
         input.providerId ?? null,
-        serializeExternalIds(input.title.externalIds),
+        serializeExternalIds(persistedTitle.externalIds),
         input.posterUrl ?? null,
         now,
         now,
@@ -158,11 +162,24 @@ export class HistoryRepository {
     }
     const externalIdsJson = serializeExternalIds(metadata.externalIds);
     if (externalIdsJson) {
-      this.db
-        .query(
-          "UPDATE history_progress SET external_ids_json = ? WHERE title_id = ? AND (external_ids_json IS NULL OR external_ids_json = '')",
+      const rows = this.db
+        .query<{ key: string; external_ids_json: string | null }, [string]>(
+          "SELECT key, external_ids_json FROM history_progress WHERE title_id = ?",
         )
-        .run(externalIdsJson, titleId);
+        .all(titleId);
+
+      for (const row of rows) {
+        const existing = parseExternalIds(row.external_ids_json);
+        const shouldReplaceEmpty = !row.external_ids_json;
+        const merged = shouldReplaceEmpty
+          ? metadata.externalIds
+          : mergeBackfillExternalIds(existing, metadata.externalIds);
+        const nextJson = serializeExternalIds(merged);
+        if (!nextJson || nextJson === row.external_ids_json) continue;
+        this.db
+          .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
+          .run(nextJson, row.key);
+      }
     }
   }
 
@@ -292,10 +309,23 @@ function serializeExternalIds(externalIds: ProviderExternalIds | undefined): str
   return JSON.stringify(externalIds);
 }
 
+function parseProviderNativeIds(
+  value: ProviderExternalIds["providerNativeIds"] | unknown,
+): ProviderExternalIds["providerNativeIds"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const compact: Partial<Record<ProviderId, string>> = {};
+  for (const [providerId, nativeId] of Object.entries(value)) {
+    if (typeof nativeId !== "string" || !nativeId.trim()) continue;
+    compact[providerId as ProviderId] = nativeId.trim();
+  }
+  return Object.keys(compact).length > 0 ? compact : undefined;
+}
+
 function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as Partial<ProviderExternalIds>;
+    const providerNativeIds = parseProviderNativeIds(parsed.providerNativeIds);
     const externalIds: ProviderExternalIds = {
       ...(typeof parsed.anilistId === "string" && parsed.anilistId
         ? { anilistId: parsed.anilistId }
@@ -303,6 +333,7 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
       ...(typeof parsed.tmdbId === "string" && parsed.tmdbId ? { tmdbId: parsed.tmdbId } : {}),
       ...(typeof parsed.imdbId === "string" && parsed.imdbId ? { imdbId: parsed.imdbId } : {}),
       ...(typeof parsed.malId === "string" && parsed.malId ? { malId: parsed.malId } : {}),
+      ...(providerNativeIds ? { providerNativeIds } : {}),
     };
     return Object.keys(externalIds).length > 0 ? externalIds : undefined;
   } catch {

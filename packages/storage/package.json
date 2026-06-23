@@ -15,6 +15,7 @@
     "test": "bun test test"
   },
   "dependencies": {
+    "@kunai/core": "workspace:*",
     "@kunai/schemas": "workspace:*",
     "@kunai/types": "workspace:*"
   },
