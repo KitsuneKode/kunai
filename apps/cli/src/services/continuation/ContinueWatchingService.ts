@@ -45,6 +45,7 @@ export type ContinuationPrimaryAction =
 export type ContinuationViewDecision = {
   readonly state: ContinuationStateKind;
   readonly target: ContinuationTarget | null;
+  readonly availableAt?: string;
   readonly badge?: string;
   readonly detail?: string;
   readonly primaryAction?: ContinuationPrimaryAction;
@@ -177,6 +178,7 @@ export class ContinueWatchingService {
     return {
       state: decision.state,
       target,
+      availableAt: decision.availableAt,
       badge: decision.state === "new-episodes" ? `${decision.newEpisodeCount ?? 1} new` : undefined,
       detail:
         decision.state === "airing-weekly" ? "next release is not provider-confirmed" : undefined,

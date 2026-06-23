@@ -259,6 +259,40 @@ test("projectionFromViewDecision preserves next-up decision details and freshnes
   });
 });
 
+test("projectionFromViewDecision preserves airing-weekly availableAt metadata", () => {
+  const projection = projectionFromViewDecision({
+    state: "airing-weekly",
+    target: {
+      titleId: "tmdb:1",
+      title: "Weekly Show",
+      mediaKind: "series",
+      season: 1,
+      episode: 6,
+      sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    },
+    availableAt: "2026-05-24T12:00:00.000Z",
+    badge: undefined,
+    detail: "next release is not provider-confirmed",
+    primaryAction: undefined,
+    secondaryActions: [],
+    freshness: "cached",
+  });
+
+  expect(projection).toEqual({
+    kind: "upcoming",
+    titleId: "tmdb:1",
+    title: "Weekly Show",
+    season: 1,
+    episode: 6,
+    availableAt: "2026-05-24T12:00:00.000Z",
+    sourceEntry: { ...baseEntry, episode: 5, completed: true, positionSeconds: 1200 },
+    badge: undefined,
+    detail: "next release is not provider-confirmed",
+    secondaryActions: [],
+    freshness: "cached",
+  });
+});
+
 test("projectionFromViewDecision preserves new-episodes badge and freshness", () => {
   const projection = projectionFromViewDecision({
     state: "new-episodes",

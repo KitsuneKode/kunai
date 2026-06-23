@@ -136,6 +136,33 @@ test("titleDecision preserves stale freshness from release progress", () => {
   expect(decision.freshness).toBe("stale");
 });
 
+test("titleDecision preserves airing-weekly availableAt metadata", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Demo" },
+    episode: { season: 1, episode: 5 },
+    positionSeconds: 1000,
+    durationSeconds: 1000,
+    completed: true,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.titleDecision("tmdb:1", {
+    nextRelease: {
+      season: 1,
+      episode: 6,
+      released: false,
+      availableAt: "2026-01-03T12:00:00.000Z",
+    },
+  });
+
+  expect(decision).toMatchObject({
+    state: "airing-weekly",
+    availableAt: "2026-01-03T12:00:00.000Z",
+  });
+});
+
 test("episodeProgress returns every stored episode for the title", () => {
   const repo = makeRepo();
   for (const episode of [1, 2, 3]) {

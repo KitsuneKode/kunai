@@ -188,7 +188,7 @@ export function projectionFromViewDecision(
         title,
         season,
         episode,
-        availableAt: undefined,
+        availableAt: decision.availableAt,
         sourceEntry,
         badge: decision.badge,
         detail: decision.detail,
