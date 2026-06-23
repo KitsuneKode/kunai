@@ -29,6 +29,7 @@ export const CALENDAR_TYPE_TABS: readonly CalendarTypeTab[] = [
 /** Broadcast / schedule state — not the same as provider playability. */
 export type CalendarReleaseState =
   | "available"
+  | "continue-ready"
   | "countdown"
   | "resolving"
   | "missed"
@@ -314,6 +315,7 @@ export function deriveCalendarReleaseState<T>(
   const item = option.calendar;
   if (!item) return "upcoming";
   if (item.providerConfirmed) return "available";
+  if (item.continuation?.playable === true) return "continue-ready";
   if (item.releaseStatus === "unknown") return "upcoming";
 
   const aired = item.releaseAt ? Date.parse(item.releaseAt) <= nowMs : false;
@@ -373,6 +375,7 @@ function formatCalendarReleaseStateLabel<T>(
   if (state === "countdown" && item?.releaseAt) {
     return formatReleaseCountdown(Date.parse(item.releaseAt) - nowMs);
   }
+  if (state === "continue-ready") return `continue · ${item?.continuation?.badge ?? "ready"}`;
   if (state === "resolving") return "aired · resolving";
   if (state === "missed") return "aired · not available";
   if (state === "failed") return "schedule unavailable";
@@ -393,6 +396,9 @@ export function calendarReleaseRowPresentation<T>(
   const label = formatCalendarReleaseStateLabel(state, option, nowMs);
   if (state === "available") {
     return { glyph: "✓ ", color: palette.ok, dim: false, label };
+  }
+  if (state === "continue-ready") {
+    return { glyph: "→ ", color: palette.ok, dim: false, label };
   }
   if (state === "countdown") {
     return { glyph: "◷ ", color: palette.accent, dim: false, label };
@@ -420,11 +426,13 @@ export function buildCalendarPreviewRailModel(
   const stateTone =
     state === "available"
       ? ("success" as const)
-      : state === "countdown"
-        ? ("warning" as const)
-        : state === "failed"
-          ? ("danger" as const)
-          : ("muted" as const);
+      : state === "continue-ready"
+        ? ("success" as const)
+        : state === "countdown"
+          ? ("warning" as const)
+          : state === "failed"
+            ? ("danger" as const)
+            : ("muted" as const);
   const tracked = isCalendarTrackedOption(option);
   const trackedValue = option.calendar?.inWatchlist
     ? "on your list"
@@ -434,9 +442,11 @@ export function buildCalendarPreviewRailModel(
   const actionLabel =
     state === "available"
       ? "Enter to open"
-      : state === "countdown" || state === "resolving" || state === "missed"
-        ? "Enter for details · playback when a source resolves"
-        : "Enter for details";
+      : state === "continue-ready"
+        ? "Enter to continue"
+        : state === "countdown" || state === "resolving" || state === "missed"
+          ? "Enter for details · playback when a source resolves"
+          : "Enter for details";
 
   const normalizedFacts: PreviewRailModel["facts"] = [
     { label: "Schedule", value: stateLabel, tone: stateTone },
@@ -458,7 +468,9 @@ export function buildCalendarPreviewRailModel(
     overview:
       state === "resolving" || state === "missed"
         ? "This episode has aired on the schedule. Kunai will not offer playback until a provider source is available."
-        : option.previewBody,
+        : state === "continue-ready"
+          ? "This release matches your continuation state. Enter uses the same continuation decision as the Continue Hub."
+          : option.previewBody,
     posterUrl: option.previewImageUrl,
     posterState,
     facts: normalizedFacts,

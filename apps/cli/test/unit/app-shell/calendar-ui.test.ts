@@ -6,6 +6,7 @@ import {
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
   calendarDayKeyFromGroup,
+  calendarReleaseRowPresentation,
   calendarRowLineCost,
   windowCalendarRowsByLines,
   calendarPriorityBand,
@@ -63,6 +64,7 @@ function calOption(partial: {
   inWatchlist?: boolean;
   providerConfirmed?: boolean;
   inHistory?: boolean;
+  continuation?: ReturnType<typeof buildCalendarItem>["continuation"];
   episode?: number;
   season?: number;
   overview?: string;
@@ -86,6 +88,7 @@ function calOption(partial: {
       inWatchlist: partial.inWatchlist,
       inHistory: partial.inHistory,
       providerConfirmed: partial.providerConfirmed,
+      continuation: partial.continuation,
     },
   );
   return {
@@ -246,6 +249,27 @@ test("deriveCalendarReleaseState reserves available for provider-confirmed rows"
   });
   expect(hasProviderConfirmedAvailability(option)).toBe(true);
   expect(deriveCalendarReleaseState(option)).toBe("available");
+});
+
+test("deriveCalendarReleaseState separates continuation-ready from provider availability", () => {
+  const option = calOption({
+    label: "Show",
+    kind: "series",
+    releaseAt: daysAgoAt(1, 9),
+    precision: "date",
+    status: "released",
+    continuation: {
+      state: "new-episodes",
+      badge: "1 new",
+      playable: true,
+      targetTitleId: "show",
+      season: 1,
+      episode: 2,
+    },
+  });
+  expect(hasProviderConfirmedAvailability(option)).toBe(false);
+  expect(deriveCalendarReleaseState(option)).toBe("continue-ready");
+  expect(calendarReleaseRowPresentation(option).label).toBe("continue · 1 new");
 });
 
 test("deriveCalendarReleaseState uses countdown for future airing-today timestamps", () => {
@@ -416,6 +440,31 @@ test("buildCalendarPreviewRailModel avoids watch-now copy for resolving rows", (
   const model = buildCalendarPreviewRailModel(option, "none");
   expect(model?.overview).toContain("will not offer playback until a provider source is available");
   expect(model?.facts.some((fact) => fact.value.includes("Watch now"))).toBe(false);
+});
+
+test("buildCalendarPreviewRailModel explains continuation-ready rows", () => {
+  const option = calOption({
+    label: "Show",
+    kind: "series",
+    releaseAt: daysAgoAt(1, 9),
+    precision: "date",
+    status: "released",
+    continuation: {
+      state: "new-episodes",
+      badge: "1 new",
+      playable: true,
+      targetTitleId: "show",
+      season: 1,
+      episode: 2,
+    },
+  });
+  const model = buildCalendarPreviewRailModel(option, "none");
+  expect(model?.overview).toContain("same continuation decision as the Continue Hub");
+  expect(model?.facts).toContainEqual({
+    label: "Action",
+    value: "Enter to continue",
+    tone: "muted",
+  });
 });
 
 test("buildCalendarErrorState offers catalog refresh without provider lookup", () => {

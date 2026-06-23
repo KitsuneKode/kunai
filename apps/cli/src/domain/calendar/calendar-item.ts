@@ -1,6 +1,15 @@
 export type CalendarContentKind = "anime" | "series" | "movie";
 export type CalendarReleasePrecision = "timestamp" | "date" | "unknown";
 export type CalendarReleaseStatus = "released" | "upcoming" | "unknown";
+export type CalendarContinuationState =
+  | "resume"
+  | "next-up"
+  | "offline-ready"
+  | "new-episodes"
+  | "new-season"
+  | "airing-weekly"
+  | "up-to-date"
+  | "empty";
 
 // Domain-facing input contract for the builder. `CatalogScheduleItem` (a service
 // type) is a structural superset, so callers pass it directly — this keeps the
@@ -47,6 +56,14 @@ export type CalendarItem = {
   readonly newEpisodeCount?: number;
   readonly inWatchlist?: boolean;
   readonly inHistory?: boolean;
+  readonly continuation?: {
+    readonly state: CalendarContinuationState;
+    readonly badge?: string;
+    readonly playable: boolean;
+    readonly targetTitleId?: string;
+    readonly season?: number;
+    readonly episode?: number;
+  };
   readonly display: {
     readonly time: string | null;
     readonly statusLabel: string;
@@ -62,6 +79,7 @@ export type CalendarItemContext = {
   readonly inHistory?: boolean;
   readonly newEpisodeCount?: number;
   readonly providerConfirmed?: boolean;
+  readonly continuation?: CalendarItem["continuation"];
 };
 
 export function buildCalendarItem(
@@ -100,6 +118,7 @@ export function buildCalendarItem(
     newEpisodeCount: ctx.newEpisodeCount,
     inWatchlist: ctx.inWatchlist,
     inHistory: ctx.inHistory,
+    continuation: ctx.continuation,
     display: {
       time,
       statusLabel: formatStatusLabel({ item, reason, releaseStatus, releasedToday, time }),

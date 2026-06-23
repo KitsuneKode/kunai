@@ -1,10 +1,18 @@
 import type { Container } from "@/container";
-import { buildCalendarItem, type CalendarItem } from "@/domain/calendar/calendar-item";
+import {
+  buildCalendarItem,
+  type CalendarContinuationState,
+  type CalendarItem,
+} from "@/domain/calendar/calendar-item";
 import type { SearchResult } from "@/domain/types";
 import type {
   CatalogScheduleItem,
   CatalogScheduleMode,
 } from "@/services/catalog/CatalogScheduleService";
+import type {
+  ContinuationSignals,
+  ContinueWatchingService,
+} from "@/services/continuation/ContinueWatchingService";
 import {
   historyContentType,
   readLatestHistoryByTitle,
@@ -28,6 +36,7 @@ export type CalendarResultBundle = {
 };
 
 type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "listService"> & {
+  readonly continueWatchingService?: Pick<ContinueWatchingService, "titleDecision">;
   readonly historyRepository?: Pick<HistoryRepository, "listLatestByTitle">;
   readonly releaseProgressCache?: Pick<ReleaseProgressCacheRepository, "getByTitleIds" | "upsert">;
   readonly releaseProgressWriter?: Pick<ReleaseProgressWriter, "upsertOptimistic">;
@@ -131,6 +140,12 @@ export async function loadCalendarResults(
         inHistory: historyMatches.has(item.titleId),
         newEpisodeCount: activeNewEpisodeCount(progress),
         providerConfirmed: false,
+        continuation: calendarContinuationForItem({
+          item,
+          match: historyMatches.get(item.titleId),
+          progress,
+          continueWatchingService: container.continueWatchingService,
+        }),
       }),
     };
   });
@@ -194,6 +209,41 @@ function projectProgressForCalendarItems(
     if (progress) projected.set(item.titleId, progress);
   }
   return projected;
+}
+
+function calendarContinuationForItem(input: {
+  readonly item: CatalogScheduleItem;
+  readonly match?: { readonly titleId: string; readonly entry: HistoryProgress };
+  readonly progress?: ReleaseProgressProjection;
+  readonly continueWatchingService?: Pick<ContinueWatchingService, "titleDecision">;
+}): CalendarItem["continuation"] | undefined {
+  const { continueWatchingService, item, match, progress } = input;
+  if (!continueWatchingService || !match) return undefined;
+  const signals: ContinuationSignals = {
+    nextRelease:
+      typeof item.episode === "number"
+        ? {
+            season: item.season ?? match.entry.season ?? 1,
+            episode: item.episode,
+            released: item.status === "released",
+            availableAt: item.releaseAt ?? undefined,
+          }
+        : null,
+    releaseProgress:
+      activeNewEpisodeCount(progress) > 0
+        ? { newEpisodeCount: activeNewEpisodeCount(progress) }
+        : null,
+  };
+  const decision = continueWatchingService.titleDecision(match.titleId, signals);
+  if (!decision.target) return undefined;
+  return {
+    state: decision.state as CalendarContinuationState,
+    badge: decision.badge,
+    playable: Boolean(decision.primaryAction),
+    targetTitleId: decision.target.titleId,
+    season: decision.target.season,
+    episode: decision.target.episode,
+  };
 }
 
 function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarItem): SearchResult {
