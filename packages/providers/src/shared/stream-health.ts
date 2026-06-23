@@ -118,13 +118,23 @@ export async function runStreamHealthCheck(
     return skippedHealthResult(plan);
   }
 
-  const probe = await probeStreamReachability({
+  let probe = await probeStreamReachability({
     url: input.url,
     headers: input.headers,
     fetchImpl: input.fetchImpl,
     timeoutMs: plan.timeoutMs,
     signal: input.signal,
   });
+
+  if (input.phase === "resolve-gate" && shouldRetryResolveGateProbe(probe)) {
+    probe = await probeStreamReachability({
+      url: input.url,
+      headers: input.headers,
+      fetchImpl: input.fetchImpl,
+      timeoutMs: Math.max(plan.timeoutMs, 1_500),
+      signal: input.signal,
+    });
+  }
 
   return {
     healthy: evaluateStreamHealth(input.phase, probe),
@@ -134,6 +144,11 @@ export async function runStreamHealthCheck(
     ageMs: plan.ageMs,
     probe,
   };
+}
+
+function shouldRetryResolveGateProbe(probe: StreamReachabilityProbeResult): boolean {
+  if (probe.status === "timeout") return true;
+  return probe.status === "unreachable" && !probe.definitive;
 }
 
 function planResolveGateHealth(

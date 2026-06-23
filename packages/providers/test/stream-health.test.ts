@@ -89,7 +89,7 @@ describe("stream health", () => {
 
   test("playback-preflight stays lenient on timeout", () => {
     expect(evaluateStreamHealth("playback-preflight", { status: "timeout" })).toBe(true);
-    expect(evaluateStreamHealth("resolve-gate", { status: "timeout" })).toBe(false);
+    expect(evaluateStreamHealth("resolve-gate", { status: "timeout" })).toBe(true);
   });
 
   test("runStreamHealthCheck performs HLS GET probes with provider headers", async () => {

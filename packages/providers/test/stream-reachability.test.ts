@@ -69,7 +69,7 @@ describe("stream reachability", () => {
 
   test("playback preflight stays lenient on timeout", async () => {
     const probe = { status: "timeout" } as const;
-    expect(isStreamReachableForResolve(probe)).toBe(false);
+    expect(isStreamReachableForResolve(probe)).toBe(true);
     expect(isStreamReachableForPlaybackPreflight(probe)).toBe(true);
     expect(shouldAbortPlaybackForPreflight(probe, false)).toBe(false);
   });

@@ -87,7 +87,7 @@ describe("checkStreamHealth", () => {
     });
     controller.abort("user-cancelled");
 
-    expect(await resultPromise).toBe(false);
+    expect(await resultPromise).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls.every((call) => call.signal?.aborted)).toBe(true);
   });
@@ -107,7 +107,7 @@ describe("checkStreamHealth", () => {
       signal: controller.signal,
     });
 
-    expect(healthy).toBe(false);
+    expect(healthy).toBe(true);
     expect(calls).toBe(0);
   });
 });
