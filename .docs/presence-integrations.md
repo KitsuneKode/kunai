@@ -103,10 +103,17 @@ catalog button when ids are known:
 - otherwise **View on AniList**, **View on IMDb**, or **View on TMDB** for the series/movie
 
 Recent Discord clients also support clickable text/image via `details_url`, `state_url`, and
-`assets.large_url` when catalog ids are known.
+`assets.large_url` when catalog ids are known. Under full privacy, the encoded playable
+`kunai://` ref is also appended to the presence `state` line (and exposed as `playable_ref` in
+url-fields); Discord buttons remain https catalog links only because Discord only allows http(s)
+button URLs.
 
-Play-in-Kunai handoffs are intentionally deferred. `presenceDiscordOpenUrl` remains in settings
-for future use but is not wired into the default activity payload.
+Play-in-Kunai handoffs use the shared `PlaybackTargetRef` codec (see `.docs/share-links.md`). The
+playable ref is derived from the live activity via `buildShareRefForActivity` in
+`discord-activity-links.ts`, so the `kunai://` text ref stays episode-accurate alongside the https
+catalog buttons.
+`presenceDiscordOpenUrl` remains in settings for future use but is not wired into the default
+activity payload.
 
 Full privacy cards are laid out like music-player presence (Cider-style): show title on
 `details`, `S# E# · episode name` on `state`, playback progress via Discord timestamps, and the
