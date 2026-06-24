@@ -7,7 +7,7 @@ import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 
 import { debugImage } from "./debug";
 
-const TMDB_IMG = "https://image.tmdb.org/t/p/w300";
+const TMDB_IMG = "https://image.tmdb.org/t/p/w342";
 const CACHE_SUBDIR = join("kunai", "posters");
 
 const fsOps = { mkdir, rename, stat, unlink };
