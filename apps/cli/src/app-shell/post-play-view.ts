@@ -20,6 +20,7 @@ import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
 import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
+import { resolvePostPlayContinueResult } from "./post-play-footer-actions";
 import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
 
@@ -723,6 +724,13 @@ export type PostPlayUnhandledInputContext = {
   readonly postPlayStateKind: PostPlayState["kind"];
   readonly selectedActionAvailable: boolean;
   readonly recommendationCount: number;
+  /**
+   * Context for the `post-continue` accelerator so the live key resolves to the
+   * same action the footer advertises (resume / next / next-season). Default
+   * false keeps legacy callers mapping `n` to `next` in mid-series.
+   */
+  readonly canResume?: boolean;
+  readonly hasNextSeason?: boolean;
 };
 
 export type PostPlayUnhandledInputResult =
@@ -744,6 +752,16 @@ export function resolvePostPlayUnhandledInput(
     return context.selectedActionAvailable ? { type: "run-selected-action" } : null;
   }
   const binding = resolveKeybinding(["postPlayback"], input, key);
+  if (binding?.id === "post-continue") {
+    // Resolve `n` through the shared continue policy so the key matches the
+    // footer label exactly (resume / next-season / no-op) instead of always
+    // firing a bare `next` that dead-ends at season/series boundaries.
+    const continueResult = resolvePostPlayContinueResult(context.postPlayStateKind, {
+      canResume: context.canResume ?? false,
+      hasNextSeason: context.hasNextSeason ?? false,
+    });
+    return continueResult ? { type: "shell-result", result: continueResult } : null;
+  }
   const bindingResult = binding ? resolvePostPlaybackBindingResult(binding) : null;
   if (binding && bindingResult) {
     if (binding.id === "post-watchlist" && context.postPlayStateKind !== "caught-up") return null;

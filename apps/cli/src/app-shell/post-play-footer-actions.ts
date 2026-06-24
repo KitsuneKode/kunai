@@ -3,6 +3,30 @@ import type { PostPlayState } from "@/domain/playback/post-play-state";
 import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import type { FooterAction, ShellAction } from "./types";
 
+/**
+ * Single source of truth for what the post-play "continue" accelerator (the
+ * `post-continue` binding, `n`) resolves to in each post-play state.
+ *
+ * Both the footer label (`buildPostPlayFooterActions`) and the live key handler
+ * (`resolvePostPlayUnhandledInput`) must agree, otherwise the footer advertises
+ * "continue"/"next season" while the key silently fires a different action. It
+ * returns `null` for states that do not offer a continue action so the key is a
+ * deliberate no-op rather than a misleading `next` that dead-ends.
+ */
+export function resolvePostPlayContinueResult(
+  kind: PostPlayState["kind"],
+  options: { readonly canResume: boolean; readonly hasNextSeason: boolean },
+): ShellAction | null {
+  switch (kind) {
+    case "mid-series":
+      return options.canResume ? "resume" : "next";
+    case "season-finale":
+      return options.hasNextSeason ? "next-season" : null;
+    default:
+      return null;
+  }
+}
+
 type PostPlayFooterOptions = {
   readonly canResume: boolean;
   readonly autoplayPaused?: boolean;
@@ -82,11 +106,16 @@ export function buildPostPlayFooterActions(
     case "season-finale":
       if (postPlayState.hasNextSeason) {
         return [
-          actionFromBinding("post-continue", "next-season", {
-            bindings,
-            label: "next season",
-            primary: true,
-          }),
+          actionFromBinding(
+            "post-continue",
+            resolvePostPlayContinueResult("season-finale", { canResume, hasNextSeason: true }) ??
+              "next-season",
+            {
+              bindings,
+              label: "next season",
+              primary: true,
+            },
+          ),
           actionFromBinding("post-replay", "replay", { bindings }),
           quit,
           command,
@@ -111,11 +140,16 @@ export function buildPostPlayFooterActions(
       // (still reachable via their direct keybindings) so the persistent footer
       // stays glanceable instead of a wall of session toggles.
       return [
-        actionFromBinding("post-continue", canResume ? "resume" : "next", {
-          bindings,
-          label: "continue",
-          primary: true,
-        }),
+        actionFromBinding(
+          "post-continue",
+          resolvePostPlayContinueResult("mid-series", { canResume, hasNextSeason: false }) ??
+            "next",
+          {
+            bindings,
+            label: "continue",
+            primary: true,
+          },
+        ),
         source,
         actionFromBinding("post-replay", "replay", { bindings }),
         command,

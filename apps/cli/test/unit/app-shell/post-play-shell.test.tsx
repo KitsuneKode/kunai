@@ -41,18 +41,21 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).toContain("Challengers of Science");
   });
 
-  it("shows the live countdown in the hero when seconds are set", () => {
+  it("advertises the manual resume/play accelerator, never a live countdown", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="My Show"
         episodeLabel="S01 E01"
         nextEpisodeLabel="S01 E02 — Next One"
         postPlayState={{ kind: "mid-series" }}
-        autoNextCountdownSeconds={4}
+        resumeLabel="Resume S01 E02"
       />,
       { columns: 130 },
     );
-    expect(frame).toContain("Playing in 4s");
+    // The countdown ticks on the mpv overlay and is cleared before this menu
+    // mounts; the hero must not imply a self-advancing timer.
+    expect(frame).not.toContain("Playing in");
+    expect(frame).toContain("↵ resume");
   });
 });
 

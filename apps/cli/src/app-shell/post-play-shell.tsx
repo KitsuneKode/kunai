@@ -57,8 +57,6 @@ export type PostPlayShellProps = {
   stopAfterCurrent?: boolean;
   /** Highlighted action row for keyboard navigation (↑/↓ or j/k). */
   selectedActionIndex?: number;
-  /** Live autoplay countdown seconds; when set, the hero shows "Playing in Ns". */
-  autoNextCountdownSeconds?: number;
   /** Pre-formatted personal watch-time line for the series-complete celebration. */
   watchTimeSummary?: string;
 };
@@ -330,13 +328,11 @@ function NextUpHeroCard({
   artworkUrl,
   title,
   width,
-  countdownSeconds,
 }: {
   readonly hero: PostPlayNextUpHero;
   readonly artworkUrl?: string;
   readonly title: string;
   readonly width: number;
-  readonly countdownSeconds?: number;
 }) {
   const innerWidth = Math.max(20, width - 4);
   const posterCols = 10;
@@ -347,12 +343,10 @@ function NextUpHeroCard({
     enabled: Boolean(artworkUrl),
     variant: "preview",
   });
-  const countdownLine =
-    countdownSeconds && countdownSeconds > 0
-      ? `Playing in ${countdownSeconds}s · ↵ now · x cancel`
-      : hero.kind === "resume"
-        ? "↵ resume · e episodes"
-        : "↵ play · e episodes";
+  // The auto-next countdown ticks on the mpv loading overlay and is cleared
+  // before this menu ever mounts, so the hero only advertises the manual
+  // resume/play accelerator — never a live "Playing in Ns" timer.
+  const countdownLine = hero.kind === "resume" ? "↵ resume · e episodes" : "↵ play · e episodes";
   return (
     <Box
       borderStyle="round"
@@ -380,9 +374,7 @@ function NextUpHeroCard({
             {truncateLine(hero.label, textWidth)}
           </Text>
           <Text color={palette.muted}>{truncateLine(hero.meta, textWidth)}</Text>
-          <Text color={countdownSeconds ? palette.accent : palette.dim}>
-            {truncateLine(countdownLine, textWidth)}
-          </Text>
+          <Text color={palette.dim}>{truncateLine(countdownLine, textWidth)}</Text>
         </Box>
       </Box>
     </Box>
@@ -450,7 +442,6 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   autoskipPaused,
   stopAfterCurrent,
   selectedActionIndex = 0,
-  autoNextCountdownSeconds,
   watchTimeSummary,
 }: PostPlayShellProps) {
   const viewport = useViewportPolicy("playback");
@@ -546,7 +537,6 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
               title={title}
               width={bodyWidth}
-              countdownSeconds={autoNextCountdownSeconds}
             />
           ) : null}
 

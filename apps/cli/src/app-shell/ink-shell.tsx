@@ -1335,12 +1335,6 @@ function PlaybackShell({
     (session) => session.activeModals.length > 0,
     (left, right) => left === right,
   );
-  // Live per-second countdown so the Next-Up hero ticks during auto-next.
-  const autoNextCountdownSeconds = useSessionSelector(
-    container.stateManager,
-    (session) => session.autoNextCountdownSeconds,
-    (left, right) => left === right,
-  );
   const watchTimeSummary = useSessionSelector(
     container.stateManager,
     (session) => session.watchTimeSummary,
@@ -1480,6 +1474,9 @@ function PlaybackShell({
         const resolved = resolvePostPlayUnhandledInput(input, key, {
           blockedByOverlay: overlayBlocksInput,
           postPlayStateKind: postPlayState.kind,
+          canResume,
+          hasNextSeason:
+            postPlayState.kind === "season-finale" ? postPlayState.hasNextSeason : false,
           selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
           recommendationCount: recommendations.length,
         });
@@ -1533,7 +1530,6 @@ function PlaybackShell({
           autoskipPaused={state.autoskipPaused}
           stopAfterCurrent={state.stopAfterCurrent}
           selectedActionIndex={selectedActionIndex}
-          autoNextCountdownSeconds={autoNextCountdownSeconds ?? undefined}
           watchTimeSummary={watchTimeSummary ?? undefined}
         />
       )}

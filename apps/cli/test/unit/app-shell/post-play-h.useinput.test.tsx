@@ -72,6 +72,43 @@ describe("post-play 'h' opens history (P0-2 regression)", () => {
     handle.unmount();
   });
 
+  test("continue (n) resolves to the same action the footer advertises", () => {
+    const resolveContinue = (
+      kind: "mid-series" | "season-finale" | "series-complete" | "caught-up",
+      extra: { canResume?: boolean; hasNextSeason?: boolean } = {},
+    ) =>
+      resolvePostPlayUnhandledInput(
+        "n",
+        {},
+        {
+          postPlayStateKind: kind,
+          selectedActionAvailable: false,
+          recommendationCount: 0,
+          ...extra,
+        },
+      );
+
+    // mid-series: resume when an offset exists, otherwise start next from zero.
+    expect(resolveContinue("mid-series", { canResume: true })).toEqual({
+      type: "shell-result",
+      result: "resume",
+    });
+    expect(resolveContinue("mid-series", { canResume: false })).toEqual({
+      type: "shell-result",
+      result: "next",
+    });
+    // season-finale advances seasons only when one exists; otherwise n is a no-op
+    // (mirrors the footer, which omits continue) instead of a dead-end `next`.
+    expect(resolveContinue("season-finale", { hasNextSeason: true })).toEqual({
+      type: "shell-result",
+      result: "next-season",
+    });
+    expect(resolveContinue("season-finale", { hasNextSeason: false })).toBeNull();
+    // States that do not offer continue must not silently fire `next`.
+    expect(resolveContinue("series-complete")).toBeNull();
+    expect(resolveContinue("caught-up")).toBeNull();
+  });
+
   test("production resolver maps recommendation number and action shortcuts", () => {
     expect(
       resolvePostPlayUnhandledInput(
