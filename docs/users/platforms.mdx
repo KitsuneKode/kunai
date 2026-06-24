@@ -5,12 +5,25 @@ description: Platform-specific install, playback, opening, protocol, and trouble
 
 Kunai is Bun-first and terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews use Kitty graphics or `chafa` depending on terminal capabilities.
 
+**Who this is for:** anyone choosing an install path or optional tools for their OS.
+
+**You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.
+
 <Callout type="info" title="Optional tools stay optional">
 Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths.
 </Callout>
 
 <Tabs items={["Linux", "macOS", "Windows", "Source checkout"]}>
 <Tab value="Linux">
+
+Recommended install (bundles Bun):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --setup
+```
+
+Package install alternative:
 
 ```sh
 bun install -g @kitsunekode/kunai
@@ -28,6 +41,15 @@ Recommended optional tools:
 </Tab>
 <Tab value="macOS">
 
+Recommended install:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --setup
+```
+
+Package install alternative:
+
 ```sh
 bun install -g @kitsunekode/kunai
 kunai --setup
@@ -38,7 +60,14 @@ Install `mpv` and optional download tools through Homebrew or your preferred pac
 </Tab>
 <Tab value="Windows">
 
-Kunai runs where **Bun**, a capable terminal, and **mpv** are available. Windows Terminal is the most predictable surface.
+Recommended install (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+kunai --setup
+```
+
+Kunai runs where a capable terminal and **mpv** are available. Windows Terminal is the most predictable surface.
 
 Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation.
 

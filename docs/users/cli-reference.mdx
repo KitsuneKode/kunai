@@ -29,7 +29,7 @@ From a repo clone, use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
 
 1. **Interactive** — no bootstrap flags: the Ink shell opens and you search or pick from history.
 2. **Bootstrap search** — `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
-3. **Bootstrap TMDB title** — `-i` / `--id` with `-t movie` or `series`: skips the initial title search for that id. Not supported together with anime mode (`-a`).
+3. **Bootstrap TMDB title** — `-i` / `--id` with `-t movie` or `-t tv` (tv = series): skips the initial title search for that id. Not supported together with anime mode (`-a`).
 4. **Anime mode** — `-a` / `--anime`: anime discovery and providers.
 5. **Continue watching** — `--continue` / `--resume`: newest unfinished local history entry.
 6. **History first** — `--history`: watch history picker at startup.

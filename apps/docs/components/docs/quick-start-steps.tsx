@@ -1,23 +1,27 @@
 import { Step, Steps } from "fumadocs-ui/components/steps";
+import Link from "next/link";
 
 export function QuickStartSteps() {
   return (
     <Steps>
       <Step>
         <h3 className="text-fd-foreground m-0 font-serif text-lg font-medium">
-          Install dependencies
+          Install Kunai and mpv
         </h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Install <strong>Bun</strong> and <strong>mpv</strong>. Optional: <code>yt-dlp</code>,{" "}
-          <code>ffprobe</code>, <code>chafa</code> for downloads, validation, and poster previews.
-          Run <code>kunai --setup</code> to see what Kunai detected on your machine.
+          Fastest path: run the release installer (<code>install.sh</code> on Linux/macOS,{" "}
+          <code>install.ps1</code> on Windows). It bundles Bun and links <code>kunai</code> on your
+          PATH. You still need <code>mpv</code> for playback. See{" "}
+          <Link href="/docs/users/install-and-update">Install and update</Link> for package and
+          source options.
         </p>
       </Step>
       <Step>
-        <h3 className="text-fd-foreground m-0 font-serif text-lg font-medium">Install Kunai</h3>
+        <h3 className="text-fd-foreground m-0 font-serif text-lg font-medium">Run setup once</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          During beta the supported path is <code>bun install -g @kitsunekode/kunai</code>. Source
-          contributors use <code>bun run link:global</code> from the repository checkout.
+          <code>kunai --setup</code> checks dependencies, writes config under{" "}
+          <code>~/.config/kunai/</code>, and explains any optional tools that are missing (
+          <code>yt-dlp</code>, <code>chafa</code>, and others).
         </p>
       </Step>
       <Step>

@@ -4,18 +4,24 @@ description: Fork Kunai, run tests, opt into live provider smokes, and open PRs 
 status: shipped
 ---
 
-Thank you for contributing to Kunai. The project is Bun-first, terminal-first, and evidence-driven — PRs that include reproduction steps or test coverage are easier to review.
+## Who this guide is for
+
+Contributors changing the Kunai CLI, providers, or documentation who want a reviewable PR with clear evidence.
+
+**You will learn:** how to fork the repo, verify the baseline, run the right tests, attach diagnostics for playback or provider bugs, and stay inside project boundaries.
+
+Thank you for contributing. Kunai is Bun-first, terminal-first, and evidence-driven — PRs with reproduction steps or test coverage are easier to review.
 
 ## Before you start
 
 Read the repo entry points:
 
 - `CLAUDE.md` / `AGENTS.md` — routing, hard boundaries, commands
-- [.docs/architecture.md](https://github.com/KitsuneKode/kunai/blob/main/.docs/architecture.md) — playback flow, data ownership (in-repo deep doc)
+- [.docs/architecture.md](https://github.com/KitsuneKode/kunai/blob/main/.docs/architecture.md) — playback flow and data ownership (in-repo deep doc, not published on this site)
 - [Debugging workflow](/docs/developer/debugging-workflow) — traces and diagnostics for bug reports
 
 <Callout type="info" title="Provider changes need extra care">
-Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare against the local ani-cli reference checkout documented in `CLAUDE.md`. Provider modules live in `packages/providers/src/*/direct.ts`; the production registry is `apps/cli/src/container.ts`.
+Before changing provider crypto, decoder constants, or AllManga/AllAnime parity logic, compare against the local ani-cli reference checkout documented in `CLAUDE.md`. Provider modules live in `packages/providers/src/*/direct.ts`; the production registry is wired in `apps/cli/src/container/bootstrap-providers.ts`.
 </Callout>
 
 ## Fork and setup
@@ -58,7 +64,7 @@ bun run lint
 bun run test
 ```
 
-All four should pass before you open a PR.
+All three should pass before you open a PR. Run `bun run fmt` if formatting fails.
 
 </Step>
 </Steps>
@@ -69,7 +75,7 @@ All four should pass before you open a PR.
 | --- | --- |
 | `apps/cli/src/main.ts` | Canonical CLI entrypoint |
 | `apps/cli/src/app-shell/` | Ink shell, command bar, overlays |
-| `apps/cli/src/container.ts` | Production provider registry |
+| `apps/cli/src/container/bootstrap-providers.ts` | Production provider registry |
 | `packages/providers/` | Direct provider modules |
 | `packages/storage/` | SQLite history, cache, downloads |
 | `apps/cli/test/unit/` | Unit tests |
@@ -93,8 +99,9 @@ Docs changes:
 
 ```sh
 bun run --cwd apps/docs generate
-bun run --cwd apps/docs typecheck
-bun run --cwd apps/docs build
+bun run --cwd apps/docs typecheck:app
+bun run --cwd apps/docs test
+bun run --cwd apps/docs build:app
 ```
 
 See [Docs maintenance](/docs/developer/docs-maintenance).
@@ -104,7 +111,8 @@ See [Docs maintenance](/docs/developer/docs-maintenance).
 Live tests hit real provider endpoints. They are **manual** release checks — not default CI.
 
 ```sh
-bun run test:live:vidking 1 2 2> debug.log
+bun run test:live:videasy
+bun run test:live:vidking   # alias for videasy
 bun run test:live:rivestream
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro
@@ -161,7 +169,7 @@ Run `bun run build` for features that touch build-only paths or release packagin
 ### Provider PRs additionally
 
 - Note which live smoke you ran (if any).
-- Do not register candidate providers in `container.ts` until they pass the quality gate.
+- Do not register candidate providers in `bootstrap-providers.ts` until they pass the quality gate.
 - Document temporary divergence from ani-cli parity in provider docs or plans when unavoidable.
 
 ### Docs PRs

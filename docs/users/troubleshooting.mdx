@@ -230,13 +230,18 @@ More: [Share links](/docs/users/share-links).
 
 ## Still stuck?
 
-1. Run a structured trace session:
+<Callout type="info" title="Contributors with a source checkout">
+Run a structured trace session:
 
-   ```sh
-   KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-session
-   ```
+```sh
+KUNAI_TRACE=provider,playback,cache bun run dev -- -S "Title" --debug-session
+```
 
-2. Export diagnostics before exit: `/export-diagnostics`
-3. Open an issue via `/report-issue` with the bundle attached (after reviewing redaction).
+Export diagnostics before exit: `/export-diagnostics`. See [Debugging workflow](/docs/developer/debugging-workflow).
+</Callout>
 
-Developers: [Debugging workflow](/docs/developer/debugging-workflow).
+For everyone else:
+
+1. Export diagnostics before exit: `/export-diagnostics`
+2. Open an issue via `/report-issue` with the bundle attached (after reviewing redaction).
+3. Include the symptom section you followed and what you already tried from this page.

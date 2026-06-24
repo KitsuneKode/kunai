@@ -49,13 +49,13 @@ bun run --cwd apps/docs build
 
 `apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` and `apps/docs/test/seo.test.ts` guard provider order, command counts, link hygiene, SEO uniqueness, and fingerprint parity.
 
-Run `bun run generate` after changing commands, providers, help text, or `docs/feature-status.yaml`.
+Run `bun run --cwd apps/docs generate` after changing commands, providers, help text, or `docs/feature-status.yaml`.
 
 ### Truth layers (L0–L4)
 
 | Layer | Source | Guard |
 | --- | --- | --- |
-| **L0 Codegen** | `container.ts`, manifests, command registry, `cli-args` | `generate`, `check-codegen-freshness.ts`, fingerprint drift tests |
+| **L0 Codegen** | `bootstrap-providers.ts`, manifests, command registry, `cli-args` | `generate`, `check-codegen-freshness.ts`, fingerprint drift tests |
 | **L1 Editorial** | `docs/feature-status.yaml` | enum tests, `<FeatureStatusTable />` |
 | **L2 Prose** | `docs/users/*.mdx` | link hygiene, promotion manifest, no hardcoded provider lists |
 | **L3 Agent** | `.docs/*`, `.plans/*` | never link from published docs; promote via `docs/promotion-manifest.yaml` |

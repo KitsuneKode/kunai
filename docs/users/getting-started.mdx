@@ -3,7 +3,11 @@ title: Getting Started
 description: Install Kunai, verify dependencies, and complete your first playback session with explicit recovery steps.
 ---
 
-Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream locally, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
+Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
+
+**Who this is for:** anyone installing Kunai for the first time.
+
+**You will learn:** how to install, launch your first search, use high-signal shell commands, and recover when playback fails.
 
 <ScopeCallout variant="beta" />
 
@@ -13,7 +17,27 @@ Kunai is a terminal-first media shell. You search for a title, pick what to watc
 
 ## Install Kunai
 
-<Tabs items={["Bun global", "npm global", "Source checkout"]}>
+<Tabs items={["Binary (recommended)", "Bun global", "npm global", "Source checkout"]}>
+<Tab value="Binary (recommended)">
+
+Linux / macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --setup
+kunai -S "Dune"
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+kunai --setup
+```
+
+Release binaries embed Bun. You still need `mpv` for playback. Details: [Install and update](/docs/users/install-and-update).
+
+</Tab>
 <Tab value="Bun global">
 
 ```sh
@@ -105,7 +129,7 @@ Press `/` to open the command palette. High-signal commands for a first week:
 <Steps>
 <Step>
 ### Stay in the shell
-Do not restart blindly. Kunai keeps session context, provider inventory, and history in SQLite.
+Do not restart blindly. Kunai keeps session context, provider inventory, and local watch history.
 </Step>
 <Step>
 ### Recover, then fallback
@@ -120,5 +144,5 @@ Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — export
 ## Next reads
 
 - [Platforms](/docs/users/platforms) for OS-specific optional tools
-- [CLI reference](/docs/users/cli-reference) for codegen-synced flags and providers
+- [CLI reference](/docs/users/cli-reference) for launch flags and provider tables synced from the CLI
 - [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook

@@ -11,14 +11,14 @@ export function SyncedAt() {
 
   return (
     <p className="text-fd-muted-foreground not-prose border-fd-border mt-10 border-t pt-4 text-xs leading-relaxed">
-      Reference tables are generated from the Kunai CLI codebase (v{codeMetadata.version}) at{" "}
-      {formatted} UTC
+      Command and provider tables on this page are generated from the Kunai CLI (v
+      {codeMetadata.version}) at {formatted} UTC
       {codeMetadata.cliSourceRevision && codeMetadata.cliSourceRevision !== "unknown"
-        ? ` · CLI @ ${codeMetadata.cliSourceRevision}`
+        ? ` · source ${codeMetadata.cliSourceRevision}`
         : null}
-      . Run <code>bun run generate</code> in <code>apps/docs</code> to refresh.{" "}
+      . Run <code>bun run --cwd apps/docs generate</code> after registry changes.{" "}
       <Link href="/docs/developer/docs-maintenance" className="text-fd-primary hover:underline">
-        Maintenance guide
+        Docs maintenance
       </Link>
     </p>
   );

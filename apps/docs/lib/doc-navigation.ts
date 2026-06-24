@@ -36,7 +36,7 @@ export const docNavEntries: readonly DocNavEntry[] = [
     title: "Developer",
     href: "/docs/developer",
     description:
-      "Debug sessions with evidence, run live smokes safely, and maintain codegen-synced documentation.",
+      "Debug sessions with evidence, run live smokes safely, and keep documentation aligned with the CLI.",
     group: "overview",
     surfaces: ["hub"],
   },

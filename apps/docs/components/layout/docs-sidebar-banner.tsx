@@ -5,23 +5,24 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 export function DocsSidebarBanner() {
+  const revision =
+    codeMetadata.cliSourceRevision && codeMetadata.cliSourceRevision !== "unknown"
+      ? codeMetadata.cliSourceRevision
+      : null;
+
   return (
     <div className="mb-3 space-y-3">
       <Card className="border-fd-border bg-fd-card/90">
         <CardHeader className="p-3 pb-2">
-          <CardDescription className="kunai-type-caption">Kunai CLI</CardDescription>
-          <CardTitle className="font-serif text-base font-medium tabular-nums">
+          <CardTitle className="font-serif text-base font-medium">Kunai</CardTitle>
+          <CardDescription className="kunai-type-caption tabular-nums">
             v{codeMetadata.version}
-            {codeMetadata.cliSourceRevision && codeMetadata.cliSourceRevision !== "unknown" ? (
-              <span className="text-fd-muted-foreground ml-1 text-xs font-normal">
-                · {codeMetadata.cliSourceRevision}
-              </span>
-            ) : null}
-          </CardTitle>
+            {revision ? ` · ${revision}` : ""}
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-3 pt-0">
           <p className="text-fd-muted-foreground text-xs leading-relaxed tabular-nums">
-            {codeMetadata.providerIds.length} providers · {codeMetadata.commandCount} commands
+            {codeMetadata.providerIds.length} providers · {codeMetadata.commandCount} shell commands
           </p>
           <Link
             href="/docs/users/cli-reference"

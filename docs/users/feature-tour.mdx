@@ -7,6 +7,10 @@ Kunai is a terminal-first media shell. It resolves media streams from third-part
 providers, hands playback to `mpv`, and keeps recovery, offline, and diagnostics
 in the same session.
 
+**Who this is for:** users who want a capability map with live command and provider tables.
+
+**You will learn:** launch entry points, shell commands, registered providers, and what is stable vs experimental in the current beta.
+
 ## Launch entry points
 
 Common launch patterns. For the full flag list synced from `kunai --help`, see
@@ -19,7 +23,7 @@ Common launch patterns. For the full flag list synced from `kunai --help`, see
 | `kunai -S "Title" --jump 1` | Search, auto-select first result |
 | `kunai -S "Title" -q` | Quick mode — same as `--jump 1` with search |
 | `kunai -a -S "Anime"` | Anime mode (anime providers) |
-| `kunai --id 438631 -t movie` | Open a specific TMDB ID directly |
+| `kunai -i 438631 -t movie` | Open a specific TMDB ID directly |
 | `kunai --continue` | Jump to the newest unfinished history entry |
 | `kunai --history` | Open watch history first |
 | `kunai --offline` | Open completed offline library first |
@@ -41,7 +45,7 @@ Common launch patterns. For the full flag list synced from `kunai --help`, see
 ## Shell commands
 
 Press `/` to open the context-aware command palette. The table below is generated
-from the CLI command registry — it updates when you run `bun run generate` in `apps/docs`.
+from the CLI command registry — it updates when you run `bun run --cwd apps/docs generate`.
 
 <CommandReference />
 
@@ -57,7 +61,7 @@ from the CLI command registry — it updates when you run `bun run generate` in 
 ## What works well
 
 - Search by title with TMDB-backed metadata
-- Movie and series playback through Videasy and VidLink
+- Movie and series playback through Videasy, VidLink, and Rivestream (candidate)
 - Anime playback through AllManga-compatible client (`allanime` id)
 - Watch history with resume support
 - Continue Watching with unfinished/new episode detection

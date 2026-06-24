@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 type ScopeCalloutProps = {
   readonly variant?: "beta" | "privacy" | "providers" | "downloads";
+  readonly title?: string;
+  readonly children?: ReactNode;
 };
 
 const copy: Record<
@@ -14,10 +16,12 @@ const copy: Record<
     title: "Beta scope (read this first)",
     body: (
       <>
-        Kunai is a terminal-first CLI during beta. You need <strong>Bun</strong> and{" "}
-        <strong>mpv</strong> on your PATH for the supported install path. Kunai does not host media
-        — it resolves streams from third-party providers and hands playback to mpv. Provider
-        availability changes; recovery commands exist because drift is expected, not exceptional.
+        Kunai is a terminal-first CLI during beta. The default install is a release binary (
+        <code>install.sh</code> / <code>install.ps1</code>) that bundles Bun — you do not need a
+        separate Bun install to run it. Global package installs and source checkouts still require{" "}
+        <strong>Bun</strong> and <strong>mpv</strong> on your PATH. Kunai does not host media — it
+        resolves streams from third-party providers on your machine and hands playback to mpv.
+        Provider availability changes; recovery commands exist because drift is expected.
       </>
     ),
   },
@@ -57,11 +61,11 @@ const copy: Record<
   },
 };
 
-export function ScopeCallout({ variant = "beta" }: ScopeCalloutProps) {
+export function ScopeCallout({ variant = "beta", title, children }: ScopeCalloutProps) {
   const entry = copy[variant];
   return (
-    <Callout type={entry.type} title={entry.title}>
-      {entry.body}
+    <Callout type={entry.type} title={title ?? entry.title}>
+      {children ?? entry.body}
     </Callout>
   );
 }
