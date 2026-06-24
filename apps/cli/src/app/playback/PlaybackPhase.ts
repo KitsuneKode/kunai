@@ -138,18 +138,14 @@ import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { buildTrackPickTransitionContext } from "@/app/playback/tracks-panel-pick";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
+import { formatCaughtUpReleaseBanner } from "@/app/post-play/caught-up-banner";
 import {
   buildPostPlayEpisodeLabel,
   buildPostPlayInputFromPlaybackContext,
   buildPostPlayNextEpisodeLabel,
   buildPostPlayQueueNextLabel,
 } from "@/app/post-play/post-play-input";
-import {
-  loadPostPlaybackRecommendationItems,
-  type PostPlaybackRecommendationItem,
-  resolvePostPlaybackRecommendationLoadMode,
-  seedPostPlaybackRecommendationItems,
-} from "@/app/post-play/post-playback-recommendations";
+import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import {
   resolvePostPlaybackEpisodeNavigationRoute,
   resolvePostPlaybackExitOutcome,
@@ -2598,28 +2594,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 "anilist",
                 title.id,
               );
-              if (schedule?.episode && schedule.releaseAt) {
-                const nextEp = schedule.episode;
-                const releaseMs = Date.parse(schedule.releaseAt);
-                const nowMs2 = Date.now();
-                if (Number.isFinite(releaseMs) && releaseMs > nowMs2) {
-                  const diffMs = releaseMs - nowMs2;
-                  const diffH = diffMs / 3_600_000;
-                  let timeLabel: string;
-                  if (diffH < 24) {
-                    const h = Math.floor(diffH);
-                    const m = Math.floor((diffH - h) * 60);
-                    timeLabel = h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
-                  } else if (diffH < 168) {
-                    timeLabel = `on ${new Date(releaseMs).toLocaleDateString(undefined, { weekday: "long" })}`;
-                  } else {
-                    timeLabel = new Date(releaseMs).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    });
-                  }
-                  catalogAutoplayEndBanner = `Caught up · Ep ${nextEp} airs ${timeLabel}`;
-                }
+              const scheduledBanner = formatCaughtUpReleaseBanner({
+                episode: schedule?.episode,
+                releaseAt: schedule?.releaseAt,
+                now: Date.now(),
+              });
+              if (scheduledBanner) {
+                catalogAutoplayEndBanner = scheduledBanner;
               }
             }
 
@@ -2796,21 +2777,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // actions stay in the menu instead of re-resolving the stream.
           const { openPlaybackShell } = await import("../../app-shell/ink-shell");
 
-          // Loaded once per post-play session when the synchronous seed is empty.
-          // null = not yet attempted; [] = attempted (within budget) but empty.
-          let postPlaybackLoadedRecommendations: readonly PostPlaybackRecommendationItem[] | null =
-            null;
-          // Guards a single background recommendation load (menu rail only) so we
-          // never block first paint and never re-trigger while one is in flight.
-          let postPlaybackRecommendationLoadInFlight = false;
+          // Rail orchestration (seed → block/background load → pick) plus its
+          // cross-iteration cache and single background-load guard live in
+          // PostPlaybackRecommendationRail. First paint stays snappy: prefetched
+          // items show immediately; live discovery is a nice-to-have rail that
+          // must never make episode completion feel stuck.
+          const recommendationRail = new PostPlaybackRecommendationRail({
+            container,
+            title,
+            budgetMs: 250,
+          });
           let postPlayProviderId = stateManager.getState().provider;
           let openRecoverySourcePanelOnPostPlay =
             (result.suspectedDeadStream === true || didPlaybackFailToStart(result)) &&
             Boolean(preparedStream.providerResolveResult?.streams.length);
-          // Keep first paint snappy. Prefetched recommendations still show
-          // immediately; live discovery is a nice-to-have rail and should never
-          // make episode completion feel stuck.
-          const POST_PLAYBACK_RECOMMENDATION_BUDGET_MS = 250;
 
           postPlayback: while (true) {
             const resumeSeconds = toHistoryTimestamp(
@@ -2911,31 +2891,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
             }
             const mode = stateManager.getState().mode;
-            const recommendationRailStartedAtMs = Date.now();
-            let recommendationRailItems = seedPostPlaybackRecommendationItems({
-              enabled: container.config.recommendationRailEnabled,
-              currentTitle: title.name,
-              prefetchedItems: prefetchedRecommendationItems,
-            });
-            diagnosticsService.record({
-              category: "playback",
-              operation: "post-playback.recommendations.seed",
-              message: "Post-playback recommendations seeded for first paint",
-              context: {
-                titleId: title.id,
-                mode,
-                itemCount: recommendationRailItems.length,
-                elapsedMs: Date.now() - recommendationRailStartedAtMs,
-                prefetched: Boolean(
-                  (prefetchedRecommendationItems as readonly SearchResult[] | null)?.length,
-                ),
-              },
-            });
             // The seed (prefetched items) paints instantly. When it is empty
-            // (e.g. starting from history), only BLOCK for a live load if we might
-            // auto-continue into the top recommendation; otherwise load it in the
-            // BACKGROUND so the menu paints immediately and the rail fills on a
-            // later loop iteration. This removes the from-history post-play lag.
+            // (e.g. starting from history), the rail only BLOCKS for a live load
+            // if we might auto-continue into the top recommendation; otherwise it
+            // loads in the BACKGROUND so the menu paints immediately and fills on
+            // a later loop iteration. This removes the from-history post-play lag.
             const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
               hasNextEpisode: Boolean(nextEpisode),
               endReason: result.endReason,
@@ -2945,61 +2905,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               hasQueuedNext: Boolean(container.queueService.peekNext()),
               autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
             });
-            const recommendationLoadMode = resolvePostPlaybackRecommendationLoadMode({
-              seedCount: recommendationRailItems.length,
-              railEnabled: container.config.recommendationRailEnabled,
-              alreadyAttempted: postPlaybackLoadedRecommendations !== null,
+            const recommendationRailItems = await recommendationRail.resolveRailItems({
+              mode,
+              prefetchedItems: prefetchedRecommendationItems,
               autoContinueIntoRecommendationPossible,
             });
-            if (recommendationLoadMode === "block") {
-              const loadStartedAtMs = Date.now();
-              let recommendationLoadTimedOut = false;
-              postPlaybackLoadedRecommendations = await Promise.race([
-                loadPostPlaybackRecommendationItems(container, title, mode, null),
-                Bun.sleep(POST_PLAYBACK_RECOMMENDATION_BUDGET_MS).then(() => {
-                  recommendationLoadTimedOut = true;
-                  return [] as readonly PostPlaybackRecommendationItem[];
-                }),
-              ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
-              diagnosticsService.record({
-                category: "playback",
-                operation: "post-playback.recommendations.load",
-                message: "Post-playback recommendations loaded before auto-continue decision",
-                context: {
-                  titleId: title.id,
-                  mode,
-                  itemCount: postPlaybackLoadedRecommendations.length,
-                  elapsedMs: Date.now() - loadStartedAtMs,
-                  timedOut: recommendationLoadTimedOut,
-                },
-              });
-            } else if (
-              recommendationLoadMode === "background" &&
-              !postPlaybackRecommendationLoadInFlight
-            ) {
-              postPlaybackRecommendationLoadInFlight = true;
-              const loadStartedAtMs = Date.now();
-              void loadPostPlaybackRecommendationItems(container, title, mode, null)
-                .catch(() => [] as readonly PostPlaybackRecommendationItem[])
-                .then((items) => {
-                  postPlaybackLoadedRecommendations = items;
-                  diagnosticsService.record({
-                    category: "playback",
-                    operation: "post-playback.recommendations.background",
-                    message: "Post-playback recommendations loaded in the background",
-                    context: {
-                      titleId: title.id,
-                      mode,
-                      itemCount: items.length,
-                      elapsedMs: Date.now() - loadStartedAtMs,
-                    },
-                  });
-                  return items;
-                });
-            }
-            if (postPlaybackLoadedRecommendations && postPlaybackLoadedRecommendations.length > 0) {
-              recommendationRailItems = postPlaybackLoadedRecommendations;
-            }
             // YouTube-style continuous play: a natural finish with no next episode and
             // an empty queue auto-continues into the top recommendation — same cancelable
             // countdown as the episode/queue advance, gated by autoplayRecommendations.

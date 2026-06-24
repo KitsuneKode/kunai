@@ -54,6 +54,140 @@ export function resolvePostPlaybackRecommendationLoadMode(input: {
   return input.autoContinueIntoRecommendationPossible ? "block" : "background";
 }
 
+type RecommendationRailContainer = Pick<
+  Container,
+  | "recommendationService"
+  | "historyRepository"
+  | "stateManager"
+  | "providerRegistry"
+  | "config"
+  | "diagnosticsService"
+>;
+
+/**
+ * Orchestrates the post-play recommendation rail across post-play menu
+ * iterations. Owns the cross-iteration cache (`loaded`) and the single
+ * background-load guard (`inFlight`) that previously lived as loose `let`
+ * bindings inside PlaybackPhase.execute, so the menu loop can just ask for the
+ * rail items each pass without re-implementing the seed/block/background policy.
+ *
+ * `now`, `sleep`, and `load` are injectable so the block-vs-background timing
+ * policy can be unit-tested without real timers or a live recommendation fetch.
+ */
+export class PostPlaybackRecommendationRail {
+  private loaded: readonly PostPlaybackRecommendationItem[] | null = null;
+  private inFlight = false;
+
+  constructor(
+    private readonly deps: {
+      readonly container: RecommendationRailContainer;
+      readonly title: TitleInfo;
+      readonly budgetMs: number;
+      readonly now?: () => number;
+      readonly sleep?: (ms: number) => Promise<void>;
+      readonly load?: (mode: ShellMode) => Promise<readonly PostPlaybackRecommendationItem[]>;
+    },
+  ) {}
+
+  /** True once a live load has been attempted this post-play session. */
+  get attempted(): boolean {
+    return this.loaded !== null;
+  }
+
+  /**
+   * Returns the rail items to render this iteration: the synchronous seed,
+   * upgraded to a blocking load only when an auto-continue decision needs it,
+   * otherwise filled in the background and picked up on a later iteration.
+   */
+  async resolveRailItems(input: {
+    readonly mode: ShellMode;
+    readonly prefetchedItems: readonly SearchResult[] | null;
+    readonly autoContinueIntoRecommendationPossible: boolean;
+  }): Promise<readonly PostPlaybackRecommendationItem[]> {
+    const { container, title, budgetMs } = this.deps;
+    const now = this.deps.now ?? Date.now;
+    const sleep = this.deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+    const load =
+      this.deps.load ??
+      ((mode: ShellMode) => loadPostPlaybackRecommendationItems(container, title, mode, null));
+
+    const seedStartedAtMs = now();
+    let railItems = seedPostPlaybackRecommendationItems({
+      enabled: container.config.recommendationRailEnabled,
+      currentTitle: title.name,
+      prefetchedItems: input.prefetchedItems,
+    });
+    container.diagnosticsService.record({
+      category: "playback",
+      operation: "post-playback.recommendations.seed",
+      message: "Post-playback recommendations seeded for first paint",
+      context: {
+        titleId: title.id,
+        mode: input.mode,
+        itemCount: railItems.length,
+        elapsedMs: now() - seedStartedAtMs,
+        prefetched: Boolean(input.prefetchedItems?.length),
+      },
+    });
+
+    const loadMode = resolvePostPlaybackRecommendationLoadMode({
+      seedCount: railItems.length,
+      railEnabled: container.config.recommendationRailEnabled,
+      alreadyAttempted: this.loaded !== null,
+      autoContinueIntoRecommendationPossible: input.autoContinueIntoRecommendationPossible,
+    });
+
+    if (loadMode === "block") {
+      const loadStartedAtMs = now();
+      let timedOut = false;
+      this.loaded = await Promise.race([
+        load(input.mode),
+        sleep(budgetMs).then(() => {
+          timedOut = true;
+          return [] as readonly PostPlaybackRecommendationItem[];
+        }),
+      ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
+      container.diagnosticsService.record({
+        category: "playback",
+        operation: "post-playback.recommendations.load",
+        message: "Post-playback recommendations loaded before auto-continue decision",
+        context: {
+          titleId: title.id,
+          mode: input.mode,
+          itemCount: this.loaded.length,
+          elapsedMs: now() - loadStartedAtMs,
+          timedOut,
+        },
+      });
+    } else if (loadMode === "background" && !this.inFlight) {
+      this.inFlight = true;
+      const loadStartedAtMs = now();
+      void load(input.mode)
+        .catch(() => [] as readonly PostPlaybackRecommendationItem[])
+        .then((items) => {
+          this.loaded = items;
+          container.diagnosticsService.record({
+            category: "playback",
+            operation: "post-playback.recommendations.background",
+            message: "Post-playback recommendations loaded in the background",
+            context: {
+              titleId: title.id,
+              mode: input.mode,
+              itemCount: items.length,
+              elapsedMs: now() - loadStartedAtMs,
+            },
+          });
+          return items;
+        });
+    }
+
+    if (this.loaded && this.loaded.length > 0) {
+      railItems = this.loaded;
+    }
+    return railItems;
+  }
+}
+
 export async function loadPostPlaybackRecommendationNames(
   container: Pick<
     Container,
