@@ -11,6 +11,10 @@ export interface NotificationServiceDeps {
   readonly getMutedTitleIds: () => ReadonlySet<string>;
   /** Feature gates for which notification kinds are derived. Defaults to all on. */
   readonly derivationFlags?: NotificationDerivationFlags;
+  readonly sinks?: {
+    readonly deliverActive?: (records: readonly NotificationRecord[]) => void;
+    readonly dismiss?: (dedupKey: string) => void;
+  };
 }
 
 export class NotificationService {
@@ -27,6 +31,7 @@ export class NotificationService {
   }
 
   private emitChange(): void {
+    this.deps.sinks?.deliverActive?.(this.listActive());
     for (const listener of this.listeners) listener();
   }
 
@@ -92,11 +97,13 @@ export class NotificationService {
 
   archive(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.archive(dedupKey, now);
+    this.deps.sinks?.dismiss?.(dedupKey);
     this.emitChange();
   }
 
   dismiss(dedupKey: string, now = new Date().toISOString()): void {
     this.deps.repo.dismissByDedupKey(dedupKey, now);
+    this.deps.sinks?.dismiss?.(dedupKey);
     this.emitChange();
   }
 
