@@ -106,6 +106,15 @@ import { redactDiagnosticValue } from "./services/diagnostics/redaction";
 import { DownloadService } from "./services/download/DownloadService";
 import { createHistoryMetadataResolver } from "./services/history-metadata/create-history-metadata-resolver";
 import { HistoryMetadataHealer } from "./services/history-metadata/HistoryMetadataHealer";
+import { NetworkStatusTracker } from "./services/network/NetworkStatusTracker";
+import {
+  mapRecordToSinkDelivery,
+  NotificationSinkRegistry,
+} from "./services/notifications/notification-sink";
+import {
+  LogNotificationSink,
+  OsNotificationSink,
+} from "./services/notifications/notification-sinks";
 import { NotificationService } from "./services/notifications/NotificationService";
 import { OfflineAssetService } from "./services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "./services/offline/OfflineLibraryService";
@@ -206,6 +215,7 @@ export interface Container {
   readonly offlineMaintenanceService: OfflineMaintenanceService;
   readonly offlineRunwayService: OfflineRunwayService;
   readonly notificationService: NotificationService;
+  readonly networkStatus: NetworkStatusTracker;
   readonly presence: PresenceService;
 
   // Session
@@ -513,6 +523,14 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
     },
   );
+  const networkStatus = new NetworkStatusTracker();
+  const notificationSinkRegistry = new NotificationSinkRegistry();
+  notificationSinkRegistry.register(
+    new LogNotificationSink((message, context) => {
+      logger.debug(message, context);
+    }),
+  );
+  notificationSinkRegistry.register(new OsNotificationSink());
   const notificationService = new NotificationService({
     repo: notificationRepository,
     getMutedTitleIds: () =>
@@ -520,6 +538,16 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     derivationFlags: {
       newEpisodeProjection: featureFlags.newEpisodeProjection,
       queueRecovery: featureFlags.queueRecovery,
+    },
+    sinks: {
+      deliverActive: (records) => {
+        for (const record of records) {
+          notificationSinkRegistry.deliver(mapRecordToSinkDelivery(record));
+        }
+      },
+      dismiss: (dedupKey) => {
+        notificationSinkRegistry.dismiss(dedupKey);
+      },
     },
   });
 
@@ -571,7 +599,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
           audioPreference: intent.audioPreference,
           subtitlePreference: intent.subtitlePreference,
           qualityPreference: intent.qualityPreference,
-          startupPriority: config.startupPriority,
+          startupPriority: "quality-first",
           selectedSourceId: intent.selectedSourceId,
           selectedStreamId: intent.selectedStreamId,
           favoriteSourceNames: config.favoriteSources,
@@ -761,6 +789,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     offlineMaintenanceService,
     offlineRunwayService,
     notificationService,
+    networkStatus,
     presence,
     stateManager,
     recommendationService,
