@@ -30,6 +30,8 @@ export type PlaybackStreamSelection = {
   readonly streamId: string | null;
 };
 
+export type EpisodePlaybackSourceKind = "local" | "online";
+
 export type PlaybackSubtitleSelection = {
   readonly subtitleUrl: string | null;
   readonly subtitleTracks?: readonly SubtitleTrack[];
@@ -77,6 +79,7 @@ export interface PlayerControlService {
   subscribePickerRequest(listener: (action: PlaybackPickerAction) => void): () => void;
   consumePendingStreamSelection(): PlaybackStreamSelection | null;
   consumePendingEpisodeSelection(): EpisodeInfo | null;
+  consumePendingEpisodeSourceOverride(): EpisodePlaybackSourceKind | null;
   selectCurrentPlaybackStream(
     action: PlaybackPickerAction,
     selection: PlaybackStreamSelection,
@@ -88,6 +91,7 @@ export interface PlayerControlService {
   recoverCurrentPlayback(reason?: string): Promise<boolean>;
   recomputeCurrentPlayback(reason?: string): Promise<boolean>;
   fallbackCurrentPlayback(reason?: string): Promise<boolean>;
+  switchEpisodePlaybackSource(kind: EpisodePlaybackSourceKind, reason?: string): Promise<boolean>;
   pickStreamCurrentPlayback(reason?: string): Promise<boolean>;
   reloadCurrentSubtitles(reason?: string): Promise<boolean>;
   selectCurrentSubtitle(selection: PlaybackSubtitleSelection, reason?: string): Promise<boolean>;

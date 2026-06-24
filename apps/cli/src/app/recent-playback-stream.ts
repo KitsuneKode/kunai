@@ -1,6 +1,6 @@
 import type { EpisodeInfo, StreamInfo } from "@/domain/types";
 
-export type RecentPlaybackStreamProvenance = "fresh" | "cache" | "prefetch" | "fallback";
+export type RecentPlaybackStreamProvenance = "fresh" | "cache" | "prefetch" | "fallback" | "local";
 
 export type RecentPlaybackStreamRecord = {
   readonly stream: StreamInfo;

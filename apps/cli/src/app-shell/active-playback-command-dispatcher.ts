@@ -26,6 +26,10 @@ export type ActivePlaybackCommandDispatchDeps = {
     readonly recoverCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
     readonly recomputeCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
     readonly fallbackCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
+    readonly switchEpisodePlaybackSource: (
+      kind: "local" | "online",
+      reason: string,
+    ) => Promise<unknown> | unknown;
     readonly stopCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
   };
   readonly workControl: {
@@ -123,6 +127,20 @@ export async function dispatchActivePlaybackCommand(
     if (!cancelledWork) {
       await deps.playerControl.fallbackCurrentPlayback("playback-loading-command-fallback");
     }
+    return "handled";
+  }
+  if (action === "play-local") {
+    await deps.playerControl.switchEpisodePlaybackSource(
+      "local",
+      "playback-loading-command-play-local",
+    );
+    return "handled";
+  }
+  if (action === "watch-online") {
+    await deps.playerControl.switchEpisodePlaybackSource(
+      "online",
+      "playback-loading-command-watch-online",
+    );
     return "handled";
   }
   if (

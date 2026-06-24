@@ -1,3 +1,5 @@
+import { isLocalPlaybackStream } from "@/app/playback-source-ui";
+
 import { rankFuzzyMatches } from "./fuzzy-match";
 import type { SessionState } from "./SessionState";
 
@@ -67,7 +69,9 @@ export type AppCommandId =
   | "sync-connect-anilist"
   | "sync-connect-tmdb"
   | "sync-disconnect"
-  | "continue";
+  | "continue"
+  | "play-local"
+  | "watch-online";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -109,6 +113,8 @@ export const COMMAND_CONTEXTS = {
     "recover",
     "recompute",
     "fallback",
+    "play-local",
+    "watch-online",
     "source",
     "quality",
     "audio",
@@ -175,6 +181,8 @@ export const COMMAND_CONTEXTS = {
     "recover",
     "recompute",
     "fallback",
+    "play-local",
+    "watch-online",
     "source",
     "quality",
     "audio",
@@ -424,6 +432,18 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Fallback Provider",
     aliases: ["fallback", "try-next-provider", "next-provider", "f"],
     description: "Stop waiting on the current provider and try the next compatible provider",
+  },
+  {
+    id: "play-local",
+    label: "Play Downloaded Copy",
+    aliases: ["play-local", "local", "offline-play", "play-offline"],
+    description: "Switch the current episode to the verified offline download",
+  },
+  {
+    id: "watch-online",
+    label: "Watch Online",
+    aliases: ["watch-online", "online", "stream-online"],
+    description: "Switch the current episode back to online provider streaming",
   },
   {
     id: "source",
@@ -890,6 +910,48 @@ function resolveCommandState(
         return {
           enabled: false,
           reason: "Start playback before provider fallback is available.",
+        };
+      }
+      return { enabled: true };
+
+    case "play-local":
+      if (!hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Choose an episode before switching to the offline copy.",
+        };
+      }
+      if (!playbackCanRecover) {
+        return {
+          enabled: false,
+          reason: "Start playback before source switching is available.",
+        };
+      }
+      if (state.stream && isLocalPlaybackStream(state.stream)) {
+        return {
+          enabled: false,
+          reason: "Already playing the downloaded copy.",
+        };
+      }
+      return { enabled: true };
+
+    case "watch-online":
+      if (!hasEpisode) {
+        return {
+          enabled: false,
+          reason: "Choose an episode before switching back online.",
+        };
+      }
+      if (!playbackCanRecover) {
+        return {
+          enabled: false,
+          reason: "Start playback before source switching is available.",
+        };
+      }
+      if (!state.stream || !isLocalPlaybackStream(state.stream)) {
+        return {
+          enabled: false,
+          reason: "Current playback is already online.",
         };
       }
       return { enabled: true };

@@ -7,6 +7,7 @@ import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
 import type {
   ActivePlayerControl,
   EpisodeNavigationAvailability,
+  EpisodePlaybackSourceKind,
   PlaybackControlAction,
   PlaybackPickerAction,
   PlaybackSubtitleSelection,
@@ -51,6 +52,7 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   private lastAction: PlaybackControlAction | null = null;
   private pendingStreamSelection: PlaybackStreamSelection | null = null;
   private pendingEpisodeSelection: EpisodeInfo | null = null;
+  private pendingEpisodeSourceOverride: EpisodePlaybackSourceKind | null = null;
   private commandQueue: Promise<unknown> = Promise.resolve();
   private waitsForActive: ActiveWait[] = [];
   private pickerRequestListeners = new Set<(action: PlaybackPickerAction) => void>();
@@ -148,6 +150,12 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     return selection;
   }
 
+  consumePendingEpisodeSourceOverride(): EpisodePlaybackSourceKind | null {
+    const override = this.pendingEpisodeSourceOverride;
+    this.pendingEpisodeSourceOverride = null;
+    return override;
+  }
+
   async selectCurrentPlaybackStream(
     action: PlaybackPickerAction,
     selection: PlaybackStreamSelection,
@@ -207,6 +215,15 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   async fallbackCurrentPlayback(reason = "user-requested"): Promise<boolean> {
     this.lastAction = "fallback";
     return this.stopWithAction("fallback", reason, true);
+  }
+
+  async switchEpisodePlaybackSource(
+    kind: EpisodePlaybackSourceKind,
+    reason = "user-requested",
+  ): Promise<boolean> {
+    this.pendingEpisodeSourceOverride = kind;
+    this.lastAction = "recover";
+    return this.stopWithAction("recover", reason, true);
   }
 
   async reloadCurrentSubtitles(reason = "user-requested"): Promise<boolean> {

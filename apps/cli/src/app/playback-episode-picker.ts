@@ -18,6 +18,7 @@ export type PlaybackEpisodePickerInput = {
   animeEpisodes?: readonly EpisodePickerOption[];
   watchedEntries?: readonly HistoryProgress[];
   releaseBadges?: ReadonlyMap<string, string>;
+  downloadedEpisodes?: ReadonlySet<string>;
   loadEpisodes?: typeof fetchEpisodes;
 };
 
@@ -35,6 +36,7 @@ export async function buildPlaybackEpisodePickerOptions({
   animeEpisodes,
   watchedEntries = [],
   releaseBadges,
+  downloadedEpisodes,
   loadEpisodes = fetchEpisodes,
 }: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
   const watchedByEpisode = new Map(
@@ -62,6 +64,7 @@ export async function buildPlaybackEpisodePickerOptions({
           baseDetail: entry.detail,
           previewImageUrl: entry.previewImageUrl,
           releaseBadge: releaseBadges?.get(`1:${entry.index}`),
+          offlineDownloaded: downloadedEpisodes?.has(`1:${entry.index}`),
           current: entry.index === currentEpisode.episode,
           history: watchedByEpisode.get(`1:${entry.index}`),
         }),
@@ -87,6 +90,7 @@ export async function buildPlaybackEpisodePickerOptions({
         episode,
         label: `Episode ${episode}`,
         releaseBadge: releaseBadges?.get(`1:${episode}`),
+        offlineDownloaded: downloadedEpisodes?.has(`1:${episode}`),
         current: episode === currentEpisode.episode,
         history: watchedByEpisode.get(`1:${episode}`),
       }),
@@ -116,6 +120,7 @@ export async function buildPlaybackEpisodePickerOptions({
           runtimeMinutes: entry.runtimeMinutes,
         }) ?? "unknown air date",
       releaseBadge: releaseBadges?.get(`${currentEpisode.season}:${entry.number}`),
+      offlineDownloaded: downloadedEpisodes?.has(`${currentEpisode.season}:${entry.number}`),
       current: entry.number === currentEpisode.episode,
       history: watchedByEpisode.get(`${currentEpisode.season}:${entry.number}`),
     }),
@@ -220,6 +225,7 @@ export function buildEpisodePickerOption({
   baseDetail,
   previewImageUrl,
   releaseBadge,
+  offlineDownloaded,
   current,
   history,
 }: {
@@ -229,6 +235,7 @@ export function buildEpisodePickerOption({
   baseDetail?: string;
   previewImageUrl?: string;
   releaseBadge?: string;
+  offlineDownloaded?: boolean;
   current: boolean;
   history?: HistoryProgress;
 }): ShellPickerOption<string> {
@@ -252,7 +259,13 @@ export function buildEpisodePickerOption({
     value: `${season}:${episode}`,
     label,
     // Row detail stays minimal (air date / release badge); the glyph carries state.
-    detail: mergeEpisodeDetail(undefined, undefined, releaseBadge, baseDetail),
+    detail: mergeEpisodeDetail(
+      undefined,
+      undefined,
+      releaseBadge,
+      offlineDownloaded ? "↓ offline" : undefined,
+      baseDetail,
+    ),
     previewImageUrl,
     tone,
     badge,
@@ -263,9 +276,11 @@ function mergeEpisodeDetail(
   history: HistoryProgress | undefined,
   watchedDetail?: string,
   releaseBadge?: string,
+  offlineBadge?: string,
   baseDetail?: string,
 ): string | undefined {
   const parts: string[] = [];
+  if (offlineBadge) parts.push(offlineBadge);
   if (history && !isFinished(history)) {
     const progress = projectWatchProgress({
       timestamp: history.positionSeconds,

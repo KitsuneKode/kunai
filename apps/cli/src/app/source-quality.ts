@@ -1,3 +1,4 @@
+import { formatLocalPlaybackSourceLine, isLocalPlaybackStream } from "@/app/playback-source-ui";
 import { formatPlaybackStreamRoute } from "@/app/playback-startup-format";
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
 import {
@@ -301,6 +302,24 @@ export function buildQualityPickerOptions(stream: StreamInfo): readonly QualityO
 }
 
 export function buildPlaybackControlSummary(stream: StreamInfo | null): PlaybackControlSummary {
+  if (stream && isLocalPlaybackStream(stream)) {
+    const detail = stream.subtitle ? "subtitles attached" : undefined;
+    return {
+      hasInventory: false,
+      sourceCount: 0,
+      streamCount: 1,
+      qualityCount: 0,
+      audioLanguages: [],
+      hardSubLanguages: [],
+      softSubtitleLanguages: [],
+      showSourceControl: false,
+      showQualityControl: false,
+      showMediaTrackControl: Boolean(stream.subtitle),
+      summary: "↓ offline",
+      detail,
+    };
+  }
+
   const result = stream?.providerResolveResult;
   if (!stream || !result) {
     return {
@@ -379,6 +398,10 @@ export type PlaybackSessionControlInput = {
 
 /** Active source identity: flavor label · provider · CDN host (e.g. Luffy · videasy · light.goldweather.net). */
 export function formatPlaybackSourceLine(stream: StreamInfo | null): string | null {
+  if (stream && isLocalPlaybackStream(stream)) {
+    return formatLocalPlaybackSourceLine(stream);
+  }
+
   const result = stream?.providerResolveResult;
   if (!result) return formatPlaybackStreamRoute(stream ?? ({} as StreamInfo));
 

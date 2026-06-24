@@ -10,6 +10,7 @@ import {
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
+import { isNetworkAvailable } from "@/services/network/network-availability";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryProgress } from "@kunai/storage";
 import type { ProviderId } from "@kunai/types";
@@ -201,7 +202,10 @@ export function selectLocalContinueCandidate(
 }
 
 export async function recordLocalHistorySourceDecision(
-  container: Pick<Container, "offlineLibraryService" | "diagnosticsService" | "stateManager">,
+  container: Pick<
+    Container,
+    "offlineLibraryService" | "diagnosticsService" | "stateManager" | "config" | "networkStatus"
+  >,
   selection: HistoryLaunchSelection,
   reason: "continue" | "history",
 ): Promise<void> {
@@ -214,7 +218,7 @@ export async function recordLocalHistorySourceDecision(
   const decision = createSourceSelectionEngine().decide({
     entrypoint: "continue",
     local: { status: "ready", jobId: localCandidate.job.id },
-    networkAvailable: true,
+    networkAvailable: isNetworkAvailable(container),
     preference: "ask",
   });
   container.diagnosticsService.record({

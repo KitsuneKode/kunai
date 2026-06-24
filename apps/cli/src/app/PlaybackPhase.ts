@@ -17,6 +17,7 @@ import {
 } from "@/app-shell/workflows";
 import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
 import { episodeInfoFromSelection } from "@/app/episode-info-from-catalog";
+import { resolveLocalEpisodePlayback } from "@/app/episode-playback-source";
 import {
   adoptEpisodePrefetchBundle,
   EpisodePrefetchHandle,
@@ -194,6 +195,7 @@ import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
+import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -628,6 +630,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
     let pendingSourceRefreshAction: SourceRefreshAction | null = null;
     let pendingRecomputeSources = false;
+    let episodePlaybackSourceOverride: "local" | "online" | null = null;
+    let localEpisodeTiming: PlaybackTimingMetadata | null = null;
 
     try {
       // Episode selection (for series)
@@ -848,6 +852,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         if (autoRecoverEpisodeKey !== episodeScopeKey) {
           autoRecoverEpisodeKey = episodeScopeKey;
           autoSourceRecoverAttempts = 0;
+        }
+        const queuedSourceOverride = playerControl.consumePendingEpisodeSourceOverride();
+        if (queuedSourceOverride) {
+          episodePlaybackSourceOverride = queuedSourceOverride;
+          invalidateRecentEpisodeStream(currentEpisode);
         }
         playbackSession = this.transitionPlaybackSession(
           context,
@@ -1118,6 +1127,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             cache: animeEpisodeCatalogByProvider,
             signal: resolveController.signal,
           });
+          const downloadedEpisodes = new Set(
+            container.offlineAssetService
+              .listTitleAssets(title.id)
+              .filter((asset) => asset.state === "ready")
+              .map((asset) => `${asset.season ?? 1}:${asset.episode ?? 1}`),
+          );
           const shellEpisodePickerPromise = currentAnimeEpisodesPromise.then(
             (currentAnimeEpisodes) =>
               buildPlaybackEpisodePickerOptions({
@@ -1127,6 +1142,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 animeEpisodeCount: title.episodeCount,
                 animeEpisodes: currentAnimeEpisodes,
                 watchedEntries,
+                downloadedEpisodes,
                 loadEpisodes: loadEpisodesOnce,
               }),
           );
@@ -1349,6 +1365,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
+          if (!stream && !sourceRefreshDecision) {
+            const localResolution = await resolveLocalEpisodePlayback(
+              container,
+              title,
+              currentEpisode,
+              {
+                entrypoint: "online-search",
+                forceOnline: episodePlaybackSourceOverride === "online",
+                forceLocal: episodePlaybackSourceOverride === "local",
+              },
+            );
+            episodePlaybackSourceOverride = null;
+            if (localResolution) {
+              stream = localResolution.stream;
+              streamProvenance = "local";
+              localEpisodeTiming = localResolution.timing;
+              diagnosticsService.record({
+                ...playbackCorrelation,
+                category: "playback",
+                operation: "playback.source.local",
+                message: "Using verified local file for episode playback",
+                titleId: title.id,
+                season: currentEpisode.season,
+                episode: currentEpisode.episode,
+                context: { jobId: localResolution.jobId },
+              });
+              recordStartupMark("resolve-complete", stream);
+            }
+          }
+
           if (!stream) {
             recordStartupMark("resolve-started");
             const resolvePolicy = resolvePlaybackResolvePolicy({
@@ -1496,6 +1542,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
+            observeResolveNetworkOutcome(container, resolveResult);
             if (
               stream &&
               pendingUserProviderSwitch &&
@@ -1697,7 +1744,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
           recordStartupMark("timing-wait-started", stream);
-          const fetchedPlaybackTiming = await timingFetch;
+          const fetchedPlaybackTiming = localEpisodeTiming ?? (await timingFetch);
+          localEpisodeTiming = null;
           recordStartupMark("timing-ready", stream);
           const playbackTiming = mergeTimingMetadata(
             fetchedPlaybackTiming,
@@ -1737,9 +1785,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          const preparedStream = prefetchWasPrepared
-            ? stream
-            : await this.preparePlaybackStream(stream, title, currentEpisode, context);
+          const preparedStream =
+            prefetchWasPrepared || streamProvenance === "local"
+              ? stream
+              : await this.preparePlaybackStream(stream, title, currentEpisode, context);
           recordStartupMark("stream-prepared", preparedStream);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 

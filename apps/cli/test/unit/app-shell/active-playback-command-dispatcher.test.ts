@@ -149,6 +149,9 @@ function createDeps(
       fallbackCurrentPlayback: async (reason) => {
         calls.push(`fallback:${reason}`);
       },
+      switchEpisodePlaybackSource: async (kind, reason) => {
+        calls.push(`source:${kind}:${reason}`);
+      },
       stopCurrentPlayback: async (reason) => {
         calls.push(`stop:${reason}`);
       },
