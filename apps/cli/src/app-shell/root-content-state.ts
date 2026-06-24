@@ -1,3 +1,4 @@
+import { clearRootContentTransitionFrame } from "@/app-shell/shell-screen-clear";
 import type { ReactElement } from "react";
 import { useSyncExternalStore } from "react";
 
@@ -69,6 +70,16 @@ export function forceSettleAllRootContent(_reason: string): void {
   setRootContentSession(null);
 }
 
+export function forceCloseRootContent<TResult>(value: TResult): boolean {
+  if (!rootContentSession) return false;
+  const mount = [...pendingRootContentMounts].find(
+    (candidate) => candidate.sessionId === rootContentSession?.id,
+  );
+  if (!mount) return false;
+  mount.settle(value);
+  return true;
+}
+
 export function mountRootContent<TResult>({
   kind,
   renderContent,
@@ -106,6 +117,10 @@ export function mountRootContent<TResult>({
   };
 
   pendingRootContentMounts.add(pendingMount);
+
+  if (rootContentSession !== null && rootContentSession.id !== sessionId) {
+    clearRootContentTransitionFrame();
+  }
 
   setRootContentSession({
     id: sessionId,

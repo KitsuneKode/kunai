@@ -1,5 +1,7 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
+import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import {
   buildMediaListRowColumns,
@@ -19,7 +21,6 @@ import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
-import { buildPickerActionContext } from "@/app-shell/workflows";
 import type { Container } from "@/container";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
@@ -127,6 +128,7 @@ export function LibraryShell({
             container={container}
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
+            showSelectionHints={false}
           />
         ) : (
           <LibraryTab container={container} />
@@ -135,8 +137,8 @@ export function LibraryShell({
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.dim} dimColor>
           {tab === "library"
-            ? "↑↓ navigate · ↵ open · x delete · p protect · Tab switch"
-            : "Tab switch to library · d toggle downloads"}
+            ? "↑↓ navigate · ↵ open · x delete · p protect · type to filter · Tab → Queue"
+            : "↑↓ navigate · ↵ play · x remove · r retry · Tab → Library · d toggle downloads"}
         </Text>
         {tab === "library" ? (
           <Text color={palette.dim} dimColor>
@@ -149,7 +151,11 @@ export function LibraryShell({
   );
 }
 
+type LibraryView = "titles" | "title-detail";
+
 function LibraryTab({ container }: { container: Container }) {
+  const [libraryView, setLibraryView] = useState<LibraryView>("titles");
+  const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
   const [entries, setEntries] = useState<
     readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] | null
   >(null);
@@ -159,29 +165,30 @@ function LibraryTab({ container }: { container: Container }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
+  const [filterQuery, setFilterQuery] = useState("");
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      container.offlineLibraryService.listCompletedEntries(200),
-      Promise.resolve(readLatestHistoryByTitle(container.historyRepository)),
-    ])
-      .then(([result, history]) => {
-        if (cancelled) return undefined;
+    void (async () => {
+      try {
+        const [result, history] = await Promise.all([
+          container.offlineLibraryService.listCompletedEntries(200),
+          Promise.resolve(readLatestHistoryByTitle(container.historyRepository)),
+        ]);
+        if (cancelled) return;
         setEntries(result);
         setHistoryMap(history);
         setWatchlist(container.listService.getWatchlist());
         setLoadError(null);
         setLoading(false);
-        return undefined;
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : String(error));
           setLoading(false);
         }
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -193,10 +200,18 @@ function LibraryTab({ container }: { container: Container }) {
     [container.config.protectedDownloadJobIds],
   );
 
-  const flatRows = useMemo(
-    () => (shelf ? buildLibraryFlatRows(shelf.groups, watchlist, historyMap) : []),
-    [shelf, watchlist, historyMap],
-  );
+  const flatRows = useMemo(() => {
+    if (!shelf) return [];
+    const rows = buildLibraryFlatRows(shelf.groups, watchlist, historyMap);
+    const normalized = filterQuery.trim().toLowerCase();
+    if (!normalized) return rows;
+    return rows.filter((row) => {
+      if (row.kind === "offline") {
+        return row.group.titleName.toLowerCase().includes(normalized);
+      }
+      return row.item.title.toLowerCase().includes(normalized);
+    });
+  }, [shelf, watchlist, historyMap, filterQuery]);
   const sections = useMemo(
     () => (shelf ? buildLibraryShelfSections(shelf.groups, watchlist, historyMap) : []),
     [shelf, watchlist, historyMap],
@@ -216,8 +231,48 @@ function LibraryTab({ container }: { container: Container }) {
   const selectedRow = totalRows > 0 ? flatRows[safeIndex] : null;
   const selectedOfflineGroup = selectedRow?.kind === "offline" ? selectedRow.group : null;
 
+  const detailEntries = useMemo(() => {
+    if (!detailGroup || !entries) return [];
+    return entries.filter((entry) => entry.job.titleId === detailGroup.titleId);
+  }, [detailGroup, entries]);
+
+  const refreshEntries = () => {
+    void (async () => {
+      const result = await container.offlineLibraryService.listCompletedEntries(200);
+      setEntries(result);
+      if (detailGroup && !result.some((entry) => entry.job.titleId === detailGroup.titleId)) {
+        setLibraryView("titles");
+        setDetailGroup(null);
+      }
+    })();
+  };
+
   useInput((input, key) => {
-    if (loading || !entries || totalRows === 0) return;
+    if (libraryView === "title-detail") return;
+    if (loading || !entries) return;
+    if (key.backspace || input === "\b") {
+      setFilterQuery((query) => query.slice(0, -1));
+      return;
+    }
+    if (input === "\u001b") return;
+    if (
+      input.length === 1 &&
+      !key.ctrl &&
+      !key.meta &&
+      !key.return &&
+      !key.escape &&
+      !key.upArrow &&
+      !key.downArrow &&
+      !key.tab &&
+      input !== "x" &&
+      input !== "X" &&
+      input !== "p" &&
+      input !== "P"
+    ) {
+      setFilterQuery((query) => query + input);
+      return;
+    }
+    if (totalRows === 0) return;
     // Esc cancels an armed delete-confirm first (web-routing back: undo the
     // pending state before leaving the surface). Only when nothing is armed does
     // esc fall through to the root overlay, which closes the Library.
@@ -281,34 +336,29 @@ function LibraryTab({ container }: { container: Container }) {
     }
     if (key.return) {
       if (!selectedOfflineGroup) return;
-      const entryById = new Map(entries.map((e) => [e.job.id, e]));
-      const groupEntryIdsSet = new Set<string>();
-      for (const entry of entries) {
-        if (entry.job.titleId === selectedOfflineGroup.titleId) {
-          groupEntryIdsSet.add(entry.job.id);
-        }
-      }
-      const groupEntries = [...entryById.values()].filter((e) => groupEntryIdsSet.has(e.job.id));
-      void (async () => {
-        const { openOfflineLibraryGroupPicker } = await import("./workflows");
-        await openOfflineLibraryGroupPicker(
-          container,
-          groupEntries,
-          buildPickerActionContext({
-            container,
-            taskLabel: `Offline: ${selectedOfflineGroup.titleName}`,
-          }),
-          {
-            actionSummary: selectedOfflineGroup.actionSummary,
-            artifactSummary: selectedOfflineGroup.artifactSummary,
-          },
-        );
-      })();
+      setDetailGroup(selectedOfflineGroup);
+      setLibraryView("title-detail");
       return;
     }
     if (confirmDeleteKey !== null) {
       setConfirmDeleteKey(null);
     }
+  });
+
+  const railPosterUrl =
+    libraryView === "titles" && selectedOfflineGroup
+      ? buildLibraryPreviewRailModel(selectedOfflineGroup, historyMap, entries ?? [], protectedIds)
+          .posterUrl
+      : undefined;
+  const { poster: railPoster } = useRailPoster(railPosterUrl, {
+    rows: 12,
+    cols: 26,
+    enabled:
+      libraryView === "titles" &&
+      !loading &&
+      !loadError &&
+      Boolean(entries) &&
+      (viewport.columns ?? 80) >= 124,
   });
 
   if (loading) {
@@ -360,6 +410,21 @@ function LibraryTab({ container }: { container: Container }) {
 
   if (!shelf) return null;
 
+  if (libraryView === "title-detail" && detailGroup) {
+    return (
+      <LibraryTitleDetail
+        container={container}
+        group={detailGroup}
+        entries={detailEntries}
+        onBack={() => {
+          setLibraryView("titles");
+          setDetailGroup(null);
+        }}
+        onEntriesChanged={refreshEntries}
+      />
+    );
+  }
+
   const columns = viewport.columns ?? 80;
   const railWidth = 32;
   const showRail = shouldRenderPreviewRail({
@@ -375,6 +440,14 @@ function LibraryTab({ container }: { container: Container }) {
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
+      {filterQuery.length > 0 ? (
+        <Box marginBottom={1}>
+          <Text color={palette.accent}>Filter: </Text>
+          <Text color={palette.text} bold>
+            {filterQuery}
+          </Text>
+        </Box>
+      ) : null}
       {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
       {items.map((item) => {
         if (item.kind === "section") {
@@ -446,6 +519,7 @@ function LibraryTab({ container }: { container: Container }) {
       railWidth={railWidth}
       list={list}
       railModel={railModel}
+      poster={railPoster}
     />
   );
 }
@@ -548,7 +622,11 @@ function isLibraryGroupProtected(
 
 function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boolean): string {
   const shield = protectedTitle ? " ⚲" : "";
-  return `${group.titleName}${shield}`;
+  const downloaded =
+    group.readyCount > 0 && group.entries.length > 0
+      ? ` ↓ ${group.readyCount}/${group.entries.length}`
+      : "";
+  return `${group.titleName}${downloaded}${shield}`;
 }
 
 function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
@@ -653,6 +731,7 @@ function buildLibraryPreviewRailModel(
     subtitle: truncateLine(group.artifactSummary, 40),
     overview: group.detail,
     posterState: group.previewImageUrl ? "ready" : "none",
+    posterUrl: group.previewImageUrl,
     facts,
   };
 }

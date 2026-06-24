@@ -79,7 +79,6 @@ import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import { buildQueueView } from "./queue-view";
 import {
-  buildRootHistorySelection,
   hasPendingRootHistorySelection,
   resolveRootHistorySelection,
   releaseProgressToContinueHistoryRelease,
@@ -1538,38 +1537,20 @@ export function RootOverlayShell({
   if (overlay.type === "library") {
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <LibraryShell
-            container={container}
-            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-            initialView={overlay.view ?? "library"}
+      <Box flexDirection="column" flexGrow={1}>
+        <LibraryShell
+          container={container}
+          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          initialView={overlay.view ?? "library"}
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel="Library"
-            actions={[
-              { key: "↑↓", label: "select", action: "search" as const },
-              { key: "enter", label: "open", action: "search" as const },
-              { key: "d", label: "downloads", action: "search" as const },
-              { key: "a", label: "auto", action: "search" as const },
-              { key: "/", label: "commands", action: "command-mode" as const },
-              { key: "esc", label: "close", action: "quit" as const },
-            ]}
-            mode="minimal"
-            commandMode={commandMode}
-          />
-        </Box>
+        ) : null}
       </Box>,
     );
   }

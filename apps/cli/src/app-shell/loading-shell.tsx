@@ -738,8 +738,17 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
 
+                {state.sourceToggleHint ? (
+                  <Box marginTop={state.playbackSourceLine ? 1 : 2}>
+                    <Text color={palette.dim}>{"ALT  "}</Text>
+                    <Text color={palette.accentDeep}>
+                      {truncateLine(state.sourceToggleHint, infoWidth - 6)}
+                    </Text>
+                  </Box>
+                ) : null}
+
                 {/* NOW — facts on one line (quality · subs · session). */}
-                <Box marginTop={state.playbackSourceLine ? 1 : 2}>
+                <Box marginTop={state.playbackSourceLine || state.sourceToggleHint ? 1 : 2}>
                   <Text color={palette.dim}>{"NOW  "}</Text>
                   {activeTracksLine ? (
                     <Text

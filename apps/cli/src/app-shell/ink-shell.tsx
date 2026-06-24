@@ -7,6 +7,7 @@ import {
   formatBootstrapInventorySummary,
 } from "@/app/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
+import { isLocalPlaybackStream } from "@/app/playback-source-ui";
 import {
   formatPlaybackSessionFactsStrip,
   formatPlaybackSourceLine,
@@ -31,6 +32,8 @@ import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
+import { isNetworkAvailable } from "@/services/network/network-availability";
+import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
 import type { ProviderId } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -72,7 +75,11 @@ import {
 } from "./root-content-state";
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import { RootOverlayShell } from "./root-overlay-shell";
-import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
+import {
+  getRootOwnedOverlay,
+  resolveRootShellSurface,
+  type RootOwnedOverlay,
+} from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { openSessionPicker } from "./session-picker";
@@ -87,6 +94,7 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { InputField, ShellFrame } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
+import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import {
@@ -174,9 +182,7 @@ let rootShellExitPromise: Promise<unknown> | null = null;
  * flicker — Ink's reconciler handles repaint.
  */
 export function clearShellScreen() {
-  if (process.stdout.isTTY) {
-    deleteAllKittyImages();
-  }
+  clearShellScreenArtifacts();
 }
 
 async function openPlaybackStreamSelectionPicker(
@@ -320,6 +326,11 @@ async function openActivePlaybackEpisodePicker(
 // =============================================================================
 // STATE-DRIVEN APP HOST
 // =============================================================================
+
+/** Library/queue overlays own their chrome; stacking them under pickers duplicates footers. */
+function shouldStackOverlayUnderRootContent(overlay: RootOwnedOverlay): boolean {
+  return overlay.type !== "library" && overlay.type !== "downloads";
+}
 
 /**
  * Hook to subscribe to the global session state.
@@ -706,6 +717,8 @@ function AppRoot({ container }: { container: Container }) {
     () => unreadNotifications.filter((notification) => notification.kind === "new-episode").length,
     [unreadNotifications],
   );
+  const playbackIsLocal = isLocalPlaybackStream(state.stream);
+  const networkAvailable = isNetworkAvailable(container);
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -716,6 +729,9 @@ function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
+      offlineMode: container.config.offlineMode,
+      networkAvailable,
+      playbackIsLocal,
       playbackProblem: state.playbackProblem,
       autoplaySessionPaused: state.autoplaySessionPaused,
       autoskipSessionPaused: state.autoskipSessionPaused,
@@ -734,6 +750,9 @@ function AppRoot({ container }: { container: Container }) {
       playlistCount,
       unreadNotificationCount,
       newEpisodeNotificationCount,
+      container.config.offlineMode,
+      networkAvailable,
+      playbackIsLocal,
       state.playbackProblem,
       state.autoplaySessionPaused,
       state.autoskipSessionPaused,
@@ -757,6 +776,9 @@ function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
+      offlineMode: container.config.offlineMode,
+      networkAvailable,
+      playbackIsLocal,
     }),
   );
   useEffect(() => {
@@ -772,6 +794,9 @@ function AppRoot({ container }: { container: Container }) {
           playlistCount: rootStatusSummaryInput.playlistCount,
           notificationCount: rootStatusSummaryInput.notificationCount,
           newEpisodeNotificationCount: rootStatusSummaryInput.newEpisodeNotificationCount,
+          offlineMode: rootStatusSummaryInput.offlineMode,
+          networkAvailable: rootStatusSummaryInput.networkAvailable,
+          playbackIsLocal: rootStatusSummaryInput.playbackIsLocal,
         }),
       );
     }, ROOT_STATUS_DEBOUNCE_MS);
@@ -1107,6 +1132,25 @@ function AppRoot({ container }: { container: Container }) {
                         ? "healthy"
                         : undefined,
                 playbackSourceLine: formatPlaybackSourceLine(state.stream) ?? undefined,
+                sourceToggleHint: (() => {
+                  const episode = state.currentEpisode;
+                  const title = state.currentTitle;
+                  if (!episode || !title) return undefined;
+                  if (isLocalPlaybackStream(state.stream)) {
+                    return "/watch-online to stream this episode online";
+                  }
+                  if (
+                    isEpisodeDownloaded(
+                      container.offlineAssetService,
+                      title.id,
+                      episode.season,
+                      episode.episode,
+                    )
+                  ) {
+                    return "/play-local to use the downloaded copy";
+                  }
+                  return undefined;
+                })(),
                 playbackFactsStrip:
                   state.playbackStatus === "playing" ||
                   state.playbackStatus === "buffering" ||
@@ -1210,7 +1254,9 @@ function AppRoot({ container }: { container: Container }) {
           )}
         </Box>
 
-        {rootSurface === "root-content" && rootOverlay ? (
+        {rootSurface === "root-content" &&
+        rootOverlay &&
+        shouldStackOverlayUnderRootContent(rootOverlay) ? (
           <Box marginTop={1}>
             <RootOverlayShell
               key={getRootOverlayResetKey(rootOverlay)}
@@ -1758,8 +1804,8 @@ function ListShell<T>({
   });
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1} flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1}>
         <Box flexDirection="column">
           <Text bold color={confirmed ? palette.ok : palette.text}>
             {confirmed ? "Selected" : title}
