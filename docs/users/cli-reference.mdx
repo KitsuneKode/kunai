@@ -35,6 +35,18 @@ From a repo clone, use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
 6. **History first** — `--history`: watch history picker at startup.
 7. **Offline library first** — `--offline`: completed downloads only (same intent as `/library`).
 8. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
+9. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers OS handler.
+
+## Share links
+
+| Flag / command | What it does |
+| --- | --- |
+| `kunai --open "kunai://play?..."` | Resolve and play a shared catalog link |
+| `kunai --install-protocol-handler` | Register `kunai://` with the OS (optional) |
+| `/share` | Copy link for current playback context |
+| `/watch` | Open link from clipboard |
+
+More: [Share links](/docs/users/share-links).
 
 ## Download modes (do not confuse)
 

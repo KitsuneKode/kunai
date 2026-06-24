@@ -1,0 +1,18 @@
+# Maps agent-facing .docs sources to published user docs for promotion tracking.
+# lastReviewed: ISO date when the published page was reconciled with the agent doc.
+promotions:
+  - agentPath: .docs/share-links.md
+    publishedPath: docs/users/share-links.mdx
+    lastReviewed: "2026-06-24"
+  - agentPath: .docs/download-offline-onboarding.md
+    publishedPath: docs/users/downloads-and-offline.md
+    lastReviewed: "2026-06-24"
+  - agentPath: .docs/cli-reference.md
+    publishedPath: docs/users/cli-reference.mdx
+    lastReviewed: "2026-06-24"
+  - agentPath: .docs/diagnostics-guide.md
+    publishedPath: docs/users/diagnostics-and-reporting.mdx
+    lastReviewed: "2026-06-23"
+  - agentPath: .docs/providers.md
+    publishedPath: docs/users/providers.mdx
+    lastReviewed: "2026-06-23"

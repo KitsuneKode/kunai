@@ -47,6 +47,10 @@ Notification actions should not hijack active playback:
 If Kunai crashes with queued items, queue recovery should restore pending items
 only after the user chooses to restore them.
 
+## Source preference on continue
+
+`continueSourcePreference` controls whether Continue Watching prefers online resolve, local offline copies when available, or asks each time. Kunai never silently switches modes — offline copies appear as explicit choices.
+
 ## Offline Copies
 
 If an exact local copy exists for the continue target, Kunai can surface it as a
@@ -63,3 +67,8 @@ Offline rows may show:
 
 These are local facts from SQLite and the filesystem. Opening the offline
 library should not trigger provider calls.
+
+## Related guides
+
+- [Playback and recovery](/docs/users/playback-and-recovery)
+- [Downloads and offline](/docs/users/downloads-and-offline)

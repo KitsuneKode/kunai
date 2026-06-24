@@ -26,6 +26,7 @@ Common launch patterns. For the full flag list synced from `kunai --help`, see
 | `kunai --discover` | Open recommendations first |
 | `kunai --calendar` | Open release calendar first |
 | `kunai --random` | Open random picks tray first |
+| `kunai --open <url>` | Play a shared `kunai://` link (trusted launch) |
 | `kunai --setup` | Run setup wizard |
 | `kunai --download -S "Title"` | Download-only flow for a title (no shell queue UI) |
 | `kunai --zen` | Minimal chrome mode |
@@ -62,6 +63,7 @@ from the CLI command registry — it updates when you run `bun run generate` in 
 - Continue Watching with unfinished/new episode detection
 - Release calendar with cached schedule data
 - Recommendations and discovery surfaces
+- Share links (`/share`, `/watch`, `kunai --open`)
 - Offline downloads via yt-dlp with artifact validation
 - Library browsing from local SQLite
 - Diagnostics panel and redacted support bundle export

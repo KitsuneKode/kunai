@@ -212,6 +212,22 @@ More: [Platforms](/docs/users/platforms), [Getting started](/docs/users/getting-
 
 ---
 
+## Share link or protocol handler issues
+
+**Symptoms:** `/watch` says clipboard is empty or invalid; `kunai --open` fails to resolve; OS does not offer Kunai for `kunai://` links.
+
+### What to try
+
+1. Copy a fresh link with `/share` from an active session — links need `cat=` or `q=` query params.
+2. For clipboard open, run `/watch` immediately after copying (some terminals clear clipboard on focus change).
+3. Trusted terminal launch: `kunai --open "kunai://play?..."` works without OS registration.
+4. Register handler once: `kunai --install-protocol-handler`, then retry from browser or chat app.
+5. Handoff URLs from the OS may require confirmation — that is expected for untrusted surfaces.
+
+More: [Share links](/docs/users/share-links).
+
+---
+
 ## Still stuck?
 
 1. Run a structured trace session:

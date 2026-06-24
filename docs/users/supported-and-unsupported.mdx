@@ -10,28 +10,9 @@ Kunai is a terminal-first CLI in beta. This page states observable boundaries �
 
 ## Support matrix
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Terminal shell (Ink) | **Shipped** | Search, pickers, history, overlays, command palette |
-| Direct HTTP providers | **Shipped** | Videasy, VidLink, AllManga-compatible, Rivestream, Miruro — quality varies by title |
-| mpv playback | **Required** | Kunai does not embed a player; mpv must be on PATH |
-| Watch history and resume | **Shipped** | Local SQLite; 1-based episode numbers in UI |
-| Continue Watching | **Shipped** | Unfinished entries + new episode detection when schedule data exists |
-| Release calendar | **Shipped** | Cached schedule data; availability checked after selection |
-| Recommendations / discover | **Shipped** | Does not auto-play |
-| Diagnostics panel | **Shipped** | `/diagnostics`, redacted `/export-diagnostics` |
-| Discord Rich Presence | **Shipped** | Opt-in; off by default |
-| AniList / TMDB sync | **Shipped** | Opt-in account sync |
-| User-owned provider geo relay | **Beta** | Optional metadata/API relay for geo-blocked providers; no Kunai-hosted relay URL |
-| Offline downloads | **Beta** | Opt-in; requires `yt-dlp`; artifact validation when `ffprobe` available |
-| Release binaries (`install.sh` / `install.ps1`) | **Beta supported** | Unsigned; SmartScreen/Gatekeeper may warn |
-| Zen / minimal chrome | **Beta** | `--zen`, `--minimal` — layout still settling |
-| Browser / Playwright scraping | **Not supported** | Archive-only reference code; not active runtime |
-| Hosted Kunai streams | **Not supported** | No Kunai CDN or proxy for video; provider geo relay is metadata-only and user-owned |
-| First-party streaming auth | **Not supported** | No Netflix/Disney+/etc. login flows |
-| Native GUI (non-terminal) | **Not supported** | Terminal-first by design |
-| DRM bypass | **Not supported** | Kunai plays what direct providers expose |
-| Cloud telemetry / auto-upload | **Not supported** | Diagnostics export is user-initiated |
+Use this codegen-backed table as the single product posture source. Narrative sections below add context — they do not override these labels.
+
+<FeatureStatusTable />
 
 ## CLI and install channels
 

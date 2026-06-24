@@ -12,14 +12,50 @@ features:
     label: mpv playback
     status: shipped
     description: Kunai resolves streams; mpv is the playback engine.
+  - id: share-links
+    label: kunai:// share links
+    status: shipped
+    description: Catalog-anchored share URLs via /share, /watch, kunai --open, and mpv hotkey.
+  - id: history-continuation
+    label: History continuation
+    status: shipped
+    description: Continue unfinished titles from History with catalog bounds and source preference.
+  - id: provider-endpoint-health
+    label: Provider endpoint health
+    status: shipped
+    description: Local health memory, /recompute bypass, and /reset-provider-health recovery.
+  - id: network-status
+    label: Network status indicator
+    status: shipped
+    description: Shell header shows connectivity; offline mode is explicit, never silent.
+  - id: diagnostics-export
+    label: Diagnostics export
+    status: shipped
+    description: /diagnostics panel and redacted /export-diagnostics with DB-backed recent export.
+  - id: catalog-sync
+    label: AniList / TMDB sync
+    status: shipped
+    description: Opt-in account sync for watch state and metadata.
+  - id: notifications-inbox
+    label: Notifications inbox
+    status: shipped
+    description: Shell notifications for downloads, playback, and setup guidance.
+  - id: discord-presence
+    label: Discord Rich Presence
+    status: shipped
+    description: Opt-in social status integration; off by default until configured.
   - id: offline-downloads
     label: Offline downloads
     status: beta
     description: Queue downloads and play completed artifacts without provider calls.
-  - id: discord-presence
-    label: Discord Rich Presence
+  - id: offline-mode
+    label: Persistent offline mode
     status: beta
-    description: Optional social status integration with setup wizard support.
+    description: Configurable local-only shell mode separate from the --offline launch flag.
+  - id: download-quality-policy
+    label: Download quality floor
+    status: beta
+    description: Shared quality policy for download jobs via defaultDownloadQuality setting.
   - id: provider-geo-relay
     label: User-owned provider geo relay
     status: beta

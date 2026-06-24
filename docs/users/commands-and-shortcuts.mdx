@@ -12,6 +12,8 @@ available without losing the playing context.
 - `/search` starts a new search.
 - `/history` opens recent playback progress.
 - `/library` opens the offline library with completed local downloads.
+- `/play-local` opens a file picker for local media playback.
+- `/watch-online` returns from offline posture to online shell flows when network allows.
 - `/downloads` opens active, queued, failed, and retryable download jobs.
 - `/notifications` opens the notification inbox.
 - `/playlist` opens saved playlists and recoverable queues.
@@ -21,8 +23,8 @@ available without losing the playing context.
 - `/discover`, `/recommendation`, `/random`, and `/surprise` open recommendation
   surfaces without autoplay.
 - `/filters` opens supported search filter syntax.
-- `/settings`, `/presence`, `/setup`, `/diagnostics`, `/docs`, `/help`, `/about`,
-  and `/update` open support surfaces.
+- `/share` copies a catalog-anchored `kunai://` play link to the clipboard.
+- `/watch` parses a `kunai://` URL from the clipboard and launches playback.
 
 ## Playback Commands
 

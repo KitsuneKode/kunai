@@ -1,0 +1,16 @@
+symptoms:
+  - id: provider-resolve-failed
+    question: Why does provider resolve fail?
+    anchor: provider resolve failed
+  - id: network-offline-playback
+    question: What if the network is offline during playback?
+    anchor: network unavailable
+  - id: offline-library-missing
+    question: Why is my offline library empty or invalid?
+    anchor: offline library issues
+  - id: mpv-missing
+    question: Why does Kunai say mpv is missing?
+    anchor: mpv missing or not found
+  - id: share-link-issues
+    question: Why does a share link or protocol handler fail?
+    anchor: share link or protocol handler issues

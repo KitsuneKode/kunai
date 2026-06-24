@@ -1,6 +1,7 @@
 ---
 title: Downloads And Offline
 description: Manage download queues, local playback, cleanup, and offline diagnostics safely.
+status: beta
 ---
 
 Kunai separates the download queue from the offline library.
@@ -72,5 +73,19 @@ Inside a normal session:
 - Delete actions ask for confirmation before removing a whole offline title.
 - Network handoff stays explicit: if the local shelf is exhausted, Kunai points you toward online search instead of silently switching modes.
 
-More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI reference](/docs/users/cli-reference#mpv-and-diagnostics).
+## Persistent offline mode
+
+`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header — mode changes are never silent.
+
+Use `/watch-online` when you want to return from offline posture to online shell flows.
+
+## Download quality
+
+`defaultDownloadQuality` sets the shared quality floor for new jobs. See [Customization](/docs/users/customization).
+
+## Share links for downloads
+
+`kunai://download?...` uses the same query params as play links but queues a download instead. See [Share links](/docs/users/share-links).
+
+More detail is in [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) and the [CLI reference](/docs/users/cli-reference#download-modes-do-not-confuse).
 Continue Watching behavior is covered in [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes).
