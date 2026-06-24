@@ -7,7 +7,7 @@ const ROOT = path.resolve(import.meta.dir, "../../..");
 const OUTPUT = path.join(ROOT, "apps/docs/lib/generated-metadata.json");
 
 function metadataPayload(value: Record<string, unknown>) {
-  const { syncedAt: _syncedAt, ...payload } = value;
+  const { syncedAt: _syncedAt, cliSourceRevision: _cliSourceRevision, ...payload } = value;
   return JSON.stringify(payload);
 }
 

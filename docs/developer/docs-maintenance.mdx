@@ -67,7 +67,7 @@ Run `bun run generate` after changing commands, providers, help text, or `docs/f
 bun run --cwd apps/docs scripts/check-codegen-freshness.ts
 ```
 
-CI runs the full docs gate on `docs/**` and CLI registry path changes.
+CI runs `generate` once, then `typecheck:app`, `test`, and `build:app` (skipping redundant MDX/codegen passes). The freshness gate compares fingerprints and registry payloads, not volatile `syncedAt` / `cliSourceRevision` stamps.
 
 Troubleshooting emits `FAQPage` JSON-LD from `docs/troubleshooting-symptoms.yaml` and the matching MDX sections.
 
