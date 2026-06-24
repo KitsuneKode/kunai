@@ -12,19 +12,19 @@ a long tail of UX fixes.
   → a recommendation when caught up (cancelable countdown). `/queue` opens the Up
   Next panel; reorder queued items (move up/down); save the queue as a playlist;
   import/export.
-- **Offline parity.** Downloaded episodes now play through the *same* path as
+- **Offline parity.** Downloaded episodes now play through the _same_ path as
   online — full resume **offer** (not a forced seek), auto-skip, OSD, track
   control, autoplay into the next downloaded episode, and history.
 - **Smarter anime.** Deterministic TMDB anime classifier (research-validated)
-  tags results as *Anime*; it is authoritative for the persisted content kind, so
+  tags results as _Anime_; it is authoritative for the persisted content kind, so
   an anime watched via a series provider is still classified as anime. Fix a wrong
   label any time with `/mark-anime` · `/mark-series`.
 - **Rebuilt calendar.** Rolling ±7-day schedule (past week + upcoming), type tabs
   (All/Anime/Series/Movies/Tracked), per-day navigation, `/anime-calendar` and
-  `/series-calendar` shortcuts, boxed day chips with a distinct *today* highlight,
+  `/series-calendar` shortcuts, boxed day chips with a distinct _today_ highlight,
   and aligned columns that no longer shift on long titles.
-- **Share a watch.** `/share` copies a `kunai1:…` code for the current title;
-  `/watch` plays a code from your clipboard.
+- **Share links.** `/share` copies a catalog-anchored `kunai://` URL for the current title;
+  `/watch` opens a `kunai://` link from your clipboard. Use `kunai --open` for trusted terminal launch.
 
 ### Features
 

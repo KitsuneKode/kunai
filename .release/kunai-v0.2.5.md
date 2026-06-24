@@ -21,8 +21,8 @@ a long tail of UX fixes.
   (All/Anime/Series/Movies/Tracked), per-day navigation, `/anime-calendar` and
   `/series-calendar` shortcuts, boxed day chips with a distinct _today_ highlight,
   and aligned columns that no longer shift on long titles.
-- **Share a watch.** `/share` copies a `kunai1:…` code for the current title;
-  `/watch` plays a code from your clipboard.
+- **Share links.** `/share` copies a catalog-anchored `kunai://` URL for the current title;
+  `/watch` opens a `kunai://` link from your clipboard. Use `kunai --open` for trusted terminal launch.
 
 ### Features
 

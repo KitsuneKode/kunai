@@ -9,7 +9,7 @@
   - **Offline parity.** Downloaded episodes now play through the _same_ path as online — full resume **offer** (not a forced seek), auto-skip, OSD, track control, autoplay into the next downloaded episode, and history.
   - **Smarter anime.** Deterministic TMDB anime classifier (research-validated) tags results as _Anime_; it is authoritative for the persisted content kind, so an anime watched via a series provider is still classified as anime. Fix a wrong label any time with `/mark-anime` · `/mark-series`.
   - **Rebuilt calendar.** Rolling ±7-day schedule (past week + upcoming), type tabs (All/Anime/Series/Movies/Tracked), per-day navigation, `/anime-calendar` and `/series-calendar` shortcuts, boxed day chips with a distinct _today_ highlight, and aligned columns that no longer shift on long titles.
-  - **Share a watch.** `/share` copies a `kunai1:…` code for the current title; `/watch` plays a code from your clipboard.
+  - **Share links.** `/share` copies a catalog-anchored `kunai://` URL for the current title; `/watch` opens a `kunai://` link from your clipboard.
   - **CLI surface.** `--help` / `--version` are first-class; Up Next panel, two-pane tracks panel, and `/audio` + `/subtitles` deep-links; settings persist on change (no Ctrl+S); destructive rows are red.
   - **Downloads.** Parallel N-worker pool (`maxConcurrentDownloads`, default 3, 1–5); runaway RAM and orphaned `yt-dlp` are fixed (bounded fragment buffering, SIGKILL children on exit, socket timeout); partial-download badges (`↓ n/total`); pause-on-quit + auto-resume on return.
   - **Calendar polish.** Chronological day strip, no phantom "Nothing on schedule" days, enter-at-today navigation, no layout shift on long titles, ±7-day clamp.
