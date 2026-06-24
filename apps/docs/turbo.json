@@ -1,0 +1,21 @@
+{
+  "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "outputs": ["lib/generated-metadata.json", ".source/**"]
+    },
+    "typecheck:app": {
+      "dependsOn": ["generate"],
+      "outputs": []
+    },
+    "typecheck": {
+      "dependsOn": ["generate", "typecheck:app"],
+      "outputs": []
+    },
+    "build": {
+      "dependsOn": ["^typecheck", "generate", "typecheck:app"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    }
+  }
+}

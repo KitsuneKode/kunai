@@ -32,6 +32,8 @@ bun run --cwd apps/docs typecheck
 bun run --cwd apps/docs test
 bun run --cwd apps/docs build
 ```
+
+`generate` must run before `typecheck` and `build` when invoking scripts directly. Turborepo runs it once via `apps/docs/turbo.json` task dependencies.
 </Step>
 </Steps>
 
