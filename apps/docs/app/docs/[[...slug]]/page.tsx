@@ -1,7 +1,11 @@
+import { DocsStatusBadge } from "@/components/docs/docs-status-badge";
+import { RelatedDocLinks } from "@/components/docs/related-doc-links";
+import { navGroupForHref } from "@/lib/doc-page-nav";
 import { docsEditUrl } from "@/lib/docs-github";
-import { techArticleJsonLd } from "@/lib/json-ld";
+import { breadcrumbListJsonLd, faqPageJsonLd, techArticleJsonLd } from "@/lib/json-ld";
 import { docsCanonicalUrl } from "@/lib/site";
 import { source } from "@/lib/source";
+import { buildTroubleshootingFaqEntries } from "@/lib/troubleshooting-faq";
 import { useMDXComponents } from "@/mdx-components";
 import {
   DocsBody,
@@ -44,7 +48,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       siteName: "Kunai Docs",
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: page.data.title,
       description: page.data.description,
     },
@@ -65,12 +69,22 @@ export default async function Page({ params }: PageProps) {
   const editUrl = docsEditUrl(page.path);
   const lastModified = readLastModified(page.data);
   const isIndexHub = page.path === "index.mdx" || page.path.endsWith("/index.mdx");
+  const pageStatus = (page.data as { status?: string }).status;
+  const navGroup = navGroupForHref(page.url);
   const articleJsonLd = techArticleJsonLd({
     title: page.data.title,
     description: page.data.description ?? "Kunai documentation",
     url: docsCanonicalUrl(page.url),
     ...(lastModified ? { dateModified: lastModified.toISOString() } : {}),
   });
+  const breadcrumbJsonLd = breadcrumbListJsonLd([
+    { name: "Kunai Docs", url: docsCanonicalUrl("/docs") },
+    { name: page.data.title, url: docsCanonicalUrl(page.url) },
+  ]);
+  const faqJsonLd =
+    page.data.info.path === "users/troubleshooting.mdx"
+      ? faqPageJsonLd(buildTroubleshootingFaqEntries())
+      : null;
 
   return (
     <>
@@ -78,6 +92,16 @@ export default async function Page({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      {faqJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      ) : null}
       <DocsPage
         className={isIndexHub ? "kunai-docs-index" : undefined}
         toc={page.data.toc}
@@ -93,9 +117,11 @@ export default async function Page({ params }: PageProps) {
         </div>
         <DocsTitle>{page.data.title}</DocsTitle>
         <DocsDescription>{page.data.description}</DocsDescription>
+        <DocsStatusBadge status={pageStatus} />
         <DocsBody>
           <MDX components={components} />
         </DocsBody>
+        {navGroup ? <RelatedDocLinks group={navGroup} currentHref={page.url} /> : null}
         <div className="not-prose border-fd-border mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
           <EditOnGitHub href={editUrl} />
           {lastModified ? <PageLastUpdate date={lastModified} /> : null}

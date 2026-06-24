@@ -1,3 +1,4 @@
+import { codeMetadata } from "@/lib/code-metadata";
 import { docsSiteUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 
@@ -7,6 +8,10 @@ export async function GET() {
   const pages = source.getPages();
   const lines = [
     "# Kunai Docs",
+    "",
+    `@doc-version: ${codeMetadata.cliVersion}`,
+    `@cli-source-revision: ${codeMetadata.cliSourceRevision}`,
+    `@synced-at: ${codeMetadata.syncedAt}`,
     "",
     "> Terminal-first guides for Kunai playback, recovery, offline use, and diagnostics.",
     "",

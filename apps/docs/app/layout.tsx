@@ -1,5 +1,6 @@
 /* eslint-disable import/no-unassigned-import */
 import "./global.css";
+import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
@@ -30,6 +31,13 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
         <RootProvider
           search={{
+            SearchDialog: KunaiSearchDialog,
+            links: [
+              ["Getting started", "/docs/users/getting-started"],
+              ["Troubleshooting", "/docs/users/troubleshooting"],
+              ["CLI reference", "/docs/users/cli-reference"],
+              ["Documentation index", "/docs"],
+            ],
             options: {
               api: "/api/search",
             },

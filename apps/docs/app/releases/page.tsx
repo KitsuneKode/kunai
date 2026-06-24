@@ -10,6 +10,18 @@ export const metadata: Metadata = {
   alternates: {
     canonical: `${docsSiteUrl}/releases`,
   },
+  openGraph: {
+    title: "Kunai Release Notes",
+    description: "Kunai release notes generated from the tracked release artifact.",
+    url: `${docsSiteUrl}/releases`,
+    type: "website",
+    siteName: "Kunai Docs",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Kunai Release Notes",
+    description: "Kunai release notes generated from the tracked release artifact.",
+  },
 };
 
 export default function ReleaseNotesPage() {

@@ -12,6 +12,11 @@ export function DocsSidebarBanner() {
           <CardDescription className="kunai-type-caption">Kunai CLI</CardDescription>
           <CardTitle className="font-serif text-base font-medium tabular-nums">
             v{codeMetadata.version}
+            {codeMetadata.cliSourceRevision && codeMetadata.cliSourceRevision !== "unknown" ? (
+              <span className="text-fd-muted-foreground ml-1 text-xs font-normal">
+                · {codeMetadata.cliSourceRevision}
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-3 pt-0">

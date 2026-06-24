@@ -1,4 +1,4 @@
-import HomePageClient from "@/app/(home)/home-page-client";
+import HomePageShell from "@/app/(home)/home-page-shell";
 import { codeMetadata } from "@/lib/code-metadata";
 import { websiteJsonLd } from "@/lib/json-ld";
 import { docsSiteUrl } from "@/lib/site";
@@ -38,14 +38,10 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <HomePageClient
+      <HomePageShell
         providers={codeMetadata.providers}
         commands={codeMetadata.commands}
         flags={codeMetadata.cliOptions}
-        commandCount={codeMetadata.commandCount}
-        providerCount={codeMetadata.providerIds.length}
-        cliVersion={codeMetadata.cliVersion}
-        runtimeBaseline={codeMetadata.runtimeBaseline}
       />
     </>
   );

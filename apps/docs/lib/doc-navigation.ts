@@ -93,6 +93,13 @@ export const docNavEntries: readonly DocNavEntry[] = [
   },
   // Daily
   {
+    title: "Share Links",
+    href: "/docs/users/share-links",
+    description: "Copy and open catalog-anchored kunai:// links across machines and providers.",
+    group: "daily",
+    surfaces: ["hub", "home"],
+  },
+  {
     title: "Feature Tour",
     href: "/docs/users/feature-tour",
     description: "Capability map with live command and provider tables from the registry.",
@@ -195,6 +202,20 @@ export const docNavEntries: readonly DocNavEntry[] = [
       "Add pages, run drift tests, and ship documentation without coupling CLI releases.",
     group: "develop",
     surfaces: ["hub", "home"],
+  },
+  {
+    title: "Release Checklist",
+    href: "/docs/developer/release-checklist",
+    description: "Regenerate codegen metadata and verify the docs gate on each CLI release.",
+    group: "develop",
+    surfaces: ["hub"],
+  },
+  {
+    title: "Glossary",
+    href: "/docs/users/glossary",
+    description: "Commands, CLI flags, and feature terms synced from codegen metadata.",
+    group: "reference",
+    surfaces: ["hub"],
   },
   {
     title: "Changelog",
