@@ -59,6 +59,7 @@ function createDeps(calls: string[]): ActivePlaybackCommandDispatchDeps {
       recoverCurrentPlayback: async (reason) => calls.push(`recover:${reason}`),
       recomputeCurrentPlayback: async (reason) => calls.push(`recompute:${reason}`),
       fallbackCurrentPlayback: async (reason) => calls.push(`fallback:${reason}`),
+      switchEpisodePlaybackSource: async (kind, reason) => calls.push(`source:${kind}:${reason}`),
       stopCurrentPlayback: async (reason) => calls.push(`stop:${reason}`),
     },
     workControl: {

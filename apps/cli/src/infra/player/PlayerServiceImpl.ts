@@ -6,6 +6,7 @@
 
 import { stat } from "node:fs/promises";
 
+import { getRootContentSession } from "@/app-shell/root-content-state";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -69,12 +70,14 @@ export class PlayerServiceImpl implements PlayerService {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "hls-manifest" });
     }
     options.onPlaybackEvent?.({ type: "launching-player" });
-    process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
-    process.stderr.write(
-      playbackStream.subtitle
-        ? "Subtitle attached before playback.\n"
-        : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
-    );
+    if (!getRootContentSession()) {
+      process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
+      process.stderr.write(
+        playbackStream.subtitle
+          ? "Subtitle attached before playback.\n"
+          : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
+      );
+    }
 
     this.deps.logger.info("Launching MPV", {
       title: options.displayTitle,

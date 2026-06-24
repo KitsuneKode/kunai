@@ -152,10 +152,13 @@ export function DownloadManagerContent({
   container,
   onClose,
   onNavigateToLibrary,
+  showSelectionHints = true,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
+  /** When false, omit per-selection hint row (parent shell owns the footer). */
+  showSelectionHints?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const [activeJobs, setActiveJobs] = useState<readonly DownloadJobRecord[]>([]);
@@ -284,8 +287,8 @@ export function DownloadManagerContent({
       if (!job) return;
 
       if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
-        void import("@/app/offline-playback").then(({ playCompletedDownload }) =>
-          playCompletedDownload(container, job.id),
+        void import("@/app/offline-playback-launch").then(({ requestUnifiedOfflinePlayback }) =>
+          requestUnifiedOfflinePlayback(container, job.id),
         );
         return;
       }
@@ -365,12 +368,18 @@ export function DownloadManagerContent({
             </Text>
           </Box>
           <Box width={queueLayout.progressWidth}>
-            <ProgressBar
-              value={progressBarValue(job)}
-              max={100}
-              width={queueLayout.progressWidth - 2}
-              color={progressBarColor(job)}
-            />
+            {job.status === "running" ? (
+              <ProgressBar
+                value={progressBarValue(job)}
+                max={100}
+                width={queueLayout.progressWidth - 2}
+                color={progressBarColor(job)}
+              />
+            ) : (
+              <Text color={palette.dim} dimColor>
+                {" "}
+              </Text>
+            )}
           </Box>
           <Box
             width={queueLayout.metaWidth}
@@ -457,7 +466,7 @@ export function DownloadManagerContent({
             {"⚠ "}Press x again to confirm delete · any other key cancels
           </Text>
         </Box>
-      ) : (
+      ) : showSelectionHints ? (
         (() => {
           const selected = allJobs[selectedIndex];
           if (!selected) return null;
@@ -484,7 +493,7 @@ export function DownloadManagerContent({
             </Box>
           ) : null;
         })()
-      )}
+      ) : null}
       {repairSweepStatus ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>{repairSweepStatus}</Text>

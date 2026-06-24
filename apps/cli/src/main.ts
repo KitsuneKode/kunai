@@ -121,13 +121,11 @@ async function maybeRunOfflineMode(
     return false;
   }
 
-  const { openCompletedDownloadsPicker, buildPickerActionContext } =
-    await import("./app-shell/workflows");
-  await openCompletedDownloadsPicker(
-    container,
-    buildPickerActionContext({ container, taskLabel: "Offline library" }),
-  );
-  return true;
+  container.stateManager.dispatch({
+    type: "OPEN_OVERLAY",
+    overlay: { type: "library", view: "library" },
+  });
+  return false;
 }
 
 type StartupHistoryTarget = {
@@ -148,9 +146,10 @@ async function maybeOpenStartupHistory(
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
   if (!selection) return null;
   if (selection.localJobId) {
-    const { playCompletedDownload } = await import("./app/offline-playback");
-    await playCompletedDownload(container, selection.localJobId);
-    return null;
+    const { prepareOfflinePlaybackLaunch } = await import("./app/offline-playback-launch");
+    const launch = await prepareOfflinePlaybackLaunch(container, selection.localJobId);
+    if (!launch) return null;
+    return { title: launch.title, episode: launch.episode };
   }
 
   applyHistorySelectionProvider(container, selection);

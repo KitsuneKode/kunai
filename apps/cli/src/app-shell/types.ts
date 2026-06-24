@@ -1,6 +1,7 @@
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
+import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
@@ -77,7 +78,9 @@ export type ShellAction =
   | "resume-continue-watching"
   | "continue"
   | "play-offline-ready"
-  | "play-queue-next";
+  | "play-queue-next"
+  | "play-local"
+  | "watch-online";
 
 export type ShellMode = "series" | "anime";
 
@@ -216,6 +219,8 @@ export type LoadingShellState = {
   playbackSourceLine?: string;
   /** Compact live-key legend under playback facts. */
   playbackKeysHint?: string;
+  /** Hint when both offline and online copies exist for the current episode. */
+  sourceToggleHint?: string;
   /** Rich catalog metadata for the playing right rail. */
   titleDetail?: import("@/domain/catalog/title-detail").TitleDetail;
   /** Next-episode still for the playing up-next card. */
@@ -310,6 +315,10 @@ export type ShellPickerOption<T> = {
 export type BrowseShellResult<T> =
   | { type: "selected"; value: T }
   | { type: "action"; action: ShellAction }
+  | {
+      type: "offline-playback";
+      launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
+    }
   | { type: "cancelled" };
 
 export type PlaybackShellResult =
@@ -399,6 +408,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "mark-watched":
     case "watch":
     case "continue":
+    case "play-local":
+    case "watch-online":
       return commandId;
   }
 }

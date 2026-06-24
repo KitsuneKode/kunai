@@ -9,7 +9,7 @@ import {
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
 import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { markEntryWatched } from "@/app/history-actions";
-import { playCompletedDownload } from "@/app/offline-playback";
+import { requestUnifiedOfflinePlayback } from "@/app/offline-playback-launch";
 import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
@@ -40,8 +40,10 @@ import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
+import { resolveDownloadQualityCeiling } from "@/services/download/download-quality-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import { isNetworkAvailable } from "@/services/network/network-availability";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -195,7 +197,7 @@ export async function openOfflineLibraryGroupPicker(
     const offlinePolicy = container.offlineTitlePolicies.get(first.titleId);
     const continuation = createContinuationEngine().decide({
       titleName: first.titleName,
-      networkAvailable: true,
+      networkAvailable: isNetworkAvailable(container),
       localEpisodes: entries
         .filter((entry) => entry.job.season !== undefined && entry.job.episode !== undefined)
         .map((entry) => ({
@@ -496,8 +498,8 @@ export async function openOfflineLibraryGroupPicker(
         });
         continue;
       }
-      await playCompletedDownload(container, job.id);
-      continue;
+      await requestUnifiedOfflinePlayback(container, job.id);
+      return;
     }
     if (action === "reveal") {
       const reveal = await revealPathInOsFileManager(job.outputPath);
@@ -611,7 +613,7 @@ function buildOfflineGroupActions(
   return actions;
 }
 
-async function queueMoreOfflineTitleEpisodes(
+export async function queueMoreOfflineTitleEpisodes(
   container: Container,
   first: DownloadJobRecord,
   actionContext?: ListShellActionContext,
@@ -1348,7 +1350,15 @@ export async function enqueueCurrentPlaybackDownload({
             : state.seriesLanguageProfile.quality,
       selectedSourceId: getSelectedPlaybackSourceId(state.stream),
       selectedStreamId: state.stream?.providerResolveResult?.selectedStreamId,
-      selectedQualityLabel: getSelectedPlaybackQualityLabel(state.stream),
+      selectedQualityLabel: resolveDownloadQualityCeiling(
+        container.config.defaultDownloadQuality,
+        state.mode === "anime"
+          ? state.animeLanguageProfile.quality
+          : state.currentTitle.type === "movie"
+            ? state.movieLanguageProfile.quality
+            : state.seriesLanguageProfile.quality,
+        getSelectedPlaybackQualityLabel(state.stream),
+      ),
       timing,
     });
     container.diagnosticsService.record({

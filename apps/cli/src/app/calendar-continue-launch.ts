@@ -9,7 +9,6 @@ import {
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/launch-entry";
-import { playCompletedDownload } from "@/app/offline-playback";
 import type { Container } from "@/container";
 import type { SearchResult } from "@/domain/types";
 import type { TitleInfo } from "@/domain/types";
@@ -161,7 +160,11 @@ export async function launchCalendarContinue(
   if (!selection) return null;
 
   if (selection.localJobId) {
-    await playCompletedDownload(container, selection.localJobId);
+    applyHistorySelectionProvider(container, selection);
+    const episode = episodeFromHistorySelection(selection);
+    if (episode) {
+      container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
+    }
   } else {
     applyHistorySelectionProvider(container, selection);
     const episode = episodeFromHistorySelection(selection);

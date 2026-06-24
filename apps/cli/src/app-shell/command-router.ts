@@ -1,7 +1,7 @@
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 import { episodeFromHistorySelection, recordLocalHistorySourceDecision } from "@/app/launch-entry";
 import { switchSessionMode } from "@/app/mode-switch";
-import { playCompletedDownload } from "@/app/offline-playback";
+import { requestUnifiedOfflinePlayback } from "@/app/offline-playback-launch";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -105,8 +105,13 @@ async function openRootHistorySelection(
   const selection = await selectionPromise;
   if (!selection) return "handled";
   if (selection.localJobId) {
-    await playCompletedDownload(container, selection.localJobId);
-    return "handled";
+    const launch = await requestUnifiedOfflinePlayback(container, selection.localJobId);
+    if (!launch) return "handled";
+    return {
+      type: "history-entry",
+      title: launch.title,
+      episode: launch.episode,
+    };
   }
   const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
   if (providerMetadata) {

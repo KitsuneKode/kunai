@@ -81,6 +81,15 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/playback-recommendation-actions.ts",
     ["@/app-shell/types", "@/app-shell/workflows", "../app-shell/ink-shell"],
   ],
+  [
+    "apps/cli/src/services/offline/offline-library-action-router.ts",
+    ["@/app-shell/pickers", "@/app-shell/workflows"],
+  ],
+  [
+    "apps/cli/src/app/offline-playback-launch.ts",
+    ["@/app-shell/root-content-state", "@/app-shell/types"],
+  ],
+  ["apps/cli/src/infra/player/PlayerServiceImpl.ts", ["@/app-shell/root-content-state"]],
 ]);
 
 const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([

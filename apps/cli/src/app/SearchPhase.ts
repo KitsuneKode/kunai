@@ -32,7 +32,6 @@ import { titleInfoFromSearchResult } from "@/app/title-info";
 import {
   episodeInfoFromQueueEntry,
   mediaItemFromSearchResult,
-  titleInfoFromMediaItemIdentity,
   titleInfoFromQueueEntry,
 } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
@@ -43,11 +42,9 @@ import {
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
-import {
-  readCatalogBoundsForHistoryEntries,
-  seedCaughtUpReleaseProgressFromCatalogCount,
-} from "@/services/history-metadata/history-catalog-seed";
+import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import { observeOnline } from "@/services/network/network-observation";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
@@ -106,7 +103,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let routeSubtitle: string | undefined;
 
       while (true) {
+        const pendingOfflineLaunch = (
+          await import("./offline-playback-launch")
+        ).consumePendingOfflinePlaybackLaunch();
+        if (pendingOfflineLaunch) {
+          return { status: "success", value: pendingOfflineLaunch.title };
+        }
         const currentState = stateManager.getState();
+        if (container.config.offlineMode && currentState.searchQuery.trim().length === 0) {
+          container.stateManager.dispatch({
+            type: "OPEN_OVERLAY",
+            overlay: { type: "library", view: "library" },
+          });
+          return { status: "cancelled" };
+        }
         if (
           pendingInitialRoute &&
           currentState.searchQuery.trim().length === 0 &&
@@ -147,15 +157,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             searchIntent.intent.mode === "anime" || searchIntent.intent.mode === "series"
               ? searchIntent.intent.mode
               : currentState.mode;
-          const search = await searchTitles(searchIntent.intent.query, {
-            mode: searchMode,
-            providerId: currentState.provider,
-            animeLanguageProfile: container.config.animeLanguageProfile,
-            signal: context.signal,
-            searchRegistry,
-            providerRegistry,
-            enrichAnimeMetadata: true,
-          });
+          const search = await observeOnline(container, "search-error", () =>
+            searchTitles(searchIntent.intent.query, {
+              mode: searchMode,
+              providerId: currentState.provider,
+              animeLanguageProfile: container.config.animeLanguageProfile,
+              signal: context.signal,
+              searchRegistry,
+              providerRegistry,
+              enrichAnimeMetadata: true,
+            }),
+          );
           const results = search.results;
 
           logger.info("Bootstrap search complete", {
@@ -366,15 +378,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
-            const search = await searchTitles(searchIntent.intent, {
-              mode: stateManager.getState().mode,
-              providerId: stateManager.getState().provider,
-              animeLanguageProfile: container.config.animeLanguageProfile,
-              signal: context.signal,
-              searchRegistry,
-              providerRegistry,
-              enrichAnimeMetadata: true,
-            });
+            const search = await observeOnline(container, "search-error", () =>
+              searchTitles(searchIntent.intent, {
+                mode: stateManager.getState().mode,
+                providerId: stateManager.getState().provider,
+                animeLanguageProfile: container.config.animeLanguageProfile,
+                signal: context.signal,
+                searchRegistry,
+                providerRegistry,
+                enrichAnimeMetadata: true,
+              }),
+            );
             const results = search.results;
 
             logger.info("Search complete", {
@@ -412,7 +426,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const mode = stateManager.getState().mode;
-            const results = await loadDiscoveryList(mode, context.signal);
+            const results = await observeOnline(container, "search-error", () =>
+              loadDiscoveryList(mode, context.signal),
+            );
 
             logger.info("Discovery list loaded", {
               mode,
@@ -474,7 +490,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             return {
               ...warmResponse,
               revalidate: (async () => {
-                const discover = await loadDiscoverResults(container, { refresh: true });
+                const discover = await observeOnline(container, "search-error", () =>
+                  loadDiscoverResults(container, { refresh: true }),
+                );
                 return toBrowseResponse(discover);
               })(),
             };
@@ -496,6 +514,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         if (outcome.type === "cancelled") {
           return { status: "cancelled" };
+        }
+
+        if (outcome.type === "offline-playback") {
+          stateManager.dispatch({ type: "SELECT_TITLE", title: outcome.launch.title });
+          if (outcome.launch.episode) {
+            stateManager.dispatch({ type: "SELECT_EPISODE", episode: outcome.launch.episode });
+          }
+          return { status: "success", value: outcome.launch.title };
         }
 
         if (outcome.type === "action") {
@@ -552,15 +578,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               logger.info("Offline-ready idle row requested without a local job");
               continue;
             }
-            const { playCompletedDownload } = await import("./offline-playback");
-            await playCompletedDownload(container, jobId);
-            const offline = idleContext?.offlineReadyNext;
-            const title = titleInfoFromMediaItemIdentity({
-              titleId: offline?.titleId ?? jobId,
-              title: offline?.title ?? "Offline title",
-              mediaKind: "series",
-            });
-            return { status: "success", value: title };
+            const { prepareOfflinePlaybackLaunch } = await import("./offline-playback-launch");
+            const launch = await prepareOfflinePlaybackLaunch(container, jobId);
+            if (!launch) continue;
+            return { status: "success", value: launch.title };
           }
 
           if (outcome.action === "play-queue-next") {
