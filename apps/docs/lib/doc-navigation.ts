@@ -257,7 +257,8 @@ export const homeSectionConfigs: readonly HomeSectionConfig[] = [
   {
     title: "Build",
     eyebrow: "For contributors",
-    description: "Keep features documented, tested, and easy for future agents to extend.",
+    description:
+      "Keep features documented, tested, and straightforward for contributors to extend.",
     group: "develop",
   },
 ] as const;

@@ -1,5 +1,4 @@
 import { codeMetadata } from "./code-metadata";
-import { homeSectionsFromNav } from "./doc-navigation";
 
 export type HomeLink = {
   readonly title: string;
@@ -20,25 +19,19 @@ export type HomeFlowStep = {
   readonly state: "focus" | "ready" | "warn" | "danger" | "quiet";
 };
 
-export type HomeProof = {
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
-};
-
 export const homeHero = {
   eyebrow: "Kunai CLI",
   title: "A calm command shell for playable streams.",
   description:
-    "Search, resolve a direct provider stream, hand it to mpv, and recover from provider churn without losing your place. Local decryption, no browser required.",
+    "Search your catalog, resolve a direct stream locally, hand playback to mpv, and pick up where you left off when something breaks.",
   installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
   primaryCta: {
-    label: "Read the docs",
-    href: "/docs",
+    label: "Get started",
+    href: "/docs/users/getting-started",
   },
   secondaryCta: {
-    label: "See recovery",
-    href: "/docs/users/playback-and-recovery",
+    label: "Browse docs",
+    href: "/docs",
   },
 } as const;
 
@@ -46,17 +39,18 @@ const providerCount = codeMetadata.providerIds.length;
 
 export const homeHighlights = [
   {
-    label: "Provider truth",
-    detail: `${providerCount} active provider modules resolved locally. No cloud proxies, no Playwright.`,
+    label: "Direct providers",
+    detail: `${providerCount} provider modules resolve streams on your machine. No browser automation and no shared relay by default.`,
   },
   {
-    label: "Fast return loop",
+    label: "Continue watching",
     detail:
-      "Continue Watching, history, calendar, and recommendations stay reachable after playback ends.",
+      "History, calendar, recommendations, and offline downloads stay one command away after playback ends.",
   },
   {
-    label: "Recoverable playback",
-    detail: "Restart, recover, recompute, and fallback each handle a distinct failure mode.",
+    label: "Recovery built in",
+    detail:
+      "Recover, recompute, and fallback each handle a different stall — with diagnostics that stay redacted by default.",
   },
 ] as const;
 
@@ -64,54 +58,44 @@ export const homeFlow: readonly HomeFlowStep[] = [
   {
     title: "Search or continue",
     description:
-      "Search by title, continue the newest unfinished history entry, or pick from calendar, recommendations, or offline library.",
+      "Find a title, resume history, or open calendar, recommendations, or your offline library from the shell.",
     state: "focus",
   },
   {
-    title: "Resolve with evidence",
+    title: "Resolve locally",
     description:
-      "Kunai checks provider health, resolves streams through direct HTTP (no browser), validates the manifest, and keeps source inventory in SQLite.",
+      "Kunai checks provider health, resolves a direct stream, and keeps source inventory in SQLite before mpv starts.",
     state: "warn",
   },
   {
-    title: "Hand off to mpv",
+    title: "Play in mpv",
     description:
-      "The shell launches mpv, supervises position reporting, applies autoskip timing, and monitors for bootstrap stalls or playback death.",
+      "The shell supervises playback, resume offers, auto-skip, and post-play routing when the session ends or stalls.",
     state: "ready",
   },
-  {
-    title: "Recover without guessing",
-    description:
-      "When streams stall or providers drift: recover refreshes the current provider, recompute bypasses all caches, fallback tries the next provider in the priority chain.",
-    state: "danger",
-  },
-  {
-    title: "Return to the next beat",
-    description:
-      "Post-playback surfaces auto-advance, playlist queue, recommendations, and history — always one action from the next watch.",
-    state: "quiet",
-  },
 ] as const;
 
-export const homeProof: readonly HomeProof[] = [
+export const homeStartCards: readonly HomeLink[] = [
   {
-    label: "Playback contract",
-    value: "mpv first",
-    detail:
-      "Kunai resolves streams and supervises state; mpv remains the playback engine. No custom media pipeline.",
+    title: "Getting started",
+    href: "/docs/users/getting-started",
+    description: "Install Bun and mpv, run setup, and launch your first playback session.",
   },
   {
-    label: "Diagnostics posture",
-    value: "redacted",
-    detail:
-      "Support bundles exclude stream URLs, subtitle URLs, auth tokens, and home paths. Privacy-first by default.",
+    title: "What you can do",
+    href: "/docs/users/what-you-can-do",
+    description: "See the daily shell workflows for search, playback, downloads, and recovery.",
   },
   {
-    label: "Runtime model",
-    value: "Bun CLI",
-    detail:
-      "Terminal-first shell with codegen-synced command and provider counts. Predictable daily use.",
+    title: "Troubleshooting",
+    href: "/docs/users/troubleshooting",
+    description:
+      "Fix stalled streams, provider failures, and setup issues with symptom-first steps.",
+  },
+  {
+    title: "CLI reference",
+    href: "/docs/users/cli-reference",
+    description:
+      "Browse the full command list, launch flags, and provider tables synced from the CLI.",
   },
 ] as const;
-
-export const homeSections = homeSectionsFromNav();

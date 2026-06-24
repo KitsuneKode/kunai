@@ -1,13 +1,11 @@
-import { GuideLinkGrid } from "@/components/home/guide-link-grid";
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
-import type {
-  HomeCliOption,
-  HomeCommandMetadata,
-  HomeProviderMetadata,
-} from "@/components/home/types";
+import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
+import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
+import { StartHereCards } from "@/components/home/start-here-cards";
+import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { codeMetadata } from "@/lib/code-metadata";
-import { homeFlow, homeHero, homeHighlights, homeProof, homeSections } from "@/lib/home-content";
+import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-content";
+import type { ProviderSummary } from "@/lib/home-presenters";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -15,22 +13,33 @@ import HomePageInteractive from "./home-page-interactive";
 
 type HomePageShellProps = {
   readonly providers: readonly HomeProviderMetadata[];
-  readonly commands: readonly HomeCommandMetadata[];
-  readonly flags: readonly HomeCliOption[];
+  readonly paletteCommands: readonly HomeCommandMetadata[];
+  readonly allCommands: readonly HomeCommandMetadata[];
+  readonly providerSummary: ProviderSummary;
+  readonly cliVersion: string;
+  readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 };
 
-export default function HomePageShell({ providers, commands, flags }: HomePageShellProps) {
-  const proofItems = homeProof.map((item) => {
-    if (item.label !== "Runtime model") return item;
-    return {
-      ...item,
-      detail: `Terminal-first. ${codeMetadata.commandCount} shell commands across context groups. ${codeMetadata.providerIds.length} provider modules. 1 SQLite history DB. Predictable daily use.`,
-    };
-  });
-
+export default function HomePageShell({
+  providers,
+  paletteCommands,
+  allCommands,
+  providerSummary,
+  cliVersion,
+  runtimeBaseline,
+}: HomePageShellProps) {
   return (
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
-      <HomeHeroStatic />
+      <section className="kunai-home-hero grid items-center gap-10 pb-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <HomeHeroStatic />
+        <HomeTerminalIsland
+          providers={providers}
+          paletteCommands={paletteCommands}
+          allCommands={allCommands}
+          cliVersion={cliVersion}
+          runtimeBaseline={runtimeBaseline}
+        />
+      </section>
 
       <noscript>
         <p className="text-fd-muted-foreground mb-8 text-sm leading-relaxed">
@@ -40,18 +49,13 @@ export default function HomePageShell({ providers, commands, flags }: HomePageSh
         </p>
       </noscript>
 
-      <HomePageInteractive
-        providers={providers}
-        commands={commands}
-        flags={flags}
-        cliVersion={codeMetadata.cliVersion}
-        runtimeBaseline={codeMetadata.runtimeBaseline}
-      />
+      <HomePageInteractive />
 
-      <section className="kunai-flow-section">
+      <section className="kunai-home-steps kunai-flow-section">
         <SectionHeading
-          eyebrow="Playback path"
-          title="One readable path from intent to recovery."
+          eyebrow="How it works"
+          title="From search to mpv in three steps."
+          description="Kunai keeps the shell readable while providers, history, and recovery stay one command away."
         />
         <div className="kunai-flow">
           {homeFlow.map((step, index) => (
@@ -71,9 +75,9 @@ export default function HomePageShell({ providers, commands, flags }: HomePageSh
         </div>
       </section>
 
-      <section className="kunai-band">
-        <p className="kunai-eyebrow">Experience promise</p>
-        <h2 className="kunai-display-title">Designed for provider drift.</h2>
+      <section className="kunai-home-highlights kunai-band">
+        <p className="kunai-eyebrow">Why Kunai</p>
+        <h2 className="kunai-display-title">Built for daily playback, not demos.</h2>
         <div className="kunai-highlight-grid mt-6">
           {homeHighlights.map((item) => (
             <article className="kunai-highlight premium-card-hover" key={item.label}>
@@ -84,36 +88,26 @@ export default function HomePageShell({ providers, commands, flags }: HomePageSh
         </div>
       </section>
 
-      <section className="kunai-docs-section">
-        <SectionHeading eyebrow="Guides map" title="Pick a guide by operational role." />
-        <div className="grid gap-6">
-          {homeSections.map((section) => (
-            <GuideLinkGrid key={section.title} section={section} />
-          ))}
-        </div>
+      <section className="kunai-home-providers">
+        <SectionHeading
+          eyebrow="Providers"
+          title="Direct adapters on your machine."
+          description="Kunai resolves streams locally. See the provider guide for status, capabilities, and setup notes."
+        />
+        <ProviderSummaryCard summary={providerSummary} />
       </section>
 
-      <section className="kunai-proof-section">
-        <SectionHeading eyebrow="Reliability posture" title="Synced from the running CLI." />
-        <div className="kunai-proof-grid grid grid-cols-3 gap-6 max-lg:grid-cols-1">
-          {proofItems.map((item) => (
-            <article className="kunai-proof premium-card-hover" key={item.label}>
-              <span className="kunai-step-label text-[9px]">{item.label}</span>
-              <p className="kunai-type-mono kunai-type-title mt-3 text-2xl md:text-3xl">
-                {item.value}
-              </p>
-              <p className="kunai-type-body mt-3 text-xs">{item.detail}</p>
-            </article>
-          ))}
-        </div>
+      <section className="kunai-home-start kunai-docs-section">
+        <SectionHeading eyebrow="Start here" title="Pick the guide that matches your next step." />
+        <StartHereCards items={homeStartCards} />
       </section>
 
-      <section className="kunai-final kunai-surface-shell p-2">
+      <section className="kunai-home-final kunai-final kunai-surface-shell p-2">
         <div className="kunai-surface-shell__inner flex flex-col gap-6 p-8 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="kunai-eyebrow">Start here</p>
+            <p className="kunai-eyebrow">Ready to install</p>
             <h2 className="kunai-display-title max-w-2xl text-3xl md:text-4xl">
-              Install once. Keep the stream pipeline diagnostic-rich.
+              Install once, then keep playback predictable.
             </h2>
           </div>
           <div className="flex shrink-0 flex-wrap gap-4">
@@ -124,11 +118,8 @@ export default function HomePageShell({ providers, commands, flags }: HomePageSh
               <span>{homeHero.primaryCta.label}</span>
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Link>
-            <Link
-              className="kunai-button border-fd-border hover:border-fd-primary"
-              href="/docs/users/diagnostics-and-reporting"
-            >
-              Debug a session
+            <Link className="kunai-button border-fd-border hover:border-fd-primary" href="/docs">
+              Browse docs
             </Link>
           </div>
         </div>

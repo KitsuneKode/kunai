@@ -7,7 +7,7 @@ export function HomeHeroStatic() {
   const installCommand = homeHero.installCommands[0] ?? "bun install -g @kitsunekode/kunai";
 
   return (
-    <section className="kunai-hero-static border-fd-border mb-10 border-b pb-10">
+    <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
       <p className="kunai-eyebrow">{homeHero.eyebrow}</p>
       <h1 className="kunai-display-title mt-3 max-w-3xl text-balance">{homeHero.title}</h1>
       <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">

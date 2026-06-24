@@ -1,5 +1,6 @@
 import HomePageShell from "@/app/(home)/home-page-shell";
 import { codeMetadata } from "@/lib/code-metadata";
+import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
 import { websiteJsonLd } from "@/lib/json-ld";
 import { docsSiteUrl } from "@/lib/site";
 import type { Metadata } from "next";
@@ -31,6 +32,8 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   const jsonLd = websiteJsonLd();
+  const paletteCommands = featuredCommands(codeMetadata.commands);
+  const providerSummary = summarizeProviders(codeMetadata.providers);
 
   return (
     <>
@@ -40,8 +43,11 @@ export default function HomePage() {
       />
       <HomePageShell
         providers={codeMetadata.providers}
-        commands={codeMetadata.commands}
-        flags={codeMetadata.cliOptions}
+        paletteCommands={paletteCommands}
+        allCommands={codeMetadata.commands}
+        providerSummary={providerSummary}
+        cliVersion={codeMetadata.cliVersion}
+        runtimeBaseline={codeMetadata.runtimeBaseline}
       />
     </>
   );

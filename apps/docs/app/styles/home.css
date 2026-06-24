@@ -16,6 +16,23 @@
   background-position: center top;
 }
 
+.kunai-home-hero {
+  position: relative;
+}
+
+.kunai-home-install,
+.kunai-home-steps,
+.kunai-home-highlights,
+.kunai-home-providers,
+.kunai-home-start,
+.kunai-home-final {
+  margin-top: clamp(2.5rem, 5vw, 4rem);
+}
+
+.kunai-home-providers .kunai-surface-shell {
+  margin-top: 1.5rem;
+}
+
 .kunai-eyebrow {
   margin: 0;
   font-size: var(--kunai-text-caption);

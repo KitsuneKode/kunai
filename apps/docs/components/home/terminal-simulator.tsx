@@ -1,8 +1,6 @@
 "use client";
 
-import { CopyButton } from "@/components/ui/copy-button";
-import { homeHero } from "@/lib/home-content";
-import { Terminal as TerminalIcon, ArrowRight, Sparkles, Check } from "lucide-react";
+import { commandsForPalette } from "@/lib/home-presenters";
 import {
   motion,
   AnimatePresence,
@@ -11,32 +9,22 @@ import {
   useReducedMotion,
   useSpring,
 } from "motion/react";
-import Link from "next/link";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { HeroHeadline } from "./hero-headline";
 import type { HomeCommandMetadata, HomeLogEntry, HomeProviderMetadata } from "./types";
 
 interface TerminalSimulatorProps {
   readonly providers: readonly HomeProviderMetadata[];
-  readonly commands: readonly HomeCommandMetadata[];
-  readonly installCommands: readonly string[];
-  readonly primaryCtaHref: string;
-  readonly primaryCtaLabel: string;
-  readonly secondaryCtaHref: string;
-  readonly secondaryCtaLabel: string;
+  readonly paletteCommands: readonly HomeCommandMetadata[];
+  readonly allCommands: readonly HomeCommandMetadata[];
   readonly cliVersion: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 }
 
 const TerminalSimulator = memo(function TerminalSimulator({
   providers,
-  commands,
-  installCommands,
-  primaryCtaHref,
-  primaryCtaLabel,
-  secondaryCtaHref,
-  secondaryCtaLabel,
+  paletteCommands,
+  allCommands,
   cliVersion,
   runtimeBaseline,
 }: TerminalSimulatorProps) {
@@ -59,8 +47,6 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
 
-  // Decorative 3D tilt — driven off the React render cycle via motion values
-  // so pointer movement never re-renders this heavy client tree (F16).
   const prefersReducedMotion = useReducedMotion();
   const rotateXValue = useMotionValue(0);
   const rotateYValue = useMotionValue(0);
@@ -69,6 +55,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const rotateX = useSpring(rotateXValue, { stiffness: 350, damping: 28 });
   const rotateY = useSpring(rotateYValue, { stiffness: 350, damping: 28 });
   const glareBackground = useMotionTemplate`radial-gradient(350px circle at ${glareX}% ${glareY}%, var(--kunai-mesh-a), transparent 80%)`;
+
+  const filteredCommands = useMemo(
+    () => commandsForPalette(paletteCommands, allCommands, searchQuery),
+    [allCommands, paletteCommands, searchQuery],
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -91,21 +82,18 @@ const TerminalSimulator = memo(function TerminalSimulator({
     glareY.set(50);
   }, [glareX, glareY, rotateXValue, rotateYValue]);
 
-  // Auto-scroll terminal
   useEffect(() => {
     if (terminalBodyRef.current) {
       terminalBodyRef.current.scrollTop = terminalBodyRef.current.scrollHeight;
     }
   }, [terminalLogs]);
 
-  // Focus palette input when open
   useEffect(() => {
     if (commandPaletteOpen && paletteInputRef.current) {
       paletteInputRef.current.focus();
     }
   }, [commandPaletteOpen]);
 
-  // Handle outside clicks to close command palette
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (terminalStageRef.current && !terminalStageRef.current.contains(event.target as Node)) {
@@ -116,14 +104,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredCommands = commands.filter((cmd) => {
-    const q = searchQuery.toLowerCase().replace(/^\//, "");
-    return (
-      cmd.id.toLowerCase().includes(q) ||
-      cmd.label.toLowerCase().includes(q) ||
-      (cmd.aliases && cmd.aliases.some((alias: string) => alias.toLowerCase().includes(q)))
-    );
-  });
+  useEffect(() => {
+    if (selectedPaletteIndex >= filteredCommands.length) {
+      setSelectedPaletteIndex(0);
+    }
+  }, [filteredCommands.length, selectedPaletteIndex]);
 
   const focusTerminalInput = () => {
     if (terminalInputRef.current) {
@@ -238,11 +223,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
     } else if (cmdText.startsWith("/recover") || cmdText === "recover") {
       addLog("[RECOVERY] Recovery sequence initiated.", accDelay);
       accDelay += 300;
-      addLog("Bypassing memory buffers...", accDelay);
-      accDelay += 300;
-      addLog("Resolving fresh payload keys from upstream manifest...", accDelay);
+      addLog("Requesting a fresh stream from the active provider...", accDelay);
       accDelay += 500;
-      addLog("[ OK ] Resolved new stream segment (No playback drift). Resuming mpv...", accDelay);
+      addLog("[ OK ] Resolved new stream segment (no playback drift). Resuming mpv...", accDelay);
     } else if (cmdText.startsWith("/fallback") || cmdText === "fallback") {
       addLog("[WARN] Fallback sequence requested.", accDelay);
       accDelay += 300;
@@ -254,11 +237,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
     } else if (cmdText.startsWith("/help") || cmdText === "help") {
       addLog("Help Manual - Context Commands:", accDelay);
       accDelay += 150;
-      commands.slice(0, 8).forEach((cmd) => {
+      paletteCommands.forEach((cmd) => {
         addLog(`  /${cmd.id.padEnd(12)} - ${cmd.description}`, accDelay);
         accDelay += 50;
       });
-      addLog("Type '/' for full search overlay.", accDelay);
+      addLog("Type '/' for more commands or open the CLI reference.", accDelay);
     } else {
       addLog(`Evaluating unknown command: "${cmdText}"`, accDelay);
       accDelay += 300;
@@ -272,6 +255,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
+      if (filteredCommands.length === 0) return;
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedPaletteIndex((prev) => (prev + 1) % filteredCommands.length);
@@ -338,211 +323,131 @@ const TerminalSimulator = memo(function TerminalSimulator({
   };
 
   return (
-    <div className="grid min-h-[calc(100dvh-8rem)] grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)] items-center gap-10 pb-18 max-lg:min-h-0 max-lg:grid-cols-1 max-lg:pt-10">
-      <div className="kunai-reveal flex flex-col justify-center">
-        <div className="kunai-meta-pill mb-6">
-          <Sparkles className="kunai-text-accent h-3.5 w-3.5 animate-pulse" />
-          <span>{homeHero.eyebrow}</span>
-        </div>
+    <div className="relative flex w-full items-center justify-center" style={{ perspective: 1200 }}>
+      <div className="kunai-hero-glow" aria-hidden="true" />
 
-        <HeroHeadline title={homeHero.title} />
-
-        <p className="kunai-type-lead mt-7 max-w-xl">{homeHero.description}</p>
-
-        {/* Tactile Install Command in Hero */}
-        <div className="mt-6 flex w-full max-w-md flex-col gap-3">
-          <div className="hero-install-box text-fd-foreground flex items-center justify-between p-3 font-mono text-xs">
-            <div className="flex items-center gap-2 select-all">
-              <span className="kunai-text-accent opacity-70 select-none">$</span>
-              <span>bun install -g @kitsunekode/kunai</span>
-            </div>
-            <CopyButton text="bun install -g @kitsunekode/kunai" label="hero-install" />
-          </div>
-          <div className="kunai-step-meta flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span className="flex items-center gap-1">
-              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
-              Bun first
-            </span>
-            <span className="bg-fd-border h-1.5 w-1.5 rounded-full" />
-            <span className="flex items-center gap-1">
-              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
-              Local decryption
-            </span>
-            <span className="bg-fd-border h-1.5 w-1.5 rounded-full" />
-            <span className="flex items-center gap-1">
-              <Check className="kunai-text-ok h-3.5 w-3.5 stroke-[3]" />
-              No browser needed
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Link className="kunai-button kunai-button-primary" href={primaryCtaHref}>
-            <span>{primaryCtaLabel}</span>
-            <ArrowRight className="ml-1.5 h-4 w-4 shrink-0" />
-          </Link>
-          <Link className="kunai-button" href={secondaryCtaHref}>
-            <span>{secondaryCtaLabel}</span>
-          </Link>
-          <a className="kunai-button" href="#install">
-            <span>Quick start</span>
-          </a>
-          <button
-            type="button"
-            className="kunai-button kunai-text-accent border-fd-primary/20 hover:text-fd-foreground flex items-center gap-2"
-            onClick={() => onPresetClick("/help")}
-          >
-            <TerminalIcon className="h-4 w-4 shrink-0" />
-            <span>Interactive Simulator</span>
-          </button>
-        </div>
-      </div>
-
-      <div
-        className="relative flex w-full max-w-md items-center justify-center max-lg:max-w-none"
-        style={{ perspective: 1200 }}
+      <motion.aside
+        ref={terminalStageRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className={`kunai-terminal-stage group relative w-full overflow-hidden select-none ${
+          commandPaletteOpen ? "is-focused" : ""
+        }`}
+        style={{ transformStyle: "preserve-3d", rotateX, rotateY }}
+        aria-label="Kunai terminal preview"
       >
-        {/* Glow behind terminal */}
-        <div className="kunai-hero-glow" aria-hidden="true" />
+        <motion.div
+          className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          style={{ background: glareBackground }}
+        />
 
-        <motion.aside
-          ref={terminalStageRef}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-          className={`kunai-terminal-stage group relative w-full overflow-hidden select-none ${
-            commandPaletteOpen ? "is-focused" : ""
-          }`}
-          style={{ transformStyle: "preserve-3d", rotateX, rotateY }}
-          aria-label="Kunai terminal preview"
+        <div className="kunai-terminal-top">
+          <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
+            <span className="kunai-status-dot kunai-status-dot--focus" />
+            kunai shell
+          </span>
+          <span className="kunai-text-accent text-[10px] font-semibold">cli active</span>
+          <span className="kunai-step-meta">mpv verified</span>
+        </div>
+
+        <div
+          ref={terminalBodyRef}
+          className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
+          onClick={focusTerminalInput}
+          role="presentation"
         >
-          {/* Radial spotlight glare inside terminal */}
-          <motion.div
-            className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-            style={{ background: glareBackground }}
-          />
-
-          <div className="kunai-terminal-top">
-            <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
-              <span className="kunai-status-dot kunai-status-dot--focus" />
-              kunai shell
+          {terminalLogs.map((line) => (
+            <span key={line.id} className={getLogLineClass(line.text)}>
+              {line.text}
             </span>
-            <span className="kunai-text-accent text-[10px] font-semibold">cli active</span>
-            <span className="kunai-step-meta">mpv verified</span>
-          </div>
+          ))}
 
-          <div
-            ref={terminalBodyRef}
-            className="kunai-terminal-body scrollbar block max-h-[360px] min-h-[260px] w-full cursor-text text-left focus:outline-none"
-            onClick={focusTerminalInput}
-            role="presentation"
-          >
-            {terminalLogs.map((line) => (
-              <span key={line.id} className={getLogLineClass(line.text)}>
-                {line.text}
-              </span>
-            ))}
+          <span className="kunai-terminal-input-row">
+            <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
+            <input
+              ref={terminalInputRef}
+              type="text"
+              className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
+              value={terminalInput}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type '/' for commands..."
+              disabled={terminalState === "running"}
+              aria-label="Terminal command execution box"
+            />
+            <span className="kunai-cursor shrink-0" />
+          </span>
 
-            <span className="kunai-terminal-input-row">
-              <span className="kunai-text-accent mr-2 text-xs font-bold">kunai &gt;</span>
-              <input
-                ref={terminalInputRef}
-                type="text"
-                className="text-fd-foreground w-full border-none bg-transparent font-mono text-xs outline-none"
-                value={terminalInput}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Type '/' for commands..."
-                disabled={terminalState === "running"}
-                aria-label="Terminal command execution box"
-              />
-              <span className="kunai-cursor shrink-0" />
-            </span>
-
-            <AnimatePresence initial={false}>
-              {commandPaletteOpen && filteredCommands.length > 0 && (
-                <motion.span
-                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                  transition={{ type: "spring", duration: 0.3, bounce: 0.1 }}
-                  className="kunai-command-palette"
-                  onClick={(e) => e.stopPropagation()}
-                  role="presentation"
-                >
-                  <span className="palette-search-wrapper">
-                    <span className="kunai-text-accent mr-2 font-bold">/</span>
-                    <input
-                      ref={paletteInputRef}
-                      type="text"
-                      className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
-                      value={searchQuery.replace(/^\//, "")}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search commands..."
-                      aria-label="CLI commands query filter"
-                    />
-                  </span>
-                  <span className="palette-list block max-h-[180px] space-y-0.5 overflow-y-auto p-1.5">
-                    {filteredCommands.map((cmd, index) => (
-                      <button
-                        type="button"
-                        key={cmd.id}
-                        className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                          index === selectedPaletteIndex
-                            ? "is-selected"
-                            : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const runCmd = `/${cmd.id}`;
-                          setTerminalInput(runCmd);
-                          runSimulatedCommand(runCmd);
-                        }}
-                        onMouseEnter={() => setSelectedPaletteIndex(index)}
-                      >
-                        <span>
-                          <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
-                          <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
-                            ({cmd.label})
-                          </span>
-                          <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
-                        </span>
-                        <span className="palette-shortcut">Enter</span>
-                      </button>
-                    ))}
-                  </span>
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-            {["/search Dune", "/discover", "/calendar", "/setup"].map((cmd) => (
-              <button
-                type="button"
-                key={cmd}
-                onClick={() => onPresetClick(cmd)}
-                className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+          <AnimatePresence initial={false}>
+            {commandPaletteOpen && filteredCommands.length > 0 && (
+              <motion.span
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                transition={{ type: "spring", duration: 0.3, bounce: 0.1 }}
+                className="kunai-command-palette"
+                onClick={(e) => e.stopPropagation()}
+                role="presentation"
               >
-                {cmd}
-              </button>
-            ))}
-          </div>
+                <span className="palette-search-wrapper">
+                  <span className="kunai-text-accent mr-2 font-bold">/</span>
+                  <input
+                    ref={paletteInputRef}
+                    type="text"
+                    className="palette-search-input text-fd-foreground w-full border-none bg-transparent text-xs outline-none"
+                    value={searchQuery.replace(/^\//, "")}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search commands..."
+                    aria-label="CLI commands query filter"
+                  />
+                </span>
+                <span className="palette-list block max-h-[180px] space-y-0.5 overflow-y-auto p-1.5">
+                  {filteredCommands.map((cmd, index) => (
+                    <button
+                      type="button"
+                      key={cmd.id}
+                      className={`palette-item flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                        index === selectedPaletteIndex
+                          ? "is-selected"
+                          : "text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground"
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const runCmd = `/${cmd.id}`;
+                        setTerminalInput(runCmd);
+                        runSimulatedCommand(runCmd);
+                      }}
+                      onMouseEnter={() => setSelectedPaletteIndex(index)}
+                    >
+                      <span>
+                        <span className="text-fd-foreground font-semibold">/{cmd.id}</span>
+                        <span className="kunai-text-accent ml-1.5 text-[10px] opacity-60">
+                          ({cmd.label})
+                        </span>
+                        <span className="kunai-step-meta mt-0.5 block">{cmd.description}</span>
+                      </span>
+                      <span className="palette-shortcut">Enter</span>
+                    </button>
+                  ))}
+                </span>
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </div>
 
-          <div className="kunai-install mt-4 rounded-xl p-3">
-            <span className="kunai-step-meta mb-2 block font-semibold tracking-wider uppercase">
-              Install CLI package
-            </span>
-            <div className="space-y-1.5">
-              {installCommands.map((command) => (
-                <code key={command} className="kunai-code-row text-[11px]">
-                  <span>{command}</span>
-                  <CopyButton text={command} label={command} />
-                </code>
-              ))}
-            </div>
-          </div>
-        </motion.aside>
-      </div>
+        <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+          {["/search Dune", "/discover", "/calendar", "/setup"].map((cmd) => (
+            <button
+              type="button"
+              key={cmd}
+              onClick={() => onPresetClick(cmd)}
+              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-[10px] transition-[transform,border-color,background-color,color] duration-150 ease-out active:scale-[0.96]"
+            >
+              {cmd}
+            </button>
+          ))}
+        </div>
+      </motion.aside>
     </div>
   );
 });

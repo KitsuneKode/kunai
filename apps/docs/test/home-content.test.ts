@@ -2,18 +2,19 @@ import { describe, expect, test } from "bun:test";
 
 import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries, homeSectionsFromNav } from "../lib/doc-navigation";
-import { homeFlow, homeHero, homeProof } from "../lib/home-content";
+import { homeFlow, homeHero, homeHighlights, homeStartCards } from "../lib/home-content";
+import { featuredCommands } from "../lib/home-presenters";
 
 describe("docs home content", () => {
-  test("keeps install, runtime feedback, and maintenance entry points visible", () => {
-    expect(homeHero.primaryCta.href).toBe("/docs");
+  test("keeps install and getting-started entry points visible", () => {
+    expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
+    expect(homeHero.secondaryCta.href).toBe("/docs");
     expect(homeHero.installCommands).toContain("bun install -g @kitsunekode/kunai");
 
-    const links = homeSectionsFromNav().flatMap((section) =>
-      section.items.map((item) => item.href),
-    );
-    expect(links).toContain("/docs/users/runtime-feedback");
-    expect(links).toContain("/docs/developer/docs-maintenance");
+    const startHrefs = homeStartCards.map((card) => card.href);
+    expect(startHrefs).toContain("/docs/users/getting-started");
+    expect(startHrefs).toContain("/docs/users/troubleshooting");
+    expect(startHrefs).toContain("/docs/users/cli-reference");
   });
 
   test("home nav links are registered in doc-navigation", () => {
@@ -27,15 +28,22 @@ describe("docs home content", () => {
     }
   });
 
-  test("keeps recovery, provider truth, and privacy promises on the home page", () => {
-    expect(homeFlow.map((step) => step.title)).toContain("Recover without guessing");
-    expect(homeProof.map((item) => item.value)).toContain("redacted");
-    expect(homeHero.description).toContain("provider churn");
+  test("keeps recovery and provider promises in user-facing copy", () => {
+    expect(homeFlow.map((step) => step.title)).toContain("Play in mpv");
+    expect(homeHighlights.some((item) => item.label === "Recovery built in")).toBe(true);
+    expect(homeHero.description).toContain("pick up where you left off");
   });
 
   test("provider count in highlights matches codegen", () => {
-    const highlight = homeFlow.find((step) => step.title === "Resolve with evidence");
+    const highlight = homeHighlights.find((item) => item.label === "Direct providers");
     expect(highlight).toBeDefined();
+    expect(highlight?.detail).toContain(String(codeMetadata.providerIds.length));
     expect(codeMetadata.providerIds.length).toBeGreaterThan(0);
+  });
+
+  test("featured commands resolve from codegen metadata", () => {
+    const palette = featuredCommands(codeMetadata.commands);
+    expect(palette.some((command) => command.id === "search")).toBe(true);
+    expect(palette.some((command) => command.id === "help")).toBe(true);
   });
 });
