@@ -11,6 +11,7 @@ import {
   getLoadingShellTimerPolicy,
   getProviderResolveWaitPresentation,
   getStageAnimationVariant,
+  isPlaybackSupervisionOperation,
   normalizeLoadingIssue,
   normalizeProviderDetail,
   renderStageRail,
@@ -32,9 +33,12 @@ import { DetailLine } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
 import { APP_LABEL, palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
-import { useViewportPolicy } from "./use-viewport-policy";
+import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
+// Matches getLoadingDisclosure's `showDiagnostics`/`showElapsed` gate: the
+// runtime health line only becomes visible once the diagnostics strip reveals.
+const LOADING_DIAGNOSTICS_REVEAL_SECONDS = 5;
 
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
@@ -88,22 +92,31 @@ function useRuntimeHealthLine(
   refreshMs: number | null,
   getRuntimeHealth: (() => ShellPanelLine | undefined) | undefined,
 ): ShellPanelLine | undefined {
+  // Hold the latest getter in a ref so the polling effect depends only on
+  // refreshMs. The getter is rebuilt inline every parent render (and the parent
+  // re-renders on every playback telemetry tick), so depending on its identity
+  // would tear down and restart the interval constantly.
+  const getRuntimeHealthRef = React.useRef(getRuntimeHealth);
+  React.useEffect(() => {
+    getRuntimeHealthRef.current = getRuntimeHealth;
+  });
+
   const [healthLine, setHealthLine] = React.useState<ShellPanelLine | undefined>(() =>
     refreshMs === null ? undefined : getRuntimeHealth?.(),
   );
 
   React.useEffect(() => {
-    if (refreshMs === null || !getRuntimeHealth) {
+    if (refreshMs === null) {
       setHealthLine(undefined);
       return undefined;
     }
 
-    setHealthLine(getRuntimeHealth());
+    setHealthLine(getRuntimeHealthRef.current?.());
     const timer = setInterval(() => {
-      setHealthLine(getRuntimeHealth());
+      setHealthLine(getRuntimeHealthRef.current?.());
     }, refreshMs);
     return () => clearInterval(timer);
-  }, [getRuntimeHealth, refreshMs]);
+  }, [refreshMs]);
 
   return healthLine;
 }
@@ -324,12 +337,18 @@ export const LoadingShell = React.memo(function LoadingShell({
   const memoryPanelPinned = Boolean(state.showMemory && memoryPanelVisible);
 
   usePlaybackPosterSurfaceCleanup(state.operation);
+  const supervisingPlayback = isPlaybackSupervisionOperation(state.operation);
+  const elapsed = useElapsed(!supervisingPlayback);
+  // Only poll runtime health when it is actually rendered: while supervising
+  // playback it rides the memory panel, and during bootstrap the diagnostics
+  // strip (and the health line with it) is gated to elapsed >= reveal seconds.
+  // Polling before that just churns re-renders behind a hidden strip.
   const timerPolicy = getLoadingShellTimerPolicy({
     operation: state.operation,
     memoryPanelVisible,
-    runtimeHealthVisible: memoryPanelVisible || state.operation !== "playing",
+    runtimeHealthVisible:
+      memoryPanelVisible || (!supervisingPlayback && elapsed >= LOADING_DIAGNOSTICS_REVEAL_SECONDS),
   });
-  const elapsed = useElapsed(timerPolicy.trackElapsed);
   const memoryLine = useRuntimeMemoryLine(timerPolicy.memoryRefreshMs);
   const runtimeHealthLine = useRuntimeHealthLine(
     timerPolicy.runtimeHealthRefreshMs,
@@ -341,7 +360,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     hasMemoryLine: Boolean(memoryLine),
     hasRuntimeHealthLine: Boolean(runtimeHealthLine),
   });
-  const loadingViewport = useViewportPolicy("playback");
+  const loadingViewport = useDebouncedViewportPolicy("playback");
   const terminalColumns = loadingViewport.columns;
   const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
   React.useEffect(() => {

@@ -11,7 +11,7 @@ export type LoadingShellTimerPolicy = {
   readonly freezeWhenOffscreen: boolean;
 };
 
-function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"]): boolean {
+export function isPlaybackSupervisionOperation(operation: LoadingShellState["operation"]): boolean {
   return operation === "playing";
 }
 

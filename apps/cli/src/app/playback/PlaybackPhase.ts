@@ -850,6 +850,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       };
 
       // Inner playback loop
+      // Tracks the previous iteration's abort controller so fire-and-forget
+      // per-iteration work (late subtitle resolve/attach) is cancelled when the
+      // loop advances to the next episode/retry/fallback, instead of leaking
+      // into the new iteration and attaching to the wrong mpv session.
+      let previousIterationAbort: AbortController | null = null;
       while (true) {
         if (context.signal.aborted) {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
@@ -857,7 +862,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           return { status: "cancelled" };
         }
 
+        previousIterationAbort?.abort();
         const playbackIterationAbort = new AbortController();
+        previousIterationAbort = playbackIterationAbort;
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
         const episodeScopeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
