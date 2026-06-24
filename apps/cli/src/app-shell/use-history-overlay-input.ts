@@ -4,7 +4,6 @@ import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
   buildRootHistorySelection,
-  resolveRootHistorySelection,
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
 import type { Container } from "@/container";

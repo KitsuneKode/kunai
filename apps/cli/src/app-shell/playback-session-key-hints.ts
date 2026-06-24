@@ -1,4 +1,5 @@
 import { formatChord, KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
+import { isLocalPlaybackStream } from "@/app/playback-source-ui";
 import {
   buildPlaybackControlSummary,
   type PlaybackSessionControlInput,
@@ -61,6 +62,12 @@ export function formatPlaybackSessionKeysHint(
 ): string {
   const control = buildPlaybackControlSummary(input.stream);
   const parts: string[] = [];
+
+  if (input.stream && isLocalPlaybackStream(input.stream)) {
+    parts.push("↓ offline");
+  } else if (input.stream?.providerResolveResult) {
+    parts.push("online");
+  }
 
   appendPlaybackSessionStatusChips(parts, input);
   appendBindingHint(parts, bindings, "player-stop");

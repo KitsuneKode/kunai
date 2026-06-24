@@ -71,6 +71,9 @@ export function buildRootStatusSummary({
   playlistCount,
   notificationCount,
   newEpisodeNotificationCount,
+  offlineMode = false,
+  networkAvailable = true,
+  playbackIsLocal = false,
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -81,6 +84,9 @@ export function buildRootStatusSummary({
   playlistCount?: number;
   notificationCount?: number;
   newEpisodeNotificationCount?: number;
+  offlineMode?: boolean;
+  networkAvailable?: boolean;
+  playbackIsLocal?: boolean;
 }): RootStatusSummary {
   const isActivePlayback =
     rootStatus === "playing" ||
@@ -101,7 +107,17 @@ export function buildRootStatusSummary({
 
   // Crumb: stable session context only. Title/episode live in the Now Playing body;
   // subtitle state lives in the NOW row — avoid repeating facts in the header strip.
-  const crumbParts: string[] = [resolveContentKind(state.currentTitle, state.mode), providerCrumb];
+  const crumbParts: string[] = [];
+  if (offlineMode) {
+    crumbParts.push("offline mode");
+  } else if (!networkAvailable) {
+    crumbParts.push("no network");
+  }
+  if (isActivePlayback && playbackIsLocal) {
+    crumbParts.push("↓ offline");
+  } else {
+    crumbParts.push(resolveContentKind(state.currentTitle, state.mode), providerCrumb);
+  }
   if (!isActivePlayback) {
     if (streak !== undefined && streak >= 2) {
       crumbParts.push(`🔥 ${streak}d`);
@@ -141,6 +157,10 @@ export function buildRootStatusSummary({
     alert = { text: "⚠ stop after current", tone: "warning" };
   } else if (downloadStatus) {
     alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
+  } else if (offlineMode && !isActivePlayback) {
+    alert = { text: "offline mode · library only", tone: "info" };
+  } else if (!networkAvailable && !offlineMode && !isActivePlayback) {
+    alert = { text: "network unavailable · local copies preferred", tone: "warning" };
   }
   // Standing notification count is NOT an alert — the alert slot is reserved for
   // transient alarms (playback problem, autoplay paused, download progress).

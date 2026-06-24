@@ -235,4 +235,36 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert?.text).toBe("⬇ 2 active  ·  1 failed  ·  4 completed");
     expect(summary.alert?.tone).toBe("info");
   });
+
+  test("surfaces offline mode and local playback in the header crumb", () => {
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const playingLocal = {
+      ...base,
+      currentTitle: { id: "tv:1", name: "Demo", type: "series" as const },
+      currentEpisode: { season: 1, episode: 2 },
+      playbackStatus: "playing" as const,
+      stream: { url: "/tmp/demo.mkv", headers: {}, timestamp: Date.now() },
+    };
+
+    const offlineBrowse = buildRootStatusSummary({
+      state: base,
+      currentViewLabel: "home",
+      rootStatus: "ready",
+      offlineMode: true,
+    });
+    expect(offlineBrowse.crumb).toContain("offline mode");
+    expect(offlineBrowse.alert?.text).toBe("offline mode · library only");
+
+    const localPlayback = buildRootStatusSummary({
+      state: playingLocal,
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+      playbackIsLocal: true,
+    });
+    expect(localPlayback.crumb).toContain("↓ offline");
+  });
 });
