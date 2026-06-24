@@ -75,6 +75,7 @@ import {
   createBootstrapResumeResolver,
   resumeSecondsFromHistoryForEpisode,
 } from "@/app/playback/playback-resume-from-history";
+import { createPlaybackRunState } from "@/app/playback/playback-run-state";
 import { PlaybackSelectionCoordinator } from "@/app/playback/playback-selection-coordinator";
 import {
   createPlaybackSessionState,
@@ -128,7 +129,6 @@ import {
 import {
   createSourceRefreshCooldownState,
   resolveSourceRefreshDecision,
-  type SourceRefreshAction,
 } from "@/app/playback/source-refresh-policy";
 import {
   choosePlaybackSubtitle,
@@ -587,8 +587,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       readonly EpisodePickerOption[] | undefined
     >();
     const playbackTimingByEpisode = new Map<string, PlaybackTimingMetadata | null>();
-    let playbackSession: PlaybackSessionState = createPlaybackSessionState({
-      autoNextEnabled: config.autoNext,
+    const run = createPlaybackRunState({
+      playbackSession: createPlaybackSessionState({ autoNextEnabled: config.autoNext }),
+      pendingStart: startFromBeginning(),
     });
     const selectionCoordinator = new PlaybackSelectionCoordinator({
       titleId: title.id,
@@ -606,18 +607,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     ): Promise<void> => {
       await selectionCoordinator.applyEpisodeSelection(providerId, target, selection);
     };
-    let sessionSoftProviderId: string | null = null;
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
-    let pendingSourceRefreshAction: SourceRefreshAction | null = null;
-    let pendingRecomputeSources = false;
-    let episodePlaybackSourceOverride: "local" | "online" | null = null;
-    let localEpisodeTiming: PlaybackTimingMetadata | null = null;
-    let localPlaybackJobId: string | null = null;
 
     try {
       // Episode selection (for series)
       let episode: EpisodeInfo | undefined;
-      let pendingStart = startFromBeginning();
       // One-shot shared start position from a share link (kunai://...&t=). Consumed once
       // here; the series path applies it via the resolver, the movie path inline below.
       // A title is either movie or series, so the two paths never double-apply it.
@@ -647,7 +641,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       ) => {
         const result = await applyPlaybackEpisodeNavigation({
           episode: target,
-          session: playbackSession,
+          session: run.playbackSession,
           cancelPrefetchReason: options.cancelPrefetchReason,
           loadingOrder: options.loadingOrder,
           resetStopAfterCurrent: options.resetStopAfterCurrent,
@@ -665,7 +659,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused }),
           },
         });
-        playbackSession = result.session;
+        run.playbackSession = result.session;
         return result.startIntent;
       };
       const provider = providerRegistry.get(stateManager.getState().provider);
@@ -731,7 +725,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         if (preselectedEpisode) {
           episode = preselectedEpisode;
-          pendingStart = await startNavigationToEpisode(episode);
+          run.pendingStart = await startNavigationToEpisode(episode);
         } else {
           const { chooseStartingEpisode } = await import("@/session-flow");
           const selection = await chooseStartingEpisode({
@@ -762,7 +756,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
           });
-          pendingStart =
+          run.pendingStart =
             selection.startAt !== undefined || selection.suppressResumePrompt
               ? startFromEpisodeSelection(selection)
               : await startNavigationToEpisode(episode);
@@ -787,16 +781,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           };
         }
         episode = { season: 1, episode: 1 };
-        pendingStart = startFromEpisodeSelection(selection);
+        run.pendingStart = startFromEpisodeSelection(selection);
         if (bootstrapStartSeconds !== undefined && bootstrapStartSeconds > 0) {
-          pendingStart = startAtResumePoint(bootstrapStartSeconds, { suppressResumePrompt: true });
+          run.pendingStart = startAtResumePoint(bootstrapStartSeconds, {
+            suppressResumePrompt: true,
+          });
         }
       }
 
       stateManager.dispatch({ type: "SELECT_EPISODE", episode });
-      playbackSession = this.transitionPlaybackSession(
+      run.playbackSession = this.transitionPlaybackSession(
         context,
-        playbackSession,
+        run.playbackSession,
         "episode-selected",
         {
           titleId: title.id,
@@ -811,8 +807,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // (P key) reuses the exact same StreamInfo without provider resolve or cache lookup.
       const recentEpisodeStreams = new Map<string, RecentPlaybackStreamRecord>();
       const deadStreamUrls = createDeadStreamUrlLedger();
-      let autoSourceRecoverAttempts = 0;
-      let autoRecoverEpisodeKey: string | null = null;
       let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
       const invalidateRecentEpisodeStream = (targetEpisode: EpisodeInfo): void => {
         recentEpisodeStreams.delete(recentPlaybackStreamKey(title.id, targetEpisode));
@@ -831,7 +825,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return selected?.sourceId === preferred.sourceId;
       };
       const prepareStreamSwitchRestart = async (targetEpisode: EpisodeInfo): Promise<void> => {
-        pendingSourceRefreshAction = "recover";
+        run.pendingSourceRefreshAction = "recover";
         invalidateRecentEpisodeStream(targetEpisode);
         this.updatePlaybackFeedback(context, {
           detail: "Switching stream…",
@@ -859,18 +853,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
         const episodeScopeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
-        if (autoRecoverEpisodeKey !== episodeScopeKey) {
-          autoRecoverEpisodeKey = episodeScopeKey;
-          autoSourceRecoverAttempts = 0;
+        if (run.autoRecoverEpisodeKey !== episodeScopeKey) {
+          run.autoRecoverEpisodeKey = episodeScopeKey;
+          run.autoSourceRecoverAttempts = 0;
         }
         const queuedSourceOverride = playerControl.consumePendingEpisodeSourceOverride();
         if (queuedSourceOverride) {
-          episodePlaybackSourceOverride = queuedSourceOverride;
+          run.episodePlaybackSourceOverride = queuedSourceOverride;
           invalidateRecentEpisodeStream(currentEpisode);
         }
-        playbackSession = this.transitionPlaybackSession(
+        run.playbackSession = this.transitionPlaybackSession(
           context,
-          playbackSession,
+          run.playbackSession,
           "resolve-started",
           {
             titleId: title.id,
@@ -911,11 +905,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         try {
           const configuredProviderId = stateManager.getState().provider;
-          if (sessionSoftProviderId && sessionSoftProviderId !== configuredProviderId) {
-            sessionSoftProviderId = null;
+          if (run.sessionSoftProviderId && run.sessionSoftProviderId !== configuredProviderId) {
+            run.sessionSoftProviderId = null;
           }
           const currentProvider = providerRegistry.get(
-            sessionSoftProviderId ?? configuredProviderId,
+            run.sessionSoftProviderId ?? configuredProviderId,
           );
 
           if (!currentProvider) {
@@ -984,8 +978,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             resolvedProviderId = restart.resolvedProviderId;
             if (restart.requiresFreshResolve) {
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = false;
             }
             return restart.startIntent;
           };
@@ -1201,10 +1195,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             note: "Esc cancels this resolve and returns to results",
           });
 
-          const sourceRefreshAction = pendingSourceRefreshAction;
-          pendingSourceRefreshAction = null;
-          const recomputeSources = pendingRecomputeSources;
-          pendingRecomputeSources = false;
+          const sourceRefreshAction = run.pendingSourceRefreshAction;
+          run.pendingSourceRefreshAction = null;
+          const recomputeSources = run.pendingRecomputeSources;
+          run.pendingRecomputeSources = false;
           await selectionCoordinator.hydrate(currentProvider.metadata.id, currentEpisode);
           const profileContext = {
             mode: stateManager.getState().mode,
@@ -1339,7 +1333,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const pendingUserProviderSwitch = providerSwitchSeq !== consumedProviderSwitchSeq;
           if (pendingUserProviderSwitch) {
             consumedProviderSwitchSeq = providerSwitchSeq;
-            sessionSoftProviderId = null;
+            run.sessionSoftProviderId = null;
             stream = null;
           }
 
@@ -1382,16 +1376,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               currentEpisode,
               {
                 entrypoint: "online-search",
-                forceOnline: episodePlaybackSourceOverride === "online",
-                forceLocal: episodePlaybackSourceOverride === "local",
+                forceOnline: run.episodePlaybackSourceOverride === "online",
+                forceLocal: run.episodePlaybackSourceOverride === "local",
               },
             );
-            episodePlaybackSourceOverride = null;
+            run.episodePlaybackSourceOverride = null;
             if (localResolution) {
               stream = localResolution.stream;
               streamProvenance = "local";
-              localEpisodeTiming = localResolution.timing;
-              localPlaybackJobId = localResolution.jobId;
+              run.localEpisodeTiming = localResolution.timing;
+              run.localPlaybackJobId = localResolution.jobId;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "playback",
@@ -1618,7 +1612,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 from: currentProvider.metadata.id,
                 fallback: resolvedProviderId,
               });
-              sessionSoftProviderId = resolvedProviderId;
+              run.sessionSoftProviderId = resolvedProviderId;
               const fallbackName =
                 providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
               this.updatePlaybackFeedback(context, {
@@ -1689,7 +1683,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   .getCompatible(title, stateManager.getState().mode)
                   .find((candidate) => candidate.metadata.id !== currentProvider.metadata.id);
                 if (fallback) {
-                  sessionSoftProviderId = null;
+                  run.sessionSoftProviderId = null;
                   stateManager.dispatch({ type: "SET_PROVIDER", provider: fallback.metadata.id });
                   this.updatePlaybackFeedback(context, {
                     detail: `Trying ${fallback.metadata.name ?? fallback.metadata.id}…`,
@@ -1719,9 +1713,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               attempts: resolveAttempts,
               capabilitySnapshot: container.capabilitySnapshot,
             });
-            playbackSession = this.transitionPlaybackSession(
+            run.playbackSession = this.transitionPlaybackSession(
               context,
-              playbackSession,
+              run.playbackSession,
               "failure-shown",
               {
                 titleId: title.id,
@@ -1732,9 +1726,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
             const problemAction = await this.showPlaybackProblem(context, problem);
             if (problemAction === "retry") {
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = true;
-              autoSourceRecoverAttempts = 0;
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = true;
+              run.autoSourceRecoverAttempts = 0;
               invalidateRecentEpisodeStream(currentEpisode);
               this.updatePlaybackFeedback(context, {
                 detail: "Retrying with fresh provider sources…",
@@ -1755,8 +1749,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
           recordStartupMark("timing-wait-started", stream);
-          const fetchedPlaybackTiming = localEpisodeTiming ?? (await timingFetch);
-          localEpisodeTiming = null;
+          const fetchedPlaybackTiming = run.localEpisodeTiming ?? (await timingFetch);
+          run.localEpisodeTiming = null;
           recordStartupMark("timing-ready", stream);
           const playbackTiming = mergeTimingMetadata(
             fetchedPlaybackTiming,
@@ -1815,9 +1809,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (first !== undefined) recentEpisodeStreams.delete(first);
           }
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
-          playbackSession = this.transitionPlaybackSession(
+          run.playbackSession = this.transitionPlaybackSession(
             context,
-            playbackSession,
+            run.playbackSession,
             "stream-ready",
             {
               titleId: title.id,
@@ -1829,8 +1823,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           // Play in MPV — consume the pending resume position on the first play only.
           // Pass loading handle so playStream can update it in-place (no shell flicker).
-          const startIntent = pendingStart;
-          pendingStart = startFromBeginning();
+          const startIntent = run.pendingStart;
+          run.pendingStart = startFromBeginning();
 
           let prefetchedRecommendationItems: readonly SearchResult[] | null = null;
           let nextPrefetchProgress: EpisodePrefetchProgress = {};
@@ -1838,7 +1832,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const nextEp = episodeAvailability.nextEpisode;
             if (!nextEp) return null;
             const prefetchMetadata = providerRegistry.get(
-              sessionSoftProviderId ?? stateManager.getState().provider,
+              run.sessionSoftProviderId ?? stateManager.getState().provider,
             );
             if (!prefetchMetadata) return null;
             return buildPrefetchTarget(nextEp, prefetchMetadata.metadata.id);
@@ -1933,16 +1927,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               !isEpisodePrefetchEligible({
                 titleType: title.type,
                 hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
-                stopAfterCurrent: playbackSession.stopAfterCurrent,
-                sessionMode: playbackSession.mode,
-                autoplayPaused: playbackSession.autoplayPaused,
+                stopAfterCurrent: run.playbackSession.stopAfterCurrent,
+                sessionMode: run.playbackSession.mode,
+                autoplayPaused: run.playbackSession.autoplayPaused,
               })
             ) {
               return;
             }
             const nextEp = episodeAvailability.nextEpisode;
             const prefetchMetadata = providerRegistry.get(
-              sessionSoftProviderId ?? stateManager.getState().provider,
+              run.sessionSoftProviderId ?? stateManager.getState().provider,
             );
             if (nextEp && prefetchMetadata) {
               await selectionCoordinator.hydrate(prefetchMetadata.metadata.id, nextEp);
@@ -1974,9 +1968,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
 
-          playbackSession = this.transitionPlaybackSession(
+          run.playbackSession = this.transitionPlaybackSession(
             context,
-            playbackSession,
+            run.playbackSession,
             "playback-started",
             {
               titleId: title.id,
@@ -2001,7 +1995,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               context,
               startIntent.startAt,
               startIntent.resumePromptAt,
-              playbackSession.mode,
+              run.playbackSession.mode,
               playbackTiming,
               maybePrefetchNext,
               startIntent.suppressResumePrompt,
@@ -2023,9 +2017,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             await container.player.releasePersistentSession();
             return { status: "cancelled" };
           }
-          playbackSession = this.transitionPlaybackSession(
+          run.playbackSession = this.transitionPlaybackSession(
             context,
-            playbackSession,
+            run.playbackSession,
             "playback-ended",
             {
               titleId: title.id,
@@ -2109,7 +2103,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               this.updatePlaybackFeedback(context, {
                 note: `✓ ${title.name}${epStr} · episode complete`,
               });
-              if (streamProvenance === "local" && localPlaybackJobId) {
+              if (streamProvenance === "local" && run.localPlaybackJobId) {
                 container.offlineRunwayService.enqueueEvaluation(
                   title.id,
                   "offline-playback-complete",
@@ -2212,21 +2206,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             playbackControlAction === "pick-episode"
               ? playerControl.consumePendingEpisodeSelection()
               : null;
-          playbackSession = syncPlaybackSessionState(playbackSession, {
+          run.playbackSession = syncPlaybackSessionState(run.playbackSession, {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             stopAfterCurrent: stateManager.getState().stopAfterCurrent,
           });
           const playbackDecision = resolvePlaybackResultDecision({
             result,
             controlAction: playbackControlAction,
-            session: playbackSession,
+            session: run.playbackSession,
             timing: effectiveTiming.current,
             endPolicy: {
               quitNearEndBehavior: config.quitNearEndBehavior,
               quitNearEndThresholdMode: config.quitNearEndThresholdMode,
             },
           });
-          playbackSession = playbackDecision.session;
+          run.playbackSession = playbackDecision.session;
           if (playbackDecision.shouldTreatAsInterrupted) {
             stateManager.dispatch({
               type: "SET_SESSION_AUTOPLAY_PAUSED",
@@ -2242,7 +2236,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             if (
               isAutoSourceRecover &&
-              autoSourceRecoverAttempts >= MAX_AUTO_SOURCE_RECOVER_ATTEMPTS
+              run.autoSourceRecoverAttempts >= MAX_AUTO_SOURCE_RECOVER_ATTEMPTS
             ) {
               diagnosticsService.record({
                 category: "playback",
@@ -2274,12 +2268,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 note: "Press o for sources, f for fallback, r to retry, or /diagnostics for details",
               });
             } else {
-              pendingRecomputeSources = playbackControlAction === "recompute";
-              pendingStart = startAtResumePoint(
+              run.pendingRecomputeSources = playbackControlAction === "recompute";
+              run.pendingStart = startAtResumePoint(
                 toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
                 { suppressResumePrompt: true },
               );
-              pendingSourceRefreshAction =
+              run.pendingSourceRefreshAction =
                 playbackControlAction === "recompute"
                   ? "recover"
                   : result.suspectedDeadStream === true ||
@@ -2288,12 +2282,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     ? "recover"
                     : "refresh";
               if (isAutoSourceRecover) {
-                autoSourceRecoverAttempts += 1;
+                run.autoSourceRecoverAttempts += 1;
               }
               diagnosticsService.record({
                 category: "playback",
                 message:
-                  pendingSourceRefreshAction === "recover"
+                  run.pendingSourceRefreshAction === "recover"
                     ? "Recovery requested for current provider source"
                     : "Refresh requested for current provider source",
                 context: {
@@ -2301,23 +2295,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.startAt,
-                  action: pendingSourceRefreshAction,
-                  recomputeSources: pendingRecomputeSources,
+                  resumeSeconds: run.pendingStart.startAt,
+                  action: run.pendingSourceRefreshAction,
+                  recomputeSources: run.pendingRecomputeSources,
                   autoRecover: isAutoSourceRecover,
-                  autoRecoverAttempts: autoSourceRecoverAttempts,
+                  autoRecoverAttempts: run.autoSourceRecoverAttempts,
                 },
               });
-              playbackSession = this.transitionPlaybackSession(
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "recovery-started",
                 {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
                   provider: resolvedProviderId,
-                  action: pendingSourceRefreshAction,
+                  action: run.pendingSourceRefreshAction,
                 },
               );
               continue;
@@ -2325,7 +2319,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           if (playbackDecision.shouldFallbackProvider) {
-            pendingStart = startEpisodeNavigation({
+            run.pendingStart = startEpisodeNavigation({
               targetResumeSeconds: toHistoryTimestamp(
                 result,
                 effectiveTiming.current,
@@ -2338,7 +2332,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             );
 
             if (fallback) {
-              sessionSoftProviderId = null;
+              run.sessionSoftProviderId = null;
               const switched = await switchPlaybackProviderFallback({
                 container,
                 fromProviderId: resolvedProviderId,
@@ -2349,8 +2343,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 invalidateRecentEpisodeStream,
               });
               resolvedProviderId = switched.providerId;
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = false;
               diagnosticsService.record({
                 category: "playback",
                 message: "Switching to fallback provider after playback control request",
@@ -2360,7 +2354,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: pendingStart.resumePromptAt,
+                  resumeSeconds: run.pendingStart.resumePromptAt,
                 },
               });
               continue;
@@ -2388,7 +2382,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "next" && title.type === "series") {
             if (episodeAvailability.nextEpisode) {
-              pendingStart = await navigatePlaybackEpisode(episodeAvailability.nextEpisode, {
+              run.pendingStart = await navigatePlaybackEpisode(episodeAvailability.nextEpisode, {
                 loadingOrder: "before-start",
                 resetStopAfterCurrent: true,
                 resumeInterruptedAutoplay: true,
@@ -2403,18 +2397,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "previous" && title.type === "series") {
             if (episodeAvailability.previousEpisode) {
-              pendingStart = await navigatePlaybackEpisode(episodeAvailability.previousEpisode, {
-                cancelPrefetchReason: "user-navigation",
-                loadingOrder: "after-start",
-                resetStopAfterCurrent: true,
-                resumeInterruptedAutoplay: true,
-              });
+              run.pendingStart = await navigatePlaybackEpisode(
+                episodeAvailability.previousEpisode,
+                {
+                  cancelPrefetchReason: "user-navigation",
+                  loadingOrder: "after-start",
+                  resetStopAfterCurrent: true,
+                  resumeInterruptedAutoplay: true,
+                },
+              );
               continue;
             }
           }
 
           if (playbackControlAction === "pick-episode" && confirmedEpisodeSelection) {
-            pendingStart = await navigatePlaybackEpisode(confirmedEpisodeSelection, {
+            run.pendingStart = await navigatePlaybackEpisode(confirmedEpisodeSelection, {
               cancelPrefetchReason: "user-navigation",
               loadingOrder: "after-start",
               resetStopAfterCurrent: true,
@@ -2425,7 +2422,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-source") {
             if (confirmedStreamSelection) {
-              pendingStart = await applyConfirmedPlaybackTrackSelection(
+              run.pendingStart = await applyConfirmedPlaybackTrackSelection(
                 playbackControlAction,
                 confirmedStreamSelection,
                 toHistoryTimestamp(
@@ -2448,7 +2445,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart = await completeSourceTrackPick(
+              run.pendingStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
@@ -2462,7 +2459,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-stream") {
             if (confirmedStreamSelection) {
-              pendingStart = await applyConfirmedPlaybackTrackSelection(
+              run.pendingStart = await applyConfirmedPlaybackTrackSelection(
                 playbackControlAction,
                 confirmedStreamSelection,
                 toHistoryTimestamp(
@@ -2481,7 +2478,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart = await completeSourceTrackPick(
+              run.pendingStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
@@ -2495,7 +2492,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (playbackControlAction === "pick-quality") {
             if (confirmedStreamSelection) {
-              pendingStart = await applyConfirmedPlaybackTrackSelection(
+              run.pendingStart = await applyConfirmedPlaybackTrackSelection(
                 playbackControlAction,
                 confirmedStreamSelection,
                 toHistoryTimestamp(
@@ -2518,7 +2515,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 effectiveTiming.current,
                 config.quitNearEndThresholdMode,
               );
-              pendingStart = await completeSourceTrackPick(
+              run.pendingStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
@@ -2540,9 +2537,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               duration: result.duration,
               lastNonZeroPos: result.lastNonZeroPositionSeconds,
               lastNonZeroDur: result.lastNonZeroDurationSeconds,
-              sessionMode: playbackSession.mode,
-              autoplayPaused: playbackSession.autoplayPaused,
-              stopAfterCurrent: playbackSession.stopAfterCurrent,
+              sessionMode: run.playbackSession.mode,
+              autoplayPaused: run.playbackSession.autoplayPaused,
+              stopAfterCurrent: run.playbackSession.stopAfterCurrent,
               hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
               upcomingNext: episodeAvailability.upcomingNext,
               animeNextReleaseUnknown: episodeAvailability.animeNextReleaseUnknown,
@@ -2552,7 +2549,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             result,
             title,
             currentEpisode,
-            session: playbackSession,
+            session: run.playbackSession,
             availability: episodeAvailability,
             timing: effectiveTiming.current,
             endPolicy: {
@@ -2567,7 +2564,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // let a stale "not paused / not aborted" leak a later auto-advance.
           const readAutoAdvanceGuards = (): AutoAdvanceGuards => ({
             endReason: result.endReason,
-            autoplayPaused: playbackSession.autoplayPaused,
+            autoplayPaused: run.playbackSession.autoplayPaused,
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             signalAborted: context.signal.aborted,
           });
@@ -2612,9 +2609,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 endReason: result.endReason,
                 watchedSeconds: result.watchedSeconds,
                 duration: result.duration,
-                autoplayMode: playbackSession.mode,
-                autoplayPaused: playbackSession.autoplayPaused,
-                stopAfterCurrent: playbackSession.stopAfterCurrent,
+                autoplayMode: run.playbackSession.mode,
+                autoplayPaused: run.playbackSession.autoplayPaused,
+                stopAfterCurrent: run.playbackSession.stopAfterCurrent,
                 hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
                 upcomingNext: episodeAvailability.upcomingNext,
                 animeNextReleaseUnknown: episodeAvailability.animeNextReleaseUnknown,
@@ -2627,8 +2624,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const countdownResult = await this.runAutoNextCountdown(context, nextEpisodeAdvance);
             if (countdownResult === "cancelled") {
               stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
-              playbackSession = {
-                ...playbackSession,
+              run.playbackSession = {
+                ...run.playbackSession,
                 autoplayPaused: true,
                 autoplayPauseReason: "user",
               };
@@ -2676,7 +2673,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 note: `S${String(nextEpisodeAdvance.season).padStart(2, "0")}E${String(nextEpisodeAdvance.episode).padStart(2, "0")}`,
               });
 
-              pendingStart = await navigatePlaybackEpisode(nextEpisodeAdvance, {
+              run.pendingStart = await navigatePlaybackEpisode(nextEpisodeAdvance, {
                 loadingOrder: "before-start",
                 resetStopAfterCurrent: true,
               });
@@ -2694,10 +2691,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
-          if (playbackSession.stopAfterCurrent) {
+          if (run.playbackSession.stopAfterCurrent) {
             stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
-            playbackSession = {
-              ...playbackSession,
+            run.playbackSession = {
+              ...run.playbackSession,
               stopAfterCurrent: false,
             };
           }
@@ -2706,9 +2703,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           this.clearPresenceInBackground(context, "presence.clearPlaybackIdle", "playback-idle");
           preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
           this.updatePlaybackFeedback(context, { detail: null, note: null });
-          playbackSession = this.transitionPlaybackSession(
+          run.playbackSession = this.transitionPlaybackSession(
             context,
-            playbackSession,
+            run.playbackSession,
             "post-playback-opened",
             {
               titleId: title.id,
@@ -2765,8 +2762,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               };
             }
             stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
-            playbackSession = {
-              ...playbackSession,
+            run.playbackSession = {
+              ...run.playbackSession,
               autoplayPaused: true,
               autoplayPauseReason: "user",
             };
@@ -2801,9 +2798,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const nearEndVoluntaryQuit = isNearEndVoluntaryQuit({
               endReason: result.endReason,
               quitNearEndBehavior: config.quitNearEndBehavior,
-              sessionMode: playbackSession.mode,
-              autoplayPaused: playbackSession.autoplayPaused,
-              stopAfterCurrent: playbackSession.stopAfterCurrent,
+              sessionMode: run.playbackSession.mode,
+              autoplayPaused: run.playbackSession.autoplayPaused,
+              stopAfterCurrent: run.playbackSession.stopAfterCurrent,
               hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
               endedNearNaturalEnd: didPlaybackEndNearNaturalEnd(
                 result,
@@ -2820,7 +2817,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   nextSeason: postPlayNextEpisode.season,
                   nextEpisode: postPlayNextEpisode.episode,
                 });
-                pendingStart = await navigatePlaybackEpisode(postPlayNextEpisode, {
+                run.pendingStart = await navigatePlaybackEpisode(postPlayNextEpisode, {
                   resetStopAfterCurrent: true,
                 });
                 const autoplayPrefetchTarget = buildPrefetchTarget(
@@ -2835,14 +2832,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               if (countdownResult === "cancelled") {
                 stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
-                playbackSession = {
-                  ...playbackSession,
+                run.playbackSession = {
+                  ...run.playbackSession,
                   autoplayPaused: true,
                   autoplayPauseReason: "user",
                 };
               }
             }
-            const autoplaySessionPaused = playbackSession.autoplayPaused;
+            const autoplaySessionPaused = run.playbackSession.autoplayPaused;
             const nearNaturalEpisodeEnd = didPlaybackEndNearNaturalEnd(
               result,
               effectiveTiming.current,
@@ -2868,16 +2865,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               );
               const selection = picked ? streamSelectionFromTrackPick(picked) : null;
               if (picked && selection) {
-                pendingStart = await completeSourceTrackPick(
+                run.pendingStart = await completeSourceTrackPick(
                   currentEpisode,
                   picked,
                   selection,
                   resumeSeconds,
                   "post-playback-tracks",
                 );
-                playbackSession = this.transitionPlaybackSession(
+                run.playbackSession = this.transitionPlaybackSession(
                   context,
-                  playbackSession,
+                  run.playbackSession,
                   "recovery-started",
                   {
                     titleId: title.id,
@@ -2899,7 +2896,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
               hasNextEpisode: Boolean(nextEpisode),
               endReason: result.endReason,
-              autoplayPaused: playbackSession.autoplayPaused,
+              autoplayPaused: run.playbackSession.autoplayPaused,
               autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
               aborted: context.signal.aborted,
               hasQueuedNext: Boolean(container.queueService.peekNext()),
@@ -3029,7 +3026,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ),
                 autoplayPaused: autoplaySessionPaused,
                 autoskipPaused: stateManager.getState().autoskipSessionPaused,
-                stopAfterCurrent: playbackSession.stopAfterCurrent,
+                stopAfterCurrent: run.playbackSession.stopAfterCurrent,
                 showMemory: false,
                 mode,
                 resumeLabel: canResumePlayback
@@ -3079,16 +3076,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   continue postPlayback;
                 }
                 const fromProviderId = resolvedProviderId;
-                pendingStart = await completeSourceTrackPick(
+                run.pendingStart = await completeSourceTrackPick(
                   currentEpisode,
                   picked,
                   selection,
                   resumeSeconds,
                   "post-playback-tracks",
                 );
-                playbackSession = this.transitionPlaybackSession(
+                run.playbackSession = this.transitionPlaybackSession(
                   context,
-                  playbackSession,
+                  run.playbackSession,
                   "episode-navigation",
                   buildTrackPickTransitionContext({
                     titleId: title.id,
@@ -3143,9 +3140,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             } else if (routedAction === "toggle-autoplay") {
               const playbackAction = resolvePostPlaybackSessionAction(
                 "toggle-autoplay",
-                playbackSession,
+                run.playbackSession,
               );
-              playbackSession = playbackAction.session;
+              run.playbackSession = playbackAction.session;
               stateManager.dispatch({
                 type: "SET_SESSION_AUTOPLAY_PAUSED",
                 paused: playbackAction.session.autoplayPaused,
@@ -3158,13 +3155,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               continue postPlayback;
             } else if (routedAction === "stop-after-current") {
-              const enabled = !playbackSession.stopAfterCurrent;
+              const enabled = !run.playbackSession.stopAfterCurrent;
               stateManager.dispatch({
                 type: "SET_SESSION_STOP_AFTER_CURRENT",
                 enabled,
               });
-              playbackSession = {
-                ...playbackSession,
+              run.playbackSession = {
+                ...run.playbackSession,
                 stopAfterCurrent: enabled,
               };
               continue postPlayback;
@@ -3175,10 +3172,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 availability: episodeAvailability,
               });
               if (navigationRoute) {
-                pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
-                playbackSession = this.transitionPlaybackSession(
+                run.pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
+                run.playbackSession = this.transitionPlaybackSession(
                   context,
-                  playbackSession,
+                  run.playbackSession,
                   "episode-navigation",
                   buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
@@ -3200,12 +3197,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const trackPanelSection = resolvePostPlaybackTrackPanelSection(routedAction);
 
             if (routedAction === "resume") {
-              pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
-              const playbackAction = resolvePostPlaybackSessionAction("resume", playbackSession);
-              playbackSession = playbackAction.session;
-              playbackSession = this.transitionPlaybackSession(
+              run.pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
+              const playbackAction = resolvePostPlaybackSessionAction(
+                "resume",
+                run.playbackSession,
+              );
+              run.playbackSession = playbackAction.session;
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "resume-requested",
                 {
                   titleId: title.id,
@@ -3219,17 +3219,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               break postPlayback;
             } else if (routedAction === "replay") {
-              pendingStart = startFromBeginning();
+              run.pendingStart = startFromBeginning();
               if (postPlayState.kind === "did-not-start") {
-                pendingSourceRefreshAction = "recover";
-                autoSourceRecoverAttempts = 0;
+                run.pendingSourceRefreshAction = "recover";
+                run.autoSourceRecoverAttempts = 0;
                 invalidateRecentEpisodeStream(currentEpisode);
               }
-              const playbackAction = resolvePostPlaybackSessionAction("replay", playbackSession);
-              playbackSession = playbackAction.session;
-              playbackSession = this.transitionPlaybackSession(
+              const playbackAction = resolvePostPlaybackSessionAction(
+                "replay",
+                run.playbackSession,
+              );
+              run.playbackSession = playbackAction.session;
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "replay-requested",
                 {
                   titleId: title.id,
@@ -3242,14 +3245,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
               break postPlayback;
             } else if (routedAction === "recompute") {
-              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = true;
-              autoSourceRecoverAttempts = 0;
+              run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = true;
+              run.autoSourceRecoverAttempts = 0;
               invalidateRecentEpisodeStream(currentEpisode);
-              playbackSession = this.transitionPlaybackSession(
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "recovery-started",
                 {
                   titleId: title.id,
@@ -3279,7 +3282,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (!fallback) {
                 continue postPlayback;
               }
-              sessionSoftProviderId = null;
+              run.sessionSoftProviderId = null;
               const switched = await switchPlaybackProviderFallback({
                 container,
                 fromProviderId: resolvedProviderId,
@@ -3291,12 +3294,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               resolvedProviderId = switched.providerId;
               postPlayProviderId = switched.providerId;
-              pendingSourceRefreshAction = "recover";
-              pendingRecomputeSources = false;
-              pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-              playbackSession = this.transitionPlaybackSession(
+              run.pendingSourceRefreshAction = "recover";
+              run.pendingRecomputeSources = false;
+              run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "episode-navigation",
                 {
                   titleId: title.id,
@@ -3336,16 +3339,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 continue postPlayback;
               }
               const fromProviderId = resolvedProviderId;
-              pendingStart = await completeSourceTrackPick(
+              run.pendingStart = await completeSourceTrackPick(
                 currentEpisode,
                 picked,
                 selection,
                 resumeSeconds,
                 "post-playback-tracks",
               );
-              playbackSession = this.transitionPlaybackSession(
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "episode-navigation",
                 selection
                   ? buildTrackPickTransitionContext({
@@ -3372,10 +3375,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (nextProviderId !== postPlayProviderId) {
                 postPlayProviderId = nextProviderId;
                 resolvedProviderId = nextProviderId;
-                sessionSoftProviderId = null;
+                run.sessionSoftProviderId = null;
                 invalidateRecentEpisodeStream(currentEpisode);
-                pendingSourceRefreshAction = "recover";
-                pendingRecomputeSources = false;
+                run.pendingSourceRefreshAction = "recover";
+                run.pendingRecomputeSources = false;
                 diagnosticsService.record({
                   category: "playback",
                   message: "Post-play provider switch staged for fresh resolve",
@@ -3421,10 +3424,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 animeEpisodes: currentAnimeEpisodes,
               });
-              pendingStart = await navigatePlaybackEpisode(pickedEpisode);
-              playbackSession = this.transitionPlaybackSession(
+              run.pendingStart = await navigatePlaybackEpisode(pickedEpisode);
+              run.playbackSession = this.transitionPlaybackSession(
                 context,
-                playbackSession,
+                run.playbackSession,
                 "episode-navigation",
                 buildEpisodeNavigationTransitionContext({
                   titleId: title.id,
@@ -3440,10 +3443,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 availability: episodeAvailability,
               });
               if (navigationRoute) {
-                pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
-                playbackSession = this.transitionPlaybackSession(
+                run.pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
+                run.playbackSession = this.transitionPlaybackSession(
                   context,
-                  playbackSession,
+                  run.playbackSession,
                   "episode-navigation",
                   buildEpisodeNavigationTransitionContext({
                     titleId: title.id,
