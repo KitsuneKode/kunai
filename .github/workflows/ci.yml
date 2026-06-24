@@ -40,6 +40,11 @@ jobs:
               - 'bun.lock'
             docs:
               - 'apps/docs/**'
+              - 'docs/**'
+              - 'apps/cli/src/container.ts'
+              - 'apps/cli/src/domain/session/command-registry.ts'
+              - 'apps/cli/src/cli-args.ts'
+              - 'packages/providers/**/manifest.ts'
               - 'packages/design/**'
               - 'turbo.json'
               - 'package.json'
@@ -147,8 +152,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build docs
-        run: bun run build:docs
+      - name: Verify docs gate
+        run: |
+          bun run --cwd apps/docs generate
+          bun run --cwd apps/docs scripts/check-codegen-freshness.ts
+          bun run --cwd apps/docs typecheck
+          bun run --cwd apps/docs lint
+          bun run --cwd apps/docs test
+          bun run --cwd apps/docs build
 
   build-binaries:
     name: Build linux binaries

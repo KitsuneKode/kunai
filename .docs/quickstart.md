@@ -219,3 +219,22 @@ The public docs app lives in `apps/docs`. Set `DOCS_SITE_URL` to your production
 ```sh
 DOCS_SITE_URL=https://docs.kunai.example bun run --cwd apps/docs build
 ```
+
+Before a production docs deploy, run the full docs gate locally:
+
+```sh
+bun run --cwd apps/docs generate
+bun run --cwd apps/docs scripts/check-codegen-freshness.ts
+bun run --cwd apps/docs test
+bun run --cwd apps/docs build
+```
+
+Optional Lighthouse audit (local only — not gated in CI):
+
+```sh
+DOCS_SITE_URL=https://docs.kunai.example bun run --cwd apps/docs lighthouse:docs
+```
+
+Troubleshooting pages emit `FAQPage` JSON-LD from `docs/troubleshooting-symptoms.yaml`.
+
+Set `DOCS_SITE_URL` to the origin you are auditing so canonical and SEO checks match production.
