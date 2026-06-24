@@ -339,6 +339,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.downloadsEnabled;
   }
 
+  get offlineMode(): boolean {
+    return this.config.offlineMode;
+  }
+
   get autoDownload(): AutoDownloadMode {
     return this.config.autoDownload;
   }
@@ -349,6 +353,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get maxConcurrentDownloads(): number {
     return normalizeMaxConcurrentDownloads(this.config.maxConcurrentDownloads);
+  }
+
+  get defaultDownloadQuality(): string {
+    return normalizeQualityPreference(this.config.defaultDownloadQuality);
   }
 
   get autoCleanupWatched(): boolean {

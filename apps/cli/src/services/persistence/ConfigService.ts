@@ -129,6 +129,8 @@ export interface KitsuneConfig {
   videasyAppId: "vidking" | "bc-frontend";
   /** Optional offline download feature gate. Default off until the user opts in. */
   downloadsEnabled: boolean;
+  /** When enabled, online search/provider work is suppressed and the library surface is preferred. */
+  offlineMode: boolean;
   /**
    * Legacy streaming auto-download preference. Non-off stored values normalize to off;
    * automatic downloads require explicit per-title offline-continuation enrollment.
@@ -138,6 +140,8 @@ export interface KitsuneConfig {
   autoDownloadNextCount: number;
   /** How many downloads run at once. Clamped 1–5; default 3. Keeps resource use bounded. */
   maxConcurrentDownloads: number;
+  /** Default quality ceiling for downloads (`best`, `1080p`, `720p`). Overrides profile when higher. */
+  defaultDownloadQuality: string;
   /** Surface completed watched downloads as cleanup candidates after the grace period. Default false. */
   autoCleanupWatched: boolean;
   /** Playback/provider recovery behavior. Default guided. */
