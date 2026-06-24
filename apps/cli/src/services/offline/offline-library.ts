@@ -228,6 +228,7 @@ function resolveOfflinePreviewImage(
 }
 
 function canUseRemoteArtwork(policy: OfflineArtworkPolicy): boolean {
+  if (policy.allowRemoteArtwork === false) return false;
   return (
     policy.allowRemoteArtwork === true ||
     (policy.networkAvailable === true && policy.artworkPreviewsEnabled !== false)

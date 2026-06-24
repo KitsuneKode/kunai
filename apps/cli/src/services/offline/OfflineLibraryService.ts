@@ -53,6 +53,13 @@ export class OfflineLibraryService {
     return this.validateCompletedArtifacts(limit);
   }
 
+  async searchCompletedEntries(query: string, limit = 60): Promise<readonly OfflineLibraryEntry[]> {
+    const normalized = query.trim().toLowerCase();
+    const entries = await this.listCompletedEntries(limit);
+    if (!normalized) return entries;
+    return entries.filter((entry) => matchesOfflineLibraryQuery(entry, normalized));
+  }
+
   async validateCompletedArtifacts(limit = 60): Promise<readonly OfflineLibraryEntry[]> {
     const completed = dedupeCompletedJobs(
       this.deps.downloadService.listCompleted(Math.max(limit * 2, 1)),
@@ -163,4 +170,21 @@ function compareBySeasonEpisode(a: DownloadJobRecord, b: DownloadJobRecord): num
   const episodeB = b.episode ?? Number.MAX_SAFE_INTEGER;
   if (episodeA !== episodeB) return episodeA - episodeB;
   return a.titleId.localeCompare(b.titleId);
+}
+
+function matchesOfflineLibraryQuery(entry: OfflineLibraryEntry, query: string): boolean {
+  const haystacks = [
+    entry.job.titleName,
+    entry.job.titleId,
+    entry.job.mediaKind,
+    formatOfflineEpisodeSearchLabel(entry.job),
+  ];
+  return haystacks.some((value) => value.toLowerCase().includes(query));
+}
+
+function formatOfflineEpisodeSearchLabel(job: DownloadJobRecord): string {
+  if (typeof job.season === "number" && typeof job.episode === "number") {
+    return `s${job.season}e${job.episode}`;
+  }
+  return job.mediaKind;
 }
