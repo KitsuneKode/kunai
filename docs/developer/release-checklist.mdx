@@ -1,0 +1,59 @@
+---
+title: Release Checklist
+description: Steps to ship a Kunai CLI release with matching documentation metadata and release artifacts.
+---
+
+Use this checklist when cutting a CLI release. Docs build stays separate from the binary, but reference tables should match the shipped CLI.
+
+## Before tagging
+
+<Steps>
+<Step>
+### Land CLI changes and run full verify
+
+```sh
+bun run ci
+```
+
+</Step>
+<Step>
+### Regenerate docs metadata
+
+```sh
+bun run --cwd apps/docs generate
+git add apps/docs/lib/generated-metadata.json
+```
+
+Confirm `cliSourceRevision` and fingerprints updated in the committed JSON.
+
+</Step>
+<Step>
+### Run docs gate locally
+
+```sh
+bun run --cwd apps/docs scripts/check-codegen-freshness.ts
+bun run --cwd apps/docs test
+bun run --cwd apps/docs build
+```
+
+</Step>
+<Step>
+### Update user-facing prose when behavior changed
+
+Check `docs/promotion-manifest.yaml` for agent docs that need promotion into `docs/users/`.
+
+</Step>
+</Steps>
+
+## Release artifacts
+
+- CHANGELOG entry via changesets
+- `.release/kunai-v*.json` artifact for GitHub release body
+- `bun run release:notes:check` when available
+
+## After release
+
+- Verify `/releases` on the docs site shows the new tag
+- Optional local Lighthouse: `bun run --cwd apps/docs lighthouse:docs`
+
+See [Docs maintenance](/docs/developer/docs-maintenance) for the L0–L4 truth model.

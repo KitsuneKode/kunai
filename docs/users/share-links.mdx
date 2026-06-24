@@ -1,0 +1,91 @@
+---
+title: Share Links
+description: Copy and open catalog-anchored kunai:// links across machines, providers, and playback surfaces.
+status: shipped
+---
+
+Kunai uses one portable `kunai://` link format for sharing what to play. Links anchor to catalog metadata (TMDB, AniList, MAL, IMDb) so the receiver can resolve through their own providers.
+
+<ScopeCallout variant="beta" title="Protocol handler is optional">
+  `kunai --open` works without OS registration. Use `--install-protocol-handler` once if you want the OS to open `kunai://` links from other apps.
+</ScopeCallout>
+
+## Copy a link from the shell
+
+During or after playback:
+
+```text
+/share
+```
+
+Copies a catalog-anchored `kunai://play?...` URL to your clipboard. When resume position exists, Kunai can include a timestamp (`t=`) so the receiver starts near where you left off.
+
+From mpv while playing:
+
+- **Ctrl+Shift+S** — copy link at the current `time-pos`
+
+Post-playback and History rows also expose **Share link** / **Copy share link** actions.
+
+## Open a link from the shell
+
+```text
+/watch
+```
+
+Reads a `kunai://` URL from your clipboard, resolves it against your local catalog and providers, and launches mpv with any shared timestamp applied once on the first play.
+
+## Launch from the terminal
+
+Trusted open (no confirmation prompt):
+
+```sh
+kunai --open "kunai://play?cat=tmdb%3A438631&kind=movie"
+```
+
+Register the OS protocol handler (optional):
+
+```sh
+kunai --install-protocol-handler
+```
+
+After registration, `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation.
+
+## URL shape
+
+```text
+kunai://play?cat=<namespace>:<id>&kind=<movie|series|anime>&s=<season>&e=<episode>&t=<seconds>
+kunai://download?...   # same query params; queues a download instead of playback
+kunai://play?q=<query>&kind=...   # search fallback when no catalog id is known
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `cat` | Catalog anchor: `tmdb:`, `anilist:`, `mal:`, or `imdb:` namespace + id |
+| `q` | Search query fallback (use instead of `cat` when no stable id) |
+| `kind` | `movie`, `series`, or `anime` |
+| `s` / `e` | Season and episode (1-based) |
+| `t` | Start offset in seconds, `1m23s`, or `1:23` |
+| `src` | Optional provider hint |
+| `sq` | Optional quality hint |
+
+## Examples
+
+```text
+kunai://play?cat=tmdb%3A1396&kind=series&s=1&e=3
+kunai://play?cat=anilist%3A21&kind=anime&s=1&e=1&t=120
+kunai://play?q=One%20Piece&kind=anime
+```
+
+## Timestamp resume
+
+Shared `t=` applies **once** on the first mpv launch (max of shared timestamp vs local history). Normal per-episode resume takes over afterward.
+
+## Discord presence
+
+Rich Presence can show an https catalog button. Playable `kunai://` refs may appear in presence text; Discord buttons only allow http(s) URLs.
+
+## Related guides
+
+- [Playback and recovery](/docs/users/playback-and-recovery) — recover streams when a shared link fails to resolve
+- [Continue watching](/docs/users/continue-watching-and-new-episodes) — local resume vs shared timestamps
+- [Troubleshooting](/docs/users/troubleshooting) — share link and protocol handler issues

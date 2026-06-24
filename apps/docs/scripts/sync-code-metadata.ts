@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  computeCliSourceFingerprint,
+  computeDocsContentFingerprint,
+  computeFeatureStatusRevision,
+  resolveCliSourceRevision,
+} from "../lib/metadata-fingerprints";
+
 const ROOT_DIR = path.resolve(__dirname, "../../..");
 const DOCS_LIB_DIR = path.join(ROOT_DIR, "apps/docs/lib");
 
@@ -124,23 +131,25 @@ function parseManifest(manifestPath: string, fallbackDir: string): ProviderMetad
 }
 
 function syncProvidersFromContainer(): ProviderMetadata[] {
-  const containerPath = path.join(ROOT_DIR, "apps/cli/src/container.ts");
+  const containerPath = path.join(ROOT_DIR, "apps/cli/src/container/bootstrap-providers.ts");
   const content = fs.readFileSync(containerPath, "utf-8");
   const arrayMatch = content.match(/orderProviderModulesByPriority\(\s*\[([\s\S]*?)\]\s*,/);
   if (!arrayMatch) {
-    throw new Error("Could not parse providerModules from apps/cli/src/container.ts");
+    throw new Error(
+      "Could not parse providerModules from apps/cli/src/container/bootstrap-providers.ts",
+    );
   }
 
   const moduleNames = [...arrayMatch[1].matchAll(/(\w+ProviderModule)/g)].map((m) => m[1]);
   if (moduleNames.length === 0) {
-    throw new Error("No provider modules found in container.ts");
+    throw new Error("No provider modules found in bootstrap-providers.ts");
   }
 
   const providers: ProviderMetadata[] = [];
   for (const moduleName of moduleNames) {
     const dir = PROVIDER_MODULE_DIR[moduleName];
     if (!dir) {
-      throw new Error(`Unknown provider module in container.ts: ${moduleName}`);
+      throw new Error(`Unknown provider module in bootstrap-providers.ts: ${moduleName}`);
     }
     const manifestPath = path.join(ROOT_DIR, `packages/providers/src/${dir}/manifest.ts`);
     if (!fs.existsSync(manifestPath)) {
@@ -321,8 +330,7 @@ function readPackageVersion(): string {
   return pkg.version ?? "0.0.0";
 }
 
-function main() {
-  console.log("Syncing code metadata as source of truth for docs...");
+export function buildMetadata(): Record<string, unknown> {
   const providers = syncProvidersFromContainer();
   const commands = syncCommands();
   const cliOptions = syncCliOptionsFromHelp();
@@ -330,10 +338,14 @@ function main() {
   const featureStatus = syncFeatureStatus();
   const runtimeBaseline = syncRuntimeBaseline();
 
-  const metadata = {
+  return {
     syncedAt: new Date().toISOString(),
     version,
     cliVersion: version,
+    cliSourceRevision: resolveCliSourceRevision(ROOT_DIR),
+    cliSourceFingerprint: computeCliSourceFingerprint(ROOT_DIR),
+    docsContentFingerprint: computeDocsContentFingerprint(ROOT_DIR),
+    featureStatusRevision: computeFeatureStatusRevision(ROOT_DIR),
     commandCount: commands.length,
     providerIds: providers.map((p) => p.id),
     providers,
@@ -342,6 +354,11 @@ function main() {
     featureStatus,
     runtimeBaseline,
   };
+}
+
+function main() {
+  console.log("Syncing code metadata as source of truth for docs...");
+  const metadata = buildMetadata();
 
   const outputPath = path.join(DOCS_LIB_DIR, "generated-metadata.json");
   const existing = readExistingMetadata(outputPath);
@@ -356,4 +373,6 @@ function main() {
   console.log(`Successfully generated metadata at: ${outputPath}`);
 }
 
-main();
+if (import.meta.main) {
+  main();
+}

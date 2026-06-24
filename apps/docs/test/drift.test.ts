@@ -4,11 +4,15 @@ import path from "node:path";
 
 import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries } from "../lib/doc-navigation";
+import {
+  computeCliSourceFingerprint,
+  computeDocsContentFingerprint,
+} from "../lib/metadata-fingerprints";
 import { source } from "../lib/source";
 
 const ROOT = path.resolve(import.meta.dir, "../../..");
 const DOCS_ROOT = path.join(ROOT, "docs");
-const CONTAINER_PATH = path.join(ROOT, "apps/cli/src/container.ts");
+const PROVIDER_BOOTSTRAP_PATH = path.join(ROOT, "apps/cli/src/container/bootstrap-providers.ts");
 const REGISTRY_PATH = path.join(ROOT, "apps/cli/src/domain/session/command-registry.ts");
 const SYNC_SCRIPT_PATH = path.join(ROOT, "apps/docs/scripts/sync-code-metadata.ts");
 
@@ -50,9 +54,9 @@ function readMetaPages(metaPath: string): string[] {
 }
 
 describe("docs codegen drift", () => {
-  test("provider ids match container.ts registration order", () => {
-    const container = fs.readFileSync(CONTAINER_PATH, "utf-8");
-    const modules = parseContainerProviderModules(container);
+  test("provider ids match provider bootstrap registration order", () => {
+    const providerBootstrap = fs.readFileSync(PROVIDER_BOOTSTRAP_PATH, "utf-8");
+    const modules = parseContainerProviderModules(providerBootstrap);
     const expectedIds = modules
       .map((module) => MODULE_TO_ID[module])
       .filter((id): id is string => Boolean(id));
@@ -61,10 +65,10 @@ describe("docs codegen drift", () => {
     expect(codeMetadata.providers.map((provider) => provider.id)).toEqual(expectedIds);
   });
 
-  test("sync script provider map covers every container module", () => {
-    const container = fs.readFileSync(CONTAINER_PATH, "utf-8");
+  test("sync script provider map covers every bootstrap module", () => {
+    const providerBootstrap = fs.readFileSync(PROVIDER_BOOTSTRAP_PATH, "utf-8");
     const syncScript = fs.readFileSync(SYNC_SCRIPT_PATH, "utf-8");
-    const modules = parseContainerProviderModules(container);
+    const modules = parseContainerProviderModules(providerBootstrap);
 
     for (const moduleName of modules) {
       expect(syncScript).toContain(`${moduleName}:`);
@@ -159,5 +163,46 @@ describe("docs codegen drift", () => {
     expect(download).toBeDefined();
     expect(download?.description.toLowerCase()).toContain("download");
     expect(download?.description.toLowerCase()).not.toContain("open the download queue");
+  });
+
+  test("cli source fingerprint matches live CLI inputs", () => {
+    expect(codeMetadata.cliSourceFingerprint).toBe(computeCliSourceFingerprint(ROOT));
+  });
+
+  test("docs content fingerprint matches published docs tree", () => {
+    expect(codeMetadata.docsContentFingerprint).toBe(computeDocsContentFingerprint(ROOT));
+  });
+
+  test("cliSourceRevision is a short sha or unknown", () => {
+    expect(codeMetadata.cliSourceRevision.length).toBeGreaterThan(0);
+    expect(/^[0-9a-f]{7,12}$|unknown/.test(codeMetadata.cliSourceRevision)).toBe(true);
+  });
+
+  test("feature status has at least fifteen entries", () => {
+    expect(codeMetadata.featureStatus.length).toBeGreaterThanOrEqual(15);
+  });
+
+  test("supported-and-unsupported uses FeatureStatusTable not duplicate Shipped rows", () => {
+    const content = fs.readFileSync(
+      path.join(DOCS_ROOT, "users/supported-and-unsupported.mdx"),
+      "utf-8",
+    );
+    expect(content).toContain("<FeatureStatusTable />");
+    expect(content).not.toMatch(/\| Terminal shell \(Ink\) \| \*\*Shipped\*\*/);
+  });
+
+  test("home content avoids hardcoded provider or command counts", () => {
+    const homeContent = fs.readFileSync(path.join(ROOT, "apps/docs/lib/home-content.ts"), "utf-8");
+    expect(homeContent).not.toMatch(/\b66\b|\b68\b/);
+  });
+
+  test("published docs avoid marketing filler terms", () => {
+    const banned = /\b(seamless|unleash|next-gen)\b/i;
+    for (const filePath of listDocFiles(DOCS_ROOT)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      if (banned.test(content)) {
+        expect(content.toLowerCase()).toContain("not supported");
+      }
+    }
   });
 });

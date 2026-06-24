@@ -45,13 +45,39 @@ bun run --cwd apps/docs build
 
 ## Codegen and drift tests
 
-`apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` guard:
+`apps/docs/scripts/sync-code-metadata.ts` writes `lib/generated-metadata.json` from the CLI registry. Drift tests in `apps/docs/test/drift.test.ts` and `apps/docs/test/seo.test.ts` guard provider order, command counts, link hygiene, SEO uniqueness, and fingerprint parity.
 
-- Provider id order vs `container.ts`
-- Command count vs the parsed registry
-- User guides must not link to unpublished `../../.docs` paths
+Run `bun run generate` after changing commands, providers, help text, or `docs/feature-status.yaml`.
 
-Run `bun run generate` after changing commands, providers, or help text that reference pages embed.
+### Truth layers (L0–L4)
+
+| Layer | Source | Guard |
+| --- | --- | --- |
+| **L0 Codegen** | `container.ts`, manifests, command registry, `cli-args` | `generate`, `check-codegen-freshness.ts`, fingerprint drift tests |
+| **L1 Editorial** | `docs/feature-status.yaml` | enum tests, `<FeatureStatusTable />` |
+| **L2 Prose** | `docs/users/*.mdx` | link hygiene, promotion manifest, no hardcoded provider lists |
+| **L3 Agent** | `.docs/*`, `.plans/*` | never link from published docs; promote via `docs/promotion-manifest.yaml` |
+| **L4 Release** | CHANGELOG, `.release/` | `release-checklist.mdx`, `release:notes:check` |
+
+**Rule:** Code wins for behavior. YAML wins for product posture. Prose explains — it does not duplicate L0 tables.
+
+### Freshness gate
+
+```sh
+bun run --cwd apps/docs scripts/check-codegen-freshness.ts
+```
+
+CI runs the full docs gate on `docs/**` and CLI registry path changes.
+
+Troubleshooting emits `FAQPage` JSON-LD from `docs/troubleshooting-symptoms.yaml` and the matching MDX sections.
+
+### Local Lighthouse (optional)
+
+```sh
+bun run --cwd apps/docs lighthouse:docs
+```
+
+Not gated in CI. Set `DOCS_SITE_URL` to production when auditing canonical URLs before deploy.
 
 ## Hub pages
 
