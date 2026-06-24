@@ -1,6 +1,5 @@
 import {
   mergeBackfillExternalIds,
-  resolveCanonicalCatalogTitleId,
   resolveHistoryLookupTitleId,
   resolvePersistedHistoryTitle,
 } from "@kunai/core";

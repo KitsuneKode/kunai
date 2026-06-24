@@ -521,11 +521,17 @@ export class DownloadJobsRepository {
   }
 
   listPaused(limit = 200): readonly DownloadJobRecord[] {
+    const now = new Date().toISOString();
     return this.db
-      .query<DownloadJobRow, [number]>(
-        "SELECT * FROM download_jobs WHERE status = 'paused' ORDER BY created_at ASC LIMIT ?",
+      .query<DownloadJobRow, [string, number]>(
+        `SELECT * FROM download_jobs
+         WHERE status = 'queued'
+           AND next_retry_at IS NOT NULL
+           AND next_retry_at > ?
+         ORDER BY created_at ASC
+         LIMIT ?`,
       )
-      .all(limit)
+      .all(now, limit)
       .map(mapRow);
   }
 
