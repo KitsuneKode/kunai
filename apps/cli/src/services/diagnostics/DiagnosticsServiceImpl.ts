@@ -3,10 +3,19 @@ import type { ResolveWorkLedgerSnapshot } from "@/services/playback/ResolveWorkL
 
 import type { DebugTraceReporter } from "./DebugTraceReporter";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
+import { normalizeDiagnosticEvent } from "./diagnostic-event";
 import { buildDiagnosticsBundle } from "./DiagnosticsBundleBuilder";
 import type { DiagnosticsService } from "./DiagnosticsService";
 import type { DiagnosticsStore } from "./DiagnosticsStore";
 import { redactDiagnosticValue } from "./redaction";
+
+export interface DurableDiagnosticsSink {
+  enqueue(event: DiagnosticEvent): void;
+  getRecent(limit?: number): readonly DiagnosticEvent[];
+  getSnapshot(limit?: number): readonly DiagnosticEvent[];
+  flush(): void;
+  clear(): void;
+}
 
 export type DiagnosticsServiceDeps = {
   readonly store: DiagnosticsStore;
@@ -15,6 +24,7 @@ export type DiagnosticsServiceDeps = {
   readonly debug?: boolean;
   readonly now?: () => Date;
   readonly traceReporter?: DebugTraceReporter;
+  readonly durableSink?: DurableDiagnosticsSink;
 };
 
 export class DiagnosticsServiceImpl implements DiagnosticsService {
@@ -27,7 +37,9 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     const redactedEvent = redactDiagnosticValue(event, {
       homeDir: process.env.HOME,
     }) as DiagnosticEventInput;
+    const normalizedEvent = normalizeDiagnosticEvent(redactedEvent, this.deps.now?.().getTime());
     this.deps.store.record(redactedEvent);
+    this.persist(normalizedEvent);
     this.log(redactedEvent);
     this.deps.traceReporter?.record(redactedEvent);
   }
@@ -43,15 +55,32 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
+    const durableEvents = this.readDurable((sink) => sink.getRecent(limit));
+    if (durableEvents && durableEvents.length > 0) return durableEvents;
     return this.deps.store.getRecent(limit);
   }
 
   getSnapshot(): readonly DiagnosticEvent[] {
+    const durableEvents = this.readDurable((sink) => sink.getSnapshot());
+    if (durableEvents && durableEvents.length > 0) return durableEvents;
     return this.deps.store.getSnapshot();
+  }
+
+  flush(): void {
+    try {
+      this.deps.durableSink?.flush();
+    } catch (error) {
+      this.deps.logger.warn("Diagnostics durable flush failed", {
+        category: "runtime",
+        operation: "diagnostics.flush.failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   clear(): void {
     this.deps.store.clear();
+    this.deps.durableSink?.clear();
     this.resolveWorkLedgers.length = 0;
   }
 
@@ -64,9 +93,38 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       capabilities: input?.capabilities ?? {},
       playbackSourceInventory: input?.playbackSourceInventory ?? null,
       resolveWorkLedgers: this.resolveWorkLedgers,
-      events: this.deps.store.getSnapshot(),
+      events: this.getSnapshot(),
       now: this.deps.now,
     });
+  }
+
+  private persist(event: DiagnosticEvent): void {
+    try {
+      this.deps.durableSink?.enqueue(event);
+    } catch (error) {
+      this.deps.logger.warn("Diagnostics durable sink failed", {
+        category: "runtime",
+        operation: "diagnostics.persist.failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private readDurable(
+    read: (sink: DurableDiagnosticsSink) => readonly DiagnosticEvent[],
+  ): readonly DiagnosticEvent[] | undefined {
+    const sink = this.deps.durableSink;
+    if (!sink) return undefined;
+    try {
+      return read(sink);
+    } catch (error) {
+      this.deps.logger.warn("Diagnostics durable read failed", {
+        category: "runtime",
+        operation: "diagnostics.read.failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
   }
 
   private log(event: DiagnosticEventInput): void {

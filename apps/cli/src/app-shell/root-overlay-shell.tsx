@@ -537,7 +537,7 @@ export function RootOverlayShell({
         : overlay.type === "diagnostics"
           ? buildDiagnosticsPanelLines({
               state,
-              recentEvents: container.diagnosticsStore.getRecent(25),
+              recentEvents: container.diagnosticsService.getRecent(25),
               capabilitySnapshot: container.capabilitySnapshot,
               downloadSummary: {
                 active: container.downloadService.listActive(200).length,

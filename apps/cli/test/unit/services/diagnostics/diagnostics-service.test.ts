@@ -5,12 +5,15 @@ import { join } from "node:path";
 
 import type { Logger } from "@/infra/logger/Logger";
 import { DebugTraceReporter } from "@/services/diagnostics/DebugTraceReporter";
+import type { DurableDiagnosticsSink } from "@/services/diagnostics/DiagnosticsServiceImpl";
 import { DiagnosticsServiceImpl } from "@/services/diagnostics/DiagnosticsServiceImpl";
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
+import { AsyncDurableDiagnosticsSink } from "@/services/diagnostics/DurableDiagnosticsSink";
 import {
   createResolveWorkLedger,
   finalizeResolveWorkLedger,
 } from "@/services/playback/ResolveWorkLedger";
+import { DiagnosticEventsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 type CapturedLog = {
   readonly level: string;
@@ -155,5 +158,90 @@ describe("DiagnosticsServiceImpl", () => {
     expect(service.buildSupportBundle().insights.resolveWork).toMatchObject({
       physicalWork: [expect.objectContaining({ resolveWorkKey: snapshot.resolveWorkKey })],
     });
+  });
+
+  test("queues redacted durable events without throwing when the durable sink fails", () => {
+    const persisted: unknown[] = [];
+    const durableSink: DurableDiagnosticsSink = {
+      enqueue(event) {
+        persisted.push(event);
+        throw new Error("cache db unavailable");
+      },
+      getRecent() {
+        return [];
+      },
+      getSnapshot() {
+        return [];
+      },
+      flush() {},
+      clear() {},
+    };
+    const store = new DiagnosticsStoreImpl();
+    const service = new DiagnosticsServiceImpl({
+      store,
+      logger: createLogger(),
+      durableSink,
+    });
+
+    expect(() =>
+      service.record({
+        category: "network",
+        operation: "network.fetch.failed",
+        level: "error",
+        message: "Fetch failed",
+        context: {
+          url: "https://cdn.example/stream.m3u8?token=secret&quality=1080p",
+        },
+      }),
+    ).not.toThrow();
+
+    expect(store.getSnapshot()).toHaveLength(1);
+    expect(persisted).toEqual([
+      expect.objectContaining({
+        context: {
+          url: "https://cdn.example/stream.m3u8?token=[redacted]&quality=1080p",
+        },
+      }),
+    ]);
+  });
+
+  test("builds support bundles from durable diagnostics after a service restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-durable-diagnostics-"));
+    const db = openKunaiDatabase(join(dir, "cache.sqlite"));
+    try {
+      runMigrations(db, "cache");
+      const repository = new DiagnosticEventsRepository(db);
+      const firstService = new DiagnosticsServiceImpl({
+        store: new DiagnosticsStoreImpl(),
+        logger: createLogger(),
+        durableSink: new AsyncDurableDiagnosticsSink({ repository }),
+        now: () => new Date("2026-06-24T12:00:00.000Z"),
+      });
+
+      firstService.record({
+        category: "provider",
+        operation: "provider.resolve.timeline",
+        message: "Provider resolve failed",
+        level: "error",
+        context: { url: "https://cdn.example/watch?token=secret" },
+      });
+      firstService.flush();
+
+      const secondService = new DiagnosticsServiceImpl({
+        store: new DiagnosticsStoreImpl(),
+        logger: createLogger(),
+        durableSink: new AsyncDurableDiagnosticsSink({ repository }),
+      });
+
+      expect(secondService.buildSupportBundle().events).toEqual([
+        expect.objectContaining({
+          operation: "provider.resolve.timeline",
+          context: { url: "https://cdn.example/watch?token=[redacted]" },
+        }),
+      ]);
+    } finally {
+      db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

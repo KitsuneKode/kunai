@@ -8,6 +8,7 @@ export interface DiagnosticsService {
   recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   getSnapshot(): readonly DiagnosticEvent[];
+  flush(): void;
   clear(): void;
   buildSupportBundle(input?: {
     readonly capabilities?: Record<string, unknown> | null;

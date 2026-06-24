@@ -923,7 +923,7 @@ async function handleStaticOverlay(
 }
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
-  const { stateManager, diagnosticsService, diagnosticsStore } = container;
+  const { stateManager, diagnosticsService } = container;
   const memoryLine = getRuntimeMemoryLine();
   const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
   diagnosticsService.record({
@@ -934,7 +934,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
   });
   const lines = buildDiagnosticsPanelLines({
     state: stateManager.getState(),
-    recentEvents: diagnosticsStore.getRecent(25),
+    recentEvents: diagnosticsService.getRecent(25),
     memorySamples: getRuntimeMemorySamples(),
     capabilitySnapshot: container.capabilitySnapshot,
     downloadSummary: {

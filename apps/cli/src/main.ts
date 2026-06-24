@@ -486,6 +486,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const { runInstall } = await import("./services/update/run-install");
     process.exit(await runInstall(argv.slice(1)));
   }
+  if (argv[0] === "diagnostics") {
+    const { runDiagnosticsRecentCommand } =
+      await import("./services/diagnostics/diagnostics-export");
+    process.exit(await runDiagnosticsRecentCommand(argv.slice(1)));
+  }
 
   // Best-effort: clear any stale `*.old` left by a prior Windows self-replace.
   void import("./services/update/self-replace").then(({ cleanupOldBinary }) =>
@@ -698,6 +703,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   if (!capabilitySnapshot.mpv) {
     console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
+    container.diagnosticsService.flush();
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(1);
   }
@@ -724,6 +730,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         },
       });
       await shutdownShell();
+      container.diagnosticsService.flush();
       if (process.stdin.isTTY) process.stdin.unref();
       return;
     }
@@ -731,11 +738,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await maybeRunSetupWizard(args, container);
   if (await maybeRunOfflineMode(args, container)) {
     await shutdownShell();
+    container.diagnosticsService.flush();
     if (process.stdin.isTTY) process.stdin.unref();
     return;
   }
   if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
     await shutdownShell();
+    container.diagnosticsService.flush();
     if (process.stdin.isTTY) process.stdin.unref();
     return;
   }
@@ -768,12 +777,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await globalContainer?.downloadService.pauseActiveJobsForShutdown("normal exit");
     await globalController.shutdown();
     await shutdownShell();
+    globalContainer?.diagnosticsService.flush();
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
     await globalController?.shutdown().catch(() => {});
     await shutdownShell();
+    globalContainer?.diagnosticsService.flush();
     console.error("Fatal error:", e);
     process.exit(1);
   }
@@ -803,6 +814,7 @@ function setupSignalHandlers(): void {
         await globalController.shutdown();
       }
       await shutdownShell();
+      globalContainer?.diagnosticsService.flush();
     } finally {
       clearTimeout(forceExit);
       if (process.stdin.isTTY) process.stdin.unref();
@@ -832,6 +844,7 @@ function setupSignalHandlers(): void {
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("uncaught exception");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();
+      globalContainer?.diagnosticsService.flush();
     })().finally(() => {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(1);
@@ -844,6 +857,7 @@ function setupSignalHandlers(): void {
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("unhandled rejection");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();
+      globalContainer?.diagnosticsService.flush();
     })().finally(() => {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(1);

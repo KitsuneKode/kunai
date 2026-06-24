@@ -25,6 +25,7 @@ import { vidlinkProviderModule } from "@kunai/providers/vidlink";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import {
   DownloadJobsRepository,
+  DiagnosticEventsRepository,
   FollowedTitleRepository,
   getKunaiPaths,
   HistoryRepository,
@@ -97,6 +98,10 @@ import type { DiagnosticsService } from "./services/diagnostics/DiagnosticsServi
 import { DiagnosticsServiceImpl } from "./services/diagnostics/DiagnosticsServiceImpl";
 import type { DiagnosticsStore } from "./services/diagnostics/DiagnosticsStore";
 import { DiagnosticsStoreImpl } from "./services/diagnostics/DiagnosticsStoreImpl";
+import {
+  AsyncDurableDiagnosticsSink,
+  type DurableDiagnosticsSinkOptions,
+} from "./services/diagnostics/DurableDiagnosticsSink";
 import { redactDiagnosticValue } from "./services/diagnostics/redaction";
 import { DownloadService } from "./services/download/DownloadService";
 import { createHistoryMetadataResolver } from "./services/history-metadata/create-history-metadata-resolver";
@@ -335,6 +340,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const titleBridgePort = createProviderTitleBridgePort(providerTitleBridge);
   const releaseProgressCache = new ReleaseProgressCacheRepository(cacheDb);
   const calendarArchive = new CalendarArchiveRepository(cacheDb);
+  const diagnosticEvents = new DiagnosticEventsRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const offlineAssets = new OfflineAssetsRepository(dataDb);
   const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
@@ -373,6 +379,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     appVersion: options?.appVersion,
     debug,
     traceReporter,
+    durableSink: new AsyncDurableDiagnosticsSink({
+      repository: diagnosticEvents,
+    } satisfies DurableDiagnosticsSinkOptions),
   });
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,

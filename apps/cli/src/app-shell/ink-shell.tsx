@@ -811,19 +811,19 @@ function AppRoot({ container }: { container: Container }) {
       buildPlaybackBootstrapPresentation({
         playbackStatus: state.playbackStatus,
         playbackDetail: state.playbackDetail,
-        recentEvents: container.diagnosticsStore.getRecent(40),
+        recentEvents: container.diagnosticsService.getRecent(40),
       }),
-    [state.playbackStatus, state.playbackDetail, container.diagnosticsStore],
+    [state.playbackStatus, state.playbackDetail, container.diagnosticsService],
   );
   const playbackFailureWaterfall = useMemo(
     () =>
       state.playbackStatus === "error"
         ? buildPlaybackFailureWaterfall({
             state,
-            recentEvents: container.diagnosticsStore.getRecent(40),
+            recentEvents: container.diagnosticsService.getRecent(40),
           })
         : null,
-    [state, container.diagnosticsStore],
+    [state, container.diagnosticsService],
   );
   const playbackBootstrapStageDetail = useMemo(() => {
     const base =
@@ -1076,7 +1076,7 @@ function AppRoot({ container }: { container: Container }) {
                     ? container.providerHealth.get(state.provider as ProviderId)
                     : undefined;
                   const snapshot = buildRuntimeHealthSnapshot({
-                    recentEvents: container.diagnosticsStore.getRecent(25),
+                    recentEvents: container.diagnosticsService.getRecent(25),
                     currentProvider: state.provider,
                     persistedProviderHealth: persisted,
                   });
