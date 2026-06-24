@@ -195,8 +195,15 @@ export function DownloadManagerContent({
   const allJobs = [...activeJobs, ...queuedJobs, ...completedJobs, ...failedJobs];
 
   useEffect(() => {
-    if (selectedIndex >= allJobs.length) {
-      setSelectedIndex(Math.max(0, allJobs.length - 1));
+    if (allJobs.length === 0) {
+      if (selectedIndex !== 0) setSelectedIndex(0);
+      return;
+    }
+    if (!Number.isFinite(selectedIndex) || selectedIndex < 0 || selectedIndex >= allJobs.length) {
+      const nextIndex = Number.isFinite(selectedIndex)
+        ? Math.min(Math.max(0, selectedIndex), allJobs.length - 1)
+        : 0;
+      setSelectedIndex(nextIndex);
     }
   }, [allJobs.length, selectedIndex]);
 
@@ -238,11 +245,13 @@ export function DownloadManagerContent({
       return;
     }
     if (key.upArrow) {
+      if (allJobs.length === 0) return;
       setConfirmingDeleteIndex(null);
       setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
       return;
     }
     if (key.downArrow) {
+      if (allJobs.length === 0) return;
       setConfirmingDeleteIndex(null);
       setSelectedIndex((current) => (current + 1) % allJobs.length);
       return;
