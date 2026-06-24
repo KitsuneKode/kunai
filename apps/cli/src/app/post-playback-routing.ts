@@ -5,6 +5,7 @@ type HistoryEntryRoute = {
   readonly type: "history-entry";
   readonly title: TitleInfo;
   readonly episode?: EpisodeInfo;
+  readonly startSeconds?: number;
 };
 
 export type PostPlaybackExitOutcome =
@@ -19,6 +20,7 @@ export type PostPlaybackExitOutcome =
             readonly type: "history_entry";
             readonly title: TitleInfo;
             readonly episode?: EpisodeInfo;
+            readonly startSeconds?: number;
           };
     };
 
@@ -37,6 +39,7 @@ export function resolvePostPlaybackExitOutcome(
         type: "history_entry",
         title: route.title,
         episode: route.episode,
+        ...(route.startSeconds !== undefined ? { startSeconds: route.startSeconds } : {}),
       },
     };
   }

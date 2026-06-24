@@ -71,7 +71,10 @@ import {
   recommendationRailItemToSearchResult,
 } from "@/app/playback-recommendation-actions";
 import { resolvePlaybackResolvePolicy } from "@/app/playback-resolve-policy";
-import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
+import {
+  createBootstrapResumeResolver,
+  resumeSecondsFromHistoryForEpisode,
+} from "@/app/playback-resume-from-history";
 import { PlaybackSelectionCoordinator } from "@/app/playback-selection-coordinator";
 import {
   createPlaybackSessionState,
@@ -126,6 +129,7 @@ import {
   type RecentPlaybackStreamRecord,
 } from "@/app/recent-playback-stream";
 import { createResolveTraceStub } from "@/app/resolve-trace";
+import { consumeShareBootstrapStartSeconds } from "@/app/share-bootstrap-start";
 import {
   applyPreferredStreamSelection,
   streamSelectionFromTrackPick,
@@ -247,7 +251,7 @@ export type PlaybackOutcome =
   | "mode_switch"
   | "quit"
   | { type: "browse_route"; route: "calendar" | "random" }
-  | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo }
+  | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo; startSeconds?: number }
   | {
       type: "playlist-advance";
       titleInfo: TitleInfo;
@@ -639,14 +643,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // Episode selection (for series)
       let episode: EpisodeInfo | undefined;
       let pendingStart = startFromBeginning();
-      const startNavigationToEpisode = async (target: EpisodeInfo) =>
-        startEpisodeNavigation({
-          targetResumeSeconds: resumeSecondsFromHistoryForEpisode(
+      // One-shot shared start position from a share link (kunai://...&t=). Consumed once
+      // here; the series path applies it via the resolver, the movie path inline below.
+      // A title is either movie or series, so the two paths never double-apply it.
+      const bootstrapStartSeconds = consumeShareBootstrapStartSeconds();
+      const resolveTargetResumeSeconds = createBootstrapResumeResolver({
+        sharedStartSeconds: bootstrapStartSeconds,
+        resumeFromHistory: (target: EpisodeInfo) =>
+          resumeSecondsFromHistoryForEpisode(
             historyRepository,
             title.id,
             target,
             config.quitNearEndThresholdMode,
           ),
+      });
+      const startNavigationToEpisode = async (target: EpisodeInfo) =>
+        startEpisodeNavigation({
+          targetResumeSeconds: resolveTargetResumeSeconds(target),
         });
       const navigatePlaybackEpisode = async (
         target: EpisodeInfo,
@@ -736,39 +749,49 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         // Session-flow owns the current season/episode selection rules until the
         // mounted root shell fully absorbs the picker stack.
-        const { chooseStartingEpisode } = await import("@/session-flow");
-        const selection = await chooseStartingEpisode({
-          currentId: title.id,
-          isAnime: stateManager.getState().mode === "anime",
-          animeEpisodeCount: title.episodeCount,
-          animeEpisodes: initialAnimeEpisodes,
-          flags: {},
-          getHistoryEntry: () => Promise.resolve(history),
-          container,
-        });
+        const preselectedEpisode =
+          stateManager.getState().currentTitle?.id === title.id
+            ? stateManager.getState().currentEpisode
+            : undefined;
 
-        if (!selection) {
-          logger.info("Episode selection cancelled before playback", {
-            titleId: title.id,
-            mode: stateManager.getState().mode,
+        if (preselectedEpisode) {
+          episode = preselectedEpisode;
+          pendingStart = await startNavigationToEpisode(episode);
+        } else {
+          const { chooseStartingEpisode } = await import("@/session-flow");
+          const selection = await chooseStartingEpisode({
+            currentId: title.id,
+            isAnime: stateManager.getState().mode === "anime",
+            animeEpisodeCount: title.episodeCount,
+            animeEpisodes: initialAnimeEpisodes,
+            flags: {},
+            getHistoryEntry: () => Promise.resolve(history),
+            container,
           });
-          return {
-            status: "success",
-            value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
-          };
-        }
 
-        episode = episodeInfoFromSelection({
-          season: selection.season,
-          episode: selection.episode,
-          isAnime: stateManager.getState().mode === "anime",
-          titleId: title.id,
-          animeEpisodes: initialAnimeEpisodes,
-        });
-        pendingStart =
-          selection.startAt !== undefined || selection.suppressResumePrompt
-            ? startFromEpisodeSelection(selection)
-            : await startNavigationToEpisode(episode);
+          if (!selection) {
+            logger.info("Episode selection cancelled before playback", {
+              titleId: title.id,
+              mode: stateManager.getState().mode,
+            });
+            return {
+              status: "success",
+              value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
+            };
+          }
+
+          episode = episodeInfoFromSelection({
+            season: selection.season,
+            episode: selection.episode,
+            isAnime: stateManager.getState().mode === "anime",
+            titleId: title.id,
+            animeEpisodes: initialAnimeEpisodes,
+          });
+          pendingStart =
+            selection.startAt !== undefined || selection.suppressResumePrompt
+              ? startFromEpisodeSelection(selection)
+              : await startNavigationToEpisode(episode);
+        }
       } else {
         // Movies have no season/episode axis but still carry saved progress.
         // Offer Resume/Restart when there is a resumable position; otherwise play
@@ -790,6 +813,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }
         episode = { season: 1, episode: 1 };
         pendingStart = startFromEpisodeSelection(selection);
+        if (bootstrapStartSeconds !== undefined && bootstrapStartSeconds > 0) {
+          pendingStart = startAtResumePoint(bootstrapStartSeconds, { suppressResumePrompt: true });
+        }
       }
 
       stateManager.dispatch({ type: "SELECT_EPISODE", episode });
@@ -3900,6 +3926,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipPreview: config.skipPreview,
         skipCredits: config.skipCredits,
         onNearEof,
+        shareLinkContext: {
+          mode: stateManager.getState().mode,
+          title,
+          episode:
+            title.type === "series"
+              ? { season: episode.season, episode: episode.episode }
+              : undefined,
+          providerId: stateManager.getState().provider,
+          onCopied: (shareCopy) => {
+            this.updatePlaybackFeedback(context, {
+              note: shareCopy?.copied
+                ? "Share link copied from mpv."
+                : shareCopy
+                  ? `Share link (copy manually): ${shareCopy.url}`
+                  : "Could not build a share link for this title.",
+            });
+          },
+        },
         onPlaybackEvent: (event) => {
           const startupStage = playbackStartupStageForPlayerEvent(event);
           if (startupStage) onStartupMark?.(startupStage);

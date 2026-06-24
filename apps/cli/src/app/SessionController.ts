@@ -7,6 +7,7 @@
 
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import type { SearchPhaseInput } from "@/app/SearchPhase";
+import { primeShareBootstrapStartSeconds } from "@/app/share-bootstrap-start";
 import type { Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
@@ -137,6 +138,7 @@ export class SessionController {
           if (typeof outcome === "object" && outcome.type === "history_entry") {
             pendingInitialTitle = outcome.title;
             pendingInitialEpisode = outcome.episode ?? null;
+            primeShareBootstrapStartSeconds(outcome.startSeconds);
             preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;

@@ -491,7 +491,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "share",
     label: "Share This",
     aliases: ["share", "share-link", "share-code"],
-    description: "Copy a 'watch this' code for the current title to your clipboard",
+    description: "Copy a catalog-anchored kunai:// share link for the current title",
   },
   {
     id: "bookmark",
@@ -520,8 +520,8 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "watch",
     label: "Watch a Shared Code",
-    aliases: ["watch", "open-share", "watch-code"],
-    description: "Play a title from a Kunai share code on your clipboard",
+    aliases: ["watch", "open-share", "open-link"],
+    description: "Open a kunai:// share link from your clipboard",
   },
   {
     id: "pick-episode",

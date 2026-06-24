@@ -87,7 +87,7 @@ type RoutedActionResult =
   | "anime-calendar"
   | "series-calendar"
   | "random"
-  | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo }
+  | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo; startSeconds?: number }
   | "unhandled";
 
 async function openRootHistorySelection(

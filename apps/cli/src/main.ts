@@ -24,6 +24,7 @@
 
 import { existsSync } from "node:fs";
 
+import { applyShareRefLaunch } from "@/app/apply-resolved-share-target";
 import { resolveBootstrapIntent } from "@/app/bootstrap-intent";
 import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
 import {
@@ -38,6 +39,11 @@ import { resolveSessionConfigOverrides } from "@/app/session-overrides";
 import { SessionController } from "@/app/SessionController";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer } from "@/container";
+import {
+  parseKunaiShareUrl,
+  type KunaiShareAction,
+  type PlaybackTargetRef,
+} from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import {
   recordContinuationProjectDecision,
@@ -69,28 +75,11 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   return parseCliArgs(argv);
 }
 
-function applyProtocolHandoffArgs(
-  args: {
-    search?: string;
-    id?: string;
-    type?: string;
-    anime: boolean;
-    download: boolean;
-  },
-  handoff: KunaiHandoffLaunch,
-): void {
-  if (handoff.search) {
-    args.search = handoff.search;
-    args.id = undefined;
-    args.type = undefined;
-  } else if (handoff.id && handoff.type) {
-    args.id = handoff.id;
-    args.type = handoff.type;
-    args.search = undefined;
-  }
-  if (handoff.anime) args.anime = true;
-  if (handoff.action === "download") args.download = true;
-}
+type PendingShareLaunch = {
+  readonly action: KunaiShareAction;
+  readonly ref: PlaybackTargetRef;
+  readonly trusted: boolean;
+};
 
 let globalController: SessionController | null = null;
 let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
@@ -531,14 +520,30 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     console.log(`Registered kunai:// protocol handler at ${paths.desktopPath}`);
     return;
   }
-  const protocolHandoff = args.handoffUrl ? parseKunaiHandoffUrl(args.handoffUrl) : null;
-  if (args.handoffUrl && !protocolHandoff) {
-    console.error("Invalid kunai:// handoff URL. Refusing to run external action.");
-    return;
+  let pendingShareLaunch: PendingShareLaunch | null = null;
+  if (args.openUrl) {
+    const parsed = parseKunaiShareUrl(args.openUrl);
+    if (!parsed) {
+      console.error("Invalid kunai:// share URL passed to --open.");
+      process.exitCode = 1;
+      return;
+    }
+    pendingShareLaunch = { ...parsed, trusted: true };
+  } else if (args.handoffUrl) {
+    const handoff = parseKunaiHandoffUrl(args.handoffUrl);
+    if (!handoff) {
+      console.error("Invalid kunai:// handoff URL. Refusing to run external action.");
+      return;
+    }
+    pendingShareLaunch = { action: handoff.action, ref: handoff.ref, trusted: false };
   }
-  if (protocolHandoff) {
-    applyProtocolHandoffArgs(args, protocolHandoff);
-  }
+  const protocolHandoff: KunaiHandoffLaunch | null = pendingShareLaunch
+    ? {
+        action: pendingShareLaunch.action,
+        ref: pendingShareLaunch.ref,
+        requiresConfirmation: true,
+      }
+    : null;
 
   // Guard: verify required system dependencies before touching the shell.
   // Silence pre-TUI console output when onboarding will run — the system
@@ -594,9 +599,27 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   const bootstrapIntent = resolveBootstrapIntent(args);
-  const bootstrapQuery: string | undefined = bootstrapIntent.query;
+  let bootstrapQuery: string | undefined = bootstrapIntent.query;
   let bootstrapTitle: TitleInfo | null = bootstrapIntent.directTitle;
   let bootstrapEpisode: EpisodeInfo | null = null;
+  let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
+
+  if (pendingShareLaunch) {
+    const shareBootstrap = await applyShareRefLaunch(container, pendingShareLaunch);
+    if (shareBootstrap.query) {
+      bootstrapQuery = shareBootstrap.query;
+      bootstrapTitle = null;
+      bootstrapEpisode = null;
+      autoPickSearchResultIndex = shareBootstrap.autoPickSearchResultIndex ?? 1;
+    } else if (shareBootstrap.title) {
+      bootstrapTitle = shareBootstrap.title;
+      bootstrapEpisode = shareBootstrap.episode ?? null;
+      bootstrapQuery = undefined;
+    }
+    if (shareBootstrap.download) {
+      args.download = true;
+    }
+  }
 
   for (const entry of bootstrapIntent.logs) {
     switch (entry.kind) {
@@ -715,7 +738,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
   launchSessionApp(container);
-  if (protocolHandoff) {
+  if (protocolHandoff && !pendingShareLaunch?.trusted) {
     const { confirmProtocolHandoff } = await import("./app-shell/workflows");
     const confirmed = await confirmProtocolHandoff(protocolHandoff);
     if (!confirmed) {
@@ -724,8 +747,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         message: "Protocol handoff cancelled by local confirmation",
         context: {
           action: protocolHandoff.action,
-          hasSearch: Boolean(protocolHandoff.search),
-          hasDirectId: Boolean(protocolHandoff.id),
+          anchor: protocolHandoff.ref.anchor.by,
         },
       });
       await shutdownShell();
@@ -761,14 +783,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapTitle = target?.title ?? null;
       bootstrapEpisode = target?.episode ?? null;
     }
-    const autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
+    const autoPick = autoPickSearchResultIndex;
 
     await globalController.run({
       initialQuery: bootstrapQuery,
       initialTitle: bootstrapTitle,
       initialEpisode: bootstrapEpisode,
       initialRoute: args.initialRoute,
-      autoPickSearchResultIndex,
+      autoPickSearchResultIndex: autoPick,
     });
 
     logger.info("Kunai exited normally");

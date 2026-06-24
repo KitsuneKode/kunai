@@ -11,6 +11,8 @@ import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
 import { markEntryWatched } from "@/app/history-actions";
 import { requestUnifiedOfflinePlayback } from "@/app/offline-playback-launch";
 import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
+import { resolveShareTarget } from "@/app/resolve-share-target";
+import { buildShareRefFromTitleContext } from "@/app/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
@@ -18,13 +20,17 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import type { SessionState } from "@/domain/session/SessionState";
-import { decodeShareCode, encodeShareCode } from "@/domain/share/share-code";
+import {
+  encodePlaybackTargetRef,
+  parsePlaybackTargetRef,
+} from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import {
   readLatestHistoryByTitle,
+  formatTimestamp,
   historyContentType,
   isFinished,
   isFinished as isProgressFinished,
@@ -747,7 +753,12 @@ export type ShellWorkflowResult =
   | "handled"
   | "quit"
   | "unhandled"
-  | { type: "history-entry"; title: TitleInfo; episode?: PlaybackEpisodeInfo };
+  | {
+      type: "history-entry";
+      title: TitleInfo;
+      episode?: PlaybackEpisodeInfo;
+      startSeconds?: number;
+    };
 
 type ActionHandler = (container: Container) => Promise<ShellWorkflowResult>;
 
@@ -1544,7 +1555,7 @@ async function handleMarkKind(container: Container, kind: "anime" | "series"): P
   return "handled";
 }
 
-/** Copy a "watch this" share code for the current title (+episode) to the clipboard. */
+/** Copy a shareable kunai:// link for the current title (+episode) to the clipboard. */
 async function handleShare(container: Container): Promise<"handled"> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
@@ -1556,18 +1567,60 @@ async function handleShare(container: Container): Promise<"handled"> {
     return "handled";
   }
   const episode = state.currentEpisode;
-  const code = encodeShareCode({
-    id: title.id,
-    type: title.type === "movie" ? "movie" : "series",
-    name: title.name,
-    ...(episode ? { season: episode.season, episode: episode.episode } : {}),
+  const mode = state.mode;
+  const mediaKind = resolveCurrentMediaKind(state);
+  const progress =
+    episode &&
+    container.historyRepository.getProgress(
+      {
+        id: title.id,
+        kind: mediaKind,
+        title: title.name,
+        externalIds: title.externalIds,
+      },
+      { season: episode.season, episode: episode.episode },
+    );
+  const resumeSeconds =
+    progress && progress.positionSeconds > 0 ? Math.floor(progress.positionSeconds) : undefined;
+
+  let startSeconds: number | undefined;
+  if (resumeSeconds && resumeSeconds > 10) {
+    const choice = await chooseFromListShell({
+      title: "Copy share link",
+      subtitle: title.name,
+      options: [
+        { value: "start" as const, label: "Copy link from start" },
+        {
+          value: "resume" as const,
+          label: `Copy link at ${formatTimestamp(resumeSeconds)}`,
+        },
+      ],
+    });
+    if (!choice) return "handled";
+    startSeconds = choice === "resume" ? resumeSeconds : undefined;
+  }
+
+  const ref = buildShareRefFromTitleContext({
+    title,
+    mode,
+    episode: episode ? { season: episode.season, episode: episode.episode } : undefined,
+    startSeconds,
+    providerId: state.provider,
   });
-  const copied = await copyToClipboard(code);
+  if (!ref) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Could not build a share link for this title.",
+    });
+    return "handled";
+  }
+  const url = encodePlaybackTargetRef(ref);
+  const copied = await copyToClipboard(url);
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
     note: copied
-      ? `Share code for "${title.name}" copied — send it to a friend, they run /watch.`
-      : `Share code (copy manually): ${code}`,
+      ? `Share link for "${title.name}" copied — open with kunai open or /watch.`
+      : `Share link (copy manually): ${url}`,
   });
   return "handled";
 }
@@ -1704,24 +1757,37 @@ function resolveCurrentMediaKind(state: SessionState): MediaKind {
   return state.mode === "anime" || title?.isAnime === true ? "anime" : "series";
 }
 
-/** Decode a Kunai share code from the clipboard and play that title. */
+/** Open a kunai:// share link from the clipboard. */
 async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
   const clip = await readClipboard();
-  const payload = clip ? decodeShareCode(clip) : null;
-  if (!payload) {
+  const ref = clip ? parsePlaybackTargetRef(clip) : null;
+  if (!ref) {
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "No Kunai share code on the clipboard. Copy a code (kunai1:…) then run /watch.",
+      note: "No Kunai share link on the clipboard. Copy a kunai:// link, then run /watch.",
     });
+    return "handled";
+  }
+  const resolved = await resolveShareTarget(ref, container);
+  if (resolved.note) {
+    container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: resolved.note });
+  }
+  if (resolved.searchQuery) {
+    container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: resolved.searchQuery });
+    if (resolved.mode === "anime") {
+      container.stateManager.dispatch({
+        type: "SET_MODE",
+        mode: "anime",
+        provider: container.config.animeProvider,
+      });
+    }
     return "handled";
   }
   return {
     type: "history-entry",
-    title: { id: payload.id, type: payload.type, name: payload.name },
-    episode:
-      payload.season !== undefined && payload.episode !== undefined
-        ? { season: payload.season, episode: payload.episode }
-        : undefined,
+    title: resolved.title,
+    episode: resolved.episode,
+    ...(resolved.startSeconds !== undefined ? { startSeconds: resolved.startSeconds } : {}),
   };
 }
 

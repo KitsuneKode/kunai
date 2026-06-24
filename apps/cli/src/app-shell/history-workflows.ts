@@ -3,6 +3,7 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+import { copyShareLinkForContext } from "@/app/copy-share-link";
 import { markEntryWatched } from "@/app/history-actions";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
@@ -192,7 +193,14 @@ export async function openHistoryShell(
       continue;
     }
 
-    type EntryAction = "search" | "episodes" | "queue" | "mark-watched" | "remove" | "back";
+    type EntryAction =
+      | "search"
+      | "episodes"
+      | "queue"
+      | "copy-share"
+      | "mark-watched"
+      | "remove"
+      | "back";
     const isSeries = picked.entryType === "series";
     const pickedEntry = entries.find(([id]) => id === picked.id)?.[1];
     const lookupTitle = pickedEntry
@@ -231,6 +239,11 @@ export async function openHistoryShell(
             },
           ]
         : []),
+      {
+        value: "copy-share" as EntryAction,
+        label: "Copy share link",
+        detail: "Copy a portable kunai:// link for this title",
+      },
       {
         value: "mark-watched" as EntryAction,
         label: "Mark as watched",
@@ -304,6 +317,41 @@ export async function openHistoryShell(
       if (result.status === "unsupported") {
         stateManager?.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: result.reason });
       }
+      continue;
+    }
+
+    if (action === "copy-share") {
+      const entry = historyRepository.getLatestForTitleIdentity(lookupTitle);
+      const mode = stateManager?.getState().mode ?? "series";
+      const share = await copyShareLinkForContext({
+        mode,
+        title: {
+          id: picked.id,
+          name: picked.title,
+          type: picked.entryType,
+          externalIds: entry?.externalIds,
+        },
+        ...(isSeries && entry
+          ? {
+              episode: {
+                season: entry.season ?? 1,
+                episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+              },
+            }
+          : {}),
+        ...(entry && entry.positionSeconds > 0
+          ? { startSeconds: Math.floor(entry.positionSeconds) }
+          : {}),
+        ...(entry?.providerId ? { providerId: entry.providerId } : {}),
+      });
+      stateManager?.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: share?.copied
+          ? "Share link copied to clipboard."
+          : share
+            ? `Share link (copy manually): ${share.url}`
+            : "Could not build a share link for this title.",
+      });
       continue;
     }
 

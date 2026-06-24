@@ -71,10 +71,17 @@ test("parseArgs supports zen startup as minimal quick playback", () => {
 });
 
 test("parseArgs accepts a protocol handoff URL without executing it", () => {
-  const args = parseArgs(["--handoff-url", "kunai://play?search=Dune"]);
+  const args = parseArgs(["--handoff-url", "kunai://play?cat=tmdb%3A438631&kind=movie"]);
 
-  expect(args.handoffUrl).toBe("kunai://play?search=Dune");
+  expect(args.handoffUrl).toBe("kunai://play?cat=tmdb%3A438631&kind=movie");
   expect(args.search).toBeUndefined();
+});
+
+test("parseArgs accepts a trusted --open share URL", () => {
+  const args = parseArgs(["--open", "kunai://play?cat=tmdb%3A1399&kind=series&s=1&e=3&t=83"]);
+
+  expect(args.openUrl).toBe("kunai://play?cat=tmdb%3A1399&kind=series&s=1&e=3&t=83");
+  expect(args.handoffUrl).toBeUndefined();
 });
 
 test("parseArgs supports explicit local protocol handler installation", () => {

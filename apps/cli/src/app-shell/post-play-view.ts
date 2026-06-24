@@ -444,6 +444,13 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           primary: false,
         },
         {
+          id: "copy-share-link",
+          label: "Share link",
+          detail: "copy a kunai:// link at the last position",
+          shortcut: "/share",
+          primary: false,
+        },
+        {
           id: "replay",
           label: "Replay / Tracks",
           detail: "rewatch, or change source · quality · audio",
@@ -592,6 +599,13 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         label: "Search",
         detail: "find something new to watch",
         shortcut: postPlayShortcut(bindings, "post-search", "s"),
+        primary: false,
+      },
+      {
+        id: "copy-share-link",
+        label: "Share link",
+        detail: "copy a kunai:// link for this title",
+        shortcut: "/share",
         primary: false,
       },
       {
@@ -783,6 +797,8 @@ export function resolvePostPlayMenuAction(
       return "next-season";
     case "bookmark":
       return "bookmark";
+    case "copy-share-link":
+      return "share";
     case "calendar":
       return "calendar";
     case "session-controls":

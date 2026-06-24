@@ -22,6 +22,7 @@ export type CliArgs = {
   download: boolean;
   downloadPath?: string;
   handoffUrl?: string;
+  openUrl?: string;
   installProtocolHandler: boolean;
   dryRun: boolean;
   help: boolean;
@@ -68,6 +69,7 @@ mpv
 
 PATHS & INTEGRATION
       --download-path <dir>  Override the download directory
+      --open <url>           Open a trusted kunai:// share link
       --install-protocol-handler  Register the kunai:// URL handler
       --handoff-url <url>    Internal: open a kunai:// deep link
       --dry-run              Print what would happen, change nothing
@@ -123,6 +125,7 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--resume",
   "--download",
   "--download-path",
+  "--open",
   "--handoff-url",
   "--install-protocol-handler",
   "--dry-run",
@@ -147,6 +150,7 @@ const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--type",
   "--jump",
   "--download-path",
+  "--open",
   "--handoff-url",
   "--mpv-log-file",
 ]);
@@ -174,6 +178,7 @@ type CommanderCliOptions = {
   readonly download?: boolean;
   readonly downloadPath?: string;
   readonly handoffUrl?: string;
+  readonly open?: string;
   readonly installProtocolHandler?: boolean;
   readonly dryRun?: boolean;
   readonly mpvDebug?: boolean;
@@ -212,6 +217,7 @@ function createCliCommand(): Command {
     .option("--resume")
     .option("--download")
     .option("--download-path <dir>")
+    .option("--open <url>")
     .option("--handoff-url <url>")
     .option("--install-protocol-handler")
     .option("--dry-run")
@@ -315,6 +321,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.continuePlayback = Boolean(options.continue || options.resume);
   args.download = Boolean(options.download);
   args.downloadPath = options.downloadPath;
+  args.openUrl = options.open;
   args.handoffUrl = options.handoffUrl;
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);

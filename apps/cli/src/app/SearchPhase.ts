@@ -28,6 +28,7 @@ import {
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
 import { loadRandomResults, loadSurpriseResults } from "@/app/random-results";
 import { applySearchSelectionSessionRouting } from "@/app/search-selection-routing";
+import { primeShareBootstrapStartSeconds } from "@/app/share-bootstrap-start";
 import { titleInfoFromSearchResult } from "@/app/title-info";
 import {
   episodeInfoFromQueueEntry,
@@ -126,6 +127,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               return { status: "quit" };
             }
             if (typeof routedAction === "object" && routedAction.type === "history-entry") {
+              primeShareBootstrapStartSeconds(routedAction.startSeconds);
               stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
               if (routedAction.episode) {
                 stateManager.dispatch({ type: "SELECT_EPISODE", episode: routedAction.episode });

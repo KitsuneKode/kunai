@@ -2,31 +2,35 @@ import { expect, test } from "bun:test";
 
 import { buildKunaiPlaybackHandoffUrl, parseKunaiHandoffUrl } from "@/app/handoff-url";
 
-test("parseKunaiHandoffUrl accepts search playback handoffs with local confirmation required", () => {
-  expect(parseKunaiHandoffUrl("kunai://play?search=Dune&mode=anime")).toEqual({
+test("parseKunaiHandoffUrl accepts catalog-anchored playback handoffs", () => {
+  expect(parseKunaiHandoffUrl("kunai://play?cat=anilist%3A21&kind=anime")).toEqual({
     action: "play",
-    search: "Dune",
-    anime: true,
     requiresConfirmation: true,
+    ref: {
+      anchor: { by: "catalog", ns: "anilist", id: "21" },
+      kind: "anime",
+    },
   });
 });
 
 test("parseKunaiHandoffUrl accepts direct title and download handoffs", () => {
-  expect(parseKunaiHandoffUrl("kunai://download?id=438631&type=movie")).toEqual({
+  expect(parseKunaiHandoffUrl("kunai://download?cat=tmdb%3A438631&kind=movie")).toEqual({
     action: "download",
-    id: "438631",
-    type: "movie",
     requiresConfirmation: true,
+    ref: {
+      anchor: { by: "catalog", ns: "tmdb", id: "438631" },
+      kind: "movie",
+    },
   });
 });
 
-test("parseKunaiHandoffUrl rejects unsafe schemes and incomplete direct ids", () => {
-  expect(parseKunaiHandoffUrl("https://example.com/play?search=Dune")).toBeNull();
+test("parseKunaiHandoffUrl rejects unsafe schemes and incomplete anchors", () => {
+  expect(parseKunaiHandoffUrl("https://example.com/play?q=Dune")).toBeNull();
   expect(parseKunaiHandoffUrl("javascript:alert(1)")).toBeNull();
-  expect(parseKunaiHandoffUrl("kunai://play?id=438631&type=anime")).toBeNull();
+  expect(parseKunaiHandoffUrl("kunai://play?kind=anime")).toBeNull();
 });
 
-test("buildKunaiPlaybackHandoffUrl prefers TMDB direct ids for series and movies", () => {
+test("buildKunaiPlaybackHandoffUrl prefers TMDB catalog anchors for series and movies", () => {
   expect(
     buildKunaiPlaybackHandoffUrl({
       mode: "series",
@@ -37,10 +41,10 @@ test("buildKunaiPlaybackHandoffUrl prefers TMDB direct ids for series and movies
         externalIds: { tmdbId: "1396" },
       },
     }),
-  ).toBe("kunai://play?id=1396&type=series");
+  ).toBe("kunai://play?cat=tmdb%3A1396&kind=series&n=Breaking%20Bad");
 });
 
-test("buildKunaiPlaybackHandoffUrl uses anime search handoffs for AniList titles", () => {
+test("buildKunaiPlaybackHandoffUrl uses AniList catalog anchors for anime titles", () => {
   expect(
     buildKunaiPlaybackHandoffUrl({
       mode: "anime",
@@ -51,5 +55,5 @@ test("buildKunaiPlaybackHandoffUrl uses anime search handoffs for AniList titles
         externalIds: { anilistId: "21" },
       },
     }),
-  ).toBe("kunai://play?search=One%20Piece&mode=anime");
+  ).toBe("kunai://play?cat=anilist%3A21&kind=anime&n=One%20Piece");
 });
