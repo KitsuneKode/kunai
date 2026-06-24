@@ -509,10 +509,48 @@ export function buildDiagnosticsPanelLines({
           : "Core playback tooling available",
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
+    { label: "─── Timeline", detail: "", tone: "info" },
+    ...formatDiagnosticTimelineLines(recentEvents, 8),
     { label: "─── Export", detail: "", tone: "info" },
     { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
     { label: "/report-issue", detail: "Open the GitHub issue template with context" },
+    {
+      label: "kunai diagnostics recent",
+      detail: "Print redacted recent events as JSONL or Markdown for agents",
+    },
   ];
+}
+
+function formatDiagnosticTimelineLines(
+  recentEvents: readonly DiagnosticEvent[],
+  limit: number,
+): readonly ShellPanelLine[] {
+  if (recentEvents.length === 0) {
+    return [{ label: "No events", detail: "No diagnostic events recorded yet", tone: "neutral" }];
+  }
+
+  return recentEvents.slice(0, limit).map((event) => ({
+    label: `${new Date(event.timestamp).toISOString()} [${event.level}]`,
+    detail: [
+      `${event.category}.${event.operation}`,
+      event.message,
+      formatTimelineCorrelation(event),
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
+    tone: event.level === "error" ? "error" : event.level === "warn" ? "warning" : "neutral",
+  }));
+}
+
+function formatTimelineCorrelation(event: DiagnosticEvent): string {
+  return [
+    event.sessionId ? `session ${compactId(event.sessionId)}` : null,
+    event.playbackCycleId ? `cycle ${compactId(event.playbackCycleId)}` : null,
+    event.providerAttemptId ? `provider ${compactId(event.providerAttemptId)}` : null,
+    event.traceId ? `trace ${compactId(event.traceId)}` : null,
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
 }
 
 function buildDiagnosticsHealthSummary({

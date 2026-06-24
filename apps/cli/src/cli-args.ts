@@ -81,6 +81,7 @@ DIAGNOSTICS
 
 MAINTENANCE
   kunai install                Install or reinstall Kunai (binary default)
+  kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
   kunai upgrade              Update to the latest release (channel-aware)
   kunai upgrade --check      Report whether an update is available
   kunai uninstall            Remove kunai (add --purge to also delete user data)

@@ -30,7 +30,24 @@ physical provider attempt evidence, playback startup path, source evidence,
 cache decisions, subtitle attachment outcome, mpv events, and recent event log
 stay below the summary for developer debugging.
 
+Diagnostics are first-party and local. Always-on summary events are written to
+an in-memory buffer immediately, then best-effort persisted to the local cache
+SQLite DB (`diagnostic_events`) in the background. This cache ring is bounded to
+the newest 10,000 events or 14 days by default and is pruned with the rest of
+disposable cache maintenance. Diagnostics write/read failures must not block
+search, playback, provider resolution, shell input, or shutdown.
+
 Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
+
+For agent-friendly local inspection without launching the shell:
+
+```sh
+kunai diagnostics recent --format jsonl --limit 200
+kunai diagnostics recent --format markdown --limit 50
+```
+
+The command reads the same redacted cache-DB events used by `/diagnostics` and
+support bundles. JSONL is an export/readout format, not the canonical store.
 
 For long local debugging sessions, use structured JSONL traces:
 
