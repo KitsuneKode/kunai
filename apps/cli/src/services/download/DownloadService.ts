@@ -14,7 +14,10 @@ import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import type { Logger } from "@/infra/logger/Logger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
-import { cacheOfflinePosterArtwork } from "@/services/offline/offline-artwork-cache";
+import {
+  cacheOfflinePosterArtwork,
+  resolveOfflinePosterArtifactPath,
+} from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import {
@@ -25,6 +28,11 @@ import {
 } from "@kunai/storage";
 
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
+import {
+  estimateBytesForDownloadQuality,
+  streamMeetsDownloadQualityFloor,
+  ytDlpFormatSelectorForQuality,
+} from "./download-quality-policy";
 import { resolveDownloadFeatureState } from "./DownloadFeature";
 import {
   formatPlaybackDownloadStripe,
@@ -248,7 +256,11 @@ export class DownloadService {
     const tempPath = `${outputPath}.tmp.${id}`;
     await mkdir(dirname(outputPath), { recursive: true });
 
-    const storage = await this.evaluateStorageForPath(outputPath);
+    const storage = await this.evaluateStorageForPath(
+      outputPath,
+      undefined,
+      input.selectedQualityLabel ?? input.qualityPreference,
+    );
     if (!storage.allowed) {
       throw new DownloadEnqueueRejectedError(
         "insufficient-disk",
@@ -441,7 +453,11 @@ export class DownloadService {
     // Claim synchronously (no await before this) so a concurrent worker's
     // selectEligibleQueuedJob skips this job until it is markRunning or released.
     this.claimedJobIds.add(next.id);
-    const storage = await this.evaluateStorageForPath(next.outputPath, next.id);
+    const storage = await this.evaluateStorageForPath(
+      next.outputPath,
+      next.id,
+      next.selectedQualityLabel,
+    );
     if (!storage.allowed) {
       this.claimedJobIds.delete(next.id);
       const retryAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
@@ -645,6 +661,10 @@ export class DownloadService {
       const derivedThumbnailPath = resolveThumbnailArtifactPath(job.outputPath);
       if (derivedThumbnailPath !== job.thumbnailPath) {
         await rm(derivedThumbnailPath, { force: true }).catch(() => {});
+      }
+      const posterPath = resolveOfflinePosterArtifactPath(job);
+      if (posterPath !== job.thumbnailPath && posterPath !== derivedThumbnailPath) {
+        await rm(posterPath, { force: true }).catch(() => {});
       }
     }
     this.deps.repo.delete(jobId);
@@ -850,6 +870,14 @@ export class DownloadService {
     });
 
     if (resolved) {
+      const selectedStream = resolved.stream.providerResolveResult?.streams.find(
+        (candidate) => candidate.id === resolved.stream.providerResolveResult?.selectedStreamId,
+      );
+      if (!streamMeetsDownloadQualityFloor(selectedStream, job.selectedQualityLabel)) {
+        throw new Error(
+          `Resolved stream below configured download quality (${job.selectedQualityLabel ?? "best"})`,
+        );
+      }
       if (resolved.selectionChanged) {
         this.deps.logger.warn("Download stream selection changed during re-resolve", {
           jobId: job.id,
@@ -1306,13 +1334,18 @@ export class DownloadService {
       : join(dirname(getKunaiPaths().dataDbPath), "downloads");
   }
 
-  private async evaluateStorageForPath(outputPath: string, excludeJobId?: string) {
+  private async evaluateStorageForPath(
+    outputPath: string,
+    excludeJobId?: string,
+    qualityLabel?: string,
+  ) {
     await mkdir(dirname(outputPath), { recursive: true });
     const diskStats = await statfs(dirname(outputPath));
+    const qualityEstimate = estimateBytesForDownloadQuality(qualityLabel);
     return evaluateStorageAdmission({
       availableBytes: diskStats.bavail * diskStats.bsize,
       reserveBytes: this.offlineFreeSpaceReserveBytes(),
-      unknownEpisodeEstimateBytes: this.offlineUnknownEpisodeEstimateBytes(),
+      unknownEpisodeEstimateBytes: qualityEstimate,
       alreadyReservedBytes: this.estimateActiveReservationBytes(excludeJobId),
     });
   }
@@ -1321,7 +1354,8 @@ export class DownloadService {
     return this.listActive(200)
       .filter((job) => job.id !== excludeJobId)
       .reduce(
-        (total, job) => total + (job.fileSize ?? this.offlineUnknownEpisodeEstimateBytes()),
+        (total, job) =>
+          total + (job.fileSize ?? estimateBytesForDownloadQuality(job.selectedQualityLabel)),
         0,
       );
   }
@@ -1453,18 +1487,7 @@ function resolveThumbnailArtifactPath(outputPath: string): string {
   return `${outputPath.slice(0, -extension.length)}.thumbnail.jpg`;
 }
 
-/**
- * yt-dlp `-f` selector honoring a configured/selected quality CEILING. Returns
- * undefined when no specific quality is set ("best"/"auto"/unlabelled) so yt-dlp's
- * default (highest video+audio) is kept — "highest when not mentioned, honor the
- * configured quality when it is". The `/best` tail guarantees a fallback when a
- * single-rendition or progressive URL has no separate height-tagged formats.
- */
-export function ytDlpFormatSelectorForQuality(qualityLabel?: string): string | undefined {
-  const height = Number(qualityLabel?.match(/(\d{3,4})\s*p/i)?.[1] ?? "");
-  if (!Number.isFinite(height) || height <= 0) return undefined;
-  return `best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best`;
-}
+export { ytDlpFormatSelectorForQuality } from "./download-quality-policy";
 
 function resolveSubtitleLanguage(stream: StreamInfo): string | null {
   const subtitleKey = stream.subtitle ? normalizeSubtitleUrl(stream.subtitle) : null;

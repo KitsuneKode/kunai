@@ -9,15 +9,14 @@ test("no quality / best / auto → undefined (keep yt-dlp default = highest)", (
   expect(ytDlpFormatSelectorForQuality("")).toBeUndefined();
 });
 
-test("a configured quality becomes a height ceiling with a safe fallback", () => {
+test("a configured quality becomes a height ceiling without unconstrained fallback", () => {
   expect(ytDlpFormatSelectorForQuality("720p")).toBe(
-    "best[height<=720]/bestvideo[height<=720]+bestaudio/best",
+    "best[height<=720]/bestvideo[height<=720]+bestaudio/best[height<=720]",
   );
   expect(ytDlpFormatSelectorForQuality("1080p")).toBe(
-    "best[height<=1080]/bestvideo[height<=1080]+bestaudio/best",
+    "best[height<=1080]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
   );
-  // Tolerant of surrounding text / spacing.
   expect(ytDlpFormatSelectorForQuality("HD 480 p")).toBe(
-    "best[height<=480]/bestvideo[height<=480]+bestaudio/best",
+    "best[height<=480]/bestvideo[height<=480]+bestaudio/best[height<=480]",
   );
 });
