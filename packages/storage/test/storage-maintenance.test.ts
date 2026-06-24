@@ -45,6 +45,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
     titleProviderHealth: 0,
     providerEndpointHealth: 0,
     releaseProgress: 0,
+    diagnosticEvents: 1,
   });
   expect(count(dataDb, "history_progress")).toBe(2);
   expect(count(dataDb, "list_items")).toBe(1);
@@ -55,6 +56,7 @@ test("cache maintenance prunes disposable expired rows without touching durable 
   expect(count(cacheDb, "schedule_cache")).toBe(1);
   expect(count(cacheDb, "resolve_traces")).toBe(2);
   expect(count(cacheDb, "provider_health")).toBe(1);
+  expect(count(cacheDb, "diagnostic_events")).toBe(1);
 
   dataDb.close();
   cacheDb.close();
@@ -165,6 +167,23 @@ function seedCacheData(db: KunaiDatabase): void {
   db.query(
     "INSERT INTO provider_health (provider_id, health_json, checked_at) VALUES (?, '{}', ?)",
   ).run("fresh", "2026-05-16T00:00:00.000Z");
+
+  db.query(
+    `
+      INSERT INTO diagnostic_events (
+        timestamp, level, category, operation, message, created_at
+      )
+      VALUES (?, 'info', 'runtime', 'runtime.old', 'old event', ?)
+    `,
+  ).run(Date.parse("2026-04-30T00:00:00.000Z"), "2026-04-30T00:00:00.000Z");
+  db.query(
+    `
+      INSERT INTO diagnostic_events (
+        timestamp, level, category, operation, message, created_at
+      )
+      VALUES (?, 'info', 'runtime', 'runtime.fresh', 'fresh event', ?)
+    `,
+  ).run(Date.parse("2026-05-16T00:00:00.000Z"), "2026-05-16T00:00:00.000Z");
 }
 
 function seedExpiringCacheTable(

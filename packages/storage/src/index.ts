@@ -59,6 +59,14 @@ export { ProviderEndpointHealthRepository } from "./repositories/provider-endpoi
 export { TitleProviderHealthRepository } from "./repositories/title-provider-health";
 export type { TitleProviderHealthRecord } from "./repositories/title-provider-health";
 export { ResolveTraceRepository } from "./repositories/resolve-trace";
+export { DiagnosticEventsRepository } from "./repositories/diagnostic-events";
+export type {
+  DiagnosticEventPruneOptions,
+  DiagnosticEventPruneResult,
+  StoredDiagnosticCategory,
+  StoredDiagnosticEvent,
+  StoredDiagnosticLevel,
+} from "./repositories/diagnostic-events";
 export { RecommendationCacheRepository } from "./repositories/recommendation-cache";
 export { ReleaseProgressCacheRepository } from "./repositories/release-progress-cache";
 export type {

@@ -8,6 +8,8 @@ export interface DatabaseMaintenanceOptions {
   readonly optimize?: boolean;
   readonly checkpointWal?: boolean;
   readonly maxResolveTraces?: number;
+  readonly maxDiagnosticEvents?: number;
+  readonly diagnosticRetentionDays?: number;
   readonly providerHealthRetentionDays?: number;
 }
 
@@ -21,6 +23,7 @@ export interface CacheMaintenancePruneCounts {
   readonly titleProviderHealth: number;
   readonly providerEndpointHealth: number;
   readonly releaseProgress: number;
+  readonly diagnosticEvents: number;
 }
 
 export interface DatabaseMaintenanceResult {
@@ -40,6 +43,7 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   titleProviderHealth: 0,
   providerEndpointHealth: 0,
   releaseProgress: 0,
+  diagnosticEvents: 0,
 };
 
 export function runDatabaseMaintenance(
@@ -53,6 +57,8 @@ export function runDatabaseMaintenance(
       ? pruneCacheTables(db, {
           now: options.now ?? new Date(),
           maxResolveTraces: options.maxResolveTraces ?? 200,
+          maxDiagnosticEvents: options.maxDiagnosticEvents ?? 10_000,
+          diagnosticRetentionDays: options.diagnosticRetentionDays ?? 14,
           providerHealthRetentionDays: options.providerHealthRetentionDays ?? 7,
         })
       : EMPTY_PRUNE_COUNTS;
@@ -78,10 +84,14 @@ function pruneCacheTables(
   options: {
     readonly now: Date;
     readonly maxResolveTraces: number;
+    readonly maxDiagnosticEvents: number;
+    readonly diagnosticRetentionDays: number;
     readonly providerHealthRetentionDays: number;
   },
 ): CacheMaintenancePruneCounts {
   const nowIso = options.now.toISOString();
+  const staleDiagnosticBefore =
+    options.now.getTime() - options.diagnosticRetentionDays * 24 * 60 * 60 * 1000;
   const staleProviderHealthBefore = new Date(
     options.now.getTime() - options.providerHealthRetentionDays * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -139,6 +149,24 @@ function pruneCacheTables(
       "DELETE FROM release_progress_cache WHERE stale_after_at <= ?",
       nowIso,
     );
+    const staleDiagnosticEvents = deleteRows(
+      db,
+      "DELETE FROM diagnostic_events WHERE timestamp < ?",
+      staleDiagnosticBefore,
+    );
+    const overflowDiagnosticEvents = deleteRows(
+      db,
+      `
+        DELETE FROM diagnostic_events
+        WHERE id IN (
+          SELECT id
+          FROM diagnostic_events
+          ORDER BY timestamp DESC, id DESC
+          LIMIT -1 OFFSET ?
+        )
+      `,
+      options.maxDiagnosticEvents,
+    );
 
     return {
       streamCache,
@@ -150,6 +178,7 @@ function pruneCacheTables(
       titleProviderHealth,
       providerEndpointHealth,
       releaseProgress,
+      diagnosticEvents: staleDiagnosticEvents + overflowDiagnosticEvents,
     };
   });
 

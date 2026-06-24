@@ -99,6 +99,7 @@ test("migrations are idempotent and create expected storage tables", () => {
   expect(cacheTables).toContain("provider_endpoint_health");
   expect(cacheTables).toContain("resolve_traces");
   expect(cacheTables).toContain("schedule_cache");
+  expect(cacheTables).toContain("diagnostic_events");
 
   dataDb.close();
   cacheDb.close();

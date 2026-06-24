@@ -719,6 +719,43 @@ export const cacheMigrations: readonly Migration[] = [
         ON provider_title_bridge(expires_at);
     `,
   },
+  {
+    id: "013_cache_diagnostic_events",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS diagnostic_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        level TEXT NOT NULL,
+        category TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        message TEXT NOT NULL,
+        session_id TEXT,
+        playback_cycle_id TEXT,
+        provider_attempt_id TEXT,
+        trace_id TEXT,
+        span_id TEXT,
+        title_id TEXT,
+        provider_id TEXT,
+        season INTEGER,
+        episode INTEGER,
+        context_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_timestamp
+        ON diagnostic_events(timestamp DESC, id DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_session
+        ON diagnostic_events(session_id, timestamp DESC, id DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_category
+        ON diagnostic_events(category, timestamp DESC, id DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_diagnostic_events_level
+        ON diagnostic_events(level, timestamp DESC, id DESC);
+    `,
+  },
 ];
 
 export function runMigrations(
