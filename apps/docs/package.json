@@ -6,9 +6,11 @@
   "scripts": {
     "generate": "bun run scripts/sync-code-metadata.ts && fumadocs-mdx",
     "dev": "bun run generate && next dev",
-    "build": "bun run generate && NEXT_TELEMETRY_DISABLED=1 next build --webpack",
+    "build:app": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "build": "bun run generate && bun run build:app",
     "start": "next start",
-    "typecheck": "bun run generate && bun tsc --noEmit",
+    "typecheck:app": "bun tsc --noEmit",
+    "typecheck": "bun run generate && bun run typecheck:app",
     "lint": "oxlint app components lib scripts test mdx-components.tsx next.config.mjs source.config.ts",
     "lighthouse:docs": "bun run scripts/lighthouse-docs.ts",
     "fmt": "oxfmt --write .",
