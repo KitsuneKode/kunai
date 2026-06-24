@@ -1,4 +1,4 @@
-import { buildShareRefFromTitleContext } from "@/app/share-ref-from-context";
+import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import {
   encodePlaybackTargetRef,

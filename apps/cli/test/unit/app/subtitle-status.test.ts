@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import {
   describePlaybackSubtitleStatus,
   projectPlaybackSubtitleState,
-} from "@/app/subtitle-status";
+} from "@/app/playback/subtitle-status";
 import type { StreamInfo } from "@/domain/types";
 
 const hardsubStream: StreamInfo = {

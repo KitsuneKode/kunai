@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { PlaybackSelectionCoordinator } from "@/app/playback-selection-coordinator";
+import { PlaybackSelectionCoordinator } from "@/app/playback/playback-selection-coordinator";
 import { resolveEffectiveStreamSelection } from "@/domain/playback/playback-selection-policy";
 import type { EpisodeInfo } from "@/domain/types";
 import { EpisodePlaybackSelectionService } from "@/services/playback/EpisodePlaybackSelectionService";
@@ -17,29 +20,21 @@ const e1: EpisodeInfo = { season: 1, episode: 1 };
 const e2: EpisodeInfo = { season: 1, episode: 2 };
 
 describe("playback selection handoff", () => {
+  let dir = "";
+
+  afterEach(async () => {
+    if (dir) await rm(dir, { recursive: true, force: true });
+    dir = "";
+  });
+
   test("E1 manual source pick flows into E2 resolve without carrying streamId", async () => {
-    class MockEpisodeStore {
-      async get() {
-        return null;
-      }
-      async set() {}
-    }
-
-    class MockTitleStore {
-      data: { sourceId: string; updatedAt: string } | null = null;
-      async get() {
-        return this.data;
-      }
-      async set(input: { sourceId: string }) {
-        this.data = { sourceId: input.sourceId, updatedAt: "now" };
-      }
-    }
-
+    dir = await mkdtemp(join(tmpdir(), "kunai-selection-handoff-"));
     const coordinator = new PlaybackSelectionCoordinator({
       titleId: title.id,
-      episodePlaybackSelection:
-        new MockEpisodeStore() as unknown as EpisodePlaybackSelectionService,
-      titlePlaybackSource: new MockTitleStore() as unknown as TitlePlaybackSourceService,
+      episodePlaybackSelection: new EpisodePlaybackSelectionService(
+        join(dir, "episode-playback-selections.json"),
+      ),
+      titlePlaybackSource: new TitlePlaybackSourceService(join(dir, "title-playback-sources.json")),
     });
 
     await coordinator.applyManualSourcePick("vidking", e1, "source:zoro");

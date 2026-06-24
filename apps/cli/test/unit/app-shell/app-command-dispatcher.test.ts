@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ActivePlaybackCommandDispatchDeps } from "@/app-shell/active-playback-command-dispatcher";
-import { dispatchAppCommand } from "@/app-shell/app-command-dispatcher";
+import { dispatchAppCommand } from "@/app-shell/command-router";
 import type { ShellAction } from "@/app-shell/types";
 
 describe("dispatchAppCommand", () => {

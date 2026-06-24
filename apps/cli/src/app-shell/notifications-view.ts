@@ -1,4 +1,4 @@
-import type { NotificationRecord } from "@kunai/storage";
+import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
 import { notificationKindGlyph } from "./notification-kinds";
 

@@ -4,7 +4,7 @@ import type { PlaybackRecommendationRailItem } from "@/app-shell/types";
 import {
   enqueuePostPlaybackRecommendation,
   recommendationRailItemToMediaItem,
-} from "@/app/playback-recommendation-actions";
+} from "@/app/playback/playback-recommendation-actions";
 
 describe("playback recommendation actions", () => {
   const item: PlaybackRecommendationRailItem = {

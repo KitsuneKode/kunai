@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { EpisodePrefetchHandle, type EpisodePrefetchBundle } from "@/app/episode-prefetch";
+import { EpisodePrefetchHandle, type EpisodePrefetchBundle } from "@/app/playback/episode-prefetch";
 
 const target = {
   titleId: "tmdb:1",

@@ -4,7 +4,7 @@ import {
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
   type RecentPlaybackStreamRecord,
-} from "@/app/recent-playback-stream";
+} from "@/app/playback/recent-playback-stream";
 
 const stream = { url: "https://example.test/stream.m3u8" } as never;
 

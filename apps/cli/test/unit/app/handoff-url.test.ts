@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { buildKunaiPlaybackHandoffUrl, parseKunaiHandoffUrl } from "@/app/handoff-url";
+import { buildKunaiPlaybackHandoffUrl, parseKunaiHandoffUrl } from "@/app/bootstrap/handoff-url";
 
 test("parseKunaiHandoffUrl accepts catalog-anchored playback handoffs", () => {
   expect(parseKunaiHandoffUrl("kunai://play?cat=anilist%3A21&kind=anime")).toEqual({

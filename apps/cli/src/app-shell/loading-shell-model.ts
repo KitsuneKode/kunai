@@ -1,76 +1,100 @@
+import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { selectFooterActions } from "./shell-primitives";
 import type { FooterAction, LoadingShellState } from "./types";
 
+type LoadingFooterBindingId =
+  | "command-palette"
+  | "help"
+  | "player-autoplay"
+  | "player-autoskip"
+  | "player-diagnostics"
+  | "player-episode"
+  | "player-fallback"
+  | "player-next"
+  | "player-previous"
+  | "player-source"
+  | "player-stop"
+  | "player-stop-after-current";
+
+function footerActionFromBinding(
+  id: LoadingFooterBindingId,
+  action: FooterAction["action"],
+  bindings: readonly KeyBinding[],
+  options: {
+    readonly label?: string;
+    readonly primary?: boolean;
+    readonly disabled?: boolean;
+  } = {},
+): FooterAction {
+  const binding = bindings.find((candidate) => candidate.id === id);
+  return {
+    key: binding ? formatChord(binding.chord).toLowerCase() : "",
+    label: options.label ?? binding?.hintLabel ?? binding?.label ?? String(action),
+    action,
+    primary: options.primary,
+    disabled: options.disabled,
+  };
+}
+
 export function buildLoadingFooterActions(state: LoadingShellState): readonly FooterAction[] {
+  const bindings = KEYBINDINGS;
   const fallbackLabel = state.fallbackProviderName
     ? `fallback ${state.fallbackProviderName}`
     : "fallback";
   const isSeriesPlayback = Boolean(
     state.isSeriesPlayback || state.hasNextEpisode || state.hasPreviousEpisode,
   );
+
   if (state.operation === "playing") {
-    // These keys mirror the mpv Lua bridge and route through Ink while the
-    // shell supervises active playback. Keep the footer and bridge vocabulary
-    // aligned so navigation/source actions feel like one control surface.
     const playingFooterActions: readonly FooterAction[] = [
-      { key: "/", label: "commands", action: "command-mode", primary: true },
-      ...(state.hasNextEpisode ? [{ key: "n", label: "next", action: "next" as const }] : []),
+      footerActionFromBinding("command-palette", "command-mode", bindings, { primary: true }),
+      ...(state.hasNextEpisode ? [footerActionFromBinding("player-next", "next", bindings)] : []),
       ...(state.hasPreviousEpisode
-        ? [{ key: "p", label: "prev", action: "previous" as const }]
+        ? [footerActionFromBinding("player-previous", "previous", bindings)]
         : []),
       ...(isSeriesPlayback
         ? [
-            { key: "e", label: "episodes", action: "pick-episode" as const },
-            {
-              key: "a",
+            footerActionFromBinding("player-episode", "pick-episode", bindings),
+            footerActionFromBinding("player-autoplay", "toggle-autoplay", bindings, {
               label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
-              action: "toggle-autoplay" as const,
-            },
+            }),
           ]
         : []),
-      { key: "o", label: "source", action: "source" },
-      { key: "q", label: "stop", action: "quit" },
+      footerActionFromBinding("player-source", "source", bindings),
+      footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
     ];
     return selectFooterActions(playingFooterActions, state.footerMode ?? "detailed");
   }
 
   return [
-    { key: "/", label: "commands", action: "command-mode" },
+    footerActionFromBinding("command-palette", "command-mode", bindings),
     ...(state.hasStreamCandidates
-      ? [{ key: "o", label: "source", action: "source" as const }]
+      ? [footerActionFromBinding("player-source", "source", bindings)]
       : []),
     ...(state.fallbackAvailable
       ? [
-          {
-            key: "f",
+          footerActionFromBinding("player-fallback", "fallback", bindings, {
             label: fallbackLabel,
-            action: "fallback" as const,
-          },
+          }),
         ]
       : []),
     ...(isSeriesPlayback
       ? [
-          {
-            key: "a",
+          footerActionFromBinding("player-autoplay", "toggle-autoplay", bindings, {
             label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
-            action: "toggle-autoplay" as const,
-          },
-          {
-            key: "u",
+          }),
+          footerActionFromBinding("player-autoskip", "toggle-autoskip", bindings, {
             label: state.autoskipPaused ? "resume autoskip" : "pause autoskip",
-            action: "toggle-autoskip" as const,
-          },
-          {
-            key: "x",
+          }),
+          footerActionFromBinding("player-stop-after-current", "stop-after-current", bindings, {
             label: "stop after current",
-            action: "stop-after-current" as const,
-          },
+          }),
         ]
       : []),
     { key: "g", label: "settings", action: "settings" },
     { key: "h", label: "history", action: "history" },
-    { key: "d", label: "diagnostics", action: "diagnostics" },
-    { key: "?", label: "help", action: "help" },
+    footerActionFromBinding("player-diagnostics", "diagnostics", bindings),
+    footerActionFromBinding("help", "help", bindings),
   ];
 }
 

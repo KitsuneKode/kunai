@@ -3,7 +3,7 @@ import {
   parseNotificationActionIds,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
-import type { NotificationRecord } from "@kunai/storage";
+import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
 const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
   "restore-queue",

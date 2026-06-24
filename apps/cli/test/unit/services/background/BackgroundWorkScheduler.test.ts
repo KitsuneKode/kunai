@@ -149,4 +149,33 @@ describe("BackgroundWorkScheduler", () => {
     expect(result.failed).toEqual([]);
     expect(result.skipped).toEqual([{ id: "abort-while-running", reason: "aborted" }]);
   });
+
+  test("records per-lane drain diagnostics", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const scheduler = new BackgroundWorkScheduler({
+      maxConcurrent: 1,
+      diagnostics: {
+        record: (event) => {
+          events.push(event as Record<string, unknown>);
+        },
+      },
+    });
+
+    scheduler.enqueue({
+      id: "warm",
+      lane: "recommendation-warm",
+      run: async () => {},
+    });
+
+    await scheduler.drain();
+
+    expect(events.some((event) => event.operation === "background.work.drain")).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.operation === "background.work.drain" &&
+          (event.context as { lane?: string } | undefined)?.lane === "recommendation-warm",
+      ),
+    ).toBe(true);
+  });
 });

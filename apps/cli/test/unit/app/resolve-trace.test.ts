@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { createResolveTraceStub } from "@/app/resolve-trace";
+import { createResolveTraceStub } from "@/app/playback/resolve-trace";
 
 test("createResolveTraceStub maps anime mode into shared title identity", () => {
   const trace = createResolveTraceStub({

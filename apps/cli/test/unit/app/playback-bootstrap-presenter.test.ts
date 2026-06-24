@@ -5,7 +5,7 @@ import {
   formatBootstrapInventorySummary,
   latestPlaybackStartupStage,
   mapStartupStageToLoadingStage,
-} from "@/app/playback-bootstrap-presenter";
+} from "@/app/playback/playback-bootstrap-presenter";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 
 function timelineEvent(stage: string): DiagnosticEvent {

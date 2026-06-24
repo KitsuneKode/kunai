@@ -1,4 +1,5 @@
 export * from "./cache-policy";
+export * from "./provider-failure-classifier";
 export * from "./embed-url";
 export * from "./provider-id-aliases";
 export * from "./provider-engine";

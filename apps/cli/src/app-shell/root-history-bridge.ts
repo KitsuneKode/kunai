@@ -8,7 +8,10 @@ import {
   type ContinueSourcePreference,
 } from "@/services/continuation/continuation-source";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
-import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
+import type {
+  HistoryProgress,
+  ReleaseProgressProjection,
+} from "@/services/storage/storage-read-models";
 
 export type RootHistorySelection = {
   titleId: string;

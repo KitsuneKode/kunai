@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ProviderResolveFailureError,
   resolveProviderStreamWithRetries,
-} from "@/app/provider-resolve-retry";
+} from "@/app/playback/provider-resolve-retry";
 
 describe("resolveProviderStreamWithRetries", () => {
   test("retries recoverable failures and reports retry status", async () => {

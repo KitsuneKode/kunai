@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { SessionController } from "@/app/SessionController";
+import { SessionController } from "@/app/session/SessionController";
 
 describe("SessionController shutdown", () => {
   test("releases persistent player session even when presence shutdown fails", async () => {

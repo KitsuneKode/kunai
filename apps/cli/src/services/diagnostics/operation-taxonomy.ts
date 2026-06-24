@@ -236,6 +236,18 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     summary: "Kunai captured app, player, total RSS, heap, and swap memory for diagnostics.",
     userAction: "Use repeated samples to compare app RSS, mpv RSS, heap, and swap over time.",
   },
+  {
+    operation: "background.work.drain",
+    category: "runtime",
+    audience: "developer",
+    summary: "A background work lane finished draining queued tasks.",
+  },
+  {
+    operation: "background.work.shutdown",
+    category: "runtime",
+    audience: "developer",
+    summary: "Background work scheduler began shutdown and drained pending lanes.",
+  },
 ];
 
 const OPERATIONS_BY_NAME = new Map(

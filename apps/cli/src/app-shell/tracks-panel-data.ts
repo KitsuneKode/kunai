@@ -1,5 +1,5 @@
-import { buildSourceInventoryCacheInput } from "@/app/playback-source-cache-invalidation";
-import { buildStreamInventoryView } from "@/app/source-quality";
+import { buildSourceInventoryCacheInput } from "@/app/playback/playback-source-cache-invalidation";
+import { buildStreamInventoryView } from "@/app/playback/source-quality";
 import type { Container } from "@/container";
 import {
   buildProviderTrackCapabilities,

@@ -4,7 +4,7 @@ import {
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
   shouldKeepPersistentMpvForPlaybackRecovery,
   shouldReleasePersistentMpvBeforePostPlay,
-} from "@/app/mpv-session-lifecycle";
+} from "@/app/playback/mpv-session-lifecycle";
 import type { PlaybackResult } from "@/domain/types";
 
 describe("mpv session lifecycle policy", () => {

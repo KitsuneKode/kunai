@@ -4,8 +4,8 @@ import {
   applyPlaybackControlTrackSelection,
   buildTrackOverrideDiagnosticContext,
   type PlaybackTrackSelectionEffects,
-} from "@/app/playback-track-selection-policy";
-import type { StreamSelectionIntent } from "@/app/source-quality";
+} from "@/app/playback/playback-track-selection-policy";
+import type { StreamSelectionIntent } from "@/app/playback/source-quality";
 import type { EpisodeInfo } from "@/domain/types";
 
 const episode: EpisodeInfo = { season: 2, episode: 7 };

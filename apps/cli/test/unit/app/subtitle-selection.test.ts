@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { choosePlaybackSubtitle, shouldAttemptLateSubtitleLookup } from "@/app/subtitle-selection";
+import {
+  choosePlaybackSubtitle,
+  shouldAttemptLateSubtitleLookup,
+} from "@/app/playback/subtitle-selection";
 import type { StreamInfo } from "@/domain/types";
 
 const BASE_STREAM: StreamInfo = {

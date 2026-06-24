@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
-} from "@/app/playback-dead-stream-ledger";
+} from "@/app/playback/playback-dead-stream-ledger";
 
 test("dead stream ledger records blocked URLs per title episode and provider", () => {
   const ledger = createDeadStreamUrlLedger();

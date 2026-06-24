@@ -10,7 +10,7 @@ import {
   resolvePlaybackResultDecision,
   resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
-} from "@/app/playback-session-controller";
+} from "@/app/playback/playback-session-controller";
 import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { PlaybackResult, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 

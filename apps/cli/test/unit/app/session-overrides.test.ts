@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveSessionConfigOverrides } from "@/app/session-overrides";
+import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 
 describe("resolveSessionConfigOverrides", () => {
   const off = { zenMode: false, minimalMode: false };

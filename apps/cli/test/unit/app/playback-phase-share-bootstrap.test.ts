@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createBootstrapResumeResolver } from "@/app/playback-resume-from-history";
+import { createBootstrapResumeResolver } from "@/app/playback/playback-resume-from-history";
 import type { EpisodeInfo } from "@/domain/types";
 
 const ep = (season: number, episode: number): EpisodeInfo => ({ season, episode });

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { markEntryWatched } from "@/app/history-actions";
+import { markEntryWatched } from "@/app/search/history-actions";
 import type { HistoryProgress } from "@kunai/storage";
 
 function entry(patch: Partial<HistoryProgress> = {}): HistoryProgress {

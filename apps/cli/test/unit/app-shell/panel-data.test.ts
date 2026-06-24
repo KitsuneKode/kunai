@@ -9,6 +9,10 @@ import {
   buildProviderPickerOptions,
   groupHistoryByRecency,
 } from "@/app-shell/panel-data";
+import {
+  buildHelpPanelCommandLines,
+  HELP_PANEL_COMMAND_IDS,
+} from "@/domain/session/command-registry";
 import { createInitialState } from "@/domain/session/SessionState";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { HistoryProgress } from "@kunai/storage";
@@ -28,6 +32,17 @@ describe("panel-data", () => {
     expect(quality?.label).toBe("k / K");
     // the old panel claimed a bare "v" for quality — it was never bound.
     expect(lines.some((line) => line.label === "v")).toBe(false);
+  });
+
+  test("buildHelpPanelLines slash commands come from the command registry", () => {
+    const lines = buildHelpPanelLines();
+    const registryLines = buildHelpPanelCommandLines();
+    expect(registryLines.length).toBe(HELP_PANEL_COMMAND_IDS.length);
+    for (const registryLine of registryLines) {
+      expect(lines).toContainEqual({ label: registryLine.label, detail: registryLine.detail });
+    }
+    expect(lines.find((line) => line.label === "/history")?.detail).toContain("watch history");
+    expect(lines.find((line) => line.label === "/wl")?.detail).toContain("watchlist");
   });
 
   test("buildAboutPanelLines includes default mode summary", () => {

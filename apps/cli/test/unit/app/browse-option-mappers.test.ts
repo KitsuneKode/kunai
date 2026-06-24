@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/browse-option-mappers";
+import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/search/browse-option-mappers";
 import type { SearchResult } from "@/domain/types";
 
 describe("toBrowseResultOption", () => {

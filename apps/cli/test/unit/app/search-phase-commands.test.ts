@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { loadSurpriseList } from "@/app/discovery-lists";
-import { SEARCH_BROWSE_COMMAND_IDS } from "@/app/SearchPhase";
+import { loadSurpriseList } from "@/app/discover/discovery-lists";
+import { SEARCH_BROWSE_COMMAND_IDS } from "@/app/search/SearchPhase";
 
 test("search browse command palette exposes discover, random, inbox, and offline surfaces", () => {
   expect([...SEARCH_BROWSE_COMMAND_IDS].slice(0, 15)).toEqual([

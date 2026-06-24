@@ -4,7 +4,7 @@ import {
   applyProviderPickerSelection,
   applyUserProviderSwitch,
   resolveTitleProviderPreferenceForTitle,
-} from "@/app/playback-provider-switch";
+} from "@/app/playback/playback-provider-switch";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 

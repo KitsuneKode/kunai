@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { runAutoplayAdvanceCountdown } from "@/app/autoplay-advance-countdown";
+import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 
 test("runAutoplayAdvanceCountdown ticks down and continues by default", async () => {
   const ticks: number[] = [];

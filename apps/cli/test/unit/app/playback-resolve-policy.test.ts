@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolvePlaybackResolvePolicy } from "@/app/playback-resolve-policy";
+import { resolvePlaybackResolvePolicy } from "@/app/playback/playback-resolve-policy";
 
 describe("resolvePlaybackResolvePolicy", () => {
   test("manual provider switch forces fresh state without disabling guided fallback", () => {

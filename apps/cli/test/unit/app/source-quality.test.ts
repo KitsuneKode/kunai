@@ -13,7 +13,7 @@ import {
   streamSelectionFromSource,
   streamSelectionFromStream,
   streamSelectionFromTrackPick,
-} from "@/app/source-quality";
+} from "@/app/playback/source-quality";
 import type { StreamInfo } from "@/domain/types";
 
 const streamWithCandidates: StreamInfo = {

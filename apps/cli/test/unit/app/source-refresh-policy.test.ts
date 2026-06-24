@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import {
   createSourceRefreshCooldownState,
   resolveSourceRefreshDecision,
-} from "@/app/source-refresh-policy";
+} from "@/app/playback/source-refresh-policy";
 
 const scope = {
   titleId: "tmdb:1",

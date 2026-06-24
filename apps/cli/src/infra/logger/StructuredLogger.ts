@@ -51,8 +51,10 @@ export class StructuredLogger implements Logger {
   }
 
   private log(level: LogEntry["level"], message: string, context?: Record<string, unknown>): void {
-    // Silent by default - only log in debug mode
-    if (!this.isDebugMode) return;
+    // Debug/info stay silent unless debug mode is on; warn/error/fatal always emit.
+    if (!this.isDebugMode && level !== "warn" && level !== "error" && level !== "fatal") {
+      return;
+    }
 
     const mergedContext =
       Object.keys(this.boundContext).length || context

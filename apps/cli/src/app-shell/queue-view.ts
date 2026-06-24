@@ -1,4 +1,4 @@
-import type { QueueEntry } from "@kunai/storage";
+import type { QueueEntry } from "@/services/storage/storage-read-models";
 
 export type QueueRowState = "playing" | "pending" | "played";
 

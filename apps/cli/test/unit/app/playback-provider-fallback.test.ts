@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
-} from "@/app/playback-provider-fallback";
+} from "@/app/playback/playback-provider-fallback";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const config = {

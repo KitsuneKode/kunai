@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { resolveBootstrapStartSeconds } from "@/app/playback-resume-from-history";
+import { resolveBootstrapStartSeconds } from "@/app/playback/playback-resume-from-history";
 
 describe("resolveBootstrapStartSeconds", () => {
   it("prefers the larger of shared vs history", () => {

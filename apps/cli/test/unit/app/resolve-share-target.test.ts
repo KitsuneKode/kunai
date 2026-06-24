@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { resolveShareTarget, shareTitleCatalogIdForAnimeMapping } from "@/app/resolve-share-target";
+import {
+  resolveShareTarget,
+  shareTitleCatalogIdForAnimeMapping,
+} from "@/app/bootstrap/resolve-share-target";
 import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 

@@ -4,7 +4,7 @@ import {
   consumeShareBootstrapStartSeconds,
   primeShareBootstrapStartSeconds,
   setShareBootstrapStartSeconds,
-} from "@/app/share-bootstrap-start";
+} from "@/app/bootstrap/share-bootstrap-start";
 
 describe("share bootstrap start mailbox", () => {
   it("stores and consumes a one-shot start position", () => {

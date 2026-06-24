@@ -1,9 +1,9 @@
 import { formatChord, KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
-import { isLocalPlaybackStream } from "@/app/playback-source-ui";
+import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
   buildPlaybackControlSummary,
   type PlaybackSessionControlInput,
-} from "@/app/source-quality";
+} from "@/app/playback/source-quality";
 
 export type PlaybackSessionKeysInput = PlaybackSessionControlInput & {
   readonly hasNextEpisode: boolean;

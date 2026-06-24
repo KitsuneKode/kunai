@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { playTrailer } from "@/app/details-trailer";
+import { playTrailer } from "@/app/search/details-trailer";
 
 describe("playTrailer", () => {
   it("plays the url through the player port", async () => {

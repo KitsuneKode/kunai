@@ -6,8 +6,11 @@ import {
   openAnimeEpisodeListPicker,
   openProviderPicker,
 } from "@/app-shell/workflows";
-import { purgeEpisodePlaybackCache, purgeTitlePlaybackCaches } from "@/app/playback-cache-purge";
-import { applyUserProviderSwitch } from "@/app/playback-provider-switch";
+import {
+  purgeEpisodePlaybackCache,
+  purgeTitlePlaybackCaches,
+} from "@/app/playback/playback-cache-purge";
+import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { resolveEpisodeAvailability } from "@/domain/playback/playback-policy";

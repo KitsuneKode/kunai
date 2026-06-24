@@ -2,8 +2,8 @@ import { useLineEditor } from "@/app-shell/line-editor";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
-} from "@/app/notification-media-session";
-import { applyProviderPickerSelection } from "@/app/playback-provider-switch";
+} from "@/app/playback/notification-media-session";
+import { applyProviderPickerSelection } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
@@ -256,7 +256,10 @@ function HelpShell({
 
 function readCachedHistoryNextReleases(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
-  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+  cachedProgress: ReadonlyMap<
+    string,
+    import("@/services/storage/storage-read-models").ReleaseProgressProjection
+  >,
 ): NonNullable<HistoryPickerOptionsContext["nextReleases"]> {
   const releases = new Map<string, ContinueHistoryRelease>();
   for (const [titleId] of entries) {
@@ -268,7 +271,10 @@ function readCachedHistoryNextReleases(
 
 function readCachedHistoryReleaseSignals(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
-  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+  cachedProgress: ReadonlyMap<
+    string,
+    import("@/services/storage/storage-read-models").ReleaseProgressProjection
+  >,
 ): NonNullable<HistoryPickerOptionsContext["releaseSignals"]> {
   const signals = new Map<string, HistoryReleaseSignal>();
   for (const [titleId] of entries) {
@@ -287,7 +293,10 @@ function readCachedHistoryReleaseSignals(
 function readCachedHistoryProjections(
   entries: ReadonlyArray<[string, RootHistorySelection["entry"]]>,
   container: Container,
-  cachedProgress: ReadonlyMap<string, import("@kunai/storage").ReleaseProgressProjection>,
+  cachedProgress: ReadonlyMap<
+    string,
+    import("@/services/storage/storage-read-models").ReleaseProgressProjection
+  >,
   catalogBounds: ReadonlyMap<
     string,
     import("@/domain/continuation/catalog-episode-bounds").CatalogEpisodeBounds

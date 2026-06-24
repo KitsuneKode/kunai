@@ -1,3 +1,5 @@
+import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
+
 export type BackgroundWorkLane =
   | "playback-critical"
   | "next-episode-prefetch"
@@ -30,6 +32,12 @@ const LANE_PRIORITY: Record<BackgroundWorkLane, number> = {
   "maintenance-cleanup": 10,
 };
 
+type LaneDrainStats = {
+  completed: number;
+  failed: number;
+  skipped: number;
+};
+
 export class BackgroundWorkScheduler {
   private readonly queue = new Map<string, BackgroundWorkItem>();
   private drainInFlight?: Promise<BackgroundWorkDrainResult>;
@@ -37,6 +45,7 @@ export class BackgroundWorkScheduler {
   constructor(
     private readonly options: {
       readonly maxConcurrent?: number;
+      readonly diagnostics?: Pick<DiagnosticsService, "record">;
     } = {},
   ) {}
 
@@ -62,18 +71,43 @@ export class BackgroundWorkScheduler {
     }
   }
 
+  recordShutdown(reason: "container-dispose" | "app-exit" = "container-dispose"): void {
+    this.options.diagnostics?.record({
+      level: "debug",
+      category: "runtime",
+      operation: "background.work.shutdown",
+      message: "Background work scheduler shutting down",
+      context: {
+        reason,
+        pendingCount: this.pendingCount(),
+      },
+    });
+  }
+
   private async drainQueue(): Promise<BackgroundWorkDrainResult> {
     const completed: string[] = [];
     const failed: { id: string; error: string }[] = [];
     const skipped: { id: string; reason: "aborted" }[] = [];
+    const laneStats = new Map<BackgroundWorkLane, LaneDrainStats>();
+    const itemLanes = new Map<string, BackgroundWorkLane>();
     const maxConcurrent = Math.max(1, Math.trunc(this.options.maxConcurrent ?? 1));
+
+    const noteLane = (lane: BackgroundWorkLane, outcome: keyof LaneDrainStats) => {
+      const stats = laneStats.get(lane) ?? { completed: 0, failed: 0, skipped: 0 };
+      stats[outcome] += 1;
+      laneStats.set(lane, stats);
+    };
 
     while (this.queue.size > 0) {
       const batch = this.takeNextBatch(maxConcurrent);
+      for (const item of batch) {
+        itemLanes.set(item.id, item.lane);
+      }
       await Promise.all(
         batch.map(async (item) => {
           if (item.signal?.aborted) {
             skipped.push({ id: item.id, reason: "aborted" });
+            noteLane(item.lane, "skipped");
             return;
           }
 
@@ -84,18 +118,22 @@ export class BackgroundWorkScheduler {
             await item.run(controller.signal);
             if (item.signal?.aborted || controller.signal.aborted) {
               skipped.push({ id: item.id, reason: "aborted" });
+              noteLane(item.lane, "skipped");
               return;
             }
             completed.push(item.id);
+            noteLane(item.lane, "completed");
           } catch (error) {
             if (item.signal?.aborted || controller.signal.aborted || isAbortLike(error)) {
               skipped.push({ id: item.id, reason: "aborted" });
+              noteLane(item.lane, "skipped");
               return;
             }
             failed.push({
               id: item.id,
               error: error instanceof Error ? error.message : String(error),
             });
+            noteLane(item.lane, "failed");
           } finally {
             item.signal?.removeEventListener("abort", relayAbort);
           }
@@ -103,7 +141,49 @@ export class BackgroundWorkScheduler {
       );
     }
 
-    return { completed, failed, skipped };
+    const result = { completed, failed, skipped };
+    this.recordDrainDiagnostics(laneStats, result, itemLanes);
+    return result;
+  }
+
+  private recordDrainDiagnostics(
+    laneStats: Map<BackgroundWorkLane, LaneDrainStats>,
+    result: BackgroundWorkDrainResult,
+    itemLanes: Map<string, BackgroundWorkLane>,
+  ): void {
+    if (!this.options.diagnostics || laneStats.size === 0) return;
+
+    for (const [lane, stats] of laneStats) {
+      this.options.diagnostics.record({
+        level: "debug",
+        category: "runtime",
+        operation: "background.work.drain",
+        message: `Background lane drained: ${lane}`,
+        context: {
+          lane,
+          completed: stats.completed,
+          failed: stats.failed,
+          skipped: stats.skipped,
+        },
+      });
+    }
+
+    if (result.failed.length > 0) {
+      this.options.diagnostics.record({
+        level: "warn",
+        category: "runtime",
+        operation: "background.work.drain",
+        message: "Background work drain finished with failures",
+        context: {
+          lanes: [...laneStats.keys()],
+          failed: result.failed.map((entry) => ({
+            id: entry.id,
+            lane: itemLanes.get(entry.id),
+            error: entry.error,
+          })),
+        },
+      });
+    }
   }
 
   private takeNextBatch(count: number): BackgroundWorkItem[] {

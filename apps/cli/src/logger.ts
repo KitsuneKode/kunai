@@ -2,21 +2,30 @@
 //
 // Enabled by:   --debug flag  OR  KITSUNE_DEBUG=1 env var
 // Output goes to stderr so it never pollutes stdout / @clack prompts.
-// Each line contains a JSON payload after the `[debug]` prefix:
-//   bun run dev -- --debug 2> debug.log
+// Routed through StructuredLogger when bound at container bootstrap.
 //
 // Usage:
-//   import { dbg } from "./lib/logger";
+//   import { dbg } from "./logger";
 //   dbg("scraper", "m3u8 found", { url });
 
-let _debugEnabled = false;
+import type { Logger } from "./infra/logger/Logger";
 
-export function initLogger(enabled: boolean) {
+let _debugEnabled = false;
+let _structuredLogger: Logger | null = null;
+
+export function initLogger(enabled: boolean, structuredLogger?: Logger): void {
   _debugEnabled = enabled;
+  if (structuredLogger) {
+    _structuredLogger = structuredLogger;
+  }
 }
 
-export function dbg(module: string, msg: string, data?: Record<string, unknown>) {
+export function dbg(module: string, msg: string, data?: Record<string, unknown>): void {
   if (!_debugEnabled) return;
+  if (_structuredLogger) {
+    _structuredLogger.child({ module }).debug(msg, data);
+    return;
+  }
   const line = JSON.stringify({
     t: new Date().toISOString(),
     module,
@@ -26,8 +35,15 @@ export function dbg(module: string, msg: string, data?: Record<string, unknown>)
   process.stderr.write(`[debug] ${line}\n`);
 }
 
-export function dbgErr(module: string, msg: string, err: unknown) {
+export function dbgErr(module: string, msg: string, err: unknown): void {
   if (!_debugEnabled) return;
+  if (_structuredLogger) {
+    _structuredLogger.child({ module }).error(msg, {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+    return;
+  }
   dbg(module, msg, {
     error: err instanceof Error ? err.message : String(err),
     stack: err instanceof Error ? err.stack : undefined,

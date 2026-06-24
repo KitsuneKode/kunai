@@ -418,6 +418,42 @@ Prefer to extract:
 
 before writing tests that mock half the world.
 
+## Structure Overhaul Gate Chain
+
+When landing structural or cross-cutting refactors, run this gate in order before advancing to the next phase:
+
+```sh
+bun run typecheck
+bun run lint
+bun run fmt:check
+bun run test
+```
+
+Packaging-affecting work also requires:
+
+```sh
+bun run build
+bun run pkg:check
+```
+
+Optional non-blocking coverage baseline (track improvement, not hard thresholds yet):
+
+```sh
+bun run test:coverage
+```
+
+Committed layout goldens under `apps/cli/test/__captures__/` are asserted in
+`golden-captures.test.ts`. Refresh captures via harness scripts such as
+`bun run --cwd apps/cli capture:settings`.
+
+### Test quality rules for refactors
+
+- Assert runtime behavior, not source substrings (except intentional architecture/doc drift guards).
+- Prefer real backends: `createIsolatedContainer`, temp SQLite, provider fixtures.
+- Mock only external boundaries (`fetch`, `Bun.spawn` for mpv/yt-dlp, live sites).
+- Use `simulateTicks` from the render harness instead of real timers in unit tests.
+- TDD on rewrite: write the new behavior test first, then delete brittle guards.
+
 For CLI UX:
 
 - prefer VHS tapes over brittle pseudo-interactive assertions when the real need is visual review

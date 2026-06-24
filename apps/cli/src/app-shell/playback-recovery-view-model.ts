@@ -1,4 +1,4 @@
-import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
+import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 
 import type { ActionRowModel } from "./primitives/ActionList.model";
 import type { StateBlockModel } from "./primitives/StateBlock.model";

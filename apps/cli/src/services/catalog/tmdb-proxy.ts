@@ -1,4 +1,5 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { VIDEASY_DB_BASE } from "@kunai/providers";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
@@ -67,9 +68,11 @@ export async function fetchTmdbProxyJson(
 ): Promise<unknown> {
   const normalized = normalizePath(path);
   const url = `${VIDEASY_DB_BASE}${normalized}`;
-  const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
-  return res.json();
+  return observeOnlineIfBound("search-error", async () => {
+    const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
+    if (!res.ok) throw new Error(`${res.status} ${url}`);
+    return res.json();
+  });
 }
 
 export async function fetchTmdbJsonWithFallback(
@@ -83,9 +86,11 @@ export async function fetchTmdbJsonWithFallback(
   } catch {
     const joiner = normalized.includes("?") ? "&" : "?";
     const directUrl = `${TMDB_DIRECT_BASE}${normalized}${joiner}api_key=${TMDB_API_KEY}`;
-    const res = await fetch(directUrl, { signal: withTimeoutSignal(signal, timeoutMs) });
-    if (!res.ok) throw new Error(`${res.status} ${directUrl}`);
-    return res.json();
+    return observeOnlineIfBound("search-error", async () => {
+      const res = await fetch(directUrl, { signal: withTimeoutSignal(signal, timeoutMs) });
+      if (!res.ok) throw new Error(`${res.status} ${directUrl}`);
+      return res.json();
+    });
   }
 }
 

@@ -1,4 +1,4 @@
-import { describePlaybackSubtitleStatus } from "@/app/subtitle-status";
+import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
   classifyHistoryBucket,
@@ -29,10 +29,14 @@ import {
 } from "@/services/playback/provider-health-policy";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import { describePresenceConfiguration } from "@/services/presence/PresenceServiceImpl";
+import type {
+  HistoryProgress,
+  ReleaseProgressDiagnosticsSummary,
+} from "@/services/storage/storage-read-models";
 import type { CapabilitySnapshot } from "@/ui";
-import type { HistoryProgress, ReleaseProgressDiagnosticsSummary } from "@kunai/storage";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
+import { buildHelpPanelCommandLines } from "../domain/session/command-registry";
 import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
@@ -161,32 +165,20 @@ function formatMs(ms: number): string {
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   // Key chords are derived from the keybinding registry (single source of truth)
   // so the help overlay can never drift from the keys that are actually bound.
-  // The slash-command list is curated here because those live in the command
-  // registry, not the chord registry.
   const keyLines: ShellPanelLine[] = helpSections().flatMap((section) => [
     { label: `─── ${section.group}`, detail: "", tone: "info" as const },
     ...section.items.map((item) => ({ label: item.keys, detail: item.label })),
   ]);
 
+  const commandLines: ShellPanelLine[] = buildHelpPanelCommandLines().map((line) => ({
+    label: line.label,
+    detail: line.detail,
+  }));
+
   return [
     ...keyLines,
-
-    // ── Panels & Commands (slash commands — see the command registry) ──
     { label: "─── Panels & commands", detail: "", tone: "info" },
-    { label: "/history", detail: "Resume from recent progress" },
-    { label: "/wl", detail: "View and manage your watchlist" },
-    { label: "/playlist", detail: "View and manage your playback queue" },
-    { label: "/stats", detail: "Watch statistics and streak" },
-    { label: "/notifications", detail: "Actionable app notices and queue recovery" },
-    { label: "/diagnostics", detail: "Session health, provider, and network status" },
-    { label: "/downloads", detail: "Manage queued, running, and failed download jobs" },
-    { label: "/library", detail: "Play completed local downloads" },
-    { label: "/settings", detail: "Open settings editor" },
-    { label: "/setup", detail: "Run dependency setup wizard" },
-    { label: "/presence", detail: "Discord presence configuration" },
-    { label: "/sync", detail: "AniList / TMDB sync configuration" },
-    { label: "/export-diagnostics", detail: "Write redacted support bundle" },
-    { label: "/report-issue", detail: "Open GitHub issue reporting" },
+    ...commandLines,
   ];
 }
 

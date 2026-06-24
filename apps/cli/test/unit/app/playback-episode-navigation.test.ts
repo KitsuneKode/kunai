@@ -4,8 +4,8 @@ import {
   applyPlaybackEpisodeNavigation,
   buildEpisodeNavigationTransitionContext,
   type PlaybackEpisodeNavigationEffects,
-} from "@/app/playback-episode-navigation";
-import { createPlaybackSessionState } from "@/app/playback-session-controller";
+} from "@/app/playback/playback-episode-navigation";
+import { createPlaybackSessionState } from "@/app/playback/playback-session-controller";
 import type { EpisodeInfo } from "@/domain/types";
 
 const episode: EpisodeInfo = { season: 1, episode: 12 };

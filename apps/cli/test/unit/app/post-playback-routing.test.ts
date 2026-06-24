@@ -4,7 +4,7 @@ import {
   resolvePostPlaybackEpisodeNavigationRoute,
   resolvePostPlaybackExitOutcome,
   resolvePostPlaybackTrackPanelSection,
-} from "@/app/post-playback-routing";
+} from "@/app/post-play/post-playback-routing";
 import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 
 const availability: EpisodeAvailability = {

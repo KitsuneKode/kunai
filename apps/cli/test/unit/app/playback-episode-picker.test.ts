@@ -5,7 +5,7 @@ import {
   buildPlaybackEpisodePickerOptions,
   formatEpisodePickerSubtitle,
   renderEpisodeWatchProgressBar,
-} from "@/app/playback-episode-picker";
+} from "@/app/playback/playback-episode-picker";
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
 import type { HistoryProgress } from "@kunai/storage";
 

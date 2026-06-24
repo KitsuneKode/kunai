@@ -5,7 +5,7 @@ import {
   buildRandomResultTray,
   buildStratifiedRandomPool,
   pickSurpriseCandidate,
-} from "@/app/random-results";
+} from "@/app/discover/random-results";
 import type { SearchResult } from "@/domain/types";
 
 const results: SearchResult[] = Array.from({ length: 6 }, (_, index) => ({

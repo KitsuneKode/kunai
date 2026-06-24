@@ -5,7 +5,7 @@ import {
   playbackLanguageProfile,
   playbackQualityPreference,
   playbackSubtitlePreference,
-} from "@/app/playback-profile-context";
+} from "@/app/playback/playback-profile-context";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const profiles: Pick<

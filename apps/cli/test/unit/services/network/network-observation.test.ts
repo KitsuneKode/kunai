@@ -90,6 +90,17 @@ describe("observeResolveNetworkOutcome", () => {
     expect(connectivity.getSnapshot().status).toBe("online");
   });
 
+  test("cache-refetched stream proves connectivity", () => {
+    const { container, connectivity } = makeObserver();
+    recordNetworkFailure(container, new Error("ENOTFOUND"), "provider-error");
+    observeResolveNetworkOutcome(container, {
+      stream: { url: "https://host/x.m3u8" },
+      provenance: "cache-refetched",
+      attempts: [],
+    });
+    expect(connectivity.getSnapshot().status).toBe("online");
+  });
+
   test("cache/prefetch stream does not flip status", () => {
     const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("ENOTFOUND"), "provider-error");

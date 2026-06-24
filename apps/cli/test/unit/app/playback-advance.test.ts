@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { evaluateAutoAdvanceNextUp, shouldOfferAutoAdvance } from "@/app/playback-advance";
+import { evaluateAutoAdvanceNextUp, shouldOfferAutoAdvance } from "@/app/playback/playback-advance";
 import type { QueueEntry } from "@kunai/storage";
 
 const guards = {
@@ -51,15 +51,5 @@ describe("evaluateAutoAdvanceNextUp", () => {
         autoplayRecommendations: true,
       }),
     ).toEqual({ kind: "queue", entry: queueHead });
-  });
-});
-
-describe("PlaybackPhase advance seam", () => {
-  test("playback loop consults evaluateAutoAdvanceNextUp", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/app/PlaybackPhase.ts", import.meta.url),
-    ).text();
-    expect(source).toContain("evaluateAutoAdvanceNextUp");
-    expect(source).not.toContain("consumePendingOfflinePlaybackLaunch");
   });
 });

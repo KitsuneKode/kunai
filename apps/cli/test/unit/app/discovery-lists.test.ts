@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { clearDiscoveryListCache, loadDiscoveryList } from "@/app/discovery-lists";
+import { clearDiscoveryListCache, loadDiscoveryList } from "@/app/discover/discovery-lists";
 
 const realFetch = globalThis.fetch;
 const realDateNow = Date.now;

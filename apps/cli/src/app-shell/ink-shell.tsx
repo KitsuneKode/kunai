@@ -2,23 +2,23 @@ import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
 import { formatPlaybackSessionKeysHint } from "@/app-shell/playback-session-key-hints";
-import { switchSessionMode } from "@/app/mode-switch";
 import {
   buildPlaybackBootstrapPresentation,
   formatBootstrapInventorySummary,
-} from "@/app/playback-bootstrap-presenter";
-import { buildPlaybackEpisodePickerOptions } from "@/app/playback-episode-picker";
-import { isLocalPlaybackStream } from "@/app/playback-source-ui";
+} from "@/app/playback/playback-bootstrap-presenter";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
+import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
   formatPlaybackSessionFactsStrip,
   formatPlaybackSourceLine,
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,
-} from "@/app/source-quality";
+} from "@/app/playback/source-quality";
 import {
   compactPlaybackSubtitleStatus,
   describePlaybackSubtitleStatus,
-} from "@/app/subtitle-status";
+} from "@/app/playback/subtitle-status";
+import { switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import { mediaLanguageProfileFor, showsEpisodeLabel } from "@/domain/media/content-kind";
@@ -38,7 +38,7 @@ import type { ProviderId } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { dispatchAppCommand } from "./app-command-dispatcher";
+import { dispatchAppCommand } from "./command-router";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { recordRender } from "./diagnostics/render-trace";
 import { ExitShell } from "./exit-shell";
@@ -226,7 +226,7 @@ async function openPlaybackStreamSelectionPicker(
       selection.crossProviderSource ||
       selection.providerId)
   ) {
-    const { resolveTracksPanelPick } = await import("@/app/tracks-panel-pick");
+    const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
     const resolved = await resolveTracksPanelPick(picked, selection, {
       container,
       title,

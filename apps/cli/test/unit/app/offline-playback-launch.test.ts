@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildOfflinePlaybackLaunch,
   requestUnifiedOfflinePlayback,
-} from "@/app/offline-playback-launch";
+} from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import type { DownloadJobRecord } from "@kunai/storage";
 

@@ -7,7 +7,7 @@ import {
   selectContinueHistoryEntryFromRecent,
   selectLocalContinueCandidate,
   titleFromHistorySelection,
-} from "@/app/launch-entry";
+} from "@/app/bootstrap/launch-entry";
 import type { HistoryProgress } from "@kunai/storage";
 
 function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {

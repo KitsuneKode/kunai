@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildSourceInventoryCacheInput,
   invalidateEpisodePlaybackCaches,
-} from "@/app/playback-source-cache-invalidation";
+} from "@/app/playback/playback-source-cache-invalidation";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const config = {

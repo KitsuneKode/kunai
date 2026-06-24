@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { episodeInfoFromSelection } from "@/app/episode-info-from-catalog";
+import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 
 const originalFetch = globalThis.fetch;
 

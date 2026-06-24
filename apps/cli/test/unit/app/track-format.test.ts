@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { formatLanguageBadge, formatSourceEvidence } from "@/app/track-format";
+import { formatLanguageBadge, formatSourceEvidence } from "@/app/playback/track-format";
 
 describe("track-format seam", () => {
   test("formatLanguageBadge renders normalized language + role", () => {

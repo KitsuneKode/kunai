@@ -55,6 +55,18 @@ Avoid using `manager`, `controller`, or `helper` for new files unless the file
 really coordinates stateful ownership. Prefer a name that says what decision or
 surface it owns.
 
+### Filename casing (locked)
+
+- **`.ts` logic modules:** kebab-case filenames (`playback-resolve-policy.ts`,
+  `download-service.ts`). Class export names stay PascalCase
+  (`export class DownloadService`).
+- **`.tsx` Ink components:** PascalCase (`ListRow.tsx`) or the shell suffixes
+  `*-shell.tsx` / `*-ui.tsx`.
+- **`.model.ts` companions:** PascalCase prefix matching the component
+  (`ListRow.model.ts`).
+- Existing PascalCase `.ts` service/phase files are migration debt. Rename them
+  only under the rename policy below; new `.ts` files must be kebab-case.
+
 ### Current confusing names
 
 - `app-shell/workflows.ts` is a migration bucket. New shell flows should move

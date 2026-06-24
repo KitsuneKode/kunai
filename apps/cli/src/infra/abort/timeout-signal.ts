@@ -7,5 +7,13 @@ export function withTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: nu
   };
   if (abortSignal.any) return abortSignal.any([signal, timeoutSignal]);
 
-  return signal;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal.aborted || timeoutSignal.aborted) {
+    abort();
+    return controller.signal;
+  }
+  signal.addEventListener("abort", abort, { once: true });
+  timeoutSignal.addEventListener("abort", abort, { once: true });
+  return controller.signal;
 }

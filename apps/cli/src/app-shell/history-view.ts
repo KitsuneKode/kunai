@@ -15,7 +15,7 @@ import {
   correctedHistoryMediaKind,
   historyContentType,
 } from "@/services/continuation/history-progress";
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
 import {
   buildHistoryPickerOptions,

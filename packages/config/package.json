@@ -1,0 +1,28 @@
+{
+  "name": "@kunai/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kunai user configuration types, defaults, and parse boundaries.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "bun tsc --noEmit",
+    "lint": "oxlint .",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check .",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@kunai/schemas": "workspace:*",
+    "@kunai/types": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:"
+  },
+  "peerDependencies": {
+    "typescript": "catalog:"
+  }
+}

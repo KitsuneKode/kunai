@@ -5,7 +5,7 @@ import {
   startEpisodeNavigation,
   startFromBeginning,
   startFromEpisodeSelection,
-} from "@/app/playback-start-intent";
+} from "@/app/playback/playback-start-intent";
 
 describe("playback start intent", () => {
   test("continues directly when the picker chose resume", () => {

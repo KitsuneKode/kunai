@@ -1,18 +1,34 @@
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
-import { episodeFromHistorySelection, recordLocalHistorySourceDecision } from "@/app/launch-entry";
-import { switchSessionMode } from "@/app/mode-switch";
-import { requestUnifiedOfflinePlayback } from "@/app/offline-playback-launch";
+import {
+  episodeFromHistorySelection,
+  recordLocalHistorySourceDecision,
+} from "@/app/bootstrap/launch-entry";
+import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
+import { switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { historyContentType } from "@/services/continuation/history-progress";
 
+import {
+  dispatchAppCommand,
+  type AppCommandDispatchInput,
+  type AppCommandDispatchResult,
+  type AppCommandSource,
+} from "./app-command-dispatcher";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
 import { waitForRootQueueSelection } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
+
+export {
+  dispatchAppCommand,
+  type AppCommandDispatchInput,
+  type AppCommandDispatchResult,
+  type AppCommandSource,
+};
 
 export type CommandPaletteSurface = "browse" | "playback" | "list" | "post-play";
 
@@ -276,7 +292,7 @@ export async function routePlaybackShellAction({
     const [
       { loadDiscoverResults },
       { createSessionPickerId, openSessionPicker, waitForSessionPicker },
-    ] = await Promise.all([import("../app/discover-results"), import("./session-picker")]);
+    ] = await Promise.all([import("../app/discover/discover-results"), import("./session-picker")]);
     const recommendation = await loadDiscoverResults(container);
     const id = createSessionPickerId("recommendation");
     const options = recommendation.results.map((r) => ({

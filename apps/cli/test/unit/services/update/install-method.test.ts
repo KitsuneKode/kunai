@@ -1,20 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
 
 import {
   detectInstallMethod,
   updateGuidanceForInstallMethod,
 } from "@/services/update/install-method";
 
+const REPO_ROOT = path.resolve(import.meta.dir, "../../../../../..");
+
 describe("install method detection", () => {
   test("detects source checkouts before global package layouts", () => {
     const method = detectInstallMethod({
-      cwd: "/home/kitsunekode/Projects/hacking/kitsunesnipe",
-      entrypoint: "/home/kitsunekode/Projects/hacking/kitsunesnipe/apps/cli/src/main.ts",
-      fileExists(path) {
+      cwd: REPO_ROOT,
+      entrypoint: path.join(REPO_ROOT, "apps/cli/src/main.ts"),
+      fileExists(filePath) {
         return (
-          path.endsWith("/package.json") ||
-          path.endsWith("/apps/cli/src/main.ts") ||
-          path.endsWith("/.git")
+          filePath.endsWith(`${path.sep}package.json`) ||
+          filePath.endsWith(`${path.sep}apps/cli/src/main.ts`) ||
+          filePath.endsWith(`${path.sep}.git`)
         );
       },
     });

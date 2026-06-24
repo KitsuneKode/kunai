@@ -1,4 +1,4 @@
-import { isLocalPlaybackStream } from "@/app/playback-source-ui";
+import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
 import type { SessionState } from "./SessionState";
@@ -632,6 +632,38 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Remove linked sync accounts",
   },
 ] as const;
+
+/** Slash commands surfaced in the `?` help overlay (panels & commands section). */
+export const HELP_PANEL_COMMAND_IDS = [
+  "history",
+  "watchlist",
+  "playlist",
+  "stats",
+  "notifications",
+  "diagnostics",
+  "downloads",
+  "library",
+  "settings",
+  "setup",
+  "presence",
+  "sync",
+  "export-diagnostics",
+  "report-issue",
+] as const satisfies readonly AppCommandId[];
+
+export type HelpPanelCommandLine = {
+  readonly label: string;
+  readonly detail: string;
+};
+
+export function buildHelpPanelCommandLines(): readonly HelpPanelCommandLine[] {
+  return HELP_PANEL_COMMAND_IDS.flatMap((id) => {
+    const command = COMMANDS.find((candidate) => candidate.id === id);
+    if (!command) return [];
+    const slashAlias = command.aliases[0] ?? command.id;
+    return [{ label: `/${slashAlias}`, detail: command.description }];
+  });
+}
 
 export function parseCommand(input: string): AppCommand | null {
   const normalized = input.trim().replace(/^\//, "").toLowerCase();

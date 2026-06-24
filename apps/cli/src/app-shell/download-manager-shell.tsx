@@ -12,7 +12,7 @@ import { getWindowStart } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
-import type { DownloadJobRecord } from "@kunai/storage";
+import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useState } from "react";
 
@@ -287,8 +287,8 @@ export function DownloadManagerContent({
       if (!job) return;
 
       if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
-        void import("@/app/offline-playback-launch").then(({ requestUnifiedOfflinePlayback }) =>
-          requestUnifiedOfflinePlayback(container, job.id),
+        void import("@/app/offline/offline-playback-launch").then(
+          ({ requestUnifiedOfflinePlayback }) => requestUnifiedOfflinePlayback(container, job.id),
         );
         return;
       }
@@ -515,7 +515,9 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function formatEta(job: import("@kunai/storage").DownloadJobRecord): string | null {
+function formatEta(
+  job: import("@/services/storage/storage-read-models").DownloadJobRecord,
+): string | null {
   if (job.status !== "running" || !job.startedAt || job.progressPercent < 5) return null;
   const elapsedMs = Date.now() - new Date(job.startedAt).getTime();
   if (elapsedMs < 3_000) return null;

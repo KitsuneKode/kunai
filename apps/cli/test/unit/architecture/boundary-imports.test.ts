@@ -39,24 +39,25 @@ const INK_IMPORT = /^ink(?:\/|$)/;
 const PROVIDER_PACKAGE_IMPORT = /^@kunai\/providers(?:\/|$)|packages\/providers/;
 const HISTORY_STORE_ADAPTER_IMPORT =
   /^@\/services\/persistence\/(?:HistoryStore|SqliteHistoryStoreImpl)$/;
+const APP_SHELL_STORAGE_IMPORT = /^@kunai\/storage(?:\/|$)/;
 
 const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   [
-    "apps/cli/src/app/DownloadOnlyPhase.ts",
+    "apps/cli/src/app/playback/DownloadOnlyPhase.ts",
     ["@/app-shell/pickers/choose-from-list-shell", "@/app-shell/workflows"],
   ],
   [
-    "apps/cli/src/app/PlaybackPhase.ts",
+    "apps/cli/src/app/playback/PlaybackPhase.ts",
     [
       "@/app-shell/command-router",
       "@/app-shell/commands",
       "@/app-shell/playback-shell-error-capture",
       "@/app-shell/workflows",
-      "../app-shell/ink-shell",
+      "../../app-shell/ink-shell",
     ],
   ],
   [
-    "apps/cli/src/app/SearchPhase.ts",
+    "apps/cli/src/app/search/SearchPhase.ts",
     [
       "@/app-shell/browse-idle-context",
       "@/app-shell/calendar-ui.model",
@@ -66,27 +67,27 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/pickers",
       "@/app-shell/search-browse-command-ids",
       "@/app-shell/types",
-      "../app-shell/workflows",
+      "../../app-shell/workflows",
     ],
   ],
-  ["apps/cli/src/app/calendar-continue-launch.ts", ["@/app-shell/root-history-bridge"]],
-  ["apps/cli/src/app/browse-option-mappers.ts", ["@/app-shell/types"]],
+  ["apps/cli/src/app/search/calendar-continue-launch.ts", ["@/app-shell/root-history-bridge"]],
+  ["apps/cli/src/app/search/browse-option-mappers.ts", ["@/app-shell/types"]],
   [
-    "apps/cli/src/app/download-episode-checklist.ts",
+    "apps/cli/src/app/bootstrap/download-episode-checklist.ts",
     ["@/app-shell/checklist-shell", "@/app-shell/pickers", "@/app-shell/workflows"],
   ],
-  ["apps/cli/src/app/playback-bootstrap-presenter.ts", ["@/app-shell/types"]],
-  ["apps/cli/src/app/playback-episode-picker.ts", ["@/app-shell/types"]],
+  ["apps/cli/src/app/playback/playback-bootstrap-presenter.ts", ["@/app-shell/types"]],
+  ["apps/cli/src/app/playback/playback-episode-picker.ts", ["@/app-shell/types"]],
   [
-    "apps/cli/src/app/playback-recommendation-actions.ts",
-    ["@/app-shell/types", "@/app-shell/workflows", "../app-shell/ink-shell"],
+    "apps/cli/src/app/playback/playback-recommendation-actions.ts",
+    ["@/app-shell/types", "@/app-shell/workflows", "../../app-shell/ink-shell"],
   ],
   [
     "apps/cli/src/services/offline/offline-library-action-router.ts",
     ["@/app-shell/pickers", "@/app-shell/workflows"],
   ],
   [
-    "apps/cli/src/app/offline-playback-launch.ts",
+    "apps/cli/src/app/offline/offline-playback-launch.ts",
     ["@/app-shell/root-content-state", "@/app-shell/types"],
   ],
 ]);
@@ -95,9 +96,12 @@ const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([
   ["@kunai/types", []],
   ["@kunai/schemas", ["@kunai/types"]],
   ["@kunai/core", ["@kunai/types"]],
+  ["@kunai/config", ["@kunai/schemas", "@kunai/types"]],
   ["@kunai/providers", ["@kunai/core", "@kunai/types"]],
+  ["@kunai/relay", ["@kunai/core", "@kunai/types"]],
   ["@kunai/storage", ["@kunai/core", "@kunai/schemas", "@kunai/types"]],
   ["@kunai/design", []],
+  ["@kunai/ui-cli", ["@kunai/design"]],
 ]);
 
 function collectImports(file: string): string[] {
@@ -206,6 +210,17 @@ describe("runtime boundary imports", () => {
     expect(offenders).toEqual([]);
   });
 
+  test("app-shell avoids direct @kunai/storage imports", () => {
+    const appShellRoot = "apps/cli/src/app-shell";
+    const offenders = collectSourceFiles(appShellRoot).flatMap((file) =>
+      collectImports(file)
+        .filter((specifier) => APP_SHELL_STORAGE_IMPORT.test(specifier))
+        .map((specifier) => `${file} -> ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   test("active runtime code does not depend on the retired history store adapter", () => {
     const offenders = collectSourceFiles("apps/cli/src").flatMap((file) =>
       collectImports(file)
@@ -221,9 +236,12 @@ describe("runtime boundary imports", () => {
       "packages/types/package.json",
       "packages/schemas/package.json",
       "packages/core/package.json",
+      "packages/config/package.json",
       "packages/providers/package.json",
+      "packages/relay/package.json",
       "packages/storage/package.json",
       "packages/design/package.json",
+      "packages/ui-cli/package.json",
     ];
     const offenders = packageJsonFiles.flatMap((file) => {
       const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, file), "utf8")) as {

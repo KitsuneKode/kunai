@@ -73,29 +73,16 @@ function resolveRecoveryOrTroubleKeys(
 }
 
 function resolveBootstrapKeys(
-  input: string,
+  _input: string,
   key: string,
   ctx: PlaybackShellInputContext,
 ): PlaybackShellInputEffect | null {
   const { handlers } = ctx;
-  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource) {
-    return { kind: "pick-source" };
-  }
-  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
-  if (key === "a" && handlers.onToggleAutoplay) return { kind: "toggle-autoplay" };
-  if (key === "u" && handlers.onToggleAutoskip) return { kind: "toggle-autoskip" };
-  if (key === "x" && handlers.onStopAfterCurrent) return { kind: "stop-after-current" };
   if (key === "g" && handlers.onCommandAction) {
     return { kind: "shell-action", action: "settings" };
   }
   if (key === "h" && handlers.onCommandAction) {
     return { kind: "shell-action", action: "history" };
-  }
-  if (key === "d" && handlers.onCommandAction) {
-    return { kind: "shell-action", action: "diagnostics" };
-  }
-  if (input === "?" && handlers.onCommandAction) {
-    return { kind: "shell-action", action: "help" };
   }
   return null;
 }
@@ -107,26 +94,8 @@ function resolvePlayingKeys(
 ): PlaybackShellInputEffect | null {
   const { handlers } = ctx;
   if (key === "r" && handlers.onRecover) return { kind: "recover" };
-  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
-  if (key === "d" && handlers.onCommandAction) {
-    return { kind: "shell-action", action: "diagnostics" };
-  }
-  if (key === "s" && handlers.onReloadSubtitles) return { kind: "reload-subtitles" };
-  if (input === "S" && handlers.onReturnToSearch) return { kind: "return-to-search" };
-  if (key === "n" && handlers.onNext) return { kind: "next" };
-  if (key === "p" && handlers.onPrevious) return { kind: "previous" };
-  if (key === "b" && handlers.onSkipSegment) return { kind: "skip-segment" };
-  if (key === "m") return { kind: "toggle-memory-panel" };
-  if (key === "e" && handlers.onPickEpisode) return { kind: "pick-episode" };
-  if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
-    return { kind: "pick-source" };
-  if ((key === "k" || key === "v") && handlers.onPickQuality) return { kind: "pick-quality" };
-  if (key === "a" && handlers.onToggleAutoplay) return { kind: "toggle-autoplay" };
-  if (key === "u" && handlers.onToggleAutoskip) return { kind: "toggle-autoskip" };
-  if (key === "x" && handlers.onStopAfterCurrent) return { kind: "stop-after-current" };
-  if (input === "?" && handlers.onCommandAction) {
-    return { kind: "shell-action", action: "help" };
-  }
+  // mpv maps quality to v; the terminal footer uses k from the keybinding registry.
+  if (key === "v" && handlers.onPickQuality) return { kind: "pick-quality" };
   return null;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveBootstrapIntent, type BootstrapArgs } from "@/app/bootstrap-intent";
+import { resolveBootstrapIntent, type BootstrapArgs } from "@/app/bootstrap/bootstrap-intent";
 
 function args(overrides: Partial<BootstrapArgs> = {}): BootstrapArgs {
   return { anime: false, quick: false, ...overrides };

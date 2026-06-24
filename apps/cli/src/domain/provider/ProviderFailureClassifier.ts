@@ -4,4 +4,4 @@ export {
   type ClassifiableProviderFailure,
   type ProviderFailureClassification,
   type ProviderFallbackPolicy,
-} from "@kunai/types";
+} from "@kunai/core";

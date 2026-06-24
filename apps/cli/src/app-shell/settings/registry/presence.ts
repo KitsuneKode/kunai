@@ -140,7 +140,8 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
           return `Discord presence: ${snapshot.status}  ·  ${snapshot.detail}`;
         }
 
-        const { applySettingsToRuntime } = await import("@/app/apply-settings-to-runtime");
+        const { applySettingsToRuntime } =
+          await import("@/app/bootstrap/apply-settings-to-runtime");
         await applySettingsToRuntime({
           container: actionCtx.container,
           next: actionCtx.config,

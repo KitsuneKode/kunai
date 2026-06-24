@@ -1,12 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { clearDiscoveryListCache } from "@/app/discovery-lists";
+import { clearDiscoveryListCache } from "@/app/discover/discovery-lists";
 import {
   loadPostPlaybackRecommendationItems,
   loadPostPlaybackRecommendationNames,
   resolvePostPlaybackRecommendationLoadMode,
   seedPostPlaybackRecommendationItems,
-} from "@/app/post-playback-recommendations";
+} from "@/app/post-play/post-playback-recommendations";
 
 const originalFetch = globalThis.fetch;
 

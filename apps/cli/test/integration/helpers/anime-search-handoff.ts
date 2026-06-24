@@ -1,6 +1,6 @@
-import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
-import { chooseSearchResultTitle } from "@/app/browse-option-mappers";
-import { titleInfoFromSearchResult } from "@/app/title-info";
+import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
+import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
+import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import type { StreamRequest } from "@/services/providers/Provider";

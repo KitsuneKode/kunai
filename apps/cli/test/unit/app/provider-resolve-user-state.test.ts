@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
+import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 
 describe("provider resolve user state", () => {
   test("classifies truthful provider and network outcomes", () => {

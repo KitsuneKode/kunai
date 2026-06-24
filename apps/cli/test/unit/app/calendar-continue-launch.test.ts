@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { resolveCalendarContinueSelection } from "@/app/calendar-continue-launch";
+import { resolveCalendarContinueSelection } from "@/app/search/calendar-continue-launch";
 import type { SearchResult } from "@/domain/types";
 import { ContinueWatchingService } from "@/services/continuation/ContinueWatchingService";
 import type { HistoryProgress } from "@kunai/storage";

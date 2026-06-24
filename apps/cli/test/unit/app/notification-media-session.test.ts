@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
-} from "@/app/notification-media-session";
+} from "@/app/playback/notification-media-session";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 
 const seriesItem: MediaItemIdentity = {

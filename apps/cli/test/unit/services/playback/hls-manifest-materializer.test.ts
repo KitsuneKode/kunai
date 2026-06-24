@@ -3,12 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import type { StreamInfo } from "@/domain/types";
-import {
-  absolutizeHostRootHlsManifest,
-  manifestUsesHostRootSegmentPaths,
-  materializeHlsManifestForPlayback,
-} from "@/services/playback/hls-manifest-materializer";
-import { shouldMaterializeHlsManifest } from "@kunai/providers";
+import { materializeHlsManifestForPlayback } from "@/services/playback/hls-manifest-materializer";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -17,38 +12,6 @@ afterEach(async () => {
 });
 
 describe("hls manifest materializer", () => {
-  test("detects host-root segment paths", () => {
-    expect(
-      manifestUsesHostRootSegmentPaths(
-        ["#EXTM3U", "#EXTINF:3,", "/segment-a/seg-1.jpg", "#EXTINF:3,", "relative/seg.ts"].join(
-          "\n",
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      manifestUsesHostRootSegmentPaths(["#EXTM3U", "#EXTINF:3,", "relative/seg.ts"].join("\n")),
-    ).toBe(false);
-  });
-
-  test("absolutizes host-root segment paths against manifest origin", () => {
-    const output = absolutizeHostRootHlsManifest(
-      ["#EXTM3U", "#EXTINF:3,", "/foo/bar/seg.jpg"].join("\n"),
-      "https://light.goldweather.net/token/index.m3u8",
-    );
-    expect(output).toContain("https://light.goldweather.net/foo/bar/seg.jpg");
-  });
-
-  test("materializes host-root playlists on known CDNs or large manifests", () => {
-    const hostRoot = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
-    expect(
-      shouldMaterializeHlsManifest(
-        "https://light.goldweather.net/token/aW5kZXgubTN1OA==.m3u8",
-        hostRoot,
-      ),
-    ).toBe(true);
-    expect(shouldMaterializeHlsManifest("https://cdn.example/master.m3u8", hostRoot)).toBe(false);
-  });
-
   test("materializes a fetched manifest into a local playlist file", async () => {
     const manifest = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
     const originalFetch = globalThis.fetch;

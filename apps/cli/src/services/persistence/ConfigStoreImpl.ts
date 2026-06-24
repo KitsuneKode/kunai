@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { StorageService } from "@/infra/storage/StorageService";
+import { parseKitsuneConfigPartial } from "@kunai/config";
 
 import type { ConfigStore, KitsuneConfig } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
@@ -13,7 +14,9 @@ export class ConfigStoreImpl implements ConfigStore {
   constructor(private storage: StorageService) {}
 
   async load(): Promise<Partial<KitsuneConfig>> {
-    return (await this.storage.read<Partial<KitsuneConfig>>(STORAGE_KEY)) ?? {};
+    const raw = await this.storage.read<unknown>(STORAGE_KEY);
+    if (!raw) return {};
+    return parseKitsuneConfigPartial(raw);
   }
 
   async save(config: KitsuneConfig): Promise<void> {

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { EpisodePrefetchHandle } from "@/app/episode-prefetch";
+import type { EpisodePrefetchHandle } from "@/app/playback/episode-prefetch";
 import {
   preparePostPlaybackSurface,
   teardownPlaybackForPostPlayExit,
-} from "@/app/playback-post-play-lifecycle";
+} from "@/app/playback/playback-post-play-lifecycle";
 
 describe("playback post-play lifecycle", () => {
   test("preparePostPlaybackSurface aborts playback work and clears pending player actions", () => {

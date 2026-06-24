@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTrackPickTransitionContext } from "@/app/tracks-panel-pick";
+import { buildTrackPickTransitionContext } from "@/app/playback/tracks-panel-pick";
 
 const episode = { season: 1, episode: 3 };
 

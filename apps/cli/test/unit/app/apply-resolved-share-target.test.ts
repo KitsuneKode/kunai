@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   applyResolvedShareSideEffects,
   applyShareRefLaunch,
-} from "@/app/apply-resolved-share-target";
+} from "@/app/bootstrap/apply-resolved-share-target";
 import {
   consumeShareBootstrapStartSeconds,
   setShareBootstrapStartSeconds,
-} from "@/app/share-bootstrap-start";
+} from "@/app/bootstrap/share-bootstrap-start";
 import type { Container } from "@/container";
 
 // The bootstrap start position is a one-shot module-level mailbox; drain it around every

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { getModeSwitchTarget } from "@/app/mode-switch";
+import { getModeSwitchTarget } from "@/app/session/mode-switch";
 import { createInitialState } from "@/domain/session/SessionState";
 
 describe("getModeSwitchTarget", () => {

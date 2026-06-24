@@ -45,6 +45,12 @@ import {
   resolveDetailsOverlaySubmitValue,
 } from "./browse-search-state";
 import {
+  buildBrowseDetailsSheetSeed,
+  formatBrowseShellError,
+  MIN_RESULTS_FOR_LOCAL_FILTER,
+  PREVIEW_POSTER_ROWS,
+} from "./browse-shell-view";
+import {
   CalendarDayStrip,
   CalendarScheduleRow,
   CalendarScheduleStatus,
@@ -121,49 +127,14 @@ import {
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
-/** Minimum loaded results before local narrow mode is worth its space. */
-const MIN_RESULTS_FOR_LOCAL_FILTER = 12;
-
-/** Rendered height of the companion poster; reserved so the slot never reflows. */
-const PREVIEW_POSTER_ROWS = 9;
-
 function clearShellScreen() {
   if (process.stdout.isTTY) {
     deleteAllKittyImages();
   }
 }
 
-/**
- * Render an unknown error in a user-visible string. An `Error` with a message
- * gets its message; everything else gets `String(error)` so we never show
- * `[object Object]` to the user (the old `String(error)` call did that when
- * the caught value was a plain object).
- */
-function formatError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "string") return error;
-  return String(error);
-}
-
-/**
- * Seed for the rich details sheet, built from data the browse list ALREADY loaded
- * (the SearchResult): header + synopsis render with no network; the detail fetch
- * only gap-fills cast/seasons/trailer/links.
- */
-function buildDetailsSheetSeed<T>(option: BrowseShellOption<T>): DetailsSheetSeed {
-  const value = option.value as unknown as Partial<SearchResult> | undefined;
-  return {
-    title: option.previewTitle ?? option.label,
-    type: value?.type === "movie" ? "movie" : "series",
-    year: value?.year || undefined,
-    score: typeof value?.rating === "number" && value.rating > 0 ? value.rating : undefined,
-    posterUrl: option.previewImageUrl,
-    synopsis: value?.overview || undefined,
-    episodeCount: value?.episodeCount,
-  };
-}
-
 export function BrowseShell<T>({
+  mode,
   provider,
   initialQuery,
   initialResults,
@@ -422,7 +393,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(formatError(error));
+      setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Search failed.");
     }
   }, [query, searchState, onSearch, resetCalendar]);
@@ -465,7 +436,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(formatError(error));
+      setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Trending failed.");
     }
   };
@@ -516,7 +487,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
-      setErrorMessage(formatError(error));
+      setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Recommendations failed.");
     }
   };
@@ -562,7 +533,7 @@ export function BrowseShell<T>({
       setCommandMode(false);
       setFocusZone("query");
 
-      const seed = buildDetailsSheetSeed(resolved);
+      const seed = buildBrowseDetailsSheetSeed(resolved);
       const value = resolved.value as unknown as Partial<SearchResult>;
       const titleId = typeof value?.id === "string" ? value.id : undefined;
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
@@ -1550,10 +1521,14 @@ export function BrowseShell<T>({
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
-            <Text color={palette.dim}>{`◌  no results for "${lastSearchedQuery}"  `}</Text>
-            <Text color={palette.dim} dimColor>
-              try a different title or browse by genre
-            </Text>
+            <StateBlock
+              model={{
+                kind: "empty",
+                title: `No results for "${lastSearchedQuery}"`,
+                detail: "Try a different title, adjust filters, or browse by genre.",
+              }}
+              width={Math.min(innerWidth, 72)}
+            />
           </Box>
         ) : searchState === "error" ? (
           <Box marginTop={1} flexGrow={1}>
@@ -1572,14 +1547,16 @@ export function BrowseShell<T>({
           </Box>
         ) : (
           <Box marginTop={1} flexGrow={1} flexDirection="column">
-            <Text color={palette.dim}>{emptyMessage}</Text>
-            {emptyMessage.includes("trending") ? (
-              <Text color={palette.dim} dimColor>
-                Use <Text color={palette.dim}>year:2022</Text> or{" "}
-                <Text color={palette.dim}>type:anime</Text> to narrow ·{" "}
-                <Text color={palette.dim}>/filters</Text> for all tokens
-              </Text>
-            ) : null}
+            <StateBlock
+              model={{
+                kind: "empty",
+                title: emptyMessage,
+                detail: emptyMessage.includes("trending")
+                  ? "Use year:2022 or type:anime to narrow · /filters for all tokens"
+                  : undefined,
+              }}
+              width={Math.min(innerWidth, 72)}
+            />
             {!commandMode &&
             idleReturnLoopModel &&
             (!viewport.ultraCompact || idleReturnLoopModel.rows.length > 0) ? (

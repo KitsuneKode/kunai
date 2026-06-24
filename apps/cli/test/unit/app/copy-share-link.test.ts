@@ -4,7 +4,7 @@ mock.module("@/infra/clipboard", () => ({
   copyToClipboard: mock(async () => true),
 }));
 
-const { copyShareLinkForContext } = await import("@/app/copy-share-link");
+const { copyShareLinkForContext } = await import("@/app/bootstrap/copy-share-link");
 const { copyToClipboard } = await import("@/infra/clipboard");
 
 afterEach(() => {

@@ -29,8 +29,8 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
-import type { HistoryProgress } from "@kunai/storage";
-import type { ListItem } from "@kunai/storage";
+import type { HistoryProgress } from "@/services/storage/storage-read-models";
+import type { ListItem } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 

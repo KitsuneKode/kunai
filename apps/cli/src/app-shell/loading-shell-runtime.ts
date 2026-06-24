@@ -1,4 +1,4 @@
-import { classifyProviderResolveUserState } from "@/app/provider-resolve-user-state";
+import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 

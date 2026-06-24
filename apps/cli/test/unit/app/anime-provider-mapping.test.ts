@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { mapAnimeDiscoveryResultToProviderNative } from "@/app/anime-provider-mapping";
+import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import type { SearchResult } from "@/domain/types";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 

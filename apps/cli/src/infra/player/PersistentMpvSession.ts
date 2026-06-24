@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
-import { copyShareLinkForContext } from "@/app/copy-share-link";
+import { copyShareLinkForContext } from "@/app/bootstrap/copy-share-link";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,

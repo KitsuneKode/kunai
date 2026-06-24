@@ -1,7 +1,7 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
 import { openSessionPicker } from "@/app-shell/session-picker";
-import { describeEpisodeWatchPresentation } from "@/app/playback-episode-picker";
+import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
 import {

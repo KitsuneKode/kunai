@@ -8,6 +8,7 @@ const sourceInflight = new Map<string, Promise<PosterSourceEntry | null>>();
 const MAX_SOURCE_CACHE = 24;
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
+import { observeOnlineIfBound } from "@/services/network/network-observation";
 
 function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
@@ -62,7 +63,9 @@ export async function fetchPosterSource(
         sourceCache.set(resolved, entry);
         return entry;
       }
-      const res = await fetch(resolved, { signal: AbortSignal.timeout(5000) });
+      const res = await observeOnlineIfBound("poster-error", () =>
+        fetch(resolved, { signal: AbortSignal.timeout(5000) }),
+      );
       if (!res.ok) return null;
       const entry = {
         url: resolved,

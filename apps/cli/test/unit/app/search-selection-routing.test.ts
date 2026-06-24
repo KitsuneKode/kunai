@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import {
   applySearchSelectionSessionRouting,
   resolveShellModeForSearchResult,
-} from "@/app/search-selection-routing";
+} from "@/app/search/search-selection-routing";
 import { buildCalendarItem } from "@/domain/calendar/calendar-item";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 import type { SessionState, StateTransition } from "@/domain/session/SessionState";

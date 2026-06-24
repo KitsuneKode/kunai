@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { persistProviderNativeMapping } from "@/app/title-identity-persist";
+import { persistProviderNativeMapping } from "@/app/bootstrap/title-identity-persist";
 import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 test("persistProviderNativeMapping backfills providerNativeIds on canonical title id", () => {

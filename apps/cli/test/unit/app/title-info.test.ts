@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { titleInfoFromSearchResult } from "@/app/title-info";
+import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import type { SearchResult } from "@/domain/types";
 
 test("titleInfoFromSearchResult carries provider metadata v2 fields into playback identity", () => {

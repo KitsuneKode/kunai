@@ -24,9 +24,9 @@
 
 import { existsSync } from "node:fs";
 
-import { applyShareRefLaunch } from "@/app/apply-resolved-share-target";
-import { resolveBootstrapIntent } from "@/app/bootstrap-intent";
-import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/handoff-url";
+import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
+import { resolveBootstrapIntent } from "@/app/bootstrap/bootstrap-intent";
+import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
@@ -34,11 +34,11 @@ import {
   recordLocalHistorySourceDecision,
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
-} from "@/app/launch-entry";
-import { resolveSessionConfigOverrides } from "@/app/session-overrides";
-import { SessionController } from "@/app/SessionController";
+} from "@/app/bootstrap/launch-entry";
+import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
+import { SessionController } from "@/app/session/SessionController";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
-import { createContainer } from "@/container";
+import { createContainer, disposeContainer } from "@/container";
 import {
   parseKunaiShareUrl,
   type KunaiShareAction,
@@ -135,7 +135,7 @@ async function maybeOpenStartupHistory(
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
   if (!selection) return null;
   if (selection.localJobId) {
-    const { prepareOfflinePlaybackLaunch } = await import("./app/offline-playback-launch");
+    const { prepareOfflinePlaybackLaunch } = await import("./app/offline/offline-playback-launch");
     const launch = await prepareOfflinePlaybackLaunch(container, selection.localJobId);
     if (!launch) return null;
     return { title: launch.title, episode: launch.episode };
@@ -319,7 +319,7 @@ async function maybeRunDownloadMode(
   const searchResult = bootstrapTitle
     ? ({ status: "success", value: bootstrapTitle } as const)
     : await new (
-        await import("@/app/SearchPhase")
+        await import("@/app/search/SearchPhase")
       ).SearchPhase().execute(
         {
           initialQuery: args.search,
@@ -334,7 +334,7 @@ async function maybeRunDownloadMode(
     return true;
   }
 
-  const { DownloadOnlyPhase } = await import("@/app/DownloadOnlyPhase");
+  const { DownloadOnlyPhase } = await import("@/app/playback/DownloadOnlyPhase");
   const result = await new DownloadOnlyPhase({
     prepareConfirmedTitle: async (title, context) => {
       const state = context.container.stateManager.getState();
@@ -343,9 +343,9 @@ async function maybeRunDownloadMode(
         state.searchResults.find((candidate) => candidate.id === title.id) ??
         searchResultFromTitle(title);
       const { mapAnimeDiscoveryResultToProviderNative } =
-        await import("@/app/anime-provider-mapping");
-      const { chooseSearchResultTitle } = await import("@/app/browse-option-mappers");
-      const { titleInfoFromSearchResult } = await import("@/app/title-info");
+        await import("@/app/discover/anime-provider-mapping");
+      const { chooseSearchResultTitle } = await import("@/app/search/browse-option-mappers");
+      const { titleInfoFromSearchResult } = await import("@/app/bootstrap/title-info");
       const mapped = await mapAnimeDiscoveryResultToProviderNative(selected, {
         mode: state.mode,
         providerId: state.provider,
@@ -725,7 +725,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   if (!capabilitySnapshot.mpv) {
     console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
-    container.diagnosticsService.flush();
+    await disposeContainer(container);
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(1);
   }
@@ -751,7 +751,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         },
       });
       await shutdownShell();
-      container.diagnosticsService.flush();
+      await disposeContainer(container);
       if (process.stdin.isTTY) process.stdin.unref();
       return;
     }
@@ -759,13 +759,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await maybeRunSetupWizard(args, container);
   if (await maybeRunOfflineMode(args, container)) {
     await shutdownShell();
-    container.diagnosticsService.flush();
+    await disposeContainer(container);
     if (process.stdin.isTTY) process.stdin.unref();
     return;
   }
   if (await maybeRunDownloadMode(args, container, bootstrapTitle)) {
     await shutdownShell();
-    container.diagnosticsService.flush();
+    await disposeContainer(container);
     if (process.stdin.isTTY) process.stdin.unref();
     return;
   }
@@ -798,14 +798,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     await globalContainer?.downloadService.pauseActiveJobsForShutdown("normal exit");
     await globalController.shutdown();
     await shutdownShell();
-    globalContainer?.diagnosticsService.flush();
+    await disposeContainer(globalContainer);
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(0);
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
     await globalController?.shutdown().catch(() => {});
     await shutdownShell();
-    globalContainer?.diagnosticsService.flush();
+    await disposeContainer(globalContainer);
     console.error("Fatal error:", e);
     process.exit(1);
   }
@@ -835,7 +835,7 @@ function setupSignalHandlers(): void {
         await globalController.shutdown();
       }
       await shutdownShell();
-      globalContainer?.diagnosticsService.flush();
+      await disposeContainer(globalContainer);
     } finally {
       clearTimeout(forceExit);
       if (process.stdin.isTTY) process.stdin.unref();
@@ -865,7 +865,7 @@ function setupSignalHandlers(): void {
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("uncaught exception");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();
-      globalContainer?.diagnosticsService.flush();
+      await disposeContainer(globalContainer);
     })().finally(() => {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(1);
@@ -878,7 +878,7 @@ function setupSignalHandlers(): void {
       await globalContainer?.downloadService.pauseActiveJobsForShutdown("unhandled rejection");
       await globalController?.shutdown().catch(() => {});
       await shutdownShell();
-      globalContainer?.diagnosticsService.flush();
+      await disposeContainer(globalContainer);
     })().finally(() => {
       if (process.stdin.isTTY) process.stdin.unref();
       process.exit(1);

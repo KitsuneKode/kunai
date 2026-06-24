@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyPlaybackControlSourceSelection } from "@/app/playback-control-source-selection";
+import { applyPlaybackControlSourceSelection } from "@/app/playback/playback-control-source-selection";
 
 const episode = { season: 1, episode: 5 };
 

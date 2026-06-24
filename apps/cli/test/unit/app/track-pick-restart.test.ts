@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { StreamSelectionIntent } from "@/app/source-quality";
-import { applyTrackPickRestart, type TrackPickRestartEffects } from "@/app/track-pick-restart";
+import type { StreamSelectionIntent } from "@/app/playback/source-quality";
+import {
+  applyTrackPickRestart,
+  type TrackPickRestartEffects,
+} from "@/app/playback/track-pick-restart";
 import type { EpisodeInfo } from "@/domain/types";
 
 const episode: EpisodeInfo = { season: 1, episode: 4 };

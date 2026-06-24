@@ -3,6 +3,7 @@
 // control language selection instead of relying on what the player auto-picks.
 
 import { dbg, dbgErr } from "@/logger";
+import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { looksLikeHiSubtitle } from "@kunai/providers";
 
 export type SubtitleEntry = {
@@ -177,10 +178,12 @@ export async function fetchSubtitlesFromWyzie(
 
   for (const timeoutMs of [8_000, 12_000]) {
     try {
-      const res = await fetch(searchUrl, {
-        signal: AbortSignal.timeout(timeoutMs),
-        headers,
-      });
+      const res = await observeOnlineIfBound("subtitle-error", () =>
+        fetch(searchUrl, {
+          signal: AbortSignal.timeout(timeoutMs),
+          headers,
+        }),
+      );
       dbg("subtitle", "wyzie response", {
         status: res.status,
         ok: res.ok,

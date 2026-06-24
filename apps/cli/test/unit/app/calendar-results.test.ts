@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { loadCalendarResults } from "@/app/calendar-results";
+import { loadCalendarResults } from "@/app/search/calendar-results";
 
 function withCalendarServices(input: {
   readonly stateManager: { readonly getState: () => { readonly mode: "anime" | "series" } };

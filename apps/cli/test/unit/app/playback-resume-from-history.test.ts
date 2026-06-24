@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { resumeSecondsFromHistoryForEpisode } from "@/app/playback-resume-from-history";
+import { resumeSecondsFromHistoryForEpisode } from "@/app/playback/playback-resume-from-history";
 import type { EpisodeInfo } from "@/domain/types";
 import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 

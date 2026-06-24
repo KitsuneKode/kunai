@@ -4,7 +4,7 @@ import {
   canAutoContinueIntoRecommendation,
   canResumePlayback,
   isNearEndVoluntaryQuit,
-} from "@/app/playback-postplay-policy";
+} from "@/app/playback/playback-postplay-policy";
 
 const nearEndBase = {
   endReason: "quit",

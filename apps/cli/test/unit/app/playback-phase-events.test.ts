@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { PlaybackPhase, playbackStartupStageForPlayerEvent } from "@/app/PlaybackPhase";
+import { PlaybackPhase, playbackStartupStageForPlayerEvent } from "@/app/playback/PlaybackPhase";
 
 test("PlaybackPhase describes mpv track-changed events for user feedback", () => {
   const phase = new PlaybackPhase();

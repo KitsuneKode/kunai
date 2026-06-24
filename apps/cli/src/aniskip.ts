@@ -68,7 +68,9 @@ async function fetchMalIdFromAllAnimeShow(
       malIdFromAllAnimeShowCache.set(showId, null);
       return null;
     }
-    const data = (await res.json()) as { data?: { show?: { malId?: string | number | null } } };
+    const data = (await res.json()) as {
+      data?: { show?: { malId?: string | number | null } };
+    };
     const raw = data?.data?.show?.malId;
     const parsed =
       typeof raw === "number" && Number.isFinite(raw)
@@ -115,7 +117,10 @@ async function resolveMalIdForAniSkip(opts: {
   }
 
   if (isNumericAniListId(catalogTitleId)) {
-    const fromCatalogId = await resolveMALForSkipTiming({ catalogId: catalogTitleId, signal });
+    const fromCatalogId = await resolveMALForSkipTiming({
+      catalogId: catalogTitleId,
+      signal,
+    });
     if (fromCatalogId) return fromCatalogId;
   }
 
@@ -165,7 +170,10 @@ async function resolveAniListIdByName(
       : `query ($s: String) { Media(search: $s, type: ANIME) { id } }`;
     const res = await fetch("https://graphql.anilist.co", {
       method: "POST",
-      headers: { "Content-Type": "application/json", accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
       body: JSON.stringify(
         seasonYear
           ? { query, variables: { s: name, y: seasonYear } }

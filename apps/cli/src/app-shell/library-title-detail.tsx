@@ -15,7 +15,7 @@ import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
-import { requestUnifiedOfflinePlayback } from "@/app/offline-playback-launch";
+import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";

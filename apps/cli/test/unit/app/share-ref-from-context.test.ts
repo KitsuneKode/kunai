@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildShareRefFromTitleContext } from "@/app/share-ref-from-context";
+import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { encodePlaybackTargetRef } from "@/domain/share/playback-target-ref";
 
 describe("buildShareRefFromTitleContext", () => {
