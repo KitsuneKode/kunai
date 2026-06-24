@@ -44,6 +44,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: () => {},
       maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
@@ -74,6 +75,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: (action) => actions.push(action),
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: () => {},
       maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
@@ -115,6 +117,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: (value) => {
         currentPosition = value;
@@ -146,5 +149,40 @@ describe("PersistentMpvPropertyRouter", () => {
         observedAt: 2,
       }),
     );
+  });
+
+  test("routes mpv copy-share requests and clears the user-data property", async () => {
+    const { ipc, commands } = createFakeIpc();
+    let copied = false;
+    const router = new PersistentMpvPropertyRouter({
+      getActiveCycle: () => null,
+      getIpcSession: () => ipc,
+      getCurrentOptions: () => ({ displayTitle: "Episode", primarySubtitle: null }),
+      subtitleManager: new PersistentSubtitleManager(),
+      notifyMpvActionRequest: () => {},
+      finishResumeChoiceWait: () => {},
+      handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {
+        copied = true;
+      },
+      onSkipRequestFromMpv: async () => {},
+      setCurrentPositionSeconds: () => {},
+      maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
+      getCurrentPositionSeconds: () => 83,
+      maybeEmitPlaybackProgress: () => {},
+      handleSegmentSkipProgress: async () => {},
+      fireNearEofIfNeeded: () => {},
+      observeWatchdog: () => {},
+    });
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "copy-share",
+      observedAt: 1,
+    });
+    await Bun.sleep(0);
+
+    expect(copied).toBe(true);
+    expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
   });
 });

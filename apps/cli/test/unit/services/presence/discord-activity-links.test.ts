@@ -7,6 +7,8 @@ import {
   buildDiscordActivityUrlFields,
   buildDiscordPosterAsset,
   buildDiscordPresenceButtons,
+  buildPlayableShareUrlForActivity,
+  buildShareRefForActivity,
 } from "@/services/presence/discord-activity-links";
 
 const baseActivity = {
@@ -116,6 +118,11 @@ test("buildDiscordActivityUrlFields exposes clickable catalog links", () => {
   expect(buildDiscordActivityUrlFields(baseActivity)).toEqual({
     details_url: "https://anilist.co/anime/21",
     state_url: "https://anilist.co/anime/21",
+    playable_ref: "kunai://play?cat=anilist%3A21&kind=anime&s=1&e=1&src=allanime&n=One%20Piece",
+  });
+  expect(buildDiscordActivityUrlFields(baseActivity, "private")).toEqual({
+    details_url: "https://anilist.co/anime/21",
+    state_url: "https://anilist.co/anime/21",
   });
   expect(
     buildDiscordActivityUrlFields({
@@ -132,7 +139,23 @@ test("buildDiscordActivityUrlFields exposes clickable catalog links", () => {
   ).toEqual({
     details_url: "https://www.themoviedb.org/tv/1396",
     state_url: "https://www.themoviedb.org/tv/1396/season/4/episode/9",
+    playable_ref: "kunai://play?cat=tmdb%3A1396&kind=series&s=4&e=9&src=allanime&n=Breaking%20Bad",
   });
+});
+
+test("buildShareRefForActivity encodes catalog anchors from playback context", () => {
+  expect(buildShareRefForActivity(baseActivity)).toEqual({
+    anchor: { by: "catalog", ns: "anilist", id: "21" },
+    kind: "anime",
+    season: 1,
+    episode: 1,
+    title: "One Piece",
+    hint: { providerId: "allanime" },
+  });
+  expect(buildPlayableShareUrlForActivity(baseActivity, "full")).toBe(
+    "kunai://play?cat=anilist%3A21&kind=anime&s=1&e=1&src=allanime&n=One%20Piece",
+  );
+  expect(buildPlayableShareUrlForActivity(baseActivity, "private")).toBeNull();
 });
 
 test("buildBestCatalogLink prefers episode pages over series pages", () => {

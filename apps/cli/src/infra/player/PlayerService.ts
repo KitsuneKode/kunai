@@ -4,7 +4,7 @@
 // MPV abstraction for media playback.
 // =============================================================================
 
-import type { StreamInfo, PlaybackResult } from "@/domain/types";
+import type { PlaybackResult, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
 import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
@@ -107,6 +107,13 @@ export interface PlayerOptions {
   onNearEof?: () => void;
   /** When aborted, `play()` rejects before spawning mpv. */
   abortSignal?: AbortSignal;
+  shareLinkContext?: {
+    readonly mode: ShellMode;
+    readonly title: Pick<TitleInfo, "id" | "type" | "name" | "externalIds" | "isAnime">;
+    readonly episode?: { readonly season: number; readonly episode: number };
+    readonly providerId?: string;
+    readonly onCopied?: (result: { readonly url: string; readonly copied: boolean } | null) => void;
+  };
 }
 
 export interface PlayerService {

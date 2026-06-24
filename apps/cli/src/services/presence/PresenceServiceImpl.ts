@@ -560,9 +560,10 @@ export function buildDiscordActivity(
     ...(viewLink ? { large_url: viewLink.url } : {}),
   };
   const buttons = buildDiscordPresenceButtons(activity, privacy);
-  const urlFields = buildDiscordActivityUrlFields(activity);
+  const urlFields = buildDiscordActivityUrlFields(activity, privacy);
+  const playableRef = urlFields.playable_ref;
   const stateLine = appendWatchSessionSuffix(
-    buildDiscordPlaybackStateLine(activity, progressLabel),
+    buildDiscordPlaybackStateLine(activity, progressLabel, playableRef),
     activity.paused === true,
     context,
   );
@@ -583,25 +584,37 @@ export function buildDiscordActivity(
 function buildDiscordPlaybackStateLine(
   activity: PresencePlaybackActivity,
   progressLabel: string | null,
+  playableRef?: string,
 ): string {
   if (activity.title.type === "movie") {
     if (activity.paused) {
-      return progressLabel ? `Paused at ${progressLabel}` : "Paused";
+      return appendPlayablePresenceRef(
+        progressLabel ? `Paused at ${progressLabel}` : "Paused",
+        playableRef,
+      );
     }
-    return activity.title.year ?? "Movie";
+    return appendPlayablePresenceRef(activity.title.year ?? "Movie", playableRef);
   }
 
   const episodeName = activity.episode.name?.trim();
   const numbered = `S${activity.episode.season} E${activity.episode.episode}`;
   const episodeLabel = episodeName ? `${numbered} · ${episodeName}` : numbered;
   if (activity.paused) {
-    if (hasDiscordPlaybackTimeline(activity)) return episodeLabel;
-    return compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(
-      " · ",
+    if (hasDiscordPlaybackTimeline(activity)) {
+      return appendPlayablePresenceRef(episodeLabel, playableRef);
+    }
+    return appendPlayablePresenceRef(
+      compact([episodeLabel, progressLabel ? `Paused at ${progressLabel}` : "Paused"]).join(" · "),
+      playableRef,
     );
   }
 
-  return episodeLabel;
+  return appendPlayablePresenceRef(episodeLabel, playableRef);
+}
+
+function appendPlayablePresenceRef(line: string, playableRef?: string): string {
+  if (!playableRef) return line;
+  return `${line} · ${playableRef}`;
 }
 
 function hasDiscordPlaybackTimeline(

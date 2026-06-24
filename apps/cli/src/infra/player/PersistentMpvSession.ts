@@ -1,11 +1,14 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
+import { copyShareLinkForContext } from "@/app/copy-share-link";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
+  ShellMode,
   StreamInfo,
   SubtitleTrack,
+  TitleInfo,
 } from "@/domain/types";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { dbg } from "@/logger";
@@ -115,6 +118,13 @@ type PlayerCycleOptions = {
   onMpvActionRequest?: (action: "next" | "previous" | "pick-quality" | "refresh") => void;
   /** Called once when playback reaches the credits prefetch window or the final ~30 s fallback. */
   onNearEof?: () => void;
+  shareLinkContext?: {
+    readonly mode: ShellMode;
+    readonly title: Pick<TitleInfo, "id" | "type" | "name" | "externalIds" | "isAnime">;
+    readonly episode?: { readonly season: number; readonly episode: number };
+    readonly providerId?: string;
+    readonly onCopied?: (result: { readonly url: string; readonly copied: boolean } | null) => void;
+  };
 };
 
 type PlayerCycleState = {
@@ -154,6 +164,7 @@ export class PersistentMpvSession {
       }
     },
     handleResumeSeekFromMpv: async () => this.handleResumeSeekFromMpv(),
+    handleCopyShareFromMpv: async () => this.handleCopyShareFromMpv(),
     onSkipRequestFromMpv: async (automatic) => this.onSkipRequestFromMpv(automatic),
     getCurrentPositionSeconds: () => this.currentPositionSeconds,
     setCurrentPositionSeconds: (value) => {
@@ -1050,6 +1061,20 @@ export class PersistentMpvSession {
       this.currentPositionSeconds = target;
       noteTrustedSeek(this.activeCycle.telemetry, target);
     }
+  }
+
+  private async handleCopyShareFromMpv(): Promise<void> {
+    const ctx = this.currentCycleOptions().shareLinkContext;
+    if (!ctx) return;
+    const position = Math.max(0, Math.round(this.currentPositionSeconds));
+    const result = await copyShareLinkForContext({
+      mode: ctx.mode,
+      title: ctx.title,
+      episode: ctx.episode,
+      providerId: ctx.providerId,
+      ...(position > 0 ? { startSeconds: position } : {}),
+    });
+    ctx.onCopied?.(result);
   }
 
   private async onSkipRequestFromMpv(automatic: boolean): Promise<void> {

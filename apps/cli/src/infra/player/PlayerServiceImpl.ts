@@ -348,6 +348,7 @@ export class PlayerServiceImpl implements PlayerService {
         this.deps.playerControl.signalPlaybackAction(action);
       },
       onNearEof: options.onNearEof,
+      shareLinkContext: options.shareLinkContext,
     };
 
     if (!this.persistentSession) {

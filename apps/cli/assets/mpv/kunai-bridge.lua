@@ -1,7 +1,7 @@
 -- Kunai mpv bridge: IPC user-data with the Kunai CLI (persistent session only on Unix).
 -- user-data: kunai-skip-to, kunai-skip-auto, kunai-skip-kind, kunai-skip-label, kunai-skip-rev,
 --             kunai-skip-prompt-ms (countdown + Bun auto-skip alignment)
--- kunai-request: next | previous | skip | auto-skip | quality | refresh | resume-seek
+-- kunai-request: next | previous | skip | auto-skip | quality | refresh | resume-seek | copy-share
 -- kunai-loading: non-empty → full-window "loading episode" overlay (set by Bun or Lua before stop).
 -- kunai-resume-at: seconds > 0 → resume vs start-over prompt (kunai-resume-choice: resume|start).
 --
@@ -1059,6 +1059,13 @@ local function do_refresh()
 	signal("refresh")
 	mp.commandv("stop")
 end
+
+local function do_copy_share()
+	mp.osd_message("Kunai · Copying share link…", 2)
+	signal("copy-share")
+end
+
+mp.add_forced_key_binding("ctrl+shift+s", "kunai-copy-share", do_copy_share, { repeatable = false })
 
 mp.add_forced_key_binding("n", "kunai-next", do_next, { repeatable = false })
 mp.add_forced_key_binding("N", "kunai-next-shift", do_next, { repeatable = false })

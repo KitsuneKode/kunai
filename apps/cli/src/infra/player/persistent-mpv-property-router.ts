@@ -35,6 +35,7 @@ export type PersistentMpvPropertyRouterDeps = {
   notifyMpvActionRequest(action: "next" | "previous" | "pick-quality" | "refresh"): void;
   finishResumeChoiceWait(choice: "resume" | "start"): void;
   handleResumeSeekFromMpv(): Promise<void>;
+  handleCopyShareFromMpv(): Promise<void>;
   onSkipRequestFromMpv(automatic: boolean): Promise<void>;
   getCurrentPositionSeconds(): number;
   setCurrentPositionSeconds(value: number): void;
@@ -133,6 +134,9 @@ export class PersistentMpvPropertyRouter {
       void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
     } else if (req === "resume-seek") {
       void this.deps.handleResumeSeekFromMpv();
+      void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
+    } else if (req === "copy-share") {
+      void this.deps.handleCopyShareFromMpv();
       void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
     } else if (req === "skip" || req === "auto-skip") {
       void this.deps.onSkipRequestFromMpv(req === "auto-skip");

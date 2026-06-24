@@ -1,4 +1,9 @@
+import { buildShareRefFromTitleContext } from "@/app/share-ref-from-context";
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
+import {
+  encodePlaybackTargetRef,
+  type PlaybackTargetRef,
+} from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
 import type { PresencePlaybackActivity } from "./PresenceService";
@@ -7,6 +12,26 @@ export type DiscordCatalogLink = {
   readonly label: string;
   readonly url: string;
 };
+
+export function buildShareRefForActivity(
+  activity: PresencePlaybackActivity,
+): PlaybackTargetRef | null {
+  return buildShareRefFromTitleContext({
+    mode: activity.mode,
+    title: activity.title,
+    episode: activity.episode,
+    providerId: activity.providerId,
+  });
+}
+
+export function buildPlayableShareUrlForActivity(
+  activity: PresencePlaybackActivity,
+  privacy: "full" | "private",
+): string | null {
+  if (privacy === "private") return null;
+  const ref = buildShareRefForActivity(activity);
+  return ref ? encodePlaybackTargetRef(ref) : null;
+}
 
 export function buildCatalogViewLink(input: {
   readonly title: Pick<TitleInfo, "id" | "type" | "name" | "year" | "externalIds">;
@@ -83,6 +108,7 @@ export function buildDiscordPresenceButtons(
 
 export function buildDiscordActivityUrlFields(
   activity: PresencePlaybackActivity,
+  privacy: "full" | "private" = "full",
 ): Record<string, string> {
   const viewLink = buildCatalogViewLink({ mode: activity.mode, title: activity.title });
   const episodeLink = buildCatalogEpisodeLink(activity);
@@ -90,6 +116,8 @@ export function buildDiscordActivityUrlFields(
   const fields: Record<string, string> = {};
   if (viewLink) fields.details_url = viewLink.url;
   if (stateLink) fields.state_url = stateLink.url;
+  const playable = buildPlayableShareUrlForActivity(activity, privacy);
+  if (playable) fields.playable_ref = playable;
   return fields;
 }
 

@@ -97,9 +97,10 @@ describe("PresenceServiceImpl", () => {
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
       details: "Breaking Bad",
-      state: "S4 E9",
       type: 3,
     });
+    expect(String(buildDiscordActivity(activity, "full").state)).toContain("S4 E9");
+    expect(buildDiscordActivity(activity, "full").playable_ref).toContain("kunai://play?");
     expect(buildDiscordActivity(activity, "full").buttons).toBeUndefined();
     expect(buildDiscordActivity(activity, "private")).toMatchObject({
       details: "Watching with Kunai",
@@ -238,7 +239,6 @@ describe("PresenceServiceImpl", () => {
 
     expect(payload).toMatchObject({
       details: "Frieren: Beyond Journey's End",
-      state: "S1 E14 · Smells Like Trouble",
       details_url: "https://anilist.co/anime/154587",
       state_url: "https://anilist.co/anime/154587",
       buttons: [{ label: "View on AniList", url: "https://anilist.co/anime/154587" }],
@@ -248,6 +248,7 @@ describe("PresenceServiceImpl", () => {
         large_url: "https://anilist.co/anime/154587",
       },
     });
+    expect(String(payload.state)).toContain("S1 E14 · Smells Like Trouble");
     expect(payload).not.toHaveProperty("largeImageKey");
     expect(payload).not.toHaveProperty("smallImageKey");
     expect(JSON.stringify(payload)).not.toContain("signed-provider.example");
@@ -289,7 +290,7 @@ describe("PresenceServiceImpl", () => {
 
     const payload = buildDiscordActivity(activity, "full");
     expect(payload.details).toBe("Breaking Bad");
-    expect(payload.state).toBe("S4 E9");
+    expect(String(payload.state)).toContain("S4 E9");
     const timestamps = payload.timestamps as { start: number; end: number };
     expect(timestamps.end - timestamps.start).toBe(1440);
     expect(payload).not.toHaveProperty("small_image");
@@ -307,9 +308,11 @@ describe("PresenceServiceImpl", () => {
     };
 
     expect(buildDiscordActivity(activity, "full")).toMatchObject({
-      state: "S4 E9 · Paused at 2:00",
       timestamps: null,
     });
+    expect(String(buildDiscordActivity(activity, "full").state)).toContain(
+      "S4 E9 · Paused at 2:00",
+    );
   });
 
   test("includes episode numbers even when the episode has a title", () => {
@@ -321,7 +324,7 @@ describe("PresenceServiceImpl", () => {
       startedAtMs: 1000,
     };
 
-    expect(buildDiscordActivity(activity, "full").state).toBe("S1 E5 · Jiwon&Jiwon");
+    expect(String(buildDiscordActivity(activity, "full").state)).toContain("S1 E5 · Jiwon&Jiwon");
   });
 
   test("appends binge session suffix after the configured threshold", () => {
@@ -336,18 +339,30 @@ describe("PresenceServiceImpl", () => {
     };
 
     expect(
-      buildDiscordActivity(activity, "full", {
-        sessionElapsedMs: 14 * 60_000,
-        sessionShowAfterMs: 15 * 60_000,
-      }).state,
-    ).toBe("S4 E9 · Bug");
+      String(
+        buildDiscordActivity(activity, "full", {
+          sessionElapsedMs: 14 * 60_000,
+          sessionShowAfterMs: 15 * 60_000,
+        }).state,
+      ),
+    ).toContain("S4 E9 · Bug");
 
     expect(
-      buildDiscordActivity(activity, "full", {
-        sessionElapsedMs: 46 * 60_000,
-        sessionShowAfterMs: 15 * 60_000,
-      }).state,
-    ).toBe("S4 E9 · Bug · 46m with Kunai");
+      String(
+        buildDiscordActivity(activity, "full", {
+          sessionElapsedMs: 46 * 60_000,
+          sessionShowAfterMs: 15 * 60_000,
+        }).state,
+      ),
+    ).toContain("S4 E9 · Bug");
+    expect(
+      String(
+        buildDiscordActivity(activity, "full", {
+          sessionElapsedMs: 46 * 60_000,
+          sessionShowAfterMs: 15 * 60_000,
+        }).state,
+      ),
+    ).toContain("46m with Kunai");
   });
 
   test("clearPlayback resets dedupe hash and watch session state", async () => {
