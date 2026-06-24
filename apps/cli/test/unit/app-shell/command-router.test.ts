@@ -2,11 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import { routePlaybackShellAction, routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
-import {
-  createInitialState,
-  type OverlayState,
-  type SessionState,
-} from "@/domain/session/SessionState";
+import { type OverlayState, type SessionState } from "@/domain/session/SessionState";
+
+import { createSessionStateFixture } from "../../support/session-state-fixture";
 
 describe("routePlaybackShellAction", () => {
   test("returns post-playback episode picker intent without opening a local picker", async () => {
@@ -143,43 +141,38 @@ describe("resolveCommandContext scoped surfaces", () => {
 });
 
 function baseState(): SessionState {
-  return {
-    ...createInitialState("test-provider", "test-provider", {
-      anime: { audio: "sub", subtitle: "en", quality: "auto" },
-      series: { audio: "original", subtitle: "en", quality: "auto" },
-      movie: { audio: "original", subtitle: "en", quality: "auto" },
-    }),
-    mode: "anime",
-    view: "playback",
-    provider: "test-provider",
-    defaultProviders: { series: "series-provider", anime: "anime-provider" },
-    animeLanguageProfile: { audio: "sub", subtitle: "en", quality: "auto" },
-    seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
-    movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
-    currentTitle: { id: "title-1", type: "series", name: "Demo" },
-    currentEpisode: { season: 1, episode: 1 },
-    episodeNavigation: {
-      hasPrevious: false,
-      hasNext: true,
-      hasNextSeason: false,
-      hasUpcomingNext: false,
+  return createSessionStateFixture(
+    {
+      mode: "anime",
+      view: "playback",
+      provider: "test-provider",
+      defaultProviders: { series: "series-provider", anime: "anime-provider" },
+      animeLanguageProfile: { audio: "sub", subtitle: "en", quality: "auto" },
+      seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
+      movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
+      currentTitle: { id: "title-1", type: "series", name: "Demo" },
+      currentEpisode: { season: 1, episode: 1 },
+      episodeNavigation: {
+        hasPrevious: false,
+        hasNext: true,
+        hasNextSeason: false,
+        hasUpcomingNext: false,
+      },
+      stream: null,
+      playbackStatus: "finished",
+      playbackError: null,
+      playbackDetail: null,
+      playbackNote: null,
+      playbackProblem: null,
+      resolveRetryCount: 0,
+      searchQuery: "",
+      searchResults: [],
+      searchState: "idle",
+      selectedResultIndex: 0,
+      selectedResultId: null,
+      activeModals: [],
+      pickerResult: null,
     },
-    autoplaySessionPaused: false,
-    autoskipSessionPaused: false,
-    stopAfterCurrent: false,
-    stream: null,
-    playbackStatus: "finished",
-    playbackError: null,
-    playbackDetail: null,
-    playbackNote: null,
-    playbackProblem: null,
-    resolveRetryCount: 0,
-    searchQuery: "",
-    searchResults: [],
-    searchState: "idle",
-    selectedResultIndex: 0,
-    selectedResultId: null,
-    activeModals: [],
-    pickerResult: null,
-  };
+    { defaultProvider: "test-provider", defaultAnimeProvider: "test-provider" },
+  );
 }

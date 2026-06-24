@@ -31,6 +31,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
+import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import {
@@ -886,23 +887,21 @@ export class PersistentMpvSession {
 
   private maybeEmitPlaybackProgress(cycle: PlayerCycleState, observedAt: number): void {
     const sample = cycle.telemetry.latestIpcSample;
-    if (!sample || sample.positionSeconds <= 0) return;
-    const durationChanged =
-      sample.durationSeconds > 0 &&
-      Math.abs(sample.durationSeconds - cycle.lastPlaybackProgressDurationSeconds) >= 1;
-    const positionChanged =
-      Math.abs(sample.positionSeconds - cycle.lastPlaybackProgressPositionSeconds) >= 15;
     if (
-      cycle.lastPlaybackProgressEventAtMs > 0 &&
-      !durationChanged &&
-      !positionChanged &&
-      observedAt - cycle.lastPlaybackProgressEventAtMs < 15_000
+      !shouldEmitPlaybackProgress(
+        cycle,
+        sample
+          ? {
+              positionSeconds: sample.positionSeconds,
+              durationSeconds: sample.durationSeconds,
+            }
+          : null,
+        observedAt,
+      ) ||
+      !sample
     ) {
       return;
     }
-    cycle.lastPlaybackProgressEventAtMs = observedAt;
-    cycle.lastPlaybackProgressPositionSeconds = sample.positionSeconds;
-    cycle.lastPlaybackProgressDurationSeconds = sample.durationSeconds;
     cycle.onPlaybackEvent?.({
       type: "playback-progress",
       positionSeconds: sample.positionSeconds,

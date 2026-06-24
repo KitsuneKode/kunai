@@ -1,3 +1,4 @@
+import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useLineEditor } from "@/app-shell/line-editor";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
 import { formatPlaybackSessionKeysHint } from "@/app-shell/playback-session-key-hints";
@@ -32,7 +33,6 @@ import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
-import { isNetworkAvailable } from "@/services/network/network-availability";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
 import type { ProviderId } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
@@ -701,13 +701,17 @@ function AppRoot({ container }: { container: Container }) {
       ? "playback"
       : rootContent?.kind === "picker"
         ? "picker"
-        : rootContent?.kind === "browse" || rootContent?.kind === "playback"
+        : rootContent?.kind === "browse" ||
+            rootContent?.kind === "playback" ||
+            rootContent?.kind === "post-playback"
           ? rootContent.kind
           : state.view;
   const headerDestination =
     currentViewLabel === "playback"
       ? "Now Playing"
-      : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
+      : currentViewLabel === "post-playback"
+        ? "Up Next"
+        : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
   // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
   // renders the bell when notificationCount > 0).
   const activeNotifications = container.notificationService.listActive(200, 0);
@@ -718,7 +722,7 @@ function AppRoot({ container }: { container: Container }) {
     [unreadNotifications],
   );
   const playbackIsLocal = isLocalPlaybackStream(state.stream);
-  const networkAvailable = isNetworkAvailable(container);
+  const networkAvailable = useConnectivityOnline(container.connectivity);
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -1545,7 +1549,7 @@ export function openPlaybackShell({
   container: Container;
 }): Promise<PlaybackShellResult> {
   const session = mountRootContent<PlaybackShellResult>({
-    kind: "playback",
+    kind: state.postPlayState ? "post-playback" : "playback",
     renderContent: (finish) => (
       <PlaybackShell container={container} state={state} onResolve={finish} />
     ),

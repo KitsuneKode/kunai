@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { Connectivity } from "@/services/network/Connectivity";
 import {
   observeOnline,
   observeResolveNetworkOutcome,
@@ -7,118 +8,116 @@ import {
   recordNetworkSuccess,
   type NetworkObserver,
 } from "@/services/network/network-observation";
-import { NetworkStatusTracker } from "@/services/network/NetworkStatusTracker";
 
 function makeObserver(offlineMode = false): {
   container: NetworkObserver;
-  tracker: NetworkStatusTracker;
+  connectivity: Connectivity;
 } {
-  const tracker = new NetworkStatusTracker();
+  const connectivity = new Connectivity(() => offlineMode);
   const container = {
-    config: { offlineMode },
-    networkStatus: tracker,
+    connectivity,
   } as unknown as NetworkObserver;
-  return { container, tracker };
+  return { container, connectivity };
 }
 
 describe("recordNetworkFailure", () => {
   test("flips to offline on connectivity-class errors", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("getaddrinfo ENOTFOUND example.com"), "search-error");
-    expect(tracker.getSnapshot().status).toBe("offline");
-    expect(tracker.isAvailable()).toBe(false);
+    expect(connectivity.getSnapshot().status).toBe("offline");
+    expect(connectivity.isOnline()).toBe(false);
   });
 
   test("ignores non-connectivity errors (no flapping on provider churn)", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("HTTP 404 Not Found"), "search-error");
-    expect(tracker.getSnapshot().status).toBe("online");
+    expect(connectivity.getSnapshot().status).toBe("online");
   });
 
   test("treats timeouts as limited, not offline", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("request timed out"), "provider-error");
-    expect(tracker.getSnapshot().status).toBe("limited");
-    expect(tracker.isAvailable()).toBe(true);
+    expect(connectivity.getSnapshot().status).toBe("limited");
+    expect(connectivity.isOnline()).toBe(true);
   });
 
   test("never overrides manual offline mode", () => {
-    const { container, tracker } = makeObserver(true);
+    const { container, connectivity } = makeObserver(true);
     recordNetworkSuccess(container, "search-error");
-    // tracker stays at its optimistic default; offline mode is enforced upstream
-    expect(tracker.getSnapshot().evidence).toBe("startup-probe");
+    expect(connectivity.getSnapshot().evidence).toBe("startup-probe");
+    expect(connectivity.isOnline()).toBe(false);
   });
 });
 
 describe("recordNetworkSuccess", () => {
   test("restores online after a prior failure", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("ENETUNREACH"), "search-error");
-    expect(tracker.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("offline");
     recordNetworkSuccess(container, "search-error");
-    expect(tracker.getSnapshot().status).toBe("online");
+    expect(connectivity.getSnapshot().status).toBe("online");
   });
 });
 
 describe("observeOnline", () => {
   test("records success and returns the value", async () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     const value = await observeOnline(container, "search-error", async () => 42);
     expect(value).toBe(42);
-    expect(tracker.getSnapshot().status).toBe("online");
+    expect(connectivity.getSnapshot().status).toBe("online");
   });
 
   test("records failure and rethrows", async () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     await expect(
       observeOnline(container, "search-error", async () => {
         throw new Error("ECONNREFUSED");
       }),
     ).rejects.toThrow("ECONNREFUSED");
-    expect(tracker.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("offline");
   });
 });
 
 describe("observeResolveNetworkOutcome", () => {
   test("fresh stream proves connectivity", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("ENOTFOUND"), "provider-error");
     observeResolveNetworkOutcome(container, {
       stream: { url: "https://host/x.m3u8" },
       provenance: "fresh",
       attempts: [],
     });
-    expect(tracker.getSnapshot().status).toBe("online");
+    expect(connectivity.getSnapshot().status).toBe("online");
   });
 
   test("cache/prefetch stream does not flip status", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     recordNetworkFailure(container, new Error("ENOTFOUND"), "provider-error");
     observeResolveNetworkOutcome(container, {
       stream: { url: "https://host/x.m3u8" },
       provenance: "cache-hit",
       attempts: [],
     });
-    expect(tracker.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("offline");
   });
 
   test("no stream with connectivity failures marks offline", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     observeResolveNetworkOutcome(container, {
       stream: null,
       provenance: "fresh",
       attempts: [{ failure: { message: "fetch failed: ENOTFOUND" } }],
     });
-    expect(tracker.getSnapshot().status).toBe("offline");
+    expect(connectivity.getSnapshot().status).toBe("offline");
   });
 
   test("no stream with provider-only failures stays online", () => {
-    const { container, tracker } = makeObserver();
+    const { container, connectivity } = makeObserver();
     observeResolveNetworkOutcome(container, {
       stream: null,
       provenance: "fresh",
       attempts: [{ failure: { message: "no playable sources" } }],
     });
-    expect(tracker.getSnapshot().status).toBe("online");
+    expect(connectivity.getSnapshot().status).toBe("online");
   });
 });

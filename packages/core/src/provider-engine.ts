@@ -12,6 +12,7 @@ import type {
 } from "@kunai/types";
 import { isProviderResolveResultResolved } from "@kunai/types";
 
+import { resolveProviderIdAlias } from "./provider-id-aliases";
 import type { CoreProviderModule } from "./provider-sdk";
 import { createProviderRuntimeContext } from "./provider-sdk";
 import {
@@ -20,12 +21,8 @@ import {
   ProviderResolveFailureError,
 } from "./resolver";
 
-const PROVIDER_ID_ALIASES: Readonly<Record<string, ProviderId>> = {
-  vidking: "videasy",
-};
-
 export function resolveProviderId(providerId: ProviderId): ProviderId {
-  return PROVIDER_ID_ALIASES[providerId] ?? providerId;
+  return resolveProviderIdAlias(providerId);
 }
 
 export interface ProviderEngineOptions {

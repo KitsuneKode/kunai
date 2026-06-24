@@ -158,3 +158,4 @@ Relay smoke is opt-in: run `bun run dev:relay`, set `KUNAI_RELAY_BASE_URL=http:/
 - [.plans/presence-integrations.md](.plans/presence-integrations.md): Discord presence setup, diagnostics, and activity polish
 - [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md): anime/TV release dates, releasing-today, and shared schedule cache
 - [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md): planned download, offline library, and setup wizard slices
+- [.plans/architecture-review.md](.plans/architecture-review.md): architecture deepening orchestrator status board and phase tracker (visual report in `.plans/architecture-review.html`)

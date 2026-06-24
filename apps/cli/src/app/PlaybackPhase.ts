@@ -33,6 +33,7 @@ import {
   shouldReleasePersistentMpvBeforePostPlay,
 } from "@/app/mpv-session-lifecycle";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/Phase";
+import { evaluateAutoAdvanceNextUp, type AutoAdvanceGuards } from "@/app/playback-advance";
 import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
@@ -632,6 +633,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     let pendingRecomputeSources = false;
     let episodePlaybackSourceOverride: "local" | "online" | null = null;
     let localEpisodeTiming: PlaybackTimingMetadata | null = null;
+    let localPlaybackJobId: string | null = null;
 
     try {
       // Episode selection (for series)
@@ -1381,6 +1383,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               stream = localResolution.stream;
               streamProvenance = "local";
               localEpisodeTiming = localResolution.timing;
+              localPlaybackJobId = localResolution.jobId;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "playback",
@@ -2098,6 +2101,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               this.updatePlaybackFeedback(context, {
                 note: `✓ ${title.name}${epStr} · episode complete`,
               });
+              if (streamProvenance === "local" && localPlaybackJobId) {
+                container.offlineRunwayService.enqueueEvaluation(
+                  title.id,
+                  "offline-playback-complete",
+                );
+              }
             }
           } else {
             diagnosticsService.record({
@@ -2544,8 +2553,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           };
           const nextEpisode = await resolveAutoplayAdvanceEpisode(autoplayAdvanceArgs);
+          // Read live at each decision site: the post-play loop can pause
+          // autoplay (catalog/playlist cancel, menu toggle) or abort between the
+          // catalog, playlist, and recommendation checks. A frozen snapshot would
+          // let a stale "not paused / not aborted" leak a later auto-advance.
+          const readAutoAdvanceGuards = (): AutoAdvanceGuards => ({
+            endReason: result.endReason,
+            autoplayPaused: playbackSession.autoplayPaused,
+            autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
+            signalAborted: context.signal.aborted,
+          });
+          const catalogAutoNext = evaluateAutoAdvanceNextUp({
+            guards: readAutoAdvanceGuards(),
+            nextEpisode,
+            queueHead: undefined,
+            topRecommendation: null,
+            seriesDone: !episodeAvailability.nextEpisode,
+            autoplayRecommendations: container.config.autoplayRecommendations,
+          });
           let catalogAutoplayEndBanner: string | undefined;
-          if (!nextEpisode) {
+          if (!catalogAutoNext || catalogAutoNext.kind !== "episode") {
             const blockedBy = explainAutoplayBlockReason(autoplayAdvanceArgs);
             catalogAutoplayEndBanner = explainAutoplayNoNextEpisodeCatalogHint({
               ...autoplayAdvanceArgs,
@@ -2602,8 +2629,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               },
             });
           }
-          if (nextEpisode) {
-            const countdownResult = await this.runAutoNextCountdown(context, nextEpisode);
+          if (catalogAutoNext?.kind === "episode") {
+            const nextEpisodeAdvance = catalogAutoNext.episode;
+            const countdownResult = await this.runAutoNextCountdown(context, nextEpisodeAdvance);
             if (countdownResult === "cancelled") {
               stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
               playbackSession = {
@@ -2616,8 +2644,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 message: "Auto-next countdown cancelled",
                 context: {
                   titleId: title.id,
-                  nextSeason: nextEpisode.season,
-                  nextEpisode: nextEpisode.episode,
+                  nextSeason: nextEpisodeAdvance.season,
+                  nextEpisode: nextEpisodeAdvance.episode,
                 },
               });
               this.updatePlaybackFeedback(context, {
@@ -2629,10 +2657,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                nextSeason: nextEpisode.season,
-                nextEpisode: nextEpisode.episode,
+                nextSeason: nextEpisodeAdvance.season,
+                nextEpisode: nextEpisodeAdvance.episode,
                 hasPrefetch: episodePrefetch.hasReadyFor(
-                  buildPrefetchTarget(nextEpisode, resolvedProviderId),
+                  buildPrefetchTarget(nextEpisodeAdvance, resolvedProviderId),
                 ),
               });
               diagnosticsService.record({
@@ -2642,25 +2670,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  nextSeason: nextEpisode.season,
-                  nextEpisode: nextEpisode.episode,
+                  nextSeason: nextEpisodeAdvance.season,
+                  nextEpisode: nextEpisodeAdvance.episode,
                   hasPrefetch: episodePrefetch.hasReadyFor(
-                    buildPrefetchTarget(nextEpisode, resolvedProviderId),
+                    buildPrefetchTarget(nextEpisodeAdvance, resolvedProviderId),
                   ),
                 },
               });
 
               this.updatePlaybackFeedback(context, {
                 detail: "Loading next episode",
-                note: `S${String(nextEpisode.season).padStart(2, "0")}E${String(nextEpisode.episode).padStart(2, "0")}`,
+                note: `S${String(nextEpisodeAdvance.season).padStart(2, "0")}E${String(nextEpisodeAdvance.episode).padStart(2, "0")}`,
               });
 
-              pendingStart = await navigatePlaybackEpisode(nextEpisode, {
+              pendingStart = await navigatePlaybackEpisode(nextEpisodeAdvance, {
                 loadingOrder: "before-start",
                 resetStopAfterCurrent: true,
               });
 
-              const autoplayPrefetchTarget = buildPrefetchTarget(nextEpisode, resolvedProviderId);
+              const autoplayPrefetchTarget = buildPrefetchTarget(
+                nextEpisodeAdvance,
+                resolvedProviderId,
+              );
               await handoffNextEpisodePrefetch(
                 autoplayPrefetchTarget,
                 "post-playback.autonext.prefetch-wait",
@@ -2694,58 +2725,59 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           );
 
-          // Playlist auto-advance: if catalog autoplay didn't fire, check the
-          // user's Up Next queue for a cross-title advance.
-          if (
-            !nextEpisode &&
-            result.endReason === "eof" &&
-            !playbackSession.autoplayPaused &&
-            !context.signal.aborted
-          ) {
-            const nextPlaylistItem = container.queueService.peekNext();
-            if (nextPlaylistItem) {
-              const episodeLabel =
-                nextPlaylistItem.episode !== undefined
-                  ? ` S${String(nextPlaylistItem.season ?? 1).padStart(2, "0")}E${String(nextPlaylistItem.episode).padStart(2, "0")}`
-                  : "";
-              const playlistCountdown = await runAutoplayAdvanceCountdown({
-                seconds: 3,
-                signal: context.signal,
-                sleep: (ms) => Bun.sleep(ms),
-                onTick: (remaining) => {
-                  this.updatePlaybackFeedback(context, {
-                    detail: "Playlist next ready",
-                    note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${remaining}s  ·  a to pause`,
-                  });
-                },
-                isCancelled: () => stateManager.getState().autoplaySessionPaused,
-              });
-              if (playlistCountdown !== "cancelled") {
-                container.queueService.advance();
-                const titleInfo: TitleInfo = {
-                  id: nextPlaylistItem.titleId,
-                  name: nextPlaylistItem.title,
-                  type: nextPlaylistItem.mediaKind === "movie" ? "movie" : "series",
-                };
-                return {
-                  status: "success",
-                  value: {
-                    type: "playlist-advance",
-                    titleInfo,
-                    mode: nextPlaylistItem.mediaKind === "anime" ? "anime" : "series",
-                    season: nextPlaylistItem.season,
-                    episode: nextPlaylistItem.episode,
-                  },
-                };
-              }
-              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
-              playbackSession = {
-                ...playbackSession,
-                autoplayPaused: true,
-                autoplayPauseReason: "user",
+          const playlistAutoNext = !nextEpisode
+            ? evaluateAutoAdvanceNextUp({
+                guards: readAutoAdvanceGuards(),
+                nextEpisode: null,
+                queueHead: container.queueService.peekNext(),
+                topRecommendation: null,
+                seriesDone: !episodeAvailability.nextEpisode,
+                autoplayRecommendations: container.config.autoplayRecommendations,
+              })
+            : null;
+          if (playlistAutoNext?.kind === "queue") {
+            const nextPlaylistItem = playlistAutoNext.entry;
+            const episodeLabel =
+              nextPlaylistItem.episode !== undefined
+                ? ` S${String(nextPlaylistItem.season ?? 1).padStart(2, "0")}E${String(nextPlaylistItem.episode).padStart(2, "0")}`
+                : "";
+            const playlistCountdown = await runAutoplayAdvanceCountdown({
+              seconds: 3,
+              signal: context.signal,
+              sleep: (ms) => Bun.sleep(ms),
+              onTick: (remaining) => {
+                this.updatePlaybackFeedback(context, {
+                  detail: "Playlist next ready",
+                  note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${remaining}s  ·  a to pause`,
+                });
+              },
+              isCancelled: () => stateManager.getState().autoplaySessionPaused,
+            });
+            if (playlistCountdown !== "cancelled") {
+              container.queueService.advance();
+              const titleInfo: TitleInfo = {
+                id: nextPlaylistItem.titleId,
+                name: nextPlaylistItem.title,
+                type: nextPlaylistItem.mediaKind === "movie" ? "movie" : "series",
               };
-              this.updatePlaybackFeedback(context, { detail: null, note: null });
+              return {
+                status: "success",
+                value: {
+                  type: "playlist-advance",
+                  titleInfo,
+                  mode: nextPlaylistItem.mediaKind === "anime" ? "anime" : "series",
+                  season: nextPlaylistItem.season,
+                  episode: nextPlaylistItem.episode,
+                },
+              };
             }
+            stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
+            playbackSession = {
+              ...playbackSession,
+              autoplayPaused: true,
+              autoplayPauseReason: "user",
+            };
+            this.updatePlaybackFeedback(context, { detail: null, note: null });
           }
 
           // Post-playback menu — inner loop so unavailable navigation
@@ -2962,16 +2994,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             // See resolveNextUp + the Up Next spec. (Episode + queue advance are handled
             // earlier; this is the rec tail of the same spine.)
             const topRec = recommendationRailItems[0];
-            if (
-              !nextEpisode &&
-              result.endReason === "eof" &&
-              !playbackSession.autoplayPaused &&
-              !stateManager.getState().autoplaySessionPaused &&
-              !context.signal.aborted &&
-              !container.queueService.peekNext() &&
-              container.config.autoplayRecommendations &&
-              topRec
-            ) {
+            const recommendationAutoNext = !nextEpisode
+              ? evaluateAutoAdvanceNextUp({
+                  guards: readAutoAdvanceGuards(),
+                  nextEpisode: null,
+                  queueHead: container.queueService.peekNext(),
+                  topRecommendation: topRec
+                    ? {
+                        mediaKind: topRec.type === "movie" ? "movie" : "series",
+                        titleId: topRec.id,
+                        title: topRec.title,
+                        sourceId: topRec.sourceId,
+                      }
+                    : null,
+                  seriesDone: !episodeAvailability.nextEpisode,
+                  autoplayRecommendations: container.config.autoplayRecommendations,
+                })
+              : null;
+            if (recommendationAutoNext?.kind === "recommendation") {
+              const topRecAdvance = recommendationAutoNext.item;
               const recCountdown = await runAutoplayAdvanceCountdown({
                 seconds: 5,
                 signal: context.signal,
@@ -2979,7 +3020,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 onTick: (remaining) =>
                   this.updatePlaybackFeedback(context, {
                     detail: "Up next ready",
-                    note: `Up next: ${topRec.title} in ${remaining}s  ·  a to pause`,
+                    note: `Up next: ${topRecAdvance.title} in ${remaining}s  ·  a to pause`,
                   }),
                 isCancelled: () => stateManager.getState().autoplaySessionPaused,
               });
@@ -2989,10 +3030,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   value: {
                     type: "playlist-advance",
                     titleInfo: {
-                      id: topRec.id,
-                      name: topRec.title,
-                      type: topRec.type,
-                      posterUrl: topRec.posterPath ?? undefined,
+                      id: topRecAdvance.titleId,
+                      name: topRecAdvance.title,
+                      type: topRec?.type === "movie" ? "movie" : "series",
+                      posterUrl: topRec?.posterPath ?? undefined,
                     },
                     mode,
                   },

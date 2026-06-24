@@ -21,6 +21,7 @@ import {
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
+import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
   type ProviderEngine,
@@ -327,7 +328,7 @@ export class PlaybackResolveService {
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (
-        (input.providerId === "videasy" || input.providerId === "vidking") &&
+        isVideasyFamilyProvider(input.providerId) &&
         isOrgOnlyProviderResolveResult(inventoryResult)
       ) {
         await this.deps.sourceInventory?.delete(inventoryInput);
@@ -1127,7 +1128,7 @@ function endpointCandidatesForPinnedSource(
   if (normalized.startsWith(prefix)) {
     candidates.add(normalized.slice(prefix.length));
   }
-  if (providerId === "videasy" || providerId === "vidking") {
+  if (isVideasyFamilyProvider(providerId)) {
     candidates.add(normalized.replace(/^source:(videasy|vidking):/, ""));
   }
   return [...candidates];

@@ -43,7 +43,6 @@ import {
 import { resolveDownloadQualityCeiling } from "@/services/download/download-quality-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
-import { isNetworkAvailable } from "@/services/network/network-availability";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -197,7 +196,7 @@ export async function openOfflineLibraryGroupPicker(
     const offlinePolicy = container.offlineTitlePolicies.get(first.titleId);
     const continuation = createContinuationEngine().decide({
       titleName: first.titleName,
-      networkAvailable: isNetworkAvailable(container),
+      networkAvailable: container.connectivity.isOnline(),
       localEpisodes: entries
         .filter((entry) => entry.job.season !== undefined && entry.job.episode !== undefined)
         .map((entry) => ({

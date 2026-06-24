@@ -6,7 +6,6 @@
 
 import { stat } from "node:fs/promises";
 
-import { getRootContentSession } from "@/app-shell/root-content-state";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -27,6 +26,8 @@ import {
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
+import type { PlayerPresentationPort } from "./player-presentation-port";
+import { nonInteractivePlayerPresentation } from "./player-presentation-port";
 import type { PlayerControlService } from "./PlayerControlService";
 import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 
@@ -43,6 +44,7 @@ export class PlayerServiceImpl implements PlayerService {
       playerControl: PlayerControlService;
       config: ConfigService;
       mpv?: MpvRuntimeOptions;
+      presentation?: PlayerPresentationPort;
     },
   ) {}
 
@@ -70,7 +72,8 @@ export class PlayerServiceImpl implements PlayerService {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "hls-manifest" });
     }
     options.onPlaybackEvent?.({ type: "launching-player" });
-    if (!getRootContentSession()) {
+    const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
+    if (!presentation.isInteractiveShellMounted()) {
       process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
       process.stderr.write(
         playbackStream.subtitle

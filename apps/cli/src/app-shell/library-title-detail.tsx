@@ -1,3 +1,4 @@
+import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import {
@@ -19,7 +20,6 @@ import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
-import { isNetworkAvailable } from "@/services/network/network-availability";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -56,6 +56,7 @@ export function LibraryTitleDetail({
   readonly onEntriesChanged: () => void;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
+  const networkAvailable = useConnectivityOnline(container.connectivity);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -69,7 +70,7 @@ export function LibraryTitleDetail({
     if (!first) return "";
     return createContinuationEngine().decide({
       titleName: first.titleName,
-      networkAvailable: isNetworkAvailable(container),
+      networkAvailable,
       localEpisodes: entries
         .filter((entry) => entry.job.season !== undefined && entry.job.episode !== undefined)
         .map((entry) => ({
@@ -84,7 +85,7 @@ export function LibraryTitleDetail({
           ),
         })),
     }).note;
-  }, [container, entries, first, historyEntries]);
+  }, [entries, first, historyEntries, networkAvailable]);
 
   const actionRows: DetailRow[] = useMemo(
     () => [

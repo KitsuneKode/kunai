@@ -3,10 +3,11 @@ import { expect, test } from "bun:test";
 import { buildSettingsPage } from "@/app-shell/settings/build-page";
 import { handleSettingsKey } from "@/app-shell/settings/controller";
 import { createSettingsUiState } from "@/app-shell/settings/state";
-import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { Key } from "ink";
+
+import { createContainerFixture } from "../support/container-fixture";
 
 function inkKey(partial: Partial<Key>): Key {
   return partial as Key;
@@ -25,12 +26,13 @@ function baseConfig(): KitsuneConfig {
 }
 
 function mockRegistryCtx(config: KitsuneConfig) {
+  const { container } = createContainerFixture();
   return {
     config,
     presenceSnapshot: null,
     seriesProviderOptions: [],
     animeProviderOptions: [],
-    container: {} as Container,
+    container,
   };
 }
 
@@ -51,7 +53,7 @@ test("Enter on relay URL enters dedicated input mode instead of submenu", () => 
   };
 
   const result = handleSettingsKey("", inkKey({ return: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
 
@@ -78,7 +80,7 @@ test("Esc in relay URL input mode restores seed and exits input mode", () => {
   };
 
   const result = handleSettingsKey("", inkKey({ escape: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
 
@@ -100,7 +102,7 @@ test("Enter with invalid relay URL keeps input mode and sets error", () => {
   };
 
   const result = handleSettingsKey("", inkKey({ return: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
 
@@ -125,7 +127,7 @@ test("Enter with valid relay URL commits and exits input mode", () => {
   };
 
   const result = handleSettingsKey("", inkKey({ return: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
 
@@ -155,7 +157,7 @@ test("pasted text chunks append to relay URL input mode", () => {
     inkKey({}),
     state,
     {
-      container: {} as Container,
+      container: createContainerFixture().container,
       registryCtx,
     },
   );
@@ -179,7 +181,7 @@ test("typing on main list before Enter on text row preserves search query when e
   };
 
   const opened = handleSettingsKey("", inkKey({ return: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
   expect(opened.state.inputMode.active).toBe(true);
@@ -200,7 +202,7 @@ test("Esc on dirty main settings closes without reverting immediate-applied draf
   };
 
   const result = handleSettingsKey("", inkKey({ escape: true }), state, {
-    container: {} as Container,
+    container: createContainerFixture().container,
     registryCtx,
   });
 

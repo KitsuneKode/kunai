@@ -64,6 +64,10 @@ export async function applySettingsToRuntime({
     });
   }
 
+  if (before.offlineMode !== next.offlineMode) {
+    container.connectivity.notifyIntentChanged();
+  }
+
   if (
     before.presenceProvider !== next.presenceProvider ||
     before.presenceDiscordClientId !== next.presenceDiscordClientId ||

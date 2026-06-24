@@ -13,6 +13,7 @@ import { initLogger } from "@/logger";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import {
   createProviderEngine,
+  isVideasyFamilyProvider,
   orderProviderModulesByPriority,
   type ProviderEngine,
 } from "@kunai/core";
@@ -52,6 +53,7 @@ import {
   StreamCacheRepository,
 } from "@kunai/storage";
 
+import { getRootContentSession } from "./app-shell/root-content-state";
 import {
   resolveAttentionFeatureFlags,
   type AttentionFeatureFlags,
@@ -66,6 +68,7 @@ import type { Logger } from "./infra/logger/Logger";
 // Import implementations
 import { StructuredLogger } from "./infra/logger/StructuredLogger";
 import type { MpvRuntimeOptions } from "./infra/player/mpv-runtime-options";
+import type { PlayerPresentationPort } from "./infra/player/player-presentation-port";
 import type { PlayerControlService } from "./infra/player/PlayerControlService";
 import { PlayerControlServiceImpl } from "./infra/player/PlayerControlServiceImpl";
 import type { PlayerService } from "./infra/player/PlayerService";
@@ -106,7 +109,7 @@ import { redactDiagnosticValue } from "./services/diagnostics/redaction";
 import { DownloadService } from "./services/download/DownloadService";
 import { createHistoryMetadataResolver } from "./services/history-metadata/create-history-metadata-resolver";
 import { HistoryMetadataHealer } from "./services/history-metadata/HistoryMetadataHealer";
-import { NetworkStatusTracker } from "./services/network/NetworkStatusTracker";
+import { Connectivity } from "./services/network/Connectivity";
 import {
   mapRecordToSinkDelivery,
   NotificationSinkRegistry,
@@ -215,7 +218,7 @@ export interface Container {
   readonly offlineMaintenanceService: OfflineMaintenanceService;
   readonly offlineRunwayService: OfflineRunwayService;
   readonly notificationService: NotificationService;
-  readonly networkStatus: NetworkStatusTracker;
+  readonly connectivity: Connectivity;
   readonly presence: PresenceService;
 
   // Session
@@ -446,6 +449,9 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
   const shell = new ShellServiceImpl({ logger, tracer, stateManager });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
+  const playerPresentation: PlayerPresentationPort = {
+    isInteractiveShellMounted: () => getRootContentSession() !== null,
+  };
   const player = new PlayerServiceImpl({
     logger,
     tracer,
@@ -453,6 +459,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     playerControl,
     config,
     mpv: options?.mpv,
+    presentation: playerPresentation,
   });
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
@@ -487,7 +494,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     titleBridge: titleBridgePort,
     auth: {
       getSecret(providerId, key) {
-        if (providerId !== "videasy" && providerId !== "vidking") return undefined;
+        if (!isVideasyFamilyProvider(providerId)) return undefined;
         if (key === "videasySessionToken") {
           return (
             process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim() ||
@@ -523,7 +530,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
     },
   );
-  const networkStatus = new NetworkStatusTracker();
+  const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(
     new LogNotificationSink((message, context) => {
@@ -789,7 +796,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     offlineMaintenanceService,
     offlineRunwayService,
     notificationService,
-    networkStatus,
+    connectivity,
     presence,
     stateManager,
     recommendationService,

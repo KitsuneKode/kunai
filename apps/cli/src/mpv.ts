@@ -12,6 +12,10 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import {
+  createPlaybackProgressThrottleState,
+  shouldEmitPlaybackProgress,
+} from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
@@ -127,9 +131,7 @@ async function launchMpvInner(
   let playerReadyNotified = false;
   let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
-  let lastPlaybackProgressEventAtMs = 0;
-  let lastPlaybackProgressPositionSeconds = -1;
-  let lastPlaybackProgressDurationSeconds = 0;
+  const playbackProgressThrottle = createPlaybackProgressThrottleState();
   let mutableTiming = opts.timing ?? null;
   const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
   const skippedSegments = new Set<string>();
@@ -153,23 +155,21 @@ async function launchMpvInner(
   };
   const maybeEmitPlaybackProgress = (observedAt: number) => {
     const sample = telemetry.latestIpcSample;
-    if (!sample || sample.positionSeconds <= 0) return;
-    const durationChanged =
-      sample.durationSeconds > 0 &&
-      Math.abs(sample.durationSeconds - lastPlaybackProgressDurationSeconds) >= 1;
-    const positionChanged =
-      Math.abs(sample.positionSeconds - lastPlaybackProgressPositionSeconds) >= 15;
     if (
-      lastPlaybackProgressEventAtMs > 0 &&
-      !durationChanged &&
-      !positionChanged &&
-      observedAt - lastPlaybackProgressEventAtMs < 15_000
+      !shouldEmitPlaybackProgress(
+        playbackProgressThrottle,
+        sample
+          ? {
+              positionSeconds: sample.positionSeconds,
+              durationSeconds: sample.durationSeconds,
+            }
+          : null,
+        observedAt,
+      ) ||
+      !sample
     ) {
       return;
     }
-    lastPlaybackProgressEventAtMs = observedAt;
-    lastPlaybackProgressPositionSeconds = sample.positionSeconds;
-    lastPlaybackProgressDurationSeconds = sample.durationSeconds;
     emitPlaybackEvent({
       type: "playback-progress",
       positionSeconds: sample.positionSeconds,

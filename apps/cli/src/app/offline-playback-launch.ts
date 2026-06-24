@@ -9,13 +9,9 @@ export type OfflinePlaybackLaunch = {
   readonly episode?: EpisodeInfo;
 };
 
-let pendingOfflinePlaybackLaunch: OfflinePlaybackLaunch | null = null;
-
-export function consumePendingOfflinePlaybackLaunch(): OfflinePlaybackLaunch | null {
-  const launch = pendingOfflinePlaybackLaunch;
-  pendingOfflinePlaybackLaunch = null;
-  return launch;
-}
+export type OfflinePlaybackRequestResult =
+  | { readonly status: "browse-handoff"; readonly launch: OfflinePlaybackLaunch }
+  | { readonly status: "direct"; readonly launch: OfflinePlaybackLaunch };
 
 export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
   return {
@@ -91,27 +87,26 @@ export async function prepareOfflinePlaybackLaunch(
 }
 
 /**
- * Start unified offline playback from a shell overlay while browse is still mounted.
- * Closes the overlay, interrupts browse, and hands off to PlaybackPhase.
+ * Start unified offline playback from a shell overlay while browse may still be mounted.
+ * Closes the overlay, interrupts browse when mounted, and returns an explicit handoff.
  */
 export async function requestUnifiedOfflinePlayback(
   container: Container,
   jobId: string,
-): Promise<OfflinePlaybackLaunch | null> {
+): Promise<OfflinePlaybackRequestResult | null> {
   const launch = await prepareOfflinePlaybackLaunch(container, jobId);
   if (!launch) return null;
 
-  pendingOfflinePlaybackLaunch = launch;
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 
   const closedBrowse = forceCloseRootContent<BrowseShellResult<SearchResult>>({
     type: "offline-playback",
     launch,
   });
-  if (!closedBrowse) {
-    return launch;
+
+  if (closedBrowse) {
+    return { status: "browse-handoff", launch };
   }
 
-  pendingOfflinePlaybackLaunch = null;
-  return launch;
+  return { status: "direct", launch };
 }

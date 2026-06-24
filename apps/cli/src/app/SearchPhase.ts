@@ -103,12 +103,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let routeSubtitle: string | undefined;
 
       while (true) {
-        const pendingOfflineLaunch = (
-          await import("./offline-playback-launch")
-        ).consumePendingOfflinePlaybackLaunch();
-        if (pendingOfflineLaunch) {
-          return { status: "success", value: pendingOfflineLaunch.title };
-        }
         const currentState = stateManager.getState();
         if (container.config.offlineMode && currentState.searchQuery.trim().length === 0) {
           container.stateManager.dispatch({

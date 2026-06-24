@@ -3,7 +3,6 @@ import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSele
 import type { PlaybackSourcePreference } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
-import { isNetworkAvailable } from "@/services/network/network-availability";
 import { findReadyJobIdForEpisode } from "@/services/offline/offline-episode-index";
 import { parseIntroSkipTiming } from "@/services/offline/offline-library";
 
@@ -58,7 +57,7 @@ export async function resolveLocalEpisodePlayback(
   const decision = createSourceSelectionEngine().decide({
     entrypoint: options.entrypoint ?? "online-search",
     local: { status: localStatus, jobId },
-    networkAvailable: isNetworkAvailable(container),
+    networkAvailable: container.connectivity.isOnline(),
     preference: mapContinuePreferenceToSourcePreference(container.config.continueSourcePreference),
   });
 

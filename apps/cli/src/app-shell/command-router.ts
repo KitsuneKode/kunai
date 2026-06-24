@@ -105,12 +105,12 @@ async function openRootHistorySelection(
   const selection = await selectionPromise;
   if (!selection) return "handled";
   if (selection.localJobId) {
-    const launch = await requestUnifiedOfflinePlayback(container, selection.localJobId);
-    if (!launch) return "handled";
+    const result = await requestUnifiedOfflinePlayback(container, selection.localJobId);
+    if (!result) return "handled";
     return {
       type: "history-entry",
-      title: launch.title,
-      episode: launch.episode,
+      title: result.launch.title,
+      episode: result.launch.episode,
     };
   }
   const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");

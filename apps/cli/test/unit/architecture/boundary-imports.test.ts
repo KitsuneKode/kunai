@@ -89,7 +89,6 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/offline-playback-launch.ts",
     ["@/app-shell/root-content-state", "@/app-shell/types"],
   ],
-  ["apps/cli/src/infra/player/PlayerServiceImpl.ts", ["@/app-shell/root-content-state"]],
 ]);
 
 const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([

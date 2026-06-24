@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kunai — Architecture Review: Data Propagation & Playback</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { mono: ['ui-monospace','SFMono-Regular','Menlo','monospace'] } } } };
+</script>
+<style>
+  body { background:#0b0f14; }
+  .card { background:linear-gradient(180deg,#10161f 0%,#0d131b 100%); border:1px solid #1e2733; }
+  .mermaid { background:#0a0e13; border-radius:.5rem; padding:.75rem; }
+  .badge-strong { background:#0f2e1c; color:#5ee79a; border:1px solid #1f6b42; }
+  .badge-explore { background:#2a230c; color:#f4c84a; border:1px solid #6b551f; }
+  .badge-spec { background:#251a2e; color:#c79bf2; border:1px solid #5a3d75; }
+  .pill { background:#16202b; border:1px solid #25323f; color:#9fb4c7; }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .anchor { scroll-margin-top:1rem; }
+  h2 { letter-spacing:-.01em; }
+</style>
+</head>
+<body class="text-slate-200 font-sans">
+<div class="max-w-6xl mx-auto px-5 py-10">
+
+  <!-- Header -->
+  <header class="mb-10">
+    <p class="text-xs uppercase tracking-widest text-sky-400/80 mb-2">Kunai · CLI runtime</p>
+    <h1 class="text-3xl md:text-4xl font-bold text-white">Architecture Review — Data Propagation &amp; Playback</h1>
+    <p class="mt-3 text-slate-400 max-w-3xl">Deepening opportunities across two themes: (1) cross-cutting <span class="text-slate-200">sources of truth</span> &amp; propagation, and (2) the <span class="text-slate-200">playback / post-playback</span> spine. Each candidate uses the deletion test — would removing it concentrate complexity, or just move it? Vocabulary: <span class="mono text-slate-300">module / interface / depth / seam / source of truth</span>.</p>
+  </header>
+
+  <!-- Legend / store inventory -->
+  <section class="card rounded-xl p-5 mb-10">
+    <h2 class="text-lg font-semibold text-white mb-3">The shape today: three runtime stores + several side-channels</h2>
+    <div class="grid md:grid-cols-3 gap-3 text-sm">
+      <div class="pill rounded-lg p-3"><div class="text-white font-medium">StateManager</div><div class="text-slate-400 mt-1">Session reducer · <span class="text-emerald-400">reactive</span></div><div class="text-slate-500 mt-1">mode, provider, episode, stream, overlays</div></div>
+      <div class="pill rounded-lg p-3"><div class="text-white font-medium">root-content-state</div><div class="text-slate-400 mt-1"><span class="mono">useSyncExternalStore</span> · <span class="text-emerald-400">reactive</span></div><div class="text-slate-500 mt-1">which shell is mounted (global singleton)</div></div>
+      <div class="pill rounded-lg p-3"><div class="text-white font-medium">NetworkStatusTracker</div><div class="text-slate-400 mt-1">plain object · <span class="text-rose-400">NOT reactive</span></div><div class="text-slate-500 mt-1">connectivity reality (now fed)</div></div>
+    </div>
+    <p class="text-slate-400 text-sm mt-4">On top of these sit <span class="text-slate-200">side-channels</span>: <span class="mono">PlayerControlService</span> consume-mailboxes, module-global mailboxes (<span class="mono">pendingOfflinePlaybackLaunch</span>), and loop-local variables inside <span class="mono">PlaybackPhase.execute()</span>. The same datum often travels several of these at once.</p>
+  </section>
+
+  <!-- TOC -->
+  <nav class="mb-12 grid md:grid-cols-2 gap-2 text-sm">
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c1">① Connectivity seam — single reactive truth for online/offline</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c2">② Offline-launch travels 3 ways — kill the module mailbox</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c3">③ Infra → app-shell inversion (PlayerServiceImpl)</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c4">④ root-content global imperative poke</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c5">⑤ PlaybackPhase god-module (execute() ≈ 3,966 lines)</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c6">⑥ "What plays next" — resolveNextUp() exists but unused</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c7">⑦ Playback intent: 4 overlapping channels</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c8">⑧ Post-playback surface drift (kind mismatch)</a>
+    <a class="pill rounded-lg px-3 py-2 hover:border-sky-600 transition" href="#c9">⑨ Offline continuity half-wired (dead seams)</a>
+  </nav>
+
+  <h2 class="text-2xl font-bold text-white mb-1">Theme A — Cross-cutting truth &amp; propagation</h2>
+  <p class="text-slate-500 text-sm mb-6">Who owns each concept, and how a change reaches everyone that cares.</p>
+
+  <!-- CARD 1 -->
+  <article id="c1" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">① Connectivity seam — one reactive source of truth</h3>
+      <span class="badge-strong text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Strong</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">services/network/network-availability.ts</span>, <span class="mono">NetworkStatusTracker.ts</span>, <span class="mono">config.offlineMode</span>, consumers in <span class="mono">ink-shell.tsx:721</span>, <span class="mono">workflows.ts:200</span>, <span class="mono">library-title-detail.tsx:72</span>, source-selection engine.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> "Can I go online?" is answered by <em>two inputs</em> (intent = <span class="mono">offlineMode</span>, reality = tracker) ANDed by a <em>free function</em> recomputed at each call site. The tracker isn't reactive — when a search fails and flips it to <span class="mono">offline</span>, nothing re-renders on its own; the header only updates if a nearby dispatch happens to trigger a render. Drop network while idle → stale UI.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> a deep <span class="mono">Connectivity</span> module owning intent + reality, exposing <span class="mono">isOnline() / snapshot() / subscribe()</span>, reactive. Tracker becomes private. <span class="mono">network-observation.ts</span> (built today) feeds it; everyone reads <span class="mono">container.connectivity</span>.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> one source of truth (locality); instant propagation to header + source-fallback + hints (leverage); the interface is the test surface — fake the seam, assert UI/fallback.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Deletion test:</span> remove it → the AND-logic and staleness reappear across ~5 call sites. <span class="text-emerald-400">Earns its keep.</span></p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    cfg1[config.offlineMode] --> fn1["isNetworkAvailable()"]
+    trk1[NetworkStatusTracker\nNOT reactive] --> fn1
+    fn1 --> h1[header recompute]
+    fn1 --> s1[source select]
+    obs1[network-observation] -.writes.-> trk1
+    trk1 -. no notify .-> h1
+  end
+  subgraph AFTER
+    cfg2[offlineMode intent] --> conn[Connectivity seam\nreactive]
+    trk2[tracker reality\nprivate] --> conn
+    obs2[network-observation] --> conn
+    conn -- subscribe --> h2[header]
+    conn --> s2[source select]
+    conn --> hint2[offline hints]
+  end
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 2 -->
+  <article id="c2" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">② Offline-launch travels three ways — kill the module mailbox</h3>
+      <span class="badge-strong text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Strong</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">app/offline-playback-launch.ts:97</span> (<span class="mono">requestUnifiedOfflinePlayback</span>), <span class="mono">SearchPhase.ts</span> (<span class="mono">consumePendingOfflinePlaybackLaunch</span>), <span class="mono">app-shell/types.ts:319</span> (<span class="mono">BrowseShellResult</span>).</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> the same launch datum is pushed through three channels: (1) <span class="mono">dispatch(SELECT_TITLE/SELECT_EPISODE)</span> — the real handoff; (2) <span class="mono">forceCloseRootContent(&#123;type:"offline-playback",launch&#125;)</span>; (3) the module-global <span class="mono">pendingOfflinePlaybackLaunch</span>. #3 is spooky-action-at-a-distance — a new entry point that forgets to consume it silently breaks.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> selection already lives in StateManager (#1 = truth). The loop only needs an "offline playback requested" signal. Collapse to dispatch + a single typed return; delete the module mailbox.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> explicit data flow; one place to reason about the handoff; no hidden global to keep in sync across entry points.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Deletion test:</span> delete the mailbox → behavior must be re-expressed as a return value (good). It was carrying state, not concentrating logic.</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    req1[requestUnifiedOfflinePlayback]
+    req1 -->|1 dispatch| sm1[StateManager]
+    req1 -->|2 BrowseShellResult| sp1[SearchPhase]
+    req1 -->|3 module global| mb1[(pendingOffline\nPlaybackLaunch)]
+    mb1 -->|consume| sp1
+    sm1 --> pb1[PlaybackPhase]
+  end
+  subgraph AFTER
+    req2[requestUnifiedOfflinePlayback]
+    req2 -->|dispatch select| sm2[StateManager]
+    req2 -->|typed return| sp2[SearchPhase]
+    sm2 --> pb2[PlaybackPhase]
+  end
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 3 -->
+  <article id="c3" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">③ Infra reaches up into the UI</h3>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Worth exploring</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">infra/player/PlayerServiceImpl.ts</span> → imports <span class="mono">getRootContentSession</span> from <span class="mono">@/app-shell/root-content-state</span> (now on the boundary allowlist).</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> the lowest layer depends on the top layer, only to ask "is the Ink shell active, so should I suppress stderr chrome?" Layering inversion; the allowlist hides it rather than fixing it.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> invert via an injected capability — <span class="mono">play(..., &#123; suppressStdoutChrome &#125;)</span> or a <span class="mono">presentation.isInteractive()</span> port. Infra asks an injected question instead of importing UI.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> infra becomes testable without app-shell; one adapter today → a real seam the moment anything else needs "is a shell active."</p>
+      </div>
+      <div class="mermaid">
+flowchart LR
+  subgraph BEFORE
+    pli1[PlayerServiceImpl\ninfra] -->|imports up| rcs1[app-shell\nroot-content-state]
+  end
+  subgraph AFTER
+    caller2[shell composition] -->|injects| port2[presentation port]
+    port2 --> pli2[PlayerServiceImpl\ninfra]
+  end
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 4 -->
+  <article id="c4" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">④ root-content global, imperatively poked</h3>
+      <span class="badge-spec text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Speculative</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">app-shell/root-content-state.ts</span> — module-global <span class="mono">rootContentSession</span>, <span class="mono">pendingRootContentMounts</span>, <span class="mono">forceCloseRootContent()</span>.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> contained but global mutable state, settled from the outside (<span class="mono">forceCloseRootContent</span>). Fine for a single CLI process, but it's imperative coordination over a singleton — hard to test in isolation, impossible to run two shells.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> mostly leave it (it IS reactive). Optional: wrap as an injected <span class="mono">RootContentHost</span> so callers receive a handle rather than reaching into module globals. Lower ROI than ①–③.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Note:</span> only worth it if/when a daemon or web host needs more than one surface.</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    g[(module globals)]:::g
+    m1[mountRootContent] --> g
+    f1[forceCloseRootContent] --> g
+    use1[useRootContentSession] --> g
+  end
+  subgraph AFTER
+    host[RootContentHost\ninjected handle]
+    m2[mount] --> host
+    f2[close] --> host
+    use2[subscribe] --> host
+  end
+  classDef g fill:#2a1320,stroke:#6b1f3a;
+      </div>
+    </div>
+  </article>
+
+  <h2 class="text-2xl font-bold text-white mb-1 mt-14">Theme B — Playback &amp; post-playback spine</h2>
+  <p class="text-slate-500 text-sm mb-6">Evidence from three exploration passes over <span class="mono">PlaybackPhase.ts</span> (4,282 lines), the post-playback flow, and the player-control IPC seams.</p>
+
+  <!-- CARD 5 -->
+  <article id="c5" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">⑤ PlaybackPhase god-module</h3>
+      <span class="badge-strong text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Strong</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">app/PlaybackPhase.ts</span> — 4,282 lines; <span class="mono">execute()</span> spans <span class="mono">590–3556</span> (~3,966 lines) with two nested <span class="mono">while(true)</span> loops (main <span class="mono">841</span>, post-play <span class="mono">2771</span>).</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> one function interleaves ~25 responsibilities — episode selection, provider resolve, stream/subtitle prep, prefetch, mpv play, history persist, dead-stream invalidation, control routing, autoplay, recommendations, post-play menu. State is scattered across loop-locals (<span class="mono">stream</span>, <span class="mono">pendingStart</span>, <span class="mono">sessionSoftProviderId</span>, <span class="mono">resolvedProviderId</span>), StateManager, and a selection coordinator. No one can hold it in context; edits are risky; the only test surface is end-to-end.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> extract deep sub-modules behind small interfaces — <span class="mono">EpisodeResolveStep</span>, <span class="mono">StreamPrepStep</span>, <span class="mono">PlaybackRunStep</span>, <span class="mono">PostPlayLoop</span>, with an explicit per-iteration <span class="mono">PlaybackIterationState</span> carrying intent. <span class="mono">execute()</span> becomes a thin coordinator.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> each step independently testable; bugs localize; you (and the model) can reason about one step at a time. This is the highest-leverage deepening in the codebase.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Deletion test:</span> n/a — this is decomposition. The win is locality, not removal. Sequence it carefully (behavior-preserving extractions, test after each).</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE["execute()  ~3,966 lines"]
+    direction TB
+    L[while loop] --> sel[select] --> res[resolve] --> prep[prep] --> play[mpv] --> hist[history] --> route[route] --> auto[autoplay] --> pp[postplay while loop]
+  end
+  subgraph AFTER["execute() thin coordinator"]
+    direction TB
+    it[PlaybackIterationState] --> S1[EpisodeResolveStep]
+    it --> S2[StreamPrepStep]
+    it --> S3[PlaybackRunStep]
+    it --> S4[PostPlayLoop]
+  end
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 6 -->
+  <article id="c6" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">⑥ "What plays next" — a tested seam the runtime ignores</h3>
+      <span class="badge-strong text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Strong</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">app/resolve-next-up.ts</span> (<span class="mono">resolveNextUp()</span>, pure, tested), vs. three inline branches in <span class="mono">PlaybackPhase.ts</span>: catalog autoplay (<span class="mono">2516–2670</span>), playlist advance (<span class="mono">2697–2748</span>), recommendation advance (<span class="mono">2964–3001</span>). A comment at <span class="mono">2962</span> references <span class="mono">resolveNextUp</span> but doesn't call it.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> the decision "what plays after this episode" is duplicated across three imperative blocks with repeated EOF / autoplay-paused / stop-after-current guards. The pure function that should own it exists and is tested — but production reimplements it inline. Bugs fixed in one branch silently miss the others.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> route all three advance paths through <span class="mono">resolveNextUp()</span> → it returns a typed <span class="mono">NextUp</span> (<span class="mono">episode | playlist | recommendation | none</span>); the loop just executes the decision.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> one decision module = one test surface; guards written once; online/offline/playlist parity by construction.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Deletion test:</span> delete the three inline branches → logic concentrates into the existing pure function. Textbook deepening.</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    eof[EOF] --> b1[catalog branch\n2516-2670]
+    eof --> b2[playlist branch\n2697-2748]
+    eof --> b3[rec branch\n2964-3001]
+    nu1["resolveNextUp() (tested)\nUNUSED"]:::dead
+  end
+  subgraph AFTER
+    eof2[EOF] --> nu2["resolveNextUp()"]
+    nu2 --> exec[execute decision]
+    exec --> e1[episode]
+    exec --> e2[playlist]
+    exec --> e3[recommendation]
+  end
+  classDef dead fill:#2a1320,stroke:#6b1f3a,color:#f8a;
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 7 -->
+  <article id="c7" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">⑦ Playback intent flows through four overlapping channels</h3>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Worth exploring</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">PlayerControlServiceImpl.ts</span> (consume mailboxes <span class="mono">lastAction</span>, <span class="mono">pendingStreamSelection</span>, …), <span class="mono">SessionState.ts</span> (<span class="mono">providerSwitchSeq</span>, pause flags, <span class="mono">stream</span>), loop-locals in <span class="mono">PlaybackPhase</span>, picker path (<span class="mono">subscribePickerRequest</span> + <span class="mono">workControl.cancelActive</span>).</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> there's no single owner for "what should the next loop iteration do?" A provider switch can touch <span class="mono">SET_PROVIDER</span>/<span class="mono">providerSwitchSeq</span>, <span class="mono">recompute → lastAction</span>, and <span class="mono">episodePlaybackSelection</span> persistence — reconciled by the loop. Autoplay/autoskip split between <span class="mono">SessionState</span> (UI toggle) and <span class="mono">PlaybackSessionState</span> (decision); autoskip is frozen at <span class="mono">play()</span> time. Correct-by-convention, hard to reason about.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> define one <span class="mono">PlaybackIntent</span> queue/bus as the single channel from UI/mpv → loop; mailboxes + seq counters become its implementation. Pairs naturally with ⑤.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> one place to see every pending user gesture; deterministic reconciliation; live autoskip toggle becomes possible.</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    ui[shell / mpv] --> mbx[consume mailboxes]
+    ui --> ss[SessionState flags/seq]
+    ui --> pk[picker + workControl]
+    mbx --> loop1[loop reconciles]
+    ss --> loop1
+    pk --> loop1
+    ll[(loop-locals)] --> loop1
+  end
+  subgraph AFTER
+    ui2[shell / mpv] --> bus[PlaybackIntent bus]
+    bus --> loop2[loop drains one queue]
+  end
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 8 -->
+  <article id="c8" class="anchor card rounded-xl p-6 mb-8">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">⑧ Post-playback surface drift</h3>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Worth exploring</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">root-content-state.ts:5</span> (<span class="mono">RootContentKind "post-playback"</span>), <span class="mono">playback-session-controller.ts</span> (phase <span class="mono">"post-playback"</span>), but <span class="mono">ink-shell.tsx:1547</span> mounts <span class="mono">kind:"playback"</span> for the post-play menu.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> the type system advertises a <span class="mono">"post-playback"</span> surface that is never used; the actual post-play menu masquerades as <span class="mono">"playback"</span>. Anyone keying transitions/clears off <span class="mono">RootContentKind</span> will be misled. Cheap clarity bug.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> either mount the post-play menu as <span class="mono">kind:"post-playback"</span> (and key screen-clear/transition logic off it), or delete the unused kind. Pick one and make the type honest.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> the type reflects reality; transition/clear logic can distinguish play vs post-play correctly.</p>
+      </div>
+      <div class="mermaid">
+flowchart LR
+  subgraph BEFORE
+    kind1["RootContentKind\n includes post-playback"]:::dead
+    mount1["openPlaybackShell\n mounts kind: playback"] --> render1[PostPlayShell]
+  end
+  subgraph AFTER
+    mount2["mounts kind: post-playback"] --> render2[PostPlayShell]
+    clr[screen-clear keys off kind]
+    mount2 --> clr
+  end
+  classDef dead fill:#2a1320,stroke:#6b1f3a,color:#f8a;
+      </div>
+    </div>
+  </article>
+
+  <!-- CARD 9 -->
+  <article id="c9" class="anchor card rounded-xl p-6 mb-10">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="text-xl font-semibold text-white">⑨ Offline continuity half-wired</h3>
+      <span class="badge-explore text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap">Worth exploring</span>
+    </div>
+    <div class="mt-3 text-sm grid md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-slate-400"><span class="text-slate-300 font-medium">Files:</span> <span class="mono">OfflineRunwayService.ts:19</span> (trigger <span class="mono">"offline-playback-complete"</span> — defined, never enqueued from playback), <span class="mono">OfflineLibraryService.ts:111</span> (<span class="mono">savePlaybackHistory</span> — only used in tests).</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Problem:</span> two seams exist for offline-aware post-playback (auto-replenish runway after watching, offline-specific history save) but neither is connected — all history/runway side-effects funnel through the online-shaped <span class="mono">PlaybackPhase</span> path. So "watched the last downloaded episode → fetch more" never fires at episode end.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Solution:</span> decide intent: if runway-on-complete is wanted, call <span class="mono">enqueueEvaluation(..., "offline-playback-complete")</span> from the unified teardown when the played source was local; otherwise delete the dead trigger + method so the surface stops lying.</p>
+        <p class="text-slate-400 mt-3"><span class="text-slate-300 font-medium">Benefits:</span> either real offline continuity, or a smaller honest surface. Both beat dead-but-advertised seams.</p>
+        <p class="text-slate-500 mt-3"><span class="text-slate-400">Deletion test:</span> if no caller is intended → delete (pure dead weight). If intended → wire it where teardown already runs.</p>
+      </div>
+      <div class="mermaid">
+flowchart TB
+  subgraph BEFORE
+    end1[episode end] --> hist1[upsertProgress\nonline-shaped]
+    rw1["runway 'offline-playback-complete'\nNEVER called"]:::dead
+    sv1["savePlaybackHistory\ntests only"]:::dead
+  end
+  subgraph AFTER
+    end2[episode end] --> teardown[unified teardown]
+    teardown --> hist2[history]
+    teardown -->|if local| rw2[runway replenish]
+  end
+  classDef dead fill:#2a1320,stroke:#6b1f3a,color:#f8a;
+      </div>
+    </div>
+  </article>
+
+  <!-- Top recommendation -->
+  <section class="card rounded-xl p-6 mb-8 border-emerald-800/60">
+    <h2 class="text-xl font-bold text-white mb-3">Top recommendation &amp; sequencing</h2>
+    <p class="text-slate-300 text-sm">Tackle in this order — each unblocks the next and keeps risk low:</p>
+    <ol class="mt-4 space-y-3 text-sm">
+      <li class="flex gap-3"><span class="text-emerald-400 font-bold">1.</span><div><span class="text-white font-medium">① Connectivity seam</span> — small, self-contained, immediately makes today's network work fully real and reactive. Lowest risk, visible payoff. <span class="badge-strong text-[10px] px-2 py-0.5 rounded-full ml-1">Start here</span></div></li>
+      <li class="flex gap-3"><span class="text-emerald-400 font-bold">2.</span><div><span class="text-white font-medium">② Offline-launch mailbox</span> + <span class="text-white font-medium">③ infra inversion</span> — two cheap, contained cleanups that remove the hidden side-channels and the layering allowlist entries.</div></li>
+      <li class="flex gap-3"><span class="text-emerald-400 font-bold">3.</span><div><span class="text-white font-medium">⑥ resolveNextUp() adoption</span> — high leverage, mostly routing existing decisions through an existing tested function. De-risks ⑤.</div></li>
+      <li class="flex gap-3"><span class="text-emerald-400 font-bold">4.</span><div><span class="text-white font-medium">⑤ PlaybackPhase decomposition</span> + <span class="text-white font-medium">⑦ PlaybackIntent bus</span> — the big one. Do it last, behavior-preserving, one extraction at a time, tests green after each. ⑥ and ⑦ make this tractable.</div></li>
+      <li class="flex gap-3"><span class="text-slate-500 font-bold">·</span><div class="text-slate-400">⑧ surface drift &amp; ⑨ offline continuity — fold in opportunistically while touching post-play; each is a tiny decision (wire or delete).</div></li>
+    </ol>
+    <p class="text-slate-500 text-xs mt-5">Generated from a live read of the repo. Line numbers reference current <span class="mono">apps/cli/src/app/PlaybackPhase.ts</span> (4,282 lines) and related modules.</p>
+  </section>
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad:true, theme:'dark', themeVariables:{ fontFamily:'ui-monospace, Menlo, monospace', fontSize:'13px', primaryColor:'#13202e', primaryBorderColor:'#2b485f', primaryTextColor:'#cfe2f2', lineColor:'#3b5870', clusterBkg:'#0c141d', clusterBorder:'#1e2c39' } });
+</script>
+</body>
+</html>

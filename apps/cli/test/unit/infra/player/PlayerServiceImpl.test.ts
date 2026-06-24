@@ -32,7 +32,10 @@ function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
   };
 }
 
-function createService(events: DiagnosticEventInput[]) {
+function createService(
+  events: DiagnosticEventInput[],
+  overrides: { presentation?: { isInteractiveShellMounted: () => boolean } } = {},
+) {
   const loggerEntries: Array<{
     readonly message: string;
     readonly context?: Record<string, unknown>;
@@ -57,12 +60,41 @@ function createService(events: DiagnosticEventInput[]) {
     diagnostics: { record: (event: DiagnosticEventInput) => events.push(event) },
     playerControl: { setActive: () => {} },
     config: { getRaw: () => ({}) },
+    ...overrides,
   } as never);
 
   return { service, loggerEntries };
 }
 
 describe("PlayerServiceImpl diagnostics", () => {
+  test("suppresses stderr launch chrome when interactive shell is mounted", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+    });
+    const result = createPlaybackResult();
+    (service as unknown as { playOneShotStream: () => Promise<PlaybackResult> }).playOneShotStream =
+      async () => result;
+
+    const stderr: string[] = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await service.play(createStream(), {
+        url: "https://cdn.example/show/episode.mp4",
+        displayTitle: "Episode 1",
+      });
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    expect(stderr.join("")).toBe("");
+  });
+
   test("launch diagnostics and stderr avoid raw stream and subtitle URLs", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service, loggerEntries } = createService(events);
