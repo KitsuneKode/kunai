@@ -7,6 +7,9 @@ import type { FooterAction, LoadingShellState } from "./types";
 type LoadingFooterBindingId =
   | "command-palette"
   | "help"
+  | "loading-history"
+  | "loading-settings"
+  | "loading-title-control-menu"
   | "player-autoplay"
   | "player-autoskip"
   | "player-diagnostics"
@@ -104,6 +107,7 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
 
   return [
     footerActionFromBinding("command-palette", "command-mode", bindings),
+    footerActionFromBinding("loading-title-control-menu", "menu", bindings),
     ...(state.hasStreamCandidates
       ? [footerActionFromBinding("player-source", "source", bindings)]
       : []),
@@ -127,8 +131,8 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
           }),
         ]
       : []),
-    { key: "g", label: "settings", action: "settings" },
-    { key: "h", label: "history", action: "history" },
+    footerActionFromBinding("loading-settings", "settings", bindings),
+    footerActionFromBinding("loading-history", "history", bindings),
     footerActionFromBinding("player-diagnostics", "diagnostics", bindings),
     footerActionFromBinding("help", "help", bindings),
   ];

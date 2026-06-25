@@ -349,7 +349,7 @@ export function DownloadManagerContent({
         key={job.id}
         flexDirection="column"
         width={shellWidth}
-        backgroundColor={isSelected ? palette.surfaceActive : undefined}
+        backgroundColor={isSelected ? palette.accentFill : undefined}
       >
         <Box flexDirection="row" width={shellWidth} overflow="hidden">
           <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>

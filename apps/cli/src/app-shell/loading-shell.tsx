@@ -27,11 +27,12 @@ import { PlaybackPlayingRail } from "./playback-playing-rail";
 import { buildPlaybackPlayingRailView } from "./playback-playing-view";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
+import { ProgressBar } from "./primitives/ProgressBar";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
 import { truncateLine } from "./shell-text";
-import { APP_LABEL, palette, statusColor } from "./shell-theme";
+import { palette, statusColor } from "./shell-theme";
 import type { LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
@@ -147,25 +148,6 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
     </Box>
   );
 }
-
-const PlaybackProgressBar = React.memo(function PlaybackProgressBar({
-  currentPosition,
-  duration,
-  width,
-}: {
-  readonly currentPosition: number;
-  readonly duration: number;
-  readonly width: number;
-}) {
-  const safeDuration = duration > 0 ? duration : 1;
-  const ratio = Math.min(1, Math.max(0, currentPosition / safeDuration));
-  const filled = Math.floor(ratio * width);
-  const markerIndex = Math.min(width - 1, filled);
-  const beforeMarker = "━".repeat(markerIndex);
-  const afterMarker = "━".repeat(Math.max(0, width - markerIndex - 1));
-
-  return <>{(beforeMarker + "╸" + afterMarker).slice(0, width)}</>;
-});
 
 // ── Recovery view (§6) ────────────────────────────────────────────────────
 // Renders the Failure & Recovery surface per the Sakura canonical spec:
@@ -535,6 +517,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       eyebrow="playback"
       title={state.title}
       subtitle={state.subtitle ?? "Preparing playback"}
+      contentOnlyChrome
       status={{
         label: isPlaying ? "playing" : stageLabel(activeStage),
         tone: isPlaying ? "success" : loadingIssue ? "warning" : "neutral",
@@ -565,13 +548,6 @@ export const LoadingShell = React.memo(function LoadingShell({
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
             <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
-              {/* App identity */}
-              <Box marginBottom={1}>
-                <Text color={palette.muted} dimColor>
-                  {APP_LABEL}
-                </Text>
-              </Box>
-
               {/* Animation grid + stage context side-by-side */}
               <Box flexDirection="row" marginTop={1} alignItems="flex-start">
                 <Box marginRight={2}>
@@ -671,11 +647,8 @@ export const LoadingShell = React.memo(function LoadingShell({
 
               {/* Progress bar or wait message */}
               {disclosure.showProgress && state.progress !== undefined ? (
-                <Box marginTop={1}>
-                  <Text>
-                    {"█".repeat(Math.floor((state.progress / 100) * barWidth))}
-                    {"░".repeat(barWidth - Math.floor((state.progress / 100) * barWidth))}
-                  </Text>
+                <Box marginTop={1} flexDirection="row">
+                  <ProgressBar value={state.progress} max={100} width={barWidth} />
                   <Text color={palette.accent}> {Math.round(state.progress)}%</Text>
                 </Box>
               ) : disclosure.showElapsed ? (
@@ -716,26 +689,20 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {state.currentPosition !== undefined &&
                 state.duration !== undefined &&
                 state.duration > 0 ? (
-                  <Box marginTop={1}>
-                    <Text>
-                      <Text color={palette.accent} bold>
-                        {formatTimestamp(state.currentPosition)}
-                      </Text>
-                      <Text color={palette.accentDeep}>
-                        {" "}
-                        <PlaybackProgressBar
-                          currentPosition={state.currentPosition}
-                          duration={state.duration}
-                          width={barWidth}
-                        />{" "}
-                      </Text>
-                      <Text color={palette.dim} dimColor>
-                        {formatTimestamp(state.duration)}
-                      </Text>
-                      {state.progress !== undefined ? (
-                        <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
-                      ) : null}
+                  <Box marginTop={1} flexDirection="row">
+                    <Text color={palette.accent} bold>
+                      {formatTimestamp(state.currentPosition)}
                     </Text>
+                    <Text color={palette.dim}> </Text>
+                    <ProgressBar
+                      value={state.currentPosition}
+                      max={state.duration}
+                      width={barWidth}
+                    />
+                    <Text color={palette.dim}> {formatTimestamp(state.duration)}</Text>
+                    {state.progress !== undefined ? (
+                      <Text color={palette.dim}>{`  ·  ${Math.round(state.progress)}%`}</Text>
+                    ) : null}
                   </Box>
                 ) : (
                   <Box marginTop={1} flexDirection="column">

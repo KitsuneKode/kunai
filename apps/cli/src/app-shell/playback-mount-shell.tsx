@@ -312,8 +312,17 @@ function PlaybackShell({
   const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
   const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
   const canResume = Boolean(state.resumeLabel);
+  const providerCount = useMemo(
+    () =>
+      container.providerRegistry
+        .getAll()
+        .filter((provider) => provider.metadata.isAnimeProvider === (state.mode === "anime"))
+        .length,
+    [container, state.mode],
+  );
   const footerActions = buildPostPlayFooterActions(postPlayState, {
     canResume,
+    providerCount,
     autoplayPaused: state.autoplayPaused,
     autoskipPaused: state.autoskipPaused,
     stopAfterCurrent: state.stopAfterCurrent,
@@ -412,6 +421,7 @@ function PlaybackShell({
       eyebrow={APP_LABEL}
       title={state.title}
       subtitle={contextStrip}
+      contentOnlyChrome
       status={state.status}
       footerTask="Post-play"
       footerActions={footerActions}

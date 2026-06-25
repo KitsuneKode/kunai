@@ -1491,7 +1491,7 @@ function ListShell<T>({
                     <Box
                       key={`${option.label}-${option.detail ?? ""}`}
                       width={rowWidth}
-                      backgroundColor={selected ? palette.surfaceActive : undefined}
+                      backgroundColor={selected ? palette.accentFill : undefined}
                     >
                       <Text
                         color={selected || isConfirmed ? palette.text : palette.textDim}

@@ -37,10 +37,13 @@ export function ShellFrame({
   children,
   terminalWidth: terminalWidthProp,
   terminalRows: terminalRowsProp,
+  contentOnlyChrome = false,
 }: {
   eyebrow: string;
   title: string;
   subtitle: string;
+  /** When true, omit the inner title/subtitle band — AppHeader owns chrome. */
+  contentOnlyChrome?: boolean;
   status?: ShellStatus;
   footerTask: string;
   footerActions: readonly FooterAction[];
@@ -96,14 +99,18 @@ export function ShellFrame({
       backgroundColor={palette.bg}
     >
       <Box flexDirection="column" flexGrow={1}>
-        <Box justifyContent="space-between">
-          <Text bold color={palette.text}>
-            {truncateLine(title, titleWidth)}
-          </Text>
-          {statusLabel ? <Text color={statusColor(status.tone)}>{statusLabel}</Text> : null}
-        </Box>
-        <Text color={palette.muted}>{truncateLine(subtitle, subtitleWidth)}</Text>
-        <Box marginTop={1} flexDirection="column" flexGrow={1}>
+        {contentOnlyChrome ? null : (
+          <>
+            <Box justifyContent="space-between">
+              <Text bold color={palette.text}>
+                {truncateLine(title, titleWidth)}
+              </Text>
+              {statusLabel ? <Text color={statusColor(status.tone)}>{statusLabel}</Text> : null}
+            </Box>
+            <Text color={palette.muted}>{truncateLine(subtitle, subtitleWidth)}</Text>
+          </>
+        )}
+        <Box marginTop={contentOnlyChrome ? 0 : 1} flexDirection="column" flexGrow={1}>
           <ShellCommandModeProvider open={commandMode}>{children}</ShellCommandModeProvider>
         </Box>
       </Box>
