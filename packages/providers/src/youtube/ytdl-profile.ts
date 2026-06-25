@@ -1,3 +1,4 @@
+import { buildYoutubeSubtitlePreferencePlan } from "./subtitle-language";
 import { buildYtdlFormatSelector, defaultYtdlPlaybackFormat } from "./yt-dlp-metadata";
 import {
   buildYoutubeMpvScriptOpts,
@@ -27,7 +28,9 @@ export function buildYoutubeYtdlProfile(input: YoutubeYtdlProfileInput): Youtube
   const cliArgs = [...buildYoutubeYtdlCliArgs(input)];
   if (input.forDownload) {
     cliArgs.push("--merge-output-format", "mp4");
-    cliArgs.push("--write-subs", "--write-auto-subs");
+    if (buildYoutubeSubtitlePreferencePlan(input.subtitleLanguage).ytdlpSubLangs) {
+      cliArgs.push("--write-subs", "--write-auto-subs");
+    }
   }
   return {
     cliArgs,

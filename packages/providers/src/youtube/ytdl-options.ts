@@ -1,9 +1,12 @@
+import { toYoutubeSubtitlePreferenceTokens } from "./subtitle-language";
+
 export type YoutubeYtdlOptionsInput = {
   readonly cookiesFromBrowser?: string;
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
   readonly sponsorblockRemove?: string;
   readonly isLive?: boolean;
+  readonly subtitleLanguage?: string;
 };
 
 /** Build yt-dlp CLI args shared by metadata extract, download, and mpv raw-options. */
@@ -23,6 +26,10 @@ export function buildYoutubeYtdlCliArgs(options: YoutubeYtdlOptionsInput): strin
   }
   if (options.isLive) {
     args.push("--no-live-from-start");
+  }
+  const subLangs = toYoutubeSubtitlePreferenceTokens(options.subtitleLanguage).ytdlpSubLangs;
+  if (subLangs) {
+    args.push("--sub-langs", subLangs);
   }
   return args;
 }
@@ -44,6 +51,10 @@ export function buildYoutubeMpvYtdlRawOptions(options: YoutubeYtdlOptionsInput):
   }
   if (options.isLive) {
     raw.push("live-from-start=no");
+  }
+  const subLangs = toYoutubeSubtitlePreferenceTokens(options.subtitleLanguage).ytdlpSubLangs;
+  if (subLangs) {
+    raw.push(formatMpvKeyValueOption("sub-langs", subLangs));
   }
   return raw;
 }

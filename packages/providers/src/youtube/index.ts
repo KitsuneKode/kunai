@@ -13,3 +13,4 @@ export * from "./yt-dlp-metadata";
 export * from "./metadata-normalize";
 export * from "./youtube-metadata";
 export * from "./youtube-metadata-service";
+export * from "./subtitle-language";

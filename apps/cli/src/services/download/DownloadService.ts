@@ -785,17 +785,14 @@ export class DownloadService {
           youtubeConfig.sponsorblockRemove ?? this.deps.config.youtubeMetadata.sponsorblockRemove,
         forDownload: true,
         qualityLabel: job.selectedQualityLabel,
+        subtitleLanguage:
+          job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en",
       });
       args.push(...profile.cliArgs);
       const formatSelector =
         ytDlpFormatSelectorForQuality(job.selectedQualityLabel) ?? profile.formatSelector;
       if (formatSelector) {
         args.push("-f", formatSelector);
-      }
-      const subLang =
-        job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en";
-      if (subLang) {
-        args.push("--sub-langs", subLang);
       }
     }
 
@@ -1464,32 +1461,6 @@ function normalizeYear(value: string | undefined): string | null {
   return match?.[0] ?? null;
 }
 
-async function readLines(
-  stream: ReadableStream<Uint8Array> | null,
-  onLine: (line: string) => void,
-): Promise<void> {
-  if (!stream) return;
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      while (true) {
-        const newlineIndex = buffer.indexOf("\n");
-        if (newlineIndex < 0) break;
-        const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
-        buffer = buffer.slice(newlineIndex + 1);
-        onLine(line);
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 function retryDelayMs(retryCount: number): number {
   const table = [2_000, 5_000, 15_000, 30_000];
   return table[Math.min(retryCount, table.length - 1)] ?? 30_000;
@@ -1546,12 +1517,6 @@ function analyzeDownloadFailure(message: string): { failureKind: string; retryab
     return { failureKind: "network", retryable: true };
   }
   return { failureKind: "unknown", retryable: true };
-}
-
-function appendBounded(current: string, line: string, maxBytes: number): string {
-  const next = `${current}${line}\n`;
-  if (next.length <= maxBytes) return next;
-  return next.slice(next.length - maxBytes);
 }
 
 function resolveThumbnailArtifactPath(outputPath: string): string {

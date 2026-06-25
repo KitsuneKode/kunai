@@ -18,6 +18,22 @@ describe("buildMpvArgs youtube playback", () => {
     expect(args.includes("--ytdl=no")).toBe(false);
   });
 
+  test("maps youtube subtitle preference to mpv slang aliases", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        headers: {},
+        subtitle: null,
+        subtitlePreference: "en",
+        displayTitle: "Test",
+      },
+      null,
+    );
+
+    expect(args).toContain("--slang=en,eng,en.*,eng.*");
+    expect(args).toContain("--subs-fallback=default");
+  });
+
   test("passes sponsorblock and live raw options to mpv ytdl", () => {
     const args = buildMpvArgs(
       {

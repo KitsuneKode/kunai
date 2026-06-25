@@ -26,6 +26,7 @@ import {
   buildYoutubeMpvScriptOpts,
   isYoutubeWatchUrl,
   joinMpvScriptOpts,
+  toYoutubeSubtitlePreferenceTokens,
 } from "@kunai/providers/youtube";
 
 export { shouldApplyStartAtSeek };
@@ -446,9 +447,17 @@ export function buildMpvArgs(
   if (alang) {
     args.push(`--alang=${alang}`);
   }
-  const slang = toMpvLanguageToken(opts.subtitlePreference, { forSubtitle: true });
+  const slang = (() => {
+    if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+      return toYoutubeSubtitlePreferenceTokens(opts.subtitlePreference).mpvSlang;
+    }
+    return toMpvLanguageToken(opts.subtitlePreference, { forSubtitle: true });
+  })();
   if (slang) {
     args.push(`--slang=${slang}`);
+    if ((isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) && slang !== "no" && slang !== "orig") {
+      args.push("--subs-fallback=default");
+    }
   }
 
   const includeStartArg = config?.includeStartArg ?? config?.persistent !== true;

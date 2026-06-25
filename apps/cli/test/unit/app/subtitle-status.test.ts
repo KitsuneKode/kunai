@@ -107,3 +107,28 @@ test("projectPlaybackSubtitleState exposes active mpv attachment separately from
     tone: "success",
   });
 });
+
+test("projectPlaybackSubtitleState describes YouTube subtitle preference with all tracks attached", () => {
+  const youtubeStream: StreamInfo = {
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    headers: {},
+    timestamp: Date.now(),
+    requiresYtdl: true,
+  };
+
+  expect(projectPlaybackSubtitleState(youtubeStream, "en")).toMatchObject({
+    kind: "available",
+    label: "YouTube subtitles · prefer English · all tracks attached",
+    tone: "success",
+  });
+  expect(projectPlaybackSubtitleState(youtubeStream, "none")).toMatchObject({
+    kind: "disabled",
+    label: "subtitles disabled",
+  });
+  expect(projectPlaybackSubtitleState(youtubeStream, "en", { lateLookup: "failed" })).toMatchObject(
+    {
+      kind: "lookup-failed",
+      label: "subtitles not found",
+    },
+  );
+});

@@ -1,7 +1,10 @@
 import { buildYoutubeYtdlProfile, getYoutubeProviderConfig } from "@kunai/providers/youtube";
 import type { StreamCandidate } from "@kunai/types";
 
-export function resolveYoutubeYtdlRawOptions(selected: StreamCandidate): string | undefined {
+export function resolveYoutubeYtdlRawOptions(
+  selected: StreamCandidate,
+  subtitleLanguage?: string,
+): string | undefined {
   if (selected.protocol !== "youtube" && !selected.requiresYtdl) return undefined;
   const config = getYoutubeProviderConfig();
   const metadata = selected.metadata as
@@ -15,6 +18,7 @@ export function resolveYoutubeYtdlRawOptions(selected: StreamCandidate): string 
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,
     qualityLabel: selected.qualityLabel,
+    subtitleLanguage,
   }).mpvRawOptions;
 }
 

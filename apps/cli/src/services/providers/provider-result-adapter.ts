@@ -59,7 +59,9 @@ export function providerResolveResultToStreamInfo(
     hardSubLanguage: selected.hardSubLanguage,
     requiresYtdl: selected.requiresYtdl,
     ytdlFormat: selected.requiresYtdl ? resolveYtdlFormatFromCandidate(selected) : undefined,
-    ytdlRawOptions: selected.requiresYtdl ? resolveYoutubeYtdlRawOptions(selected) : undefined,
+    ytdlRawOptions: selected.requiresYtdl
+      ? resolveYoutubeYtdlRawOptions(selected, subtitlePreference)
+      : undefined,
     subtitle: pickedSubtitle?.url,
     subtitleList,
     subtitleSource,

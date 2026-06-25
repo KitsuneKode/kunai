@@ -1,5 +1,6 @@
 import { hardSubInventory, selectedHardSubLanguage } from "@/domain/subtitle-policy";
 import type { StreamInfo } from "@/domain/types";
+import { buildYoutubeSubtitlePreferencePlan, isYoutubeWatchUrl } from "@kunai/providers/youtube";
 
 export type PlaybackSubtitleStatusTone = "success" | "info" | "warning";
 export type PlaybackSubtitleStateKind =
@@ -49,6 +50,19 @@ export function projectPlaybackSubtitleState(
     };
   }
 
+  if (isYoutubePlaybackStream(stream)) {
+    const plan = buildYoutubeSubtitlePreferencePlan(subLang);
+    if (subLang === "none" || plan.mpvSlang === "no") {
+      return { kind: "disabled", label: "subtitles disabled", tone: "warning" };
+    }
+    if (options.lateLookup === "failed") {
+      return { kind: "lookup-failed", label: "subtitles not found", tone: "warning" };
+    }
+    if (plan.statusHint) {
+      return { kind: "available", label: plan.statusHint, tone: "success" };
+    }
+  }
+
   const selectedHardSub = stream ? selectedHardSubLanguage(stream) : undefined;
   if (selectedHardSub) {
     return {
@@ -93,6 +107,11 @@ export function projectPlaybackSubtitleState(
   }
 
   return { kind: "missing", label: "subtitles not found", tone: "warning" };
+}
+
+function isYoutubePlaybackStream(stream: StreamInfo | null | undefined): boolean {
+  if (!stream) return false;
+  return stream.requiresYtdl === true || isYoutubeWatchUrl(stream.url);
 }
 
 export function playbackSubtitleStatusTone(status: string): PlaybackSubtitleStatusTone {
