@@ -1,4 +1,10 @@
-export type MediaKind = "movie" | "series" | "anime";
+export type MediaKind = "movie" | "series" | "anime" | "video";
+
+export type ProviderLane = "anime" | "series" | "youtube";
+
+export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
+
+export type YouTubeContentShape = "video" | "playlist" | "channel";
 
 export type * from "./provider-cycle";
 
@@ -92,6 +98,9 @@ export interface ProviderExternalIds {
   readonly tmdbId?: string;
   readonly imdbId?: string;
   readonly malId?: string;
+  readonly youtubeId?: string;
+  readonly youtubePlaylistId?: string;
+  readonly youtubeChannelId?: string;
   /** Provider-owned title ids discovered at resolve/search time (e.g. AllAnime opaque _id). */
   readonly providerNativeIds?: Readonly<Partial<Record<ProviderId, string>>>;
 }
@@ -157,8 +166,9 @@ export interface StreamCandidate {
   readonly variantId?: string;
   readonly url?: string;
   readonly deferredLocator?: string;
-  readonly protocol: "hls" | "dash" | "mp4" | "iframe" | "unknown";
+  readonly protocol: "hls" | "dash" | "mp4" | "iframe" | "youtube" | "unknown";
   readonly container?: "m3u8" | "mpd" | "mp4" | "webm" | "unknown";
+  readonly requiresYtdl?: boolean;
   readonly audioLanguages?: readonly string[];
   readonly presentation?: StreamPresentation;
   readonly hardSubLanguage?: string;
@@ -276,8 +286,10 @@ export type ResolveErrorCode =
   | "expired"
   | "parse-failed"
   | "runtime-missing"
+  | "yt-dlp-missing"
   | "timeout"
   | "cancelled"
+  | "missing-input"
   | "unknown";
 
 export interface ProviderFailure {
@@ -549,6 +561,15 @@ export interface ProviderSearchResult {
   readonly release?: ProviderReleaseInfo;
   readonly artwork?: ProviderArtworkInfo;
   readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly durationSeconds?: number;
+  readonly channelTitle?: string;
+  readonly channelId?: string;
+  readonly viewCount?: number;
+  readonly publishedAt?: string;
+  readonly liveStatus?: YouTubeLiveStatus;
+  readonly premium?: boolean;
+  readonly paid?: boolean;
+  readonly contentShape?: YouTubeContentShape;
 }
 
 export interface ProviderEpisodeListInput {

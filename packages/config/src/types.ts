@@ -22,12 +22,26 @@ export interface MediaLanguageProfile {
   quality?: string;
 }
 
+export interface YouTubeMetadataConfig {
+  readonly instanceUrl?: string;
+  readonly pipedApiUrl?: string;
+  readonly cookiesFromBrowser?: string;
+  readonly cookiesFile?: string;
+  readonly extractorArgs?: string;
+  /** Comma-separated SponsorBlock categories passed to yt-dlp on play/download (e.g. sponsor,intro). */
+  readonly sponsorblockRemove?: string;
+}
+
 export interface KitsuneConfig {
-  defaultMode: "series" | "anime";
+  defaultMode: "series" | "anime" | "youtube";
   provider: string;
   animeProvider: string;
+  youtubeProvider: string;
   providerPriority: readonly string[];
   animeProviderPriority: readonly string[];
+  youtubeProviderPriority: readonly string[];
+  youtubeLanguageProfile: MediaLanguageProfile;
+  youtubeMetadata: YouTubeMetadataConfig;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
   subLang: string;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */

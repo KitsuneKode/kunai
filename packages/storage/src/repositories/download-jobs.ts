@@ -28,7 +28,7 @@ export interface DownloadJobRecord {
   readonly season?: number;
   readonly episode?: number;
   readonly providerId: ProviderId;
-  readonly mode?: "series" | "anime";
+  readonly mode?: "series" | "anime" | "youtube";
   readonly subLang?: string;
   readonly animeLang?: "sub" | "dub";
   readonly selectedSourceId?: string;

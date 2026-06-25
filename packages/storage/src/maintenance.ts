@@ -18,6 +18,7 @@ export interface CacheMaintenancePruneCounts {
   readonly sourceInventory: number;
   readonly recommendationCache: number;
   readonly scheduleCache: number;
+  readonly youtubeMetadataCache: number;
   readonly resolveTraces: number;
   readonly providerHealth: number;
   readonly titleProviderHealth: number;
@@ -38,6 +39,7 @@ const EMPTY_PRUNE_COUNTS: CacheMaintenancePruneCounts = {
   sourceInventory: 0,
   recommendationCache: 0,
   scheduleCache: 0,
+  youtubeMetadataCache: 0,
   resolveTraces: 0,
   providerHealth: 0,
   titleProviderHealth: 0,
@@ -113,6 +115,11 @@ function pruneCacheTables(
       "DELETE FROM schedule_cache WHERE expires_at <= ?",
       nowIso,
     );
+    const youtubeMetadataCache = deleteRows(
+      db,
+      "DELETE FROM youtube_metadata_cache WHERE expires_at <= ?",
+      nowIso,
+    );
     const resolveTraces = deleteRows(
       db,
       `
@@ -173,6 +180,7 @@ function pruneCacheTables(
       sourceInventory,
       recommendationCache,
       scheduleCache,
+      youtubeMetadataCache,
       resolveTraces,
       providerHealth,
       titleProviderHealth,

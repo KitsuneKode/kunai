@@ -768,6 +768,22 @@ export const cacheMigrations: readonly Migration[] = [
         ON diagnostic_events(level, timestamp DESC, id DESC);
     `,
   },
+  {
+    id: "014_cache_youtube_metadata",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS youtube_metadata_cache (
+        video_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        source TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_youtube_metadata_cache_expires_at
+        ON youtube_metadata_cache(expires_at ASC);
+    `,
+  },
 ];
 
 export function runMigrations(

@@ -23,6 +23,14 @@ export function resolveCanonicalCatalogTitleId(
     return anilistId ?? malId ?? id;
   }
 
+  if (kind === "video") {
+    const youtubeId = externalIds?.youtubeId;
+    if (youtubeId) {
+      return id.startsWith("youtube:") ? id : `youtube:${youtubeId}`;
+    }
+    return id;
+  }
+
   if ((kind === "movie" || kind === "series") && tmdbId) {
     if (id === `tmdb:${tmdbId}` || id === tmdbId) {
       return id.startsWith("tmdb:") ? id : `tmdb:${tmdbId}`;

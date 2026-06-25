@@ -78,7 +78,19 @@ export class HistoryRepository {
       : input.title;
     const key = createHistoryKey(persistedTitle, input.episode);
     const now = input.updatedAt ?? new Date().toISOString();
-    const existing = this.getProgressByKey(key);
+    let existing = this.getProgressByKey(key);
+    if (persistedTitle.kind === "video") {
+      const legacyKey = createHistoryKey({ ...persistedTitle, kind: "movie" }, input.episode);
+      if (legacyKey !== key) {
+        const legacy = this.getProgressByKey(legacyKey);
+        if (legacy) {
+          if (!existing) {
+            existing = legacy;
+          }
+          this.db.query("DELETE FROM history_progress WHERE key = ?").run(legacyKey);
+        }
+      }
+    }
     const watchedSeconds = resolveWatchedSeconds(input, existing);
     const lastWatchedAt = input.lastWatchedAt ?? now;
     const resolvedCompleted = input.completed ?? existing?.completed ?? false;

@@ -1,10 +1,25 @@
+import type { ProviderLane } from "@kunai/types";
+
 import { resolveProviderId } from "./provider-engine";
 import type { CoreProviderModule } from "./provider-sdk";
 
 export type ProviderPriorityInput = {
   readonly providerPriority: readonly string[];
   readonly animeProviderPriority: readonly string[];
+  readonly youtubeProviderPriority?: readonly string[];
 };
+
+export function resolveProviderLaneFromModule(module: CoreProviderModule): ProviderLane {
+  return resolveProviderLaneFromMediaKinds(module.manifest.mediaKinds);
+}
+
+export function resolveProviderLaneFromMediaKinds(
+  mediaKinds: readonly CoreProviderModule["manifest"]["mediaKinds"][number][],
+): ProviderLane {
+  if (mediaKinds.includes("video")) return "youtube";
+  if (mediaKinds.includes("anime")) return "anime";
+  return "series";
+}
 
 export function orderProviderModulesByPriority(
   modules: readonly CoreProviderModule[],
@@ -12,23 +27,35 @@ export function orderProviderModulesByPriority(
 ): CoreProviderModule[] {
   const seriesRank = buildFirstSeenRank(priority.providerPriority);
   const animeRank = buildFirstSeenRank(priority.animeProviderPriority);
+  const youtubeRank = buildFirstSeenRank(priority.youtubeProviderPriority);
 
   const seriesModules = sortLaneModules(
-    modules.filter((module) => providerLane(module) === "series"),
+    modules.filter((module) => resolveProviderLaneFromModule(module) === "series"),
     seriesRank,
   );
   const animeModules = sortLaneModules(
-    modules.filter((module) => providerLane(module) === "anime"),
+    modules.filter((module) => resolveProviderLaneFromModule(module) === "anime"),
     animeRank,
+  );
+  const youtubeModules = sortLaneModules(
+    modules.filter((module) => resolveProviderLaneFromModule(module) === "youtube"),
+    youtubeRank,
   );
 
   let seriesIndex = 0;
   let animeIndex = 0;
+  let youtubeIndex = 0;
 
   return modules.map((module) => {
-    if (providerLane(module) === "anime") {
+    const lane = resolveProviderLaneFromModule(module);
+    if (lane === "anime") {
       const next = animeModules[animeIndex] ?? module;
       animeIndex += 1;
+      return next;
+    }
+    if (lane === "youtube") {
+      const next = youtubeModules[youtubeIndex] ?? module;
+      youtubeIndex += 1;
       return next;
     }
 
@@ -62,8 +89,4 @@ function sortLaneModules(
       return rankDelta === 0 ? a.index - b.index : rankDelta;
     })
     .map(({ module }) => module);
-}
-
-function providerLane(module: CoreProviderModule): "anime" | "series" {
-  return module.manifest.mediaKinds.includes("anime") ? "anime" : "series";
 }

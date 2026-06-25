@@ -12,7 +12,8 @@
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",
-    "./vidlink": "./src/vidlink/direct.ts"
+    "./vidlink": "./src/vidlink/direct.ts",
+    "./youtube": "./src/youtube/index.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
