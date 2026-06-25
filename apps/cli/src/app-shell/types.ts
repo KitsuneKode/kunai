@@ -80,7 +80,8 @@ export type ShellAction =
   | "play-offline-ready"
   | "play-queue-next"
   | "play-local"
-  | "watch-online";
+  | "watch-online"
+  | "menu";
 
 export type ShellMode = "series" | "anime";
 
@@ -410,6 +411,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "continue":
     case "play-local":
     case "watch-online":
+    case "menu":
       return commandId;
   }
 }
