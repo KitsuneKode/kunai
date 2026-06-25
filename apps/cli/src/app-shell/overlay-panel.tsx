@@ -283,7 +283,7 @@ export function OverlayPanel({
                 return (
                   <Box
                     key={`${option.value}-${optionIndex}`}
-                    backgroundColor={selected ? palette.surfaceActive : undefined}
+                    backgroundColor={selected ? palette.accentFill : undefined}
                     flexDirection="row"
                   >
                     {isHistoryPicker && option.posterTitle ? (

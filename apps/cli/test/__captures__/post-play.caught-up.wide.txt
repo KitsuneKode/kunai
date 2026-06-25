@@ -1,17 +1,22 @@
 # post-play.caught-up · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │
- ◉ caught up · airing                                                                              │
- next broadcast · Thu 23:00                                                                        │                 DS
-                                                                                                   │
- ▌ Watchlist         add to watchlist for release alerts         [w]                               │
-   Calendar          see what's ready for you now [/calendar]                                      │
-   Search            find something to watch now         [s]                                       │
                                                                                                    │  DETAILS
+ ◉ caught up · airing                                                                              │
+ next broadcast · Thu 23:00                                                                        │  progress   7 / 12 · 58%
+                                                                                                   │
+ ▌ Bookmark          save to watchlist for release alerts [w]                                      │
+   Calendar          see what's ready for you now [/calendar]                                      │
+   Search            find something to watch now [s]                                               │
+                                                                                                   │
  ────────────────────────────────────── you might also like ───────────────────────────────────────│
-                                                                                                   │  progress   7 / 12 · 58%
+                                                                                                   │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+                                                                                                   │
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │

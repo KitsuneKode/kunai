@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { palette } from "../shell-theme";
+import { palette, semanticToneColor } from "../shell-theme";
 import { ActionList } from "./ActionList";
 import {
   getStateBlockGlyph,
@@ -13,7 +13,7 @@ import {
 function colorForTone(tone: StateBlockTone): string {
   if (tone === "danger") return palette.danger;
   if (tone === "success") return palette.ok;
-  if (tone === "info") return palette.accentDeep;
+  if (tone === "info") return semanticToneColor("info");
   return palette.dim;
 }
 

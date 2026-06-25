@@ -4,11 +4,14 @@
  ✦ SERIES COMPLETE
  12 episodes · 4 seasons
 
- ▌ Search            find something new to watch  [s]
-   Replay            rewatch from the beginning  [r]
+ ▌ Search            find something new to watch [s]
+   Share link        copy a kunai:// link for this title [/share]
+   Replay            rewatch from the beginning [r]
 
  ──────────────────────── because you finished this ─────────────────────────
 
- 1 Frieren · Slow-burn fantasy
- 2 Vinland Saga · 2019
- 3 Heavenly Delusion · 2023
+ F    1 Frieren · Slow-burn fantasy
+ VS   2 Vinland Saga · 2019
+ HD   3 Heavenly Delusion · 2023
+
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search

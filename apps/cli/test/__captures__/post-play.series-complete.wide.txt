@@ -1,16 +1,22 @@
 # post-play.series-complete · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │
+                                                                                                   │  DETAILS
  ✦ SERIES COMPLETE                                                                                 │
- 12 episodes · 4 seasons                                                                           │                 DS
+ 12 episodes · 4 seasons                                                                           │  episodes   12
+                                                                                                   │  seasons    4
+ ▌ Search            find something new to watch [s]                                               │
+   Share link        copy a kunai:// link for this title [/share]                                  │
+   Replay            rewatch from the beginning [r]                                                │
                                                                                                    │
- ▌ Search            find something new to watch  [s]                                              │
-   Replay            rewatch from the beginning  [r]                                               │
+ ─────────────────────────────────── because you finished this ────────────────────────────────────│
                                                                                                    │
- ─────────────────────────────────── because you finished this ────────────────────────────────────│  DETAILS
-                                                                                                   │
- ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │  episodes   12
- │ 1                           │  │ 2                           │  │ 3                           │ │  seasons    4
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+                                                                                                   │
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │

@@ -109,10 +109,7 @@ export function CommandPalette({
     const showReason = !command.enabled && (selected || command.reason);
     return (
       <Box key={command.id} flexDirection="column" width={contentWidth + 4}>
-        <Box
-          width={contentWidth + 4}
-          backgroundColor={selected ? palette.surfaceActive : undefined}
-        >
+        <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
           <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
           <Text
             color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
@@ -124,7 +121,7 @@ export function CommandPalette({
           <Text color={palette.dim}> </Text>
           <Text
             wrap="truncate"
-            color={command.enabled ? (selected ? "white" : palette.muted) : palette.dim}
+            color={command.enabled ? (selected ? palette.text : palette.muted) : palette.dim}
             dimColor={!command.enabled}
           >
             {detail}

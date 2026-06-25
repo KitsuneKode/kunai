@@ -1,20 +1,32 @@
 # post-play.stopped-early · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │
+                                                                                                   │  UP NEXT
  ⏸ stopped early                                                                                   │
-                                                                                                   │                 DS
- ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 · 58%                                                 │
+                                                                                                   │  ┌───────────────────────────────┐
+ █████████████████████┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 7 / 12 · 58%                                                 │  │ E32 · Challengers of Science  │
+                                                                                                   │  │ Status available · autoplay   │
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│  │ on                            │
+ │ ▶ UP NEXT                                                                                      ││  └───────────────────────────────┘
+ │                                                                                                ││
+ │             resume S04E07  ·  18:49                                                            ││  DETAILS
+ │     DS      same stream · same position                                                        ││
+ │             ↵ resume · e episodes                                                              ││  progress   7 / 12 · 58%
+ │                                                                                                ││
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│
                                                                                                    │
- ▌ ↵ Resume          same stream · same position  [↵]                                              │
-   Episodes          open season list  [e]                                                         │
-   Replay            rewatch from the start  [r]                                                   │  UP NEXT
+ ▌ ↵ Resume          same stream · same position [↵]                                               │
+   Episodes          open season list [e]                                                          │
+   Replay            rewatch from the start [r]                                                    │
                                                                                                    │
- ────────────────────────────────────── you might also like ───────────────────────────────────────│  ┌───────────────────────────────┐
-                                                                                                   │  │ E32 · Challengers of Science  │
- ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │  │ Status available · autoplay   │
- │ 1                           │  │ 2                           │  │ 3                           │ │  │ on                            │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  └───────────────────────────────┘
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│
+                                                                                                   │
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │  DETAILS
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
                                                                                                    │
-                                                                                                   │  progress   7 / 12 · 58%
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel   ·   / search                            │

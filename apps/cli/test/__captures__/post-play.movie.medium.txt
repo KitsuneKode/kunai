@@ -3,11 +3,13 @@
 
  ✓ movie complete
 
- ▌ Replay            rewatch from the start  [r]
-   Search            find another title  [/]
+ ▌ Replay            rewatch from the start [r]
+   Search            find another title [s]
 
  ───────────────────────── because you watched this ─────────────────────────
 
- 1 Frieren · Slow-burn fantasy
- 2 Vinland Saga · 2019
- 3 Heavenly Delusion · 2023
+ F    1 Frieren · Slow-burn fantasy
+ VS   2 Vinland Saga · 2019
+ HD   3 Heavenly Delusion · 2023
+
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search

@@ -45,7 +45,7 @@ export const ListRow = React.memo(function ListRow({
   return (
     <Box
       width={rowWidth}
-      backgroundColor={selected ? palette.surfaceActive : undefined}
+      backgroundColor={selected ? palette.accentFill : undefined}
       flexDirection="row"
       overflow="hidden"
     >

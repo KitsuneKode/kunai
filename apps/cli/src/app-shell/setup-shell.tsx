@@ -353,7 +353,7 @@ function PickerSlide({
             <Box
               key={opt.value}
               marginBottom={0}
-              backgroundColor={selected ? palette.surfaceActive : undefined}
+              backgroundColor={selected ? palette.accentFill : undefined}
             >
               <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">
@@ -428,7 +428,7 @@ function DownloadsSlide({
             <Box
               key={opt.label}
               marginBottom={0}
-              backgroundColor={selected ? palette.surfaceActive : undefined}
+              backgroundColor={selected ? palette.accentFill : undefined}
             >
               <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
               <Box flexDirection="column">

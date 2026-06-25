@@ -3,8 +3,21 @@
 
  ✓ episode complete
 
- ▌ Next episode      E32 · Challengers of Science · …   [↵ n]
-   Episodes          open season list, current stays…     [e]
-   Replay / Tracks   rewatch, or change source · qua… [r · t]
+ ╭──────────────────────────────────────────────────────────────────╮
+ │ ▶ UP NEXT                                                        │
+ │                                                                  │
+ │             E32 · Challengers of Science                         │
+ │     DS      Status available · autoplay on                       │
+ │             ↵ play · e episodes                                  │
+ │                                                                  │
+ ╰──────────────────────────────────────────────────────────────────╯
+
+ ▌ Next episode      E32 · Challengers of Science · auto… [↵ n]
+   Episodes          open season list, current stays mar… [e]
+   Session           autoskip on · chain continues [a · u · x]
+   Share link        copy a kunai:// link at the last po… [/share]
+   Replay / Tracks   rewatch, or change source · quality… [r · o]
 
  +3 picks · Frieren · Vinland Saga
+
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel   ·   / sea…

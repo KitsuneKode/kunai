@@ -4,13 +4,15 @@
  ▢ playback didn't start
  nothing was recorded for this title
 
- ▌ Try again         retry the same episode  [r]
-   Fallback          try another provider  [f]
-   Sources           choose another stream  [o]
-   Search            find another title  [s]
+ ▌ Try again         retry the same episode [r]
+   Fallback          try another provider [f]
+   Sources           choose another stream [o]
+   Search            find another title [s]
 
  ─────────────────────────── you might also like ────────────────────────────
 
- 1 Frieren · Slow-burn fantasy
- 2 Vinland Saga · 2019
- 3 Heavenly Delusion · 2023
+ F    1 Frieren · Slow-burn fantasy
+ VS   2 Vinland Saga · 2019
+ HD   3 Heavenly Delusion · 2023
+
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search

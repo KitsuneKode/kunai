@@ -2,14 +2,19 @@
  DR. STONE                                                                                         │
                                                                                                    │
  ✓ movie complete                                                                                  │
-                                                                                                   │                 DS
- ▌ Replay            rewatch from the start  [r]                                                   │
-   Search            find another title  [/]                                                       │
+                                                                                                   │
+ ▌ Replay            rewatch from the start [r]                                                    │
+   Search            find another title [s]                                                        │
                                                                                                    │
  ──────────────────────────────────── because you watched this ────────────────────────────────────│
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+                                                                                                   │
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │

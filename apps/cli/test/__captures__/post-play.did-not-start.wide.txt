@@ -1,18 +1,23 @@
 # post-play.did-not-start · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │
+                                                                                                   │  DETAILS
  ▢ playback didn't start                                                                           │
- nothing was recorded for this title                                                               │                 DS
+ nothing was recorded for this title                                                               │  season     4
                                                                                                    │
- ▌ Try again         retry the same episode  [r]                                                   │
-   Fallback          try another provider  [f]                                                     │
-   Sources           choose another stream  [o]                                                    │
-   Search            find another title  [s]                                                       │  DETAILS
+ ▌ Try again         retry the same episode [r]                                                    │
+   Fallback          try another provider [f]                                                      │
+   Sources           choose another stream [o]                                                     │
+   Search            find another title [s]                                                        │
                                                                                                    │
- ────────────────────────────────────── you might also like ───────────────────────────────────────│  season     4
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│
                                                                                                    │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
  │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
  │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+                                                                                                   │
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   / search                                           │

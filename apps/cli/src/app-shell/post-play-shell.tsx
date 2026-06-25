@@ -26,6 +26,7 @@ import {
   type PostPlayView,
 } from "./post-play-view";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import { ProgressBar } from "./primitives/ProgressBar";
 import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -81,12 +82,9 @@ function ProgressStrip({
   readonly width: number;
   readonly color: string;
 }) {
-  const filled = Math.floor((bar.percent / 100) * width);
-  const empty = Math.max(0, width - filled);
   return (
     <Box marginTop={1} flexDirection="row" flexWrap="nowrap">
-      <Text color={color}>{"█".repeat(filled)}</Text>
-      <Text color={palette.dim}>{"░".repeat(empty)}</Text>
+      <ProgressBar value={bar.percent} max={100} width={width} color={color} />
       <Text color={palette.muted}> {bar.label}</Text>
     </Box>
   );

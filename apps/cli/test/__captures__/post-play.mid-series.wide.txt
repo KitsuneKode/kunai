@@ -1,20 +1,32 @@
 # post-play.mid-series · wide (140×45)
  DR. STONE                                                                                         │
-                                                                                                   │
+                                                                                                   │  UP NEXT
  ✓ episode complete                                                                                │
-                                                                                                   │                 DS
- ▌ Next episode      E32 · Challengers of Science · autoplay on   [↵ n]                            │
-   Episodes          open season list, current stays marked     [e]                                │
-   Replay / Tracks   rewatch, or change source · quality · audio [r · t]                           │
+                                                                                                   │  ┌───────────────────────────────┐
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│  │ E32 · Challengers of Science  │
+ │ ▶ UP NEXT                                                                                      ││  │ Status available · autoplay   │
+ │                                                                                                ││  │ on                            │
+ │             E32 · Challengers of Science                                                       ││  └───────────────────────────────┘
+ │     DS      Status available · autoplay on                                                     ││
+ │             ↵ play · e episodes                                                                ││  DETAILS
+ │                                                                                                ││
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│  progress   7 / 12 · 58%
                                                                                                    │
- ──────────────────────────────────── because you watched this ────────────────────────────────────│  UP NEXT
+ ▌ Next episode      E32 · Challengers of Science · autoplay on [↵ n]                              │
+   Episodes          open season list, current stays marked [e]                                    │
+   Session           autoskip on · chain continues [a · u · x]                                     │
+   Share link        copy a kunai:// link at the last position [/share]                            │
+   Replay / Tracks   rewatch, or change source · quality · audio [r · o]                           │
                                                                                                    │
- ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │  ┌───────────────────────────────┐
- │ 1                           │  │ 2                           │  │ 3                           │ │  │ E32 · Challengers of Science  │
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │  │ Status available · autoplay   │
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │  │ on                            │
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │  └───────────────────────────────┘
+ ──────────────────────────────────── because you watched this ────────────────────────────────────│
                                                                                                    │
-                                                                                                   │  DETAILS
+ ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
+ │                             │  │                             │  │                             │ │
+ │              F              │  │             VS              │  │             HD              │ │
+ │                             │  │                             │  │                             │ │
+ │ 1                           │  │ 2                           │  │ 3                           │ │
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
                                                                                                    │
-                                                                                                   │  progress   7 / 12 · 58%
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel   ·   / search                            │

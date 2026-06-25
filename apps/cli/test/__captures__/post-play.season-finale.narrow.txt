@@ -3,9 +3,20 @@
 
  ✦ Season 4 complete
 
- ████████████████████░░░░░░░░░░░░░░░░ 7 / 12 this season · 58%
+ █████████████████████┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 7 / 12 this season · 58%
 
- ▌ ↵ Continue        continue to next season  [↵]
-   Episodes          review this season  [e]
+ ╭──────────────────────────────────────────────────────────────────╮
+ │ ▶ UP NEXT                                                        │
+ │                                                                  │
+ │             E32 · Challengers of Science                         │
+ │     DS      Status available · autoplay on                       │
+ │             ↵ play · e episodes                                  │
+ │                                                                  │
+ ╰──────────────────────────────────────────────────────────────────╯
+
+ ▌ ↵ Continue        continue to next season [↵ n]
+   Episodes          review this season [e]
 
  +3 picks · Frieren · Vinland Saga
+
+ ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel   ·   / sea…
