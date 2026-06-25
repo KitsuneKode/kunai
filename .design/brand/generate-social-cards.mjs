@@ -1,7 +1,7 @@
 // Generates Kunai social / OG card SVGs and PNG exports for docs + GitHub.
 // Run: bun .design/brand/generate-social-cards.mjs
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -169,16 +169,44 @@ function exportPng(svgPath, pngPath, width) {
   }
 }
 
-/** GitHub social preview must stay under 1 MB. Prefer crisp PNG; fall back to high-quality JPEG. */
-function exportGithubSocialUpload(pngPath, githubJpgPath) {
-  const oxipng = spawnSync("oxipng", ["-o", "4", "-strip", "all", "-out", pngPath, pngPath], {
+const GITHUB_MAX_BYTES = 1_000_000;
+
+function optimizePng(pngPath) {
+  const result = spawnSync("oxipng", ["-o", "4", "-strip", "all", "-out", pngPath, pngPath], {
     stdio: "pipe",
     encoding: "utf8",
   });
+  return result.status === 0;
+}
 
-  const pngSize = readFileSync(pngPath).length;
-  if (pngSize <= 1_000_000) {
-    return { format: "png", path: pngPath, bytes: pngSize, optimized: oxipng.status === 0 };
+function tryPngDownscale(pngPath, scalePercent) {
+  const result = spawnSync(
+    "magick",
+    [pngPath, "-resize", `${scalePercent}%`, "-strip", pngPath],
+    { stdio: "inherit" },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `magick failed while downscaling GitHub social preview PNG to ${scalePercent}%`,
+    );
+  }
+  optimizePng(pngPath);
+}
+
+/** GitHub social preview must stay under 1 MB. Prefer crisp PNG; fall back to high-quality JPEG. */
+function exportGithubSocialUpload(pngPath, githubJpgPath) {
+  const optimized = optimizePng(pngPath);
+  let pngSize = readFileSync(pngPath).length;
+  if (pngSize <= GITHUB_MAX_BYTES) {
+    return { format: "png", path: pngPath, bytes: pngSize, optimized };
+  }
+
+  for (const scale of [95, 90]) {
+    tryPngDownscale(pngPath, scale);
+    pngSize = readFileSync(pngPath).length;
+    if (pngSize <= GITHUB_MAX_BYTES) {
+      return { format: "png", path: pngPath, bytes: pngSize, optimized: true, downscaled: scale };
+    }
   }
 
   const qualities = [95, 92, 88];
@@ -193,7 +221,11 @@ function exportGithubSocialUpload(pngPath, githubJpgPath) {
       throw new Error("magick failed while exporting GitHub social preview JPEG");
     }
     lastSize = readFileSync(githubJpgPath).length;
-    if (lastSize <= 1_000_000) {
+    if (lastSize <= GITHUB_MAX_BYTES) {
+      unlinkSync(pngPath);
+      console.warn(
+        `GitHub social preview exceeded 1 MB as PNG; wrote JPEG fallback and removed oversized PNG at ${pngPath}`,
+      );
       return { format: "jpg", path: githubJpgPath, bytes: lastSize, quality };
     }
   }

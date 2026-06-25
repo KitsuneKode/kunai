@@ -22,6 +22,7 @@ const MODULE_TO_ID: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   allmangaProviderModule: "allanime",
   miruroProviderModule: "miruro",
+  youtubeProviderModule: "youtube",
 };
 
 function listDocFiles(dir: string): string[] {

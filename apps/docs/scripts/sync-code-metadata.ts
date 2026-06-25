@@ -42,6 +42,7 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   allmangaProviderModule: "allmanga",
   miruroProviderModule: "miruro",
+  youtubeProviderModule: "youtube",
 };
 
 const PROVIDER_ID_CONSTANTS: Record<string, string> = {
@@ -51,6 +52,7 @@ const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   RIVESTREAM_PROVIDER_ID: "rivestream",
   VIDEOSY_PROVIDER_ID: "videasy",
   VIDLINK_PROVIDER_ID: "vidlink",
+  YOUTUBE_PROVIDER_ID: "youtube",
 };
 
 function formatGeneratedFile(filePath: string) {

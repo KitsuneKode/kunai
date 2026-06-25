@@ -1,13 +1,13 @@
 {
-  "syncedAt": "2026-06-25T03:29:58.532Z",
+  "syncedAt": "2026-06-25T06:08:00.635Z",
   "version": "0.2.5",
   "cliVersion": "0.2.5",
-  "cliSourceRevision": "c2dae69b",
-  "cliSourceFingerprint": "bb556932cb4d3cb3acad9397dbaa8a4f799734e5bc0f3b481772f020da762bee",
+  "cliSourceRevision": "77f0ec34",
+  "cliSourceFingerprint": "b2105bb4982e00f5a7eccd011021556530fdbcdcd5b9ff1a761e2cc739b26768",
   "docsContentFingerprint": "3d0464415299620f254b02977c7f22ba086581f2efbcef44b18505ab15ba65f1",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 75,
-  "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro"],
+  "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -83,6 +83,17 @@
         "Sources from vault-10.uwucdn.top CDN with referer from stream payload.",
         "May hit Cloudflare rate limits if called too frequently."
       ]
+    },
+    {
+      "id": "youtube",
+      "displayName": "YouTube",
+      "description": "YouTube via Invidious search and yt-dlp playback",
+      "domain": "youtube.com",
+      "recommended": true,
+      "mediaKinds": ["video"],
+      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
+      "status": "production",
+      "notes": ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."]
     }
   ],
   "commands": [

@@ -1,6 +1,6 @@
 # Plan vs Implementation Truth Index
 
-**Last reconciled:** 2026-06-24
+**Last reconciled:** 2026-06-25
 
 Use this file when a `.plans/*` status disagrees with the codebase. **Code wins** unless this index explicitly says otherwise. Update this file in the same change set when you complete or retire plan work.
 
@@ -31,7 +31,7 @@ Canonical product/UX behavior lives in `.docs/*` when it describes **current** u
 | [persistent-shell-implementation.md](./persistent-shell-implementation.md)             | In Progress      | **Pass B/C largely landed** (root Ink host, root overlays, session pickers, resize blockers). **Not done:** single reducer-driven content tree ([phase-1.8](./phase-1.8-single-mounted-content-tree.md)), full back-stack, root-owned footer.                                                               |
 | [phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md) | Planned          | **In progress.** Phase 1.5 foundation exists; browse/playback still transition via `SearchPhase` / `PlaybackPhase` loops.                                                                                                                                                                                   |
 | [beta-ui-provider-runtime-hardening.md](./beta-ui-provider-runtime-hardening.md)       | (no top status)  | **In progress.** Tasks 1–7 largely complete (`use-session-selector`, `picker-controller`, `picker-overlay`, `PlaybackResolveService`, source inventory, `CatalogDiscoveryService`). Open: central input routing step 2, subtitle call avoidance, split `ink-shell`, history panel, dub/sub display honesty. |
-| [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)           | in progress      | **Slices 1–4 largely done** (`CatalogScheduleService`, SQLite `schedule_cache`, `/calendar`, anime week window). Open: date-group headers, week navigation, TMDB weekly TV, browse schedule badges.                                                                                                         |
+| [yt-provider.md](./yt-provider.md)                                                     | Stable           | **v1 shipped + Phase 4 complete.** Third lane `youtube`, Invidious/Piped/ytsearch search, yt-dlp resolve gate, mpv ytdl playback + SponsorBlock, settings UI (`youtubeMetadata`), diagnostics probes, stats `video` bucket, live smoke `test:live:youtube`.                                                 |
 
 ---
 
