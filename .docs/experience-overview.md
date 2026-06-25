@@ -44,6 +44,11 @@ The current app supports:
 - searchable browse/results flow
 - filterable pickers for common list flows
 - watch history and resume behavior
+- Watchlist for saved-later intent
+- durable Playlists for named collections
+- Up Next for current playback order
+- Follow/Unfollow/Mute for release attention
+- Provider switching through a stable `/provider` surface
 - app-owned autoplay through available released episodes
 - subtitle policy for disabled, provider-default, and interactive subtitle picking
 - diagnostics panels with stream, subtitle, provider, and recent runtime event state
@@ -105,3 +110,18 @@ The app should:
 - show enough local diagnostic state to make provider drift easier to debug
 
 History and stats should remain local unless future sync/export features are explicitly enabled by the user.
+
+## Personal Media Vocabulary
+
+Kunai keeps one meaning per user-facing noun:
+
+- **Watchlist** is the built-in watch-later list.
+- **Playlists** are durable named collections.
+- **Up Next** is the current playback order.
+- **Downloads** are offline jobs and local library management.
+- **Follow** asks Kunai to surface future releases.
+- **Unfollow** removes explicit release attention without muting.
+- **Mute** suppresses release nudges.
+- **Provider** is a stable switching surface, not only a diagnostics escape hatch.
+
+Legacy aliases may continue to work, but displayed labels and docs should use the canonical nouns above.

@@ -126,10 +126,10 @@ describe("command picker model", () => {
       enabled: true,
     };
     const playlistCommand: ResolvedAppCommand = {
-      id: "playlist",
-      label: "Playlist",
-      aliases: ["playlist", "queue"],
-      description: "Manage your playback calendar queue",
+      id: "playlists",
+      label: "Playlists",
+      aliases: ["playlists", "playlist"],
+      description: "Manage durable playlists",
       enabled: true,
     };
 

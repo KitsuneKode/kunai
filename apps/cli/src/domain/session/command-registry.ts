@@ -46,6 +46,7 @@ export type AppCommandId =
   | "watch"
   | "bookmark"
   | "follow"
+  | "unfollow"
   | "mute"
   | "mark-watched"
   | "mark-unwatched"
@@ -65,7 +66,8 @@ export type AppCommandId =
   | "library"
   | "watchlist"
   | "favorites"
-  | "playlist"
+  | "playlists"
+  | "up-next"
   | "playlist-add"
   | "queue-season"
   | "stats"
@@ -95,9 +97,8 @@ export const COMMAND_CONTEXTS = {
     "continue",
     "watch",
     "watchlist",
-    "playlist",
-    "stats",
-    "sync",
+    "playlists",
+    "up-next",
     "library",
     "downloads",
     "notifications",
@@ -131,6 +132,7 @@ export const COMMAND_CONTEXTS = {
     "share",
     "bookmark",
     "follow",
+    "unfollow",
     "mute",
     "mark-watched",
     "mark-unwatched",
@@ -170,6 +172,7 @@ export const COMMAND_CONTEXTS = {
     "share",
     "bookmark",
     "follow",
+    "unfollow",
     "mute",
     "mark-watched",
     "mark-unwatched",
@@ -181,7 +184,8 @@ export const COMMAND_CONTEXTS = {
     "downloads",
     "notifications",
     "watchlist",
-    "playlist",
+    "playlists",
+    "up-next",
     "stats",
     "recommendation",
     "random",
@@ -225,6 +229,8 @@ export const COMMAND_CONTEXTS = {
 } as const satisfies Record<string, readonly AppCommandId[]>;
 
 export type CommandContextId = keyof typeof COMMAND_CONTEXTS;
+
+export type AppCommandGroup = "Core" | "Playback" | "Attention" | "Advanced" | "Experimental";
 
 export const COMMANDS: readonly AppCommand[] = [
   {
@@ -526,6 +532,12 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Track future releases and notices for the current title",
   },
   {
+    id: "unfollow",
+    label: "Unfollow Releases",
+    aliases: ["unfollow", "untrack", "stop-following"],
+    description: "Stop explicit release tracking without muting the title",
+  },
+  {
     id: "mute",
     label: "Mute Releases",
     aliases: ["mute", "mute-title", "mute-releases", "hide-releases"],
@@ -618,8 +630,8 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "watchlist",
     label: "Watchlist",
-    aliases: ["wl", "watchlist", "watch-list"],
-    description: "View and manage your watchlist",
+    aliases: ["watchlist", "wl", "watch-list", "watch-later", "bookmarks"],
+    description: "View and manage the built-in Watchlist playlist",
   },
   {
     id: "favorites",
@@ -628,16 +640,22 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "View your favorite titles",
   },
   {
-    id: "playlist",
-    label: "Up Next Queue",
-    aliases: ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
-    description: "View and manage the Up Next queue — play, clear, save as playlist, import/export",
+    id: "playlists",
+    label: "Playlists",
+    aliases: ["playlists", "playlist", "pl", "lists"],
+    description: "View and manage durable playlists",
+  },
+  {
+    id: "up-next",
+    label: "Up Next",
+    aliases: ["up-next", "upnext", "queue", "queue-playlist"],
+    description: "View and manage the current playback order",
   },
   {
     id: "playlist-add",
-    label: "Add to Queue",
-    aliases: ["playlist-add", "pl-add", "add-to-playlist"],
-    description: "Queue the current title for sequential playback",
+    label: "Add to Up Next",
+    aliases: ["playlist-add", "pl-add", "add-to-up-next", "queue-add", "add-to-queue"],
+    description: "Add the current title to Up Next",
   },
   {
     id: "queue-season",
@@ -681,8 +699,8 @@ export const COMMANDS: readonly AppCommand[] = [
 export const HELP_PANEL_COMMAND_IDS = [
   "history",
   "watchlist",
-  "playlist",
-  "stats",
+  "playlists",
+  "up-next",
   "notifications",
   "diagnostics",
   "downloads",
@@ -690,7 +708,9 @@ export const HELP_PANEL_COMMAND_IDS = [
   "settings",
   "setup",
   "presence",
-  "sync",
+  "follow",
+  "unfollow",
+  "mute",
   "export-diagnostics",
   "report-issue",
 ] as const satisfies readonly AppCommandId[];
@@ -707,6 +727,60 @@ export function buildHelpPanelCommandLines(): readonly HelpPanelCommandLine[] {
     const slashAlias = command.aliases[0] ?? command.id;
     return [{ label: `/${slashAlias}`, detail: command.description }];
   });
+}
+
+export function commandGroupFor(id: AppCommandId): AppCommandGroup {
+  switch (id) {
+    case "search":
+    case "continue":
+    case "watchlist":
+    case "playlists":
+    case "up-next":
+    case "download":
+    case "downloads":
+    case "library":
+    case "share":
+    case "settings":
+    case "help":
+      return "Core";
+    case "next":
+    case "previous":
+    case "pick-episode":
+    case "replay":
+    case "source":
+    case "quality":
+    case "audio":
+    case "subtitle":
+    case "recover":
+    case "fallback":
+    case "toggle-autoplay":
+    case "toggle-autoskip":
+    case "stop-after-current":
+    case "playlist-add":
+    case "queue-season":
+    case "play-local":
+    case "watch-online":
+    case "memory":
+      return "Playback";
+    case "follow":
+    case "unfollow":
+    case "mute":
+    case "notifications":
+    case "calendar":
+    case "anime-calendar":
+    case "series-calendar":
+      return "Attention";
+    case "sync":
+    case "sync-connect-anilist":
+    case "sync-connect-tmdb":
+    case "sync-disconnect":
+    case "favorites":
+    case "random":
+    case "surprise":
+      return "Experimental";
+    default:
+      return "Advanced";
+  }
 }
 
 export function parseCommand(input: string): AppCommand | null {
@@ -735,8 +809,13 @@ export function suggestCommands(
 export function resolveCommands(
   state: SessionState,
   allowed: readonly AppCommandId[] = COMMANDS.map((command) => command.id),
+  options?: { readonly excludeGroups?: readonly AppCommandGroup[] },
 ): readonly ResolvedAppCommand[] {
-  return allowed.flatMap((id) => {
+  const excluded = new Set(options?.excludeGroups ?? []);
+  const filtered = excluded.size
+    ? allowed.filter((id) => !excluded.has(commandGroupFor(id)))
+    : allowed;
+  return filtered.flatMap((id) => {
     const command = COMMANDS.find((candidate) => candidate.id === id);
     return command
       ? [
@@ -1101,6 +1180,7 @@ function resolveCommandState(
     case "share":
     case "bookmark":
     case "follow":
+    case "unfollow":
     case "mute":
     case "mark-watched":
     case "mark-unwatched":
@@ -1121,7 +1201,7 @@ function resolveCommandState(
                 ? "Play or select a title before sharing it."
                 : id === "bookmark"
                   ? "Play or select a title before bookmarking it."
-                  : id === "follow"
+                  : id === "follow" || id === "unfollow"
                     ? "Play or select a title before following releases."
                     : id === "mute"
                       ? "Play or select a title before muting releases."
@@ -1194,7 +1274,8 @@ function resolveCommandState(
     case "watchlist":
     case "favorites":
     case "continue":
-    case "playlist":
+    case "playlists":
+    case "up-next":
     case "stats":
     case "sync":
     case "sync-connect-anilist":

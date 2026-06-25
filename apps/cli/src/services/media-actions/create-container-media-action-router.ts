@@ -14,6 +14,7 @@ export type ContainerMediaActionRouterOptions = {
   readonly playback?: MediaActionRouterDeps["playback"];
   readonly details?: MediaActionRouterDeps["details"];
   readonly downloads?: MediaActionRouterDeps["downloads"];
+  readonly playlists?: MediaActionRouterDeps["playlists"];
   readonly onDownloadQueued?: (item: MediaItemIdentity) => void;
 };
 
@@ -33,8 +34,8 @@ export function createContainerMediaActionRouter(
         options.onDownloadQueued?.(item);
       },
     },
-    playlists: {
-      addToPlaylist: (item) => {
+    watchlist: {
+      addToWatchlist: (item) => {
         container.listService.addToWatchlist({
           titleId: item.titleId,
           mediaKind: normalizeMediaKind(item.mediaKind),
@@ -48,8 +49,24 @@ export function createContainerMediaActionRouter(
       follow: (item) => {
         upsertAttentionPreference(container, item, "following");
       },
+      unfollow: (item) => {
+        upsertAttentionPreference(container, item, "implicit");
+      },
       mute: (item) => {
         upsertAttentionPreference(container, item, "muted");
+      },
+    },
+    playlists: options.playlists ?? {
+      addToPlaylist: async (item) => {
+        const { addMediaItemToPickedPlaylist } =
+          await import("@/app-shell/workflows/playlist-add-workflow");
+        const result = await addMediaItemToPickedPlaylist(container, item);
+        if (result) {
+          container.stateManager.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: `Added "${item.title}" to playlist "${result.playlistName}".`,
+          });
+        }
       },
     },
     history: {
@@ -135,7 +152,7 @@ export function markMediaItemWatched(
 function upsertAttentionPreference(
   container: Container,
   item: MediaItemIdentity,
-  preference: "following" | "muted",
+  preference: "implicit" | "following" | "muted",
 ): void {
   container.followedTitleRepository.upsert({
     titleId: item.titleId,

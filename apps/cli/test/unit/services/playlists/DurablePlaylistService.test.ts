@@ -116,3 +116,31 @@ test("DurablePlaylistService imports safe playlist documents without autoplay in
 
   db.close();
 });
+
+test("DurablePlaylistService renames and deletes durable playlists", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new DurablePlaylistService(new PlaylistsRepository(db), {
+    now: () => "2026-05-17T00:00:00.000Z",
+    id: (prefix) => `${prefix}-1`,
+  });
+
+  const playlist = service.createPlaylist("Weekend");
+  const renamed = service.renamePlaylist(playlist.id, "Road trip");
+  expect(renamed.name).toBe("Road trip");
+
+  service.addItem(playlist.id, {
+    titleId: "tmdb:9",
+    mediaKind: "movie",
+    title: "Example",
+  });
+  const [item] = service.listItems(playlist.id);
+  expect(item).toBeDefined();
+  service.removeItem(item!.id);
+  expect(service.listItems(playlist.id)).toHaveLength(0);
+
+  service.deletePlaylist(playlist.id);
+  expect(service.listPlaylists()).toHaveLength(0);
+
+  db.close();
+});

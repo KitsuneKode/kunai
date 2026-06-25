@@ -167,9 +167,12 @@ function isNotificationActionId(value: unknown): value is NotificationActionId {
     value === "queue-next" ||
     value === "queue-after-current-chain" ||
     value === "queue-end" ||
+    value === "add-to-up-next" ||
+    value === "add-to-watchlist" ||
     value === "add-to-playlist" ||
     value === "download" ||
     value === "follow" ||
+    value === "unfollow" ||
     value === "mute" ||
     value === "dismiss" ||
     value === "open-details"

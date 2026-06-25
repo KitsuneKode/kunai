@@ -28,7 +28,9 @@ export function resolveCommandsForPaletteSurface(
 ): readonly ResolvedAppCommand[] {
   switch (surface) {
     case "browse":
-      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS);
+      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS, {
+        excludeGroups: ["Experimental"],
+      });
     case "playback":
       return resolveCommandContext(state, "activePlayback");
     case "post-play":
@@ -36,7 +38,9 @@ export function resolveCommandsForPaletteSurface(
     case "list":
       return resolveCommandContext(state, "rootOverlay");
     default:
-      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS);
+      return resolveCommands(state, SEARCH_BROWSE_COMMAND_IDS, {
+        excludeGroups: ["Experimental"],
+      });
   }
 }
 

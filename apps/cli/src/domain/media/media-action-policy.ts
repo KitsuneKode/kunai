@@ -1,3 +1,5 @@
+import type { FollowedTitlePreference } from "@kunai/storage";
+
 import type { MediaItemIdentity } from "./media-item-identity";
 
 export type MediaActionId =
@@ -5,9 +7,12 @@ export type MediaActionId =
   | "queue-next"
   | "queue-after-current-chain"
   | "queue-end"
+  | "add-to-up-next"
+  | "add-to-watchlist"
   | "add-to-playlist"
   | "download"
   | "follow"
+  | "unfollow"
   | "mute"
   | "mark-watched"
   | "mark-unwatched"
@@ -39,6 +44,7 @@ export interface MediaActionPolicyInput {
     readonly playlistsEnabled: boolean;
     readonly followEnabled: boolean;
     readonly canDismiss: boolean;
+    readonly followPreference?: FollowedTitlePreference;
   };
 }
 
@@ -57,16 +63,26 @@ export function getMediaActions(input: MediaActionPolicyInput): readonly MediaAc
   actions.push({ id: "queue-next", label: "Queue next" });
   actions.push({ id: "queue-after-current-chain", label: "Queue after current series" });
   actions.push({ id: "queue-end", label: "Queue at end" });
+  actions.push({ id: "add-to-up-next", label: "Add to Up Next" });
 
   if (context.playlistsEnabled) {
-    actions.push({ id: "add-to-playlist", label: "Save to playlist" });
+    actions.push({ id: "add-to-watchlist", label: "Add to Watchlist" });
+    actions.push({ id: "add-to-playlist", label: "Add to playlist" });
   }
   if (context.downloadsEnabled) {
     actions.push({ id: "download", label: "Download" });
   }
   if (context.followEnabled) {
-    actions.push({ id: "follow", label: "Follow releases" });
-    actions.push({ id: "mute", label: "Mute release notices", dangerous: true });
+    const preference = context.followPreference ?? "implicit";
+    if (preference === "implicit") {
+      actions.push({ id: "follow", label: "Follow releases" });
+      actions.push({ id: "mute", label: "Mute release notices", dangerous: true });
+    } else if (preference === "following") {
+      actions.push({ id: "unfollow", label: "Unfollow releases" });
+      actions.push({ id: "mute", label: "Mute release notices", dangerous: true });
+    } else if (preference === "muted") {
+      actions.push({ id: "unfollow", label: "Unmute release notices" });
+    }
   }
   actions.push({ id: "open-details", label: "Open details" });
   if (context.canDismiss) {

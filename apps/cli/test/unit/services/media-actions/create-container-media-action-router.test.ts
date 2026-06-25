@@ -3,8 +3,9 @@ import { describe, expect, test } from "bun:test";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 
 describe("createContainerMediaActionRouter", () => {
-  test("routes follow and queue actions through container services", async () => {
+  test("routes watchlist, follow, unfollow, and queue actions through container services", async () => {
     const calls: string[] = [];
+    const preferences: string[] = [];
     const container = {
       queueService: {
         enqueueMediaItem: () => {
@@ -20,7 +21,8 @@ describe("createContainerMediaActionRouter", () => {
         },
       },
       followedTitleRepository: {
-        upsert: () => {
+        upsert: (record: { preference: string }) => {
+          preferences.push(record.preference);
           calls.push("follow");
         },
       },
@@ -32,7 +34,13 @@ describe("createContainerMediaActionRouter", () => {
       },
     };
 
-    const router = createContainerMediaActionRouter(container as never);
+    const router = createContainerMediaActionRouter(container as never, {
+      playlists: {
+        addToPlaylist: async () => {
+          calls.push("playlist");
+        },
+      },
+    });
     await router.run({
       actionId: "queue-end",
       item: {
@@ -54,7 +62,16 @@ describe("createContainerMediaActionRouter", () => {
       source: "notification",
     });
     await router.run({
-      actionId: "add-to-playlist",
+      actionId: "unfollow",
+      item: {
+        mediaKind: "series",
+        titleId: "tmdb:1",
+        title: "Example",
+      },
+      source: "notification",
+    });
+    await router.run({
+      actionId: "add-to-watchlist",
       item: {
         mediaKind: "series",
         titleId: "tmdb:1",
@@ -63,7 +80,20 @@ describe("createContainerMediaActionRouter", () => {
       source: "notification",
     });
 
-    expect(calls).toEqual(["queue", "follow", "watchlist"]);
+    await expect(
+      router.run({
+        actionId: "add-to-playlist",
+        item: {
+          mediaKind: "series",
+          titleId: "tmdb:1",
+          title: "Example",
+        },
+        source: "notification",
+      }),
+    ).resolves.toMatchObject({ status: "handled", actionId: "add-to-playlist" });
+
+    expect(calls).toEqual(["queue", "follow", "follow", "watchlist", "playlist"]);
+    expect(preferences).toEqual(["following", "implicit"]);
   });
 
   test("allows callers to override the download executor", async () => {

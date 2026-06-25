@@ -72,6 +72,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "watchlist",
   "bookmark",
   "follow",
+  "unfollow",
   "mute",
   "share",
   "mark-watched",
@@ -215,7 +216,10 @@ export async function dispatchPaletteCommand(
     return routeNotificationsInbox(container);
   }
   if (action === "provider") return "provider";
-  if (action === "playlist") return openRootQueueSelection(container);
+  if (action === "up-next") return openRootQueueSelection(container);
+  if (action === "playlists" || action === "playlist") {
+    return handleShellAction({ action: "playlists", container });
+  }
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {

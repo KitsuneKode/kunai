@@ -139,4 +139,33 @@ export class PlaylistsRepository {
       .all(playlistId)
       .map(mapPlaylistItemRow);
   }
+
+  updatePlaylist(
+    id: string,
+    input: { readonly name?: string; readonly description?: string; readonly updatedAt: string },
+  ): UserPlaylistRecord {
+    const existing = this.get(id);
+    if (!existing) throw new Error(`Playlist not found: ${id}`);
+    const name = input.name ?? existing.name;
+    const description =
+      input.description === undefined ? (existing.description ?? null) : input.description;
+    this.db
+      .query(
+        `UPDATE user_playlists
+         SET name = ?, description = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(name, description, input.updatedAt, id);
+    const row = this.get(id);
+    if (!row) throw new Error(`Playlist not found after update: ${id}`);
+    return row;
+  }
+
+  deletePlaylist(id: string): void {
+    this.db.query(`DELETE FROM user_playlists WHERE id = ?`).run(id);
+  }
+
+  removeItem(itemId: string): void {
+    this.db.query(`DELETE FROM user_playlist_items WHERE id = ?`).run(itemId);
+  }
 }

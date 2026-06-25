@@ -30,6 +30,7 @@ test("playback-active notification actions avoid hijacking playback", () => {
   expect(actions).toContain("queue-next");
   expect(actions).toContain("queue-after-current-chain");
   expect(actions).toContain("queue-end");
+  expect(actions).toContain("add-to-up-next");
   expect(actions).toContain("download");
   expect(actions).toContain("dismiss");
 });
@@ -49,6 +50,45 @@ test("idle surfaces can play now and still expose durable actions", () => {
 
   expect(actions[0]).toBe("play-now");
   expect(actions).toContain("queue-end");
+  expect(actions).toContain("add-to-watchlist");
   expect(actions).toContain("add-to-playlist");
+  expect(actions).toContain("follow");
+  expect(actions).not.toContain("unfollow");
   expect(actions).not.toContain("dismiss");
+});
+
+test("attention actions respect explicit follow preference", () => {
+  const following = getMediaActions({
+    item,
+    context: {
+      surface: "history",
+      playbackActive: false,
+      downloadsEnabled: true,
+      playlistsEnabled: true,
+      followEnabled: true,
+      canDismiss: false,
+      followPreference: "following",
+    },
+  }).map((action) => action.id);
+
+  expect(following).toContain("unfollow");
+  expect(following).toContain("mute");
+  expect(following).not.toContain("follow");
+
+  const muted = getMediaActions({
+    item,
+    context: {
+      surface: "history",
+      playbackActive: false,
+      downloadsEnabled: true,
+      playlistsEnabled: true,
+      followEnabled: true,
+      canDismiss: false,
+      followPreference: "muted",
+    },
+  }).map((action) => action.id);
+
+  expect(muted).toContain("unfollow");
+  expect(muted).not.toContain("mute");
+  expect(muted).not.toContain("follow");
 });

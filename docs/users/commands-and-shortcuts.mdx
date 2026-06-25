@@ -7,24 +7,38 @@ Kunai keeps the command palette context-aware. Press `/` in the shell to open th
 available actions for the current screen. During playback, the same actions stay
 available without losing the playing context.
 
+## Personal Media Vocabulary
+
+- **Watchlist** — built-in watch-later list (`/watchlist`, `/wl`)
+- **Playlists** — durable named collections (`/playlists`; `/playlist` and `/pl` are aliases)
+- **Up Next** — current playback order (`/up-next`; `/queue` is a compatibility alias)
+- **Downloads** — offline download jobs (`/downloads`)
+- **Follow / Unfollow / Mute** — release attention, not saved-for-later state
+- **Provider** — stable provider switching (`/provider`)
+
 ## Global Commands
 
 - `/search` starts a new search.
 - `/history` opens recent playback progress.
+- `/watchlist` opens the built-in watch-later list.
+- `/playlists` opens durable saved playlists.
+- `/up-next` opens the current playback order.
 - `/library` opens the offline library with completed local downloads.
 - `/play-local` opens a file picker for local media playback.
 - `/watch-online` returns from offline posture to online shell flows when network allows.
 - `/downloads` opens active, queued, failed, and retryable download jobs.
 - `/notifications` opens the notification inbox.
-- `/playlist` opens saved playlists and recoverable queues.
-- `/stats` opens local watch stats.
-- `/sync` opens optional account sync settings.
+- `/provider` opens the provider picker without changing provider until confirmed.
+- `/follow`, `/unfollow`, and `/mute` change release attention for the current title.
+- `/bookmark` adds or removes the current title from Watchlist.
 - `/calendar` opens release calendar results.
-- `/discover`, `/recommendation`, `/random`, and `/surprise` open recommendation
-  surfaces without autoplay.
+- `/discover` and `/recommendation` open recommendation surfaces without autoplay.
 - `/filters` opens supported search filter syntax.
 - `/share` copies a catalog-anchored `kunai://` play link to the clipboard.
 - `/watch` parses a `kunai://` URL from the clipboard and launches playback.
+
+Advanced or experimental commands such as `/stats`, `/sync`, `/random`, and `/surprise`
+remain available by typing them directly even when they are not on the default browse palette.
 
 ## Playback Commands
 
@@ -59,6 +73,10 @@ context. Close the overlay to return where you were.
 | Anywhere in shell | `/` | Open context-aware command palette |
 | Browse results | `Enter` | Open or play selected result |
 | Browse results | `Shift+Enter` or `i` | Open title details |
+| Browse results | `q` | Add selected result to Up Next when the list owns focus |
+| Browse results | `w` | Add selected result to Watchlist when the list owns focus |
+| Browse results | `Shift+W` | Follow selected title when the list owns focus |
+| Browse results | `Shift+Q` | Open Up Next when the list owns focus |
 | Browse results | `Ctrl+F` | Focus filters |
 | Browse results | `Ctrl+T` | Refresh trending |
 | Browse results | `Ctrl+D` | Queue selected result for download |

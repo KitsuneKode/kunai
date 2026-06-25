@@ -19,8 +19,12 @@ export interface MediaActionRouterDeps {
   readonly playlists?: {
     readonly addToPlaylist: (item: MediaItemIdentity) => Promise<void> | void;
   };
+  readonly watchlist?: {
+    readonly addToWatchlist: (item: MediaItemIdentity) => Promise<void> | void;
+  };
   readonly attention?: {
     readonly follow: (item: MediaItemIdentity) => Promise<void> | void;
+    readonly unfollow: (item: MediaItemIdentity) => Promise<void> | void;
     readonly mute: (item: MediaItemIdentity) => Promise<void> | void;
   };
   readonly history?: {
@@ -94,6 +98,15 @@ export class MediaActionRouter {
         });
         return handled(input.actionId);
       }
+      case "add-to-up-next": {
+        const executor = this.deps.queue?.enqueueMediaItem;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item, {
+          placement: "end",
+          source: input.source,
+        });
+        return handled(input.actionId);
+      }
       case "download": {
         if (
           requiresProviderResolutionConfirmation(input.source) &&
@@ -112,8 +125,20 @@ export class MediaActionRouter {
         await executor(input.item);
         return handled(input.actionId);
       }
+      case "add-to-watchlist": {
+        const executor = this.deps.watchlist?.addToWatchlist;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
       case "follow": {
         const executor = this.deps.attention?.follow;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "unfollow": {
+        const executor = this.deps.attention?.unfollow;
         if (!executor) return unsupported(input.actionId);
         await executor(input.item);
         return handled(input.actionId);

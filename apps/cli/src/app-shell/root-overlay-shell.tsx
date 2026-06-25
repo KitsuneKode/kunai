@@ -966,17 +966,21 @@ export function RootOverlayShell({
                 ? "Download queued"
                 : resolvedAction === "follow"
                   ? "Following releases"
-                  : resolvedAction === "mute"
-                    ? "Release notices muted"
-                    : resolvedAction === "add-to-playlist"
-                      ? "Saved to watchlist"
-                      : resolvedAction === "play-now"
-                        ? "Starting playback"
-                        : resolvedAction === "open-details"
-                          ? "Opening details"
-                          : resolvedAction === "update-app"
-                            ? "Opening release page in your browser"
-                            : "Action queued",
+                  : resolvedAction === "unfollow"
+                    ? "Stopped following releases"
+                    : resolvedAction === "mute"
+                      ? "Release notices muted"
+                      : resolvedAction === "add-to-watchlist"
+                        ? "Saved to watchlist"
+                        : resolvedAction === "add-to-up-next"
+                          ? "Added to Up Next"
+                          : resolvedAction === "play-now"
+                            ? "Starting playback"
+                            : resolvedAction === "open-details"
+                              ? "Opening details"
+                              : resolvedAction === "update-app"
+                                ? "Opening release page in your browser"
+                                : "Action queued",
         );
         setNotifTick((tick) => tick + 1);
         onRedraw();

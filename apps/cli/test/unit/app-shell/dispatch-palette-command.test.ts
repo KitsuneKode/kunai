@@ -35,4 +35,11 @@ describe("dispatchPaletteCommand", () => {
     });
     expect(handleShellAction).not.toHaveBeenCalled();
   });
+
+  test("provider command returns provider picker intent from the shared dispatcher", async () => {
+    const result = await dispatchPaletteCommand("playback", "provider", {} as never);
+
+    expect(result).toBe("provider");
+    expect(handleShellAction).not.toHaveBeenCalled();
+  });
 });

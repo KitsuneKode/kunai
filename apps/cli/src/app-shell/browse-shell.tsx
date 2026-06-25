@@ -83,6 +83,7 @@ import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
+import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
   getBrowseChromeRows,
@@ -150,6 +151,7 @@ export function BrowseShell<T>({
   onLoadRecommendations,
   settings,
   onQueueSelected,
+  onWatchlistSelected,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -172,6 +174,7 @@ export function BrowseShell<T>({
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
+  onWatchlistSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -892,9 +895,9 @@ export function BrowseShell<T>({
           return;
         }
         // Actions advertised in the sheet footer, dispatched against the highlighted row.
-        if (input.toLowerCase() === "w" && selectedOption && onFollowSelected) {
-          void Promise.resolve(onFollowSelected(selectedOption.value));
-          flashActionFeedback(`Following ${selectedOption.label}`);
+        if (input.toLowerCase() === "w" && selectedOption && onWatchlistSelected) {
+          void Promise.resolve(onWatchlistSelected(selectedOption.value));
+          flashActionFeedback(`Watchlisted ${selectedOption.label}`);
           return;
         }
         if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
@@ -982,6 +985,49 @@ export function BrowseShell<T>({
       return;
     }
 
+    if (!commandMode && !resultFilterFocused && !filterModeOpen && listFocused) {
+      const listBinding = resolveKeybinding(["browse"], input, key);
+      if (listBinding?.id === "help") {
+        onResolve("help");
+        return;
+      }
+    }
+
+    if (!commandMode && listFocused) {
+      const listBinding = resolveKeybinding(["browse"], input, key);
+      const listEffect = listBinding ? resolveBrowseBindingEffect(listBinding) : null;
+      if (listEffect?.kind === "open-up-next") {
+        onResolve("up-next");
+        return;
+      }
+      if (
+        listEffect &&
+        (listEffect.kind === "add-to-up-next" ||
+          listEffect.kind === "add-to-watchlist" ||
+          listEffect.kind === "follow") &&
+        selectedOption &&
+        displayOptions.length > 0 &&
+        !queryDirty &&
+        searchState === "ready"
+      ) {
+        if (listEffect.kind === "add-to-up-next" && onQueueSelected) {
+          void Promise.resolve(onQueueSelected(selectedOption.value));
+          flashActionFeedback(`Added ${selectedOption.label} to Up Next`);
+          return;
+        }
+        if (listEffect.kind === "add-to-watchlist" && onWatchlistSelected) {
+          void Promise.resolve(onWatchlistSelected(selectedOption.value));
+          flashActionFeedback(`Watchlisted ${selectedOption.label}`);
+          return;
+        }
+        if (listEffect.kind === "follow" && onFollowSelected) {
+          void Promise.resolve(onFollowSelected(selectedOption.value));
+          flashActionFeedback(`Following ${selectedOption.label}`);
+          return;
+        }
+      }
+    }
+
     if ((input === "f" && key.ctrl) || input === "\x06") {
       if (searchState === "ready" && options.length > 0 && !isCalendarView) {
         setFilterModeOpen(true);
@@ -1021,12 +1067,6 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Open the Up Next queue (results zone; from the query field use /queue).
-    if (listFocused && input === "Q") {
-      onResolve("playlist");
-      return;
-    }
-
     // Download: Ctrl+D anywhere, or bare `d` in the results zone.
     if (
       (input === "d" && key.ctrl) ||
@@ -1035,38 +1075,6 @@ export function BrowseShell<T>({
     ) {
       if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
         onResolve("download");
-      }
-      return;
-    }
-
-    // Queue: bare `q` only in the results zone (it would otherwise type into the
-    // search box — the latent double-fire this focus model removes).
-    if (listFocused && input.toLowerCase() === "q") {
-      if (
-        selectedOption &&
-        onQueueSelected &&
-        displayOptions.length > 0 &&
-        !queryDirty &&
-        searchState === "ready"
-      ) {
-        void Promise.resolve(onQueueSelected(selectedOption.value));
-        flashActionFeedback(`Queued ${selectedOption.label}`);
-      }
-      return;
-    }
-
-    // Follow / bookmark the highlighted result (results zone). Bookmarks the title
-    // for release notices via the shared media-action router — same path as queue.
-    if (listFocused && input.toLowerCase() === "w") {
-      if (
-        selectedOption &&
-        onFollowSelected &&
-        displayOptions.length > 0 &&
-        !queryDirty &&
-        searchState === "ready"
-      ) {
-        void Promise.resolve(onFollowSelected(selectedOption.value));
-        flashActionFeedback(`Following ${selectedOption.label}`);
       }
       return;
     }
@@ -1662,6 +1670,7 @@ export function BrowseShell<T>({
             ? [
                 "browse-download",
                 ...(onQueueSelected ? ["browse-queue"] : []),
+                ...(onWatchlistSelected ? ["browse-watchlist"] : []),
                 ...(onFollowSelected ? ["browse-follow"] : []),
               ]
             : []),
@@ -1688,7 +1697,8 @@ export function BrowseShell<T>({
               "browse-mode": "toggle-mode",
               "browse-trending": "trending",
               "browse-download": "download",
-              "browse-queue": "playlist",
+              "browse-queue": "up-next",
+              "browse-watchlist": "bookmark",
               "browse-follow": "follow",
             },
             overrides: {
@@ -1735,6 +1745,7 @@ export function openBrowseShell<T>({
   onLoadRecommendations,
   settings,
   onQueueSelected,
+  onWatchlistSelected,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -1754,6 +1765,7 @@ export function openBrowseShell<T>({
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
+  onWatchlistSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -1777,6 +1789,7 @@ export function openBrowseShell<T>({
         onLoadRecommendations={onLoadRecommendations}
         settings={settings}
         onQueueSelected={onQueueSelected}
+        onWatchlistSelected={onWatchlistSelected}
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}

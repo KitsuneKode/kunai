@@ -3,23 +3,23 @@ import { expect, test } from "bun:test";
 import { loadSurpriseList } from "@/app/discover/discovery-lists";
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app/search/SearchPhase";
 
-test("search browse command palette exposes discover, random, inbox, and offline surfaces", () => {
+test("search browse command palette exposes stable watch and library surfaces first", () => {
   expect([...SEARCH_BROWSE_COMMAND_IDS].slice(0, 15)).toEqual([
     "continue",
     "filters",
     "recommendation",
-    "random",
-    "surprise",
     "calendar",
     "bookmark",
     "follow",
     "watchlist",
-    "playlist",
-    "stats",
-    "sync",
+    "playlists",
+    "up-next",
+    "provider",
     "library",
     "downloads",
     "notifications",
+    "history",
+    "download",
   ]);
 });
 

@@ -7,6 +7,8 @@ const SCOPES: KeyScope[] = [
   "editing",
   "browse",
   "search",
+  "loading",
+  "library",
   "player",
   "postPlayback",
   "queue",

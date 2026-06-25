@@ -28,6 +28,7 @@ describe("command registry contexts", () => {
       "share",
       "bookmark",
       "follow",
+      "unfollow",
       "mute",
       "mark-watched",
       "mark-unwatched",
@@ -100,6 +101,7 @@ describe("command registry contexts", () => {
       "share",
       "bookmark",
       "follow",
+      "unfollow",
       "mute",
       "mark-watched",
       "mark-unwatched",
@@ -111,7 +113,8 @@ describe("command registry contexts", () => {
       "downloads",
       "notifications",
       "watchlist",
-      "playlist",
+      "playlists",
+      "up-next",
       "stats",
       "recommendation",
       "random",
@@ -178,6 +181,7 @@ describe("command registry contexts", () => {
     expect(parseCommand("/bookmark")?.id).toBe("bookmark");
     expect(parseCommand("/save-current")?.id).toBe("bookmark");
     expect(parseCommand("/follow")?.id).toBe("follow");
+    expect(parseCommand("/unfollow")?.id).toBe("unfollow");
     expect(parseCommand("/mute")?.id).toBe("mute");
     expect(parseCommand("/mark-watched")?.id).toBe("mark-watched");
     expect(parseCommand("/watched")?.id).toBe("mark-watched");
@@ -188,13 +192,13 @@ describe("command registry contexts", () => {
       "continue",
       "watch",
       "watchlist",
-      "playlist",
-      "stats",
-      "sync",
+      "playlists",
+      "up-next",
       "library",
       "downloads",
       "notifications",
       "history",
+      "setup",
     ] satisfies readonly AppCommandId[]);
   });
 
@@ -241,7 +245,16 @@ describe("command registry contexts", () => {
     });
   });
 
-  test("uses product-consistent labels for queue and recommendations", () => {
+  test("resolves stable saved-media command vocabulary and compatibility aliases", () => {
+    expect(parseCommand("/watchlist")?.id).toBe("watchlist");
+    expect(parseCommand("/playlists")?.id).toBe("playlists");
+    expect(parseCommand("/playlist")?.id).toBe("playlists");
+    expect(parseCommand("/pl")?.id).toBe("playlists");
+    expect(parseCommand("/up-next")?.id).toBe("up-next");
+    expect(parseCommand("/queue")?.id).toBe("up-next");
+  });
+
+  test("uses product-consistent labels for Up Next and recommendations", () => {
     const state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -249,19 +262,29 @@ describe("command registry contexts", () => {
     });
 
     expect(
-      resolveCommands(state, ["downloads", "playlist", "playlist-add", "recommendation"]),
+      resolveCommands(state, [
+        "downloads",
+        "playlists",
+        "up-next",
+        "playlist-add",
+        "recommendation",
+      ]),
     ).toEqual([
       expect.objectContaining({
         id: "downloads",
         label: "Download Queue",
       }),
       expect.objectContaining({
-        id: "playlist",
-        label: "Up Next Queue",
+        id: "playlists",
+        label: "Playlists",
+      }),
+      expect.objectContaining({
+        id: "up-next",
+        label: "Up Next",
       }),
       expect.objectContaining({
         id: "playlist-add",
-        label: "Add to Queue",
+        label: "Add to Up Next",
       }),
       expect.objectContaining({
         id: "recommendation",

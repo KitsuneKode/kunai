@@ -113,14 +113,27 @@ test("recommendation downloads require explicit provider resolution confirmation
 test("durable media actions delegate to their owning services", async () => {
   const calls: string[] = [];
   const router = new MediaActionRouter({
+    queue: {
+      enqueueMediaItem: async () => {
+        calls.push("up-next");
+      },
+    },
     playlists: {
       addToPlaylist: async () => {
         calls.push("playlist");
       },
     },
+    watchlist: {
+      addToWatchlist: async () => {
+        calls.push("watchlist");
+      },
+    },
     attention: {
       follow: async () => {
         calls.push("follow");
+      },
+      unfollow: async () => {
+        calls.push("unfollow");
       },
       mute: async () => {
         calls.push("mute");
@@ -133,12 +146,23 @@ test("durable media actions delegate to their owning services", async () => {
     },
   });
 
+  await router.run({ actionId: "add-to-up-next", item, source: "history" });
+  await router.run({ actionId: "add-to-watchlist", item, source: "history" });
   await router.run({ actionId: "add-to-playlist", item, source: "history" });
   await router.run({ actionId: "follow", item, source: "history" });
+  await router.run({ actionId: "unfollow", item, source: "history" });
   await router.run({ actionId: "mute", item, source: "history" });
   await router.run({ actionId: "open-details", item, source: "history" });
 
-  expect(calls).toEqual(["playlist", "follow", "mute", "details"]);
+  expect(calls).toEqual([
+    "up-next",
+    "watchlist",
+    "playlist",
+    "follow",
+    "unfollow",
+    "mute",
+    "details",
+  ]);
 });
 
 test("unsupported media actions fail clearly instead of silently doing nothing", async () => {
@@ -163,7 +187,7 @@ test("returns unsupported when a displayed action has no executor", async () => 
 
 test("returns handled when follow executor runs", async () => {
   const router = new MediaActionRouter({
-    attention: { follow: async () => {}, mute: async () => {} },
+    attention: { follow: async () => {}, unfollow: async () => {}, mute: async () => {} },
   });
 
   await expect(router.run({ actionId: "follow", item, source: "history" })).resolves.toEqual({

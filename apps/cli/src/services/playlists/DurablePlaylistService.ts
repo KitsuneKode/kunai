@@ -151,6 +151,21 @@ export class DurablePlaylistService {
     }
     return playlist;
   }
+
+  renamePlaylist(playlistId: string, name: string): UserPlaylistRecord {
+    return this.repo.updatePlaylist(playlistId, {
+      name,
+      updatedAt: this.clock.now(),
+    });
+  }
+
+  deletePlaylist(playlistId: string): void {
+    this.repo.deletePlaylist(playlistId);
+  }
+
+  removeItem(itemId: string): void {
+    this.repo.removeItem(itemId);
+  }
 }
 
 function parseProviderHints(value: string | undefined): readonly MediaProviderHint[] {

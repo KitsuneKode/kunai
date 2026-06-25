@@ -1,9 +1,45 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
+import type { MediaActionId } from "@/domain/media/media-action-policy";
 
 import type { ShellInputCommand } from "./input-router";
 import { matchBinding, type KeyBinding, type KeyScope } from "./keybindings";
 import type { PlaybackShellInputEffect, PlaybackShellInputHandlers } from "./playback-shell-input";
-import type { PlaybackShellResult } from "./types";
+import type { PlaybackShellResult, ShellAction } from "./types";
+
+export type BrowseBindingEffect =
+  | { readonly kind: "add-to-up-next" }
+  | { readonly kind: "add-to-watchlist" }
+  | { readonly kind: "follow" }
+  | { readonly kind: "open-up-next" }
+  | { readonly kind: "shell-action"; readonly action: ShellAction };
+
+export function resolveBrowseBindingEffect(binding: KeyBinding): BrowseBindingEffect | null {
+  switch (binding.id) {
+    case "browse-queue":
+      return { kind: "add-to-up-next" };
+    case "browse-watchlist":
+      return { kind: "add-to-watchlist" };
+    case "browse-follow":
+      return { kind: "follow" };
+    case "queue-open":
+      return { kind: "open-up-next" };
+    case "help":
+      return { kind: "shell-action", action: "help" };
+    case "command-palette":
+      return { kind: "shell-action", action: "command-mode" };
+    default:
+      return null;
+  }
+}
+
+export function resolveBrowseMediaAction(binding: KeyBinding): MediaActionId | null {
+  const effect = resolveBrowseBindingEffect(binding);
+  if (!effect) return null;
+  if (effect.kind === "add-to-up-next") return "add-to-up-next";
+  if (effect.kind === "add-to-watchlist") return "add-to-watchlist";
+  if (effect.kind === "follow") return "follow";
+  return null;
+}
 
 export function resolveKeybinding(
   scopes: readonly KeyScope[],

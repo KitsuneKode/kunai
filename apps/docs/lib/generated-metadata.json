@@ -1,12 +1,12 @@
 {
-  "syncedAt": "2026-06-24T23:33:56.427Z",
+  "syncedAt": "2026-06-25T03:18:00.432Z",
   "version": "0.2.5",
   "cliVersion": "0.2.5",
-  "cliSourceRevision": "8d88560f",
-  "cliSourceFingerprint": "3b8a2a577d567443b40ae1b846ad0d0df5208d76b2d2a6da7a1e0a22be59cbac",
-  "docsContentFingerprint": "b26d5badca77369c802b9260393ba1a60f499ab82c04deaca4efbe3bca54b3b8",
+  "cliSourceRevision": "0f552214",
+  "cliSourceFingerprint": "4901c0aa94c5c64e7d571f733b82477eb7ef008aa10341104da7b337091c3322",
+  "docsContentFingerprint": "b1cb5e2d8bfacfda775c6e65a9e9154f28b8665593d85305a533324461dae7c3",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
-  "commandCount": 69,
+  "commandCount": 75,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro"],
   "providers": [
     {
@@ -384,6 +384,12 @@
       "description": "Track future releases and notices for the current title"
     },
     {
+      "id": "unfollow",
+      "label": "Unfollow Releases",
+      "aliases": ["unfollow", "untrack", "stop-following"],
+      "description": "Stop explicit release tracking without muting the title"
+    },
+    {
       "id": "mute",
       "label": "Mute Releases",
       "aliases": ["mute", "mute-title", "mute-releases", "hide-releases"],
@@ -394,6 +400,24 @@
       "label": "Mark Watched",
       "aliases": ["mark-watched", "watched", "complete", "finish"],
       "description": "Mark the current movie or episode as fully watched"
+    },
+    {
+      "id": "mark-unwatched",
+      "label": "Mark Unwatched",
+      "aliases": ["mark-unwatched", "unwatched", "unwatch"],
+      "description": "Clear the watched flag while keeping resume position"
+    },
+    {
+      "id": "mark-season-watched",
+      "label": "Mark Season Watched",
+      "aliases": ["mark-season-watched", "season-watched", "mark-season"],
+      "description": "Mark every episode in the current season up to the current episode as watched"
+    },
+    {
+      "id": "mark-up-to-episode",
+      "label": "Mark Up To Episode",
+      "aliases": ["mark-up-to-episode", "mark-through", "mark-through-episode"],
+      "description": "Pick an episode and mark the whole season through that episode as watched"
     },
     {
       "id": "watch",
@@ -458,8 +482,8 @@
     {
       "id": "watchlist",
       "label": "Watchlist",
-      "aliases": ["wl", "watchlist", "watch-list"],
-      "description": "View and manage your watchlist"
+      "aliases": ["watchlist", "wl", "watch-list", "watch-later", "bookmarks"],
+      "description": "View and manage the built-in Watchlist playlist"
     },
     {
       "id": "favorites",
@@ -468,16 +492,28 @@
       "description": "View your favorite titles"
     },
     {
-      "id": "playlist",
-      "label": "Up Next Queue",
-      "aliases": ["playlist", "pl", "queue-playlist", "queue", "up-next", "upnext"],
-      "description": "View and manage the Up Next queue — play, clear, save as playlist, import/export"
+      "id": "playlists",
+      "label": "Playlists",
+      "aliases": ["playlists", "playlist", "pl", "lists"],
+      "description": "View and manage durable playlists"
+    },
+    {
+      "id": "up-next",
+      "label": "Up Next",
+      "aliases": ["up-next", "upnext", "queue", "queue-playlist"],
+      "description": "View and manage the current playback order"
     },
     {
       "id": "playlist-add",
-      "label": "Add to Queue",
-      "aliases": ["playlist-add", "pl-add", "add-to-playlist"],
-      "description": "Queue the current title for sequential playback"
+      "label": "Add to Up Next",
+      "aliases": ["playlist-add", "pl-add", "add-to-up-next", "queue-add", "add-to-queue"],
+      "description": "Add the current title to Up Next"
+    },
+    {
+      "id": "queue-season",
+      "label": "Queue Rest of Season",
+      "aliases": ["queue-season", "season-queue", "queue-rest-season"],
+      "description": "Queue remaining episodes in the current season"
     },
     {
       "id": "stats",

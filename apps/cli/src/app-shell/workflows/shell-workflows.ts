@@ -788,6 +788,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   share: (c) => handleShare(c),
   bookmark: (c) => handleBookmark(c),
   follow: (c) => handleAttentionPreference(c, "following"),
+  unfollow: (c) => handleAttentionPreference(c, "implicit"),
   mute: (c) => handleAttentionPreference(c, "muted"),
   "mark-watched": (c) => handleMarkWatched(c),
   "mark-unwatched": (c) => handleMarkUnwatched(c),
@@ -796,7 +797,9 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   watch: (c) => handleWatch(c),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
-  playlist: (c) => handlePlaylist(c),
+  playlists: (c) => handlePlaylists(c),
+  "up-next": (c) => handleUpNext(c),
+  playlist: (c) => handlePlaylists(c),
   "playlist-add": (c) => handlePlaylistAdd(c),
   "queue-season": (c) => handleQueueSeason(c),
   stats: (c) => handleStats(c),
@@ -1673,7 +1676,7 @@ async function handleBookmark(container: Container): Promise<"handled"> {
 
 async function handleAttentionPreference(
   container: Container,
-  preference: "following" | "muted",
+  preference: "implicit" | "following" | "muted",
 ): Promise<"handled"> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
@@ -1683,13 +1686,16 @@ async function handleAttentionPreference(
       note:
         preference === "following"
           ? "Play or select a title before following releases."
-          : "Play or select a title before muting releases.",
+          : preference === "implicit"
+            ? "Play or select a title before unfollowing releases."
+            : "Play or select a title before muting releases.",
     });
     return "handled";
   }
 
   const result = await createContainerMediaActionRouter(container).run({
-    actionId: preference === "following" ? "follow" : "mute",
+    actionId:
+      preference === "following" ? "follow" : preference === "implicit" ? "unfollow" : "mute",
     item: {
       mediaKind: resolveCurrentMediaKind(state),
       titleId: title.id,
@@ -1712,7 +1718,9 @@ async function handleAttentionPreference(
     note:
       preference === "following"
         ? `Following future releases for "${title.name}".`
-        : `Muted future release notices for "${title.name}".`,
+        : preference === "implicit"
+          ? `Stopped explicit release tracking for "${title.name}".`
+          : `Muted future release notices for "${title.name}".`,
   });
   return "handled";
 }
@@ -2006,7 +2014,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const isMuted = attentionPreference === "muted";
     const isFollowing = attentionPreference === "following";
 
-    type SubAction = "search" | "follow" | "mute" | "remove" | "back";
+    type SubAction = "search" | "follow" | "unfollow" | "mute" | "remove" | "back";
 
     const sub = await chooseFromListShell({
       title: picked.title,
@@ -2022,23 +2030,45 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
           detail: "Search for this title to play it",
         },
         ...(isFollowing
-          ? []
-          : [
+          ? [
               {
-                value: "follow" as SubAction,
-                label: "Follow releases",
-                detail: "Surface new episodes in Calendar, Home, and notifications",
+                value: "unfollow" as SubAction,
+                label: "Unfollow releases",
+                detail: "Return to neutral release attention without removing from Watchlist",
               },
-            ]),
-        ...(isMuted
-          ? []
-          : [
+            ]
+          : isMuted
+            ? [
+                {
+                  value: "unfollow" as SubAction,
+                  label: "Unmute release notices",
+                  detail: "Stop suppressing release nudges for this title",
+                },
+              ]
+            : [
+                {
+                  value: "follow" as SubAction,
+                  label: "Follow releases",
+                  detail: "Surface new episodes in Calendar, Home, and notifications",
+                },
+              ]),
+        ...(!isFollowing && !isMuted
+          ? [
               {
                 value: "mute" as SubAction,
                 label: "Mute release notices",
                 detail: "Keep it in Watchlist, but stop new-episode nudges",
               },
-            ]),
+            ]
+          : isFollowing
+            ? [
+                {
+                  value: "mute" as SubAction,
+                  label: "Mute release notices",
+                  detail: "Suppress release nudges while keeping Watchlist saved",
+                },
+              ]
+            : []),
         { value: "remove" as SubAction, label: "Remove from watchlist" },
         { value: "back" as SubAction, label: "Back" },
       ],
@@ -2051,10 +2081,11 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
       return "handled";
     }
 
-    if (sub === "follow" || sub === "mute") {
+    if (sub === "follow" || sub === "mute" || sub === "unfollow") {
       const pickedItem = items.find((item) => item.titleId === picked.titleId);
+      const actionId = sub === "follow" ? "follow" : sub === "mute" ? "mute" : "unfollow";
       const result = await createContainerMediaActionRouter(container).run({
-        actionId: sub === "follow" ? "follow" : "mute",
+        actionId,
         item: {
           mediaKind: pickedItem?.mediaKind ?? "series",
           titleId: picked.titleId,
@@ -2074,7 +2105,11 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
         note:
           sub === "follow"
             ? `Following future releases for "${picked.title}".`
-            : `Muted future release notices for "${picked.title}".`,
+            : sub === "mute"
+              ? `Muted future release notices for "${picked.title}".`
+              : isMuted
+                ? `Unmuted release notices for "${picked.title}".`
+                : `Stopped following future releases for "${picked.title}".`,
       });
       continue;
     }
@@ -2132,11 +2167,156 @@ async function handleFavorites(container: Container): Promise<"handled"> {
   }
 }
 
-// ─── Playlist ──────────────────────────────────────────────────────────────────
+// ─── Playlists ─────────────────────────────────────────────────────────────────
 
-async function handlePlaylist(container: Container): Promise<ShellWorkflowResult> {
+async function handlePlaylists(container: Container): Promise<ShellWorkflowResult> {
+  const { durablePlaylistService, queueService } = container;
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Playlists" });
+
+  while (true) {
+    const playlists = durablePlaylistService.listPlaylists();
+
+    type PlaylistAction =
+      | { type: "playlist"; id: string; name: string }
+      | { type: "create" }
+      | { type: "export" }
+      | { type: "import" }
+      | { type: "up-next" }
+      | { type: "back" };
+    const options: ShellOption<PlaylistAction>[] = [
+      ...playlists.map((playlist) => ({
+        value: { type: "playlist" as const, id: playlist.id, name: playlist.name },
+        label: playlist.name,
+        detail: playlist.description,
+      })),
+      { value: { type: "create" as const }, label: "Create empty playlist" },
+      ...(container.featureFlags.playlistSharing
+        ? [
+            {
+              value: { type: "export" as const },
+              label: "Export playlist",
+              detail: "Write a safe Kunai playlist JSON file",
+            },
+            {
+              value: { type: "import" as const },
+              label: "Import playlist",
+              detail: "Read a Kunai playlist JSON file from the exchange folder",
+            },
+          ]
+        : []),
+      {
+        value: { type: "up-next" as const },
+        label: "Open Up Next",
+        detail: "Manage the current playback order",
+      },
+      { value: { type: "back" as const }, label: "Back" },
+    ];
+
+    const picked = await chooseFromListShell({
+      title: "Playlists",
+      subtitle:
+        playlists.length > 0
+          ? `${playlists.length} saved playlist${playlists.length === 1 ? "" : "s"}`
+          : "No saved playlists yet. Save Up Next as a playlist to start.",
+      actionContext,
+      options,
+    });
+
+    if (!picked || picked.type === "back") return "handled";
+
+    if (picked.type === "up-next") {
+      return handleUpNext(container);
+    }
+
+    if (picked.type === "create") {
+      const playlist = durablePlaylistService.createPlaylist(
+        `Playlist ${new Date().toISOString().slice(0, 10)}`,
+      );
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Created playlist "${playlist.name}".`,
+      });
+      continue;
+    }
+
+    if (picked.type === "export") {
+      await exportDurablePlaylist(container, actionContext);
+      continue;
+    }
+
+    if (picked.type === "import") {
+      await importDurablePlaylist(container, actionContext);
+      continue;
+    }
+
+    const itemAction = await chooseFromListShell({
+      title: picked.name,
+      subtitle: "Saved playlist",
+      actionContext,
+      options: [
+        {
+          value: "load" as const,
+          label: "Load into Up Next",
+          detail: "Append playlist items without autoplaying",
+        },
+        {
+          value: "rename" as const,
+          label: "Rename playlist",
+        },
+        {
+          value: "delete" as const,
+          label: "Delete playlist",
+          detail: "Remove this durable playlist and its saved items",
+        },
+        { value: "export" as const, label: "Export playlist" },
+        { value: "back" as const, label: "Back" },
+      ],
+    });
+
+    if (itemAction === "load") {
+      const loaded = durablePlaylistService.loadIntoQueue(queueService, picked.id);
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          loaded > 0
+            ? `Loaded ${loaded} item(s) from "${picked.name}" into Up Next.`
+            : "Selected playlist is empty.",
+      });
+    } else if (itemAction === "rename") {
+      const nextName = `Playlist ${new Date().toISOString().slice(0, 10)}`;
+      const renamed = durablePlaylistService.renamePlaylist(picked.id, nextName);
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: `Renamed playlist to "${renamed.name}".`,
+      });
+    } else if (itemAction === "delete") {
+      const confirm = await chooseFromListShell({
+        title: `Delete "${picked.name}"?`,
+        subtitle: "This removes the durable playlist only, not Watchlist or Up Next.",
+        actionContext,
+        options: [
+          { value: true, label: "Delete playlist" },
+          { value: false, label: "Keep playlist" },
+        ],
+      });
+      if (confirm) {
+        durablePlaylistService.deletePlaylist(picked.id);
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: `Deleted playlist "${picked.name}".`,
+        });
+      }
+    } else if (itemAction === "export") {
+      await exportDurablePlaylist(container, actionContext);
+    }
+  }
+}
+
+// ─── Up Next ───────────────────────────────────────────────────────────────────
+
+async function handleUpNext(container: Container): Promise<ShellWorkflowResult> {
   const { queueService, listService } = container;
-  const actionContext = buildPickerActionContext({ container, taskLabel: "Up Next Queue" });
+  const actionContext = buildPickerActionContext({ container, taskLabel: "Up Next" });
 
   while (true) {
     const status = queueService.getStatus();
@@ -2170,7 +2350,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     const subtitle =
       all.length > 0
         ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
-        : "Up Next Queue is empty. Add titles via /playlist-add or refill from watchlist.";
+        : "Up Next is empty. Add titles via /playlist-add or refill from Watchlist.";
 
     const firstUnplayedId = all.find((i) => !i.playedAt)?.id;
 
@@ -2218,8 +2398,8 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
         ? [
             {
               value: { type: "snapshot-queue" as const },
-              label: "Save queue as durable playlist",
-              detail: "Create a shareable playlist from the current queue identities",
+              label: "Save Up Next as playlist",
+              detail: "Create a durable playlist from the current Up Next identities",
             },
           ]
         : []),
@@ -2229,12 +2409,12 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
         ? [
             {
               value: { type: "export-durable" as const },
-              label: "Export durable playlist",
+              label: "Export playlist",
               detail: "Write a safe Kunai playlist JSON file",
             },
             {
               value: { type: "import-durable" as const },
-              label: "Import durable playlist",
+              label: "Import playlist",
               detail: "Read a Kunai playlist JSON file from the playlist exchange folder",
             },
           ]
@@ -2249,7 +2429,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     ];
 
     const picked = await chooseFromListShell({
-      title: `Up Next Queue · ${status.unplayedCount} up next`,
+      title: `Up Next · ${status.unplayedCount} queued`,
       subtitle,
       actionContext,
       options,
@@ -2269,7 +2449,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     if (picked.type === "snapshot-queue") {
       const playlist = container.durablePlaylistService.createPlaylist(
         `Queue ${new Date().toISOString().slice(0, 10)}`,
-        "Saved from the runtime queue",
+        "Saved from Up Next",
       );
       for (const item of all) {
         container.durablePlaylistService.addItem(playlist.id, {
@@ -2283,7 +2463,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
       }
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: `Saved ${all.length} queue items to "${playlist.name}".`,
+        note: `Saved ${all.length} Up Next item(s) to "${playlist.name}".`,
       });
       continue;
     }

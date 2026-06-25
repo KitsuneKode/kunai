@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
 
+import { resolveBrowseMediaAction } from "@/app-shell/keybinding-runtime";
 import {
   KEYBINDINGS,
+  bindingForCommand,
   bindingKeys,
   bindingsForScope,
   buildFooterActionsFromBindings,
+  commandBackedBindingsForScope,
   footerHints,
   footerKeyFromBinding,
   formatChord,
@@ -115,6 +118,34 @@ test("buildFooterActionsFromBindings preserves display keys and appends the comm
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
   ]);
+});
+
+test("matchBinding matches browse watchlist and follow chords", () => {
+  expect(matchBinding("browse", "w", {})?.id).toBe("browse-watchlist");
+  expect(matchBinding("browse", "W", { shift: true })?.id).toBe("browse-follow");
+  expect(matchBinding("browse", "q", {})?.id).toBe("browse-queue");
+});
+
+test("bindingForCommand links stable slash commands to browse shortcuts", () => {
+  expect(bindingForCommand("bookmark")?.id).toBe("browse-watchlist");
+  expect(bindingForCommand("follow")?.id).toBe("browse-follow");
+  expect(bindingForCommand("up-next")?.id).toBe("queue-open");
+  expect(resolveBrowseMediaAction(bindingForCommand("bookmark")!)).toBe("add-to-watchlist");
+  expect(resolveBrowseMediaAction(bindingForCommand("follow")!)).toBe("follow");
+});
+
+test("browse Up Next labels avoid legacy queue copy", () => {
+  const queue = KEYBINDINGS.find((binding) => binding.id === "browse-queue");
+  const historyQueue = KEYBINDINGS.find((binding) => binding.id === "history-queue");
+  expect(queue?.label).toContain("Up Next");
+  expect(historyQueue?.hintLabel).toBe("up next");
+});
+
+test("commandBackedBindingsForScope exposes browse parity bindings", () => {
+  const ids = commandBackedBindingsForScope("browse").map((binding) => binding.id);
+  expect(ids).toContain("browse-watchlist");
+  expect(ids).toContain("browse-follow");
+  expect(ids).toContain("browse-queue");
 });
 
 test("footerKeyFromBinding maps Enter chords to enter", () => {

@@ -68,6 +68,8 @@ The app should feel like one cockpit, not a sequence of separate mini-tools.
 - `q` is reserved for quitting from root contexts
 - high-frequency actions get direct keys
 - lower-frequency actions can live behind an explicit leader mode if needed
+- `/provider` is a stable surface for changing provider; it should not be hidden under diagnostics
+- `/playlists` means durable collections, `/up-next` means runtime playback order, and `/downloads` means download jobs
 
 ### Minimal Footer and UI Density
 
@@ -156,8 +158,14 @@ The app should feel like one cockpit, not a sequence of separate mini-tools.
 
 - continue watching
 - watch history
+- Watchlist for saved-later intent
+- durable Playlists for named collections and safe identity-only exchange
+- Up Next for current playback order and recoverable runtime intent
+- Follow, Unfollow, and Mute for release attention
 - local usage stats
 - future export and sync hooks
+
+The personal layer should keep one meaning per noun. Bookmark is a quick Watchlist verb, not a separate product surface. Favorites, Sync, Random, Surprise, and advanced repair commands should stay experimental or secondary until their product role is strong enough for the default command palette.
 
 ### Future integrations
 

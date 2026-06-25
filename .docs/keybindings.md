@@ -12,6 +12,8 @@ visibly different.
 ## Principles
 
 - `/` opens commands anywhere the current surface supports command entry.
+- Stable command nouns are `/watchlist`, `/playlists`, `/up-next`, `/downloads`, `/provider`, `/follow`, `/unfollow`, and `/mute`.
+- `/playlist` and `/pl` are compatibility aliases for `/playlists`; `/queue` is a compatibility alias for `/up-next`.
 - `?` opens help on non-text playback and panel surfaces. In focused search or
   filter fields, use `/help` so `?` can still be typed normally.
 - `Esc` closes the top overlay or picker first; in post-playback it returns to
@@ -39,36 +41,43 @@ visibly different.
 
 ## Browse And Search
 
-| Key       | Action                                |
-| --------- | ------------------------------------- |
-| `Enter`   | Open selected result                  |
-| `↑` / `↓` | Move selection                        |
-| `Tab`     | Switch series/anime mode              |
-| `/`       | Open command palette                  |
-| `Esc`     | Clear/back depending on focused state |
+| Key       | Action                                                                            |
+| --------- | --------------------------------------------------------------------------------- |
+| `Enter`   | Open selected result                                                              |
+| `↑` / `↓` | Move selection                                                                    |
+| `Tab`     | Switch series/anime mode                                                          |
+| `/`       | Open command palette                                                              |
+| `q`       | Add selected result to Up Next when the result list, not text input, owns focus   |
+| `w`       | Add selected result to Watchlist when the result list, not text input, owns focus |
+| `Shift+W` | Follow selected title when the result list, not text input, owns focus            |
+| `Shift+Q` | Open Up Next when the result list, not text input, owns focus                     |
+| `Esc`     | Clear/back depending on focused state                                             |
+
+Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
 
 ## Active Playback
 
 These keys are available while `mpv` is active and the shell is supervising it.
 
-| Key       | Action                                                                               |
-| --------- | ------------------------------------------------------------------------------------ |
-| `q`       | Stop playback and enter post-playback controls                                       |
-| `Shift+S` | Stop playback and return to search                                                   |
-| `n`       | Next episode, starting from the beginning with mpv resume prompt when applicable     |
-| `p`       | Previous episode, starting from the beginning with mpv resume prompt when applicable |
-| `a`       | Pause/resume autoplay for the current chain                                          |
-| `u`       | Pause/resume autoskip for the current title/session                                  |
-| `e`       | Open episode picker without changing episode until selection is confirmed            |
-| `k`       | Open combined stream picker without changing stream until selection is confirmed     |
-| `o`       | Open source picker without changing source until selection is confirmed              |
-| `v`       | Open quality picker without changing quality until selection is confirmed            |
-| `f`       | Try fallback provider when available                                                 |
-| `r`       | Recover current playback                                                             |
-| `s`       | Reload subtitles                                                                     |
-| `b`       | Manually skip the currently offered timing segment                                   |
-| `m`       | Temporarily show runtime memory/health panel                                         |
-| `x`       | Toggle stop-after-current when available                                             |
+| Key         | Action                                                                               |
+| ----------- | ------------------------------------------------------------------------------------ |
+| `q`         | Stop playback and enter post-playback controls                                       |
+| `Shift+S`   | Stop playback and return to search                                                   |
+| `n`         | Next episode, starting from the beginning with mpv resume prompt when applicable     |
+| `p`         | Previous episode, starting from the beginning with mpv resume prompt when applicable |
+| `a`         | Pause/resume autoplay for the current chain                                          |
+| `u`         | Pause/resume autoskip for the current title/session                                  |
+| `e`         | Open episode picker without changing episode until selection is confirmed            |
+| `k`         | Open combined stream picker without changing stream until selection is confirmed     |
+| `o`         | Open source picker without changing source until selection is confirmed              |
+| `v`         | Open quality picker without changing quality until selection is confirmed            |
+| `f`         | Try fallback provider when available                                                 |
+| `/provider` | Open provider picker without changing provider until selection is confirmed          |
+| `r`         | Recover current playback                                                             |
+| `s`         | Reload subtitles                                                                     |
+| `b`         | Manually skip the currently offered timing segment                                   |
+| `m`         | Temporarily show runtime memory/health panel                                         |
+| `x`         | Toggle stop-after-current when available                                             |
 
 `Shift+S` is intentionally uppercase because lowercase `s` reloads subtitles
 during active playback. Lowercase `g` is not used for this action because `g`
@@ -88,26 +97,27 @@ already opens settings in the playback loading/resolving shell.
 
 ## Post-Playback
 
-| Key   | Action                                                             |
-| ----- | ------------------------------------------------------------------ |
-| `/`   | Open command palette                                               |
-| `n`   | Next episode                                                       |
-| `p`   | Previous episode                                                   |
-| `c`   | Continue from saved point when resumable                           |
-| `r`   | Replay from start with mpv resume prompt available when applicable |
-| `e`   | Episode picker                                                     |
-| `k`   | Streams                                                            |
-| `o`   | Source                                                             |
-| `v`   | Quality                                                            |
-| `f`   | Fallback provider                                                  |
-| `a`   | Toggle autoplay                                                    |
-| `d`   | Download current episode                                           |
-| `i`   | Recommendation pick actions, when the rail is visible              |
-| `1-3` | Recommendation pick actions, when the rail is visible              |
-| `?`   | Help                                                               |
-| `s`   | Fresh search                                                       |
-| `q`   | Quit                                                               |
-| `Esc` | Back to previous results                                           |
+| Key         | Action                                                             |
+| ----------- | ------------------------------------------------------------------ |
+| `/`         | Open command palette                                               |
+| `n`         | Next episode                                                       |
+| `p`         | Previous episode                                                   |
+| `c`         | Continue from saved point when resumable                           |
+| `r`         | Replay from start with mpv resume prompt available when applicable |
+| `e`         | Episode picker                                                     |
+| `k`         | Streams                                                            |
+| `o`         | Source                                                             |
+| `v`         | Quality                                                            |
+| `f`         | Fallback provider                                                  |
+| `/provider` | Provider picker                                                    |
+| `a`         | Toggle autoplay                                                    |
+| `d`         | Download current episode                                           |
+| `i`         | Recommendation pick actions, when the rail is visible              |
+| `1-3`       | Recommendation pick actions, when the rail is visible              |
+| `?`         | Help                                                               |
+| `s`         | Fresh search                                                       |
+| `q`         | Quit                                                               |
+| `Esc`       | Back to previous results                                           |
 
 ## Pickers
 

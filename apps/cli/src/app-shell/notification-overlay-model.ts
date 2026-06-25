@@ -12,8 +12,10 @@ const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
   "queue-end",
   "download",
   "follow",
+  "unfollow",
   "mute",
-  "add-to-playlist",
+  "add-to-watchlist",
+  "add-to-up-next",
   "play-now",
   "open-details",
   "dismiss",
@@ -97,8 +99,10 @@ function getNotificationActionLabel(action: NotificationActionId): string {
   if (action === "dismiss") return "Dismiss";
   if (action === "play-now") return "Play now";
   if (action === "open-details") return "Open details";
-  if (action === "add-to-playlist") return "Save to playlist";
+  if (action === "add-to-watchlist") return "Add to Watchlist";
+  if (action === "add-to-up-next") return "Add to Up Next";
   if (action === "follow") return "Follow releases";
+  if (action === "unfollow") return "Unfollow releases";
   if (action === "mute") return "Mute release notices";
   return "Run action";
 }
@@ -114,8 +118,10 @@ function getNotificationActionDetail(action: NotificationActionId): string {
   if (action === "dismiss") return "Hide this notice";
   if (action === "play-now") return "Start playback after explicit confirmation when needed";
   if (action === "open-details") return "Open local details for this notice";
-  if (action === "add-to-playlist") return "Save this item to a durable playlist";
+  if (action === "add-to-watchlist") return "Save this item to your Watchlist";
+  if (action === "add-to-up-next") return "Add this item to the end of Up Next";
   if (action === "follow") return "Track future releases for this title";
+  if (action === "unfollow") return "Stop explicit release tracking without muting";
   if (action === "mute") return "Stop future release notices for this title";
   return "Run this action";
 }

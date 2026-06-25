@@ -2,6 +2,12 @@
 
 Kunai playlists are durable, shareable taste artifacts. They are separate from the runtime queue.
 
+Current command surface:
+
+- `/playlists` opens durable saved playlists.
+- `/playlist` and `/pl` are compatibility aliases for `/playlists`.
+- `/up-next` opens the current playback order.
+
 ## Internal Storage
 
 Durable playlist rows live in SQLite and store:
@@ -16,11 +22,13 @@ They do not store playback progress internally. Progress is projected from watch
 
 ## Import And Export
 
-Use `/playlist` to:
+Use `/playlists` to:
 
-- save the current runtime queue as a durable playlist
+- load a durable playlist into Up Next
 - export a durable playlist to Kunai's playlist exchange folder
 - import a Kunai playlist JSON file from the same folder
+
+Use `/up-next` to save the current runtime order as a durable playlist.
 
 The exchange folder is `playlists/` under Kunai's app data directory.
 
@@ -41,8 +49,10 @@ Exports must never include:
 - auth tokens
 - local file paths
 
-Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses or replace the current queue.
+Imported unresolved items are inert until explicitly resolved. They must not autoplay from guesses or replace the current Up Next order.
 
 ## Service Boundary
 
 The durable playlist service creates playlist rows, appends identity-only items, and exports safe Kunai playlist documents. It projects progress from history at export or render time instead of copying mutable progress into playlist storage.
+
+`add-to-playlist` must choose a specific durable playlist. It must not silently write to Watchlist. Watchlist has its own explicit actions and aliases.

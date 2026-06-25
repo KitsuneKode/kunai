@@ -1,6 +1,8 @@
-# Lists, Playlist, Stats, and Sync — Implementation Plan
+# Lists, Up Next, Stats, and Sync — Historical Implementation Plan
 
-Status: planned (v2 — grilled and locked 2026-05-17)
+Status: historical / partially superseded
+
+> **Vocabulary supersession (2026-06-25):** Decision #1 below is no longer current product truth. Kunai now uses **Playlists** for durable named collections and **Up Next** for runtime playback order. `/playlist` and `/pl` are compatibility aliases for `/playlists`; `/queue` is a compatibility alias for `/up-next`; `/downloads` remains download jobs. See [ADR 0001](../.docs/adr/0001-personal-media-vocabulary.md) and [plan-implementation-truth.md](./plan-implementation-truth.md).
 
 > **For agentic workers:** Steps use checkbox (`- [ ]`) syntax. Each task is self-contained with tests before implementation. Read the Design Decisions table before touching any file — several assumptions in the original plan were corrected.
 
@@ -8,20 +10,20 @@ Status: planned (v2 — grilled and locked 2026-05-17)
 
 ## Design Decisions (Grilled and Locked)
 
-| #   | Decision               | Choice                                                                                                                                                                                                           | Reason                                                                                                                                    |
-| --- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Naming: playback queue | **`/playlist`** everywhere — CLI, commands, UI                                                                                                                                                                   | `/queue` is already the alias for download jobs. Two "queues" would create an unresolvable collision.                                     |
-| 2   | Stats data source      | **`history_progress` watch ledger** — `watched_seconds` (engaged time), `completed` / `completed_at`, `last_watched_at`; `playback_events` instrumented from mpv ticks                                           | Stats v1 used duration/position overcount; ledger + events landed in migration `024` (2026-06).                                           |
-| 3   | AniList OAuth          | **Localhost callback server** (temp `Bun.serve` on a random port, 60s window) + **PAT paste fallback**                                                                                                           | AniList uses authorization code flow, not device code. No redirect receiver = no token. Localhost is the clean terminal-CLI approach.     |
-| 4   | Token storage          | **`~/.config/kunai/sync-tokens.json`** written via `writeAtomicSecretJson` (`chmod 0o600` after rename)                                                                                                          | `config.json` uses default umask (typically 644). Auth tokens grant write access to external accounts — they need a restricted file.      |
-| 5   | `w` key in BrowseShell | **No interactive toggle** — search input is always live, `w` would conflict. **Read-only `[wl]` badge** on rows. Full watchlist actions in detail view, post-playback, `/playlist`, and command palette (`/wl`). | Can't have plain letter shortcuts in a shell with a live text input.                                                                      |
-| 6   | Smart playlist refill  | **Non-blocking** — SQLite sources fill synchronously (< 1 ms), discover recommendations fetch in background (fire-and-forget). Shows `◌ finding more…` spinner.                                                  | Episode-end → next episode must have zero added latency. Discover is a nice-to-have top-up, not a dependency.                             |
-| 7   | Calendar scope in v1   | Watchlist badge + add-to-playlist action fall out naturally once `ListService` exists. **Week navigation (`[` / `]`) landed 2026-06.** Tracked-only tab + day filter in calendar UI.                             | Calendar infrastructure (day headers, group labels, sort) is already solid. Integration is trivial; navigation needs its own design pass. |
-| 8   | Streak definition      | **`completed = 1` OR `position_seconds ≥ 300` on a given UTC day**                                                                                                                                               | Rewards real watching without counting accidental 10-second opens. Generous enough for long paused episodes.                              |
-| 9   | Playlist persistence   | **SQLite-persisted** (`playlist_queue` table). Shows "last active X days ago" if stale, offers `[c] clear` in one keypress.                                                                                      | Playlist should survive app restart (pick up where you left off). Staleness UX prevents confusing old queues.                             |
-| 10  | Playlist auto-advance  | **5-second countdown cancel window** — `"Next: Title S01E04 in 5s  [space] cancel"`. Respects `toggle-autoplay` — if autoplay is off, banner waits indefinitely for Enter.                                       | Identical to Netflix/Crunchyroll pattern. No surprise advances, but no friction either.                                                   |
-| 11  | Sync ledger            | **Skipped in v1** — push-on-demand with no durable queue. Failures logged to diagnostics, header indicator turns amber.                                                                                          | Build the UX and prove value first; harden with a ledger in v2 when failure patterns are known.                                           |
-| 12  | Stats progress bars    | **Completed episodes + `watched_seconds`**, proportional bars; completion-rate and provider breakdown from ledger. No series total denominator.                                                                  | Total episode count per show from TMDB/AniList is still out of scope; engaged seconds fix overcount from duration fallback.               |
+| #   | Decision               | Choice                                                                                                                                                                                                                                                         | Reason                                                                                                                                                                        |
+| --- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Naming: playback queue | **Superseded.** Current product vocabulary is `/up-next` for runtime playback order, `/playlists` for durable collections, and `/downloads` for download jobs. Legacy `/playlist` remains an alias for `/playlists`; `/queue` remains an alias for `/up-next`. | The original `/playlist` decision avoided a download-job collision but blurred durable collections with playback order. ADR 0001 resolves that with one noun per user intent. |
+| 2   | Stats data source      | **`history_progress` watch ledger** — `watched_seconds` (engaged time), `completed` / `completed_at`, `last_watched_at`; `playback_events` instrumented from mpv ticks                                                                                         | Stats v1 used duration/position overcount; ledger + events landed in migration `024` (2026-06).                                                                               |
+| 3   | AniList OAuth          | **Localhost callback server** (temp `Bun.serve` on a random port, 60s window) + **PAT paste fallback**                                                                                                                                                         | AniList uses authorization code flow, not device code. No redirect receiver = no token. Localhost is the clean terminal-CLI approach.                                         |
+| 4   | Token storage          | **`~/.config/kunai/sync-tokens.json`** written via `writeAtomicSecretJson` (`chmod 0o600` after rename)                                                                                                                                                        | `config.json` uses default umask (typically 644). Auth tokens grant write access to external accounts — they need a restricted file.                                          |
+| 5   | `w` key in BrowseShell | **No interactive toggle** — search input is always live, `w` would conflict. **Read-only `[wl]` badge** on rows. Full watchlist actions in detail view, post-playback, `/playlist`, and command palette (`/wl`).                                               | Can't have plain letter shortcuts in a shell with a live text input.                                                                                                          |
+| 6   | Smart playlist refill  | **Non-blocking** — SQLite sources fill synchronously (< 1 ms), discover recommendations fetch in background (fire-and-forget). Shows `◌ finding more…` spinner.                                                                                                | Episode-end → next episode must have zero added latency. Discover is a nice-to-have top-up, not a dependency.                                                                 |
+| 7   | Calendar scope in v1   | Watchlist badge + Up Next action fall out naturally once `ListService` exists. **Week navigation (`[` / `]`) landed 2026-06.** Tracked-only tab + day filter in calendar UI.                                                                                   | Calendar infrastructure (day headers, group labels, sort) is already solid. Integration is trivial; navigation needs its own design pass.                                     |
+| 8   | Streak definition      | **`completed = 1` OR `position_seconds ≥ 300` on a given UTC day**                                                                                                                                                                                             | Rewards real watching without counting accidental 10-second opens. Generous enough for long paused episodes.                                                                  |
+| 9   | Playlist persistence   | **SQLite-persisted** (`playlist_queue` table). Shows "last active X days ago" if stale, offers `[c] clear` in one keypress.                                                                                                                                    | Playlist should survive app restart (pick up where you left off). Staleness UX prevents confusing old queues.                                                                 |
+| 10  | Playlist auto-advance  | **5-second countdown cancel window** — `"Next: Title S01E04 in 5s  [space] cancel"`. Respects `toggle-autoplay` — if autoplay is off, banner waits indefinitely for Enter.                                                                                     | Identical to Netflix/Crunchyroll pattern. No surprise advances, but no friction either.                                                                                       |
+| 11  | Sync ledger            | **Skipped in v1** — push-on-demand with no durable queue. Failures logged to diagnostics, header indicator turns amber.                                                                                                                                        | Build the UX and prove value first; harden with a ledger in v2 when failure patterns are known.                                                                               |
+| 12  | Stats progress bars    | **Completed episodes + `watched_seconds`**, proportional bars; completion-rate and provider breakdown from ledger. No series total denominator.                                                                                                                | Total episode count per show from TMDB/AniList is still out of scope; engaged seconds fix overcount from duration fallback.                                                   |
 
 ---
 
@@ -31,7 +33,7 @@ Status: planned (v2 — grilled and locked 2026-05-17)
 @kunai/storage (new tables + repositories)
   009_data_lists migration  →  lists, list_items, playlist_queue tables
   repositories/lists.ts     →  ListRepository
-  repositories/playlist.ts  →  PlaylistRepository
+  repositories/queue.ts     →  QueueRepository / QueueService adapters
 
 apps/cli/src/infra/fs/
   atomic-write.ts           →  + writeAtomicSecretJson (chmod 0o600)
@@ -42,7 +44,7 @@ apps/cli/src/services/persistence/
 apps/cli/src/domain/lists/
   types.ts                  →  shared types (List, ListItem, PlaylistItem, ListKind)
   ListService.ts            →  CRUD + findByTitleId, watchlist toggle
-  PlaylistService.ts        →  enqueue, dequeue, advance, smartRefill, staleness
+  QueueService.ts           →  Up Next enqueue, dequeue, advance, smartRefill, staleness
   StatsService.ts           →  aggregation from history_progress (streak, heatmap, totals)
   StatsFormatter.ts         →  ANSI heatmap, progress bars, digest, CSV/JSON
 
@@ -54,16 +56,16 @@ apps/cli/src/services/sync/
 
 apps/cli/src/app/
   browse-option-mappers.ts  →  + watchlist badge on search rows (read-only)
-  calendar-results.ts       →  + watchlist badge + playlist action on calendar rows
+  calendar-results.ts       →  + watchlist badge + Up Next action on calendar rows
 
 apps/cli/src/app-shell/
-  domain/session/command-registry.ts  →  + wl, playlist, stats, sync command IDs
-  workflows.ts              →  + wl / playlist / stats / sync command handlers
-  ink-shell.tsx             →  + post-playback watchlist/playlist/fav actions
-                                + 5-second countdown banner (PlaylistAdvanceBanner)
+  domain/session/command-registry.ts  →  + watchlist, playlists, up-next, stats, sync command IDs
+  workflows.ts              →  + watchlist / playlists / up-next / stats / sync command handlers
+  ink-shell.tsx             →  + post-playback watchlist/up-next/fav actions
+                                + 5-second countdown banner (Up Next advance banner)
                                 + streak + sync health indicator in header
 
-apps/cli/src/app/PlaybackPhase.ts     →  + playlist advance hook after history save
+apps/cli/src/app/PlaybackPhase.ts     →  + Up Next advance hook after history save
                                           + first-episode sync nudge (one-time)
 apps/cli/src/container.ts             →  wire new services
 apps/cli/src/services/persistence/ConfigService.ts  →  + sync config flags (no tokens)
@@ -109,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_list_items_list_id
 CREATE INDEX IF NOT EXISTS idx_list_items_title_id
   ON list_items(title_id, added_at DESC);
 
--- Playlist queue (playback order, not download jobs)
+-- Up Next queue (playback order, not download jobs)
 CREATE TABLE IF NOT EXISTS playlist_queue (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -450,6 +452,8 @@ sync: {
 
 ### Task 2.1: New command IDs
 
+> **Current command truth:** use `watchlist`, `playlists`, `up-next`, `bookmark`, `follow`, `unfollow`, and `mute`. Legacy `wl`, `playlist`, `pl`, and `queue` are aliases, not separate product surfaces.
+
 **Files:**
 
 - Modify: `apps/cli/src/domain/session/command-registry.ts`
@@ -459,16 +463,17 @@ sync: {
   | "wl"          // watchlist
   | "wl-add"      // add focused item to watchlist (detail/post-playback context)
   | "wl-remove"   // remove from watchlist
-  | "playlist"    // show playlist
-  | "playlist-add" // add to playlist
+  | "playlists"   // durable named collections
+  | "up-next"     // runtime playback order
+  | "playlist-add" // legacy command id; displayed as Add to Up Next
   | "stats"       // stats overview
   | "sync"        // sync status / push / pull
   | "sync-connect-anilist"
   | "sync-connect-tmdb"
   ```
 - [ ] Add definitions (label, aliases, description) for each
-- [ ] Add `"wl"`, `"playlist"`, `"stats"`, `"sync"` to `COMMAND_CONTEXTS.rootOverlay` and `postPlayback`
-- [ ] Add `"wl-add"`, `"playlist-add"` to `COMMAND_CONTEXTS.activePlayback` and `postPlayback`
+- [ ] Add `watchlist`, `playlists`, `up-next`, `stats`, `sync` to appropriate command contexts
+- [ ] Add `bookmark` and `playlist-add` to current-title / playback contexts
 - [ ] Update `command-registry-contexts.test.ts` to match new order
 - [ ] Run `bun run test apps/cli/test/unit/domain/session/`
 
@@ -500,7 +505,9 @@ sync: {
 
 ---
 
-### Task 2.3: `/playlist` command workflows
+### Task 2.3: `/up-next` command workflows
+
+> **Current command truth:** `/up-next` opens runtime playback order. `/playlist` opens durable Playlists through its compatibility alias.
 
 **Files:**
 
@@ -515,7 +522,8 @@ sync: {
 - [ ] `addToPlaylist(container, result, source)`:
   - Calls `playlistService.enqueue(...)`, dispatches feedback note
 
-- [ ] Wire `/playlist` command → `openPlaylistOverlay`
+- [ ] Wire `/up-next` command → Up Next overlay/workflow
+- [ ] Keep `/queue` as a compatibility alias for `/up-next`
 - [ ] Run `bun run typecheck`
 
 ---
@@ -562,7 +570,7 @@ const wlBadge = inWatchlist ? "wl✓" : null;
 
 ---
 
-### Task 2.6: Calendar watchlist badge + playlist action
+### Task 2.6: Calendar Watchlist badge + Up Next action
 
 **Files:**
 
@@ -571,13 +579,13 @@ const wlBadge = inWatchlist ? "wl✓" : null;
 - [ ] Pass `listService` into `loadCalendarResults`; add `inWatchlist` flag to each row via `displayBadge` field
 - [ ] In `toCalendarSearchResult`, enrich `previewFacts` with:
   - "In watchlist" fact (tone: success) when `inWatchlist`
-  - "Add to playlist" action hint in the detail overlay footer
-- [ ] Confirm `[w] wl` and `[q] playlist` keys work in the detail overlay when opened from calendar (detail overlay already handles letter keys since it has no text input)
+  - "Add to Up Next" action hint in the detail overlay footer
+- [ ] Confirm Watchlist and Up Next actions work in the detail overlay when opened from calendar
 - [ ] Run `bun run typecheck`
 
 ---
 
-### Task 2.7: Detail view watchlist + playlist actions
+### Task 2.7: Detail view Watchlist + Up Next actions
 
 **Files:**
 
@@ -586,13 +594,14 @@ const wlBadge = inWatchlist ? "wl✓" : null;
 - [ ] In the detail view picker (opened from search result Enter), add actions:
   - `w` → `toggleWatchlist` → feedback note
   - `W` → `openListPicker` (multi-list)
-  - `q` → `addToPlaylist` → feedback note
-  - Footer updates: `[p] play  [w] wl  [q] playlist  [i] info  [b] back`
+  - Add to Up Next → feedback note
+  - Add to a durable playlist → opens a playlist picker
+  - Footer updates: play, Watchlist, Up Next, info, back
 - [ ] Run `bun run typecheck`
 
 ---
 
-### Task 2.8: Post-playback watchlist + playlist + favorites actions
+### Task 2.8: Post-playback Watchlist + Up Next + experimental Favorites actions
 
 **Files:**
 
@@ -601,21 +610,21 @@ const wlBadge = inWatchlist ? "wl✓" : null;
 - [ ] In the post-playback options picker, add:
   - `[f] add to favorites` — calls `listService.addToList({ listId: "favorites", ... })`
   - `[w] add to watchlist` / `[r] remove from watchlist` — conditional on current watchlist state
-  - `[q] add to playlist` — enqueues current title's next episode
+  - Add to Up Next — enqueues current title's next episode
 - [ ] Run `bun run typecheck`
 
 ---
 
-## Phase 3 — Playlist Auto-Advance
+## Phase 3 — Up Next Auto-Advance
 
-### Task 3.1: Wire playlist into `PlaybackPhase`
+### Task 3.1: Wire Up Next into playback continuation
 
 **Files:**
 
 - Modify: `apps/cli/src/app/PlaybackPhase.ts`
 
-- [ ] After history save at episode end, check `container.playlistService.getQueue().length > 0`
-- [ ] If playlist has items AND `config.autoNext` is true:
+- [ ] After history save at episode end, check `container.queueService.getStatus()` / next unplayed item
+- [ ] If Up Next has items AND `config.autoNext` is true:
   - Show 5-second countdown banner: `"Next: {title} S{s}E{e} in 5s  ·  [space] cancel  [enter] play now"`
   - Use `setTimeout(5000)` with `clearTimeout` on any keypress
   - On timeout: call `playlistService.advance()` → resolve next episode
@@ -936,34 +945,34 @@ Kunai  🔥 14d · sync✓                          ready
 
 ## Key Files Map
 
-| File                                                   | Action                                       |
-| ------------------------------------------------------ | -------------------------------------------- |
-| `packages/storage/src/migrations.ts`                   | Add `009_data_lists`                         |
-| `packages/storage/src/repositories/lists.ts`           | Create                                       |
-| `packages/storage/src/repositories/playlist.ts`        | Create                                       |
-| `apps/cli/src/infra/fs/atomic-write.ts`                | Add `writeAtomicSecretJson`                  |
-| `apps/cli/src/services/persistence/SyncTokenStore.ts`  | Create                                       |
-| `apps/cli/src/domain/lists/types.ts`                   | Create                                       |
-| `apps/cli/src/domain/lists/ListService.ts`             | Create                                       |
-| `apps/cli/src/domain/lists/PlaylistService.ts`         | Create                                       |
-| `apps/cli/src/domain/lists/StatsService.ts`            | Create                                       |
-| `apps/cli/src/domain/lists/StatsFormatter.ts`          | Create                                       |
-| `apps/cli/src/services/sync/types.ts`                  | Create                                       |
-| `apps/cli/src/services/sync/SyncAdapter.ts`            | Create                                       |
-| `apps/cli/src/services/sync/AniListAdapter.ts`         | Create                                       |
-| `apps/cli/src/services/sync/TmdbAdapter.ts`            | Create                                       |
-| `apps/cli/src/services/sync/SyncService.ts`            | Create                                       |
-| `apps/cli/src/app-shell/commands/list-commands.ts`     | Create                                       |
-| `apps/cli/src/app-shell/commands/playlist-commands.ts` | Create                                       |
-| `apps/cli/src/app-shell/commands/stats-commands.ts`    | Create                                       |
-| `apps/cli/src/app-shell/commands/sync-commands.ts`     | Create                                       |
-| `apps/cli/src/domain/session/command-registry.ts`      | Add 8 command IDs                            |
-| `apps/cli/src/app/browse-option-mappers.ts`            | Add `[wl✓]` badge                            |
-| `apps/cli/src/app/calendar-results.ts`                 | Add watchlist badge + playlist action        |
-| `apps/cli/src/app-shell/workflows.ts`                  | Wire all new commands                        |
-| `apps/cli/src/app/PlaybackPhase.ts`                    | Playlist advance + tracker push + sync nudge |
-| `apps/cli/src/app-shell/root-status-summary.ts`        | Streak + sync health                         |
-| `apps/cli/src/app-shell/ink-shell.tsx`                 | Header render + countdown banner             |
-| `apps/cli/src/container.ts`                            | Wire all new services                        |
-| `apps/cli/src/services/persistence/ConfigService.ts`   | Sync config flags + nudge timestamp          |
-| `.plans/roadmap.md`                                    | Mark this plan as in-progress                |
+| File                                                  | Action                                        |
+| ----------------------------------------------------- | --------------------------------------------- |
+| `packages/storage/src/migrations.ts`                  | Add `009_data_lists`                          |
+| `packages/storage/src/repositories/lists.ts`          | Create                                        |
+| `packages/storage/src/repositories/queue.ts`          | Current owner for Up Next persistence         |
+| `apps/cli/src/infra/fs/atomic-write.ts`               | Add `writeAtomicSecretJson`                   |
+| `apps/cli/src/services/persistence/SyncTokenStore.ts` | Create                                        |
+| `apps/cli/src/domain/lists/types.ts`                  | Create                                        |
+| `apps/cli/src/domain/lists/ListService.ts`            | Create                                        |
+| `apps/cli/src/domain/queue/QueueService.ts`           | Current owner for Up Next behavior            |
+| `apps/cli/src/domain/lists/StatsService.ts`           | Create                                        |
+| `apps/cli/src/domain/lists/StatsFormatter.ts`         | Create                                        |
+| `apps/cli/src/services/sync/types.ts`                 | Create                                        |
+| `apps/cli/src/services/sync/SyncAdapter.ts`           | Create                                        |
+| `apps/cli/src/services/sync/AniListAdapter.ts`        | Create                                        |
+| `apps/cli/src/services/sync/TmdbAdapter.ts`           | Create                                        |
+| `apps/cli/src/services/sync/SyncService.ts`           | Create                                        |
+| `apps/cli/src/app-shell/commands/list-commands.ts`    | Create                                        |
+| `apps/cli/src/app-shell/workflows/shell-workflows.ts` | Current owner for Playlists and Up Next flows |
+| `apps/cli/src/app-shell/commands/stats-commands.ts`   | Create                                        |
+| `apps/cli/src/app-shell/commands/sync-commands.ts`    | Create                                        |
+| `apps/cli/src/domain/session/command-registry.ts`     | Add 8 command IDs                             |
+| `apps/cli/src/app/browse-option-mappers.ts`           | Add `[wl✓]` badge                             |
+| `apps/cli/src/app/calendar-results.ts`                | Add Watchlist badge + Up Next action          |
+| `apps/cli/src/app-shell/workflows.ts`                 | Wire all new commands                         |
+| `apps/cli/src/app/PlaybackPhase.ts`                   | Up Next advance + tracker push + sync nudge   |
+| `apps/cli/src/app-shell/root-status-summary.ts`       | Streak + sync health                          |
+| `apps/cli/src/app-shell/ink-shell.tsx`                | Header render + countdown banner              |
+| `apps/cli/src/container.ts`                           | Wire all new services                         |
+| `apps/cli/src/services/persistence/ConfigService.ts`  | Sync config flags + nudge timestamp           |
+| `.plans/roadmap.md`                                   | Mark this plan as in-progress                 |

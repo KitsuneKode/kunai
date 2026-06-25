@@ -1,4 +1,5 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
+import type { AppCommandId } from "@/domain/session/command-registry";
 
 import type { FooterAction, ShellAction } from "./types";
 
@@ -59,6 +60,8 @@ export type KeyBinding = {
    * (handled by another layer — the line editor, the list controller, or mpv).
    */
   readonly helpOnly?: boolean;
+  /** Optional slash-command id for palette / footer / help parity. */
+  readonly commandId?: AppCommandId;
 };
 
 export type KeyHint = {
@@ -104,6 +107,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "global",
     group: "Global",
     footerPriority: 40,
+    commandId: "help",
   },
   {
     id: "back",
@@ -209,18 +213,30 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-queue",
     chord: { input: "q" },
-    label: "Add the highlighted title to the queue",
+    label: "Add the highlighted title to Up Next",
     hintLabel: "up next",
     scope: "browse",
     group: "While browsing",
+    commandId: "playlist-add",
+  },
+  {
+    id: "browse-watchlist",
+    chord: { input: "w" },
+    label: "Add the highlighted title to Watchlist",
+    hintLabel: "watchlist",
+    scope: "browse",
+    group: "While browsing",
+    commandId: "bookmark",
   },
   {
     id: "browse-follow",
-    chord: { input: "w" },
-    label: "Follow the highlighted title",
+    chord: { input: "W", shift: true },
+    display: "Shift+W",
+    label: "Follow releases for the highlighted title",
     hintLabel: "follow",
     scope: "browse",
     group: "While browsing",
+    commandId: "follow",
   },
   {
     id: "browse-trending",
@@ -519,10 +535,12 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "queue-open",
     chord: { input: "Q", shift: true },
     display: "Shift+Q",
-    label: "Open the Up Next queue",
+    label: "Open Up Next",
+    hintLabel: "up next",
     scope: "browse",
     group: "While browsing",
     footerPriority: 45,
+    commandId: "up-next",
   },
   {
     id: "queue-play",
@@ -594,11 +612,12 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "history-queue",
     chord: { input: "q" },
-    label: "Queue the highlighted title",
-    hintLabel: "queue",
+    label: "Add the highlighted title to Up Next",
+    hintLabel: "up next",
     scope: "history",
     group: "History",
     footerPriority: 15,
+    commandId: "playlist-add",
   },
   {
     id: "history-tab",
@@ -756,6 +775,28 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     footerPriority: 30,
   },
 ];
+
+/** First binding linked to a slash-command id (if any). */
+export function bindingForCommand(commandId: AppCommandId): KeyBinding | undefined {
+  return KEYBINDINGS.find((binding) => binding.commandId === commandId);
+}
+
+/** All bindings linked to a slash-command id. */
+export function bindingsForCommand(commandId: AppCommandId): readonly KeyBinding[] {
+  return KEYBINDINGS.filter((binding) => binding.commandId === commandId);
+}
+
+/** Slash-command id linked to a binding, when declared. */
+export function commandForBinding(bindingId: string): AppCommandId | undefined {
+  return KEYBINDINGS.find((binding) => binding.id === bindingId)?.commandId;
+}
+
+/** Live bindings in a scope that declare a command id. */
+export function commandBackedBindingsForScope(scope: KeyScope): readonly KeyBinding[] {
+  return bindingsForScope(scope).filter(
+    (binding) => binding.commandId !== undefined && !binding.helpOnly,
+  );
+}
 
 /** Human-readable chord, e.g. "Esc", "↑", "/", "Ctrl+C". */
 export function formatChord(chord: KeyChord): string {

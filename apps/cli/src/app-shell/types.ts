@@ -50,6 +50,7 @@ export type ShellAction =
   | "share"
   | "bookmark"
   | "follow"
+  | "unfollow"
   | "mute"
   | "mark-watched"
   | "mark-unwatched"
@@ -61,6 +62,8 @@ export type ShellAction =
   | "library"
   | "watchlist"
   | "favorites"
+  | "playlists"
+  | "up-next"
   | "playlist"
   | "playlist-add"
   | "queue-season"
@@ -397,7 +400,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "library":
     case "watchlist":
     case "favorites":
-    case "playlist":
+    case "playlists":
+    case "up-next":
     case "playlist-add":
     case "queue-season":
     case "stats":
@@ -410,6 +414,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "share":
     case "bookmark":
     case "follow":
+    case "unfollow":
     case "mute":
     case "mark-watched":
     case "mark-unwatched":

@@ -347,18 +347,32 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
           placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
-          commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS),
+          commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS, {
+            excludeGroups: ["Experimental"],
+          }),
           idleContext,
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({
-              actionId: "queue-end",
+              actionId: "add-to-up-next",
               item: mediaItemFromSearchResult(result),
               source: "search",
             });
             stateManager.dispatch({
               type: "SET_PLAYBACK_FEEDBACK",
-              note: `Queued ${chooseSearchResultTitle(result, container.config.animeTitlePreference)}.`,
+              note: `Added ${chooseSearchResultTitle(result, container.config.animeTitlePreference)} to Up Next.`,
+            });
+          },
+          onWatchlistSelected: async (result) => {
+            const router = createContainerMediaActionRouter(container);
+            await router.run({
+              actionId: "add-to-watchlist",
+              item: mediaItemFromSearchResult(result),
+              source: "search",
+            });
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Added ${chooseSearchResultTitle(result, container.config.animeTitlePreference)} to Watchlist.`,
             });
           },
           onFollowSelected: async (result) => {
