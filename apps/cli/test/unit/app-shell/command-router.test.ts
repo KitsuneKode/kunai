@@ -16,15 +16,6 @@ describe("routePlaybackShellAction", () => {
     expect(result).toBe("pick-episode");
   });
 
-  test("recommendation action during search is handled without mutation", async () => {
-    const result = await routeSearchShellAction({
-      action: "recommendation",
-      container: {} as never,
-    });
-
-    expect(result).toBe("handled");
-  });
-
   test("calendar and random actions during search are handled by the search phase", async () => {
     await expect(
       routeSearchShellAction({

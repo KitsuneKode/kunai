@@ -28,6 +28,7 @@ import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
+import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
   readLatestHistoryByTitle,
   formatTimestamp,
@@ -74,7 +75,7 @@ import { openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { openProviderPicker } from "./picker-workflows";
-import { runSetupWizard } from "./setup-workflows";
+import { openSetupWizardFromShell } from "./setup-workflows";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -691,34 +692,14 @@ async function openStaticInfoShell({
   });
 }
 
-async function openExternalUrl(url: string): Promise<void> {
-  const commands: readonly [string, readonly string[]][] = [
-    ["xdg-open", [url]],
-    ["open", [url]],
-    ["cmd", ["/c", "start", "", url]],
-  ];
-  for (const [command, args] of commands) {
-    if (!Bun.which(command)) continue;
-    try {
-      const proc = Bun.spawn([command, ...args], { stdout: "ignore", stderr: "ignore" });
-      await proc.exited;
-      return;
-    } catch {
-      // try next opener
-    }
-  }
-}
-
 async function openIssueUrl(
   url = "https://github.com/kitsunekode/kunai/issues/new/choose",
 ): Promise<void> {
-  await openExternalUrl(url);
+  await openExternalUrlAndWait(url);
 }
 
-async function openDocsUrl(
-  url = process.env.KUNAI_DOCS_URL ?? "https://github.com/KitsuneKode/kunai/tree/main/docs",
-): Promise<void> {
-  await openExternalUrl(url);
+async function openDocsUrl(url = defaultKunaiDocsUrl()): Promise<void> {
+  await openExternalUrlAndWait(url);
 }
 
 export function buildPickerActionContext({
@@ -756,6 +737,24 @@ export type ShellWorkflowResult =
 
 type ActionHandler = (container: Container) => Promise<ShellWorkflowResult>;
 
+async function handleTitleControlMenu(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const surface =
+    state.playbackStatus === "playing"
+      ? "playing"
+      : state.playbackStatus === "loading" ||
+          state.playbackStatus === "ready" ||
+          state.playbackStatus === "buffering"
+        ? "loading"
+        : state.activeModals.some((overlay) => overlay.type === "library")
+          ? "library"
+          : "browse";
+  const { openTitleControlMenu } =
+    await import("@/app-shell/title-control/open-title-control-menu");
+  await openTitleControlMenu(container, surface);
+  return "handled";
+}
+
 const actionHandlers: Record<string, ActionHandler | undefined> = {
   quit: (c) => resolveQuitWithDownloadQueue(c),
   continue: (c) => handleContinue(c),
@@ -766,6 +765,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   },
   downloads: (c) => handleLibraryOverlay(c, "queue"),
   library: (c) => handleLibraryOverlay(c, "library"),
+  menu: (c) => handleTitleControlMenu(c),
   help: (c) => handleStaticOverlay(c, "help"),
   docs: async () => {
     await openDocsUrl();
@@ -776,9 +776,9 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   provider: (c) => handleProviderPicker(c),
   settings: (c) => handleSettings(c),
   presence: (c) => handleSettings(c),
-  setup: (c) => {
-    void runSetupWizard({ container: c, force: true });
-    return Promise.resolve("handled");
+  setup: async (container) => {
+    await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
+    return "handled";
   },
   "clear-cache": (c) => handleClearCache(c),
   "reset-provider-health": (c) => handleResetProviderHealth(c),
@@ -815,6 +815,26 @@ export async function handleShellAction({
   const handler = actionHandlers[action];
   if (handler) return handler(container);
   return "unhandled";
+}
+
+/** Close the active overlay (or cancel a picker) before running a workflow command. */
+export async function runShellWorkflowFromOverlay(
+  container: Container,
+  action: ShellAction,
+  options: {
+    readonly cancelPickerId?: string;
+    readonly execute?: (
+      input: Parameters<typeof handleShellAction>[0],
+    ) => ReturnType<typeof handleShellAction>;
+  } = {},
+): Promise<ShellWorkflowResult> {
+  if (options.cancelPickerId) {
+    container.stateManager.dispatch({ type: "CANCEL_PICKER", id: options.cancelPickerId });
+  } else if (container.stateManager.getState().activeModals.length > 0) {
+    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+  }
+  const execute = options.execute ?? handleShellAction;
+  return execute({ action, container });
 }
 
 const withOverlay = async <T>(

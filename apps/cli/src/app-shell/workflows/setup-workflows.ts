@@ -103,3 +103,29 @@ export async function runSetupWizard({
 
   return outcome === "completed" ? "completed" : "skipped";
 }
+
+function closeActiveOverlays(container: Container): void {
+  let guard = 0;
+  while (container.stateManager.getState().activeModals.length > 0 && guard < 32) {
+    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+    guard += 1;
+  }
+}
+
+/** Run setup from a shell command and block until the wizard finishes. */
+export async function openSetupWizardFromShell(
+  container: Container,
+  options: { readonly force?: boolean; readonly closeOverlays?: boolean } = {},
+): Promise<SetupWizardResult> {
+  if (options.closeOverlays ?? true) {
+    closeActiveOverlays(container);
+  }
+
+  const result = await runSetupWizard({ container, force: options.force ?? true });
+  const note =
+    result === "completed" ? "Setup complete." : result === "skipped" ? "Setup skipped." : null;
+  if (note) {
+    container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note });
+  }
+  return result;
+}

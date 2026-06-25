@@ -221,6 +221,11 @@ export async function routeSearchShellAction({
     await openRootOwnedOverlay(container, { type: "settings" });
     return "handled";
   }
+  if (action === "setup") {
+    const { openSetupWizardFromShell } = await import("./workflows/setup-workflows");
+    await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
+    return "handled";
+  }
 
   const result = await handleShellAction({ action, container });
   return result === "quit" ? "quit" : result;
@@ -286,6 +291,11 @@ export async function routePlaybackShellAction({
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
     await openRootOwnedOverlay(container, { type: "settings" });
+    return "handled";
+  }
+  if (action === "setup") {
+    const { openSetupWizardFromShell } = await import("./workflows/setup-workflows");
+    await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
     return "handled";
   }
   if (action === "recommendation") {

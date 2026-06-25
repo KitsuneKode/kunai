@@ -8,12 +8,18 @@ export {
   openSubtitlePicker,
   openTracksPanel,
 } from "./picker-workflows";
-export { confirmProtocolHandoff, runSetupWizard, type SetupWizardResult } from "./setup-workflows";
+export {
+  confirmProtocolHandoff,
+  openSetupWizardFromShell,
+  runSetupWizard,
+  type SetupWizardResult,
+} from "./setup-workflows";
 export {
   buildPickerActionContext,
   downloadSelectedResult,
   enqueueCurrentPlaybackDownload,
   handleShellAction,
+  runShellWorkflowFromOverlay,
   openCompletedDownloadsPicker,
   openOfflineLibraryGroupPicker,
   queueMoreOfflineTitleEpisodes,

@@ -109,7 +109,7 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { FooterAction, ShellPanelLine } from "./types";
+import type { FooterAction, ShellAction, ShellPanelLine } from "./types";
 import { handleHistoryOverlayInput } from "./use-history-overlay-input";
 import { handleNotificationsOverlayInput } from "./use-notifications-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
@@ -118,6 +118,33 @@ import { useShellDimensions } from "./use-viewport-policy";
 const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 
 const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
+
+const ROOT_OVERLAY_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
+  "setup",
+  "update",
+  "report-issue",
+  "clear-cache",
+  "reset-provider-health",
+  "clear-history",
+  "export-diagnostics",
+  "docs",
+  "sync",
+  "sync-connect-anilist",
+  "sync-connect-tmdb",
+  "sync-disconnect",
+  "stats",
+  "menu",
+  "download",
+  "watchlist",
+  "bookmark",
+  "follow",
+  "mute",
+  "share",
+  "mark-watched",
+  "playlist-add",
+  "mark-anime",
+  "mark-series",
+]);
 type HelpTab = (typeof HELP_TABS_INTERNAL)[number];
 
 const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
@@ -695,14 +722,12 @@ export function RootOverlayShell({
         }
         return;
       }
-      if (action === "update" || action === "report-issue") {
-        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
-          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-        } else {
-          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-        }
-        void import("./workflows").then(({ handleShellAction }) =>
-          handleShellAction({ action, container }),
+      if (ROOT_OVERLAY_WORKFLOW_ACTIONS.has(action)) {
+        void import("./workflows").then(({ runShellWorkflowFromOverlay }) =>
+          runShellWorkflowFromOverlay(container, action, {
+            cancelPickerId:
+              isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+          }),
         );
       }
     },
@@ -1598,13 +1623,6 @@ export function RootOverlayShell({
               highlightedIndex={highlightedIndex}
             />
           ) : null}
-          <ShellFooter
-            taskLabel="Settings"
-            actions={footerActions}
-            mode="detailed"
-            commandMode={commandMode}
-            terminalWidth={cols}
-          />
         </Box>
       </Box>,
     );
