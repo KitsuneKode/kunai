@@ -2,6 +2,7 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
+import { libraryFooterActions, queueFooterActions } from "@/app-shell/overlay-footer-actions";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import {
   buildMediaListRowColumns,
@@ -17,7 +18,7 @@ import {
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
-import { ResizeBlocker } from "@/app-shell/shell-primitives";
+import { ResizeBlocker, ShellFooter, selectFooterActions } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -135,11 +136,16 @@ export function LibraryShell({
         )}
       </Box>
       <Box marginTop={1} flexDirection="column">
-        <Text color={palette.dim} dimColor>
-          {tab === "library"
-            ? "↑↓ navigate · ↵ open · x delete · p protect · type to filter · Tab → Queue"
-            : "↑↓ navigate · ↵ play · x remove · r retry · Tab → Library · d toggle downloads"}
-        </Text>
+        <ShellFooter
+          taskLabel={tab === "library" ? "Library" : "Queue"}
+          mode="minimal"
+          actions={selectFooterActions(
+            tab === "library" ? libraryFooterActions() : queueFooterActions(),
+            "minimal",
+            viewport.columns,
+          )}
+          terminalWidth={viewport.columns}
+        />
         {tab === "library" ? (
           <Text color={palette.dim} dimColor>
             Missing or broken artifacts: press <Text color={palette.accent}>x</Text> to remove, then

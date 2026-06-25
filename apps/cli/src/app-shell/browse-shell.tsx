@@ -718,7 +718,9 @@ export function BrowseShell<T>({
   // Short terminals: collapse schedule chrome margins so the list keeps its rows.
   const denseChrome = viewport.rows < 28;
   const browseBreakpoint = viewport.breakpoint;
-  const showCompanionLayout = browseBreakpoint === "wide" || browseBreakpoint === "medium";
+  const wideBrowse = browseBreakpoint === "wide";
+  const mediumBrowse = browseBreakpoint === "medium";
+  const showCompanionLayout = wideBrowse || mediumBrowse;
   const effectiveFooterMode = "minimal";
   const innerWidth = Math.max(24, viewport.columns - 8);
   // Tiered companion widths: wide gets 30%, medium gets 28%, compact gets full width below list
@@ -743,6 +745,7 @@ export function BrowseShell<T>({
   // companion preview hidden so its (taller) content can't overlap the palette
   // rows or get clipped against the bottom of the viewport.
   const showCompanion = showCompanionLayout && !compact && !commandMode && Boolean(selectedOption);
+  const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
   const { poster, posterState: posterPreviewState } = usePosterPreview(
     settledOption?.previewImageUrl ?? undefined,
     {
@@ -1058,6 +1061,11 @@ export function BrowseShell<T>({
 
     if (listFocused && input.toLowerCase() === "m" && selectedOption && searchState === "ready") {
       onResolve("menu");
+      return;
+    }
+
+    if (listFocused && input.toLowerCase() === "n" && key.shift) {
+      onResolve("notifications");
       return;
     }
 
@@ -1391,13 +1399,13 @@ export function BrowseShell<T>({
           <OverlayPanel overlay={activeOverlay} width={innerWidth} />
         ) : displayOptions.length > 0 ? (
           <Box
-            flexDirection={showCompanion ? "row" : "column"}
+            flexDirection={companionBesideList ? "row" : "column"}
             marginTop={1}
             justifyContent="space-between"
             flexGrow={1}
           >
             {/* Result list */}
-            <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
+            <Box flexDirection="column" width={companionBesideList ? listWidth : undefined}>
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
                 <Text color={palette.dim}> ▲ ...</Text>
               ) : null}
@@ -1470,7 +1478,8 @@ export function BrowseShell<T>({
                 // is now reconciled (cheap, memoized) and the poster hook clears
                 // stale images on fetch, so no remount is needed for correctness.
                 key="browse-companion"
-                marginLeft={2}
+                marginLeft={companionBesideList ? 2 : 0}
+                marginTop={companionBesideList ? 0 : 1}
                 flexDirection="column"
                 width={previewWidth}
               >
@@ -1571,7 +1580,11 @@ export function BrowseShell<T>({
                   {idleReturnLoopModel.heading}
                 </Text>
                 {idleReturnLoopModel.rows.map((row) => (
-                  <Text key={row.id} color={row.focused ? palette.text : palette.muted}>
+                  <Text
+                    key={row.id}
+                    backgroundColor={row.focused ? palette.accentFill : undefined}
+                    color={row.focused ? palette.text : palette.muted}
+                  >
                     {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
                     <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
                     <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
