@@ -13,6 +13,7 @@ type PostPlayFooterOptions = {
   readonly canResume: boolean;
   readonly hasNextEpisode?: boolean;
   readonly hasNextSeason?: boolean;
+  readonly providerCount?: number;
   readonly autoplayPaused?: boolean;
   readonly autoskipPaused?: boolean;
   readonly stopAfterCurrent?: boolean;
@@ -27,6 +28,7 @@ export function buildPostPlayFooterActions(
     canResume: options.canResume,
     hasNextEpisode: options.hasNextEpisode,
     hasNextSeason: options.hasNextSeason,
+    providerCount: options.providerCount,
     bindings: options.bindings ?? KEYBINDINGS,
   });
 }

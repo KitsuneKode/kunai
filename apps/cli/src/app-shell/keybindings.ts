@@ -247,6 +247,16 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "While browsing",
     footerPriority: 18,
   },
+  {
+    id: "browse-notifications",
+    chord: { input: "n", shift: true },
+    display: "Shift+N",
+    label: "Open notifications inbox",
+    hintLabel: "inbox",
+    scope: "browse",
+    group: "While browsing",
+    footerPriority: 22,
+  },
 
   // ── In player — mpv window; mirrors kunai-bridge.lua ──
   {
@@ -680,15 +690,70 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "While loading",
     footerPriority: 12,
   },
+  {
+    id: "loading-settings",
+    chord: { input: "g" },
+    label: "Open settings",
+    hintLabel: "settings",
+    scope: "loading",
+    group: "While loading",
+    footerPriority: 40,
+  },
+  {
+    id: "loading-history",
+    chord: { input: "h" },
+    label: "Open history",
+    hintLabel: "history",
+    scope: "loading",
+    group: "While loading",
+    footerPriority: 42,
+  },
 
-  // ── Library — documentation-only; use /menu in the palette ──
+  // ── Library ──
+  {
+    id: "library-open",
+    chord: { named: "return" },
+    label: "Open selected title",
+    hintLabel: "open",
+    scope: "library",
+    group: "In the library",
+    footerPriority: 10,
+  },
+  {
+    id: "library-delete",
+    chord: { input: "x" },
+    label: "Delete offline title",
+    hintLabel: "delete",
+    scope: "library",
+    group: "In the library",
+    footerPriority: 15,
+  },
+  {
+    id: "library-protect",
+    chord: { input: "p" },
+    label: "Toggle cleanup protection",
+    hintLabel: "protect",
+    scope: "library",
+    group: "In the library",
+    footerPriority: 20,
+  },
+  {
+    id: "library-tab",
+    chord: { named: "tab" },
+    label: "Switch Library / Queue",
+    hintLabel: "Tab → Queue",
+    scope: "library",
+    group: "In the library",
+    footerPriority: 25,
+  },
   {
     id: "library-title-control-menu",
     chord: { input: "m" },
     label: "Open title control menu",
+    hintLabel: "menu",
     scope: "library",
     group: "In the library",
-    helpOnly: true,
+    footerPriority: 30,
   },
 ];
 

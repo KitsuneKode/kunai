@@ -72,6 +72,7 @@ export function resolvePlaybackBindingEffect(
     case "player-memory":
       return handlers.onCommandAction ? { kind: "shell-action", action: "memory" } : null;
     case "title-control-menu":
+    case "loading-title-control-menu":
       return handlers.onCommandAction ? { kind: "shell-action", action: "menu" } : null;
     case "player-diagnostics":
       return handlers.onCommandAction ? { kind: "shell-action", action: "diagnostics" } : null;

@@ -46,3 +46,12 @@ export function notificationsFooterActions(): readonly FooterAction[] {
     },
   });
 }
+
+export function libraryFooterActions(): readonly FooterAction[] {
+  return buildFooterActionsFromBindings("library", {
+    ids: ["library-open", "library-delete", "library-protect", "library-tab"],
+    overrides: {
+      "library-open": { primary: true },
+    },
+  });
+}

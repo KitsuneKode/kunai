@@ -23,6 +23,7 @@ describe("buildPostPlayFooterActions", () => {
       "z:source",
       "d:diagnostics",
       "s:search",
+      "m:menu",
       "q:quit",
       "/:command-mode",
     ]);
@@ -43,6 +44,7 @@ describe("buildPostPlayFooterActions", () => {
       "n:resume:resume",
       "o:source:source",
       "r:replay:replay",
+      "m:menu:menu",
       "/:commands:command-mode",
     ]);
 
