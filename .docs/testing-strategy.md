@@ -383,6 +383,8 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 
 ## Manual Smoke Matrix
 
+See also [e2e-regression-matrix.md](./e2e-regression-matrix.md) for the post-play convergence release gate scenarios.
+
 Use these after meaningful shell or startup-route changes. They are not replacements for unit tests; they verify the real terminal experience.
 
 | Flow                  | Command                                           | Expected first thing to verify                                       |
