@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   extractYoutubeVideoIdFromUrl,
+  isYoutubeCollectionCatalogId,
   isYoutubeWatchUrl,
   parseYoutubeCatalogId,
   toYoutubeChannelCatalogId,
@@ -9,11 +10,11 @@ import {
 
 describe("youtube ids", () => {
   test.each([
-    ["https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
-    ["https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
-    ["https://www.youtube.com/live/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
-    ["https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
-  ])("extractYoutubeVideoIdFromUrl(%s)", (url, expected) => {
+    { url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", expected: "dQw4w9WgXcQ" },
+    { url: "https://youtu.be/dQw4w9WgXcQ", expected: "dQw4w9WgXcQ" },
+    { url: "https://www.youtube.com/live/dQw4w9WgXcQ", expected: "dQw4w9WgXcQ" },
+    { url: "https://www.youtube.com/shorts/dQw4w9WgXcQ", expected: "dQw4w9WgXcQ" },
+  ])("extractYoutubeVideoIdFromUrl($url)", ({ url, expected }) => {
     expect(isYoutubeWatchUrl(url)).toBe(true);
     expect(extractYoutubeVideoIdFromUrl(url)).toBe(expected);
   });
@@ -31,5 +32,11 @@ describe("youtube ids", () => {
       kind: "video",
       nativeId: "dQw4w9WgXcQ",
     });
+  });
+
+  test("detects channel and playlist catalog ids", () => {
+    expect(isYoutubeCollectionCatalogId("youtube-channel:UC123")).toBe(true);
+    expect(isYoutubeCollectionCatalogId("youtube-playlist:PL123")).toBe(true);
+    expect(isYoutubeCollectionCatalogId("youtube:abc12345678")).toBe(false);
   });
 });

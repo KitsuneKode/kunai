@@ -128,6 +128,7 @@ import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-re
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
+import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
   didPlaybackReachCompletionThreshold,
@@ -527,6 +528,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       });
 
       let providerSwitchSeqBeforeEpisodePicker = stateManager.getState().providerSwitchSeq;
+      const shellMode = stateManager.getState().mode;
+      const usesNativeEpisodes = usesProviderNativeEpisodeCatalog(shellMode, title.id);
 
       if (title.type === "series") {
         // Check history for resume
@@ -571,14 +574,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const providerHealth = container.providerHealth.get(stateManager.getState().provider);
         const failedProvider =
           providerHealth?.status === "degraded" || providerHealth?.status === "down";
-        const isAnimeMode = stateManager.getState().mode === "anime";
-        const seasonCount = isAnimeMode
+        const seasonCount = usesNativeEpisodes
           ? (title.episodeCount ?? initialAnimeEpisodes?.length)
           : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
         const episodeEntry = resolvePlaybackEpisodeEntry({
           titleId: title.id,
           titleType: title.type,
-          isAnime: isAnimeMode,
+          isAnime: usesNativeEpisodes,
           launchSource: title.launchSource,
           preselectedEpisode: preselectedEpisode ?? undefined,
           history,
@@ -591,7 +593,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           episode = episodeInfoFromSelection({
             season: episodeEntry.selection.season,
             episode: episodeEntry.selection.episode,
-            isAnime: stateManager.getState().mode === "anime",
+            isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
           });
@@ -604,7 +606,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const { chooseStartingEpisode } = await import("@/session-flow");
           const selection = await chooseStartingEpisode({
             currentId: title.id,
-            isAnime: stateManager.getState().mode === "anime",
+            isAnime: usesNativeEpisodes,
             animeEpisodeCount: title.episodeCount,
             animeEpisodes: initialAnimeEpisodes,
             flags: {},
@@ -626,7 +628,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           episode = episodeInfoFromSelection({
             season: selection.season,
             episode: selection.episode,
-            isAnime: stateManager.getState().mode === "anime",
+            isAnime: usesNativeEpisodes,
             titleId: title.id,
             animeEpisodes: initialAnimeEpisodes,
           });
@@ -2993,11 +2995,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     episode: EpisodeInfo,
     context: PhaseContext,
   ): Promise<StreamInfo> {
-    const { stateManager, logger } = context.container;
-    const subLang =
-      stateManager.getState().mode === "anime"
-        ? stateManager.getState().animeLanguageProfile.subtitle
-        : stateManager.getState().seriesLanguageProfile.subtitle;
+    const { stateManager, logger, config } = context.container;
+    const subLang = playbackSubtitlePreference({
+      mode: stateManager.getState().mode,
+      title,
+      config,
+    });
 
     if (shouldSkipExternalSubtitleLookup(stream, subLang)) {
       logger.info("Subtitle resolution skipped", {
@@ -3080,9 +3083,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
-      stateManager.getState().mode === "anime"
-        ? stateManager.getState().animeLanguageProfile.subtitle
-        : stateManager.getState().seriesLanguageProfile.subtitle,
+      playbackSubtitlePreference({
+        mode: stateManager.getState().mode,
+        title,
+        config,
+      }),
     );
 
     this.startLateSubtitleResolver({
@@ -3147,24 +3152,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       },
       playOptions: {
         abortSignal: context.signal,
-        audioPreference:
-          stateManager.getState().mode === "anime"
-            ? stateManager.getState().animeLanguageProfile.audio
-            : title.type === "movie"
-              ? stateManager.getState().movieLanguageProfile.audio
-              : stateManager.getState().seriesLanguageProfile.audio,
-        subtitlePreference:
-          stateManager.getState().mode === "anime"
-            ? stateManager.getState().animeLanguageProfile.subtitle
-            : title.type === "movie"
-              ? stateManager.getState().movieLanguageProfile.subtitle
-              : stateManager.getState().seriesLanguageProfile.subtitle,
-        qualityPreference:
-          stateManager.getState().mode === "anime"
-            ? stateManager.getState().animeLanguageProfile.quality
-            : title.type === "movie"
-              ? stateManager.getState().movieLanguageProfile.quality
-              : stateManager.getState().seriesLanguageProfile.quality,
+        audioPreference: playbackAudioPreference({
+          mode: stateManager.getState().mode,
+          title,
+          config,
+        }),
+        subtitlePreference: playbackSubtitlePreference({
+          mode: stateManager.getState().mode,
+          title,
+          config,
+        }),
+        qualityPreference: playbackQualityPreference({
+          mode: stateManager.getState().mode,
+          title,
+          config,
+        }),
         resumePromptAt,
         attach: false,
         playbackMode,
@@ -3295,10 +3297,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   }): void {
     const iterationSignal = playbackIterationSignal ?? context.signal;
     const { stateManager, diagnosticsService, logger } = context.container;
-    const requestedSubLang =
-      stateManager.getState().mode === "anime"
-        ? stateManager.getState().animeLanguageProfile.subtitle
-        : stateManager.getState().seriesLanguageProfile.subtitle;
+    const requestedSubLang = playbackSubtitlePreference({
+      mode: stateManager.getState().mode,
+      title,
+      config: context.container.config,
+    });
     const lookupDecision = shouldAttemptLateSubtitleLookup({
       stream,
       requestedSubLang,

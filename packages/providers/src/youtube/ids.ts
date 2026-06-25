@@ -14,6 +14,11 @@ export function toYoutubeChannelCatalogId(channelId: string): string {
   return `${YOUTUBE_CHANNEL_ID_PREFIX}${channelId}`;
 }
 
+export function isYoutubeCollectionCatalogId(id: string): boolean {
+  const kind = parseYoutubeCatalogId(id).kind;
+  return kind === "channel" || kind === "playlist";
+}
+
 export function parseYoutubeCatalogId(id: string): {
   readonly kind: "video" | "playlist" | "channel" | "unknown";
   readonly nativeId: string;
