@@ -24,9 +24,9 @@ describe("download-quality-policy", () => {
     expect(streamMeetsDownloadQualityFloor({ qualityRank: 1080 }, "720p")).toBe(true);
   });
 
-  test("ytDlpFormatSelectorForQuality avoids an unconstrained /best tail", () => {
+  test("ytDlpFormatSelectorForQuality prefers DASH merge for height caps", () => {
     expect(ytDlpFormatSelectorForQuality("1080p")).toBe(
-      "best[height<=1080]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+      "bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]/bestvideo+bestaudio/bv*+ba/b",
     );
     expect(ytDlpFormatSelectorForQuality("best")).toBeUndefined();
   });

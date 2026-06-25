@@ -75,7 +75,10 @@ kunai -S "Dune"   # after bun run link:global
 
 Inside the shell, press `m` to cycle `series -> anime -> YouTube`, or run
 `/youtube` / `/yt` to switch straight into the YouTube lane. YouTube search can
-use Invidious/Piped metadata, but playback needs `yt-dlp` on `PATH`.
+use Invidious/Piped metadata, but playback needs `yt-dlp` on `PATH`. Default
+YouTube quality is **1080p** (Settings → Language → YouTube quality); playback
+streams via mpv + yt-dlp without writing a video file to disk. Use download
+(`d`) to save `.mp4` files offline.
 
 ## Dev Checks
 

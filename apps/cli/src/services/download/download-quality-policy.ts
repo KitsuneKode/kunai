@@ -56,6 +56,8 @@ export function estimateBytesForDownloadQuality(qualityLabel?: string): number {
   return 250 * 1024 * 1024;
 }
 
+import { buildYtdlFormatSelector } from "@kunai/providers/youtube";
+
 /**
  * yt-dlp `-f` selector honoring a configured quality ceiling without an
  * unconstrained `/best` tail that can fall through to 360p.
@@ -63,5 +65,5 @@ export function estimateBytesForDownloadQuality(qualityLabel?: string): number {
 export function ytDlpFormatSelectorForQuality(qualityLabel?: string): string | undefined {
   const height = parseQualityHeight(qualityLabel);
   if (height === null) return undefined;
-  return `best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`;
+  return buildYtdlFormatSelector(`${height}p`);
 }

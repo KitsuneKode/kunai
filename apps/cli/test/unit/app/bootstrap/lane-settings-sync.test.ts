@@ -12,7 +12,7 @@ function baseConfig(): KitsuneConfig {
     seriesLanguageProfile: { audio: "original", subtitle: "en" },
     animeLanguageProfile: { audio: "ja", subtitle: "en" },
     movieLanguageProfile: { audio: "original", subtitle: "en" },
-    youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+    youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   } as KitsuneConfig;
 }
 
@@ -27,7 +27,7 @@ test("providerForLane returns lane-specific defaults", () => {
 test("languageProfileForLane returns lane-specific profiles", () => {
   const config = baseConfig();
 
-  expect(languageProfileForLane(config, "youtube").quality).toBe("best");
+  expect(languageProfileForLane(config, "youtube").quality).toBe("1080p");
   expect(languageProfileForLane(config, "anime").audio).toBe("ja");
   expect(languageProfileForLane(config, "series").subtitle).toBe("en");
 });

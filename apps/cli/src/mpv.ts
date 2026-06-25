@@ -22,7 +22,11 @@ import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
-import { isYoutubeWatchUrl } from "@kunai/providers/youtube";
+import {
+  buildYoutubeMpvScriptOpts,
+  isYoutubeWatchUrl,
+  joinMpvScriptOpts,
+} from "@kunai/providers/youtube";
 
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
@@ -500,7 +504,13 @@ export function buildMpvArgs(
   }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
   if (config?.scriptPath) args.push(`--script=${config.scriptPath}`);
-  if (config?.scriptOpts) args.push(`--script-opts=${config.scriptOpts}`);
+  if (config?.scriptOpts || isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+    const scriptOpts = joinMpvScriptOpts(
+      config?.scriptOpts,
+      isYoutubeWatchUrl(opts.url) || opts.requiresYtdl ? buildYoutubeMpvScriptOpts() : undefined,
+    );
+    if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
+  }
 
   return args;
 }

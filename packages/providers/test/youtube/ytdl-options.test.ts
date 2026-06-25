@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildYoutubeMpvScriptOpts,
   buildYoutubeMpvYtdlRawOptions,
   buildYoutubeYtdlCliArgs,
+  joinMpvScriptOpts,
   joinMpvYtdlRawOptions,
 } from "@kunai/providers/youtube";
 
@@ -31,6 +33,13 @@ describe("youtube ytdl options", () => {
     );
 
     expect(joined).toBe("sponsorblock-remove=%13%sponsor,intro,live-from-start=no");
+  });
+
+  test("buildYoutubeMpvScriptOpts disables ytdlautoformat overrides", () => {
+    expect(buildYoutubeMpvScriptOpts()).toBe("ytdlautoformat-domains=");
+    expect(joinMpvScriptOpts("foo=bar", buildYoutubeMpvScriptOpts())).toBe(
+      "foo=bar,ytdlautoformat-domains=",
+    );
   });
 
   test("buildYoutubeMpvYtdlRawOptions forwards cookies and extractor args", () => {

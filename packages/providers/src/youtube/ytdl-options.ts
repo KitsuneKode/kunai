@@ -53,6 +53,23 @@ export function joinMpvYtdlRawOptions(options: readonly string[]): string | unde
   return options.join(",");
 }
 
+/**
+ * mpv script-opts that stop mpv-ytdlautoformat from overriding Kunai's ytdl-format.
+ * @see https://github.com/Samillion/mpv-ytdlautoformat
+ */
+export function buildYoutubeMpvScriptOpts(): string {
+  return "ytdlautoformat-domains=";
+}
+
+export function joinMpvScriptOpts(...parts: readonly (string | undefined)[]): string | undefined {
+  const merged = parts
+    .flatMap((part) => part?.split(",") ?? [])
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (merged.length === 0) return undefined;
+  return merged.join(",");
+}
+
 function formatMpvKeyValueOption(key: string, value: string): string {
   return `${key}=${quoteMpvSuboptionValue(value)}`;
 }

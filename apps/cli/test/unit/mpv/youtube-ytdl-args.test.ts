@@ -35,5 +35,6 @@ describe("buildMpvArgs youtube playback", () => {
     expect(args).toContain(
       "--ytdl-raw-options=sponsorblock-remove=%13%sponsor,intro,live-from-start=no",
     );
+    expect(args).toContain("--script-opts=ytdlautoformat-domains=");
   });
 });

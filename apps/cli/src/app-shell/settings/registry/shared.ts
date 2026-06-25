@@ -21,6 +21,15 @@ export const SUBTITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "ja", label: "Japanese" },
 ];
 
+export const YOUTUBE_QUALITY_SETTINGS_OPTIONS: readonly EnumOption[] = [
+  { value: "1080p", label: "1080p", detail: "Default — balances quality and bandwidth" },
+  { value: "best", label: "Best available", detail: "Highest resolution yt-dlp can merge" },
+  { value: "2160p", label: "4K (2160p)", detail: "Ultra HD when the upload provides it" },
+  { value: "1440p", label: "1440p", detail: "Quad HD ceiling" },
+  { value: "720p", label: "720p", detail: "HD ceiling for slower connections" },
+  { value: "480p", label: "480p", detail: "SD ceiling" },
+];
+
 export const AUDIO_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "original", label: "Original", detail: "Prefer original/native audio" },
   { value: "en", label: "English", detail: "Prefer English audio when available" },

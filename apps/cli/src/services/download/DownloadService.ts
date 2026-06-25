@@ -773,6 +773,7 @@ export class DownloadService {
           sponsorblockRemove: this.deps.config.youtubeMetadata.sponsorblockRemove,
         }),
       );
+      args.push("--merge-output-format", "mp4");
       args.push("--write-subs", "--write-auto-subs");
       const subLang =
         job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en";

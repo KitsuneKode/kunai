@@ -229,9 +229,9 @@ Active beta providers resolve through direct modules in `packages/providers`.
 Third lane provider for standalone videos, playlists, and channels.
 
 - **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail.
-- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent.
-- **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live-from-start). Upcoming premieres blocked; live streams use live-tolerant format.
-- **Downloads:** yt-dlp spawn passes cookies/extractor args and optional `--sponsorblock-remove`; live streams rejected at enqueue.
+- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default quality ceiling is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality.
+- **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` (DASH `bestvideo+bestaudio` capped to the profile) and `--ytdl-raw-options` (SponsorBlock, live-from-start). Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
+- **Downloads:** explicit queue via `d` / download flows; yt-dlp writes `.mp4` to `downloadPath` (or OS default) with `-f` from the same format selector, `--merge-output-format mp4`, cookies/extractor args, and optional `--sponsorblock-remove`; live streams rejected at enqueue.
 - **History:** persisted as `mediaKind: "video"`; resume/continue restores youtube shell mode; playlist rows label `#N`.
 - **Share:** `kunai://` links use `cat=youtube:VIDEO_ID` and `kind=video`.
 - **Settings:** `/settings` → YouTube section for Invidious instance, Piped URL, cookies, extractor args, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.

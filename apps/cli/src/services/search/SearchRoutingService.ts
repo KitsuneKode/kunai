@@ -50,7 +50,7 @@ export async function searchTitles(
     const youtubeProfile = context.youtubeLanguageProfile ?? {
       audio: "original",
       subtitle: "en",
-      quality: "best",
+      quality: "1080p",
     };
     const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
     const results = applyLocalSearchFilters(

@@ -3,6 +3,7 @@ import {
   ANIME_TITLE_SETTINGS_OPTIONS,
   AUDIO_SETTINGS_OPTIONS,
   SUBTITLE_SETTINGS_OPTIONS,
+  YOUTUBE_QUALITY_SETTINGS_OPTIONS,
 } from "./shared";
 
 export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
@@ -115,6 +116,22 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       write: (config, value) => ({
         ...config,
         youtubeLanguageProfile: { ...config.youtubeLanguageProfile, subtitle: value },
+      }),
+    },
+    {
+      kind: "enum",
+      id: "youtubeQuality",
+      label: "YouTube quality",
+      detail: "Playback and download ceiling for YouTube (mpv ytdl-format / yt-dlp -f)",
+      options: YOUTUBE_QUALITY_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.youtubeLanguageProfile.quality ?? "1080p",
+      write: (config, value) => ({
+        ...config,
+        youtubeLanguageProfile: {
+          ...config.youtubeLanguageProfile,
+          quality: value as typeof config.youtubeLanguageProfile.quality,
+        },
       }),
     },
     {

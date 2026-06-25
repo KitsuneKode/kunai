@@ -77,7 +77,9 @@ export function buildYtdlFormatSelector(qualityLabel?: string): string {
   if (!match?.[1]) return defaultYtdlPlaybackFormat();
   const height = Number.parseInt(match[1], 10);
   if (!Number.isFinite(height) || height <= 0) return defaultYtdlPlaybackFormat();
-  return `best[height<=${height}]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]`;
+  // YouTube 1080p+ is usually DASH (separate video+audio). Leading with `best[height]`
+  // prefers muxed/HLS streams and can cap well below the requested ceiling.
+  return `bestvideo[height<=${height}]+bestaudio/bestvideo[height<=${height}]/bestvideo+bestaudio/bv*+ba/b`;
 }
 
 export function mapYtDlpFormatsToQualityLabels(

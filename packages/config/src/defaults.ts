@@ -12,7 +12,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   providerPriority: ["vidlink", "rivestream"],
   animeProviderPriority: ["allanime", "miruro"],
   youtubeProviderPriority: ["youtube"],
-  youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+  youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: {},
   subLang: "en",
   animeLang: "sub",
