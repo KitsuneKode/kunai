@@ -29,6 +29,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "reset-provider-health",
   "export-diagnostics",
   "help",
+  "menu",
   "about",
   "quit",
 ] as const satisfies readonly AppCommandId[];

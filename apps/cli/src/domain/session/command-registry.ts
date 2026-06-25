@@ -71,7 +71,8 @@ export type AppCommandId =
   | "sync-disconnect"
   | "continue"
   | "play-local"
-  | "watch-online";
+  | "watch-online"
+  | "menu";
 
 export type AppCommand = {
   readonly id: AppCommandId;
@@ -106,6 +107,7 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
+    "menu",
     "about",
     "update",
   ],
@@ -148,6 +150,7 @@ export const COMMAND_CONTEXTS = {
     "presence",
     "setup",
     "help",
+    "menu",
     "about",
     "update",
     "quit",
@@ -204,6 +207,7 @@ export const COMMAND_CONTEXTS = {
     "presence",
     "setup",
     "help",
+    "menu",
     "about",
     "update",
     "quit",
@@ -362,6 +366,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Help",
     aliases: ["help", "shortcuts", "?"],
     description: "Show shortcuts and command help",
+  },
+  {
+    id: "menu",
+    label: "Title Control Menu",
+    aliases: ["menu", "title-control", "title-menu"],
+    description: "Open the unified title control menu",
   },
   {
     id: "about",
@@ -827,6 +837,7 @@ function resolveCommandState(
     case "diagnostics":
     case "docs":
     case "help":
+    case "menu":
     case "about":
     case "update":
     case "clear-cache":

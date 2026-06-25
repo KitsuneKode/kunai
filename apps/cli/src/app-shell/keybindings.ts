@@ -1,5 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 
+import type { FooterAction, ShellAction } from "./types";
+
 /**
  * Single source of truth for raw key chords (Esc / arrows / Enter / `/` / `?`, the
  * mpv-window playback keys, and the post-play footer keys), distinct from the
@@ -20,9 +22,13 @@ export type KeyScope =
   | "editing"
   | "browse"
   | "search"
+  | "loading"
+  | "library"
   | "player"
   | "postPlayback"
-  | "queue";
+  | "queue"
+  | "history"
+  | "notifications";
 
 export type KeyChord = {
   /** Printable trigger character, e.g. "/", "?", "n". Omit for pure named keys. */
@@ -178,6 +184,16 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-details",
     chord: { input: "i" },
     label: "Show title details",
+    hintLabel: "details",
+    scope: "browse",
+    group: "While browsing",
+  },
+  {
+    id: "browse-details-ctrl",
+    chord: { input: "o", ctrl: true },
+    display: "Ctrl+O",
+    label: "Show title details",
+    hintLabel: "details",
     scope: "browse",
     group: "While browsing",
   },
@@ -186,6 +202,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "d", ctrl: true },
     display: "Ctrl+D / d",
     label: "Download the highlighted title",
+    hintLabel: "download",
     scope: "browse",
     group: "While browsing",
   },
@@ -193,6 +210,15 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-queue",
     chord: { input: "q" },
     label: "Add the highlighted title to the queue",
+    hintLabel: "up next",
+    scope: "browse",
+    group: "While browsing",
+  },
+  {
+    id: "browse-follow",
+    chord: { input: "w" },
+    label: "Follow the highlighted title",
+    hintLabel: "follow",
     scope: "browse",
     group: "While browsing",
   },
@@ -200,6 +226,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-trending",
     chord: { input: "t", ctrl: true },
     label: "Reload trending results",
+    hintLabel: "trending",
     scope: "browse",
     group: "While browsing",
   },
@@ -207,8 +234,18 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-filter",
     chord: { input: "f", ctrl: true },
     label: "Focus the filter field",
+    hintLabel: "filter",
     scope: "browse",
     group: "While browsing",
+  },
+  {
+    id: "browse-title-control-menu",
+    chord: { input: "m" },
+    label: "Open title control menu",
+    hintLabel: "menu",
+    scope: "browse",
+    group: "While browsing",
+    footerPriority: 18,
   },
 
   // ── In player — mpv window; mirrors kunai-bridge.lua ──
@@ -318,11 +355,22 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     footerPriority: 45,
   },
   {
+    id: "title-control-menu",
+    chord: { input: "m" },
+    label: "Open title control menu",
+    hintLabel: "menu",
+    scope: "player",
+    group: "In the player",
+    footerPriority: 28,
+  },
+  {
     id: "player-memory",
     chord: { input: "m" },
+    display: "/memory",
     label: "Toggle memory panel",
     scope: "player",
     group: "In the player",
+    helpOnly: true,
   },
   {
     id: "player-diagnostics",
@@ -438,6 +486,15 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "After playback",
   },
   {
+    id: "post-title-control-menu",
+    chord: { input: "m" },
+    label: "Open title control menu",
+    hintLabel: "menu",
+    scope: "postPlayback",
+    group: "After playback",
+    footerPriority: 12,
+  },
+  {
     id: "post-play-recommendation",
     chord: { input: "1" },
     display: "1·2·3",
@@ -461,6 +518,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "queue-play",
     chord: { named: "return" },
     label: "Play the selected item now",
+    hintLabel: "play",
     scope: "queue",
     group: "Up Next",
     footerPriority: 10,
@@ -470,6 +528,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "J" },
     display: "J / K",
     label: "Move item down / up one slot",
+    hintLabel: "reorder",
     scope: "queue",
     group: "Up Next",
     footerPriority: 15,
@@ -487,6 +546,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "queue-remove",
     chord: { input: "x" },
     label: "Remove the selected item",
+    hintLabel: "remove",
     scope: "queue",
     group: "Up Next",
     footerPriority: 25,
@@ -496,15 +556,139 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     chord: { input: "c" },
     display: "c / C",
     label: "Clear queue / clear played",
+    hintLabel: "clear",
     scope: "queue",
     group: "Up Next",
+    footerPriority: 28,
   },
   {
     id: "queue-restore",
     chord: { input: "r" },
     label: "Restore your last queue",
+    hintLabel: "restore",
     scope: "queue",
     group: "Up Next",
+    footerPriority: 30,
+  },
+
+  // ── History ──
+  {
+    id: "history-resume",
+    chord: { named: "return" },
+    label: "Resume the highlighted title",
+    hintLabel: "resume",
+    scope: "history",
+    group: "History",
+    footerPriority: 10,
+  },
+  {
+    id: "history-queue",
+    chord: { input: "q" },
+    label: "Queue the highlighted title",
+    hintLabel: "queue",
+    scope: "history",
+    group: "History",
+    footerPriority: 15,
+  },
+  {
+    id: "history-tab",
+    chord: { named: "tab" },
+    label: "Cycle history tabs",
+    hintLabel: "tabs",
+    scope: "history",
+    group: "History",
+    footerPriority: 20,
+  },
+  {
+    id: "history-type-filter",
+    chord: { named: "tab", shift: true },
+    display: "Shift+Tab",
+    label: "Cycle type filter",
+    hintLabel: "filter",
+    scope: "history",
+    group: "History",
+    helpOnly: true,
+  },
+
+  // ── Notifications ──
+  {
+    id: "notifications-action",
+    chord: { named: "return" },
+    label: "Run the primary notification action",
+    hintLabel: "action",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 10,
+  },
+  {
+    id: "notifications-mark-all",
+    chord: { input: "A" },
+    display: "A",
+    label: "Mark all notifications as read",
+    hintLabel: "read all",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 15,
+  },
+  {
+    id: "notifications-archive",
+    chord: { input: "x" },
+    label: "Archive the selected notification",
+    hintLabel: "archive",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 20,
+  },
+  {
+    id: "notifications-clear",
+    chord: { input: "C" },
+    display: "C",
+    label: "Clear archived notifications",
+    hintLabel: "clear",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 25,
+  },
+  {
+    id: "notifications-page",
+    chord: { input: "[" },
+    display: "[ / ]",
+    label: "Previous / next page",
+    hintLabel: "page",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 28,
+    helpOnly: true,
+  },
+  {
+    id: "notifications-tab",
+    chord: { named: "tab" },
+    label: "Switch Active / Archive",
+    hintLabel: "switch",
+    scope: "notifications",
+    group: "Notifications",
+    footerPriority: 30,
+  },
+
+  // ── Loading — playback bootstrap surface ──
+  {
+    id: "loading-title-control-menu",
+    chord: { input: "m" },
+    label: "Open title control menu",
+    hintLabel: "menu",
+    scope: "loading",
+    group: "While loading",
+    footerPriority: 12,
+  },
+
+  // ── Library — documentation-only; use /menu in the palette ──
+  {
+    id: "library-title-control-menu",
+    chord: { input: "m" },
+    label: "Open title control menu",
+    scope: "library",
+    group: "In the library",
+    helpOnly: true,
   },
 ];
 
@@ -574,6 +758,77 @@ export function matchBinding(
     if (matchChord(binding.chord, input, key)) return binding;
   }
   return null;
+}
+
+export type FooterBindingsContext = {
+  /** Binding ids to include, in order. Defaults to footer-priority bindings for the scope. */
+  readonly ids?: readonly string[];
+  /** Map binding id → dispatchable shell action (browse/post-play footers). */
+  readonly actions?: Partial<Record<string, ShellAction>>;
+  /** Per-binding overrides for keys, labels, primary state, or actions. */
+  readonly overrides?: Partial<
+    Record<
+      string,
+      {
+        readonly key?: string;
+        readonly label?: string;
+        readonly primary?: boolean;
+        readonly action?: ShellAction;
+      }
+    >
+  >;
+  /** Append `/ commands` + `esc close` (default true). */
+  readonly tail?: boolean;
+  readonly tailCloseLabel?: string;
+};
+
+/** Rendered footer key for a binding — preserves display overrides such as `J / K`. */
+export function footerKeyFromBinding(binding: KeyBinding): string {
+  if (binding.display) return binding.display;
+  if (binding.chord.named === "return") return "enter";
+  return formatChord(binding.chord).toLowerCase();
+}
+
+/** Build structured footer actions from the keybinding registry for a scope. */
+export function buildFooterActionsFromBindings(
+  scope: KeyScope,
+  ctx: FooterBindingsContext = {},
+): readonly FooterAction[] {
+  const scopeBindings = bindingsForScope(scope);
+  const byId = new Map(scopeBindings.map((binding) => [binding.id, binding]));
+  const selected = ctx.ids
+    ? ctx.ids
+        .map((id) => byId.get(id) ?? KEYBINDINGS.find((binding) => binding.id === id))
+        .filter((binding): binding is KeyBinding => binding !== undefined)
+    : scopeBindings
+        .filter((binding) => binding.footerPriority !== undefined && !binding.helpOnly)
+        .sort((a, b) => (a.footerPriority ?? 0) - (b.footerPriority ?? 0));
+
+  const actions: FooterAction[] = selected.map((binding) => {
+    const override = ctx.overrides?.[binding.id];
+    return {
+      key: override?.key ?? footerKeyFromBinding(binding),
+      label: override?.label ?? binding.hintLabel ?? binding.label,
+      action: override?.action ?? ctx.actions?.[binding.id],
+      primary: override?.primary,
+    };
+  });
+
+  if (ctx.tail === false) return actions;
+
+  const commandPalette = KEYBINDINGS.find((binding) => binding.id === "command-palette");
+  const back = KEYBINDINGS.find((binding) => binding.id === "back");
+  actions.push({
+    key: commandPalette ? footerKeyFromBinding(commandPalette) : "/",
+    label: commandPalette?.hintLabel ?? "commands",
+    action: "command-mode",
+  });
+  actions.push({
+    key: back ? footerKeyFromBinding(back) : "esc",
+    label: ctx.tailCloseLabel ?? "close",
+    action: "quit",
+  });
+  return actions;
 }
 
 /** Footer hints for a surface, ordered by priority, optionally capped. */

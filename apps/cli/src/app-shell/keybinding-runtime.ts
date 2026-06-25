@@ -70,7 +70,9 @@ export function resolvePlaybackBindingEffect(
     case "player-stop-after-current":
       return handlers.onStopAfterCurrent ? { kind: "stop-after-current" } : null;
     case "player-memory":
-      return { kind: "toggle-memory-panel" };
+      return handlers.onCommandAction ? { kind: "shell-action", action: "memory" } : null;
+    case "title-control-menu":
+      return handlers.onCommandAction ? { kind: "shell-action", action: "menu" } : null;
     case "player-diagnostics":
       return handlers.onCommandAction ? { kind: "shell-action", action: "diagnostics" } : null;
     case "help":
@@ -100,6 +102,8 @@ export function resolvePostPlaybackBindingResult(binding: KeyBinding): PlaybackS
       return "diagnostics";
     case "post-episode":
       return "pick-episode";
+    case "post-title-control-menu":
+      return "menu";
     default:
       return null;
   }

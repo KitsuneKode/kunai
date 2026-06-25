@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 
 import { resolveShellInputCommand } from "./keybinding-runtime";
+import type { KeyScope } from "./keybindings";
 
 export type ShellInputOwner =
   | "hard-global"
@@ -25,6 +26,59 @@ export type ShellInputRoute = {
 export type OverlayInputCommand = "close" | "help" | "page-up" | "page-down";
 
 export type ShellInputCommand = "quit" | "open-command-palette" | OverlayInputCommand;
+
+export type SurfaceTitleControlScope = Extract<
+  KeyScope,
+  "browse" | "loading" | "player" | "post-playback"
+>;
+
+export type SurfaceTitleControlEffect =
+  | { readonly kind: "title-control-menu" }
+  | { readonly kind: "pick-episode" };
+
+export type SurfaceTitleControlContext = ShellInputRouteContext & {
+  readonly scope: SurfaceTitleControlScope;
+  /** Browse-only: list must be focused with a selected row. */
+  readonly browseListReady?: boolean;
+};
+
+function isReservedSurfaceChord(input: string, key: LineEditorKey): boolean {
+  if (key.escape) return true;
+  if (input === "/" && !key.ctrl && !key.meta) return true;
+  if (input === "?" && !key.ctrl && !key.meta) return true;
+  return false;
+}
+
+/**
+ * Title-control ownership for `m` / `e` on non-text surfaces.
+ * Esc, `/`, and `?` are never swallowed here — callers route those first.
+ */
+export function resolveSurfaceTitleControlInput(
+  input: string,
+  key: LineEditorKey,
+  context: SurfaceTitleControlContext,
+): SurfaceTitleControlEffect | null {
+  if (context.textInputFocused || context.commandPaletteOpen || context.modalOpen) {
+    return null;
+  }
+  if (isReservedSurfaceChord(input, key)) {
+    return null;
+  }
+
+  const normalized = input.toLowerCase();
+  if (normalized === "m") {
+    if (context.scope === "browse" && !context.browseListReady) {
+      return null;
+    }
+    return { kind: "title-control-menu" };
+  }
+
+  if (normalized === "e" && (context.scope === "loading" || context.scope === "player")) {
+    return { kind: "pick-episode" };
+  }
+
+  return null;
+}
 
 export function routeShellInput(
   input: string,

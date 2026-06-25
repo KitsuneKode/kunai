@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { routeShellInput, routeOverlayInput } from "@/app-shell/input-router";
+import {
+  routeShellInput,
+  routeOverlayInput,
+  resolveSurfaceTitleControlInput,
+} from "@/app-shell/input-router";
 
 test("ctrl-c always routes to the hard global owner", () => {
   expect(
@@ -62,4 +66,30 @@ test("overlay route maps bracket chords to page navigation", () => {
     owner: "overlay",
     command: "page-down",
   });
+});
+
+test("title-control m routes on loading surface outside text input", () => {
+  expect(
+    resolveSurfaceTitleControlInput("m", {}, { scope: "loading", textInputFocused: false }),
+  ).toEqual({ kind: "title-control-menu" });
+});
+
+test("title-control e routes episode picker on player surface", () => {
+  expect(resolveSurfaceTitleControlInput("e", {}, { scope: "player" })).toEqual({
+    kind: "pick-episode",
+  });
+});
+
+test("title-control never swallows esc or slash", () => {
+  expect(resolveSurfaceTitleControlInput("", { escape: true }, { scope: "player" })).toBeNull();
+  expect(resolveSurfaceTitleControlInput("/", {}, { scope: "loading" })).toBeNull();
+});
+
+test("browse title-control m requires list-ready context", () => {
+  expect(
+    resolveSurfaceTitleControlInput("m", {}, { scope: "browse", browseListReady: false }),
+  ).toBeNull();
+  expect(
+    resolveSurfaceTitleControlInput("m", {}, { scope: "browse", browseListReady: true }),
+  ).toEqual({ kind: "title-control-menu" });
 });

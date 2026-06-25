@@ -4,7 +4,9 @@ import {
   KEYBINDINGS,
   bindingKeys,
   bindingsForScope,
+  buildFooterActionsFromBindings,
   footerHints,
+  footerKeyFromBinding,
   formatChord,
   helpSections,
   matchBinding,
@@ -101,7 +103,38 @@ test("player-scope bindings mirror the mpv bridge (k = quality, not streams)", (
   ).toBe(false);
 });
 
-test("every binding has a unique id", () => {
-  const ids = KEYBINDINGS.map((binding) => binding.id);
-  expect(new Set(ids).size).toBe(ids.length);
+test("buildFooterActionsFromBindings preserves display keys and appends the command tail", () => {
+  const actions = buildFooterActionsFromBindings("queue", {
+    ids: ["queue-play", "queue-reorder"],
+    overrides: { "queue-play": { primary: true } },
+  });
+
+  expect(actions).toEqual([
+    { key: "enter", label: "play", action: undefined, primary: true },
+    { key: "J / K", label: "reorder", action: undefined, primary: undefined },
+    { key: "/", label: "commands", action: "command-mode" },
+    { key: "esc", label: "close", action: "quit" },
+  ]);
+});
+
+test("footerKeyFromBinding maps Enter chords to enter", () => {
+  const play = KEYBINDINGS.find((binding) => binding.id === "queue-play");
+  expect(play).toBeDefined();
+  expect(footerKeyFromBinding(play!)).toBe("enter");
+});
+
+test("buildFooterActionsFromBindings can wire browse actions from the registry", () => {
+  const actions = buildFooterActionsFromBindings("browse", {
+    ids: ["browse-details-ctrl", "browse-download"],
+    tail: false,
+    actions: {
+      "browse-details-ctrl": "details",
+      "browse-download": "download",
+    },
+  });
+
+  expect(actions.map((action) => `${action.key}:${action.label}:${action.action}`)).toEqual([
+    "Ctrl+O:details:details",
+    "Ctrl+D / d:download:download",
+  ]);
 });

@@ -106,7 +106,10 @@ export function resolvePlaybackShellInput(
 ): PlaybackShellInputEffect | null {
   const normalized = normalizedKey(input);
   const isPlaying = ctx.operation === "playing";
-  const binding = resolveKeybinding(["player"], input, key);
+  const scopes: readonly import("./keybindings").KeyScope[] = isPlaying
+    ? ["player"]
+    : ["loading", "player"];
+  const binding = resolveKeybinding(scopes, input, key);
 
   if (ctx.recoveryViewActive || ctx.playbackTroubleActive) {
     const recoveryEffect = binding

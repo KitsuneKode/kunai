@@ -10,6 +10,8 @@ const SCOPES: KeyScope[] = [
   "player",
   "postPlayback",
   "queue",
+  "history",
+  "notifications",
 ];
 
 describe("keybinding collisions", () => {
