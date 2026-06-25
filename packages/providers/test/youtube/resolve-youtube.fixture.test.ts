@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   configureYoutubeProvider,
   getYoutubeProviderConfig,
+  normalizeYtDlpVideoInfo,
   toYoutubeVideoCatalogId,
   youtubeProviderModule,
 } from "@kunai/providers/youtube";
@@ -70,15 +71,21 @@ describe("resolveYoutube", () => {
         },
       },
     });
-    cache.set(FIXTURE_VIDEO_ID, {
-      id: FIXTURE_VIDEO_ID,
-      title: "Me at the zoo",
-      duration: 19,
-      formats: [
-        { format_id: "18", height: 360, vcodec: "avc1", acodec: "mp4a", tbr: 500 },
-        { format_id: "22", height: 720, vcodec: "avc1", acodec: "mp4a", tbr: 2000 },
-      ],
-    });
+    cache.set(
+      FIXTURE_VIDEO_ID,
+      normalizeYtDlpVideoInfo(
+        {
+          id: FIXTURE_VIDEO_ID,
+          title: "Me at the zoo",
+          duration: 19,
+          formats: [
+            { format_id: "18", height: 360, vcodec: "avc1", acodec: "mp4a", tbr: 500 },
+            { format_id: "22", height: 720, vcodec: "avc1", acodec: "mp4a", tbr: 2000 },
+          ],
+        },
+        FIXTURE_VIDEO_ID,
+      ),
+    );
 
     const resolve = youtubeProviderModule.resolve;
     if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");

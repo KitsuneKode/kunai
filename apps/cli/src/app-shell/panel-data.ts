@@ -41,6 +41,7 @@ import {
   extractYoutubeProbeFromEvents,
   formatYoutubeDiagnosticsDetail,
 } from "@/services/youtube/youtube-diagnostics-probes";
+import { applyYoutubeHistoryEnrichment } from "@/services/youtube/youtube-history-metadata";
 import type { CapabilitySnapshot } from "@/ui";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
@@ -1051,14 +1052,15 @@ export function buildHistoryPanelLines(
   for (const group of groups) {
     lines.push({ label: `─── ${group.label}`, detail: "", tone: "info" });
     for (const [titleId, entry] of group.items) {
-      const details = historyProgressDetails(entry);
-      const initial = entry.title.trim().charAt(0).toUpperCase() || "?";
+      const displayEntry = applyYoutubeHistoryEnrichment(entry);
+      const details = historyProgressDetails(displayEntry);
+      const initial = displayEntry.title.trim().charAt(0).toUpperCase() || "?";
       lines.push({
         label:
-          historyContentType(entry) === "series"
-            ? `${initial}  ${entry.title}  ·  S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode ?? entry.absoluteEpisode ?? 1).padStart(2, "0")}`
-            : `${initial}  ${entry.title}  ·  movie`,
-        detail: `${details.bar ? `${details.bar} ` : ""}${details.text}  ·  provider ${entry.providerId ?? "unknown"}  ·  id ${titleId}  ·  ${new Date(entry.updatedAt).toLocaleDateString()}`,
+          historyContentType(displayEntry) === "series"
+            ? `${initial}  ${displayEntry.title}  ·  S${String(displayEntry.season ?? 1).padStart(2, "0")}E${String(displayEntry.episode ?? displayEntry.absoluteEpisode ?? 1).padStart(2, "0")}`
+            : `${initial}  ${displayEntry.title}  ·  movie`,
+        detail: `${details.bar ? `${details.bar} ` : ""}${details.text}  ·  provider ${displayEntry.providerId ?? "unknown"}  ·  id ${titleId}  ·  ${new Date(displayEntry.updatedAt).toLocaleDateString()}`,
       });
     }
   }
@@ -1123,13 +1125,14 @@ function buildHistoryOptionRow(
   entry: HistoryProgress,
   context: HistoryPickerOptionsContext,
 ): ShellPickerOption<string> {
-  const details = historyProgressDetails(entry);
-  const isCompleted = isFinished(entry);
+  const displayEntry = applyYoutubeHistoryEnrichment(entry);
+  const details = historyProgressDetails(displayEntry);
+  const isCompleted = isFinished(displayEntry);
   const projection = context.projections?.get(id);
-  const entrySeason = entry.season ?? 1;
-  const entryEpisode = entry.episode ?? entry.absoluteEpisode ?? 1;
+  const entrySeason = displayEntry.season ?? 1;
+  const entryEpisode = displayEntry.episode ?? displayEntry.absoluteEpisode ?? 1;
   const episode =
-    historyContentType(entry) === "series"
+    historyContentType(displayEntry) === "series"
       ? formatSeriesEpisode(entrySeason, entryEpisode)
       : "movie";
   if (projection?.kind === "offline-ready") {
@@ -1137,11 +1140,11 @@ function buildHistoryOptionRow(
       projection.primaryAction?.kind === "play-local" && Boolean(projection.primaryAction.jobId);
     return {
       value: id,
-      label: `${entry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
-      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(entry.updatedAt))}`,
+      label: `${displayEntry.title}  ·  ${formatSeriesEpisode(projection.season, projection.episode)}`,
+      detail: `${directLocalPlay ? "enter plays downloaded episode" : "download ready in /library"}  ·  ${projection.badge ?? "next episode ready"}  ·  completed ${episode}  ·  ${relativeTime(new Date(displayEntry.updatedAt))}`,
       badge: projection.badge ?? "offline",
       tone: "success",
-      posterTitle: entry.title,
+      posterTitle: displayEntry.title,
     };
   }
   const decision = reconcileContinueHistory({
@@ -1166,38 +1169,38 @@ function buildHistoryOptionRow(
         ? formatSeriesEpisode(decision.season ?? entrySeason, decision.episode)
         : episode;
     const completedEpisode =
-      historyContentType(entry) === "series"
+      historyContentType(displayEntry) === "series"
         ? formatSeriesEpisode(entrySeason, entryEpisode)
         : "movie";
-    const timeAgo = relativeTime(new Date(entry.updatedAt));
+    const timeAgo = relativeTime(new Date(displayEntry.updatedAt));
     const returnLoopDetail = describeHistoryReturnLoopDetail({
       entry,
       nextRelease: context.nextReleases?.get(id) ?? null,
     });
     return {
       value: id,
-      label: `${entry.title}  ·  ${nextEpisode}`,
-      detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${entry.providerId ?? "unknown"}  ·  ${timeAgo}`,
+      label: `${displayEntry.title}  ·  ${nextEpisode}`,
+      detail: `${returnLoopDetail}  ·  completed ${completedEpisode}  ·  ${displayEntry.providerId ?? "unknown"}  ·  ${timeAgo}`,
       badge: isNewEpisodeRow ? (projection?.badge ?? "new") : "next",
       tone: "success",
-      posterTitle: entry.title,
+      posterTitle: displayEntry.title,
     };
   }
   const statusGlyph = isCompleted
     ? "✓ complete"
-    : entry.positionSeconds > 10
-      ? `⏸ ${formatTimestamp(entry.positionSeconds)}`
+    : displayEntry.positionSeconds > 10
+      ? `⏸ ${formatTimestamp(displayEntry.positionSeconds)}`
       : "▶ start";
-  const timeAgo = relativeTime(new Date(entry.updatedAt));
+  const timeAgo = relativeTime(new Date(displayEntry.updatedAt));
 
   return {
     value: id,
     label:
-      historyContentType(entry) === "series"
-        ? `${entry.title}  ·  ${episode}`
-        : `${entry.title}  ·  movie`,
-    detail: `${statusGlyph}  ·  ${entry.providerId ?? "unknown"}  ·  ${timeAgo}`,
-    posterTitle: entry.title,
+      historyContentType(displayEntry) === "series"
+        ? `${displayEntry.title}  ·  ${episode}`
+        : `${displayEntry.title}  ·  movie`,
+    detail: `${statusGlyph}  ·  ${displayEntry.providerId ?? "unknown"}  ·  ${timeAgo}`,
+    posterTitle: displayEntry.title,
     historyProgress:
       details.percentage !== null
         ? { percentage: details.percentage, completed: isCompleted }

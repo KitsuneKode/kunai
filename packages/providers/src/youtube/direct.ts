@@ -31,20 +31,15 @@ import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
 import { pipedSearch } from "./piped-client";
 import { spawnYtDlpWithTimeout } from "./spawn-ytdlp";
-import {
-  buildYtdlFormatSelector,
-  defaultYtdlPlaybackFormat,
-  extractYtDlpVideoInfo,
-  mapYtDlpFormatsToQualityLabels,
-  type YtDlpVideoInfo,
-} from "./yt-dlp-metadata";
+import type {
+  YoutubeMetadataCachePort,
+  YoutubeMetadataService,
+  YoutubeVideoMetadata,
+} from "./youtube-metadata";
+import { createYoutubeMetadataService } from "./youtube-metadata-service";
+import { buildYtdlFormatSelector, defaultYtdlPlaybackFormat } from "./yt-dlp-metadata";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
-
-type YoutubeMetadataCachePort = {
-  readonly get: (videoId: string) => YtDlpVideoInfo | null | undefined;
-  readonly set: (videoId: string, info: YtDlpVideoInfo) => void;
-};
 
 type YoutubeProviderConfig = {
   readonly invidiousInstanceUrl?: string;
@@ -53,17 +48,37 @@ type YoutubeProviderConfig = {
   readonly cookiesFile?: string;
   readonly extractorArgs?: string;
   readonly sponsorblockRemove?: string;
+  readonly metadataService?: YoutubeMetadataService;
+  /** @deprecated Prefer metadataService; kept for tests and lazy service bootstrap. */
   readonly metadataCache?: YoutubeMetadataCachePort;
 };
+
+function resolveMetadataService(config: YoutubeProviderConfig): YoutubeMetadataService | undefined {
+  if (config.metadataService) return config.metadataService;
+  if (!config.metadataCache) return undefined;
+  return createYoutubeMetadataService({
+    cache: config.metadataCache,
+    extractOptions: {
+      cookiesFromBrowser: config.cookiesFromBrowser,
+      cookiesFile: config.cookiesFile,
+      extractorArgs: config.extractorArgs,
+    },
+  });
+}
+
+export function getCachedYoutubeVideoMetadata(videoId: string): YoutubeVideoMetadata | null {
+  return globalYoutubeConfig.metadataService?.get(videoId) ?? null;
+}
 
 export function getYoutubeProviderConfig(): Readonly<YoutubeProviderConfig> {
   return globalYoutubeConfig;
 }
 
-let globalYoutubeConfig: YoutubeProviderConfig = {};
+let globalYoutubeConfig: YoutubeProviderConfig & { metadataService?: YoutubeMetadataService } = {};
 
 export function configureYoutubeProvider(config: YoutubeProviderConfig): void {
-  globalYoutubeConfig = { ...config };
+  const metadataService = resolveMetadataService(config);
+  globalYoutubeConfig = { ...config, metadataService };
 }
 
 async function searchYoutube(
@@ -218,20 +233,13 @@ async function loadYtDlpVideoInfo(
   videoId: string,
   watchUrl: string,
   context: ProviderRuntimeContext,
-): Promise<YtDlpVideoInfo | null> {
-  const cached = globalYoutubeConfig.metadataCache?.get(videoId);
-  if (cached) return cached;
+): Promise<YoutubeVideoMetadata | null> {
+  const service = globalYoutubeConfig.metadataService;
+  if (!service) return null;
 
   if (!Bun.which("yt-dlp")) return null;
 
-  const info = await extractYtDlpVideoInfo(watchUrl, {
-    cookiesFromBrowser: globalYoutubeConfig.cookiesFromBrowser,
-    cookiesFile: globalYoutubeConfig.cookiesFile,
-    extractorArgs: globalYoutubeConfig.extractorArgs,
-    signal: context.signal,
-  });
-  globalYoutubeConfig.metadataCache?.set(videoId, info);
-  return info;
+  return service.getOrFetch(videoId, watchUrl, { signal: context.signal });
 }
 
 async function resolveYoutube(
@@ -295,7 +303,7 @@ async function resolveYoutube(
   });
 
   try {
-    let ytInfo: YtDlpVideoInfo | null = null;
+    let ytInfo: YoutubeVideoMetadata | null = null;
     try {
       ytInfo = await loadYtDlpVideoInfo(videoId, watchUrl, context);
     } catch (error) {
@@ -308,7 +316,7 @@ async function resolveYoutube(
       });
     }
 
-    const liveStatus = mapYtDlpLiveStatus(ytInfo?.is_live, ytInfo?.live_status);
+    const liveStatus = mapYtDlpLiveStatus(ytInfo?.isLive, ytInfo?.liveStatus);
     if (liveStatus === "upcoming") {
       return createExhaustedResult(input, context, YOUTUBE_PROVIDER_ID, {
         code: "unsupported-title",
@@ -317,10 +325,11 @@ async function resolveYoutube(
       });
     }
 
-    const isLive = liveStatus === "live" || ytInfo?.is_live === true;
+    const isLive = liveStatus === "live" || ytInfo?.isLive === true;
 
-    const mappedFormats = mapYtDlpFormatsToQualityLabels(ytInfo?.formats);
-    const qualityLabels = mappedFormats.length > 0 ? mappedFormats : [{ label: "best", rank: 0 }];
+    const mappedFormats = ytInfo?.qualities ?? [];
+    const qualityLabels =
+      mappedFormats.length > 0 ? mappedFormats : [{ label: "best", rank: 0, formatId: "best" }];
     const selectedQuality =
       input.qualityPreference && input.qualityPreference !== "best"
         ? (qualityLabels.find((entry) => entry.label === input.qualityPreference) ??
@@ -351,7 +360,7 @@ async function resolveYoutube(
         metadata: {
           ytdlFormat,
           videoId,
-          durationSeconds: ytInfo?.duration,
+          durationSeconds: ytInfo?.durationSeconds,
           isLive,
           liveStatus,
         },
@@ -371,7 +380,7 @@ async function resolveYoutube(
       confidence: 0.9,
     }));
 
-    const subtitles: SubtitleCandidate[] = mapYtDlpSubtitles(ytInfo, cachePolicy);
+    const subtitles: SubtitleCandidate[] = mapYoutubeMetadataSubtitles(ytInfo, cachePolicy);
 
     const endedAt = context.now();
     emitTraceEvent(events, context, {
@@ -446,26 +455,22 @@ async function resolveYoutube(
   }
 }
 
-function mapYtDlpSubtitles(
-  info: Awaited<ReturnType<typeof extractYtDlpVideoInfo>> | null,
+function mapYoutubeMetadataSubtitles(
+  info: YoutubeVideoMetadata | null,
   cachePolicy: StreamCandidate["cachePolicy"],
 ): SubtitleCandidate[] {
   if (!info) return [];
-  const manual = info.subtitles ?? {};
-  const automatic = info.automatic_captions ?? {};
-  const entries = Object.entries({ ...automatic, ...manual });
   const subtitles: SubtitleCandidate[] = [];
-  for (const [language, tracks] of entries) {
-    const track = tracks[tracks.length - 1];
-    if (!track?.url) continue;
+  for (const track of info.subtitles) {
+    if (!track.url) continue;
     subtitles.push({
-      id: `subtitle:${YOUTUBE_PROVIDER_ID}:${language}:${track.ext ?? "vtt"}`,
+      id: `subtitle:${YOUTUBE_PROVIDER_ID}:${track.language}:${track.ext ?? "vtt"}`,
       providerId: YOUTUBE_PROVIDER_ID,
       url: track.url,
-      language,
-      label: language,
+      language: track.language,
+      label: track.language,
       format: track.ext === "vtt" ? "vtt" : track.ext === "srt" ? "srt" : "unknown",
-      source: info.subtitles?.[language] ? "provider" : "embedded",
+      source: track.source === "manual" ? "provider" : "embedded",
       confidence: 0.8,
       cachePolicy,
     });

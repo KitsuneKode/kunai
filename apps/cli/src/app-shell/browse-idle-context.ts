@@ -7,6 +7,7 @@ import {
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
+import { applyYoutubeHistoryEnrichment } from "@/services/youtube/youtube-history-metadata";
 
 type IdleContextContainer = Pick<
   Container,
@@ -44,20 +45,21 @@ export async function buildBrowseIdleContext(
     );
     if (topEntry) {
       const [titleId, top] = topEntry;
+      const displayTop = applyYoutubeHistoryEnrichment(top);
       continueWatchingSelection = { titleId, entry: top };
-      const ep = historyEpisodeLabel(top);
-      const topDuration = top.durationSeconds ?? 0;
+      const ep = historyEpisodeLabel(displayTop);
+      const topDuration = displayTop.durationSeconds ?? 0;
       const remainingSecs = topDuration > 0 ? topDuration - top.positionSeconds : 0;
       const remainingLabel =
         remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined;
       continueWatching = {
-        title: top.title,
+        title: displayTop.title,
         ep,
         remainingLabel,
         titleId,
-        mediaKind: isYoutubeHistoryEntry(top)
+        mediaKind: isYoutubeHistoryEntry(displayTop)
           ? "video"
-          : historyContentType(top) === "movie"
+          : historyContentType(displayTop) === "movie"
             ? "movie"
             : "series",
       };
