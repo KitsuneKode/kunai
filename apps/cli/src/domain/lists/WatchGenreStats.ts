@@ -30,7 +30,7 @@ export async function buildWatchGenreBreakdown(
     const batch = rows.slice(index, index + TITLE_CONCURRENCY);
     const profiles = await Promise.all(
       batch.map(async (row) => {
-        const resolved = resolveTmdbIdentity(row);
+        const resolved = await resolveWatchTitleTmdbIdentity(row);
         if (!resolved) return null;
         const genres = await fetchTitleGenres(resolved.id, resolved.mediaType).catch(() => []);
         if (genres.length === 0) return null;
@@ -67,8 +67,21 @@ export async function buildWatchGenreBreakdown(
   };
 }
 
-function resolveTmdbIdentity(
+/** Resolve TMDB id from stored ids, numeric title_id, or a bounded title search. */
+export async function resolveWatchTitleTmdbIdentity(
   row: WatchStatsTitleSecondsRow,
+): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
+  const fromIds = resolveTmdbIdentityFromStoredIds(row);
+  if (fromIds) return fromIds;
+
+  const title = row.title.trim();
+  if (title.length === 0) return null;
+  const mediaType = row.mediaKind === "movie" ? "movie" : "tv";
+  return searchTmdbTitleByName(title, mediaType);
+}
+
+export function resolveTmdbIdentityFromStoredIds(
+  row: Pick<WatchStatsTitleSecondsRow, "titleId" | "mediaKind" | "externalIdsJson">,
 ): { id: string; mediaType: "movie" | "tv" } | null {
   const externalIds = parseExternalIds(row.externalIdsJson);
   const mediaType = row.mediaKind === "movie" ? "movie" : "tv";
@@ -98,6 +111,18 @@ function parseExternalIds(json: string | null): ProviderExternalIds | undefined 
   } catch {
     return undefined;
   }
+}
+
+async function searchTmdbTitleByName(
+  title: string,
+  mediaType: "movie" | "tv",
+): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
+  const data = (await fetchTmdbJsonCached(
+    `/search/${mediaType}?query=${encodeURIComponent(title)}&include_adult=false&page=1`,
+  ).catch(() => null)) as { results?: Array<{ id?: number }> } | null;
+  const match = data?.results?.find((item) => typeof item.id === "number");
+  if (!match?.id) return null;
+  return { id: String(match.id), mediaType };
 }
 
 async function fetchTitleGenres(

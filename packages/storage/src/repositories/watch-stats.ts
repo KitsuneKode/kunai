@@ -51,6 +51,7 @@ export interface WatchStatsDailyKindRow {
 
 export interface WatchStatsTitleSecondsRow {
   readonly titleId: string;
+  readonly title: string;
   readonly mediaKind: string;
   readonly externalIdsJson: string | null;
   readonly totalSeconds: number;
@@ -304,6 +305,7 @@ export class WatchStatsRepository {
       .query<
         {
           title_id: string;
+          title: string;
           media_kind: string;
           external_ids_json: string | null;
           total_seconds: number;
@@ -313,6 +315,7 @@ export class WatchStatsRepository {
         `
           SELECT
             title_id,
+            MAX(title) AS title,
             MAX(media_kind) AS media_kind,
             MAX(external_ids_json) AS external_ids_json,
             COALESCE(SUM(watched_seconds), 0) AS total_seconds
@@ -327,6 +330,7 @@ export class WatchStatsRepository {
       .all(...params, limit)
       .map((row) => ({
         titleId: row.title_id,
+        title: row.title,
         mediaKind: row.media_kind,
         externalIdsJson: row.external_ids_json,
         totalSeconds: row.total_seconds,

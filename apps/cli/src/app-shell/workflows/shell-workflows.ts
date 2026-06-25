@@ -1743,7 +1743,6 @@ async function handleMarkWatched(container: Container): Promise<"handled"> {
         externalIds: episode.externalIds,
       }
     : undefined;
-  const existing = container.historyRepository.getProgress(titleIdentity, episodeIdentity);
   container.historyRepository.markWatched(titleIdentity, episodeIdentity);
 
   const episodeLabel = episode

@@ -179,5 +179,6 @@ test("completedTitleWatchSecondsSince aggregates completed rows only", () => {
   const rows = stats.completedTitleWatchSecondsSince(windowStart);
   expect(rows).toHaveLength(1);
   expect(rows[0]?.titleId).toBe("show-1");
+  expect(rows[0]?.title).toBe("Show");
   expect(rows[0]?.totalSeconds).toBe(600);
 });

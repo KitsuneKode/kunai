@@ -1,40 +1,56 @@
 import { expect, test } from "bun:test";
 
-import { markEntryWatched } from "@/app/search/history-actions";
-import type { HistoryProgress } from "@kunai/storage";
+import { markSeasonThroughEpisode } from "@/app/search/history-actions";
+import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
-function entry(patch: Partial<HistoryProgress> = {}): HistoryProgress {
-  return {
-    key: "k",
-    titleId: "demo",
-    title: "Demo",
-    mediaKind: "series",
-    season: 1,
-    episode: 4,
-    positionSeconds: 320,
-    durationSeconds: 1400,
-    completed: false,
-    providerId: "vidking",
-    updatedAt: "2026-05-10T00:00:00.000Z",
-    createdAt: "2026-05-10T00:00:00.000Z",
-    ...patch,
-  };
+function makeRepo(): HistoryRepository {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  return new HistoryRepository(db);
 }
 
-test("markEntryWatched flags completed and snaps position to the end", () => {
-  const marked = markEntryWatched(
-    entry({ positionSeconds: 320, durationSeconds: 1400 }),
-    () => "NOW",
-  );
-  expect(marked.completed).toBe(true);
-  expect(marked.positionSeconds).toBe(1400);
-  expect(marked.updatedAt).toBe("NOW");
-  // preserves identity fields
-  expect(marked).toMatchObject({ title: "Demo", season: 1, episode: 4, providerId: "vidking" });
+const title = { id: "show-1", kind: "series" as const, title: "Demo Show" };
+
+test("markSeasonThroughEpisode marks episodes 1 through N via markWatched", () => {
+  const calls: Array<{ season: number; episode: number }> = [];
+  const spy = {
+    markWatched: (_title: typeof title, episode?: { season: number; episode: number }) => {
+      if (episode) calls.push({ season: episode.season, episode: episode.episode });
+    },
+  };
+
+  const count = markSeasonThroughEpisode(spy, title, 2, 3);
+
+  expect(count).toBe(3);
+  expect(calls).toEqual([
+    { season: 2, episode: 1 },
+    { season: 2, episode: 2 },
+    { season: 2, episode: 3 },
+  ]);
 });
 
-test("markEntryWatched keeps the saved position when duration is unknown", () => {
-  const marked = markEntryWatched(entry({ positionSeconds: 320, durationSeconds: 0 }), () => "NOW");
-  expect(marked.completed).toBe(true);
-  expect(marked.positionSeconds).toBe(320);
+test("markSeasonThroughEpisode clamps throughEpisode to at least 1", () => {
+  const repo = makeRepo();
+  const count = markSeasonThroughEpisode(repo, title, 1, 0);
+
+  expect(count).toBe(1);
+  expect(repo.getProgress(title, { season: 1, episode: 1 })?.completed).toBe(true);
+});
+
+test("markSeasonThroughEpisode writes completed rows for each episode", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title,
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 400,
+    durationSeconds: 1_200,
+    completed: false,
+    watchedSeconds: 400,
+  });
+
+  markSeasonThroughEpisode(repo, title, 1, 2);
+
+  expect(repo.getProgress(title, { season: 1, episode: 1 })?.completed).toBe(true);
+  expect(repo.getProgress(title, { season: 1, episode: 2 })?.completed).toBe(true);
+  expect(repo.getProgress(title, { season: 1, episode: 2 })?.positionSeconds).toBe(1_200);
 });

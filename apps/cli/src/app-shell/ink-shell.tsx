@@ -1604,8 +1604,9 @@ function StatsShell({
     setStatsWithGenres(stats);
     let cancelled = false;
     void statsService.fetchGenreBreakdown(windowDays, mediaKindFilter).then((breakdown) => {
-      if (cancelled) return;
+      if (cancelled) return undefined;
       setStatsWithGenres(statsService.applyGenreBreakdown(stats, breakdown));
+      return undefined;
     });
     return () => {
       cancelled = true;
