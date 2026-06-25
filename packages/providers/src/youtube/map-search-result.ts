@@ -92,12 +92,13 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
   }
 
   if (item.type === "channel") {
+    const channelPoster = pickInvidiousThumbnail(item.authorThumbnails);
     return {
       id: toYoutubeChannelCatalogId(item.authorId),
       type: "series",
       title: item.author,
       overview: item.description ?? "",
-      posterPath: null,
+      posterPath: channelPoster,
       metadataSource: "Invidious",
       episodeCount: item.videoCount,
       channelTitle: item.author,
@@ -106,6 +107,12 @@ export function mapInvidiousSearchItem(item: InvidiousSearchItem): ProviderSearc
       externalIds: {
         youtubeChannelId: item.authorId,
       },
+      artwork: channelPoster
+        ? {
+            posterUrl: channelPoster,
+            thumbnailUrl: channelPoster,
+          }
+        : undefined,
     };
   }
 

@@ -41,6 +41,10 @@ export type InvidiousSearchChannel = {
   readonly authorId: string;
   readonly videoCount?: number;
   readonly description?: string;
+  readonly authorThumbnails?: readonly {
+    readonly quality?: string;
+    readonly url?: string;
+  }[];
 };
 
 export type InvidiousPlaylistVideo = {
