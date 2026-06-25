@@ -21,7 +21,8 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import {
-  buildYoutubeYtdlCliArgs,
+  buildYoutubeYtdlProfile,
+  getYoutubeProviderConfig,
   runYtDlpProcess,
   type YtDlpProcess,
 } from "@kunai/providers/youtube";
@@ -765,23 +766,32 @@ export class DownloadService {
     // Quality: yt-dlp's default already takes the highest video+audio, so we only
     // constrain when the user picked/configured a specific ceiling (e.g. 720p to
     // save disk). Unset → undefined → keep the default (highest available).
-    const formatSelector = ytDlpFormatSelectorForQuality(job.selectedQualityLabel);
-    if (formatSelector) {
-      args.push("-f", formatSelector);
-    }
-
     const isYoutubeJob = job.mediaKind === "video" || job.providerId === "youtube";
+    if (!isYoutubeJob) {
+      const formatSelector = ytDlpFormatSelectorForQuality(job.selectedQualityLabel);
+      if (formatSelector) {
+        args.push("-f", formatSelector);
+      }
+    }
     if (isYoutubeJob) {
-      args.push(
-        ...buildYoutubeYtdlCliArgs({
-          cookiesFromBrowser: this.deps.config.youtubeMetadata.cookiesFromBrowser,
-          cookiesFile: this.deps.config.youtubeMetadata.cookiesFile,
-          extractorArgs: this.deps.config.youtubeMetadata.extractorArgs,
-          sponsorblockRemove: this.deps.config.youtubeMetadata.sponsorblockRemove,
-        }),
-      );
-      args.push("--merge-output-format", "mp4");
-      args.push("--write-subs", "--write-auto-subs");
+      const youtubeConfig = getYoutubeProviderConfig();
+      const profile = buildYoutubeYtdlProfile({
+        cookiesFromBrowser:
+          youtubeConfig.cookiesFromBrowser ?? this.deps.config.youtubeMetadata.cookiesFromBrowser,
+        cookiesFile: youtubeConfig.cookiesFile ?? this.deps.config.youtubeMetadata.cookiesFile,
+        extractorArgs:
+          youtubeConfig.extractorArgs ?? this.deps.config.youtubeMetadata.extractorArgs,
+        sponsorblockRemove:
+          youtubeConfig.sponsorblockRemove ?? this.deps.config.youtubeMetadata.sponsorblockRemove,
+        forDownload: true,
+        qualityLabel: job.selectedQualityLabel,
+      });
+      args.push(...profile.cliArgs);
+      const formatSelector =
+        ytDlpFormatSelectorForQuality(job.selectedQualityLabel) ?? profile.formatSelector;
+      if (formatSelector) {
+        args.push("-f", formatSelector);
+      }
       const subLang =
         job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en";
       if (subLang) {
@@ -1506,6 +1516,9 @@ function analyzeDownloadFailure(message: string): { failureKind: string; retryab
     normalized.includes("no such option")
   ) {
     return { failureKind: "ytdlp-config", retryable: false };
+  }
+  if (normalized.includes("cannot be downloaded")) {
+    return { failureKind: "unsupported", retryable: false };
   }
   if (normalized.includes("unsupported url") || normalized.includes("protocol not found")) {
     return { failureKind: "protocol", retryable: false };

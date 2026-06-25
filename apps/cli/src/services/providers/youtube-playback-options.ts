@@ -1,9 +1,4 @@
-import {
-  buildYoutubeMpvYtdlRawOptions,
-  buildYtdlFormatSelector,
-  getYoutubeProviderConfig,
-  joinMpvYtdlRawOptions,
-} from "@kunai/providers/youtube";
+import { buildYoutubeYtdlProfile, getYoutubeProviderConfig } from "@kunai/providers/youtube";
 import type { StreamCandidate } from "@kunai/types";
 
 export function resolveYoutubeYtdlRawOptions(selected: StreamCandidate): string | undefined {
@@ -13,15 +8,14 @@ export function resolveYoutubeYtdlRawOptions(selected: StreamCandidate): string 
     | { readonly isLive?: boolean; readonly liveStatus?: string }
     | undefined;
   const isLive = metadata?.isLive === true || metadata?.liveStatus === "live";
-  return joinMpvYtdlRawOptions(
-    buildYoutubeMpvYtdlRawOptions({
-      cookiesFromBrowser: config.cookiesFromBrowser,
-      cookiesFile: config.cookiesFile,
-      extractorArgs: config.extractorArgs,
-      sponsorblockRemove: config.sponsorblockRemove,
-      isLive,
-    }),
-  );
+  return buildYoutubeYtdlProfile({
+    cookiesFromBrowser: config.cookiesFromBrowser,
+    cookiesFile: config.cookiesFile,
+    extractorArgs: config.extractorArgs,
+    sponsorblockRemove: config.sponsorblockRemove,
+    isLive,
+    qualityLabel: selected.qualityLabel,
+  }).mpvRawOptions;
 }
 
 export function resolveYtdlFormatFromCandidate(selected: StreamCandidate): string {
@@ -29,5 +23,17 @@ export function resolveYtdlFormatFromCandidate(selected: StreamCandidate): strin
   if (typeof metadata?.ytdlFormat === "string" && metadata.ytdlFormat.trim()) {
     return metadata.ytdlFormat;
   }
-  return buildYtdlFormatSelector(selected.qualityLabel);
+  const config = getYoutubeProviderConfig();
+  const liveMetadata = selected.metadata as
+    | { readonly isLive?: boolean; readonly liveStatus?: string }
+    | undefined;
+  const isLive = liveMetadata?.isLive === true || liveMetadata?.liveStatus === "live";
+  return buildYoutubeYtdlProfile({
+    cookiesFromBrowser: config.cookiesFromBrowser,
+    cookiesFile: config.cookiesFile,
+    extractorArgs: config.extractorArgs,
+    sponsorblockRemove: config.sponsorblockRemove,
+    isLive,
+    qualityLabel: selected.qualityLabel,
+  }).mpvFormat;
 }
