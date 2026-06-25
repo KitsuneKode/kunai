@@ -33,7 +33,8 @@ export type TitleControlActionId =
   | "next-season"
   | "fallback"
   | "recover"
-  | "watchlist";
+  | "watchlist"
+  | "setup";
 
 export type TitleControlAction = {
   readonly id: TitleControlActionId;
@@ -337,6 +338,17 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     shellAction: "diagnostics",
     when: () => enabled(),
   },
+  {
+    id: "setup",
+    label: "Setup wizard",
+    detail: "Configure providers, language, and playback defaults",
+    group: "this-title",
+    shellAction: "setup",
+    when: (ctx) =>
+      ctx.surface === "browse" || ctx.surface === "post-play"
+        ? enabled()
+        : disabled("Setup is available from browse or after playback"),
+  },
 ];
 
 const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActionId[]> = {
@@ -353,6 +365,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "download",
     "share",
     "bookmark",
+    "setup",
     "diagnostics",
   ],
   library: [
@@ -405,6 +418,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "watchlist",
     "search",
     "share",
+    "setup",
     "diagnostics",
   ],
 };

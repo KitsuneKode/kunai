@@ -51,6 +51,7 @@ type PostPlayBindingId =
   | "post-replay"
   | "post-search"
   | "post-source"
+  | "post-title-control-menu"
   | "post-watchlist";
 
 export const TITLE_CONTROL_POST_PLAY_BINDING_ID: Partial<
@@ -80,6 +81,7 @@ export type PostPlayFooterBuildOptions = {
   readonly canResume: boolean;
   readonly hasNextEpisode?: boolean;
   readonly hasNextSeason?: boolean;
+  readonly providerCount?: number;
   readonly bindings?: readonly KeyBinding[];
 };
 
@@ -160,6 +162,10 @@ function resolvePostPlayFooterSpecs(
   }
 }
 
+function menuAction(bindings: readonly KeyBinding[]): FooterAction {
+  return actionFromBinding("post-title-control-menu", "menu", { bindings });
+}
+
 export function buildPostPlayTitleControlContext(
   postPlayState: PostPlayState,
   options: PostPlayFooterBuildOptions,
@@ -178,7 +184,7 @@ export function buildPostPlayTitleControlContext(
     postPlayKind: postPlayState.kind,
     hasStreamCandidates: true,
     hasResolvedStream: true,
-    providerCount: 2,
+    providerCount: options.providerCount ?? 1,
   };
 }
 
@@ -210,5 +216,5 @@ export function buildPostPlayFooterActionsFromTitleControl(
   });
 
   const trailing = postPlayState.kind === "mid-series" ? [] : [quitAction(bindings)];
-  return [...primaryActions, ...trailing, commandAction(bindings)];
+  return [...primaryActions, menuAction(bindings), ...trailing, commandAction(bindings)];
 }

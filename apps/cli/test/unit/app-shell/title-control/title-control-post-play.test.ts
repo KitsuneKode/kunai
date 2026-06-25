@@ -83,6 +83,7 @@ describe("buildPostPlayFooterActionsFromTitleControl", () => {
       "z:source",
       "d:diagnostics",
       "s:search",
+      "m:menu",
       "q:quit",
       "/:command-mode",
     ]);
