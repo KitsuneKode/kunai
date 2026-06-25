@@ -20,7 +20,8 @@ export async function resolveShareTarget(
   container: Container,
   options: { readonly action?: "play" | "download" } = {},
 ): Promise<ResolvedShareTarget> {
-  const mode: ShellMode = ref.kind === "anime" ? "anime" : "series";
+  const mode: ShellMode =
+    ref.kind === "anime" ? "anime" : ref.kind === "video" ? "youtube" : "series";
   const hintNote = validateProviderHint(ref, container);
   const download = options.action === "download";
 
@@ -28,7 +29,7 @@ export async function resolveShareTarget(
     return {
       title: {
         id: `search:${ref.anchor.query}`,
-        type: ref.kind === "movie" ? "movie" : "series",
+        type: ref.kind === "movie" || ref.kind === "video" ? "movie" : "series",
         name: ref.title ?? ref.anchor.query,
         ...(ref.kind === "anime" ? { isAnime: true as const } : {}),
       },
@@ -71,10 +72,10 @@ export async function resolveShareTarget(
 function buildTitleFromCatalogAnchor(ref: PlaybackTargetRef): TitleInfo {
   const anchor = ref.anchor as Extract<PlaybackTargetRef["anchor"], { by: "catalog" }>;
   const externalIds = catalogExternalIds(anchor.ns, anchor.id);
-  const id = `${anchor.ns}:${anchor.id}`;
+  const id = anchor.ns === "youtube" ? `youtube:${anchor.id}` : `${anchor.ns}:${anchor.id}`;
   return {
     id,
-    type: ref.kind === "movie" ? "movie" : "series",
+    type: ref.kind === "movie" || ref.kind === "video" ? "movie" : "series",
     name: ref.title ?? id,
     externalIds,
     ...(ref.kind === "anime" ? { isAnime: true as const } : {}),
@@ -86,6 +87,8 @@ function catalogExternalIds(
   id: string,
 ) {
   switch (ns) {
+    case "youtube":
+      return /^PL[\w-]+$/.test(id) ? { youtubePlaylistId: id } : { youtubeId: id };
     case "tmdb":
       return { tmdbId: id };
     case "anilist":
@@ -119,6 +122,9 @@ function validateProviderHint(ref: PlaybackTargetRef, container: Container): str
   }
   if (ref.kind === "anime" && !provider.metadata.isAnimeProvider) {
     return `Shared source "${ref.hint.providerId}" is not an anime provider here — using your default provider.`;
+  }
+  if (ref.kind === "video" && provider.metadata.id !== "youtube") {
+    return `Shared source "${ref.hint.providerId}" is not the YouTube provider here — using your default provider.`;
   }
   return undefined;
 }

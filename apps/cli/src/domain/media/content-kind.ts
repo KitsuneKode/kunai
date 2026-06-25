@@ -11,7 +11,17 @@
 import type { ShellMode, TitleInfo } from "@/domain/types";
 import type { MediaLanguageProfile } from "@/services/persistence/ConfigService";
 
-export type ContentKind = "movie" | "series" | "anime";
+export type ContentKind = "movie" | "series" | "anime" | "video";
+
+const YOUTUBE_PROVIDER_ID = "youtube";
+
+export function isYoutubeShellMode(mode: ShellMode): boolean {
+  return mode === "youtube";
+}
+
+export function isYoutubeProviderId(providerId: string | undefined | null): boolean {
+  return providerId === YOUTUBE_PROVIDER_ID;
+}
 
 /** TMDB genre id for "Animation". */
 const TMDB_ANIMATION_GENRE_ID = 16;
@@ -57,6 +67,7 @@ export function resolveContentKind(
   title: Pick<TitleInfo, "type"> | null | undefined,
   mode: ShellMode,
 ): ContentKind {
+  if (isYoutubeShellMode(mode)) return "video";
   if (title?.type === "movie") return "movie";
   return mode === "anime" ? "anime" : "series";
 }
@@ -72,6 +83,7 @@ export function classifyPersistedKind(
   mode: ShellMode,
   options: { readonly providerId?: string | null } = {},
 ): ContentKind {
+  if (isYoutubeShellMode(mode) || isYoutubeProviderId(options.providerId)) return "video";
   if (title?.type === "movie") return "movie";
   // The deterministic classifier tag (TMDB original_language=ja etc.) is
   // authoritative regardless of ShellMode — so an anime watched via a series
@@ -98,8 +110,12 @@ export function mediaLanguageProfileFor(input: {
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
+  readonly youtubeLanguageProfile?: MediaLanguageProfile;
 }): MediaLanguageProfile {
   const kind = resolveContentKind(input.currentTitle, input.mode);
+  if (kind === "video") {
+    return input.youtubeLanguageProfile ?? input.movieLanguageProfile;
+  }
   if (kind === "anime") return input.animeLanguageProfile;
   if (kind === "movie") return input.movieLanguageProfile;
   return input.seriesLanguageProfile;

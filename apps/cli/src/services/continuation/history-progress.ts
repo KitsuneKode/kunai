@@ -37,6 +37,34 @@ export function correctedHistoryMediaKind(
   return progress.mediaKind === "anime" ? "series" : progress.mediaKind;
 }
 
+export function isYoutubeHistoryEntry(
+  progress: Pick<HistoryProgress, "mediaKind" | "providerId" | "externalIds">,
+): boolean {
+  return (
+    progress.mediaKind === "video" ||
+    progress.providerId === "youtube" ||
+    Boolean(progress.externalIds?.youtubeId)
+  );
+}
+
+/**
+ * Episode label for history/continue UI. YouTube playlist items use `#N` instead of S01E03.
+ */
+export function historyEpisodeLabel(progress: HistoryProgress): string | undefined {
+  if (isYoutubeHistoryEntry(progress)) {
+    const index = progress.episode ?? progress.absoluteEpisode;
+    if (typeof index === "number" && index > 0) {
+      return `#${index}`;
+    }
+    return undefined;
+  }
+  if (historyContentType(progress) !== "series") return undefined;
+  const season = progress.season ?? 1;
+  const episode = progress.episode ?? progress.absoluteEpisode;
+  if (typeof episode !== "number") return undefined;
+  return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
+}
+
 /**
  * The movie|series content type for a history row, collapsing anime → "series".
  *
@@ -47,6 +75,17 @@ export function correctedHistoryMediaKind(
  * a naïve `mediaKind` substitution would wrongly treat anime as a third kind.
  */
 export function historyContentType(progress: HistoryProgress): ContentType {
+  if (progress.mediaKind === "video") {
+    const hasEpisode =
+      typeof progress.episode === "number" || typeof progress.absoluteEpisode === "number";
+    return hasEpisode ? "series" : "movie";
+  }
+  if (
+    progress.mediaKind === "movie" &&
+    (progress.providerId === "youtube" || progress.externalIds?.youtubeId)
+  ) {
+    return "movie";
+  }
   return progress.mediaKind === "movie" ? "movie" : "series";
 }
 

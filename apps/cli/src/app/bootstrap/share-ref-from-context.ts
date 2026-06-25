@@ -44,7 +44,12 @@ export function describeKunaiHandoffLaunch(handoff: KunaiHandoffLaunch): string 
         ? ` ep ${handoff.ref.absoluteEpisode}`
         : "";
   const timestamp = handoff.ref.startSeconds !== undefined ? ` @ ${handoff.ref.startSeconds}s` : "";
-  const mode = handoff.ref.kind === "anime" ? "anime mode" : "default mode";
+  const mode =
+    handoff.ref.kind === "anime"
+      ? "anime mode"
+      : handoff.ref.kind === "video"
+        ? "youtube mode"
+        : "default mode";
   return handoff.action === "download"
     ? `Queue a download for ${target}${episode} in ${mode}`
     : `Open playback for ${target}${episode}${timestamp} in ${mode}`;
@@ -76,6 +81,7 @@ function resolveShareKind(
   title: Pick<TitleInfo, "type" | "isAnime">,
   mode: ShellMode,
 ): PlaybackTargetRef["kind"] {
+  if (mode === "youtube") return "video";
   if (mode === "anime" || title.isAnime) return "anime";
   return title.type === "movie" ? "movie" : "series";
 }
@@ -85,6 +91,12 @@ function resolveShareAnchor(
   mode: ShellMode,
 ): ShareAnchor | null {
   const external = title.externalIds;
+  if (external?.youtubeId?.trim()) {
+    return { by: "catalog", ns: "youtube", id: external.youtubeId.trim() };
+  }
+  if (external?.youtubePlaylistId?.trim()) {
+    return { by: "catalog", ns: "youtube", id: external.youtubePlaylistId.trim() };
+  }
   if (external?.anilistId?.trim()) {
     return { by: "catalog", ns: "anilist", id: external.anilistId.trim() };
   }
@@ -110,9 +122,16 @@ function resolveShareAnchor(
   if (malFromId?.[1]) {
     return { by: "catalog", ns: "mal", id: malFromId[1] };
   }
+  const youtubeFromId = /^youtube:(.+)$/.exec(title.id.trim());
+  if (youtubeFromId?.[1]) {
+    return { by: "catalog", ns: "youtube", id: youtubeFromId[1] };
+  }
   const query = title.name?.trim();
   if (!query) return null;
   if (mode === "anime" || title.id.startsWith("anilist:")) {
+    return { by: "search", query: query.slice(0, 200) };
+  }
+  if (mode === "youtube") {
     return { by: "search", query: query.slice(0, 200) };
   }
   return { by: "search", query: query.slice(0, 200) };

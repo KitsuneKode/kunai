@@ -22,7 +22,7 @@ export function buildSourceInventoryCacheInput(
   const profileContext = { mode, title, config };
   return {
     providerId,
-    mediaKind: mode === "anime" ? "anime" : title.type,
+    mediaKind: mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type,
     titleId: title.id,
     season: episode.season,
     episode: episode.episode,

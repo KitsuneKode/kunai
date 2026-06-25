@@ -185,7 +185,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 }
 
 /** Soft guard for the published npm JS bundle (excludes dist/assets). */
-export const NPM_BUNDLE_BUDGET_KB = 2_400;
+export const NPM_BUNDLE_BUDGET_KB = 2_560;
 
 export function assertNpmBundleBudget(bytes: number): void {
   const budgetBytes = NPM_BUNDLE_BUDGET_KB * 1024;

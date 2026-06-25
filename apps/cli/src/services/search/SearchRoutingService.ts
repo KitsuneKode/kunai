@@ -15,6 +15,7 @@ export type SearchRoutingContext = {
   mode: ShellMode;
   providerId: string;
   animeLanguageProfile: import("@/services/persistence/ConfigService").MediaLanguageProfile;
+  youtubeLanguageProfile?: import("@/services/persistence/ConfigService").MediaLanguageProfile;
   signal?: AbortSignal;
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
   providerRegistry: ProviderRegistry;
@@ -44,6 +45,37 @@ export async function searchTitles(
   const routing = resolveSearchRouting(intent, context);
   const provider = context.providerRegistry.get(routing.providerId);
   const advanced = hasAdvancedSearchFilters(intent);
+
+  if (provider && routing.mode === "youtube" && provider.search) {
+    const youtubeProfile = context.youtubeLanguageProfile ?? {
+      audio: "original",
+      subtitle: "en",
+      quality: "best",
+    };
+    const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
+    const results = applyLocalSearchFilters(
+      (
+        await provider.search(
+          query,
+          {
+            audioPreference: youtubeProfile.audio,
+            subtitlePreference: youtubeProfile.subtitle,
+          },
+          context.signal,
+        )
+      )?.map(normalizeProviderSearchResult) ?? [],
+      intent,
+      evidence,
+    );
+
+    return {
+      results,
+      sourceId: provider.metadata.id,
+      sourceName: provider.metadata.name,
+      strategy: "provider-native",
+      evidence,
+    };
+  }
 
   if (advanced) {
     const searchService =
@@ -128,6 +160,13 @@ function resolveSearchRouting(
     return {
       mode: "anime",
       providerId: context.providerRegistry.getDefault(true).metadata.id,
+    };
+  }
+
+  if (intent.mode === "youtube" && context.mode !== "youtube") {
+    return {
+      mode: "youtube",
+      providerId: context.providerRegistry.getDefaultForMode("youtube").metadata.id,
     };
   }
 
@@ -250,6 +289,7 @@ function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): reado
     filters.provider ? "provider" : null,
     filters.audio ? "audio" : null,
     filters.subtitles ? "subtitles" : null,
+    sourceId !== "tmdb" && sourceId !== "anilist" && intent.sort !== "relevance" ? "sort" : null,
     typeof filters.downloaded === "boolean" ? "downloaded" : null,
     filters.watched ? "watched" : null,
     filters.release ? "release" : null,

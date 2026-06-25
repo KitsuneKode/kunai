@@ -1,4 +1,8 @@
-import { isLocalHlsManifestPlaybackUrl, isRemoteHlsManifestPlaybackUrl } from "./mpv-playback-url";
+import {
+  isLocalHlsManifestPlaybackUrl,
+  isRemoteHlsManifestPlaybackUrl,
+  isYoutubeWatchUrl,
+} from "./mpv-playback-url";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
 
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
@@ -33,6 +37,7 @@ export type PersistentLoadfileOptions = {
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
   readonly ytdl?: string;
+  readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
   readonly "demuxer-lavf-o-clr"?: string;
 };
@@ -41,40 +46,61 @@ export function buildPersistentLoadfileOptions(
   url: string,
   startAt: number | undefined,
   headers: Record<string, string> | undefined,
+  ytdlOptions?: {
+    readonly requiresYtdl?: boolean;
+    readonly ytdlFormat?: string;
+    readonly ytdlRawOptions?: string;
+  },
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin } = normalizeStreamHttpHeaders(headers);
-  const options: Record<string, string> = {
+  const loadOptions: Record<string, string> = {
     start: shouldApplyStartAtSeek(startAt) ? String(startAt) : "0",
   };
 
   if (referer) {
-    options.referrer = referer;
+    loadOptions.referrer = referer;
   }
   if (userAgent) {
-    options["user-agent"] = userAgent;
+    loadOptions["user-agent"] = userAgent;
   }
   if (origin) {
-    options["http-header-fields"] = `Origin: ${origin}`;
+    loadOptions["http-header-fields"] = `Origin: ${origin}`;
   } else {
-    options["http-header-fields-clr"] = "";
+    loadOptions["http-header-fields-clr"] = "";
   }
 
-  if (isRemoteHlsManifestPlaybackUrl(url)) {
-    options.ytdl = "no";
+  if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {
+    loadOptions.ytdl = ytdlOptions?.ytdlFormat ?? "bv*+ba/b";
+    if (ytdlOptions?.ytdlRawOptions?.trim()) {
+      loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
+    }
+  } else if (isRemoteHlsManifestPlaybackUrl(url)) {
+    loadOptions.ytdl = "no";
   }
   if (isLocalHlsManifestPlaybackUrl(url)) {
-    options["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
+    loadOptions["demuxer-lavf-o"] = LOCAL_HLS_DEMUXER_LAVF_OPTIONS;
   } else if (/^https?:\/\//i.test(url.trim())) {
-    options["demuxer-lavf-o-clr"] = "";
+    loadOptions["demuxer-lavf-o-clr"] = "";
   }
 
-  return options as PersistentLoadfileOptions;
+  return loadOptions as PersistentLoadfileOptions;
 }
 
 export function buildPersistentLoadfileCommand(
   url: string,
   startAt?: number,
   headers?: Record<string, string>,
+  ytdlOptions?: {
+    readonly requiresYtdl?: boolean;
+    readonly ytdlFormat?: string;
+    readonly ytdlRawOptions?: string;
+  },
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {
-  return ["loadfile", url, "replace", -1, buildPersistentLoadfileOptions(url, startAt, headers)];
+  return [
+    "loadfile",
+    url,
+    "replace",
+    -1,
+    buildPersistentLoadfileOptions(url, startAt, headers, ytdlOptions),
+  ];
 }

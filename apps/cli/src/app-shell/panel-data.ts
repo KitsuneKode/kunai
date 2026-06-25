@@ -36,6 +36,11 @@ import type {
   HistoryProgress,
   ReleaseProgressDiagnosticsSummary,
 } from "@/services/storage/storage-read-models";
+import type { YoutubeDiagnosticsProbe } from "@/services/youtube/youtube-diagnostics-probes";
+import {
+  extractYoutubeProbeFromEvents,
+  formatYoutubeDiagnosticsDetail,
+} from "@/services/youtube/youtube-diagnostics-probes";
 import type { CapabilitySnapshot } from "@/ui";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
@@ -49,26 +54,26 @@ function summarizeHeaderKeys(headers: Record<string, string> | undefined): strin
   return keys.length > 0 ? keys.join(", ") : "none";
 }
 
-function describeSubtitleState(state: SessionState): {
+function describeSubtitleState(
+  state: SessionState,
+  config?: { readonly youtubeLanguageProfile: { readonly subtitle: string } },
+): {
   label: string;
   tone: ShellPanelLine["tone"];
 } {
-  if (
-    (state.mode === "anime"
+  const subtitlePref =
+    state.mode === "anime"
       ? state.animeLanguageProfile.subtitle
-      : state.seriesLanguageProfile.subtitle) === "none"
-  ) {
+      : state.mode === "youtube"
+        ? (config?.youtubeLanguageProfile.subtitle ?? "en")
+        : state.seriesLanguageProfile.subtitle;
+  if (subtitlePref === "none") {
     return { label: "disabled by preference", tone: "neutral" };
   }
   if (!state.stream) {
     return { label: "not resolved yet", tone: "neutral" };
   }
-  const label = describePlaybackSubtitleStatus(
-    state.stream,
-    state.mode === "anime"
-      ? state.animeLanguageProfile.subtitle
-      : state.seriesLanguageProfile.subtitle,
-  );
+  const label = describePlaybackSubtitleStatus(state.stream, subtitlePref);
   if (state.stream.subtitle) {
     return { label: "attached", tone: "success" };
   }
@@ -217,7 +222,7 @@ export function buildAboutPanelLines({
     },
     {
       label: "Default startup mode",
-      detail: `${config.defaultMode}  ·  Series ${config.provider}  ·  Anime ${config.animeProvider}`,
+      detail: `${config.defaultMode}  ·  Series ${config.provider}  ·  Anime ${config.animeProvider}  ·  YouTube ${config.youtubeProvider}`,
     },
     {
       label: "Presence",
@@ -258,6 +263,7 @@ export function buildDiagnosticsPanelLines({
   memorySamples,
   providers,
   getProviderHealth,
+  youtubeProbe,
   developerMode = false,
 }: {
   state: SessionState;
@@ -270,6 +276,7 @@ export function buildDiagnosticsPanelLines({
   memorySamples?: readonly RuntimeMemorySample[];
   providers?: readonly ProviderMetadata[];
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  youtubeProbe?: YoutubeDiagnosticsProbe | null;
   developerMode?: boolean;
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
@@ -312,6 +319,10 @@ export function buildDiagnosticsPanelLines({
           mode: state.mode,
         })
       : [];
+  const resolvedYoutubeProbe = youtubeProbe ?? extractYoutubeProbeFromEvents(recentEvents);
+  const youtubeDiagnostics = resolvedYoutubeProbe
+    ? formatYoutubeDiagnosticsDetail(resolvedYoutubeProbe)
+    : null;
   const healthSummary = buildDiagnosticsHealthSummary({
     state,
     recentEvents,
@@ -498,6 +509,20 @@ export function buildDiagnosticsPanelLines({
           ? "warning"
           : "neutral",
     },
+    ...(youtubeDiagnostics
+      ? ([
+          {
+            label: "YouTube tooling",
+            detail: youtubeDiagnostics.tooling,
+            tone: youtubeDiagnostics.toolingTone,
+          },
+          {
+            label: "Invidious metadata",
+            detail: youtubeDiagnostics.invidious,
+            tone: youtubeDiagnostics.invidiousTone,
+          },
+        ] as const)
+      : []),
     {
       label: "Capabilities",
       detail:
@@ -1287,9 +1312,11 @@ export function buildProviderMemoryPanelLines(input: {
   readonly getProviderHealth: (providerId: ProviderId) => ProviderHealth | undefined;
   readonly mode: SessionState["mode"];
 }): readonly ShellPanelLine[] {
-  const laneProviders = input.providers.filter(
-    (provider) => provider.isAnimeProvider === (input.mode === "anime"),
-  );
+  const laneProviders = input.providers.filter((provider) => {
+    if (input.mode === "youtube") return provider.isYoutubeProvider;
+    if (input.mode === "anime") return provider.isAnimeProvider;
+    return !provider.isAnimeProvider && !provider.isYoutubeProvider;
+  });
   if (laneProviders.length === 0) {
     return [{ label: "Provider memory", detail: "No providers registered for this mode" }];
   }

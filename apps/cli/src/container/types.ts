@@ -3,6 +3,7 @@ import type {
   CalendarArchiveRepository,
   FollowedTitleRepository,
   HistoryRepository,
+  KunaiDatabase,
   ListRepository,
   NotificationRepository,
   OfflineMaintenanceJobsRepository,
@@ -101,6 +102,7 @@ export interface Container {
   readonly playbackEventRepository: PlaybackEventRepository;
   readonly configStore: ConfigStore;
   readonly cacheStore: CacheStore;
+  readonly cacheDb: KunaiDatabase;
   readonly diagnosticsStore: DiagnosticsStore;
   readonly diagnosticsService: DiagnosticsService;
   readonly storageMaintenance: StorageMaintenanceService;

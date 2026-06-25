@@ -14,6 +14,7 @@ import { createProviderPrioritySnapshot } from "../services/providers/provider-p
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
+import { applyYoutubeProviderConfig } from "./configure-youtube-provider";
 
 export type ProviderBootstrap = {
   readonly engine: ProviderEngine;
@@ -43,13 +44,17 @@ export async function bootstrapProviders(
     { rivestreamProviderModule },
     { allmangaProviderModule },
     { miruroProviderModule },
+    { youtubeProviderModule },
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
     import("@kunai/providers/vidlink"),
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/miruro"),
+    import("@kunai/providers/youtube"),
   ]);
+
+  applyYoutubeProviderConfig(config.getRaw(), persistence.cacheDb);
 
   const providerModules = orderProviderModulesByPriority(
     [
@@ -58,6 +63,7 @@ export async function bootstrapProviders(
       rivestreamProviderModule,
       allmangaProviderModule,
       miruroProviderModule,
+      youtubeProviderModule,
     ],
     providerPriority,
   );

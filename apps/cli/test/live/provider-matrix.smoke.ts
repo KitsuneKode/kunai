@@ -1,11 +1,11 @@
 import { fileURLToPath } from "node:url";
 
-type MatrixProviderId = "videasy" | "rivestream" | "allanime" | "miruro";
+type MatrixProviderId = "videasy" | "rivestream" | "allanime" | "miruro" | "youtube";
 
 type MatrixEntry = {
   readonly provider: MatrixProviderId;
   readonly command: readonly string[];
-  readonly media: "series" | "anime";
+  readonly media: "series" | "anime" | "youtube";
   readonly fixture: string;
 };
 
@@ -51,6 +51,12 @@ const MATRIX: readonly MatrixEntry[] = [
     command: ["bun", "-e", "await import('./test/live/miruro-demonslayer.smoke.ts')"],
     media: "anime",
     fixture: "One Piece E1159",
+  },
+  {
+    provider: "youtube",
+    command: ["bun", "-e", "await import('./test/live/youtube.smoke.ts')"],
+    media: "youtube",
+    fixture: "Me at the zoo (jNQXAC9IVRw)",
   },
 ];
 

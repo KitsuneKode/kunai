@@ -90,6 +90,31 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Presence")?.tone).toBe("warning");
   });
 
+  test("buildDiagnosticsPanelLines surfaces YouTube probe rows", () => {
+    const state = createInitialState("youtube", "youtube", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "en" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const lines = buildDiagnosticsPanelLines({
+      state,
+      recentEvents: [],
+      youtubeProbe: {
+        ytDlp: { available: true, version: "2024.10.07" },
+        invidious: {
+          ok: true,
+          instance: "https://yewtu.be",
+          latencyMs: 120,
+          instanceCount: 3,
+        },
+      },
+    });
+
+    expect(lines.find((line) => line.label === "YouTube tooling")?.detail).toContain("yt-dlp");
+    expect(lines.find((line) => line.label === "Invidious metadata")?.detail).toContain("yewtu.be");
+    expect(lines.find((line) => line.label === "YouTube tooling")?.tone).toBe("success");
+  });
+
   test("buildDiagnosticsPanelLines surfaces the latest playback problem", () => {
     const state = {
       ...createInitialState("vidking", "allanime", {
@@ -705,6 +730,8 @@ describe("panel-data", () => {
           description: "Anime provider",
           recommended: false,
           isAnimeProvider: true,
+          isYoutubeProvider: false,
+          providerLane: "anime",
         },
         {
           id: "cineby-anime",
@@ -712,6 +739,8 @@ describe("panel-data", () => {
           description: "Fallback anime provider",
           recommended: false,
           isAnimeProvider: true,
+          isYoutubeProvider: false,
+          providerLane: "anime",
         },
       ],
     });
@@ -734,6 +763,8 @@ describe("panel-data", () => {
           description: "Anime provider",
           recommended: false,
           isAnimeProvider: true,
+          isYoutubeProvider: false,
+          providerLane: "anime",
         },
       ],
       getProviderHealth: () => ({
@@ -767,6 +798,8 @@ describe("panel-data", () => {
           description: "Anime provider",
           recommended: false,
           isAnimeProvider: true,
+          isYoutubeProvider: false,
+          providerLane: "anime",
         },
       ],
       getProviderHealth: () => ({

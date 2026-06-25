@@ -5,7 +5,7 @@
 // scrape paths so providers do not duplicate keying policy.
 // =============================================================================
 
-import type { TitleInfo, EpisodeInfo } from "@/domain/types";
+import type { TitleInfo, EpisodeInfo, ShellMode } from "@/domain/types";
 import type { CoreProviderManifest } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
 
@@ -15,7 +15,7 @@ export function buildApiStreamResolveCacheKey(input: {
   readonly providerManifest?: CoreProviderManifest;
   readonly title: TitleInfo;
   readonly episode: EpisodeInfo;
-  readonly mode: "series" | "anime";
+  readonly mode: ShellMode;
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
@@ -37,7 +37,7 @@ function buildManifestDrivenPolicyParts(input: {
   readonly providerManifest?: CoreProviderManifest;
   readonly title: TitleInfo;
   readonly episode: EpisodeInfo;
-  readonly mode: "series" | "anime";
+  readonly mode: ShellMode;
   readonly audioPreference: string;
   readonly subtitlePreference: string;
   readonly qualityPreference?: string;
@@ -69,7 +69,7 @@ function resolveToken(
     readonly providerId: string;
     readonly title: TitleInfo;
     readonly episode: EpisodeInfo;
-    readonly mode: "series" | "anime";
+    readonly mode: ShellMode;
     readonly audioPreference: string;
     readonly subtitlePreference: string;
     readonly qualityPreference?: string;
@@ -83,7 +83,9 @@ function resolveToken(
       return "provider";
     case "media-kind":
     case "anime":
-      return normalizePart(input.mode === "anime" ? "anime" : input.title.type);
+      return normalizePart(
+        input.mode === "youtube" ? "video" : input.mode === "anime" ? "anime" : input.title.type,
+      );
     case "title":
       return normalizePart(input.title.id);
     case "season":

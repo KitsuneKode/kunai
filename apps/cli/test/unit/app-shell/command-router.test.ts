@@ -174,7 +174,7 @@ function baseState(): SessionState {
       mode: "anime",
       view: "playback",
       provider: "test-provider",
-      defaultProviders: { series: "series-provider", anime: "anime-provider" },
+      defaultProviders: { series: "series-provider", anime: "anime-provider", youtube: "youtube" },
       animeLanguageProfile: { audio: "sub", subtitle: "en", quality: "auto" },
       seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
       movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },

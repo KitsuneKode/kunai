@@ -7,7 +7,10 @@ export type PlaybackProfileContextInput = {
   readonly title: Pick<TitleInfo, "type"> | null;
   readonly config: Pick<
     KitsuneConfig,
-    "animeLanguageProfile" | "seriesLanguageProfile" | "movieLanguageProfile"
+    | "animeLanguageProfile"
+    | "seriesLanguageProfile"
+    | "movieLanguageProfile"
+    | "youtubeLanguageProfile"
   >;
 };
 
@@ -19,6 +22,7 @@ export function playbackLanguageProfile(input: PlaybackProfileContextInput): Med
     animeLanguageProfile: input.config.animeLanguageProfile,
     seriesLanguageProfile: input.config.seriesLanguageProfile,
     movieLanguageProfile: input.config.movieLanguageProfile,
+    youtubeLanguageProfile: input.config.youtubeLanguageProfile,
   });
 }
 

@@ -211,3 +211,21 @@ test("avgEpisodesPerDay divides completed episodes by window length", () => {
   const stats = service.getStats(10);
   expect(stats.avgEpisodesPerDay).toBe(0.2);
 });
+
+test("getStats includes video kind in type breakdown", () => {
+  const { service, history } = makeStatsService();
+
+  history.upsertProgress({
+    title: { id: "youtube:abc", kind: "video", title: "Clip" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 600,
+    durationSeconds: 600,
+    completed: true,
+    watchedSeconds: 600,
+    updatedAt: "2026-06-20T12:00:00.000Z",
+  });
+
+  const stats = service.getStats(30, "video");
+  expect(stats.typeBreakdown.videoSeconds).toBe(600);
+  expect(stats.totalSeconds).toBe(600);
+});

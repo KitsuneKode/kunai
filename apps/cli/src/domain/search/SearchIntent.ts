@@ -1,4 +1,4 @@
-export type SearchIntentMode = "series" | "anime" | "movie" | "all";
+export type SearchIntentMode = "series" | "anime" | "movie" | "youtube" | "all";
 export type SearchIntentTypeFilter = "movie" | "series" | "all";
 export type WatchFilter = "any" | "unwatched" | "watching" | "completed";
 export type ReleaseFilter = "today" | "this-week" | "upcoming";

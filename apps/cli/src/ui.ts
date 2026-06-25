@@ -68,9 +68,10 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
 
 export async function checkDeps(
   appVersion = "0.1.0",
-  options: { silent?: boolean } = {},
+  options: { silent?: boolean; requireYtDlp?: boolean } = {},
 ): Promise<CapabilitySnapshot> {
   const silent = options.silent ?? false;
+  const requireYtDlp = options.requireYtDlp ?? false;
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(Bun.which("mpv"));
   const ffprobe = Boolean(Bun.which("ffprobe"));
@@ -92,6 +93,24 @@ export async function checkDeps(
       remediation,
     });
     if (!silent) console.error("mpv not found — required for playback.");
+  }
+
+  if (!ytDlp) {
+    issues.push({
+      id: "yt-dlp-missing",
+      severity: requireYtDlp ? "fatal" : "degraded",
+      message: requireYtDlp
+        ? "yt-dlp not found — required for YouTube mode playback and downloads."
+        : "yt-dlp not found — YouTube playback and downloads require yt-dlp.",
+      remediation: [
+        "Arch:   sudo pacman -S yt-dlp",
+        "Debian: sudo apt install yt-dlp",
+        "Fedora: sudo dnf install yt-dlp",
+        "Windows: winget install yt-dlp",
+        "macOS:  brew install yt-dlp",
+        "Other:  pip install yt-dlp",
+      ],
+    });
   }
 
   if (image.terminal === "windows-terminal" && !chafa) {

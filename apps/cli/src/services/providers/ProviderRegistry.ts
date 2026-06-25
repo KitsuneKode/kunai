@@ -2,11 +2,13 @@ import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
 import {
   buildFirstSeenRank,
   resolveProviderId,
+  resolveProviderLaneFromModule,
   type CoreProviderManifest,
   type ProviderEngine,
 } from "@kunai/core";
 
 import { createProviderFromModule, type Provider } from "./Provider";
+import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
@@ -15,6 +17,7 @@ export interface ProviderRegistry {
   getAllIds(): string[];
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[];
   getDefault(isAnime: boolean): Provider;
+  getDefaultForMode(mode: ShellMode): Provider;
   getMetadata(id: string): ProviderMetadata | undefined;
   setPriority(options: ProviderRegistryOptions): void;
 }
@@ -22,12 +25,14 @@ export interface ProviderRegistry {
 export interface ProviderRegistryOptions {
   readonly providerPriority?: readonly string[];
   readonly animeProviderPriority?: readonly string[];
+  readonly youtubeProviderPriority?: readonly string[];
 }
 
 export class ProviderRegistryImpl implements ProviderRegistry {
   private readonly providersById = new Map<string, Provider>();
   private seriesRank = new Map<string, number>();
   private animeRank = new Map<string, number>();
+  private youtubeRank = new Map<string, number>();
 
   constructor(
     private readonly engine: ProviderEngine,
@@ -35,8 +40,11 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   ) {
     this.rebuildPriorityRanks();
     for (const module of engine.modules) {
+      const lane = resolveProviderLaneFromModule(module);
+      const shellMode: ShellMode =
+        lane === "youtube" ? "youtube" : lane === "anime" ? "anime" : "series";
       const provider = createProviderFromModule(module, {
-        mode: module.manifest.mediaKinds.includes("anime") ? "anime" : "series",
+        mode: shellMode,
         search: module.search
           ? async (query, opts, signal?) => {
               const results = await module.search?.(
@@ -73,6 +81,15 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 release: r.release,
                 artwork: r.artwork,
                 languageEvidence: r.languageEvidence,
+                durationSeconds: r.durationSeconds,
+                channelTitle: r.channelTitle,
+                channelId: r.channelId,
+                viewCount: r.viewCount,
+                publishedAt: r.publishedAt,
+                liveStatus: r.liveStatus,
+                premium: r.premium,
+                paid: r.paid,
+                contentShape: r.contentShape,
               }));
             }
           : undefined,
@@ -84,7 +101,9 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                     id: request.title.id,
                     kind: module.manifest.mediaKinds.includes("anime")
                       ? "anime"
-                      : request.title.type,
+                      : module.manifest.mediaKinds.includes("video")
+                        ? "video"
+                        : request.title.type,
                     title: request.title.name,
                   },
                 },
@@ -116,7 +135,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[] {
     return this.getAll().filter((provider) => {
-      if (mode && provider.metadata.isAnimeProvider !== (mode === "anime")) {
+      if (mode && !providerLaneMatchesMode(provider.metadata.providerLane, mode)) {
         return false;
       }
       return provider.canHandle(title);
@@ -124,20 +143,21 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getDefault(isAnime: boolean): Provider {
-    const preferred = this.getPriority(isAnime)
+    return this.getDefaultForMode(isAnime ? "anime" : "series");
+  }
+
+  getDefaultForMode(mode: ShellMode): Provider {
+    const lane = shellModeToProviderLane(mode);
+    const preferred = this.getPriorityForLane(lane)
       .map((providerId) => this.providersById.get(resolveProviderId(providerId)))
-      .find((provider) => provider && provider.metadata.isAnimeProvider === isAnime);
+      .find((provider) => provider && provider.metadata.providerLane === lane);
 
     if (preferred) return preferred;
 
-    const fallback = this.getAll().find((p) =>
-      isAnime ? p.metadata.isAnimeProvider : !p.metadata.isAnimeProvider,
-    );
-
+    const fallback = this.getAll().find((provider) => provider.metadata.providerLane === lane);
     if (!fallback) {
-      throw new Error(`No providers available for mode: ${isAnime ? "anime" : "series"}`);
+      throw new Error(`No providers available for mode: ${mode}`);
     }
-
     return fallback;
   }
 
@@ -149,31 +169,37 @@ export class ProviderRegistryImpl implements ProviderRegistry {
     this.options = {
       providerPriority: options.providerPriority ?? this.options.providerPriority,
       animeProviderPriority: options.animeProviderPriority ?? this.options.animeProviderPriority,
+      youtubeProviderPriority:
+        options.youtubeProviderPriority ?? this.options.youtubeProviderPriority,
     };
     this.rebuildPriorityRanks();
   }
 
   private sortByPriority(providers: readonly Provider[]): Provider[] {
     return [...providers].sort((a, b) => {
-      const aRank = a.metadata.isAnimeProvider
-        ? this.animeRank.get(a.metadata.id)
-        : this.seriesRank.get(a.metadata.id);
-      const bRank = b.metadata.isAnimeProvider
-        ? this.animeRank.get(b.metadata.id)
-        : this.seriesRank.get(b.metadata.id);
+      const aRank = this.rankForProvider(a);
+      const bRank = this.rankForProvider(b);
       return (aRank ?? Number.MAX_SAFE_INTEGER) - (bRank ?? Number.MAX_SAFE_INTEGER);
     });
   }
 
-  private getPriority(isAnime: boolean): readonly string[] {
-    return isAnime
-      ? (this.options.animeProviderPriority ?? [])
-      : (this.options.providerPriority ?? []);
+  private rankForProvider(provider: Provider): number | undefined {
+    const lane = provider.metadata.providerLane;
+    if (lane === "anime") return this.animeRank.get(provider.metadata.id);
+    if (lane === "youtube") return this.youtubeRank.get(provider.metadata.id);
+    return this.seriesRank.get(provider.metadata.id);
+  }
+
+  private getPriorityForLane(lane: ReturnType<typeof shellModeToProviderLane>): readonly string[] {
+    if (lane === "anime") return this.options.animeProviderPriority ?? [];
+    if (lane === "youtube") return this.options.youtubeProviderPriority ?? [];
+    return this.options.providerPriority ?? [];
   }
 
   private rebuildPriorityRanks(): void {
     this.seriesRank = buildFirstSeenRank(this.options.providerPriority);
     this.animeRank = buildFirstSeenRank(this.options.animeProviderPriority);
+    this.youtubeRank = buildFirstSeenRank(this.options.youtubeProviderPriority);
   }
 }
 

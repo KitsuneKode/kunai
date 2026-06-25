@@ -3,11 +3,12 @@ import type {
   EpisodePickerOption,
   ProviderCapabilities,
   ProviderMetadata,
+  ShellMode,
   StreamInfo,
   TitleInfo,
 } from "@/domain/types";
 import type { CoreProviderManifest, CoreProviderModule } from "@kunai/core";
-import { resolveProviderCatalogIdentity } from "@kunai/core";
+import { resolveProviderCatalogIdentity, resolveProviderLaneFromModule } from "@kunai/core";
 import type { StartupPriority } from "@kunai/types";
 
 import { providerResolveResultToStreamInfo } from "./provider-result-adapter";
@@ -50,7 +51,7 @@ export type ProviderResolveFn = (
 export function createProviderFromModule(
   module: CoreProviderModule,
   opts: {
-    readonly mode: "series" | "anime";
+    readonly mode: ShellMode;
     readonly resolveStream?: ProviderResolveFn;
     readonly search?: Provider["search"];
     readonly listEpisodes?: Provider["listEpisodes"];
@@ -58,6 +59,7 @@ export function createProviderFromModule(
   },
 ): Provider {
   const manifest = module.manifest;
+  const lane = resolveProviderLaneFromModule(module);
 
   const metadata: ProviderMetadata = {
     id: manifest.id,
@@ -65,7 +67,9 @@ export function createProviderFromModule(
     aliases: manifest.aliases,
     description: manifest.description,
     recommended: manifest.recommended,
-    isAnimeProvider: manifest.mediaKinds.includes("anime"),
+    isAnimeProvider: lane === "anime",
+    isYoutubeProvider: lane === "youtube",
+    providerLane: lane,
     catalogIdentity: resolveProviderCatalogIdentity(manifest),
     status: manifest.status,
     domain: manifest.domain,
@@ -89,14 +93,14 @@ export function createProviderFromModule(
 
 function defaultCanHandle(manifest: CoreProviderManifest) {
   return (title: TitleInfo): boolean => {
+    if (manifest.mediaKinds.includes("video")) {
+      return title.id.startsWith("youtube:") || Boolean(title.externalIds?.youtubeId);
+    }
     return manifest.mediaKinds.includes(title.type) || manifest.mediaKinds.includes("anime");
   };
 }
 
-function defaultResolveStream(
-  module: CoreProviderModule,
-  mode: "series" | "anime",
-): ProviderResolveFn {
+function defaultResolveStream(module: CoreProviderModule, mode: ShellMode): ProviderResolveFn {
   return async (request: StreamRequest, signal?: AbortSignal): Promise<StreamInfo | null> => {
     const catalogIdentity = resolveProviderCatalogIdentity(module.manifest);
     const input = streamRequestToResolveInput(

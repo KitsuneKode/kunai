@@ -55,6 +55,17 @@ export function buildProviderResolveProblem({
     };
   }
 
+  if (hasYtDlpMissingFailure(attempts)) {
+    return {
+      stage: "provider-resolve",
+      severity: "blocking",
+      cause: "yt-dlp-missing",
+      userMessage: "yt-dlp is required for YouTube playback. Install yt-dlp, then refresh.",
+      recommendedAction: "settings",
+      secondaryActions: ["diagnostics"],
+    };
+  }
+
   const failureMessages = attempts
     .map((attempt) => attempt.failure?.message ?? "")
     .filter(Boolean)
@@ -292,5 +303,17 @@ function hasRuntimeMissingFailure(
     const code = attempt.failure?.code?.toLowerCase() ?? "";
     const message = attempt.failure?.message?.toLowerCase() ?? "";
     return code === "runtime_missing" || message.includes("runtime dependency");
+  });
+}
+
+function hasYtDlpMissingFailure(
+  attempts: readonly {
+    readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
+  }[],
+): boolean {
+  return attempts.some((attempt) => {
+    const code = attempt.failure?.code?.toLowerCase() ?? "";
+    const message = attempt.failure?.message?.toLowerCase() ?? "";
+    return code === "yt-dlp-missing" || message.includes("yt-dlp");
   });
 }

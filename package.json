@@ -77,6 +77,7 @@
     "test:live:discord": "bun run --cwd apps/cli test:live:discord",
     "test:live:miruro": "bun run --cwd apps/cli test:live:miruro",
     "test:live:matrix": "bun run --cwd apps/cli test:live:matrix",
+    "test:live:youtube": "bun run --cwd apps/cli test:live:youtube",
     "test:live:providers": "bun run --cwd apps/cli test:live:providers",
     "test:live:rivestream": "bun run --cwd apps/cli test:live:rivestream",
     "test:live:relay-allanime": "bun run --cwd apps/cli test:live:relay-allanime",

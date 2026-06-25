@@ -30,7 +30,7 @@ export type ContinuationSignals = {
 export type ContinuationTarget = {
   readonly titleId: string;
   readonly title: string;
-  readonly mediaKind: "movie" | "series";
+  readonly mediaKind: "movie" | "series" | "video";
   readonly season?: number;
   readonly episode?: number;
   readonly sourceEntry: HistoryProgress;
@@ -137,7 +137,8 @@ export class ContinueWatchingService {
       return { state: decision.state, target: null, secondaryActions: [], freshness: "cached" };
     }
 
-    const mediaKind = anchor.mediaKind === "movie" ? "movie" : "series";
+    const mediaKind: ContinuationTarget["mediaKind"] =
+      anchor.mediaKind === "movie" ? "movie" : anchor.mediaKind === "video" ? "video" : "series";
     const target: ContinuationTarget = {
       titleId: decision.titleId,
       title: decision.title ?? anchor.title,

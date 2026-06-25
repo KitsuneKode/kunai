@@ -2,7 +2,7 @@ import type { PlaybackStartupStage } from "@/services/playback/playback-startup-
 
 import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { selectFooterActions } from "./shell-primitives";
-import type { FooterAction, LoadingShellState } from "./types";
+import type { FooterAction, LoadingShellState, ShellMode } from "./types";
 
 type LoadingFooterBindingId =
   | "command-palette"
@@ -59,8 +59,22 @@ const STARTUP_STAGE_COPY: Record<PlaybackStartupStage, string> = {
   "first-progress": "Buffering playback",
 };
 
+const YOUTUBE_STARTUP_STAGE_COPY: Partial<Record<PlaybackStartupStage, string>> = {
+  "episode-bootstrap-started": "Preparing YouTube selection",
+  "episode-context-ready": "Loading YouTube metadata",
+  "resolve-started": "Resolving YouTube metadata and watch URL",
+  "resolve-complete": "YouTube stream options ready",
+  "stream-prepared": "Preparing yt-dlp playback arguments",
+  "media-materialized": "YouTube watch URL ready for mpv",
+  "player-launch": "Launching mpv with yt-dlp",
+  "mpv-process-started": "Starting mpv with yt-dlp",
+  "player-ready": "Player ready for YouTube playback",
+  "first-progress": "Buffering YouTube playback",
+};
+
 /** User-facing status line for a playback startup timeline stage. */
-export function loadingStageCopy(stage: PlaybackStartupStage): string {
+export function loadingStageCopy(stage: PlaybackStartupStage, mode?: ShellMode): string {
+  if (mode === "youtube") return YOUTUBE_STARTUP_STAGE_COPY[stage] ?? STARTUP_STAGE_COPY[stage];
   return STARTUP_STAGE_COPY[stage];
 }
 
@@ -68,10 +82,11 @@ export function loadingStageCopy(stage: PlaybackStartupStage): string {
 export function resolveHonestLoadingStageDetail(input: {
   readonly startupStage: PlaybackStartupStage | null;
   readonly playbackDetail?: string | null;
+  readonly mode?: ShellMode;
 }): string | undefined {
   const explicit = input.playbackDetail?.trim();
   if (explicit) return explicit;
-  if (input.startupStage) return loadingStageCopy(input.startupStage);
+  if (input.startupStage) return loadingStageCopy(input.startupStage, input.mode);
   return undefined;
 }
 

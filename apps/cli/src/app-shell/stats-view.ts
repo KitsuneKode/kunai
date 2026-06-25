@@ -22,12 +22,12 @@ export type StatsTab = (typeof STATS_TABS)[number];
 export const STATS_RANGES = ["all", "7d", "30d"] as const;
 export type StatsRange = (typeof STATS_RANGES)[number];
 
-export const STATS_KINDS = ["all", "anime", "series", "movie"] as const;
+export const STATS_KINDS = ["all", "anime", "series", "movie", "video"] as const;
 export type StatsKind = (typeof STATS_KINDS)[number];
 
 export const STATS_TAB_LABELS = ["Overview", "Titles", "Insights"] as const;
 export const STATS_RANGE_LABELS = ["All time", "Last 7d", "Last 30d"] as const;
-export const STATS_KIND_LABELS = ["All", "Anime", "Series", "Movies"] as const;
+export const STATS_KIND_LABELS = ["All", "Anime", "Series", "Movies", "YouTube"] as const;
 
 export const STATS_RANGE_DAYS: Record<StatsRange, number> = {
   all: 99_999,
@@ -160,13 +160,14 @@ function heatmapChar(bucket: number): string {
 function kindMixForDate(
   dailyKindMix: readonly DailyKindMix[],
   date: string,
-): { anime: number; series: number; movie: number } | null {
+): { anime: number; series: number; movie: number; video: number } | null {
   const row = dailyKindMix.find((entry) => entry.date === date);
   if (!row) return null;
   return {
     anime: row.animeSeconds,
     series: row.seriesSeconds,
     movie: row.movieSeconds,
+    video: row.videoSeconds,
   };
 }
 
@@ -228,20 +229,26 @@ function buildTypeBreakdown(breakdown: TypeBreakdown): {
   bar: { color: string; widthPct: number }[];
   label: string | null;
 } {
-  const total = breakdown.animeSeconds + breakdown.seriesSeconds + breakdown.movieSeconds;
+  const total =
+    breakdown.animeSeconds +
+    breakdown.seriesSeconds +
+    breakdown.movieSeconds +
+    breakdown.videoSeconds;
   if (total <= 0) return { bar: [], label: null };
 
   const animePct = Math.round((breakdown.animeSeconds / total) * 100);
   const seriesPct = Math.round((breakdown.seriesSeconds / total) * 100);
-  const moviePct = Math.max(0, 100 - animePct - seriesPct);
+  const videoPct = Math.round((breakdown.videoSeconds / total) * 100);
+  const moviePct = Math.max(0, 100 - animePct - seriesPct - videoPct);
 
   return {
     bar: [
       { color: palette.typeAnime, widthPct: animePct },
       { color: palette.typeSeries, widthPct: seriesPct },
       { color: palette.typeMovie, widthPct: moviePct },
+      { color: palette.accent, widthPct: videoPct },
     ].filter((segment) => segment.widthPct > 0),
-    label: `${animePct}% anime · ${seriesPct}% series · ${moviePct}% movies`,
+    label: `${animePct}% anime · ${seriesPct}% series · ${moviePct}% movies · ${videoPct}% YouTube`,
   };
 }
 

@@ -93,9 +93,10 @@ function applyResultEnrichment(
 
 function shouldIncludeItem(
   discoverMode: "auto" | "unified" | "anime-only" | "series-only",
-  shellMode: "series" | "anime",
+  shellMode: import("@/domain/types").ShellMode,
   item: SearchResult,
 ): boolean {
+  if (shellMode === "youtube") return false;
   if (discoverMode === "unified") return true;
   if (discoverMode === "anime-only") return item.type === "series";
   if (discoverMode === "series-only") return item.type === "movie" || item.type === "series";
@@ -105,8 +106,9 @@ function shouldIncludeItem(
 
 function labelDiscoverMode(
   discoverMode: "auto" | "unified" | "anime-only" | "series-only",
-  shellMode: "series" | "anime",
+  shellMode: import("@/domain/types").ShellMode,
 ): string {
+  if (shellMode === "youtube") return "YouTube mode";
   if (discoverMode === "unified") return "unified";
   if (discoverMode === "anime-only") return "anime only";
   if (discoverMode === "series-only") return "series and movies only";

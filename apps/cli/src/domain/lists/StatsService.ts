@@ -20,6 +20,7 @@ export interface TypeBreakdown {
   readonly animeSeconds: number;
   readonly seriesSeconds: number;
   readonly movieSeconds: number;
+  readonly videoSeconds: number;
 }
 
 export interface DailyKindMix {
@@ -27,6 +28,7 @@ export interface DailyKindMix {
   readonly animeSeconds: number;
   readonly seriesSeconds: number;
   readonly movieSeconds: number;
+  readonly videoSeconds: number;
 }
 
 export interface ProviderStat {
@@ -76,7 +78,10 @@ export class StatsService {
     this.repo = new WatchStatsRepository(db);
   }
 
-  computeStreak(mediaKind?: "movie" | "series" | "anime"): { current: number; longest: number } {
+  computeStreak(mediaKind?: "movie" | "series" | "anime" | "video"): {
+    current: number;
+    longest: number;
+  } {
     const rows = this.repo.streakDates(mediaKind);
 
     if (rows.length === 0) return { current: 0, longest: 0 };
@@ -136,7 +141,7 @@ export class StatsService {
     return { current, longest };
   }
 
-  getStats(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): WatchStats {
+  getStats(windowDays = 30, mediaKind?: "movie" | "series" | "anime" | "video"): WatchStats {
     const { current: streakDays, longest: longestStreak } = this.computeStreak(mediaKind);
     const windowStart = windowStartIso(windowDays);
 
@@ -165,10 +170,12 @@ export class StatsService {
     let animeSeconds = 0;
     let seriesSeconds = 0;
     let movieSeconds = 0;
+    let videoSeconds = 0;
     for (const row of kindRows) {
       if (row.kind === "anime") animeSeconds = row.totalSeconds;
       else if (row.kind === "series") seriesSeconds = row.totalSeconds;
       else if (row.kind === "movie") movieSeconds = row.totalSeconds;
+      else if (row.kind === "video") videoSeconds = row.totalSeconds;
     }
 
     const dailyKindByDate = new Map<string, DailyKindMix>();
@@ -178,12 +185,14 @@ export class StatsService {
         animeSeconds: 0,
         seriesSeconds: 0,
         movieSeconds: 0,
+        videoSeconds: 0,
       };
       const next: DailyKindMix = {
         date: row.date,
         animeSeconds: existing.animeSeconds + (row.kind === "anime" ? row.totalSeconds : 0),
         seriesSeconds: existing.seriesSeconds + (row.kind === "series" ? row.totalSeconds : 0),
         movieSeconds: existing.movieSeconds + (row.kind === "movie" ? row.totalSeconds : 0),
+        videoSeconds: existing.videoSeconds + (row.kind === "video" ? row.totalSeconds : 0),
       };
       dailyKindByDate.set(row.date, next);
     }
@@ -199,7 +208,7 @@ export class StatsService {
       avgEpisodesPerDay,
       activeDays,
       mostActiveDay,
-      typeBreakdown: { animeSeconds, seriesSeconds, movieSeconds },
+      typeBreakdown: { animeSeconds, seriesSeconds, movieSeconds, videoSeconds },
       providerBreakdown,
       hourOfDay,
       dailyKindMix: [...dailyKindByDate.values()],
@@ -226,7 +235,7 @@ export class StatsService {
 
   async fetchGenreBreakdown(
     windowDays = 30,
-    mediaKind?: "movie" | "series" | "anime",
+    mediaKind?: "movie" | "series" | "anime" | "video",
   ): Promise<WatchGenreBreakdown> {
     const rows = this.repo.completedTitleWatchSecondsSince(
       windowStartIso(windowDays),
@@ -250,7 +259,7 @@ export class StatsService {
     };
   }
 
-  exportStatsJson(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): string {
+  exportStatsJson(windowDays = 30, mediaKind?: "movie" | "series" | "anime" | "video"): string {
     const stats = this.getStats(windowDays, mediaKind);
     return `${JSON.stringify(
       {
@@ -264,7 +273,7 @@ export class StatsService {
     )}\n`;
   }
 
-  exportStatsCsv(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): string {
+  exportStatsCsv(windowDays = 30, mediaKind?: "movie" | "series" | "anime" | "video"): string {
     const stats = this.getStats(windowDays, mediaKind);
     const lines: string[] = [
       "section,key,value",

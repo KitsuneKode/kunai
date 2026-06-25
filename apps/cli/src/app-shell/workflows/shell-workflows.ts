@@ -20,6 +20,7 @@ import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import { resolveProviderLaneFromMetadata, shellModeToProviderLane } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import {
@@ -621,7 +622,7 @@ export async function queueMoreOfflineTitleEpisodes(
   if (provider) {
     container.stateManager.dispatch({
       type: "SET_MODE",
-      mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+      mode: resolveProviderLaneFromMetadata(provider.metadata),
       provider: provider.metadata.id,
     });
   } else {
@@ -942,12 +943,16 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
     message: "Runtime memory sample",
     context: { memory: memoryLine, trend: memoryTrend.detail, source: "diagnostics-command" },
   });
+  const { runYoutubeDiagnosticsProbes } =
+    await import("@/services/youtube/youtube-diagnostics-probes");
+  const youtubeProbe = await runYoutubeDiagnosticsProbes(container);
   const lines = buildDiagnosticsPanelLines({
     state: stateManager.getState(),
     recentEvents: diagnosticsService.getRecent(container.debugTracePath ? 50 : 25),
     developerMode: Boolean(container.debugTracePath),
     memorySamples: getRuntimeMemorySamples(),
     capabilitySnapshot: container.capabilitySnapshot,
+    youtubeProbe,
     downloadSummary: {
       active: container.downloadService.listActive(200).length,
       completed: container.downloadService.listCompleted(200).length,
@@ -975,14 +980,22 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   const fromProviderId = state.provider;
   const picked = await withOverlay(
     stateManager,
-    { type: "provider_picker", currentProvider: fromProviderId, isAnime: state.mode === "anime" },
+    {
+      type: "provider_picker",
+      currentProvider: fromProviderId,
+      lane: shellModeToProviderLane(state.mode),
+    },
     () =>
       openProviderPicker({
         currentProvider: fromProviderId,
         providers: providerRegistry
           .getAll()
           .map((p) => p.metadata)
-          .filter((p) => p.isAnimeProvider === (state.mode === "anime")),
+          .filter((p) => {
+            if (state.mode === "youtube") return p.isYoutubeProvider;
+            if (state.mode === "anime") return p.isAnimeProvider;
+            return !p.isAnimeProvider && !p.isYoutubeProvider;
+          }),
         actionContext: buildPickerActionContext({
           container,
           taskLabel: "Choose provider",
@@ -1340,32 +1353,40 @@ export async function enqueueCurrentPlaybackDownload({
       mode: state.mode,
       posterUrl: state.currentTitle.posterUrl,
       audioPreference:
-        state.mode === "anime"
-          ? state.animeLanguageProfile.audio
-          : state.currentTitle.type === "movie"
-            ? state.movieLanguageProfile.audio
-            : state.seriesLanguageProfile.audio,
+        state.mode === "youtube"
+          ? container.config.youtubeLanguageProfile.audio
+          : state.mode === "anime"
+            ? state.animeLanguageProfile.audio
+            : state.currentTitle.type === "movie"
+              ? state.movieLanguageProfile.audio
+              : state.seriesLanguageProfile.audio,
       subtitlePreference:
-        state.mode === "anime"
-          ? state.animeLanguageProfile.subtitle
-          : state.currentTitle.type === "movie"
-            ? state.movieLanguageProfile.subtitle
-            : state.seriesLanguageProfile.subtitle,
+        state.mode === "youtube"
+          ? container.config.youtubeLanguageProfile.subtitle
+          : state.mode === "anime"
+            ? state.animeLanguageProfile.subtitle
+            : state.currentTitle.type === "movie"
+              ? state.movieLanguageProfile.subtitle
+              : state.seriesLanguageProfile.subtitle,
       qualityPreference:
-        state.mode === "anime"
-          ? state.animeLanguageProfile.quality
-          : state.currentTitle.type === "movie"
-            ? state.movieLanguageProfile.quality
-            : state.seriesLanguageProfile.quality,
+        state.mode === "youtube"
+          ? container.config.youtubeLanguageProfile.quality
+          : state.mode === "anime"
+            ? state.animeLanguageProfile.quality
+            : state.currentTitle.type === "movie"
+              ? state.movieLanguageProfile.quality
+              : state.seriesLanguageProfile.quality,
       selectedSourceId: getSelectedPlaybackSourceId(state.stream),
       selectedStreamId: state.stream?.providerResolveResult?.selectedStreamId,
       selectedQualityLabel: resolveDownloadQualityCeiling(
         container.config.defaultDownloadQuality,
-        state.mode === "anime"
-          ? state.animeLanguageProfile.quality
-          : state.currentTitle.type === "movie"
-            ? state.movieLanguageProfile.quality
-            : state.seriesLanguageProfile.quality,
+        state.mode === "youtube"
+          ? container.config.youtubeLanguageProfile.quality
+          : state.mode === "anime"
+            ? state.animeLanguageProfile.quality
+            : state.currentTitle.type === "movie"
+              ? state.movieLanguageProfile.quality
+              : state.seriesLanguageProfile.quality,
         getSelectedPlaybackQualityLabel(state.stream),
       ),
       timing,

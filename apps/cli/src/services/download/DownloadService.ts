@@ -20,6 +20,7 @@ import {
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
+import { buildYoutubeYtdlCliArgs } from "@kunai/providers/youtube";
 import {
   getKunaiPaths,
   type DownloadArtifactStatus,
@@ -270,11 +271,20 @@ export class DownloadService {
 
     const { subLang, animeLang } = persistLanguageHintsFromEnqueueInput(input);
 
+    const mediaKind =
+      input.mode === "youtube"
+        ? ("video" as const)
+        : input.title.type === "movie"
+          ? ("movie" as const)
+          : input.mode === "anime"
+            ? ("anime" as const)
+            : ("series" as const);
+
     this.deps.repo.enqueue({
       id,
       titleId: canonicalTitleId,
       titleName: input.title.name,
-      mediaKind: input.title.type,
+      mediaKind,
       season: input.episode?.season,
       episode: input.episode?.episode,
       providerId: input.providerId,
@@ -673,6 +683,16 @@ export class DownloadService {
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
     const resolved = await this.resolveStreamForJob(job);
+    const selectedStream = resolved.stream.providerResolveResult?.streams.find(
+      (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
+    );
+    const streamMeta = selectedStream?.metadata as
+      | { readonly isLive?: boolean; readonly liveStatus?: string }
+      | undefined;
+    if (streamMeta?.isLive === true || streamMeta?.liveStatus === "live") {
+      throw new Error("Live YouTube streams cannot be downloaded yet");
+    }
+
     const subtitleLanguage = resolveSubtitleLanguage(resolved.stream);
     const updatedAt = new Date().toISOString();
     this.deps.repo.updateResolvedStream(
@@ -741,6 +761,24 @@ export class DownloadService {
     const formatSelector = ytDlpFormatSelectorForQuality(job.selectedQualityLabel);
     if (formatSelector) {
       args.push("-f", formatSelector);
+    }
+
+    const isYoutubeJob = job.mediaKind === "video" || job.providerId === "youtube";
+    if (isYoutubeJob) {
+      args.push(
+        ...buildYoutubeYtdlCliArgs({
+          cookiesFromBrowser: this.deps.config.youtubeMetadata.cookiesFromBrowser,
+          cookiesFile: this.deps.config.youtubeMetadata.cookiesFile,
+          extractorArgs: this.deps.config.youtubeMetadata.extractorArgs,
+          sponsorblockRemove: this.deps.config.youtubeMetadata.sponsorblockRemove,
+        }),
+      );
+      args.push("--write-subs", "--write-auto-subs");
+      const subLang =
+        job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en";
+      if (subLang) {
+        args.push("--sub-langs", subLang);
+      }
     }
 
     // Add headers
@@ -848,11 +886,17 @@ export class DownloadService {
       throw new Error("download stream resolver unavailable");
     }
 
-    const mode = job.mode ?? (job.mediaKind === "anime" ? "anime" : "series");
+    const mode =
+      job.mode ??
+      (job.mediaKind === "anime" ? "anime" : job.mediaKind === "video" ? "youtube" : "series");
+    const subtitlePreference =
+      mode === "youtube"
+        ? (job.subLang ?? this.deps.config.youtubeLanguageProfile.subtitle ?? "eng")
+        : (job.subLang ?? "eng");
     const resolved = await this.deps.resolveDownloadStream({
       title: {
         id: job.titleId,
-        type: job.mediaKind === "movie" ? "movie" : "series",
+        type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
         name: job.titleName,
       },
       episode:
@@ -861,8 +905,15 @@ export class DownloadService {
           : undefined,
       providerId: job.providerId,
       mode,
-      audioPreference: mode === "anime" ? (job.animeLang === "dub" ? "dub" : "sub") : "original",
-      subtitlePreference: job.subLang ?? "eng",
+      audioPreference:
+        mode === "anime"
+          ? job.animeLang === "dub"
+            ? "dub"
+            : "sub"
+          : mode === "youtube"
+            ? this.deps.config.youtubeLanguageProfile.audio
+            : "original",
+      subtitlePreference,
       qualityPreference: job.selectedQualityLabel,
       selectedSourceId: job.selectedSourceId,
       selectedStreamId: job.selectedStreamId,

@@ -58,3 +58,17 @@ test("historyContentType collapses anime to series, preserving the facade flatte
   expect(historyContentType(row({ mediaKind: "series" }))).toBe("series");
   expect(historyContentType(row({ mediaKind: "anime" }))).toBe("series");
 });
+
+test("historyContentType treats standalone youtube video rows as movie-shaped", () => {
+  expect(
+    historyContentType(
+      row({
+        mediaKind: "video",
+        season: undefined,
+        episode: undefined,
+        absoluteEpisode: undefined,
+      }),
+    ),
+  ).toBe("movie");
+  expect(historyContentType(row({ mediaKind: "video", season: 1, episode: 3 }))).toBe("series");
+});

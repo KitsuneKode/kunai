@@ -380,7 +380,11 @@ export class PersistentMpvSession {
     });
 
     const loadResult = await this.ipcSession?.send(
-      buildPersistentLoadfileCommand(stream.url, options.startAt, stream.headers),
+      buildPersistentLoadfileCommand(stream.url, options.startAt, stream.headers, {
+        requiresYtdl: stream.requiresYtdl,
+        ytdlFormat: stream.ytdlFormat,
+        ytdlRawOptions: stream.ytdlRawOptions,
+      }),
       3_000,
     );
 
@@ -511,6 +515,9 @@ export class PersistentMpvSession {
         subtitleTracks: this.initialOptions.subtitleTracks,
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialOptions.startAt,
+        requiresYtdl: this.initialStream.requiresYtdl,
+        ytdlFormat: this.initialStream.ytdlFormat,
+        ytdlRawOptions: this.initialStream.ytdlRawOptions,
       },
       ipcServerCliArg(this.ipcEndpoint),
       {
@@ -1395,6 +1402,11 @@ export class PersistentMpvSession {
           this.playbackStream.url,
           shouldSeek ? seekSeconds : 0,
           this.playbackStream.headers,
+          {
+            requiresYtdl: this.playbackStream.requiresYtdl,
+            ytdlFormat: this.playbackStream.ytdlFormat,
+            ytdlRawOptions: this.playbackStream.ytdlRawOptions,
+          },
         ),
         12_000,
       );

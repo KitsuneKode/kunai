@@ -40,7 +40,14 @@ export function buildDefaultDownloadProfile(
   options: { readonly outputDirectory?: string } = {},
 ): DownloadConfirmationProfile {
   const state = container.stateManager.getState();
-  const language = mediaLanguageProfileFor(state);
+  const language = mediaLanguageProfileFor({
+    mode: state.mode,
+    currentTitle: state.currentTitle,
+    animeLanguageProfile: state.animeLanguageProfile,
+    seriesLanguageProfile: state.seriesLanguageProfile,
+    movieLanguageProfile: state.movieLanguageProfile,
+    youtubeLanguageProfile: container.config.youtubeLanguageProfile,
+  });
   return {
     audioPreference: language.audio,
     subtitlePreference: language.subtitle,

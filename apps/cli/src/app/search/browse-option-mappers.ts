@@ -9,6 +9,7 @@ import {
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
+import { formatDurationSeconds, formatViewCount } from "@kunai/providers/youtube";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
@@ -103,9 +104,36 @@ export function toBrowseResultOption(
   const displayTitle = chooseSearchResultTitle(result, titlePreference);
   const alternateTitles = formatAlternateTitles(result, displayTitle);
   const overview = normalizeProviderText(result.overview);
+  const isYoutubeResult =
+    result.contentShape !== undefined ||
+    result.externalIds?.youtubeId !== undefined ||
+    result.id.startsWith("youtube:");
+  const contentLabel = isYoutubeResult
+    ? result.contentShape === "playlist"
+      ? "Playlist"
+      : result.contentShape === "channel"
+        ? "Channel"
+        : "Video"
+    : result.type === "series"
+      ? "Series"
+      : "Movie";
   const meta = [
-    result.isAnime ? "Anime" : result.type === "series" ? "Series" : "Movie",
-    result.year || undefined,
+    isYoutubeResult
+      ? contentLabel
+      : result.isAnime
+        ? "Anime"
+        : result.type === "series"
+          ? "Series"
+          : "Movie",
+    isYoutubeResult ? undefined : result.year || undefined,
+    formatDurationSeconds(result.durationSeconds),
+    result.channelTitle,
+    formatViewCount(result.viewCount),
+    result.liveStatus === "live"
+      ? "Live"
+      : result.liveStatus === "upcoming"
+        ? "Upcoming"
+        : undefined,
     result.episodeCount ? `${result.episodeCount} episodes` : undefined,
     formatAnimeAvailability(result),
     formatRating(result.rating),
@@ -118,10 +146,14 @@ export function toBrowseResultOption(
 
   return {
     value: result,
-    label: result.year ? `${displayTitle} (${result.year})` : displayTitle,
-    detail: `${result.type === "series" ? "Series" : "Movie"}${
-      localStatus ? ` · ${localStatus}` : ""
-    }${historyBadge ? ` · ${historyBadge}` : ""}${overview ? ` · ${overview}` : ""}`,
+    label: isYoutubeResult
+      ? displayTitle
+      : result.year
+        ? `${displayTitle} (${result.year})`
+        : displayTitle,
+    detail: `${contentLabel}${localStatus ? ` · ${localStatus}` : ""}${
+      historyBadge ? ` · ${historyBadge}` : ""
+    }${overview ? ` · ${overview}` : ""}`,
     previewTitle: displayTitle,
     previewMeta: meta,
     previewBadge: inWatchlist ? "wl" : isFollowing ? "★ following" : undefined,
@@ -181,9 +213,15 @@ export function toBrowseResultOption(
     previewRating: formatRating(result.rating),
     previewBody: overview || "No overview available yet.",
     previewNote:
-      result.type === "series"
-        ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
-        : "Press Enter to open this title and continue to playback. Use / details for the overview.",
+      isYoutubeResult && result.contentShape === "playlist"
+        ? "Press Enter to open this playlist and choose a video."
+        : isYoutubeResult && result.contentShape === "channel"
+          ? "Press Enter to open this channel and choose a video."
+          : isYoutubeResult
+            ? "Press Enter to open this video and continue to playback."
+            : result.type === "series"
+              ? "Press Enter to open this title and continue to episode selection. Use / details for the overview."
+              : "Press Enter to open this title and continue to playback. Use / details for the overview.",
   };
 }
 

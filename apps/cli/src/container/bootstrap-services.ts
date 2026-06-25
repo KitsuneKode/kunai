@@ -339,12 +339,18 @@ export function bootstrapServices(input: {
     repo: historyRepository,
     resolver: createHistoryMetadataResolver({
       search: async (title, mediaKind) => {
-        const mode = mediaKind === "anime" ? "anime" : "series";
+        const mode = mediaKind === "anime" ? "anime" : mediaKind === "video" ? "youtube" : "series";
         try {
           const { results } = await searchTitles(title, {
             mode,
-            providerId: mode === "anime" ? config.animeProvider : config.provider,
+            providerId:
+              mode === "anime"
+                ? config.animeProvider
+                : mode === "youtube"
+                  ? config.youtubeProvider
+                  : config.provider,
             animeLanguageProfile: config.animeLanguageProfile,
+            youtubeLanguageProfile: config.youtubeLanguageProfile,
             searchRegistry,
             providerRegistry,
             enrichAnimeMetadata: false,
@@ -393,6 +399,7 @@ export function bootstrapServices(input: {
     playbackEventRepository,
     configStore,
     cacheStore,
+    cacheDb: persistence.cacheDb,
     diagnosticsStore,
     diagnosticsService,
     storageMaintenance,

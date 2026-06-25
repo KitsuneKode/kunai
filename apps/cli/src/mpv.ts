@@ -22,6 +22,7 @@ import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
+import { isYoutubeWatchUrl } from "@kunai/providers/youtube";
 
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
@@ -56,6 +57,9 @@ export async function launchMpv(opts: {
   subtitleTracks?: readonly SubtitleTrack[];
   displayTitle: string;
   startAt?: number;
+  requiresYtdl?: boolean;
+  ytdlFormat?: string;
+  ytdlRawOptions?: string;
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -400,6 +404,9 @@ export function buildMpvArgs(
     subtitleTracks?: readonly SubtitleTrack[];
     displayTitle: string;
     startAt?: number;
+    requiresYtdl?: boolean;
+    ytdlFormat?: string;
+    ytdlRawOptions?: string;
   },
   ipcPath: string | null,
   config?: {
@@ -413,7 +420,12 @@ export function buildMpvArgs(
 ): string[] {
   const args: string[] = [opts.url];
 
-  if (opts.url.toLowerCase().includes(".m3u8")) {
+  if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+    args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);
+    if (opts.ytdlRawOptions?.trim()) {
+      args.push(`--ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
+    }
+  } else if (opts.url.toLowerCase().includes(".m3u8")) {
     args.push("--ytdl=no");
   }
 

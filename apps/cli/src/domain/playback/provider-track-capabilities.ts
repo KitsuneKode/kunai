@@ -1,4 +1,4 @@
-import type { ProviderMetadata } from "@/domain/types";
+import type { ProviderMetadata, ShellMode } from "@/domain/types";
 
 import type { TrackCapability, TrackCapabilityGroup } from "./track-capabilities";
 
@@ -10,7 +10,7 @@ export type ProviderHealthHint = {
 
 export type BuildProviderTrackCapabilitiesInput = {
   readonly providers: readonly ProviderMetadata[];
-  readonly mode: "anime" | "series";
+  readonly mode: ShellMode;
   readonly currentProviderId: string;
   readonly healthByProviderId?: Readonly<Record<string, ProviderHealthHint>>;
 };
@@ -45,9 +45,11 @@ export function buildProviderTrackCapabilities(
   input: BuildProviderTrackCapabilitiesInput,
 ): TrackCapabilityGroup {
   const rows: TrackCapability[] = input.providers
-    .filter((provider) =>
-      input.mode === "anime" ? provider.isAnimeProvider : !provider.isAnimeProvider,
-    )
+    .filter((provider) => {
+      if (input.mode === "youtube") return provider.isYoutubeProvider;
+      if (input.mode === "anime") return provider.isAnimeProvider;
+      return !provider.isAnimeProvider && !provider.isYoutubeProvider;
+    })
     .map((provider) => {
       const selected = provider.id === input.currentProviderId;
       const health = input.healthByProviderId?.[provider.id];

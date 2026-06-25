@@ -10,3 +10,9 @@ export function isLocalHlsManifestPlaybackUrl(url: string): boolean {
   if (!trimmed || /^https?:\/\//i.test(trimmed)) return false;
   return /\.m3u8(?:[?#]|$)/i.test(trimmed);
 }
+
+export function isYoutubeWatchUrl(url: string): boolean {
+  return /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/live\/|youtube\.com\/shorts\/)/i.test(
+    url.trim(),
+  );
+}

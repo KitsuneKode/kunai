@@ -7,6 +7,11 @@ import {
 } from "@kunai/providers";
 import type { ProviderResolveResult, SubtitleCandidate } from "@kunai/types";
 
+import {
+  resolveYtdlFormatFromCandidate,
+  resolveYoutubeYtdlRawOptions,
+} from "./youtube-playback-options";
+
 export interface ProviderResultAdapterInput {
   readonly result: ProviderResolveResult;
   readonly title: string;
@@ -52,6 +57,9 @@ export function providerResolveResultToStreamInfo(
     headers: selected.headers ?? {},
     audioLanguages: selected.audioLanguages ? [...selected.audioLanguages] : undefined,
     hardSubLanguage: selected.hardSubLanguage,
+    requiresYtdl: selected.requiresYtdl,
+    ytdlFormat: selected.requiresYtdl ? resolveYtdlFormatFromCandidate(selected) : undefined,
+    ytdlRawOptions: selected.requiresYtdl ? resolveYoutubeYtdlRawOptions(selected) : undefined,
     subtitle: pickedSubtitle?.url,
     subtitleList,
     subtitleSource,

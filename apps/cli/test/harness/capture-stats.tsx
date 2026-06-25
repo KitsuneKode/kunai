@@ -22,7 +22,12 @@ const sampleStats: WatchStats = {
   avgEpisodesPerDay: 3.1,
   activeDays: 75,
   mostActiveDay: "2026-05-16",
-  typeBreakdown: { animeSeconds: 280_000, seriesSeconds: 160_000, movieSeconds: 80_980 },
+  typeBreakdown: {
+    animeSeconds: 280_000,
+    seriesSeconds: 160_000,
+    movieSeconds: 80_980,
+    videoSeconds: 0,
+  },
   providerBreakdown: [{ providerId: "allanime", episodeCount: 200, totalSeconds: 300_000 }],
   hourOfDay: [{ hour: 21, episodeCount: 40, totalSeconds: 50_000 }],
   dailyKindMix: [],

@@ -32,6 +32,7 @@ function createResolverContainer(
                 id,
                 isAnimeProvider:
                   id === "allanime" || (id === providerId && overrides.isAnimeProvider === true),
+                ...(id === "allanime" ? { catalogIdentity: "anilist" as const } : {}),
               },
               capabilities: {} as never,
               canHandle: () => true,
@@ -76,6 +77,23 @@ describe("shareTitleCatalogIdForAnimeMapping", () => {
 });
 
 describe("resolveShareTarget", () => {
+  it("maps a youtube catalog anchor to youtube mode", async () => {
+    const container = createResolverContainer();
+    const out = await resolveShareTarget(
+      {
+        anchor: { by: "catalog", ns: "youtube", id: "dQw4w9WgXcQ" },
+        kind: "video",
+        title: "Never Gonna Give You Up",
+        startSeconds: 42,
+      },
+      container,
+    );
+    expect(out.mode).toBe("youtube");
+    expect(out.title.id).toBe("youtube:dQw4w9WgXcQ");
+    expect(out.title.externalIds?.youtubeId).toBe("dQw4w9WgXcQ");
+    expect(out.startSeconds).toBe(42);
+  });
+
   it("maps a tmdb series catalog anchor to a portable TitleInfo", async () => {
     const container = createResolverContainer();
     const out = await resolveShareTarget(

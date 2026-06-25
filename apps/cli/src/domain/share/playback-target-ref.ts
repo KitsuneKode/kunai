@@ -2,7 +2,7 @@
 // playback-target-ref.ts — portable catalog-anchored "what to play" model + codec.
 // =============================================================================
 
-export type CatalogNs = "tmdb" | "anilist" | "mal" | "imdb";
+export type CatalogNs = "tmdb" | "anilist" | "mal" | "imdb" | "youtube";
 
 export type ShareAnchor =
   | { readonly by: "catalog"; readonly ns: CatalogNs; readonly id: string }
@@ -10,7 +10,7 @@ export type ShareAnchor =
 
 export type PlaybackTargetRef = {
   readonly anchor: ShareAnchor;
-  readonly kind: "movie" | "series" | "anime";
+  readonly kind: "movie" | "series" | "anime" | "video";
   readonly season?: number;
   readonly episode?: number;
   readonly absoluteEpisode?: number;
@@ -21,7 +21,7 @@ export type PlaybackTargetRef = {
 
 export type KunaiShareAction = "play" | "download";
 
-const CATALOG_NS: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "imdb"]);
+const CATALOG_NS: ReadonlySet<string> = new Set(["tmdb", "anilist", "mal", "imdb", "youtube"]);
 const PARAM_ORDER = ["cat", "q", "kind", "s", "e", "abs", "t", "src", "sq", "n"] as const;
 
 export function parseTimestampToSeconds(raw: string | null | undefined): number | null {
@@ -158,7 +158,14 @@ function readAnchor(params: URLSearchParams): ShareAnchor | null {
 
 function readKind(params: URLSearchParams): PlaybackTargetRef["kind"] {
   const explicit = params.get("kind")?.trim();
-  if (explicit === "movie" || explicit === "series" || explicit === "anime") return explicit;
+  if (
+    explicit === "movie" ||
+    explicit === "series" ||
+    explicit === "anime" ||
+    explicit === "video"
+  ) {
+    return explicit;
+  }
   return "series";
 }
 

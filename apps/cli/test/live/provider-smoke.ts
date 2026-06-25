@@ -136,7 +136,7 @@ export async function resolveProviderSmokeStream({
   };
   readonly providerId: string;
   readonly request: StreamRequest;
-  readonly mode: "series" | "anime";
+  readonly mode: "series" | "anime" | "youtube";
 }): Promise<{
   readonly stream: StreamInfo | null;
   readonly result: ProviderResolveResult;

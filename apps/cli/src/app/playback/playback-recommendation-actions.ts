@@ -50,7 +50,7 @@ export async function openPostPlaybackRecommendationActionPanel({
 }: {
   readonly container: PhaseContext["container"];
   readonly items: readonly PlaybackRecommendationRailItem[];
-  readonly mode: "series" | "anime";
+  readonly mode: import("@/domain/types").ShellMode;
 }): Promise<void> {
   if (items.length === 0) return;
   const [item] = items;
@@ -136,8 +136,15 @@ export async function openRecommendationDetailsPanel(
 export async function confirmAndDownloadPostPlaybackRecommendation(
   container: PhaseContext["container"],
   item: PlaybackRecommendationRailItem,
-  mode: "series" | "anime",
+  mode: import("@/domain/types").ShellMode,
 ): Promise<void> {
+  if (mode === "youtube") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Post-play recommendations are not available in YouTube mode.",
+    });
+    return;
+  }
   const eligibility = container.downloadService.getEnqueueEligibility();
   if (!eligibility.allowed) {
     container.stateManager.dispatch({

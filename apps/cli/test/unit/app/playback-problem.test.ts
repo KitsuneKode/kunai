@@ -18,6 +18,29 @@ describe("playback problem model", () => {
     expect(problem.recommendedAction).toBe("diagnostics");
   });
 
+  test("maps missing yt-dlp to an actionable YouTube setup problem", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        {
+          failure: {
+            code: "yt-dlp-missing",
+            message: "yt-dlp is required for YouTube playback. Install yt-dlp and retry.",
+          },
+        },
+      ],
+      capabilitySnapshot: null,
+    });
+
+    expect(problem).toMatchObject({
+      cause: "yt-dlp-missing",
+      severity: "blocking",
+      recommendedAction: "settings",
+      secondaryActions: ["diagnostics"],
+    });
+    expect(problem.userMessage).toContain("Install yt-dlp");
+    expect(toErrorScenario(problem)).toBeUndefined();
+  });
+
   test("maps player exit to relaunch before provider fallback", () => {
     const problem = buildPlayerFailureProblem("player-exited");
 

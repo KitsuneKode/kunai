@@ -533,7 +533,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const history =
           historyRepository.getLatestForTitleIdentity({
             id: title.id,
-            kind: stateManager.getState().mode === "anime" || title.isAnime ? "anime" : "series",
+            kind:
+              stateManager.getState().mode === "youtube"
+                ? "video"
+                : stateManager.getState().mode === "anime" || title.isAnime
+                  ? "anime"
+                  : "series",
             externalIds: title.externalIds,
           }) ?? null;
         if (history) {
@@ -637,7 +642,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const movieHistory =
           historyRepository.getLatestForTitleIdentity({
             id: title.id,
-            kind: "movie",
+            kind: stateManager.getState().mode === "youtube" ? "video" : "movie",
             externalIds: title.externalIds,
           }) ?? null;
         const { chooseMovieStartingPoint } = await import("@/session-flow");
@@ -1969,10 +1974,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   title: title.name,
                   externalIds: title.externalIds,
                 },
-                episode: {
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
+                episode:
+                  title.type === "series"
+                    ? {
+                        season: currentEpisode.season,
+                        episode: currentEpisode.episode,
+                      }
+                    : undefined,
                 positionSeconds: historyTimestamp,
                 durationSeconds: result.duration,
                 completed: didComplete,
@@ -3480,7 +3488,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     signal,
   }: {
     title: TitleInfo;
-    mode: "series" | "anime";
+    mode: import("../../domain/types").ShellMode;
     provider: import("../../services/providers/Provider").Provider | undefined;
     cache: Map<string, readonly EpisodePickerOption[] | undefined>;
     signal?: AbortSignal;
@@ -3500,11 +3508,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
   private async loadAnimeEpisodeOptions(
     title: TitleInfo,
-    mode: "series" | "anime",
+    mode: import("../../domain/types").ShellMode,
     provider: import("../../services/providers/Provider").Provider | undefined,
     signal?: AbortSignal,
   ): Promise<readonly EpisodePickerOption[] | undefined> {
-    if (mode !== "anime" || title.type !== "series" || !provider?.listEpisodes) {
+    if (
+      (mode !== "anime" && mode !== "youtube") ||
+      title.type !== "series" ||
+      !provider?.listEpisodes
+    ) {
       return undefined;
     }
 

@@ -44,8 +44,15 @@ export function titleInfoFromSearchResult(
 /** Map TitleInfo + shell mode to the canonical history lookup id. */
 export function resolveTitleHistoryLookupId(
   title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
-  mode?: "series" | "anime",
+  mode?: import("@/domain/types").ShellMode,
 ): string {
+  if (mode === "youtube") {
+    return resolveHistoryLookupTitleId({
+      id: title.id,
+      kind: "video",
+      externalIds: title.externalIds,
+    });
+  }
   const kind =
     mode === "anime" || title.isAnime
       ? ("anime" as const)

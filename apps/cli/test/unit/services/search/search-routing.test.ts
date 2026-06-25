@@ -333,6 +333,130 @@ describe("searchTitles", () => {
     expect(result.evidence.upstream).toEqual(["mode anime", "genre action", "sort popular"]);
   });
 
+  test("keeps advanced youtube searches on the youtube provider instead of registry fallback", async () => {
+    let providerNativeCalls = 0;
+    let searchedProvider: string | undefined;
+    const provider: any = {
+      metadata: {
+        id: "youtube",
+        name: "YouTube",
+        description: "",
+        recommended: true,
+        isAnimeProvider: false,
+        isYoutubeProvider: true,
+        domain: "youtube.com",
+      } as ProviderMetadata,
+      search: async () => {
+        providerNativeCalls += 1;
+        return [
+          {
+            id: "youtube:abc123",
+            title: "YouTube Result",
+            type: "movie",
+            contentShape: "video",
+            externalIds: { youtubeId: "abc123" },
+          },
+        ];
+      },
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "lofi",
+        mode: "youtube",
+        filters: { provider: "youtube", subtitles: "en" },
+        sort: "popular",
+      }),
+      {
+        mode: "youtube",
+        providerId: "youtube",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+        searchRegistry: createSearchRegistry({
+          defaultResults: [
+            {
+              id: "tmdb-wrong",
+              type: "movie",
+              title: "Wrong Registry Result",
+              year: "",
+              overview: "",
+              posterPath: null,
+            },
+          ],
+          onProviderResolution: (providerId) => {
+            searchedProvider = providerId;
+          },
+        }) as any,
+        providerRegistry: { get: () => provider } as any,
+      },
+    );
+
+    expect(providerNativeCalls).toBe(1);
+    expect(searchedProvider).toBeUndefined();
+    expect(result.strategy).toBe("provider-native");
+    expect(result.sourceId).toBe("youtube");
+    expect(result.results[0]?.id).toBe("youtube:abc123");
+    expect(result.evidence.unsupported).toEqual([
+      "provider youtube",
+      "subtitles en",
+      "sort popular",
+    ]);
+  });
+
+  test("routes mode youtube filters through the youtube provider from series mode", async () => {
+    let providerNativeCalls = 0;
+    const provider: any = {
+      metadata: {
+        id: "youtube",
+        name: "YouTube",
+        description: "",
+        recommended: true,
+        isAnimeProvider: false,
+        isYoutubeProvider: true,
+        domain: "youtube.com",
+      } as ProviderMetadata,
+      search: async () => {
+        providerNativeCalls += 1;
+        return [
+          {
+            id: "youtube:cross-mode",
+            title: "Cross Mode YouTube",
+            type: "movie",
+            contentShape: "video",
+            externalIds: { youtubeId: "cross-mode" },
+          },
+        ];
+      },
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "music",
+        mode: "youtube",
+        filters: {},
+        sort: "relevance",
+      }),
+      {
+        mode: "series",
+        providerId: "vidking",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: createSearchRegistry({}) as any,
+        providerRegistry: {
+          get: (id: string) => (id === "youtube" ? provider : undefined),
+          getDefaultForMode: (mode: string) => {
+            expect(mode).toBe("youtube");
+            return provider;
+          },
+        } as any,
+      },
+    );
+
+    expect(providerNativeCalls).toBe(1);
+    expect(result.strategy).toBe("provider-native");
+    expect(result.sourceId).toBe("youtube");
+    expect(result.results[0]?.id).toBe("youtube:cross-mode");
+  });
+
   test("applies text search filters locally when TMDB search cannot push them upstream", async () => {
     const searchRegistry = createSearchRegistry({
       providerResults: [

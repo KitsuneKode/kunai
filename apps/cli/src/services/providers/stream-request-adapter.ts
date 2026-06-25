@@ -32,7 +32,7 @@ export function streamRequestToResolveInput(
   return {
     title: titleToCoreIdentity(request.title, mode, catalogIdentity, providerId),
     episode: episodeToCoreIdentity(request.episode),
-    mediaKind: mode === "anime" ? "anime" : request.title.type,
+    mediaKind: mode === "youtube" ? "video" : mode === "anime" ? "anime" : request.title.type,
     preferredSourceId: normalizeOptionalId(request.selectedSourceId),
     preferredStreamId: normalizeOptionalId(request.selectedStreamId),
     favoriteSourceNames:
@@ -68,7 +68,7 @@ export function titleToCoreIdentity(
   catalogIdentity?: ProviderCatalogIdentity,
   providerId?: string,
 ): TitleIdentity {
-  const kind = mode === "anime" ? "anime" : title.type;
+  const kind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const year = title.year ? Number.parseInt(title.year, 10) || undefined : undefined;
 
   if (catalogIdentity) {

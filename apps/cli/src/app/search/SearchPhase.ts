@@ -174,7 +174,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             currentMode: currentState.mode,
           });
           const searchMode =
-            searchIntent.intent.mode === "anime" || searchIntent.intent.mode === "series"
+            searchIntent.intent.mode === "anime" ||
+            searchIntent.intent.mode === "series" ||
+            searchIntent.intent.mode === "youtube"
               ? searchIntent.intent.mode
               : currentState.mode;
           const search = await observeOnline(container, "search-error", () =>
@@ -182,6 +184,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               mode: searchMode,
               providerId: currentState.provider,
               animeLanguageProfile: container.config.animeLanguageProfile,
+              youtubeLanguageProfile: container.config.youtubeLanguageProfile,
               signal: context.signal,
               searchRegistry,
               providerRegistry,
@@ -346,7 +349,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 : `${currentState.searchResults.length} results · previous search`
               : undefined,
           initialSelectedIndex: currentState.selectedResultIndex,
-          placeholder: currentState.mode === "anime" ? "Demon Slayer" : "Breaking Bad",
+          placeholder:
+            currentState.mode === "anime"
+              ? "Demon Slayer"
+              : currentState.mode === "youtube"
+                ? "lofi hip hop"
+                : "Breaking Bad",
           commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
@@ -417,6 +425,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 mode: stateManager.getState().mode,
                 providerId: stateManager.getState().provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
+                youtubeLanguageProfile: container.config.youtubeLanguageProfile,
                 signal: context.signal,
                 searchRegistry,
                 providerRegistry,
@@ -481,7 +490,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} trending · ${mode === "anime" ? "AniList" : "TMDB"}`,
+              subtitle: `${results.length} trending · ${
+                mode === "anime" ? "AniList" : mode === "youtube" ? "YouTube" : "TMDB"
+              }`,
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
           },
@@ -812,6 +823,7 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
       { value: "type:movie", label: "Type · Movies", detail: "Only movies" },
       { value: "type:series", label: "Type · Series", detail: "Only TV / series" },
       { value: "mode:anime", label: "Type · Anime", detail: "Search anime catalogs" },
+      { value: "mode:youtube", label: "Type · YouTube", detail: "Search YouTube" },
       // ── Genre (anime catalogs honor these directly) ──
       { value: "genre:action", label: "Genre · Action", detail: "" },
       { value: "genre:adventure", label: "Genre · Adventure", detail: "" },
