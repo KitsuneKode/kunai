@@ -1,15 +1,22 @@
 import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
+  applyYoutubeProviderOrder,
   describeProviderOrder,
   resolveAnimeProviderOrder,
   resolveSeriesProviderOrder,
+  resolveYoutubeProviderOrder,
 } from "../provider-order";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import { configLabel, describeVideasySessionToken } from "./shared";
 
-function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "anime") {
-  const options = kind === "series" ? ctx.seriesProviderOptions : ctx.animeProviderOptions;
+function providerEnumOptions(ctx: SettingsRegistryContext, kind: "series" | "anime" | "youtube") {
+  const options =
+    kind === "series"
+      ? ctx.seriesProviderOptions
+      : kind === "anime"
+        ? ctx.animeProviderOptions
+        : ctx.youtubeProviderOptions;
   return options.map((option) => ({
     value: option.value,
     label: option.label.replace(/  ·  current$/, ""),
@@ -46,6 +53,16 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       write: (config, value) => ({ ...config, animeProvider: value }),
     },
     {
+      kind: "enum",
+      id: "youtubeProvider",
+      label: "YouTube provider",
+      detail: "YouTube mode default: used on new YouTube searches until changed in-session",
+      options: providerEnumOptions(ctx, "youtube"),
+      presentation: "submenu",
+      read: (config) => config.youtubeProvider,
+      write: (config, value) => ({ ...config, youtubeProvider: value }),
+    },
+    {
       kind: "reorder",
       id: "providerPriority",
       label: configLabel("providerPriority"),
@@ -62,6 +79,15 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       resolveOrder: resolveAnimeProviderOrder,
       applyOrder: applyAnimeProviderOrder,
       providerOptions: (orderCtx) => orderCtx.animeProviderOptions,
+    },
+    {
+      kind: "reorder",
+      id: "youtubeProviderPriority",
+      label: configLabel("youtubeProviderPriority"),
+      detail: "Try order for YouTube — first entry is default, rest are fallbacks",
+      resolveOrder: resolveYoutubeProviderOrder,
+      applyOrder: applyYoutubeProviderOrder,
+      providerOptions: (orderCtx) => orderCtx.youtubeProviderOptions,
     },
     {
       kind: "text",

@@ -619,7 +619,7 @@ describe("root shell surface selection", () => {
       overlay: {
         type: "provider_picker",
         currentProvider: "vidking",
-        isAnime: false,
+        lane: "series",
       },
     });
 

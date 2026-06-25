@@ -16,6 +16,7 @@ export type SettingsRegistryContext = {
   readonly presenceSnapshot: PresenceSnapshot | null;
   readonly seriesProviderOptions: readonly ShellPickerOption<string>[];
   readonly animeProviderOptions: readonly ShellPickerOption<string>[];
+  readonly youtubeProviderOptions: readonly ShellPickerOption<string>[];
   readonly container: Container;
 };
 

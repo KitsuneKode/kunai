@@ -32,6 +32,7 @@ function mockRegistryCtx(config: KitsuneConfig) {
     presenceSnapshot: null,
     seriesProviderOptions: [],
     animeProviderOptions: [],
+    youtubeProviderOptions: [],
     container,
   };
 }

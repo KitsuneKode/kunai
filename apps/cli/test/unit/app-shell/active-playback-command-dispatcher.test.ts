@@ -188,6 +188,9 @@ function createDeps(
     switchSessionMode: () => {
       calls.push("switch-mode");
     },
+    setSessionLane: () => {
+      calls.push("set-lane");
+    },
     routeSearchShellAction: async (action: ShellAction) => {
       calls.push(`route:${action}`);
       return "handled";

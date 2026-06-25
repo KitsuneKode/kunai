@@ -5,5 +5,6 @@ export function createProviderPrioritySnapshot(config: KitsuneConfig): ProviderP
   return {
     providerPriority: [config.provider, ...config.providerPriority],
     animeProviderPriority: [config.animeProvider, ...config.animeProviderPriority],
+    youtubeProviderPriority: [config.youtubeProvider, ...config.youtubeProviderPriority],
   };
 }

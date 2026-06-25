@@ -8,6 +8,7 @@ import { providerSettingsRows } from "./providers";
 import { relaySettingsRows } from "./relay";
 import { storageSettingsRows } from "./storage";
 import { updateSettingsRows } from "./updates";
+import { youtubeSettingsRows } from "./youtube";
 
 export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
@@ -15,6 +16,7 @@ export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowD
     ...discoverSettingsRows(ctx),
     ...providerSettingsRows(ctx),
     ...relaySettingsRows(ctx),
+    ...youtubeSettingsRows(ctx),
     ...languageSettingsRows(ctx),
     ...playbackSettingsRows(ctx),
     ...presenceSettingsRows(ctx),

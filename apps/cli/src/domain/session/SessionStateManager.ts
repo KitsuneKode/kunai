@@ -25,6 +25,7 @@ export interface SessionStateManager {
       series: import("../../services/persistence/ConfigService").MediaLanguageProfile;
       movie: import("../../services/persistence/ConfigService").MediaLanguageProfile;
     },
+    defaultYoutubeProvider?: string,
   ): void;
 }
 
@@ -33,11 +34,16 @@ export interface SessionStateManagerDeps {
 }
 
 export class SessionStateManagerImpl implements SessionStateManager {
-  private state: SessionState = createInitialState("videasy", "allanime", {
-    anime: { audio: "original", subtitle: "en" },
-    series: { audio: "original", subtitle: "none" },
-    movie: { audio: "original", subtitle: "en" },
-  });
+  private state: SessionState = createInitialState(
+    "videasy",
+    "allanime",
+    {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    },
+    "youtube",
+  );
   private listeners = new Set<StateListener>();
 
   constructor(private deps: SessionStateManagerDeps) {}
@@ -50,11 +56,18 @@ export class SessionStateManagerImpl implements SessionStateManager {
       series: import("../../services/persistence/ConfigService").MediaLanguageProfile;
       movie: import("../../services/persistence/ConfigService").MediaLanguageProfile;
     },
+    defaultYoutubeProvider = "youtube",
   ): void {
-    this.state = createInitialState(defaultProvider, defaultAnimeProvider, initialProfiles);
+    this.state = createInitialState(
+      defaultProvider,
+      defaultAnimeProvider,
+      initialProfiles,
+      defaultYoutubeProvider,
+    );
     this.deps.logger.info("Session state initialized", {
       defaultProvider,
       defaultAnimeProvider,
+      defaultYoutubeProvider,
     });
   }
 

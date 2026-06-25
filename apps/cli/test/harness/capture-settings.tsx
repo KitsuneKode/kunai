@@ -25,6 +25,7 @@ const registryCtx = {
   presenceSnapshot: null,
   seriesProviderOptions: [],
   animeProviderOptions: [],
+  youtubeProviderOptions: [],
   container: {} as Container,
 };
 

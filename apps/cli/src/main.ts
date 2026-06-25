@@ -551,13 +551,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const { getKunaiPaths } = await import("@kunai/storage");
   const configJson = await (async () => {
     try {
-      return (await Bun.file(getKunaiPaths().configPath).json()) as { onboardingVersion?: number };
+      return (await Bun.file(getKunaiPaths().configPath).json()) as {
+        onboardingVersion?: number;
+        defaultMode?: string;
+      };
     } catch {
-      return {} as { onboardingVersion?: number };
+      return {} as { onboardingVersion?: number; defaultMode?: string };
     }
   })();
   const onboardingWillRun = (configJson.onboardingVersion ?? 0) < 2;
-  const capabilitySnapshot = await checkDeps(KUNAI_VERSION, { silent: onboardingWillRun });
+  const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
+    silent: onboardingWillRun,
+    requireYtDlp: args.youtube || configJson.defaultMode === "youtube",
+  });
 
   // Bootstrap the DI container
   const container = await createContainer({
@@ -583,18 +589,29 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await maybeRunAutoCleanupDownloads(container);
 
   // Initialize session state with CLI overrides
-  stateManager.initialize(config.provider, config.animeProvider, {
-    anime: config.animeLanguageProfile,
-    series: config.seriesLanguageProfile,
-    movie: config.movieLanguageProfile,
-  });
+  stateManager.initialize(
+    config.provider,
+    config.animeProvider,
+    {
+      anime: config.animeLanguageProfile,
+      series: config.seriesLanguageProfile,
+      movie: config.movieLanguageProfile,
+    },
+    config.youtubeProvider,
+  );
 
-  const initialMode = args.anime ? "anime" : config.defaultMode;
+  const initialMode = args.youtube ? "youtube" : args.anime ? "anime" : config.defaultMode;
   if (initialMode === "anime") {
     stateManager.dispatch({
       type: "SET_MODE",
       mode: "anime",
       provider: config.animeProvider,
+    });
+  } else if (initialMode === "youtube") {
+    stateManager.dispatch({
+      type: "SET_MODE",
+      mode: "youtube",
+      provider: config.youtubeProvider,
     });
   }
 

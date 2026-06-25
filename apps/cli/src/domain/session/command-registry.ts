@@ -1,4 +1,5 @@
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
+import { getModeSwitchTarget } from "@/app/session/mode-switch";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
 import type { SessionState } from "./SessionState";
@@ -18,6 +19,9 @@ export type AppCommandId =
   | "presence"
   | "notifications"
   | "toggle-mode"
+  | "series-mode"
+  | "anime-mode"
+  | "youtube-mode"
   | "quit"
   | "provider"
   | "history"
@@ -208,6 +212,9 @@ export const COMMAND_CONTEXTS = {
     "next-season",
     "provider",
     "toggle-mode",
+    "series-mode",
+    "anime-mode",
+    "youtube-mode",
     "diagnostics",
     "export-diagnostics",
     "report-issue",
@@ -329,8 +336,26 @@ export const COMMANDS: readonly AppCommand[] = [
   {
     id: "toggle-mode",
     label: "Toggle Mode",
-    aliases: ["mode", "toggle-mode", "anime"],
-    description: "Switch between anime and series mode",
+    aliases: ["mode", "toggle-mode"],
+    description: "Cycle catalog mode: series, anime, then YouTube",
+  },
+  {
+    id: "series-mode",
+    label: "Series Mode",
+    aliases: ["series-mode", "series", "tv-mode"],
+    description: "Switch into series and movies mode",
+  },
+  {
+    id: "anime-mode",
+    label: "Anime Mode",
+    aliases: ["anime-mode", "anime"],
+    description: "Switch into anime mode",
+  },
+  {
+    id: "youtube-mode",
+    label: "YouTube Mode",
+    aliases: ["youtube-mode", "youtube", "yt"],
+    description: "Switch into YouTube mode",
   },
   {
     id: "quit",
@@ -834,11 +859,21 @@ export function resolveCommandContext(
 
 function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {
   if (command.id === "toggle-mode") {
-    const targetMode = state.mode === "anime" ? "series" : "anime";
+    const target = getModeSwitchTarget(state);
+    const labelByMode = {
+      series: "Series Mode",
+      anime: "Anime Mode",
+      youtube: "YouTube Mode",
+    } as const;
+    const descriptionByMode = {
+      series: "Switch into series and movies mode",
+      anime: "Switch into anime mode",
+      youtube: "Switch into YouTube mode",
+    } as const;
     return {
       ...command,
-      label: targetMode === "anime" ? "Anime Mode" : "Series Mode",
-      description: targetMode === "anime" ? "Switch into anime mode" : "Switch into series mode",
+      label: labelByMode[target.mode],
+      description: descriptionByMode[target.mode],
     };
   }
 
@@ -958,6 +993,9 @@ function resolveCommandState(
       return { enabled: true };
 
     case "toggle-mode":
+    case "series-mode":
+    case "anime-mode":
+    case "youtube-mode":
       return resolving
         ? {
             enabled: false,

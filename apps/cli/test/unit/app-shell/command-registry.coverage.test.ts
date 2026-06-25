@@ -26,7 +26,7 @@ function baseState(overrides: Partial<SessionState> = {}): SessionState {
     mode: "anime",
     view: "playback",
     provider: "vidking",
-    defaultProviders: { series: "vidking", anime: "allanime" },
+    defaultProviders: { series: "vidking", anime: "allanime", youtube: "youtube" },
     animeLanguageProfile: { audio: "sub", subtitle: "en", quality: "auto" },
     seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
     movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
@@ -88,6 +88,9 @@ describe("command registry — full surface coverage", () => {
       // postPlayback context are only reachable through surface-specific
       // keyboard handlers, not the palette.
       "toggle-mode",
+      "series-mode",
+      "anime-mode",
+      "youtube-mode",
       "details",
       "image-pane",
       "next-season",

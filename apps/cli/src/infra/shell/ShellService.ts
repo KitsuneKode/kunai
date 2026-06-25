@@ -16,7 +16,11 @@ export type ShellState =
 
 export type ModalType =
   | { type: "settings" }
-  | { type: "provider_picker"; currentProvider: string; isAnime: boolean }
+  | {
+      type: "provider_picker";
+      currentProvider: string;
+      lane: import("../../domain/types").ProviderLane;
+    }
   | { type: "subtitle_picker"; tracks: import("../../domain/types").SubtitleTrack[] }
   | { type: "confirm"; message: string; onConfirm: () => void };
 

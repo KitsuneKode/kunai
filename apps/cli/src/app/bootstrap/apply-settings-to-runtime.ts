@@ -1,6 +1,9 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { shellModeToDefaultProviderKey } from "@/services/providers/provider-lane";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
+
+import { providerForLane } from "./lane-settings-sync";
 
 export async function applySettingsToRuntime({
   container,
@@ -20,16 +23,14 @@ export async function applySettingsToRuntime({
   container.providerRegistry.setPriority(createProviderPrioritySnapshot(next));
 
   const state = stateManager.getState();
-  stateManager.dispatch({
-    type: "SET_DEFAULT_PROVIDER",
-    mode: "series",
-    provider: next.provider,
-  });
-  stateManager.dispatch({
-    type: "SET_DEFAULT_PROVIDER",
-    mode: "anime",
-    provider: next.animeProvider,
-  });
+  for (const mode of ["series", "anime", "youtube"] as const) {
+    stateManager.dispatch({
+      type: "SET_DEFAULT_PROVIDER",
+      mode,
+      provider: providerForLane(next, mode),
+    });
+  }
+
   stateManager.dispatch({
     type: "UPDATE_LANGUAGE_PROFILE",
     kind: "anime",
@@ -46,10 +47,10 @@ export async function applySettingsToRuntime({
     profile: next.movieLanguageProfile,
   });
 
-  const currentProvider =
-    state.mode === "anime" ? state.defaultProviders.anime : state.defaultProviders.series;
-  const nextDefault = state.mode === "anime" ? next.animeProvider : next.provider;
-  if (state.provider === currentProvider && state.provider !== nextDefault) {
+  const laneKey = shellModeToDefaultProviderKey(state.mode);
+  const currentDefault = state.defaultProviders[laneKey];
+  const nextDefault = providerForLane(next, state.mode);
+  if (state.provider === currentDefault && state.provider !== nextDefault) {
     stateManager.dispatch({
       type: "SET_PROVIDER",
       provider: nextDefault,
@@ -60,7 +61,7 @@ export async function applySettingsToRuntime({
     stateManager.dispatch({
       type: "SET_MODE",
       mode: next.defaultMode,
-      provider: next.defaultMode === "anime" ? next.animeProvider : next.provider,
+      provider: providerForLane(next, next.defaultMode),
     });
   }
 
@@ -78,6 +79,11 @@ export async function applySettingsToRuntime({
 
   if (before.videasyAppId !== next.videasyAppId) {
     await invalidateVideasyCaches(container, before, next);
+  }
+
+  if (JSON.stringify(before.youtubeMetadata) !== JSON.stringify(next.youtubeMetadata)) {
+    const { applyYoutubeProviderConfig } = await import("@/container/configure-youtube-provider");
+    applyYoutubeProviderConfig(next, container.cacheDb, { purgeCache: true });
   }
 }
 

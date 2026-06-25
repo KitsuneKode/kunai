@@ -93,6 +93,32 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     },
     {
       kind: "enum",
+      id: "youtubeAudio",
+      label: "YouTube audio",
+      detail: "Preferred YouTube audio track language",
+      options: AUDIO_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.youtubeLanguageProfile.audio,
+      write: (config, value) => ({
+        ...config,
+        youtubeLanguageProfile: { ...config.youtubeLanguageProfile, audio: value },
+      }),
+    },
+    {
+      kind: "enum",
+      id: "youtubeSubtitle",
+      label: "YouTube subtitles",
+      detail: "Preferred YouTube subtitle behavior",
+      options: SUBTITLE_SETTINGS_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.youtubeLanguageProfile.subtitle,
+      write: (config, value) => ({
+        ...config,
+        youtubeLanguageProfile: { ...config.youtubeLanguageProfile, subtitle: value },
+      }),
+    },
+    {
+      kind: "enum",
       id: "animeTitlePreference",
       label: "Anime title names",
       detail: "Choose English, Romaji, native, or provider titles in anime search",

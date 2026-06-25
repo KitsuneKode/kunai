@@ -23,6 +23,9 @@ export type ShellAction =
   | "presence"
   | "notifications"
   | "toggle-mode"
+  | "series-mode"
+  | "anime-mode"
+  | "youtube-mode"
   | "quit"
   | "history"
   | "details"
@@ -90,7 +93,7 @@ export type ShellAction =
   | "watch-online"
   | "menu";
 
-export type ShellMode = "series" | "anime";
+export type ShellMode = "series" | "anime" | "youtube";
 
 export type ShellStatusTone = "neutral" | "info" | "success" | "warning" | "error";
 
@@ -255,7 +258,7 @@ export type BrowseIdleContext = {
     ep?: string;
     remainingLabel?: string;
     titleId?: string;
-    mediaKind?: "movie" | "series";
+    mediaKind?: "movie" | "series" | "video";
   };
   offlineReadyNext?: {
     title: string;
@@ -364,6 +367,9 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "presence":
     case "notifications":
     case "toggle-mode":
+    case "series-mode":
+    case "anime-mode":
+    case "youtube-mode":
     case "quit":
     case "history":
     case "details":

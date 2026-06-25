@@ -3,8 +3,9 @@ import {
   recordLocalHistorySourceDecision,
 } from "@/app/bootstrap/launch-entry";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
-import { switchSessionMode } from "@/app/session/mode-switch";
+import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
+import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { historyContentType } from "@/services/continuation/history-progress";
 
 import { waitForRootHistorySelection } from "./root-history-bridge";
@@ -134,9 +135,10 @@ async function openRootHistorySelection(
   }
   const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
   if (providerMetadata) {
+    const lane = resolveProviderLaneFromMetadata(providerMetadata.metadata);
     stateManager.dispatch({
       type: "SET_MODE",
-      mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
+      mode: lane,
       provider: providerMetadata.metadata.id,
     });
   } else {
@@ -194,10 +196,18 @@ export async function dispatchPaletteCommand(
   }
   if (action === "toggle-mode") {
     switchSessionMode(stateManager);
-    if (_surface === "browse") {
-      stateManager.dispatch({ type: "RESET_SEARCH" });
-      stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-    }
+    return "mode-switch";
+  }
+  if (action === "series-mode") {
+    setSessionLane(stateManager, "series");
+    return "mode-switch";
+  }
+  if (action === "anime-mode") {
+    setSessionLane(stateManager, "anime");
+    return "mode-switch";
+  }
+  if (action === "youtube-mode") {
+    setSessionLane(stateManager, "youtube");
     return "mode-switch";
   }
   if (action === "help") {

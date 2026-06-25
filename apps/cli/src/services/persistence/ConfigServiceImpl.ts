@@ -119,6 +119,24 @@ function normalizeRelayBaseUrl(value: unknown): string {
   return normalizeRelayBaseUrlValue(value) ?? "";
 }
 
+function normalizeYoutubeMetadata(
+  value: KitsuneConfig["youtubeMetadata"] | undefined,
+): KitsuneConfig["youtubeMetadata"] {
+  if (!value || typeof value !== "object") return { ...DEFAULT_CONFIG.youtubeMetadata };
+  return {
+    ...(value.instanceUrl?.trim() ? { instanceUrl: value.instanceUrl.trim() } : {}),
+    ...(value.pipedApiUrl?.trim() ? { pipedApiUrl: value.pipedApiUrl.trim() } : {}),
+    ...(value.cookiesFromBrowser?.trim()
+      ? { cookiesFromBrowser: value.cookiesFromBrowser.trim() }
+      : {}),
+    ...(value.cookiesFile?.trim() ? { cookiesFile: value.cookiesFile.trim() } : {}),
+    ...(value.extractorArgs?.trim() ? { extractorArgs: value.extractorArgs.trim() } : {}),
+    ...(value.sponsorblockRemove?.trim()
+      ? { sponsorblockRemove: value.sponsorblockRemove.trim() }
+      : {}),
+  };
+}
+
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -145,6 +163,16 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.animeProviderPriority,
         DEFAULT_CONFIG.animeProviderPriority,
       ),
+      youtubeProvider:
+        normalizeSeriesProvider(loaded.youtubeProvider) || DEFAULT_CONFIG.youtubeProvider,
+      youtubeProviderPriority: normalizeProviderIdList(
+        loaded.youtubeProviderPriority,
+        DEFAULT_CONFIG.youtubeProviderPriority,
+      ),
+      youtubeLanguageProfile: normalizeLanguageProfile(
+        loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
+      ),
+      youtubeMetadata: normalizeYoutubeMetadata(loaded.youtubeMetadata),
       subLang: normalizeDefaultSubtitleLanguage(loaded.subLang),
       animeLanguageProfile: normalizeLanguageProfile(loaded.animeLanguageProfile),
       seriesLanguageProfile: normalizeLanguageProfile(loaded.seriesLanguageProfile),
@@ -191,12 +219,28 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.provider;
   }
 
-  get defaultMode(): "series" | "anime" {
+  get defaultMode(): KitsuneConfig["defaultMode"] {
     return this.config.defaultMode;
   }
 
   get animeProvider(): string {
     return this.config.animeProvider;
+  }
+
+  get youtubeProvider(): string {
+    return this.config.youtubeProvider;
+  }
+
+  get youtubeProviderPriority(): readonly string[] {
+    return [...this.config.youtubeProviderPriority];
+  }
+
+  get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
+    return this.config.youtubeLanguageProfile;
+  }
+
+  get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
+    return { ...this.config.youtubeMetadata };
   }
 
   get providerPriority(): readonly string[] {

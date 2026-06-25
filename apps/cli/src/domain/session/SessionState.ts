@@ -19,7 +19,7 @@ import {
   type ViewportSize,
 } from "./layout";
 
-export type ShellMode = "series" | "anime";
+export type ShellMode = "series" | "anime" | "youtube";
 export type ShellView =
   | "home"
   | "search"
@@ -76,7 +76,7 @@ export type PickerOverlayState = {
 
 export type OverlayState =
   | { type: "settings" }
-  | { type: "provider_picker"; currentProvider: string; isAnime: boolean }
+  | { type: "provider_picker"; currentProvider: string; lane: import("../types").ProviderLane }
   | ({ type: "subtitle_picker" } & PickerOverlayState)
   | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)
   | ({ type: "episode_picker"; season: number; initialIndex?: number } & PickerOverlayState)
@@ -122,6 +122,7 @@ export interface SessionState {
   readonly defaultProviders: {
     readonly series: string;
     readonly anime: string;
+    readonly youtube: string;
   };
   readonly animeLanguageProfile: import("../../services/persistence/ConfigService").MediaLanguageProfile;
   readonly seriesLanguageProfile: import("../../services/persistence/ConfigService").MediaLanguageProfile;
@@ -235,6 +236,7 @@ export function createInitialState(
     series: import("../../services/persistence/ConfigService").MediaLanguageProfile;
     movie: import("../../services/persistence/ConfigService").MediaLanguageProfile;
   },
+  defaultYoutubeProvider = "youtube",
 ): SessionState {
   const layoutPreferences = DEFAULT_LAYOUT_PREFERENCES;
   return {
@@ -244,6 +246,7 @@ export function createInitialState(
     defaultProviders: {
       series: defaultProvider,
       anime: defaultAnimeProvider,
+      youtube: defaultYoutubeProvider,
     },
     animeLanguageProfile: initialProfiles.anime,
     seriesLanguageProfile: initialProfiles.series,
@@ -278,12 +281,25 @@ export function createInitialState(
 
 export function reduceState(state: SessionState, transition: StateTransition): SessionState {
   switch (transition.type) {
-    case "SET_MODE":
+    case "SET_MODE": {
+      if (state.mode === transition.mode && state.provider === transition.provider) {
+        return state;
+      }
       return {
         ...state,
         mode: transition.mode,
         provider: transition.provider,
+        currentTitle: null,
+        currentEpisode: null,
+        stream: null,
+        searchQuery: "",
+        searchResults: [],
+        searchState: "idle",
+        selectedResultIndex: 0,
+        selectedResultId: null,
+        playbackStatus: state.playbackStatus === "idle" ? "idle" : state.playbackStatus,
       };
+    }
 
     case "SET_DEFAULT_PROVIDER":
       return {

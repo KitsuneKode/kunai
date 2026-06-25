@@ -30,7 +30,10 @@ export type {
 } from "./media/media-track-model";
 
 export type ContentType = "movie" | "series";
-export type ShellMode = "series" | "anime";
+export type ShellMode = "series" | "anime" | "youtube";
+export type ProviderLane = "anime" | "series" | "youtube";
+export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
+export type YouTubeContentShape = "video" | "playlist" | "channel";
 
 export interface TitleInfo {
   readonly id: string;
@@ -84,6 +87,9 @@ export interface StreamInfo {
   readonly subtitleEvidence?: SubtitleEvidence;
   readonly title?: string;
   readonly timestamp: number;
+  readonly requiresYtdl?: boolean;
+  readonly ytdlFormat?: string;
+  readonly ytdlRawOptions?: string;
   readonly providerResolveResult?: SharedProviderResolveResult;
   readonly cacheProvenance?:
     | "fresh"
@@ -142,6 +148,15 @@ export interface SearchResult {
   readonly release?: ProviderReleaseInfo;
   readonly artwork?: ProviderArtworkInfo;
   readonly languageEvidence?: readonly ProviderLanguageEvidence[];
+  readonly durationSeconds?: number;
+  readonly channelTitle?: string;
+  readonly channelId?: string;
+  readonly viewCount?: number;
+  readonly publishedAt?: string;
+  readonly liveStatus?: YouTubeLiveStatus;
+  readonly premium?: boolean;
+  readonly paid?: boolean;
+  readonly contentShape?: YouTubeContentShape;
 }
 
 export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";
@@ -196,6 +211,8 @@ export interface ProviderMetadata {
   readonly description: string;
   readonly recommended: boolean;
   readonly isAnimeProvider: boolean;
+  readonly isYoutubeProvider: boolean;
+  readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
   readonly status?: "production" | "candidate" | "experimental" | "research";
   readonly domain?: string;

@@ -228,6 +228,60 @@ describe("launch entry helpers", () => {
     });
   });
 
+  test("applyHistorySelectionProvider switches to youtube mode for youtube history rows", () => {
+    const transitions: unknown[] = [];
+
+    applyHistorySelectionProvider(
+      {
+        config: {
+          getRaw() {
+            return { titleProviderPreferences: {} };
+          },
+        },
+        providerRegistry: {
+          get(providerId: string) {
+            return {
+              metadata: {
+                id: providerId,
+                isAnimeProvider: false,
+              },
+            };
+          },
+        },
+        stateManager: {
+          getState() {
+            return {
+              provider: "videasy",
+              providerSwitchSeq: 0,
+              mode: "series",
+              defaultProviders: { series: "videasy", anime: "allanime", youtube: "youtube" },
+            };
+          },
+          dispatch(transition: unknown) {
+            transitions.push(transition);
+          },
+        },
+      } as never,
+      {
+        titleId: "youtube:abc123",
+        entry: history({
+          title: "Sample Video",
+          mediaKind: "video",
+          providerId: "youtube",
+          externalIds: { youtubeId: "abc123" },
+          season: undefined,
+          episode: undefined,
+        }),
+      },
+    );
+
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "youtube",
+      provider: "youtube",
+    });
+  });
+
   test("applyHistorySelectionProvider restores the explicit target episode", () => {
     const transitions: unknown[] = [];
 

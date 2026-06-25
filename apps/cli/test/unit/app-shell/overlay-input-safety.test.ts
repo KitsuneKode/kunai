@@ -6,7 +6,7 @@ describe("overlay input safety", () => {
   test("provider picker filter disables overlay cancel while typing", () => {
     expect(
       isOverlayCancelActive({
-        overlay: { type: "provider_picker", currentProvider: "allanime", isAnime: true },
+        overlay: { type: "provider_picker", currentProvider: "allanime", lane: "anime" },
         pickerFilterQuery: "all",
       }),
     ).toBe(false);
@@ -21,7 +21,7 @@ describe("overlay input safety", () => {
     ).toBe(true);
     expect(
       shouldHandleOverlayEscape({
-        overlay: { type: "provider_picker", currentProvider: "allanime", isAnime: true },
+        overlay: { type: "provider_picker", currentProvider: "allanime", lane: "anime" },
         pickerFilterQuery: "all",
       }),
     ).toBe(false);

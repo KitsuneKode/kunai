@@ -4,6 +4,7 @@ import { FOOTER_HINT_OPTIONS } from "./shared";
 const DEFAULT_MODE_OPTIONS = [
   { value: "series", label: "Series mode", detail: "Browse movies and TV on launch" },
   { value: "anime", label: "Anime mode", detail: "Browse anime on launch" },
+  { value: "youtube", label: "YouTube mode", detail: "Browse and play YouTube on launch" },
 ] as const;
 
 export function generalSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
@@ -18,14 +19,16 @@ export function generalSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
       kind: "enum",
       id: "defaultMode",
       label: "Default startup mode",
-      detail: "First catalog after launch: series/TV or anime (does not change mid-session mode)",
+      detail: "First catalog after launch: series, anime, or YouTube",
       options: DEFAULT_MODE_OPTIONS,
       presentation: "submenu",
       read: (config) => config.defaultMode,
-      write: (config, value) =>
-        value === "anime"
-          ? { ...config, defaultMode: "anime" }
-          : { ...config, defaultMode: "series" },
+      write: (config, value) => {
+        if (value === "anime" || value === "youtube" || value === "series") {
+          return { ...config, defaultMode: value };
+        }
+        return { ...config, defaultMode: "series" };
+      },
     },
     {
       kind: "enum",

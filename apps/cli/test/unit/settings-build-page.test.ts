@@ -17,6 +17,7 @@ test("buildSettingsRegistry includes relay text rows without keep/clear submenu"
     presenceSnapshot: null,
     seriesProviderOptions: [],
     animeProviderOptions: [],
+    youtubeProviderOptions: [],
     container: {} as Container,
   };
   const rows = buildSettingsRegistry(ctx);
@@ -33,6 +34,7 @@ test("buildSettingsPage filters rows by search query", () => {
     presenceSnapshot: null,
     seriesProviderOptions: [],
     animeProviderOptions: [],
+    youtubeProviderOptions: [],
     container: {} as Container,
   };
   const page = buildSettingsPage(ctx, { searchQuery: "relay" });
@@ -46,6 +48,7 @@ test("editable config metadata is represented by registry rows", () => {
     presenceSnapshot: null,
     seriesProviderOptions: [],
     animeProviderOptions: [],
+    youtubeProviderOptions: [],
     container: {} as Container,
   };
   const rows = buildSettingsRegistry(ctx);

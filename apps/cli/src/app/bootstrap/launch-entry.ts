@@ -1,7 +1,7 @@
 import { persistProviderNativeMapping } from "@/app/bootstrap/title-identity-persist";
 import { applyTitleProviderPreferenceToSession } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
-import { isAnimeContent } from "@/domain/media/content-kind";
+import { isAnimeContent, isYoutubeProviderId } from "@/domain/media/content-kind";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
@@ -9,6 +9,7 @@ import {
   correctedHistoryMediaKind,
   historyContentType,
   isFinished,
+  isYoutubeHistoryEntry,
 } from "@/services/continuation/history-progress";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryProgress } from "@kunai/storage";
@@ -44,7 +45,7 @@ export function historyLaunchSelectionFromContinuation(
     titleId: decision.target.titleId,
     entry: decision.target.sourceEntry,
     targetEpisode:
-      decision.target.mediaKind === "series"
+      decision.target.mediaKind === "series" || decision.target.mediaKind === "video"
         ? {
             season: decision.target.season ?? 1,
             episode: decision.target.episode ?? 1,
@@ -82,18 +83,31 @@ function selectNewestUnfinishedAnchor(
 }
 
 export function titleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {
+  const entry = selection.entry;
   const title: TitleInfo = {
     id: selection.titleId,
-    type: historyContentType(selection.entry),
-    name: selection.entry.title,
-    // Restore the stored poster so resumed playback renders art (it was simply
-    // absent because history never persisted a poster URL).
-    posterUrl: selection.entry.posterUrl,
-    externalIds: selection.entry.externalIds,
+    type: historyContentType(entry),
+    name: entry.title,
+    posterUrl: entry.posterUrl,
+    externalIds: entry.externalIds,
     launchSource: "history",
   };
-  if (isAnimeHistoryEntry(selection.entry)) {
+  if (isAnimeHistoryEntry(entry)) {
     return { ...title, isAnime: true };
+  }
+  if (isYoutubeHistoryEntry(entry)) {
+    const youtubeId = entry.externalIds?.youtubeId;
+    const catalogId =
+      entry.titleId.startsWith("youtube:") || !youtubeId ? entry.titleId : `youtube:${youtubeId}`;
+    return {
+      ...title,
+      id: catalogId,
+      type: historyContentType(entry),
+      externalIds: {
+        ...entry.externalIds,
+        ...(youtubeId ? { youtubeId } : {}),
+      },
+    };
   }
   return title;
 }
@@ -107,6 +121,18 @@ export async function prepareReplayTitleForProvider(
   title: TitleInfo,
   entry?: HistoryProgress,
 ): Promise<TitleInfo> {
+  if (entry && isYoutubeHistoryEntry(entry)) {
+    const state = container.stateManager.getState();
+    if (state.mode !== "youtube") {
+      container.stateManager.dispatch({
+        type: "SET_MODE",
+        mode: "youtube",
+        provider: state.defaultProviders.youtube,
+      });
+    }
+    return titleFromHistorySelection({ titleId: entry.titleId, entry });
+  }
+
   const animeReplay = isAnimeContent(title) || (entry ? isAnimeHistoryEntry(entry) : false);
   if (!animeReplay) return title;
 
@@ -172,10 +198,19 @@ export async function prepareReplayTitleForProvider(
 export function episodeFromHistorySelection(
   selection: HistoryLaunchSelection,
 ): EpisodeInfo | undefined {
-  if (historyContentType(selection.entry) !== "series") return undefined;
+  const entry = selection.entry;
+  if (isYoutubeHistoryEntry(entry)) {
+    if (historyContentType(entry) !== "series") return undefined;
+    const target = selection.targetEpisode ?? {
+      season: entry.season ?? 1,
+      episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    };
+    return { season: target.season, episode: target.episode };
+  }
+  if (historyContentType(entry) !== "series") return undefined;
   const target = selection.targetEpisode ?? {
-    season: selection.entry.season ?? 1,
-    episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
+    season: entry.season ?? 1,
+    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
   };
   return { season: target.season, episode: target.episode };
 }
@@ -263,13 +298,26 @@ export function applyHistorySelectionProvider(
     });
   }
 
+  if (isYoutubeHistoryEntry(selection.entry) && state.mode !== "youtube") {
+    container.stateManager.dispatch({
+      type: "SET_MODE",
+      mode: "youtube",
+      provider: state.defaultProviders.youtube,
+    });
+  }
+
   if (!appliedPreference) {
     if (!keepSessionProvider) {
       const provider = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
       if (provider) {
+        const mode = provider.metadata.isAnimeProvider
+          ? "anime"
+          : isYoutubeProviderId(provider.metadata.id)
+            ? "youtube"
+            : "series";
         container.stateManager.dispatch({
           type: "SET_MODE",
-          mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+          mode,
           provider: provider.metadata.id,
         });
       } else {

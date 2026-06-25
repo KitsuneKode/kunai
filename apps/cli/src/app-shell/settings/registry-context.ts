@@ -28,7 +28,7 @@ export function buildSettingsRegistryContext(
     providers: container.providerRegistry
       .getAll()
       .map((provider) => provider.metadata)
-      .filter((metadata) => !metadata.isAnimeProvider),
+      .filter((metadata) => !metadata.isAnimeProvider && !metadata.isYoutubeProvider),
     priority: [config.provider, ...config.providerPriority],
   });
   const animeProviderMetadata = sortProvidersByConfigPriority({
@@ -37,6 +37,13 @@ export function buildSettingsRegistryContext(
       .map((provider) => provider.metadata)
       .filter((metadata) => metadata.isAnimeProvider),
     priority: [config.animeProvider, ...config.animeProviderPriority],
+  });
+  const youtubeProviderMetadata = sortProvidersByConfigPriority({
+    providers: container.providerRegistry
+      .getAll()
+      .map((provider) => provider.metadata)
+      .filter((metadata) => metadata.isYoutubeProvider),
+    priority: [config.youtubeProvider, ...config.youtubeProviderPriority],
   });
 
   return {
@@ -49,6 +56,10 @@ export function buildSettingsRegistryContext(
     animeProviderOptions: buildSettingsProviderOptions({
       providers: animeProviderMetadata,
       currentProvider: config.animeProvider,
+    }),
+    youtubeProviderOptions: buildSettingsProviderOptions({
+      providers: youtubeProviderMetadata,
+      currentProvider: config.youtubeProvider,
     }),
     container,
   };

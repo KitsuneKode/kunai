@@ -55,6 +55,10 @@ export type ActivePlaybackCommandDispatchDeps = {
   readonly switchSessionMode: (
     stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
   ) => void;
+  readonly setSessionLane: (
+    stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
+    mode: "series" | "anime" | "youtube",
+  ) => void;
   readonly routeSearchShellAction: (
     action: ShellAction,
     deps: ActivePlaybackCommandDispatchDeps,
@@ -167,6 +171,18 @@ export async function dispatchActivePlaybackCommand(
   }
   if (action === "toggle-mode") {
     deps.switchSessionMode(deps.stateManager);
+    return "handled";
+  }
+  if (action === "series-mode") {
+    deps.setSessionLane(deps.stateManager, "series");
+    return "handled";
+  }
+  if (action === "anime-mode") {
+    deps.setSessionLane(deps.stateManager, "anime");
+    return "handled";
+  }
+  if (action === "youtube-mode") {
+    deps.setSessionLane(deps.stateManager, "youtube");
     return "handled";
   }
 

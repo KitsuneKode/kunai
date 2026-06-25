@@ -9,6 +9,11 @@ import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket"
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-name";
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
+import {
+  providerMetadataMatchesLane,
+  providerPriorityForLane,
+  shellModeToProviderLane,
+} from "@/domain/provider-lane";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
@@ -388,10 +393,8 @@ export function RootOverlayShell({
               providers: container.providerRegistry
                 .getAll()
                 .map((p) => p.metadata)
-                .filter((metadata) => metadata.isAnimeProvider === overlay.isAnime),
-              priority: overlay.isAnime
-                ? [rawConfig.animeProvider, ...rawConfig.animeProviderPriority]
-                : [rawConfig.provider, ...rawConfig.providerPriority],
+                .filter((metadata) => providerMetadataMatchesLane(metadata, overlay.lane)),
+              priority: providerPriorityForLane(rawConfig, overlay.lane),
             }),
             currentProvider: overlay.currentProvider,
             previewImageUrl: state.currentTitle?.posterUrl,
@@ -402,10 +405,7 @@ export function RootOverlayShell({
       overlay,
       container.providerRegistry,
       container.providerHealth,
-      rawConfig.animeProvider,
-      rawConfig.provider,
-      rawConfig.animeProviderPriority,
-      rawConfig.providerPriority,
+      rawConfig,
       state.currentTitle?.posterUrl,
     ],
   );
@@ -673,7 +673,7 @@ export function RootOverlayShell({
             ? {
                 type: "provider_picker" as const,
                 currentProvider: state.provider,
-                isAnime: state.mode === "anime",
+                lane: shellModeToProviderLane(state.mode),
               }
             : action === "history" || action === "continue"
               ? { type: "history" as const, initialFilterMode: "watching" as const }

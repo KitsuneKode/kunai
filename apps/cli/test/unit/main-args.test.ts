@@ -9,6 +9,22 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
+  expect(help).toContain("-y, --youtube");
+});
+
+test("parseArgs supports --youtube launch mode", () => {
+  const args = parseArgs(["--youtube", "-S", "lofi"]);
+
+  expect(args.youtube).toBe(true);
+  expect(args.anime).toBe(false);
+  expect(args.search).toBe("lofi");
+});
+
+test("parseArgs prefers --youtube over --anime when both are set", () => {
+  const args = parseArgs(["--youtube", "--anime"]);
+
+  expect(args.youtube).toBe(true);
+  expect(args.anime).toBe(false);
 });
 
 test("parseArgs supports download-only mode", () => {

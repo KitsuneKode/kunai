@@ -16,7 +16,7 @@ import {
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,
 } from "@/app/playback/source-quality";
-import { switchSessionMode } from "@/app/session/mode-switch";
+import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
 import {
   describePlaybackTelemetrySnapshot,
@@ -825,6 +825,7 @@ function AppRoot({ container }: { container: Container }) {
     const base = resolveHonestLoadingStageDetail({
       startupStage,
       playbackDetail: playbackBootstrapPresentation.stageDetail ?? state.playbackDetail,
+      mode: state.mode,
     });
     if (
       !state.stream?.providerResolveResult ||
@@ -838,6 +839,7 @@ function AppRoot({ container }: { container: Container }) {
   }, [
     container.diagnosticsService,
     playbackBootstrapPresentation.stageDetail,
+    state.mode,
     state.playbackDetail,
     state.playbackStatus,
     state.stream,
@@ -878,6 +880,9 @@ function AppRoot({ container }: { container: Container }) {
               },
               switchSessionMode: () => {
                 switchSessionMode(container.stateManager);
+              },
+              setSessionLane: (_sm, mode) => {
+                setSessionLane(container.stateManager, mode);
               },
               routeSearchShellAction: async (nextAction) => {
                 const { routeSearchShellAction } = await import("./command-router");
@@ -1945,7 +1950,7 @@ function TextInputShell({
 }) {
   const [value, setValue] = useState(initialValue);
   const { cols } = useShellDimensions();
-  const clearShellScreen = useCallback(() => {
+  const clearTextInputScreen = useCallback(() => {
     clearShellScreenArtifacts();
   }, []);
 
@@ -1974,7 +1979,7 @@ function TextInputShell({
               onSubmit(normalized);
             }
           }}
-          onRedraw={clearShellScreen}
+          onRedraw={clearTextInputScreen}
           focus
         />
       </Box>

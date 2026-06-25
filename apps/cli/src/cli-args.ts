@@ -7,6 +7,7 @@ export type CliArgs = {
   id?: string;
   type?: string;
   anime: boolean;
+  youtube: boolean;
   debug: boolean;
   debugJson: boolean;
   debugSession: boolean;
@@ -40,12 +41,14 @@ USAGE
   kunai -S "Dune"            Search straight away
   kunai -i 438631 -t movie   Open a known TMDB id
   kunai -a                   Start in anime mode
+  kunai -y                   Start in YouTube mode
 
 LAUNCH
   -S, --search <query>       Search for a title on launch
   -i, --id <id>              Open a specific title id
   -t, --type <movie|tv>      Content type for --id (tv = series)
   -a, --anime                Anime mode (AllAnime providers)
+  -y, --youtube              YouTube mode (YouTube provider)
       --continue, --resume   Jump into Continue Watching
       --history              Open watch history
       --offline              Offline library only (no provider calls)
@@ -105,6 +108,8 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--type",
   "-a",
   "--anime",
+  "-y",
+  "--youtube",
   "-m",
   "--minimal",
   "-z",
@@ -160,6 +165,7 @@ type CommanderCliOptions = {
   readonly id?: string;
   readonly type?: string;
   readonly anime?: boolean;
+  readonly youtube?: boolean;
   readonly minimal?: boolean;
   readonly zen?: boolean;
   readonly quick?: boolean;
@@ -200,6 +206,7 @@ function createCliCommand(): Command {
     .option("-i, --id <id>")
     .option("-t, --type <type>")
     .option("-a, --anime")
+    .option("-y, --youtube")
     .option("-m, --minimal")
     .option("-z, --zen")
     .option("-q, --quick")
@@ -274,6 +281,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
 
   const args: Omit<CliArgs, "shellChrome"> = {
     anime: false,
+    youtube: false,
     debug: false,
     debugJson: false,
     debugSession: false,
@@ -296,6 +304,11 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.id = options.id;
   if (options.type !== undefined) args.type = options.type === "tv" ? "series" : options.type;
   args.anime = Boolean(options.anime);
+  args.youtube = Boolean(options.youtube);
+  if (args.youtube && args.anime) {
+    warnings.push("--youtube overrides --anime for startup mode");
+    args.anime = false;
+  }
   args.minimal = Boolean(options.minimal);
   args.zen = Boolean(options.zen);
   args.quick = Boolean(options.quick);

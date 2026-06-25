@@ -20,6 +20,10 @@ export function resolveAnimeProviderOrder(config: KitsuneConfig): string[] {
   return dedupeProviderOrder([config.animeProvider, ...config.animeProviderPriority]);
 }
 
+export function resolveYoutubeProviderOrder(config: KitsuneConfig): string[] {
+  return dedupeProviderOrder([config.youtubeProvider, ...config.youtubeProviderPriority]);
+}
+
 export function applySeriesProviderOrder(
   config: KitsuneConfig,
   order: readonly string[],
@@ -38,6 +42,16 @@ export function applyAnimeProviderOrder(
   const first = normalized[0];
   if (!first) return config;
   return { ...config, animeProvider: first, animeProviderPriority: normalized.slice(1) };
+}
+
+export function applyYoutubeProviderOrder(
+  config: KitsuneConfig,
+  order: readonly string[],
+): KitsuneConfig {
+  const normalized = dedupeProviderOrder(order);
+  const first = normalized[0];
+  if (!first) return config;
+  return { ...config, youtubeProvider: first, youtubeProviderPriority: normalized.slice(1) };
 }
 
 export function moveProviderInOrder(

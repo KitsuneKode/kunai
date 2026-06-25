@@ -29,6 +29,29 @@ describe("getModeSwitchTarget", () => {
       defaultProviders: {
         series: "cineby",
         anime: "allanime",
+        youtube: "youtube",
+      },
+    };
+
+    expect(getModeSwitchTarget(state)).toEqual({
+      mode: "youtube",
+      provider: "youtube",
+    });
+  });
+
+  test("switches youtube mode to the configured series provider", () => {
+    const state = {
+      ...createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      mode: "youtube" as const,
+      provider: "youtube",
+      defaultProviders: {
+        series: "cineby",
+        anime: "allanime",
+        youtube: "youtube",
       },
     };
 
