@@ -17,7 +17,7 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
   const isOn = row.valueSummary === "on";
 
   return (
-    <Box width={rowWidth} backgroundColor={selected ? palette.surfaceActive : undefined}>
+    <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <BooleanSwitch on={isOn} />
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>

@@ -134,6 +134,7 @@ export type SettingsUiState = {
   readonly parentIndex: number;
   readonly inputMode: SettingsInputMode;
   readonly searchQuery: string;
+  readonly activeSectionIndex: number;
   readonly selectedIndex: number;
   readonly error: string | null;
   readonly busy: boolean;

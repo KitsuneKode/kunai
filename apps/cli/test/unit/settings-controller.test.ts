@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { buildSettingsPage } from "@/app-shell/settings/build-page";
+import { buildSettingsPage, listSettingsSectionLabels } from "@/app-shell/settings/build-page";
 import { handleSettingsKey } from "@/app-shell/settings/controller";
 import { createSettingsUiState } from "@/app-shell/settings/state";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -46,9 +46,11 @@ function rowIndexFor(page: ReturnType<typeof buildSettingsPage>, id: string): nu
 test("Enter on relay URL enters dedicated input mode instead of submenu", () => {
   const draft = baseConfig();
   const registryCtx = mockRegistryCtx(draft);
-  const page = buildSettingsPage(registryCtx);
+  const relaySectionIndex = listSettingsSectionLabels(registryCtx).indexOf("Provider relay");
+  const page = buildSettingsPage(registryCtx, { activeSectionIndex: relaySectionIndex });
   const state = {
     ...createSettingsUiState(draft),
+    activeSectionIndex: relaySectionIndex,
     selectedIndex: rowIndexFor(page, "providerRelayBaseUrl"),
   };
 

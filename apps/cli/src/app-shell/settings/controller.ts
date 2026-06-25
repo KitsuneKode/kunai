@@ -1,7 +1,7 @@
 import type { Container } from "@/container";
 import type { Key } from "ink";
 
-import { buildSettingsPage } from "./build-page";
+import { buildSettingsPage, listSettingsSectionLabels } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { clampSelectedIndex, moveSelectedIndex, selectableSettingsRows } from "./navigation";
 import { shouldDebouncePersist } from "./persist";
@@ -32,7 +32,10 @@ export type SettingsKeyContext = {
 };
 
 function pageFor(state: SettingsUiState, ctx: SettingsKeyContext) {
-  return buildSettingsPage(ctx.registryCtx, { searchQuery: state.searchQuery });
+  return buildSettingsPage(ctx.registryCtx, {
+    searchQuery: state.searchQuery,
+    activeSectionIndex: state.activeSectionIndex,
+  });
 }
 
 function selectedRow(state: SettingsUiState, ctx: SettingsKeyContext) {
@@ -313,10 +316,40 @@ export function handleSettingsKey(
   }
 
   if (input === "/" && !key.ctrl && !key.meta) {
+    const nextQuery = state.searchQuery + "/";
+    const filtered = buildSettingsPage(ctx.registryCtx, {
+      searchQuery: nextQuery,
+      activeSectionIndex: state.activeSectionIndex,
+    });
     return {
       handled: true,
-      state: { ...state, searchQuery: "", selectedIndex: 0, error: null },
+      state: {
+        ...state,
+        searchQuery: nextQuery,
+        selectedIndex: clampSelectedIndex(
+          0,
+          selectableSettingsRows(filtered).length || filtered.rows.length,
+        ),
+        error: null,
+      },
     };
+  }
+
+  if (key.tab && !state.searchQuery.trim()) {
+    const sectionCount = listSettingsSectionLabels(ctx.registryCtx).length;
+    if (sectionCount > 1) {
+      const nextSection = (state.activeSectionIndex + 1) % sectionCount;
+      const filtered = buildSettingsPage(ctx.registryCtx, { activeSectionIndex: nextSection });
+      return {
+        handled: true,
+        state: {
+          ...state,
+          activeSectionIndex: nextSection,
+          selectedIndex: clampSelectedIndex(0, selectableSettingsRows(filtered).length),
+          error: null,
+        },
+      };
+    }
   }
 
   if (key.backspace || key.delete) {
@@ -335,7 +368,10 @@ export function handleSettingsKey(
 
   if (!key.ctrl && !key.meta && input.length === 1 && input >= " " && input !== "/") {
     const nextQuery = state.searchQuery + input;
-    const filtered = buildSettingsPage(ctx.registryCtx, { searchQuery: nextQuery });
+    const filtered = buildSettingsPage(ctx.registryCtx, {
+      searchQuery: nextQuery,
+      activeSectionIndex: state.activeSectionIndex,
+    });
     return {
       handled: true,
       state: {

@@ -18,7 +18,7 @@ export const SettingsFooter = React.memo(function SettingsFooter({
       ? "Enter save · Esc cancel · Ctrl+U clear"
       : mode === "submenu"
         ? "Enter pick · [ ] reorder · Esc back"
-        : "Space toggle · Enter open · / search · Esc close";
+        : "Tab sections · Space toggle · Enter open · / search · Esc close";
 
   return (
     <Text color={palette.dim}>{`${hints}${dirty ? "  ·  changes apply automatically" : ""}`}</Text>

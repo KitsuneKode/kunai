@@ -14,7 +14,7 @@ export const SettingRowReorder = React.memo(function SettingRowReorder({
   readonly rowWidth: number;
 }) {
   return (
-    <Box width={rowWidth} backgroundColor={selected ? palette.surfaceActive : undefined}>
+    <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={palette.muted}>▸ </Text>
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>

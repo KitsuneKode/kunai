@@ -58,7 +58,7 @@ export const SettingRowAction = React.memo(function SettingRowAction({
   if (row.def.kind !== "action") return null;
   const danger = row.def.tone === "danger";
   return (
-    <Box width={rowWidth} backgroundColor={selected ? palette.surfaceActive : undefined}>
+    <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       {danger ? <Text color={palette.danger}>! </Text> : null}
       <Text

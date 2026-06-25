@@ -16,7 +16,7 @@ export const SettingRowText = React.memo(function SettingRowText({
   const summary = row.disabledReason ? "env locked" : row.valueSummary;
 
   return (
-    <Box width={rowWidth} backgroundColor={selected ? palette.surfaceActive : undefined}>
+    <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={palette.muted}>{"› ".padEnd(3)}</Text>
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>

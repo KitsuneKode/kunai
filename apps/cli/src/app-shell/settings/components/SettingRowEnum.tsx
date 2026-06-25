@@ -17,13 +17,13 @@ export const SettingRowEnum = React.memo(function SettingRowEnum({
   if (row.def.kind !== "enum" || row.def.presentation === "submenu") return null;
   const activeIndex = Math.max(
     0,
-    row.def.options.findIndex((option) => option.value === row.valueSummary),
+    row.def.options.findIndex((option) => option.label === row.valueSummary),
   );
 
   return (
     <Box
       width={rowWidth}
-      backgroundColor={selected ? palette.surfaceActive : undefined}
+      backgroundColor={selected ? palette.accentFill : undefined}
       flexDirection="column"
     >
       <Box>

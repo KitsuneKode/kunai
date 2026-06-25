@@ -2,7 +2,10 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { PickerOptionRow } from "../overlay-picker-row";
+import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
+import { StateBlock } from "../primitives/StateBlock";
 import { palette } from "../shell-theme";
+import { listSettingsSectionLabels } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingRowBoolean } from "./components/SettingRowBoolean";
 import { SettingRowEnum } from "./components/SettingRowEnum";
@@ -12,7 +15,7 @@ import { SettingRowText } from "./components/SettingRowText";
 import { SettingRowAction, SettingRowStatus, SettingSection } from "./components/SettingSection";
 import { SettingsInputBanner } from "./components/SettingsInputBanner";
 import { SettingsSearchBar } from "./components/SettingsSearchBar";
-import { windowStart } from "./navigation";
+import { selectableSettingsRows, windowStart } from "./navigation";
 import type { BuiltSettingsPage, SettingsRegistryContext, SettingsUiState } from "./types";
 
 function renderMainRow(
@@ -70,6 +73,8 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly error: string | null;
 }) {
   const rowWidth = Math.max(24, width - 4);
+  const sectionLabels = listSettingsSectionLabels(registryCtx);
+  const showSectionTabs = sectionLabels.length > 1 && !state.searchQuery.trim();
   const inputDef =
     state.inputMode.active && state.inputMode.settingId
       ? page.defById.get(state.inputMode.settingId)
@@ -109,10 +114,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             const absolute = start + index;
             const selected = absolute === state.selectedIndex;
             return (
-              <Box
-                key={choice.value}
-                backgroundColor={selected ? palette.surfaceActive : undefined}
-              >
+              <Box key={choice.value} backgroundColor={selected ? palette.accentFill : undefined}>
                 <Text color={selected ? palette.accent : palette.dim}>
                   {selected ? "▌ " : "  "}
                 </Text>
@@ -136,6 +138,30 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     );
   }
 
+  const selectableRows = selectableSettingsRows(page);
+  if (state.searchQuery.trim() && selectableRows.length === 0) {
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Text color={palette.text} bold>
+          {page.title}
+        </Text>
+        <Text color={palette.dim}>{page.subtitle}</Text>
+        <SettingsSearchBar query={state.searchQuery} />
+        <Box marginTop={1}>
+          <StateBlock
+            model={{
+              kind: "empty",
+              title: `No settings match "${state.searchQuery.trim()}"`,
+              detail: "Try another keyword or clear the filter with Backspace.",
+            }}
+            width={rowWidth}
+          />
+        </Box>
+        {error ? <Text color={palette.danger}>{error}</Text> : null}
+      </Box>
+    );
+  }
+
   const start = windowStart(state.selectedIndex, page.rows.length, maxRows);
   const visible = page.rows.slice(start, start + maxRows);
 
@@ -145,6 +171,15 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         {page.title}
       </Text>
       <Text color={palette.dim}>{page.subtitle}</Text>
+      {showSectionTabs ? (
+        <ClaudeTabRow
+          labels={sectionLabels}
+          activeIndex={state.activeSectionIndex}
+          hint="Tab next section"
+          maxWidth={rowWidth}
+          dense
+        />
+      ) : null}
       <SettingsSearchBar query={state.searchQuery} />
       <Box marginTop={1} flexDirection="column">
         {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}

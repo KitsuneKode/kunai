@@ -39,8 +39,12 @@ export function SettingsShell({
   );
 
   const page = useMemo(
-    () => buildSettingsPage(registryCtx, { searchQuery: state.searchQuery }),
-    [registryCtx, state.searchQuery],
+    () =>
+      buildSettingsPage(registryCtx, {
+        searchQuery: state.searchQuery,
+        activeSectionIndex: state.activeSectionIndex,
+      }),
+    [registryCtx, state.searchQuery, state.activeSectionIndex],
   );
 
   const runAction = useCallback(

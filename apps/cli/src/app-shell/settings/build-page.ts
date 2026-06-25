@@ -30,8 +30,10 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
       return "";
     case "boolean":
       return def.read(config) ? "on" : "off";
-    case "enum":
-      return def.read(config);
+    case "enum": {
+      const value = def.read(config);
+      return def.options.find((option) => option.value === value)?.label ?? value;
+    }
     case "text": {
       const raw = def.read(config);
       if (def.sensitive) return raw ? "configured" : "not set";
@@ -90,9 +92,28 @@ export function buildSettingsSummary(config: KitsuneConfig): string {
   return `${config.defaultMode} default  ·  discover ${config.discoverMode}  ·  series ${config.provider}  ·  anime ${config.animeProvider}`;
 }
 
+export function listSettingsSectionLabels(ctx: SettingsRegistryContext): readonly string[] {
+  return buildSettingsRegistry(ctx)
+    .filter((row) => isSettingVisible(row, ctx) && row.kind === "section")
+    .map((row) => row.label);
+}
+
+function sliceRowsForSection(
+  rows: readonly BuiltSettingsRow[],
+  sectionIndex: number,
+): readonly BuiltSettingsRow[] {
+  const sectionStarts = rows
+    .map((row, index) => (row.def.kind === "section" ? index : -1))
+    .filter((index) => index >= 0);
+  const start = sectionStarts[sectionIndex];
+  if (start === undefined) return rows;
+  const end = sectionStarts[sectionIndex + 1] ?? rows.length;
+  return rows.slice(start, end);
+}
+
 export function buildSettingsPage(
   ctx: SettingsRegistryContext,
-  options?: { readonly searchQuery?: string },
+  options?: { readonly searchQuery?: string; readonly activeSectionIndex?: number },
 ): BuiltSettingsPage {
   const search = options?.searchQuery?.trim().toLowerCase() ?? "";
   const defs = buildSettingsRegistry(ctx).filter((row) => isSettingVisible(row, ctx));
@@ -135,10 +156,13 @@ export function buildSettingsPage(
     };
   }
 
+  const sectionIndex = options?.activeSectionIndex ?? 0;
+  const sectionRows = sliceRowsForSection(rows, sectionIndex);
+
   return {
     title: "Settings",
     subtitle: buildSettingsSummary(ctx.config),
-    rows,
+    rows: sectionRows,
     rowById,
     defById,
   };

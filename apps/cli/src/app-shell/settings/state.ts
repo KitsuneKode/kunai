@@ -10,6 +10,7 @@ export function createSettingsUiState(snapshot: KitsuneConfig): SettingsUiState 
     parentIndex: 0,
     inputMode: { active: false },
     searchQuery: "",
+    activeSectionIndex: 0,
     selectedIndex: 0,
     error: null,
     busy: false,
