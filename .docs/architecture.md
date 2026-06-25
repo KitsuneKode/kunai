@@ -164,6 +164,8 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 | Stream cache       | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
 | Debug logs         | `./logs.txt`                        | `apps/cli/src/logger.ts`             |
 
+**Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
+
 The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
 Automatic storage maintenance is conservative:
