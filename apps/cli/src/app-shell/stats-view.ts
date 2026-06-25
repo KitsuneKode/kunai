@@ -16,7 +16,7 @@ import { heatBucket } from "./format/heatmap";
 import { padColumnsEnd, truncateLine } from "./shell-text";
 import { palette, resolveStatsTintColor, statsHeatCellColor } from "./shell-theme";
 
-export const STATS_TABS = ["overview", "titles"] as const;
+export const STATS_TABS = ["overview", "titles", "insights"] as const;
 export type StatsTab = (typeof STATS_TABS)[number];
 
 export const STATS_RANGES = ["all", "7d", "30d"] as const;
@@ -25,7 +25,7 @@ export type StatsRange = (typeof STATS_RANGES)[number];
 export const STATS_KINDS = ["all", "anime", "series", "movie"] as const;
 export type StatsKind = (typeof STATS_KINDS)[number];
 
-export const STATS_TAB_LABELS = ["Overview", "Titles"] as const;
+export const STATS_TAB_LABELS = ["Overview", "Titles", "Insights"] as const;
 export const STATS_RANGE_LABELS = ["All time", "Last 7d", "Last 30d"] as const;
 export const STATS_KIND_LABELS = ["All", "Anime", "Series", "Movies"] as const;
 
@@ -33,6 +33,12 @@ export const STATS_RANGE_DAYS: Record<StatsRange, number> = {
   all: 99_999,
   "7d": 7,
   "30d": 30,
+};
+
+const STATS_TYPE_BREAKDOWN_TITLES: Record<StatsRange, string> = {
+  all: "All-time watch mix",
+  "7d": "Last 7 days watch mix",
+  "30d": "Last 30 days watch mix",
 };
 
 const HEATMAP_CHARS = ["·", "░", "▒", "▓", "█"] as const;
@@ -75,6 +81,19 @@ export type StatsTitleRow = {
   readonly meta: string;
 };
 
+export type StatsInsightRow = {
+  readonly label: string;
+  readonly value: string;
+  readonly detail?: string;
+};
+
+export type StatsGenreRow = {
+  readonly label: string;
+  readonly barFilled: string;
+  readonly barEmpty: string;
+  readonly durationLabel: string;
+};
+
 export type StatsView = {
   readonly tab: StatsTab;
   readonly tabLabels: readonly string[];
@@ -93,6 +112,7 @@ export type StatsView = {
   readonly metrics: readonly StatsMetric[];
   readonly typeBreakdownBar: readonly { color: string; widthPct: number }[];
   readonly typeBreakdownLabel: string | null;
+  readonly typeBreakdownTitle: string;
   readonly heatmap: {
     readonly grid: readonly StatsHeatmapWeek[];
     readonly monthLabels: readonly { weekStartDate: string; label: string }[];
@@ -100,6 +120,9 @@ export type StatsView = {
     readonly dayLabels: readonly string[];
   } | null;
   readonly topTitles: readonly StatsTitleRow[];
+  readonly insights: readonly StatsInsightRow[];
+  readonly genreRows: readonly StatsGenreRow[];
+  readonly genreAffinityNote: string | null;
   readonly footerHints: string;
 };
 
@@ -264,6 +287,10 @@ function buildMetrics(input: {
       value: input.stats.mostActiveDay ? formatShortDate(input.stats.mostActiveDay) : "—",
     },
     { label: "Longest streak", value: `${input.stats.longestStreak} days` },
+    {
+      label: "Avg episodes / day",
+      value: String(input.stats.avgEpisodesPerDay),
+    },
   ];
 }
 
@@ -289,6 +316,58 @@ function buildTitleRows(
       barFilled: "█".repeat(filled),
       barEmpty: "░".repeat(BAR_WIDTH - filled),
       meta: `${show.episodeCount}ep · ${duration}`,
+    };
+  });
+}
+
+function buildInsightRows(stats: WatchStats): StatsInsightRow[] {
+  const completionPct = `${Math.round(stats.completionRate * 100)}%`;
+  const topProviders = stats.providerBreakdown
+    .slice(0, 3)
+    .map((row) => row.providerId)
+    .join(", ");
+  const peakHour = [...stats.hourOfDay].sort((a, b) => b.totalSeconds - a.totalSeconds)[0];
+  const peakLabel = peakHour !== undefined ? `${String(peakHour.hour).padStart(2, "0")}:00` : "—";
+
+  return [
+    {
+      label: "Completion rate",
+      value: completionPct,
+      detail: `${stats.completedEpisodes} completed episodes`,
+    },
+    {
+      label: "Series completed",
+      value: String(stats.seriesCompleted),
+      detail: "all in-window episodes marked done",
+    },
+    {
+      label: "Top providers",
+      value: topProviders.length > 0 ? topProviders : "—",
+      detail: "by engaged watch time",
+    },
+    {
+      label: "Peak watch hour",
+      value: peakLabel,
+      detail: peakHour ? `${formatDuration(peakHour.totalSeconds)} watched` : undefined,
+    },
+  ];
+}
+
+function buildGenreRows(
+  genres: WatchStats["genreBreakdown"],
+  maxRows: number,
+  labelWidth: number,
+): StatsGenreRow[] {
+  const slice = genres.slice(0, maxRows);
+  const maxSeconds = Math.max(...slice.map((genre) => genre.totalSeconds), 1);
+  return slice.map((genre) => {
+    const ratio = genre.totalSeconds / maxSeconds;
+    const filled = genre.totalSeconds > 0 ? Math.max(1, Math.round(ratio * BAR_WIDTH)) : 0;
+    return {
+      label: padColumnsEnd(truncateLine(genre.label, labelWidth), labelWidth),
+      barFilled: "█".repeat(filled),
+      barEmpty: "░".repeat(BAR_WIDTH - filled),
+      durationLabel: formatDuration(genre.totalSeconds),
     };
   });
 }
@@ -321,15 +400,31 @@ export function buildStatsView(input: {
       : null;
 
   const fixedRows =
-    2 + 2 + (showHeatmap && heatmapData ? 9 : 0) + (input.tab === "overview" ? 8 : 3) + 3;
+    2 +
+    2 +
+    (showHeatmap && heatmapData ? 9 : 0) +
+    (input.tab === "overview" ? 8 : input.tab === "insights" ? 10 : 3) +
+    3;
   const showsRowBudget = Math.max(0, input.availableRows - fixedRows - 2);
-  const maxTopTitles = Math.min(input.tab === "titles" ? 12 : 5, showsRowBudget);
+  const maxTopTitles = Math.min(
+    input.tab === "titles" ? 12 : input.tab === "overview" ? 5 : 0,
+    showsRowBudget,
+  );
+  const maxGenreRows = Math.min(8, Math.max(0, input.availableRows - fixedRows - 2));
 
   const rawTitleWidth =
     maxTopTitles > 0
       ? Math.max(...input.stats.topShows.slice(0, maxTopTitles).map((show) => show.title.length), 6)
       : 0;
   const titleWidth = Math.min(rawTitleWidth, Math.max(10, input.innerWidth - BAR_WIDTH - 24));
+  const genreLabelWidth = Math.min(
+    18,
+    Math.max(
+      8,
+      ...input.stats.genreBreakdown.slice(0, maxGenreRows).map((genre) => genre.label.length),
+      8,
+    ),
+  );
 
   const { bar, label } = buildTypeBreakdown(input.stats.typeBreakdown);
   const streakHero = input.stats.streakDays >= 2 ? `${input.stats.streakDays}-day streak` : null;
@@ -354,6 +449,7 @@ export function buildStatsView(input: {
     metrics: buildMetrics({ stats: input.stats, rangeDays }),
     typeBreakdownBar: bar,
     typeBreakdownLabel: label,
+    typeBreakdownTitle: STATS_TYPE_BREAKDOWN_TITLES[input.range],
     heatmap: heatmapData
       ? {
           grid: heatmapData.grid,
@@ -366,6 +462,9 @@ export function buildStatsView(input: {
         }
       : null,
     topTitles: buildTitleRows(input.stats.topShows, maxTopTitles, titleWidth),
-    footerHints: "←→ tab · Tab range · ⇧Tab type · s share · q back",
+    insights: buildInsightRows(input.stats),
+    genreRows: buildGenreRows(input.stats.genreBreakdown, maxGenreRows, genreLabelWidth),
+    genreAffinityNote: input.stats.genreAffinityNote,
+    footerHints: "←→ tab · Tab range · ⇧Tab type · s share · e export · q back",
   };
 }

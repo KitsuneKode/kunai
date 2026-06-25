@@ -1,4 +1,7 @@
 import type { KunaiDatabase } from "@kunai/storage";
+import { WatchStatsRepository } from "@kunai/storage";
+
+import { buildWatchGenreBreakdown, type WatchGenreBreakdown } from "./WatchGenreStats";
 
 export interface DailyActivity {
   readonly date: string;
@@ -26,47 +29,55 @@ export interface DailyKindMix {
   readonly movieSeconds: number;
 }
 
+export interface ProviderStat {
+  readonly providerId: string;
+  readonly episodeCount: number;
+  readonly totalSeconds: number;
+}
+
+export interface HourOfDayStat {
+  readonly hour: number;
+  readonly episodeCount: number;
+  readonly totalSeconds: number;
+}
+
+export interface GenreStat {
+  readonly genreId: number;
+  readonly label: string;
+  readonly totalSeconds: number;
+}
+
 export interface WatchStats {
   readonly streakDays: number;
   readonly longestStreak: number;
   readonly totalEpisodes: number;
+  readonly completedEpisodes: number;
+  readonly completionRate: number;
+  readonly seriesCompleted: number;
   readonly totalSeconds: number;
   readonly avgEpisodesPerDay: number;
   readonly activeDays: number;
   readonly mostActiveDay: string | null;
   readonly typeBreakdown: TypeBreakdown;
+  readonly providerBreakdown: readonly ProviderStat[];
+  readonly hourOfDay: readonly HourOfDayStat[];
   readonly dailyKindMix: readonly DailyKindMix[];
   readonly heatmap: readonly DailyActivity[];
   readonly topShows: readonly ShowStat[];
   readonly weeklyBuckets: readonly DailyActivity[];
-}
-
-interface DayRow {
-  readonly date: string;
-  readonly watched_count: number;
-  readonly total_seconds: number;
-}
-
-interface ShowRow {
-  readonly title_id: string;
-  readonly title: string;
-  readonly episode_count: number;
-  readonly total_seconds: number;
+  readonly genreBreakdown: readonly GenreStat[];
+  readonly genreAffinityNote: string | null;
 }
 
 export class StatsService {
-  constructor(private readonly db: KunaiDatabase) {}
+  private readonly repo: WatchStatsRepository;
+
+  constructor(db: KunaiDatabase) {
+    this.repo = new WatchStatsRepository(db);
+  }
 
   computeStreak(mediaKind?: "movie" | "series" | "anime"): { current: number; longest: number } {
-    const kindClause = mediaKind ? ` AND media_kind = '${mediaKind}'` : "";
-    const rows = this.db
-      .query<{ date: string }, []>(
-        `SELECT DISTINCT date(updated_at) AS date
-         FROM history_progress
-         WHERE (completed = 1 OR position_seconds >= 300)${kindClause}
-         ORDER BY date DESC`,
-      )
-      .all();
+    const rows = this.repo.streakDates(mediaKind);
 
     if (rows.length === 0) return { current: 0, longest: 0 };
 
@@ -78,7 +89,7 @@ export class StatsService {
     let streak = 0;
     let prevDate: string | undefined;
 
-    for (const { date } of rows) {
+    for (const date of rows) {
       if (streak === 0) {
         if (date === today || date === yesterday) {
           streak = 1;
@@ -102,7 +113,7 @@ export class StatsService {
 
     streak = 0;
     prevDate = undefined;
-    for (const { date } of [...rows].reverse()) {
+    for (const date of [...rows].reverse()) {
       if (prevDate === undefined) {
         streak = 1;
         prevDate = date;
@@ -127,110 +138,38 @@ export class StatsService {
 
   getStats(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): WatchStats {
     const { current: streakDays, longest: longestStreak } = this.computeStreak(mediaKind);
+    const windowStart = windowStartIso(windowDays);
 
-    const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString();
-    const kindClause = mediaKind ? ` AND media_kind = '${mediaKind}'` : "";
-
-    const totalsRow = this.db
-      .query<{ total_episodes: number; total_seconds: number }, [string]>(
-        `SELECT COUNT(*) AS total_episodes,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}`,
-      )
-      .get(windowStart) ?? { total_episodes: 0, total_seconds: 0 };
-
-    const dayRows = this.db
-      .query<DayRow, [string]>(
-        `SELECT date(updated_at) AS date,
-                COUNT(*) AS watched_count,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}
-         GROUP BY date(updated_at)
-         ORDER BY date ASC`,
-      )
-      .all(windowStart);
-
-    const heatmapStart = new Date(Date.now() - 365 * 86400000).toISOString();
-    const heatmapRows = this.db
-      .query<DayRow, [string]>(
-        `SELECT date(updated_at) AS date,
-                COUNT(*) AS watched_count,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}
-         GROUP BY date(updated_at)
-         ORDER BY date ASC`,
-      )
-      .all(heatmapStart);
-
-    const showRows = this.db
-      .query<ShowRow, [string]>(
-        `SELECT title_id,
-                MAX(title) AS title,
-                COUNT(*) AS episode_count,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}
-         GROUP BY title_id
-         ORDER BY total_seconds DESC
-         LIMIT 10`,
-      )
-      .all(windowStart);
-
-    const weeklyRows = this.db
-      .query<{ week: string; watched_count: number; total_seconds: number }, [string]>(
-        `SELECT strftime('%Y-W%W', updated_at) AS week,
-                COUNT(*) AS watched_count,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= date('now', '-84 days')${kindClause}
-         GROUP BY week
-         ORDER BY week ASC`,
-      )
-      .all(windowStart);
+    const totals = this.repo.totalsSince(windowStart, mediaKind);
+    const dayRows = this.repo.dailyActivitySince(windowStart, mediaKind);
+    const heatmapRows = this.repo.dailyActivitySince(windowStart, mediaKind);
+    const showRows = this.repo.topShowsSince(windowStart, mediaKind);
+    const weeklyRows = this.repo.weeklyBucketsSince(windowStart, mediaKind);
+    const kindRows = this.repo.kindBreakdownSince(windowStart, mediaKind);
+    const dailyKindRows = this.repo.dailyKindMixSince(windowStart, mediaKind);
+    const providerBreakdown = this.repo.providerBreakdownSince(windowStart, mediaKind);
+    const hourOfDay = this.repo.hourOfDaySince(windowStart, mediaKind);
 
     const activeDays = dayRows.length;
+    const completedEpisodes = totals.completedEpisodes;
+    const completionRate =
+      totals.rowCount > 0 ? Math.round((completedEpisodes / totals.rowCount) * 1000) / 1000 : 0;
     const avgEpisodesPerDay =
-      activeDays > 0 ? totalsRow.total_episodes / Math.max(1, windowDays) : 0;
+      windowDays > 0 ? Math.round((completedEpisodes / windowDays) * 10) / 10 : 0;
 
     const mostActiveDay =
       dayRows.length > 0
-        ? dayRows.reduce((best, row) => (row.total_seconds > best.total_seconds ? row : best)).date
+        ? dayRows.reduce((best, row) => (row.totalSeconds > best.totalSeconds ? row : best)).date
         : null;
-
-    const kindRows = this.db
-      .query<{ media_kind: string; total_seconds: number }, [string]>(
-        `SELECT media_kind,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}
-         GROUP BY media_kind`,
-      )
-      .all(windowStart);
 
     let animeSeconds = 0;
     let seriesSeconds = 0;
     let movieSeconds = 0;
     for (const row of kindRows) {
-      if (row.media_kind === "anime") animeSeconds = row.total_seconds;
-      else if (row.media_kind === "series") seriesSeconds = row.total_seconds;
-      else if (row.media_kind === "movie") movieSeconds = row.total_seconds;
+      if (row.kind === "anime") animeSeconds = row.totalSeconds;
+      else if (row.kind === "series") seriesSeconds = row.totalSeconds;
+      else if (row.kind === "movie") movieSeconds = row.totalSeconds;
     }
-    const typeBreakdown: TypeBreakdown = { animeSeconds, seriesSeconds, movieSeconds };
-
-    const dailyKindRows = this.db
-      .query<{ date: string; media_kind: string; total_seconds: number }, [string]>(
-        `SELECT date(updated_at) AS date,
-                media_kind,
-                COALESCE(SUM(COALESCE(duration_seconds, position_seconds)), 0) AS total_seconds
-         FROM history_progress
-         WHERE updated_at >= ?${kindClause}
-         GROUP BY date(updated_at), media_kind
-         ORDER BY date ASC`,
-      )
-      .all(heatmapStart);
 
     const dailyKindByDate = new Map<string, DailyKindMix>();
     for (const row of dailyKindRows) {
@@ -242,10 +181,9 @@ export class StatsService {
       };
       const next: DailyKindMix = {
         date: row.date,
-        animeSeconds: existing.animeSeconds + (row.media_kind === "anime" ? row.total_seconds : 0),
-        seriesSeconds:
-          existing.seriesSeconds + (row.media_kind === "series" ? row.total_seconds : 0),
-        movieSeconds: existing.movieSeconds + (row.media_kind === "movie" ? row.total_seconds : 0),
+        animeSeconds: existing.animeSeconds + (row.kind === "anime" ? row.totalSeconds : 0),
+        seriesSeconds: existing.seriesSeconds + (row.kind === "series" ? row.totalSeconds : 0),
+        movieSeconds: existing.movieSeconds + (row.kind === "movie" ? row.totalSeconds : 0),
       };
       dailyKindByDate.set(row.date, next);
     }
@@ -253,40 +191,123 @@ export class StatsService {
     return {
       streakDays,
       longestStreak,
-      totalEpisodes: totalsRow.total_episodes,
-      totalSeconds: totalsRow.total_seconds,
-      avgEpisodesPerDay: Math.round(avgEpisodesPerDay * 10) / 10,
+      totalEpisodes: completedEpisodes,
+      completedEpisodes,
+      completionRate,
+      seriesCompleted: totals.seriesCompleted,
+      totalSeconds: totals.totalSeconds,
+      avgEpisodesPerDay,
       activeDays,
       mostActiveDay,
-      typeBreakdown,
+      typeBreakdown: { animeSeconds, seriesSeconds, movieSeconds },
+      providerBreakdown,
+      hourOfDay,
       dailyKindMix: [...dailyKindByDate.values()],
-      heatmap: heatmapRows.map((r) => ({
-        date: r.date,
-        watchedCount: r.watched_count,
-        totalSeconds: r.total_seconds,
+      heatmap: heatmapRows.map((row) => ({
+        date: row.date,
+        watchedCount: row.watchedCount,
+        totalSeconds: row.totalSeconds,
       })),
-      topShows: showRows.map((r) => ({
-        titleId: r.title_id,
-        title: r.title,
-        episodeCount: r.episode_count,
-        totalSeconds: r.total_seconds,
+      topShows: showRows.map((row) => ({
+        titleId: row.titleId,
+        title: row.title,
+        episodeCount: row.episodeCount,
+        totalSeconds: row.totalSeconds,
       })),
-      weeklyBuckets: weeklyRows.map((r) => ({
-        date: r.week,
-        watchedCount: r.watched_count,
-        totalSeconds: r.total_seconds,
+      weeklyBuckets: weeklyRows.map((row) => ({
+        date: row.week,
+        watchedCount: row.watchedCount,
+        totalSeconds: row.totalSeconds,
       })),
+      genreBreakdown: [],
+      genreAffinityNote: null,
     };
+  }
+
+  async fetchGenreBreakdown(
+    windowDays = 30,
+    mediaKind?: "movie" | "series" | "anime",
+  ): Promise<WatchGenreBreakdown> {
+    const rows = this.repo.completedTitleWatchSecondsSince(
+      windowStartIso(windowDays),
+      mediaKind,
+      50,
+    );
+    return buildWatchGenreBreakdown(rows);
+  }
+
+  applyGenreBreakdown(stats: WatchStats, breakdown: WatchGenreBreakdown): WatchStats {
+    const genreAffinityNote =
+      breakdown.totalTitles === 0
+        ? null
+        : breakdown.resolvedTitles < breakdown.totalTitles
+          ? `Genres from ${breakdown.resolvedTitles} of ${breakdown.totalTitles} completed titles`
+          : null;
+    return {
+      ...stats,
+      genreBreakdown: breakdown.genres,
+      genreAffinityNote,
+    };
+  }
+
+  exportStatsJson(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): string {
+    const stats = this.getStats(windowDays, mediaKind);
+    return `${JSON.stringify(
+      {
+        exportedAt: new Date().toISOString(),
+        windowDays,
+        mediaKind: mediaKind ?? "all",
+        stats,
+      },
+      null,
+      2,
+    )}\n`;
+  }
+
+  exportStatsCsv(windowDays = 30, mediaKind?: "movie" | "series" | "anime"): string {
+    const stats = this.getStats(windowDays, mediaKind);
+    const lines: string[] = [
+      "section,key,value",
+      "summary,streakDays," + stats.streakDays,
+      "summary,longestStreak," + stats.longestStreak,
+      "summary,completedEpisodes," + stats.completedEpisodes,
+      "summary,completionRate," + stats.completionRate,
+      "summary,seriesCompleted," + stats.seriesCompleted,
+      "summary,totalSeconds," + stats.totalSeconds,
+      "summary,avgEpisodesPerDay," + stats.avgEpisodesPerDay,
+      "summary,activeDays," + stats.activeDays,
+      "summary,mostActiveDay," + csvCell(stats.mostActiveDay ?? ""),
+      "",
+      "topShows,titleId,title,episodeCount,totalSeconds",
+      ...stats.topShows.map(
+        (show) =>
+          `topShows,${csvCell(show.titleId)},${csvCell(show.title)},${show.episodeCount},${show.totalSeconds}`,
+      ),
+      "",
+      "providers,providerId,episodeCount,totalSeconds",
+      ...stats.providerBreakdown.map(
+        (row) => `providers,${csvCell(row.providerId)},${row.episodeCount},${row.totalSeconds}`,
+      ),
+      "",
+      "daily,date,watchedCount,totalSeconds",
+      ...stats.heatmap.map((day) => `daily,${day.date},${day.watchedCount},${day.totalSeconds}`),
+    ];
+    return `${lines.join("\n")}\n`;
   }
 
   watchedToday(): boolean {
     const today = new Date().toISOString().slice(0, 10);
-    const row = this.db
-      .query<{ count: number }, [string]>(
-        `SELECT COUNT(*) AS count FROM history_progress
-         WHERE date(updated_at) = ? AND (completed = 1 OR position_seconds >= 300)`,
-      )
-      .get(today);
-    return (row?.count ?? 0) > 0;
+    const rows = this.repo.streakDates();
+    return rows.includes(today);
   }
+}
+
+function windowStartIso(windowDays: number): string {
+  if (windowDays >= 99_999) return "1970-01-01T00:00:00.000Z";
+  return new Date(Date.now() - windowDays * 86400000).toISOString();
+}
+
+function csvCell(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
 }

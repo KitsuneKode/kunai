@@ -1,3 +1,6 @@
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { resolveHonestLoadingStageDetail } from "@/app-shell/loading-shell-model";
@@ -1569,10 +1572,12 @@ export { openBrowseShell } from "./browse-shell";
 function StatsShell({
   statsService,
   statsFormatter,
+  exportDir,
   onBack,
 }: {
   statsService: import("@/domain/lists/StatsService").StatsService;
   statsFormatter: import("@/domain/lists/StatsFormatter").StatsFormatter;
+  exportDir: string;
   onBack: () => void;
 }) {
   const [tabIdx, setTabIdx] = useState(0);
@@ -1593,11 +1598,24 @@ function StatsShell({
     () => statsService.getStats(windowDays, mediaKindFilter),
     [statsService, windowDays, mediaKindFilter],
   );
+  const [statsWithGenres, setStatsWithGenres] = useState(stats);
+
+  useEffect(() => {
+    setStatsWithGenres(stats);
+    let cancelled = false;
+    void statsService.fetchGenreBreakdown(windowDays, mediaKindFilter).then((breakdown) => {
+      if (cancelled) return;
+      setStatsWithGenres(statsService.applyGenreBreakdown(stats, breakdown));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [stats, statsService, windowDays, mediaKindFilter]);
 
   const view = useMemo(
     () =>
       buildStatsView({
-        stats,
+        stats: statsWithGenres,
         statsFormatter,
         tab: activeTab,
         range: activeRange,
@@ -1605,7 +1623,7 @@ function StatsShell({
         innerWidth,
         availableRows: available,
       }),
-    [stats, statsFormatter, activeTab, activeRange, activeKind, innerWidth, available],
+    [statsWithGenres, statsFormatter, activeTab, activeRange, activeKind, innerWidth, available],
   );
 
   useInput((input, key) => {
@@ -1649,6 +1667,19 @@ function StatsShell({
         const ok = await copyToClipboard(shareText);
         setCopiedFlash(ok ? "Copied to clipboard!" : "Copy failed — clipboard tool not found");
         setTimeout(() => setCopiedFlash(null), 2_000);
+      })();
+    } else if (input === "e") {
+      void (async () => {
+        const dir = join(exportDir, "stats");
+        await mkdir(dir, { recursive: true });
+        const stamp = new Date().toISOString().slice(0, 10);
+        const base = `kunai-stats-${stamp}`;
+        const jsonPath = join(dir, `${base}.json`);
+        const csvPath = join(dir, `${base}.csv`);
+        await Bun.write(jsonPath, statsService.exportStatsJson(windowDays, mediaKindFilter));
+        await Bun.write(csvPath, statsService.exportStatsCsv(windowDays, mediaKindFilter));
+        setCopiedFlash(`Exported to ${dir}`);
+        setTimeout(() => setCopiedFlash(null), 3_000);
       })();
     }
   });
@@ -1761,7 +1792,7 @@ function StatsShell({
 
               {view.typeBreakdownBar.length > 0 ? (
                 <Box marginTop={1} flexDirection="column">
-                  <Text color={palette.muted}>This watch year</Text>
+                  <Text color={palette.muted}>{view.typeBreakdownTitle}</Text>
                   <Box>
                     {view.typeBreakdownBar.map((segment) => (
                       <Text
@@ -1820,19 +1851,58 @@ function StatsShell({
             </>
           ) : null}
 
-          {view.topTitles.length > 0 ? (
+          {view.tab === "insights" ? (
             <Box marginTop={1} flexDirection="column">
-              <Text color={palette.muted}>Top titles</Text>
-              {view.topTitles.map((show) => (
-                <Box key={show.titleId}>
-                  <Text color={palette.text}>{show.title}</Text>
-                  <Text color={palette.dim}>{"  "}</Text>
-                  <Text color={palette.accentDeep}>{show.barFilled}</Text>
-                  <Text color={palette.dim}>{show.barEmpty}</Text>
-                  <Text color={palette.dim}>{`  ${show.meta}`}</Text>
+              {view.insights.map((row) => (
+                <Box key={row.label}>
+                  <Text color={palette.muted}>{row.label.padEnd(18)}</Text>
+                  <Text bold color={palette.text}>
+                    {row.value}
+                  </Text>
+                  {row.detail ? <Text color={palette.dim}>{" · " + row.detail}</Text> : null}
                 </Box>
               ))}
+              {view.genreRows.length > 0 ? (
+                <Box marginTop={1} flexDirection="column">
+                  <Text color={palette.muted}>Top genres</Text>
+                  {view.genreRows.map((genre) => (
+                    <Box key={genre.label}>
+                      <Text color={palette.text}>{genre.label}</Text>
+                      <Text color={palette.dim}>{"  "}</Text>
+                      <Text color={palette.accentDeep}>{genre.barFilled}</Text>
+                      <Text color={palette.dim}>{genre.barEmpty}</Text>
+                      <Text color={palette.dim}>{`  ${genre.durationLabel}`}</Text>
+                    </Box>
+                  ))}
+                  {view.genreAffinityNote ? (
+                    <Text color={palette.dim}>{view.genreAffinityNote}</Text>
+                  ) : null}
+                </Box>
+              ) : (
+                <Box marginTop={1}>
+                  <Text color={palette.dim}>
+                    Genre affinity unavailable offline or without TMDB ids.
+                  </Text>
+                </Box>
+              )}
             </Box>
+          ) : null}
+
+          {view.tab === "titles" || view.tab === "overview" ? (
+            view.topTitles.length > 0 ? (
+              <Box marginTop={1} flexDirection="column">
+                <Text color={palette.muted}>Top titles</Text>
+                {view.topTitles.map((show) => (
+                  <Box key={show.titleId}>
+                    <Text color={palette.text}>{show.title}</Text>
+                    <Text color={palette.dim}>{"  "}</Text>
+                    <Text color={palette.accentDeep}>{show.barFilled}</Text>
+                    <Text color={palette.dim}>{show.barEmpty}</Text>
+                    <Text color={palette.dim}>{`  ${show.meta}`}</Text>
+                  </Box>
+                ))}
+              </Box>
+            ) : null
           ) : null}
         </>
       )}
@@ -1862,6 +1932,7 @@ export function openStatsShell(container: Container): Promise<void> {
       <StatsShell
         statsService={container.statsService}
         statsFormatter={container.statsFormatter}
+        exportDir={container.dataDir}
         onBack={() => finish(undefined)}
       />
     ),

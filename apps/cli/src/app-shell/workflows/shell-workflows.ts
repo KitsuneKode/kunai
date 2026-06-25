@@ -13,12 +13,12 @@ import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-pr
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import { applyProviderPickerSelection } from "@/app/playback/playback-provider-switch";
 import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
-import { markEntryWatched } from "@/app/search/history-actions";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
+import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import {
   encodePlaybackTargetRef,
@@ -62,11 +62,8 @@ import {
 } from "@/services/offline/offline-library";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import {
-  getKunaiPaths,
-  historyProgressToInput,
-  type DownloadJobRecord,
-} from "@/services/storage/storage-read-models";
+import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
+import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
 import { resolveCommands } from "../commands";
@@ -793,11 +790,15 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   follow: (c) => handleAttentionPreference(c, "following"),
   mute: (c) => handleAttentionPreference(c, "muted"),
   "mark-watched": (c) => handleMarkWatched(c),
+  "mark-unwatched": (c) => handleMarkUnwatched(c),
+  "mark-season-watched": (c) => handleMarkSeasonWatched(c),
+  "mark-up-to-episode": (c) => handleMarkUpToEpisode(c),
   watch: (c) => handleWatch(c),
   watchlist: (c) => handleWatchlist(c),
   favorites: (c) => handleFavorites(c),
   playlist: (c) => handlePlaylist(c),
   "playlist-add": (c) => handlePlaylistAdd(c),
+  "queue-season": (c) => handleQueueSeason(c),
   stats: (c) => handleStats(c),
   sync: (c) => handleSync(c),
   "sync-connect-anilist": (c) => handleSyncConnectAniList(c),
@@ -960,7 +961,8 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
   });
   const lines = buildDiagnosticsPanelLines({
     state: stateManager.getState(),
-    recentEvents: diagnosticsService.getRecent(25),
+    recentEvents: diagnosticsService.getRecent(container.debugTracePath ? 50 : 25),
+    developerMode: Boolean(container.debugTracePath),
     memorySamples: getRuntimeMemorySamples(),
     capabilitySnapshot: container.capabilitySnapshot,
     downloadSummary: {
@@ -1742,18 +1744,7 @@ async function handleMarkWatched(container: Container): Promise<"handled"> {
       }
     : undefined;
   const existing = container.historyRepository.getProgress(titleIdentity, episodeIdentity);
-
-  container.historyRepository.upsertProgress(
-    existing
-      ? historyProgressToInput(markEntryWatched(existing))
-      : {
-          title: titleIdentity,
-          episode: episodeIdentity,
-          positionSeconds: 0,
-          completed: true,
-          posterUrl: title.posterUrl,
-        },
-  );
+  container.historyRepository.markWatched(titleIdentity, episodeIdentity);
 
   const episodeLabel = episode
     ? ` S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
@@ -1761,6 +1752,129 @@ async function handleMarkWatched(container: Container): Promise<"handled"> {
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
     note: `Marked "${title.name}${episodeLabel}" as watched.`,
+  });
+  return "handled";
+}
+
+async function handleMarkUnwatched(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Play or select a title before marking it unwatched.",
+    });
+    return "handled";
+  }
+
+  const episode = title.type === "series" ? state.currentEpisode : null;
+  const mediaKind = resolveCurrentMediaKind(state);
+  const titleIdentity = {
+    id: title.id,
+    kind: mediaKind,
+    title: title.name,
+    externalIds: title.externalIds,
+  };
+  const episodeIdentity = episode
+    ? { season: episode.season, episode: episode.episode, externalIds: episode.externalIds }
+    : undefined;
+
+  container.historyRepository.markUnwatched(titleIdentity, episodeIdentity);
+
+  const episodeLabel = episode
+    ? ` S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
+    : "";
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Marked "${title.name}${episodeLabel}" as unwatched (resume position kept).`,
+  });
+  return "handled";
+}
+
+async function handleMarkSeasonWatched(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  const episode = state.currentEpisode;
+  if (!title || title.type !== "series" || !episode) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Select a series episode before marking a season watched.",
+    });
+    return "handled";
+  }
+
+  const mediaKind = resolveCurrentMediaKind(state);
+  const titleIdentity = {
+    id: title.id,
+    kind: mediaKind,
+    title: title.name,
+    externalIds: title.externalIds,
+  };
+  const { markSeasonThroughEpisode } = await import("@/app/search/history-actions");
+  const count = markSeasonThroughEpisode(
+    container.historyRepository,
+    titleIdentity,
+    episode.season,
+    episode.episode,
+  );
+
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Marked ${count} episode(s) in season ${episode.season} through E${episode.episode} as watched.`,
+  });
+  return "handled";
+}
+
+async function handleMarkUpToEpisode(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  const currentEpisode = state.currentEpisode;
+  if (!title || title.type !== "series" || !currentEpisode) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Select a series episode before marking through an episode.",
+    });
+    return "handled";
+  }
+
+  const seasonEpisodes = await resolveSeasonEpisodesForQueue(container, title, currentEpisode);
+  if (!seasonEpisodes?.length) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Could not load episodes for this season.",
+    });
+    return "handled";
+  }
+
+  const throughEpisode = await chooseFromListShell({
+    title: "Mark through episode",
+    subtitle: `${title.name} · Season ${currentEpisode.season}`,
+    options: seasonEpisodes.map((episode) => ({
+      value: episode.episode,
+      label: `E${String(episode.episode).padStart(2, "0")}${episode.name ? ` · ${episode.name}` : ""}`,
+      detail: `Mark episodes 1–${episode.episode} as watched`,
+    })),
+  });
+  if (!throughEpisode) return "handled";
+
+  const mediaKind = resolveCurrentMediaKind(state);
+  const titleIdentity = {
+    id: title.id,
+    kind: mediaKind,
+    title: title.name,
+    externalIds: title.externalIds,
+  };
+  const { markSeasonThroughEpisode } = await import("@/app/search/history-actions");
+  const count = markSeasonThroughEpisode(
+    container.historyRepository,
+    titleIdentity,
+    currentEpisode.season,
+    throughEpisode,
+  );
+
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Marked ${count} episode(s) in season ${currentEpisode.season} through E${throughEpisode} as watched.`,
   });
   return "handled";
 }
@@ -2046,6 +2160,7 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
       | { type: "snapshot-queue" }
       | { type: "export-durable" }
       | { type: "import-durable" }
+      | { type: "load-durable" }
       | { type: "back" };
 
     const staleNote =
@@ -2126,6 +2241,11 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
           ]
         : []),
       { value: { type: "refill" as const }, label: "Refill from watchlist" },
+      {
+        value: { type: "load-durable" as const },
+        label: "Play saved playlist",
+        detail: "Load a durable playlist into Up Next",
+      },
       { value: { type: "back" as const }, label: "Back" },
     ];
 
@@ -2179,6 +2299,40 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
       continue;
     }
 
+    if (picked.type === "load-durable") {
+      const playlists = container.durablePlaylistService.listPlaylists();
+      if (playlists.length === 0) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "No saved playlists yet. Save the queue as a durable playlist first.",
+        });
+        continue;
+      }
+
+      const selectedPlaylist = await chooseFromListShell({
+        title: "Play Saved Playlist",
+        subtitle: "Load playlist items into Up Next without autoplaying",
+        actionContext,
+        options: playlists.map((playlist) => ({
+          value: playlist.id,
+          label: playlist.name,
+          detail: playlist.description,
+        })),
+      });
+      if (!selectedPlaylist) continue;
+
+      const loaded = container.durablePlaylistService.loadIntoQueue(queueService, selectedPlaylist);
+      const playlist = playlists.find((item) => item.id === selectedPlaylist);
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note:
+          loaded > 0
+            ? `Loaded ${loaded} item(s) from "${playlist?.name ?? "playlist"}" into Up Next.`
+            : "Selected playlist is empty.",
+      });
+      continue;
+    }
+
     if (picked.type === "clear-played") {
       queueService.clearPlayed();
       continue;
@@ -2199,11 +2353,9 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
     }
 
     if (picked.type === "item") {
-      const unplayedIds = all.filter((i) => !i.playedAt).map((i) => i.id);
-      const unplayedIndex = unplayedIds.indexOf(picked.id);
-      const canMoveUp = !picked.played && unplayedIndex > 0;
-      const canMoveDown =
-        !picked.played && unplayedIndex >= 0 && unplayedIndex < unplayedIds.length - 1;
+      const allIndex = all.findIndex((item) => item.id === picked.id);
+      const canMoveUp = allIndex > 0;
+      const canMoveDown = allIndex >= 0 && allIndex < all.length - 1;
       const itemAction = await chooseFromListShell({
         title: picked.title,
         subtitle: picked.played
@@ -2253,10 +2405,10 @@ async function handlePlaylist(container: Container): Promise<ShellWorkflowResult
       if (itemAction === "remove") {
         queueService.remove(picked.id);
       } else if (itemAction === "move-up") {
-        queueService.moveUp(picked.id);
+        queueService.moveUpInQueue(picked.id);
         continue;
       } else if (itemAction === "move-down") {
-        queueService.moveDown(picked.id);
+        queueService.moveDownInQueue(picked.id);
         continue;
       } else if (itemAction === "play") {
         return {
@@ -2406,6 +2558,85 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
     note: `Added "${title.name}" to queue.`,
   });
   return "handled";
+}
+
+async function handleQueueSeason(container: Container): Promise<"handled"> {
+  const { stateManager, queueService } = container;
+  const state = stateManager.getState();
+  const title = state.currentTitle;
+  const currentEpisode = state.currentEpisode;
+
+  if (!title || title.type !== "series" || !currentEpisode) {
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Select a series episode before queueing the rest of the season.",
+    });
+    return "handled";
+  }
+
+  const seasonEpisodes = await resolveSeasonEpisodesForQueue(container, title, currentEpisode);
+  const plan = planEpisodeQueue({
+    scope: { type: "current-season-remaining" },
+    currentEpisode,
+    seasonEpisodes,
+  });
+
+  if (plan.episodes.length === 0) {
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No remaining episodes in this season to queue.",
+    });
+    return "handled";
+  }
+
+  const mediaKind = resolveCurrentMediaKind(state);
+  for (const episode of plan.episodes) {
+    queueService.enqueue({
+      title: title.name,
+      mediaKind,
+      titleId: title.id,
+      season: episode.season,
+      episode: episode.episode,
+      source: "queue-season",
+    });
+  }
+
+  stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Queued ${plan.episodes.length} episode(s) from season ${currentEpisode.season}.`,
+  });
+  return "handled";
+}
+
+async function resolveSeasonEpisodesForQueue(
+  container: Container,
+  title: TitleInfo,
+  currentEpisode: PlaybackEpisodeInfo,
+): Promise<readonly PlaybackEpisodeInfo[] | null> {
+  const state = container.stateManager.getState();
+  if (state.mode === "anime") {
+    const provider = container.providerRegistry.get(state.provider);
+    if (!provider?.listEpisodes) return null;
+    const episodes = await provider.listEpisodes({ title });
+    if (!episodes?.length) return null;
+    return [...episodes]
+      .sort((left, right) => left.index - right.index)
+      .map((episode) => ({
+        season: currentEpisode.season,
+        episode: episode.index,
+        name: episode.name,
+      }));
+  }
+
+  const episodes = await fetchEpisodes(title.id, currentEpisode.season);
+  if (!episodes) return null;
+  return episodes.map((episode) => ({
+    season: currentEpisode.season,
+    episode: episode.number,
+    name: episode.name,
+    airDate: episode.airDate,
+    overview: episode.overview,
+  }));
 }
 
 // ─── Stats ──────────────────────────────────────────────────────────────────────
