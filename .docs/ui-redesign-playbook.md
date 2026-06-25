@@ -116,7 +116,7 @@ Optional enhancement:
 
 ## Visual Rules
 
-- prefer restrained amber/cyan/gray system with green/red only for outcome states
+- prefer Sakura rose/mint semantic accents with amber for caution and red only for actionable errors (see `.docs/design-system.md`)
 - use badges sparingly and with consistent semantics
 - selected rows need a clear active-state marker, not just slightly different text
 - empty states and loading states should still feel designed
