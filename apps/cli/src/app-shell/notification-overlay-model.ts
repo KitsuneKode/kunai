@@ -13,6 +13,7 @@ const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
   "download",
   "follow",
   "unfollow",
+  "unmute",
   "mute",
   "add-to-watchlist",
   "add-to-up-next",
@@ -103,6 +104,7 @@ function getNotificationActionLabel(action: NotificationActionId): string {
   if (action === "add-to-up-next") return "Add to Up Next";
   if (action === "follow") return "Follow releases";
   if (action === "unfollow") return "Unfollow releases";
+  if (action === "unmute") return "Unmute release notices";
   if (action === "mute") return "Mute release notices";
   return "Run action";
 }
@@ -122,6 +124,7 @@ function getNotificationActionDetail(action: NotificationActionId): string {
   if (action === "add-to-up-next") return "Add this item to the end of Up Next";
   if (action === "follow") return "Track future releases for this title";
   if (action === "unfollow") return "Stop explicit release tracking without muting";
+  if (action === "unmute") return "Restore neutral release attention for this title";
   if (action === "mute") return "Stop future release notices for this title";
   return "Run this action";
 }

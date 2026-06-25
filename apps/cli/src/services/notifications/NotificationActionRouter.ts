@@ -173,6 +173,7 @@ function isNotificationActionId(value: unknown): value is NotificationActionId {
     value === "download" ||
     value === "follow" ||
     value === "unfollow" ||
+    value === "unmute" ||
     value === "mute" ||
     value === "dismiss" ||
     value === "open-details"

@@ -25,6 +25,7 @@ export interface MediaActionRouterDeps {
   readonly attention?: {
     readonly follow: (item: MediaItemIdentity) => Promise<void> | void;
     readonly unfollow: (item: MediaItemIdentity) => Promise<void> | void;
+    readonly unmute?: (item: MediaItemIdentity) => Promise<void> | void;
     readonly mute: (item: MediaItemIdentity) => Promise<void> | void;
   };
   readonly history?: {
@@ -139,6 +140,12 @@ export class MediaActionRouter {
       }
       case "unfollow": {
         const executor = this.deps.attention?.unfollow;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "unmute": {
+        const executor = this.deps.attention?.unmute ?? this.deps.attention?.unfollow;
         if (!executor) return unsupported(input.actionId);
         await executor(input.item);
         return handled(input.actionId);

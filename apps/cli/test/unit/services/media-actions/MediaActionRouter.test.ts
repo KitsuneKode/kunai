@@ -135,6 +135,9 @@ test("durable media actions delegate to their owning services", async () => {
       unfollow: async () => {
         calls.push("unfollow");
       },
+      unmute: async () => {
+        calls.push("unmute");
+      },
       mute: async () => {
         calls.push("mute");
       },
@@ -151,6 +154,7 @@ test("durable media actions delegate to their owning services", async () => {
   await router.run({ actionId: "add-to-playlist", item, source: "history" });
   await router.run({ actionId: "follow", item, source: "history" });
   await router.run({ actionId: "unfollow", item, source: "history" });
+  await router.run({ actionId: "unmute", item, source: "history" });
   await router.run({ actionId: "mute", item, source: "history" });
   await router.run({ actionId: "open-details", item, source: "history" });
 
@@ -160,6 +164,7 @@ test("durable media actions delegate to their owning services", async () => {
     "playlist",
     "follow",
     "unfollow",
+    "unmute",
     "mute",
     "details",
   ]);

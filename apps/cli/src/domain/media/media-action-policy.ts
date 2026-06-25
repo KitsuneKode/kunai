@@ -13,6 +13,7 @@ export type MediaActionId =
   | "download"
   | "follow"
   | "unfollow"
+  | "unmute"
   | "mute"
   | "mark-watched"
   | "mark-unwatched"
@@ -81,7 +82,7 @@ export function getMediaActions(input: MediaActionPolicyInput): readonly MediaAc
       actions.push({ id: "unfollow", label: "Unfollow releases" });
       actions.push({ id: "mute", label: "Mute release notices", dangerous: true });
     } else if (preference === "muted") {
-      actions.push({ id: "unfollow", label: "Unmute release notices" });
+      actions.push({ id: "unmute", label: "Unmute release notices" });
     }
   }
   actions.push({ id: "open-details", label: "Open details" });

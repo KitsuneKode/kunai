@@ -52,6 +52,9 @@ export function createContainerMediaActionRouter(
       unfollow: (item) => {
         upsertAttentionPreference(container, item, "implicit");
       },
+      unmute: (item) => {
+        upsertAttentionPreference(container, item, "implicit");
+      },
       mute: (item) => {
         upsertAttentionPreference(container, item, "muted");
       },

@@ -1994,7 +1994,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const isMuted = attentionPreference === "muted";
     const isFollowing = attentionPreference === "following";
 
-    type SubAction = "search" | "follow" | "unfollow" | "mute" | "remove" | "back";
+    type SubAction = "search" | "follow" | "unfollow" | "unmute" | "mute" | "remove" | "back";
 
     const sub = await chooseFromListShell({
       title: picked.title,
@@ -2020,7 +2020,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
           : isMuted
             ? [
                 {
-                  value: "unfollow" as SubAction,
+                  value: "unmute" as SubAction,
                   label: "Unmute release notices",
                   detail: "Stop suppressing release nudges for this title",
                 },
@@ -2061,9 +2061,16 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
       return "handled";
     }
 
-    if (sub === "follow" || sub === "mute" || sub === "unfollow") {
+    if (sub === "follow" || sub === "mute" || sub === "unfollow" || sub === "unmute") {
       const pickedItem = items.find((item) => item.titleId === picked.titleId);
-      const actionId = sub === "follow" ? "follow" : sub === "mute" ? "mute" : "unfollow";
+      const actionId =
+        sub === "follow"
+          ? "follow"
+          : sub === "mute"
+            ? "mute"
+            : sub === "unmute"
+              ? "unmute"
+              : "unfollow";
       const result = await createContainerMediaActionRouter(container).run({
         actionId,
         item: {

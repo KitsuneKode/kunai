@@ -88,9 +88,10 @@ test("attention actions respect explicit follow preference", () => {
     },
   }).map((action) => action.id);
 
-  expect(muted).toContain("unfollow");
+  expect(muted).toContain("unmute");
   expect(muted).not.toContain("mute");
   expect(muted).not.toContain("follow");
+  expect(muted).not.toContain("unfollow");
 
   const mutedActions = getMediaActions({
     item,
@@ -104,7 +105,7 @@ test("attention actions respect explicit follow preference", () => {
       followPreference: "muted",
     },
   });
-  expect(mutedActions.find((action) => action.id === "unfollow")?.label).toBe(
+  expect(mutedActions.find((action) => action.id === "unmute")?.label).toBe(
     "Unmute release notices",
   );
 });
