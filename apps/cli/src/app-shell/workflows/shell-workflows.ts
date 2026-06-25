@@ -73,6 +73,7 @@ import { openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { openProviderPicker } from "./picker-workflows";
+import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
 
 export function waitForOverlayClose(
@@ -2208,9 +2209,13 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
     }
 
     if (picked.type === "create") {
-      const playlist = durablePlaylistService.createPlaylist(
-        `Playlist ${new Date().toISOString().slice(0, 10)}`,
-      );
+      const name = await promptPlaylistName(container, {
+        title: "Create playlist",
+        subtitle: "Choose a name for the new playlist",
+        actionContext,
+      });
+      if (!name) continue;
+      const playlist = durablePlaylistService.createPlaylist(name);
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note: `Created playlist "${playlist.name}".`,
@@ -2262,22 +2267,11 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
             : "Selected playlist is empty.",
       });
     } else if (itemAction === "rename") {
-      const suggestedName = `Playlist ${new Date().toISOString().slice(0, 10)}`;
-      const nextName = await chooseFromListShell({
+      const nextName = await promptPlaylistName(container, {
         title: "Rename playlist",
         subtitle: picked.name,
+        initialValue: picked.name,
         actionContext,
-        options: [
-          {
-            value: suggestedName,
-            label: suggestedName,
-            detail:
-              suggestedName === picked.name
-                ? "Current name already matches"
-                : "Use dated playlist name",
-          },
-          { value: null, label: "Cancel" },
-        ],
       });
       if (!nextName || nextName === picked.name) {
         continue;
