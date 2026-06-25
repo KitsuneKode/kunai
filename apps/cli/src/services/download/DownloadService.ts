@@ -20,7 +20,11 @@ import {
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
-import { buildYoutubeYtdlCliArgs } from "@kunai/providers/youtube";
+import {
+  buildYoutubeYtdlCliArgs,
+  runYtDlpProcess,
+  type YtDlpProcess,
+} from "@kunai/providers/youtube";
 import {
   getKunaiPaths,
   type DownloadArtifactStatus,
@@ -135,7 +139,8 @@ export type DownloadEvent =
 type DownloadEventListener = (event: DownloadEvent) => void;
 
 type ActiveDownloadProcess = {
-  readonly process: Bun.Subprocess;
+  readonly process: YtDlpProcess;
+  readonly cancel?: (reason?: string) => void;
   cancelRequested: boolean;
   cancelMode: "abort" | "pause";
   cancelReason?: string;
@@ -607,7 +612,7 @@ export class DownloadService {
       active.cancelRequested = true;
       active.cancelMode = "abort";
       active.cancelReason = "download aborted by user";
-      await this.terminateProcess(active.process);
+      await this.terminateProcess(active.process, active.cancel);
       return;
     }
     await rm(job.tempPath, { force: true }).catch(() => {});
@@ -643,7 +648,9 @@ export class DownloadService {
       active.cancelMode = "pause";
       active.cancelReason = reason;
     }
-    await Promise.all(activeEntries.map(([, active]) => this.terminateProcess(active.process)));
+    await Promise.all(
+      activeEntries.map(([, active]) => this.terminateProcess(active.process, active.cancel)),
+    );
     await this.waitForInactive(
       activeEntries.map(([jobId]) => jobId),
       DEFAULT_INACTIVE_WAIT_MS,
@@ -791,23 +798,6 @@ export class DownloadService {
 
     args.push("-o", job.tempPath, job.streamUrl);
 
-    const proc = Bun.spawn(["yt-dlp", ...args], {
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const cancellation = this.cancellationRequests.get(job.id);
-    this.activeProcesses.set(job.id, {
-      process: proc,
-      cancelRequested: cancellation !== undefined,
-      cancelMode: cancellation?.mode ?? "abort",
-      cancelReason: cancellation?.reason,
-    });
-
-    const stopHeartbeat = this.startHeartbeat(job.id);
-
-    let stderr = "";
     let lastProgressPersistAt = 0;
     let lastPersistedPercent = 0;
 
@@ -822,26 +812,36 @@ export class DownloadService {
       lastPersistedPercent = clamped;
     };
 
-    const readStdout = readLines(proc.stdout, (line) => {
-      const match = line.match(/\[download\]\s+([\d.]+)%/);
-      if (match && match[1]) {
-        const percent = Number.parseFloat(match[1]);
-        if (Number.isFinite(percent)) {
-          persistProgress(percent);
+    const handle = runYtDlpProcess({
+      args,
+      maxStderrBytes: STDERR_MAX_BYTES,
+      onStdoutLine: (line) => {
+        const match = line.match(/\[download\]\s+([\d.]+)%/);
+        if (match && match[1]) {
+          const percent = Number.parseFloat(match[1]);
+          if (Number.isFinite(percent)) {
+            persistProgress(percent);
+          }
         }
-      }
-      if (line.includes("100%") || line.includes("has already been downloaded")) {
-        persistProgress(99);
-      }
+        if (line.includes("100%") || line.includes("has already been downloaded")) {
+          persistProgress(99);
+        }
+      },
     });
 
-    const readStderr = readLines(proc.stderr, (line) => {
-      stderr = appendBounded(stderr, line, STDERR_MAX_BYTES);
+    const cancellation = this.cancellationRequests.get(job.id);
+    this.activeProcesses.set(job.id, {
+      process: handle.process,
+      cancel: handle.cancel,
+      cancelRequested: cancellation !== undefined,
+      cancelMode: cancellation?.mode ?? "abort",
+      cancelReason: cancellation?.reason,
     });
+
+    const stopHeartbeat = this.startHeartbeat(job.id);
 
     try {
-      const exitCode = await proc.exited;
-      await Promise.all([readStdout, readStderr]);
+      const { exitCode, stderr } = await handle.completed;
 
       if (
         exitCode !== 0 &&
@@ -942,8 +942,16 @@ export class DownloadService {
     throw new Error("download stream resolve failed");
   }
 
-  private async terminateProcess(proc: Bun.Subprocess): Promise<void> {
+  private async terminateProcess(
+    proc: YtDlpProcess,
+    cancel?: (reason?: string) => void,
+  ): Promise<void> {
     const graceMs = this.deps.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
+    if (cancel) {
+      cancel("download terminated");
+      await waitForExit(proc.exited, graceMs + 2_500).catch(() => {});
+      return;
+    }
     try {
       proc.kill("SIGTERM");
     } catch {
