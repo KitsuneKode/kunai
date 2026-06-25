@@ -101,4 +101,19 @@ describe("stream health cache policy", () => {
       policyReason: "stale-direct",
     });
   });
+
+  test("skips youtube watch URLs even when cache is stale", () => {
+    expect(
+      planCacheRevalidate({
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        cachedAt: now - 3 * 60 * 60 * 1000,
+        now,
+        staleAfterMs: 15 * 60 * 1000,
+      }),
+    ).toMatchObject({
+      shouldProbe: false,
+      skipReason: "provider-attested",
+      policyReason: "provider-attested",
+    });
+  });
 });

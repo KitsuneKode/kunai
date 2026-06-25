@@ -23,6 +23,7 @@ export type StreamHealthCheckInput = {
   readonly signal?: AbortSignal;
   readonly cachedAt?: number | null;
   readonly streamReachabilityVerified?: boolean;
+  readonly requiresYtdl?: boolean;
 };
 
 /** Last-chance playback handoff check. Lenient on timeout so mpv can still try. */
@@ -33,6 +34,7 @@ export async function checkStreamPreflight(
   options: {
     readonly cachedAt?: number | null;
     readonly streamReachabilityVerified?: boolean;
+    readonly requiresYtdl?: boolean;
     readonly signal?: AbortSignal;
     readonly fetchImpl?: StreamReachabilityFetch;
   } = {},
@@ -43,6 +45,7 @@ export async function checkStreamPreflight(
     headers,
     cachedAt: options.cachedAt,
     streamReachabilityVerified: options.streamReachabilityVerified,
+    requiresYtdl: options.requiresYtdl,
     timeoutMs,
     signal: options.signal,
     fetchImpl: options.fetchImpl,
@@ -66,6 +69,7 @@ export async function checkStreamHealth(
     headers: input.headers,
     cachedAt: input.cachedAt,
     streamReachabilityVerified: input.streamReachabilityVerified,
+    requiresYtdl: input.requiresYtdl,
     force: input.force,
     fetchImpl: input.fetchImpl,
     timeoutMs: input.timeoutMs,

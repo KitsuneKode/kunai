@@ -1,5 +1,7 @@
+import { YOUTUBE_METADATA_TTL_MS } from "@/container/configure-youtube-provider";
 import type { StreamInfo } from "@/domain/types";
 import {
+  isYoutubeWatchUrl,
   runStreamHealthCheck,
   type StreamHealthPhase,
   type StreamHealthPolicyReason,
@@ -31,7 +33,10 @@ export class StreamHealthService {
   constructor(private readonly deps: StreamHealthServiceDeps = {}) {}
 
   async check(
-    stream: Pick<StreamInfo, "url" | "headers" | "timestamp" | "providerResolveResult">,
+    stream: Pick<
+      StreamInfo,
+      "url" | "headers" | "timestamp" | "providerResolveResult" | "requiresYtdl"
+    >,
     options: {
       readonly force?: boolean;
       readonly signal?: AbortSignal;
@@ -45,12 +50,16 @@ export class StreamHealthService {
       headers: stream.headers,
       cachedAt: stream.timestamp,
       streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+      requiresYtdl: stream.requiresYtdl,
       force: options.force,
       fetchImpl: this.deps.fetchImpl,
       timeoutMs: this.deps.timeoutMs,
       signal: options.signal,
       now: this.deps.now?.(),
-      staleAfterMs: this.deps.staleAfterMs,
+      staleAfterMs:
+        stream.requiresYtdl || isYoutubeWatchUrl(stream.url)
+          ? YOUTUBE_METADATA_TTL_MS
+          : this.deps.staleAfterMs,
       playbackTrustMs: this.deps.playbackTrustMs,
     });
 

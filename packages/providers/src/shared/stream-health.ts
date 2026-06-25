@@ -1,3 +1,4 @@
+import { isYoutubeWatchUrl } from "../youtube/ids";
 import {
   isHlsManifestUrl,
   isStreamReachableForPlaybackPreflight,
@@ -53,6 +54,7 @@ export type StreamHealthCheckInput = {
   readonly now?: number;
   readonly staleAfterMs?: number;
   readonly playbackTrustMs?: number;
+  readonly requiresYtdl?: boolean;
 };
 
 export type StreamHealthResult = {
@@ -155,6 +157,9 @@ function planResolveGateHealth(
   input: StreamHealthCheckInput,
   context: PlanContext,
 ): StreamHealthPlan {
+  if (isYoutubeAttestedStream(input)) {
+    return skipPlan(context, "provider-attested", "provider-attested");
+  }
   if (input.streamReachabilityVerified === true) {
     return skipPlan(context, "provider-attested", "provider-attested");
   }
@@ -165,6 +170,9 @@ function planPlaybackPreflightHealth(
   input: StreamHealthCheckInput,
   context: PlanContext,
 ): StreamHealthPlan {
+  if (isYoutubeAttestedStream(input)) {
+    return skipPlan(context, "provider-attested", "provider-attested");
+  }
   if (
     input.streamReachabilityVerified === true &&
     typeof context.ageMs === "number" &&
@@ -182,6 +190,9 @@ function planCacheRevalidateHealth(
   input: StreamHealthCheckInput,
   context: PlanContext,
 ): StreamHealthPlan {
+  if (isYoutubeAttestedStream(input)) {
+    return skipPlan(context, "provider-attested", "provider-attested");
+  }
   if (!input.url || input.cachedAt === undefined || input.cachedAt === null) {
     return {
       shouldProbe: false,
@@ -259,4 +270,8 @@ function resolveAgeMs(cachedAt: number | null | undefined, now: number): number 
 
 function probeStrategyForUrl(url: string): Exclude<StreamHealthStrategy, "none"> {
   return isHlsManifestUrl(url) ? "hls-manifest-get" : "head-then-range";
+}
+
+function isYoutubeAttestedStream(input: StreamHealthCheckInput): boolean {
+  return input.requiresYtdl === true || isYoutubeWatchUrl(input.url);
 }

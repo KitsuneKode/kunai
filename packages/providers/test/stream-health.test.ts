@@ -87,6 +87,32 @@ describe("stream health", () => {
     });
   });
 
+  test("skips probes for youtube watch URLs and requiresYtdl streams", () => {
+    expect(
+      planStreamHealth({
+        phase: "cache-revalidate",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        cachedAt: now - 5 * 60_000,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: false,
+      skipReason: "provider-attested",
+      policyReason: "provider-attested",
+    });
+    expect(
+      planStreamHealth({
+        phase: "resolve-gate",
+        url: "https://example.com/stream",
+        requiresYtdl: true,
+        now,
+      }),
+    ).toMatchObject({
+      shouldProbe: false,
+      skipReason: "provider-attested",
+    });
+  });
+
   test("playback-preflight stays lenient on timeout", () => {
     expect(evaluateStreamHealth("playback-preflight", { status: "timeout" })).toBe(true);
     expect(evaluateStreamHealth("resolve-gate", { status: "timeout" })).toBe(true);
