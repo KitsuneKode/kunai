@@ -48,6 +48,7 @@ import {
   preparePostPlaybackSurface,
   teardownPlaybackForPostPlayExit,
 } from "@/app/playback/playback-post-play-lifecycle";
+import { canAutoContinueIntoRecommendation } from "@/app/playback/playback-postplay-policy";
 import {
   playbackAudioPreference,
   playbackQualityPreference,
@@ -105,6 +106,7 @@ import {
 } from "@/app/playback/recent-playback-stream";
 import { createResolveTraceStub } from "@/app/playback/resolve-trace";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
+import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
 import {
   applyPreferredStreamSelection,
   shouldSkipExternalSubtitleLookup,
@@ -163,6 +165,7 @@ import {
   PlaybackTimingAggregator,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
+import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
@@ -191,6 +194,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
   private static readonly lateSubtitleInflight = new Set<string>();
+  private playbackLedger: PlaybackHistoryLedger | null = null;
 
   private updatePlaybackFeedback(
     context: PhaseContext,
@@ -1512,15 +1516,60 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // TypeScript cannot narrow `stream` across the conditional mutation above.
           if (!stream) {
             workControl.setActive(null);
-            if (resolveController.signal.aborted && !context.signal.aborted) {
-              const streamSwitchAction = playerControl.consumeLastAction();
-              const streamSwitchSelection =
-                streamSwitchAction === "pick-source" ||
-                streamSwitchAction === "pick-stream" ||
-                streamSwitchAction === "pick-quality"
-                  ? playerControl.consumePendingStreamSelection()
-                  : null;
-              if (streamSwitchSelection) {
+            const resolveAborted = resolveController.signal.aborted && !context.signal.aborted;
+            const streamSwitchAction = resolveAborted ? playerControl.consumeLastAction() : null;
+            const streamSwitchSelection =
+              streamSwitchAction === "pick-source" ||
+              streamSwitchAction === "pick-stream" ||
+              streamSwitchAction === "pick-quality"
+                ? playerControl.consumePendingStreamSelection()
+                : null;
+            const hasCompatibleFallbackProvider =
+              resolveAborted && resolveAbortIntent === "fallback"
+                ? providerRegistry
+                    .getCompatible(title, stateManager.getState().mode)
+                    .some((candidate) => candidate.metadata.id !== currentProvider.metadata.id)
+                : false;
+
+            let problemAction: "dismiss" | "retry" | null = null;
+            if (!resolveAborted) {
+              const problem = buildProviderResolveProblem({
+                attempts: resolveAttempts,
+                capabilitySnapshot: container.capabilitySnapshot,
+              });
+              run.playbackSession = this.transitionPlaybackSession(
+                context,
+                run.playbackSession,
+                "failure-shown",
+                {
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                  cause: problem.cause,
+                },
+              );
+              problemAction = await this.showPlaybackProblem(context, problem);
+            }
+
+            const iterationDirective = planEpisodeIterationDirective({
+              streamResolved: false,
+              resolveAborted,
+              sessionAborted: context.signal.aborted,
+              streamSwitchSelection,
+              resolveAbortIntent,
+              hasCompatibleFallbackProvider,
+              problemAction,
+            });
+
+            if (iterationDirective.kind === "continue") {
+              continue;
+            }
+
+            if (iterationDirective.kind === "restart") {
+              if (
+                iterationDirective.reason === "stream-switch-during-resolve" &&
+                streamSwitchSelection
+              ) {
                 await setPreferredStreamSelection(
                   currentProvider.metadata.id,
                   currentEpisode,
@@ -1543,7 +1592,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 });
                 continue;
               }
-              if (resolveAbortIntent === "fallback") {
+
+              if (iterationDirective.reason === "provider-fallback-skip") {
                 const fallback = providerRegistry
                   .getCompatible(title, stateManager.getState().mode)
                   .find((candidate) => candidate.metadata.id !== currentProvider.metadata.id);
@@ -1568,40 +1618,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   continue;
                 }
               }
+
+              if (iterationDirective.reason === "resolve-retry") {
+                run.pendingSourceRefreshAction = "recover";
+                run.pendingRecomputeSources = true;
+                run.autoSourceRecoverAttempts = 0;
+                invalidateRecentEpisodeStream(currentEpisode);
+                this.updatePlaybackFeedback(context, {
+                  detail: "Retrying with fresh provider sources…",
+                  note: "Cached failures and stale source inventory are bypassed for this attempt.",
+                });
+                continue;
+              }
+            }
+
+            if (resolveAborted) {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
               stateManager.dispatch({ type: "SET_STREAM", stream: null });
               this.updatePlaybackFeedback(context, { detail: null, note: null });
               await dismissMpvTransitionOverlay(playerControl);
-              return { status: "success", value: "back_to_results" };
+            } else {
+              stateManager.dispatch({ type: "SET_STREAM", stream: null });
             }
-            const problem = buildProviderResolveProblem({
-              attempts: resolveAttempts,
-              capabilitySnapshot: container.capabilitySnapshot,
-            });
-            run.playbackSession = this.transitionPlaybackSession(
-              context,
-              run.playbackSession,
-              "failure-shown",
-              {
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                cause: problem.cause,
-              },
-            );
-            const problemAction = await this.showPlaybackProblem(context, problem);
-            if (problemAction === "retry") {
-              run.pendingSourceRefreshAction = "recover";
-              run.pendingRecomputeSources = true;
-              run.autoSourceRecoverAttempts = 0;
-              invalidateRecentEpisodeStream(currentEpisode);
-              this.updatePlaybackFeedback(context, {
-                detail: "Retrying with fresh provider sources…",
-                note: "Cached failures and stale source inventory are bypassed for this attempt.",
-              });
-              continue;
-            }
-            stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
           }
 
@@ -1914,26 +1952,38 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: resolvedProviderId,
             });
             const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
-            container.historyRepository.upsertProgress({
-              title: {
-                id: title.id,
-                kind: persistedKind,
-                title: title.name,
-                externalIds: title.externalIds,
-              },
-              episode: {
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-              },
-              positionSeconds: historyTimestamp,
-              durationSeconds: result.duration,
-              completed: didComplete,
-              providerId: resolvedProviderId,
-              // Persist the poster so resume/continue rebuilds the title WITH art
-              // (no poster on resumed playback was just a missing URL) + history rail.
-              posterUrl: title.posterUrl,
-              updatedAt: new Date().toISOString(),
-            });
+            if (this.playbackLedger) {
+              this.playbackLedger.finalize({
+                positionSeconds: historyTimestamp,
+                durationSeconds: result.duration,
+                completed: didComplete,
+                providerId: resolvedProviderId,
+                posterUrl: title.posterUrl,
+              });
+              this.playbackLedger = null;
+            } else {
+              container.historyRepository.upsertProgress({
+                title: {
+                  id: title.id,
+                  kind: persistedKind,
+                  title: title.name,
+                  externalIds: title.externalIds,
+                },
+                episode: {
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+                positionSeconds: historyTimestamp,
+                durationSeconds: result.duration,
+                completed: didComplete,
+                watchedSeconds: didComplete ? result.duration : historyTimestamp,
+                lastWatchedAt: new Date().toISOString(),
+                completedAt: didComplete ? new Date().toISOString() : null,
+                providerId: resolvedProviderId,
+                posterUrl: title.posterUrl,
+                updatedAt: new Date().toISOString(),
+              });
+            }
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
             enqueueReleaseReconciliation(
               container,
@@ -2554,12 +2604,43 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           );
 
+          const recommendationRail = new PostPlaybackRecommendationRail({
+            container,
+            title,
+            budgetMs: 250,
+          });
+          const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
+            sessionMode: run.playbackSession.mode,
+            hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+            endReason: result.endReason,
+            autoplayPaused: run.playbackSession.autoplayPaused,
+            autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
+            aborted: context.signal.aborted,
+            hasQueuedNext: Boolean(container.queueService.peekNext()),
+            autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
+          });
+          const recommendationRailItems = await recommendationRail.resolveRailItems({
+            mode: stateManager.getState().mode,
+            prefetchedItems: prefetchedRecommendationItems,
+            autoContinueIntoRecommendationPossible,
+          });
+          const topRec = recommendationRailItems[0];
+          const topRecommendation = topRec
+            ? {
+                mediaKind: topRec.type === "movie" ? "movie" : "series",
+                titleId: topRec.id,
+                title: topRec.title,
+                sourceId: topRec.sourceId,
+              }
+            : null;
+
           const playlistAutoNext = planPlaylistAutoAdvance({
             catalogNextEpisode: nextEpisode,
             guards: readAutoAdvanceGuards(),
             queueHead: container.queueService.peekNext(),
             seriesHasNextEpisode: Boolean(episodeAvailability.nextEpisode),
             autoplayRecommendations: container.config.autoplayRecommendations,
+            topRecommendation,
           });
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
@@ -2604,17 +2685,48 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               autoplayPauseReason: "user",
             };
             this.updatePlaybackFeedback(context, { detail: null, note: null });
+          } else if (playlistAutoNext?.kind === "recommendation") {
+            const topRecAdvance = playlistAutoNext.item;
+            const recCountdown = await runAutoplayAdvanceCountdown({
+              seconds: 5,
+              signal: context.signal,
+              sleep: (ms) => Bun.sleep(ms),
+              onTick: (remaining) => {
+                this.updatePlaybackFeedback(context, {
+                  detail: "Up next ready",
+                  note: `Up next: ${topRecAdvance.title} in ${remaining}s  ·  a to pause`,
+                });
+              },
+              isCancelled: () => stateManager.getState().autoplaySessionPaused,
+            });
+            if (recCountdown !== "cancelled") {
+              return {
+                status: "success",
+                value: {
+                  type: "playlist-advance",
+                  titleInfo: {
+                    id: topRecAdvance.titleId,
+                    name: topRecAdvance.title,
+                    type: topRec?.type === "movie" ? "movie" : "series",
+                    posterUrl: topRec?.posterPath ?? undefined,
+                  },
+                  mode: stateManager.getState().mode,
+                },
+              };
+            }
+            stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
+            run.playbackSession = {
+              ...run.playbackSession,
+              autoplayPaused: true,
+              autoplayPauseReason: "user",
+            };
+            this.updatePlaybackFeedback(context, { detail: null, note: null });
           }
 
           // Post-playback menu — inner loop so unavailable navigation
           // actions stay in the menu instead of re-resolving the stream.
           const { openPlaybackShell } = await import("../../app-shell/ink-shell");
 
-          const recommendationRail = new PostPlaybackRecommendationRail({
-            container,
-            title,
-            budgetMs: 250,
-          });
           const iteration = createPlaybackIteration({
             title,
             currentEpisode,
@@ -2955,7 +3067,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     onStartupMark?: (stage: PlaybackStartupStage) => void,
     playbackIterationSignal?: AbortSignal,
   ): Promise<PlaybackResult> {
-    const { player, stateManager, config } = context.container;
+    const { player, stateManager, config, historyRepository, playbackEventRepository } =
+      context.container;
 
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
@@ -2980,6 +3093,29 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stream,
       startedAtMs: Date.now(),
     });
+
+    const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
+      providerId: stateManager.getState().provider,
+    });
+    this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
+    this.playbackLedger.start(
+      {
+        title: {
+          id: title.id,
+          kind: persistedKind,
+          title: title.name,
+          externalIds: title.externalIds,
+        },
+        episode:
+          title.type === "series"
+            ? { season: episode.season, episode: episode.episode }
+            : undefined,
+        providerId: stateManager.getState().provider,
+        posterUrl: title.posterUrl,
+        mediaKind: persistedKind,
+      },
+      startAt,
+    );
 
     return runMpvPlaybackSession({
       stream,
@@ -3057,6 +3193,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
         },
         onPresenceProgress: ({ positionSeconds, durationSeconds }) => {
+          this.playbackLedger?.onProgress(positionSeconds, durationSeconds);
           this.updatePresenceInBackground(
             context,
             "presence.updatePlaybackProgress",
@@ -3078,6 +3215,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
         },
         onPresencePaused: ({ positionSeconds, durationSeconds }) => {
+          this.playbackLedger?.onPaused(positionSeconds, durationSeconds);
           this.updatePresenceInBackground(
             context,
             "presence.updatePlaybackPaused",
@@ -3091,6 +3229,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
         },
         onPresenceResumed: ({ positionSeconds, durationSeconds }) => {
+          this.playbackLedger?.onResumed(positionSeconds, durationSeconds);
           this.updatePresenceInBackground(
             context,
             "presence.updatePlaybackResumed",

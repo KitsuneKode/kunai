@@ -6,6 +6,19 @@ import {
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { FollowedTitleRecord, HistoryProgress } from "@kunai/storage";
 
+const baseReconciliationContainer = {
+  featureFlags: { providerAvailabilitySync: false },
+  attentionRefreshWorker: {
+    runOnce: async () => ({
+      status: "disabled" as const,
+      refreshIds: [],
+      skipped: [],
+      refreshedIds: [],
+      failed: [],
+    }),
+  },
+};
+
 function row(over: Partial<HistoryProgress> & { titleId: string }): HistoryProgress {
   return {
     key: "k",
@@ -61,6 +74,7 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
   const ids: string[] = [];
   let policyLookups = 0;
   const container = {
+    ...baseReconciliationContainer,
     config: { powerSaverMode: false },
     offlineTitlePolicies: {
       listByTitleIds: (titleIds: readonly string[]) => {
@@ -91,6 +105,7 @@ test("release reconciliation triggers share one coalescing scheduler identity", 
 test("power saver suppresses passive release reconciliation from browse and history surfaces", () => {
   const ids: string[] = [];
   const container = {
+    ...baseReconciliationContainer,
     config: { powerSaverMode: true },
     offlineTitlePolicies: { listByTitleIds: () => [] },
     backgroundWorkScheduler: {
@@ -116,6 +131,7 @@ test("release reconciliation batches offline policy attention lookup once per tr
   const runs: Promise<void>[] = [];
   let lookupCalls = 0;
   const container = {
+    ...baseReconciliationContainer,
     config: { powerSaverMode: false },
     offlineTitlePolicies: {
       listByTitleIds: (titleIds: readonly string[]) => {
@@ -159,6 +175,7 @@ test("release reconciliation completion callback runs after cache write pass", a
   const events: string[] = [];
   const runs: Promise<void>[] = [];
   const container = {
+    ...baseReconciliationContainer,
     config: { powerSaverMode: false },
     offlineTitlePolicies: { listByTitleIds: () => [] },
     backgroundWorkScheduler: {

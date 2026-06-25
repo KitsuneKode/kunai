@@ -1,4 +1,5 @@
 import type { MediaProviderHint } from "@/domain/media/media-item-identity";
+import type { QueueService } from "@/domain/queue/QueueService";
 import type { PlaylistsRepository, UserPlaylistRecord } from "@kunai/storage";
 
 import {
@@ -115,6 +116,24 @@ export class DurablePlaylistService {
       items: exportItems,
       exportedAt: this.clock.now(),
     });
+  }
+
+  loadIntoQueue(queueService: QueueService, playlistId: string): number {
+    const items = [...this.repo.listItems(playlistId)].sort(
+      (left, right) => left.sortOrder - right.sortOrder,
+    );
+    for (const item of items) {
+      queueService.enqueue({
+        title: item.title,
+        mediaKind: item.mediaKind,
+        titleId: item.titleId,
+        season: item.season,
+        episode: item.episode,
+        absoluteEpisode: item.absoluteEpisode,
+        source: "durable-playlist",
+      });
+    }
+    return items.length;
   }
 
   importPlaylist(document: KunaiPlaylistDocument): UserPlaylistRecord {

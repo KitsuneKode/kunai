@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 
+import { QueueService } from "@/domain/queue/QueueService";
 import { DurablePlaylistService } from "@/services/playlists/DurablePlaylistService";
-import { openKunaiDatabase, PlaylistsRepository, runMigrations } from "@kunai/storage";
+import {
+  openKunaiDatabase,
+  PlaylistsRepository,
+  QueueRepository,
+  runMigrations,
+} from "@kunai/storage";
 
 test("DurablePlaylistService creates playlists and exports safe documents", () => {
   const db = openKunaiDatabase(":memory:");
@@ -25,6 +31,48 @@ test("DurablePlaylistService creates playlists and exports safe documents", () =
 
   expect(exported.items).toHaveLength(1);
   expect(JSON.stringify(exported)).not.toContain("http");
+
+  db.close();
+});
+
+test("DurablePlaylistService loads playlist items into the runtime queue", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const queueRepo = new QueueRepository(db);
+  queueRepo.createQueueSession({
+    id: "session-1",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  const queueService = new QueueService(queueRepo, "session-1");
+  const service = new DurablePlaylistService(new PlaylistsRepository(db), {
+    now: () => "2026-05-17T00:00:00.000Z",
+    id: (() => {
+      let counter = 0;
+      return (prefix) => `${prefix}-load-${++counter}`;
+    })(),
+  });
+
+  const playlist = service.createPlaylist("Weekend");
+  service.addItem(playlist.id, {
+    titleId: "tmdb:1",
+    mediaKind: "series",
+    title: "Example",
+    season: 1,
+    episode: 2,
+  });
+  service.addItem(playlist.id, {
+    titleId: "tmdb:2",
+    mediaKind: "movie",
+    title: "Movie",
+  });
+
+  expect(service.loadIntoQueue(queueService, playlist.id)).toBe(2);
+  expect(queueService.getAll().map((item) => item.source)).toEqual([
+    "durable-playlist",
+    "durable-playlist",
+  ]);
 
   db.close();
 });

@@ -41,6 +41,38 @@ test("QueueService restores a recoverable queue into the current session explici
   db.close();
 });
 
+test("moveUpInQueue / moveDownInQueue reorder the full persisted queue list", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:00:00.000Z",
+  });
+  const enqueue = (titleId: string) =>
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "series",
+      titleId,
+      source: "manual",
+      sessionId: "s",
+    });
+  const done = enqueue("done");
+  const _a = enqueue("a");
+  const b = enqueue("b");
+  repo.markPlayed(done.id);
+
+  const service = new QueueService(repo, "s");
+  expect(service.moveUpInQueue(b.id)).toBe(true);
+  expect(service.getAll().map((item) => item.titleId)).toEqual(["done", "b", "a"]);
+  expect(service.moveDownInQueue(done.id)).toBe(true);
+  expect(service.getAll().map((item) => item.titleId)).toEqual(["b", "done", "a"]);
+
+  db.close();
+});
+
 test("moveUp / moveDown reorder unplayed queue items and clamp at the ends", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

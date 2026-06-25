@@ -1,9 +1,10 @@
 import type { Container } from "@/container";
-import { isFreshlyAiredSinceWatch } from "@/domain/continuation/history-bucket";
 import { toEpisodeCursor } from "@/domain/media/episode-cursor";
+import { buildAttentionRefreshCandidates } from "@/services/attention/build-attention-refresh-candidates";
 import { readLatestHistoryByTitle, isFinished } from "@/services/continuation/history-progress";
 import type { FollowedTitleRecord, HistoryProgress } from "@kunai/storage";
 
+import { shouldNotifyForReleaseProjection } from "./release-notification-policy";
 import type {
   ReleaseReconciliationAttention,
   ReleaseReconciliationHistoryRow,
@@ -12,9 +13,11 @@ import type {
 
 type ReleaseReconciliationContainer = Pick<
   Container,
+  | "attentionRefreshWorker"
   | "backgroundWorkScheduler"
   | "releaseReconciliationService"
   | "diagnosticsService"
+  | "featureFlags"
   | "offlineTitlePolicies"
   | "config"
   | "releaseProgressCache"
@@ -62,16 +65,6 @@ export function collectReleaseReconciliationRows(
 
 function catalogSourceLabel(source: string): boolean {
   return source === "anilist" || source === "tmdb";
-}
-
-function shouldNotifyForProjection(
-  projection: { readonly newEpisodeCount: number; readonly latestKnownReleaseAt?: string | null },
-  historyRow: HistoryProgress | undefined,
-): boolean {
-  if (projection.newEpisodeCount <= 0) return false;
-  if (!historyRow) return true;
-  if (!isFinished(historyRow)) return false;
-  return isFreshlyAiredSinceWatch(projection.latestKnownReleaseAt, historyRow.updatedAt);
 }
 
 export function enqueueReleaseReconciliation(
@@ -128,7 +121,7 @@ export function enqueueReleaseReconciliation(
         const projections = container.releaseProgressCache.getByTitleIds(reconciledTitleIds);
         const newEpisodeSignals = [...projections.values()]
           .filter((projection) =>
-            shouldNotifyForProjection(projection, historyByTitle.get(projection.titleId)),
+            shouldNotifyForReleaseProjection(projection, historyByTitle.get(projection.titleId)),
           )
           .map((projection) => {
             const historyRow = historyByTitle.get(projection.titleId);
@@ -162,6 +155,22 @@ export function enqueueReleaseReconciliation(
           skippedReasons: result.skipped.map((skip) => skip.reason),
         },
       });
+
+      if (container.featureFlags.providerAvailabilitySync) {
+        const refreshCandidates = buildAttentionRefreshCandidates({
+          rows,
+          followedTitleRepository: container.followedTitleRepository,
+        });
+        const refreshBudget = trigger === "calendar" || trigger === "history" ? 5 : 3;
+        await container.attentionRefreshWorker.runOnce({
+          candidates: refreshCandidates,
+          maxChecks: refreshBudget,
+          now: new Date().toISOString(),
+          minIntervalMs: 30 * 60 * 1000,
+          signal: workSignal,
+        });
+      }
+
       await options.onComplete?.();
     },
   });

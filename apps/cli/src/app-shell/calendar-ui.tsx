@@ -88,7 +88,7 @@ export function CalendarDayStrip({
       {showHint ? (
         <Box marginLeft={1}>
           <Text color={palette.dim} dimColor>
-            {selectedDayKey !== null ? "← → day · a/esc all" : "a/→ pick day"}
+            {selectedDayKey !== null ? "← → day · a/esc all" : "a/→ pick day · [ ] week"}
           </Text>
         </Box>
       ) : null}

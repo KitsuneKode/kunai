@@ -17,6 +17,7 @@ import {
   historyContentType,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { activeNewEpisodeCount } from "@/services/release-reconciliation/release-notification-policy";
 import type { ReleaseProgressWriter } from "@/services/release-reconciliation/ReleaseProgressWriter";
 import type {
   CalendarArchiveRepository,
@@ -292,13 +293,6 @@ function formatCalendarOverview(calendar: CalendarItem): string {
     calendar.inHistory && !calendar.inWatchlist ? "from history" : null,
   ].filter((value): value is string => Boolean(value));
   return parts.join(" · ");
-}
-
-function activeNewEpisodeCount(projection: ReleaseProgressProjection | undefined): number {
-  if (!projection || projection.status !== "new-episodes") return 0;
-  const staleAfterMs = Date.parse(projection.staleAfterAt);
-  if (Number.isFinite(staleAfterMs) && staleAfterMs <= Date.now()) return 0;
-  return Math.max(0, Math.trunc(projection.newEpisodeCount));
 }
 
 /**

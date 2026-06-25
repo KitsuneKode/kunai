@@ -168,6 +168,36 @@ export function filterCalendarOptionsByDay<T>(
   });
 }
 
+export function filterCalendarOptionsByWeek<T>(
+  options: readonly BrowseShellOption<T>[],
+  weekKey: string | null,
+): readonly BrowseShellOption<T>[] {
+  if (weekKey === null) return options;
+  return options.filter((option) => {
+    const dayKey = option.calendar?.dayKey ?? option.previewDayKey ?? null;
+    if (!dayKey) return false;
+    return calendarWeekKeyFromIsoDay(dayKey) === weekKey;
+  });
+}
+
+/** Step to the previous/next ISO week key; returns null when stepping past available weeks. */
+export function stepCalendarWeekKey(
+  days: readonly CalendarDay[],
+  currentWeekKey: string | null,
+  direction: 1 | -1,
+): string | null {
+  if (days.length === 0) return currentWeekKey;
+  const weekKeys = [...new Set(days.map((day) => calendarWeekKeyFromIsoDay(day.key)))].sort();
+  if (currentWeekKey === null) {
+    const todayKey = days.find((day) => day.isToday)?.key ?? days[0]?.key;
+    return todayKey ? calendarWeekKeyFromIsoDay(todayKey) : (weekKeys[0] ?? null);
+  }
+  const index = weekKeys.indexOf(currentWeekKey);
+  if (index < 0) return weekKeys[0] ?? null;
+  const target = index + direction;
+  return target >= 0 && target < weekKeys.length ? (weekKeys[target] ?? null) : currentWeekKey;
+}
+
 function trackedReleaseMs(option: BrowseShellOption<SearchResult>): number {
   const releaseAt = option.value.calendar?.releaseAt;
   const ms = releaseAt ? Date.parse(releaseAt) : Number.NaN;

@@ -64,6 +64,7 @@ import {
   buildCalendarRenderRows,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
+  filterCalendarOptionsByWeek,
   windowCalendarRowsByLines,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
@@ -287,6 +288,7 @@ export function BrowseShell<T>({
   });
   const calendarTypeTab = calendar.typeTab;
   const calendarDayFilter = calendar.dayFilter;
+  const calendarWeekFilter = calendar.weekFilter;
   const calendarDays = calendar.days;
   // Stable action refs (each is useCallback-memoized in the hook) so consuming
   // callbacks/effects can depend on them without re-creating every render.
@@ -294,8 +296,10 @@ export function BrowseShell<T>({
     reset: resetCalendar,
     cycleType: cycleCalendarType,
     stepDay: stepCalendarDay,
+    stepWeek: stepCalendarWeek,
     toggleAllDays: toggleCalendarAllDays,
     setDayFilter: setCalendarDay,
+    setWeekFilter: setCalendarWeek,
   } = calendar;
 
   const displayOptions = useMemo(() => {
@@ -305,9 +309,17 @@ export function BrowseShell<T>({
       import("@/domain/types").SearchResult
     >[];
     const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
-    const byDay = filterCalendarOptionsByDay(typed, calendarDayFilter);
+    const byWeek = filterCalendarOptionsByWeek(typed, calendarWeekFilter);
+    const byDay = filterCalendarOptionsByDay(byWeek, calendarDayFilter);
     return sortCalendarOptions(byDay) as typeof options;
-  }, [calendarDayFilter, calendarTypeTab, isCalendarView, options, resultFilter]);
+  }, [
+    calendarDayFilter,
+    calendarTypeTab,
+    calendarWeekFilter,
+    isCalendarView,
+    options,
+    resultFilter,
+  ]);
 
   const clearResults = useCallback(() => {
     setOptions([]);
@@ -1105,6 +1117,16 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       return;
     }
+    if (isCalendarView && calendarDays.length > 0 && input === "[") {
+      stepCalendarWeek(-1);
+      setSelectedIndex(0);
+      return;
+    }
+    if (isCalendarView && calendarDays.length > 0 && input === "]") {
+      stepCalendarWeek(1);
+      setSelectedIndex(0);
+      return;
+    }
     // `a` toggles all-days ⇄ day-by-day view. Guarded to a focused list with a
     // clean query so it never eats a filter keystroke.
     if (
@@ -1131,6 +1153,11 @@ export function BrowseShell<T>({
       if (isCalendarView) {
         if (calendarDayFilter !== null) {
           setCalendarDay(null);
+          setSelectedIndex(0);
+          return;
+        }
+        if (calendarWeekFilter !== null) {
+          setCalendarWeek(null);
           setSelectedIndex(0);
           return;
         }

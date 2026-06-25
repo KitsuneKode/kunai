@@ -120,6 +120,30 @@ export class QueueService {
     return this.moveUnplayed(id, 1);
   }
 
+  /** Reorder any queue item one slot earlier in the full persisted list. */
+  moveUpInQueue(id: string): boolean {
+    return this.moveInFullList(id, -1);
+  }
+
+  /** Reorder any queue item one slot later in the full persisted list. */
+  moveDownInQueue(id: string): boolean {
+    return this.moveInFullList(id, 1);
+  }
+
+  private moveInFullList(id: string, direction: -1 | 1): boolean {
+    const all = this.repo.getAll(this.sessionId);
+    const index = all.findIndex((entry) => entry.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= all.length) return false;
+    const moved = all[index];
+    const displaced = all[target];
+    if (!moved || !displaced) return false;
+    all[index] = displaced;
+    all[target] = moved;
+    this.repo.setQueuePositions(all.map((entry) => entry.id));
+    return true;
+  }
+
   /**
    * Jump an unplayed item to the front ("play next") or back of the Up Next
    * queue. Played items keep their leading slots; only the unplayed tail moves.

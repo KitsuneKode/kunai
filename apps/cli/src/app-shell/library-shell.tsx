@@ -115,7 +115,7 @@ export function LibraryShell({
   return (
     <Box flexDirection="column" flexGrow={1}>
       <ClaudeTabRow
-        labels={["Library", "Queue"]}
+        labels={["Library", "Downloads"]}
         activeIndex={tab === "library" ? 0 : 1}
         hint="Tab switch"
       />
@@ -137,7 +137,7 @@ export function LibraryShell({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <ShellFooter
-          taskLabel={tab === "library" ? "Library" : "Queue"}
+          taskLabel={tab === "library" ? "Library" : "Downloads"}
           mode="minimal"
           actions={selectFooterActions(
             tab === "library" ? libraryFooterActions() : queueFooterActions(),
@@ -407,7 +407,7 @@ function LibraryTab({ container }: { container: Container }) {
         />
         <Box marginTop={1}>
           <Text color={palette.muted} dimColor>
-            Switch to Queue (Tab) to see active downloads
+            Switch to Downloads (Tab) to see active downloads
           </Text>
         </Box>
       </Box>

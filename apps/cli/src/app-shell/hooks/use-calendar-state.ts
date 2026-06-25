@@ -18,22 +18,27 @@ import {
   type CalendarTypeTab,
   buildCalendarDaysFromOptions,
   filterCalendarOptionsByType,
+  stepCalendarWeekKey,
 } from "../calendar-ui.model";
 
 export type CalendarState = {
   readonly typeTab: CalendarTypeTab;
   readonly dayFilter: string | null;
+  readonly weekFilter: string | null;
   readonly days: readonly CalendarDay[];
   /** Cycle the type tab (Tab / Shift+Tab). Clears the day filter — the new tab has a different strip. */
   readonly cycleType: (direction: 1 | -1) => void;
   /** Step one day earlier (-1) / later (+1). From "all days" enters at today (or first), clamped at ends. */
   readonly stepDay: (direction: 1 | -1) => void;
+  /** Step one week earlier (-1) / later (+1). Clears the day filter when entering week mode. */
+  readonly stepWeek: (direction: 1 | -1) => void;
   /** Toggle all-days ⇄ day-by-day. */
   readonly toggleAllDays: () => void;
   /** Reset to the default view (all types, all days) — used when results clear / re-search. */
   readonly reset: () => void;
   readonly setTypeTab: (tab: CalendarTypeTab) => void;
   readonly setDayFilter: (key: string | null) => void;
+  readonly setWeekFilter: (key: string | null) => void;
 };
 
 export function useCalendarState(input: {
@@ -43,6 +48,7 @@ export function useCalendarState(input: {
 }): CalendarState {
   const { isCalendarView, options } = input;
   const [dayFilter, setDayFilter] = useState<string | null>(null);
+  const [weekFilter, setWeekFilter] = useState<string | null>(null);
   const [typeTab, setTypeTab] = useState<CalendarTypeTab>(input.initialTypeTab ?? "All");
 
   // Build the day strip from the TYPE-filtered options so every chip has content
@@ -59,6 +65,7 @@ export function useCalendarState(input: {
       return CALENDAR_TYPE_TABS[next] ?? "All";
     });
     setDayFilter(null);
+    setWeekFilter(null);
   }, []);
 
   const stepDay = useCallback(
@@ -66,13 +73,21 @@ export function useCalendarState(input: {
       setDayFilter((current) => {
         if (days.length === 0) return current;
         if (current === null) {
-          // Enter at today (or the first day) — never jump to the furthest-future day.
           return days.find((day) => day.isToday)?.key ?? days[0]?.key ?? null;
         }
         const idx = days.findIndex((day) => day.key === current);
         const target = idx + direction;
         return target >= 0 && target < days.length ? (days[target]?.key ?? current) : current;
       });
+      setWeekFilter(null);
+    },
+    [days],
+  );
+
+  const stepWeek = useCallback(
+    (direction: 1 | -1) => {
+      setWeekFilter((current) => stepCalendarWeekKey(days, current, direction));
+      setDayFilter(null);
     },
     [days],
   );
@@ -83,18 +98,22 @@ export function useCalendarState(input: {
 
   const reset = useCallback(() => {
     setDayFilter(null);
+    setWeekFilter(null);
     setTypeTab("All");
   }, []);
 
   return {
     typeTab,
     dayFilter,
+    weekFilter,
     days,
     cycleType,
     stepDay,
+    stepWeek,
     toggleAllDays,
     reset,
     setTypeTab,
     setDayFilter,
+    setWeekFilter,
   };
 }
