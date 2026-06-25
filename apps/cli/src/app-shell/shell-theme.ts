@@ -68,11 +68,12 @@ export function statusColor(tone: ShellStatus["tone"] = "neutral"): string {
   }
 }
 
-export function contentTintColor(kind: "anime" | "series" | "movie"): string {
+export function contentTintColor(kind: "anime" | "series" | "movie" | "video"): string {
   // Media-type hue is allowed only where type is the data (Stats). Other
   // surfaces should keep rows neutral and let weight carry hierarchy.
   if (kind === "anime") return palette.typeAnime;
   if (kind === "movie") return palette.typeMovie;
+  if (kind === "video") return palette.accent;
   return palette.typeSeries;
 }
 
@@ -118,24 +119,34 @@ export function statsHeatCellColor(intensityIndex: number, tintHex: string): str
 }
 
 export function resolveStatsTintColor(input: {
-  readonly kindFilter: "all" | "anime" | "series" | "movie";
-  readonly mix: { readonly anime: number; readonly series: number; readonly movie: number } | null;
+  readonly kindFilter: "all" | "anime" | "series" | "movie" | "video";
+  readonly mix: {
+    readonly anime: number;
+    readonly series: number;
+    readonly movie: number;
+    readonly video: number;
+  } | null;
 }): string {
   if (input.kindFilter !== "all") return contentTintColor(input.kindFilter);
   if (!input.mix) return palette.typeMixed;
-  const total = input.mix.anime + input.mix.series + input.mix.movie;
+  const total = input.mix.anime + input.mix.series + input.mix.movie + input.mix.video;
   if (total <= 0) return heatColor(0);
-  const activeKinds = [input.mix.anime > 0, input.mix.series > 0, input.mix.movie > 0].filter(
-    Boolean,
-  ).length;
+  const activeKinds = [
+    input.mix.anime > 0,
+    input.mix.series > 0,
+    input.mix.movie > 0,
+    input.mix.video > 0,
+  ].filter(Boolean).length;
   if (activeKinds >= 2) {
     let blended = parseHexColor(palette.typeAnime);
     blended = mixRgb(blended, parseHexColor(palette.typeSeries), input.mix.series / total);
     blended = mixRgb(blended, parseHexColor(palette.typeMovie), input.mix.movie / total);
+    blended = mixRgb(blended, parseHexColor(palette.accent), input.mix.video / total);
     return formatHexColor(blended);
   }
   if (input.mix.anime > 0) return palette.typeAnime;
   if (input.mix.series > 0) return palette.typeSeries;
+  if (input.mix.video > 0) return palette.accent;
   return palette.typeMovie;
 }
 

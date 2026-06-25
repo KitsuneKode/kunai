@@ -215,7 +215,9 @@ function SystemSlide({
     {
       name: "yt-dlp",
       status: snapshot.ytDlp ? "ok" : "optional-missing",
-      detail: snapshot.ytDlp ? "Download engine ready" : "Optional — needed for offline downloads",
+      detail: snapshot.ytDlp
+        ? "YouTube playback + download engine ready"
+        : "Required for YouTube playback and offline downloads",
       install: "brew install yt-dlp  ·  pip install yt-dlp",
     },
     {

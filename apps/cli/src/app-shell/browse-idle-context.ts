@@ -2,6 +2,8 @@ import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
 import {
   historyContentType,
+  historyEpisodeLabel,
+  isYoutubeHistoryEntry,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
@@ -43,12 +45,7 @@ export async function buildBrowseIdleContext(
     if (topEntry) {
       const [titleId, top] = topEntry;
       continueWatchingSelection = { titleId, entry: top };
-      const ep =
-        historyContentType(top) === "series" &&
-        typeof top.season === "number" &&
-        typeof top.episode === "number"
-          ? `S${String(top.season).padStart(2, "0")}E${String(top.episode).padStart(2, "0")}`
-          : undefined;
+      const ep = historyEpisodeLabel(top);
       const topDuration = top.durationSeconds ?? 0;
       const remainingSecs = topDuration > 0 ? topDuration - top.positionSeconds : 0;
       const remainingLabel =
@@ -58,7 +55,11 @@ export async function buildBrowseIdleContext(
         ep,
         remainingLabel,
         titleId,
-        mediaKind: historyContentType(top) === "movie" ? "movie" : "series",
+        mediaKind: isYoutubeHistoryEntry(top)
+          ? "video"
+          : historyContentType(top) === "movie"
+            ? "movie"
+            : "series",
       };
     }
 
@@ -111,9 +112,11 @@ export async function buildBrowseIdleContext(
             ? {
                 title: playlistNextItem.title,
                 ep:
-                  playlistNextItem.season !== null && playlistNextItem.episode !== null
-                    ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
-                    : undefined,
+                  playlistNextItem.mediaKind === "video" && playlistNextItem.episode !== null
+                    ? `#${playlistNextItem.episode}`
+                    : playlistNextItem.season !== null && playlistNextItem.episode !== null
+                      ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
+                      : undefined,
                 titleId: playlistNextItem.titleId,
                 mediaKind: playlistNextItem.mediaKind,
                 season: playlistNextItem.season ?? undefined,

@@ -3,7 +3,7 @@ import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-tr
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
-import type { SearchResult } from "@/domain/types";
+import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { Box, Text, useInput } from "ink";
@@ -136,8 +136,36 @@ function clearShellScreen() {
   }
 }
 
+function browseIdleHint(mode: ShellMode): string {
+  if (mode === "youtube") {
+    return "Search for a channel or video — or try /trending";
+  }
+  if (mode === "anime") {
+    return "Search for an anime — or try /trending";
+  }
+  return "Search for a title — or try /trending to see what's popular";
+}
+
+function browseEmptyDetail(mode: ShellMode, message: string): string | undefined {
+  if (!message.includes("trending")) return undefined;
+  if (mode === "youtube") {
+    return "Use type:playlist to narrow · /filters for all tokens";
+  }
+  return "Use year:2022 or type:anime to narrow · /filters for all tokens";
+}
+
+function browseFilterPlaceholder(mode: ShellMode): string {
+  if (mode === "youtube") {
+    return "type channel, playlist, video, downloaded…";
+  }
+  if (mode === "anime") {
+    return "type title, year, anime, downloaded…";
+  }
+  return "type title, year, movie, series, downloaded…";
+}
+
 export function BrowseShell<T>({
-  mode: _mode,
+  mode,
   provider,
   initialQuery,
   initialResults,
@@ -160,7 +188,7 @@ export function BrowseShell<T>({
   onCancel,
   idleContext,
 }: {
-  mode: "series" | "anime";
+  mode: ShellMode;
   provider: string;
   initialQuery?: string;
   initialResults?: readonly BrowseShellOption<T>[];
@@ -228,9 +256,7 @@ export function BrowseShell<T>({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [emptyMessage, setEmptyMessage] = useState(
-    "Search for a title — or try /trending to see what's popular",
-  );
+  const [emptyMessage, setEmptyMessage] = useState(() => browseIdleHint(mode));
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
   const [filterModeOpen, setFilterModeOpen] = useState(false);
@@ -264,6 +290,14 @@ export function BrowseShell<T>({
     selectedIndex: 0,
   });
   const requestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setCalendarNow(Date.now()), 60_000);
@@ -483,7 +517,7 @@ export function BrowseShell<T>({
       if (response.revalidate) {
         void response.revalidate
           .then((nextResponse) => {
-            if (requestIdRef.current !== requestId) return undefined;
+            if (!mountedRef.current || requestIdRef.current !== requestId) return undefined;
             setOptions(nextResponse.options);
             setSelectedIndex(0);
             setResultSubtitle(nextResponse.subtitle);
@@ -1329,7 +1363,7 @@ export function BrowseShell<T>({
                 dispatchFocusZone({ type: "focus-filter" });
               }}
               onSubmit={() => dispatchFocusZone({ type: "focus-query" })}
-              placeholder="type title, year, movie, series, downloaded…"
+              placeholder={browseFilterPlaceholder(mode)}
               focus={resultFilterFocused && !commandMode}
               maxWidth={innerWidth}
               onRedraw={clearShellScreen}
@@ -1601,9 +1635,7 @@ export function BrowseShell<T>({
               model={{
                 kind: "empty",
                 title: emptyMessage,
-                detail: emptyMessage.includes("trending")
-                  ? "Use year:2022 or type:anime to narrow · /filters for all tokens"
-                  : undefined,
+                detail: browseEmptyDetail(mode, emptyMessage),
               }}
               width={Math.min(innerWidth, 72)}
             />
@@ -1751,7 +1783,7 @@ export function openBrowseShell<T>({
   onOpenLink,
   idleContext,
 }: {
-  mode: "series" | "anime";
+  mode: ShellMode;
   provider: string;
   initialQuery?: string;
   initialResults?: readonly BrowseShellOption<T>[];
