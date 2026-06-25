@@ -127,10 +127,57 @@ export function releaseAssetSupported(
   arch: PlatformArch,
   libc: PlatformLibc = "gnu",
 ): boolean {
-  return RELEASE_BINARY_TARGETS.some(
+  return resolveReleaseBinaryTarget(os, arch, libc) !== undefined;
+}
+
+/** Map OS/arch/libc to the published cross-compile target, if any. */
+export function resolveReleaseBinaryTarget(
+  os: PlatformOs,
+  arch: PlatformArch,
+  libc: PlatformLibc = "gnu",
+): ReleaseBinaryTarget | undefined {
+  const effectiveLibc = os === "linux" ? libc : "gnu";
+  return RELEASE_BINARY_TARGETS.find(
     (target) =>
-      target.os === os &&
-      target.arch === arch &&
-      (target.libc ?? "gnu") === (os === "linux" ? libc : "gnu"),
+      target.os === os && target.arch === arch && (target.libc ?? "gnu") === effectiveLibc,
   );
+}
+
+export type HostReleaseBinaryTargetInput = {
+  readonly platform?: string;
+  readonly arch?: string;
+  readonly libc?: PlatformLibc;
+};
+
+/**
+ * Resolve the release binary target that matches this machine (or explicit overrides).
+ * Throws when the host OS/arch is unknown or has no published binary.
+ */
+export function resolveHostReleaseBinaryTarget(
+  input: HostReleaseBinaryTargetInput = {},
+): ReleaseBinaryTarget {
+  const detected = detectPlatform(
+    input.platform ?? process.platform,
+    input.arch ?? process.arch,
+    input.libc ?? "gnu",
+  );
+  if (!detected.os || !detected.arch) {
+    const platform = input.platform ?? process.platform;
+    const arch = input.arch ?? process.arch;
+    throw new Error(
+      `[platform] unsupported host ${platform}/${arch}. ` +
+        `Published targets: ${RELEASE_BINARY_TARGETS.map((t) => t.id).join(", ")}`,
+    );
+  }
+
+  const libc = input.libc ?? (detected.os === "linux" ? (detected.libc ?? "gnu") : "gnu");
+  const target = resolveReleaseBinaryTarget(detected.os, detected.arch, libc);
+  if (!target) {
+    throw new Error(
+      `[platform] no release binary for host ${detected.os}/${detected.arch}` +
+        (detected.os === "linux" && libc === "musl" ? " (musl)" : "") +
+        `. Published targets: ${RELEASE_BINARY_TARGETS.map((t) => t.id).join(", ")}`,
+    );
+  }
+  return target;
 }

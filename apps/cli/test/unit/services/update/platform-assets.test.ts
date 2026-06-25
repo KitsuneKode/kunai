@@ -7,6 +7,8 @@ import {
   normalizePlatformOs,
   releaseAssetName,
   releaseAssetSupported,
+  resolveHostReleaseBinaryTarget,
+  resolveReleaseBinaryTarget,
 } from "@/services/update/platform-assets";
 
 describe("platform release assets", () => {
@@ -40,5 +42,18 @@ describe("platform release assets", () => {
   test("windows arm64 uses a dedicated asset name", () => {
     expect(releaseAssetName("windows", "arm64")).toBe("kunai-windows-arm64.exe");
     expect(releaseAssetName("windows", "x64")).toBe("kunai-windows-x64.exe");
+  });
+
+  test("resolves explicit release binary targets", () => {
+    expect(resolveReleaseBinaryTarget("linux", "x64", "gnu")?.id).toBe("linux-x64");
+    expect(resolveReleaseBinaryTarget("linux", "x64", "musl")?.id).toBe("linux-x64-musl");
+    expect(resolveReleaseBinaryTarget("darwin", "arm64")?.id).toBe("darwin-arm64");
+    expect(resolveReleaseBinaryTarget("windows", "x64")?.id).toBe("windows-x64");
+  });
+
+  test("resolves the host release binary target for the current runtime", () => {
+    const target = resolveHostReleaseBinaryTarget();
+    expect(RELEASE_BINARY_TARGETS.some((entry) => entry.id === target.id)).toBe(true);
+    expect(target.out).toBe(releaseAssetName(target.os, target.arch, target.libc ?? "gnu"));
   });
 });
