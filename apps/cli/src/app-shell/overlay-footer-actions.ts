@@ -1,3 +1,4 @@
+import { buildFooterActionsFromBindings } from "./keybindings";
 import type { FooterAction } from "./types";
 
 /**
@@ -12,37 +13,36 @@ import type { FooterAction } from "./types";
  * `esc close` tail is always appended so deeper actions stay discoverable.
  */
 
-const COMMANDS_ACTION: FooterAction = { key: "/", label: "commands", action: "command-mode" };
-const CLOSE_ACTION: FooterAction = { key: "esc", label: "close", action: "quit" };
-
-function withTail(actions: readonly FooterAction[]): readonly FooterAction[] {
-  return [...actions, COMMANDS_ACTION, CLOSE_ACTION];
-}
-
 export function queueFooterActions(): readonly FooterAction[] {
-  return withTail([
-    { key: "enter", label: "play", primary: true },
-    { key: "j/k", label: "reorder" },
-    { key: "x", label: "remove" },
-    { key: "c", label: "clear" },
-    { key: "r", label: "restore" },
-  ]);
+  return buildFooterActionsFromBindings("queue", {
+    ids: ["queue-play", "queue-reorder", "queue-remove", "queue-clear", "queue-restore"],
+    overrides: {
+      "queue-play": { primary: true },
+    },
+  });
 }
 
 export function historyFooterActions(): readonly FooterAction[] {
-  return withTail([
-    { key: "enter", label: "resume", primary: true },
-    { key: "q", label: "queue" },
-    { key: "tab", label: "filter" },
-  ]);
+  return buildFooterActionsFromBindings("history", {
+    ids: ["history-resume", "history-queue", "history-tab"],
+    overrides: {
+      "history-resume": { primary: true },
+    },
+  });
 }
 
 export function notificationsFooterActions(): readonly FooterAction[] {
-  return withTail([
-    { key: "enter", label: "action", primary: true },
-    { key: "r", label: "read" },
-    { key: "x", label: "archive" },
-    { key: "d", label: "delete" },
-    { key: "tab", label: "switch" },
-  ]);
+  return buildFooterActionsFromBindings("notifications", {
+    ids: [
+      "notifications-action",
+      "notifications-mark-all",
+      "notifications-archive",
+      "notifications-clear",
+      "notifications-page",
+      "notifications-tab",
+    ],
+    overrides: {
+      "notifications-action": { primary: true },
+    },
+  });
 }

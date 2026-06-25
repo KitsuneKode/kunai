@@ -5,19 +5,14 @@
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
 
-import { routePlaybackShellAction } from "@/app-shell/command-router";
-import { resolveCommandContext } from "@/app-shell/commands";
 import { capturePlaybackShellError } from "@/app-shell/playback-shell-error-capture";
 import {
   openTracksPanel,
   buildPickerActionContext,
   openSubtitlePicker,
-  handleShellAction,
-  enqueueCurrentPlaybackDownload,
 } from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
-import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
 import {
@@ -38,20 +33,18 @@ import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
 } from "@/app/playback/playback-dead-stream-ledger";
-import {
-  applyPlaybackEpisodeNavigation,
-  buildEpisodeNavigationTransitionContext,
-} from "@/app/playback/playback-episode-navigation";
+import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
+import { createPlaybackIteration } from "@/app/playback/playback-iteration";
+import type { PlaybackOutcome } from "@/app/playback/playback-outcome";
+import {
+  createPostPlaybackMenuDeps,
+  runPostPlaybackMenuAfterEpisode,
+} from "@/app/playback/playback-post-play-entry";
 import {
   preparePostPlaybackSurface,
   teardownPlaybackForPostPlayExit,
 } from "@/app/playback/playback-post-play-lifecycle";
-import {
-  canAutoContinueIntoRecommendation,
-  canResumePlayback as resolveCanResumePlayback,
-  isNearEndVoluntaryQuit,
-} from "@/app/playback/playback-postplay-policy";
 import {
   playbackAudioPreference,
   playbackQualityPreference,
@@ -65,11 +58,6 @@ import {
   resolveStreamProviderId,
   resolveTitleProviderPreference,
 } from "@/app/playback/playback-provider-switch";
-import {
-  enqueuePostPlaybackRecommendation,
-  openPostPlaybackRecommendationActionPanel,
-  recommendationRailItemToSearchResult,
-} from "@/app/playback/playback-recommendation-actions";
 import { resolvePlaybackResolvePolicy } from "@/app/playback/playback-resolve-policy";
 import {
   createBootstrapResumeResolver,
@@ -84,7 +72,6 @@ import {
   resolveAutoplayAdvanceEpisode,
   didPlaybackFailToStart,
   resolvePlaybackResultDecision,
-  resolvePostPlaybackSessionAction,
   syncPlaybackSessionState,
   transitionPlaybackSessionPhase,
   type PlaybackSessionPhaseEvent,
@@ -123,6 +110,7 @@ import {
 import { createResolveTraceStub } from "@/app/playback/resolve-trace";
 import {
   applyPreferredStreamSelection,
+  shouldSkipExternalSubtitleLookup,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
 } from "@/app/playback/source-quality";
@@ -136,28 +124,14 @@ import {
 } from "@/app/playback/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
-import { buildTrackPickTransitionContext } from "@/app/playback/tracks-panel-pick";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { formatCaughtUpReleaseBanner } from "@/app/post-play/caught-up-banner";
-import {
-  buildPostPlayEpisodeLabel,
-  buildPostPlayInputFromPlaybackContext,
-  buildPostPlayNextEpisodeLabel,
-  buildPostPlayQueueNextLabel,
-} from "@/app/post-play/post-play-input";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
-import {
-  resolvePostPlaybackEpisodeNavigationRoute,
-  resolvePostPlaybackExitOutcome,
-  resolvePostPlaybackTrackPanelSection,
-} from "@/app/post-play/post-playback-routing";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
-import { episodeThumbKey } from "@/domain/catalog/title-detail";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
-  didPlaybackEndNearNaturalEnd,
   didPlaybackReachCompletionThreshold,
   resolveEpisodeAvailability,
   toEpisodeNavigationState,
@@ -167,19 +141,16 @@ import {
   buildProviderResolveProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
-import { resolvePostPlayState } from "@/domain/playback/post-play-state";
 import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
-import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 import type {
   TitleInfo,
   EpisodeInfo,
   EpisodePickerOption,
   PlaybackTimingMetadata,
-  ShellMode,
   StreamInfo,
   PlaybackResult,
   SubtitleTrack,
@@ -200,7 +171,6 @@ import {
   PlaybackTimingAggregator,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
-import { formatTimestamp } from "@/services/continuation/history-progress";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
@@ -220,25 +190,10 @@ import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
 
 // Re-exported for tests that import it from this module's public surface.
+export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 export { playbackStartupStageForPlayerEvent };
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
-
-export type PlaybackOutcome =
-  | "back_to_search"
-  | "back_to_results"
-  | "back_to_history"
-  | "mode_switch"
-  | "quit"
-  | { type: "browse_route"; route: "calendar" | "random" }
-  | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo; startSeconds?: number }
-  | {
-      type: "playlist-advance";
-      titleInfo: TitleInfo;
-      mode: ShellMode;
-      season?: number;
-      episode?: number;
-    };
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
@@ -723,9 +678,40 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             ? stateManager.getState().currentEpisode
             : undefined;
 
-        if (preselectedEpisode) {
-          episode = preselectedEpisode;
-          run.pendingStart = await startNavigationToEpisode(episode);
+        const { resolvePlaybackEpisodeEntry } =
+          await import("@/app-shell/title-control/smart-auto-launch");
+        const providerHealth = container.providerHealth.get(stateManager.getState().provider);
+        const failedProvider =
+          providerHealth?.status === "degraded" || providerHealth?.status === "down";
+        const isAnimeMode = stateManager.getState().mode === "anime";
+        const seasonCount = isAnimeMode
+          ? (title.episodeCount ?? initialAnimeEpisodes?.length)
+          : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
+        const episodeEntry = resolvePlaybackEpisodeEntry({
+          titleId: title.id,
+          titleType: title.type,
+          isAnime: isAnimeMode,
+          launchSource: title.launchSource,
+          preselectedEpisode: preselectedEpisode ?? undefined,
+          history,
+          seasonCount,
+          failedProvider,
+          flags: {},
+        });
+
+        if (episodeEntry.kind === "auto") {
+          episode = episodeInfoFromSelection({
+            season: episodeEntry.selection.season,
+            episode: episodeEntry.selection.episode,
+            isAnime: stateManager.getState().mode === "anime",
+            titleId: title.id,
+            animeEpisodes: initialAnimeEpisodes,
+          });
+          run.pendingStart =
+            episodeEntry.selection.startAt !== undefined ||
+            episodeEntry.selection.suppressResumePrompt
+              ? startFromEpisodeSelection(episodeEntry.selection)
+              : await startNavigationToEpisode(episode);
         } else {
           const { chooseStartingEpisode } = await import("@/session-flow");
           const selection = await chooseStartingEpisode({
@@ -2691,6 +2677,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
+          const stopAfterCurrentAtMenuEntry = run.playbackSession.stopAfterCurrent;
           if (run.playbackSession.stopAfterCurrent) {
             stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled: false });
             run.playbackSession = {
@@ -2774,707 +2761,89 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // actions stay in the menu instead of re-resolving the stream.
           const { openPlaybackShell } = await import("../../app-shell/ink-shell");
 
-          // Rail orchestration (seed → block/background load → pick) plus its
-          // cross-iteration cache and single background-load guard live in
-          // PostPlaybackRecommendationRail. First paint stays snappy: prefetched
-          // items show immediately; live discovery is a nice-to-have rail that
-          // must never make episode completion feel stuck.
           const recommendationRail = new PostPlaybackRecommendationRail({
             container,
             title,
             budgetMs: 250,
           });
-          let postPlayProviderId = stateManager.getState().provider;
-          let openRecoverySourcePanelOnPostPlay =
-            (result.suspectedDeadStream === true || didPlaybackFailToStart(result)) &&
-            Boolean(preparedStream.providerResolveResult?.streams.length);
+          const iteration = createPlaybackIteration({
+            title,
+            currentEpisode,
+            episodeAvailability,
+            result,
+            effectiveTimingCurrent: effectiveTiming.current,
+            nextEpisode,
+            catalogAutoplayEndBanner,
+            shellEpisodePicker,
+            watchedEntries,
+            prefetchedRecommendationItems,
+            currentAnimeEpisodes,
+            preparedStream,
+            resolvedProviderId,
+            openRecoverySourcePanelOnPostPlay:
+              (result.suspectedDeadStream === true &&
+                Boolean(preparedStream.providerResolveResult?.streams.length)) ||
+              didPlaybackFailToStart(result),
+            stopAfterCurrentAtMenuEntry,
+          });
 
-          postPlayback: while (true) {
-            const resumeSeconds = toHistoryTimestamp(
-              result,
-              effectiveTiming.current,
-              config.quitNearEndThresholdMode,
-            );
-            const nearEndVoluntaryQuit = isNearEndVoluntaryQuit({
-              endReason: result.endReason,
-              quitNearEndBehavior: config.quitNearEndBehavior,
-              sessionMode: run.playbackSession.mode,
-              autoplayPaused: run.playbackSession.autoplayPaused,
-              stopAfterCurrent: run.playbackSession.stopAfterCurrent,
-              hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
-              endedNearNaturalEnd: didPlaybackEndNearNaturalEnd(
-                result,
-                effectiveTiming.current,
-                config.quitNearEndThresholdMode,
-              ),
-            });
-            if (nearEndVoluntaryQuit && episodeAvailability.nextEpisode) {
-              const postPlayNextEpisode = episodeAvailability.nextEpisode;
-              const countdownResult = await this.runAutoNextCountdown(context, postPlayNextEpisode);
-              if (countdownResult !== "cancelled" && !context.signal.aborted) {
-                logger.info("Post-play auto-next advancing after near-end quit", {
-                  titleId: title.id,
-                  nextSeason: postPlayNextEpisode.season,
-                  nextEpisode: postPlayNextEpisode.episode,
-                });
-                run.pendingStart = await navigatePlaybackEpisode(postPlayNextEpisode, {
-                  resetStopAfterCurrent: true,
-                });
-                const autoplayPrefetchTarget = buildPrefetchTarget(
-                  postPlayNextEpisode,
-                  resolvedProviderId,
-                );
-                await handoffNextEpisodePrefetch(
-                  autoplayPrefetchTarget,
-                  "post-playback.autonext.prefetch-wait",
-                );
-                break postPlayback;
-              }
-              if (countdownResult === "cancelled") {
-                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: true });
-                run.playbackSession = {
-                  ...run.playbackSession,
-                  autoplayPaused: true,
-                  autoplayPauseReason: "user",
-                };
-              }
-            }
-            const autoplaySessionPaused = run.playbackSession.autoplayPaused;
-            const nearNaturalEpisodeEnd = didPlaybackEndNearNaturalEnd(
-              result,
-              effectiveTiming.current,
-              config.quitNearEndThresholdMode,
-            );
-            const canResumePlayback = resolveCanResumePlayback({
-              resumeSeconds,
-              durationSeconds: result.duration,
-              endReason: result.endReason,
-              endedNearNaturalEnd: nearNaturalEpisodeEnd,
-            });
-            if (openRecoverySourcePanelOnPostPlay) {
-              openRecoverySourcePanelOnPostPlay = false;
-              const picked = await openTracksPanel(
-                preparedStream,
-                {
-                  initialSection: "source",
-                  failedCurrentReason: result.suspectedDeadStream
-                    ? "Playback failed on this stream."
-                    : "Playback did not start on this stream.",
-                },
-                container,
-              );
-              const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-              if (picked && selection) {
-                run.pendingStart = await completeSourceTrackPick(
-                  currentEpisode,
-                  picked,
-                  selection,
-                  resumeSeconds,
-                  "post-playback-tracks",
-                );
-                run.playbackSession = this.transitionPlaybackSession(
-                  context,
-                  run.playbackSession,
-                  "recovery-started",
-                  {
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    provider: resolvedProviderId,
-                    action: "recover",
-                  },
-                );
-                break postPlayback;
-              }
-            }
-            const mode = stateManager.getState().mode;
-            // The seed (prefetched items) paints instantly. When it is empty
-            // (e.g. starting from history), the rail only BLOCKS for a live load
-            // if we might auto-continue into the top recommendation; otherwise it
-            // loads in the BACKGROUND so the menu paints immediately and fills on
-            // a later loop iteration. This removes the from-history post-play lag.
-            const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
-              hasNextEpisode: Boolean(nextEpisode),
-              endReason: result.endReason,
-              autoplayPaused: run.playbackSession.autoplayPaused,
-              autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
-              aborted: context.signal.aborted,
-              hasQueuedNext: Boolean(container.queueService.peekNext()),
-              autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
-            });
-            const recommendationRailItems = await recommendationRail.resolveRailItems({
-              mode,
-              prefetchedItems: prefetchedRecommendationItems,
-              autoContinueIntoRecommendationPossible,
-            });
-            // YouTube-style continuous play: a natural finish with no next episode and
-            // an empty queue auto-continues into the top recommendation — same cancelable
-            // countdown as the episode/queue advance, gated by autoplayRecommendations.
-            // See resolveNextUp + the Up Next spec. (Episode + queue advance are handled
-            // earlier; this is the rec tail of the same spine.)
-            const topRec = recommendationRailItems[0];
-            const recommendationAutoNext = !nextEpisode
-              ? evaluateAutoAdvanceNextUp({
-                  guards: readAutoAdvanceGuards(),
-                  nextEpisode: null,
-                  queueHead: container.queueService.peekNext(),
-                  topRecommendation: topRec
-                    ? {
-                        mediaKind: topRec.type === "movie" ? "movie" : "series",
-                        titleId: topRec.id,
-                        title: topRec.title,
-                        sourceId: topRec.sourceId,
-                      }
-                    : null,
-                  seriesDone: !episodeAvailability.nextEpisode,
-                  autoplayRecommendations: container.config.autoplayRecommendations,
-                })
-              : null;
-            if (recommendationAutoNext?.kind === "recommendation") {
-              const topRecAdvance = recommendationAutoNext.item;
-              const recCountdown = await runAutoplayAdvanceCountdown({
-                seconds: 5,
-                signal: context.signal,
-                sleep: (ms) => Bun.sleep(ms),
-                onTick: (remaining) =>
-                  this.updatePlaybackFeedback(context, {
-                    detail: "Up next ready",
-                    note: `Up next: ${topRecAdvance.title} in ${remaining}s  ·  a to pause`,
-                  }),
-                isCancelled: () => stateManager.getState().autoplaySessionPaused,
-              });
-              if (recCountdown !== "cancelled") {
-                return {
-                  status: "success",
-                  value: {
-                    type: "playlist-advance",
-                    titleInfo: {
-                      id: topRecAdvance.titleId,
-                      name: topRecAdvance.title,
-                      type: topRec?.type === "movie" ? "movie" : "series",
-                      posterUrl: topRec?.posterPath ?? undefined,
-                    },
-                    mode,
-                  },
-                };
-              }
-              this.updatePlaybackFeedback(context, { detail: null, note: null });
-            }
-            // Playback "started" means mpv reached real content. Exit on load or a
-            // quit within the first seconds (no eof, no resumable position, almost
-            // nothing watched) is NOT a completion — never claim finished/watched.
-            const playbackStarted =
-              result.endReason === "eof" || result.watchedSeconds >= 30 || resumeSeconds > 10;
-            const postPlayInput = buildPostPlayInputFromPlaybackContext({
-              title,
-              currentEpisode,
-              availability: episodeAvailability,
-              isAnime: mode === "anime",
-              nextAirDateHint: catalogAutoplayEndBanner?.replace(/^Caught up ·\s*/i, ""),
-              playbackStarted,
-            });
-            const postPlayState = resolvePostPlayState(postPlayInput);
-            // Personal watch-time stat for the series-complete celebration, gated by
-            // config. Aggregates this title's history; null hides the line.
-            const watchTimeSummary =
-              postPlayState.kind === "series-complete" && container.config.showWatchTimeStats
-                ? formatWatchTimeSummary(
-                    aggregateWatchTime(historyRepository.listByTitle(title.id)),
-                  )
-                : null;
-            stateManager.dispatch({ type: "SET_WATCH_TIME_SUMMARY", summary: watchTimeSummary });
-            const upcomingEpisode = episodeAvailability.nextEpisode;
-            const nextEpisodePickerOption = upcomingEpisode
-              ? shellEpisodePicker.options.find(
-                  (option) =>
-                    option.value === `${upcomingEpisode.season}:${upcomingEpisode.episode}`,
-                )
-              : undefined;
-            const episodesInCurrentSeason = shellEpisodePicker.options.filter((option) =>
-              option.value.startsWith(`${currentEpisode.season}:`),
-            ).length;
-            const watchedEpisodes = watchedEntries.filter((entry) =>
-              title.type === "series" ? entry.season === currentEpisode.season : true,
-            ).length;
-            // Catalog detail for the post-play rail. Read synchronously from the
-            // cache the episode-start prefetch warmed — never blocks the surface.
-            // Undefined falls back to honest placeholders; the next open is warm.
-            const postPlayTitleDetail = peekTitleDetail(title.id, title.type);
-            // Next-episode still for the post-play rail, when the merged artwork
-            // carries one for that exact season/episode.
-            const nextEpisodeThumbUrl =
-              upcomingEpisode && postPlayTitleDetail?.artwork?.episodeThumbnails
-                ? postPlayTitleDetail.artwork.episodeThumbnails[
-                    episodeThumbKey(upcomingEpisode.season, upcomingEpisode.episode)
-                  ]
-                : undefined;
-            const postAction = await openPlaybackShell({
-              container,
-              state: {
-                type: title.type,
-                title: title.name,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                posterUrl: title.posterUrl,
-                titleDetail: postPlayTitleDetail,
-                provider: resolvedProviderId,
-                subtitleStatus: describePlaybackSubtitleStatus(
-                  preparedStream,
-                  stateManager.getState().mode === "anime"
-                    ? stateManager.getState().animeLanguageProfile.subtitle
-                    : stateManager.getState().seriesLanguageProfile.subtitle,
-                ),
-                autoplayPaused: autoplaySessionPaused,
-                autoskipPaused: stateManager.getState().autoskipSessionPaused,
-                stopAfterCurrent: run.playbackSession.stopAfterCurrent,
-                showMemory: false,
-                mode,
-                resumeLabel: canResumePlayback
-                  ? title.type === "series"
-                    ? `resume S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}  ·  ${formatTimestamp(resumeSeconds)}`
-                    : `resume ${formatTimestamp(resumeSeconds)}`
-                  : undefined,
-                status: catalogAutoplayEndBanner
-                  ? { label: catalogAutoplayEndBanner, tone: "neutral" }
-                  : { label: "Ready for next action", tone: "success" },
-                footerMode: "minimal",
-                postPlayState,
-                episodeLabel: buildPostPlayEpisodeLabel(
-                  title,
-                  currentEpisode,
-                  episodesInCurrentSeason || undefined,
-                ),
-                nextEpisodeLabel: buildPostPlayNextEpisodeLabel(
-                  upcomingEpisode,
-                  nextEpisodePickerOption?.label,
-                ),
-                queueNextLabel: buildPostPlayQueueNextLabel(container.queueService.peekNext()),
-                nextEpisodeThumbUrl,
-                totalEpisodes: title.episodeCount ?? shellEpisodePicker.options.length,
-                watchedEpisodes,
-                currentSeason: currentEpisode.season,
-                recommendationRailItems: recommendationRailItems.slice(0, 4).map((item) => ({
-                  id: item.id,
-                  title: item.title,
-                  type: item.type,
-                  ...(item.sourceId ? { sourceId: item.sourceId } : {}),
-                  ...(item.titleAliases ? { titleAliases: item.titleAliases } : {}),
-                  ...(item.year ? { year: item.year } : {}),
-                  ...(item.overview ? { overview: item.overview } : {}),
-                  ...(item.posterPath !== undefined ? { posterPath: item.posterPath } : {}),
-                  ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
-                })),
-                commands: resolveCommandContext(stateManager.getState(), "postPlayback"),
-              },
-            });
-
-            if (typeof postAction === "object") {
-              if (postAction.type === "track-selection") {
-                const picked = postAction.pick;
-                const selection = streamSelectionFromTrackPick(picked);
-                if (!selection) {
-                  continue postPlayback;
-                }
-                const fromProviderId = resolvedProviderId;
-                run.pendingStart = await completeSourceTrackPick(
-                  currentEpisode,
-                  picked,
-                  selection,
-                  resumeSeconds,
-                  "post-playback-tracks",
-                );
-                run.playbackSession = this.transitionPlaybackSession(
-                  context,
-                  run.playbackSession,
-                  "episode-navigation",
-                  buildTrackPickTransitionContext({
-                    titleId: title.id,
-                    episode: currentEpisode,
-                    selection,
-                    fromProviderId,
-                  }),
-                );
-                break postPlayback;
-              }
-              if (postAction.type === "play-recommendation") {
-                await teardownPlaybackForPostPlayExit(
-                  container,
-                  episodePrefetch,
-                  playbackIterationAbort,
-                );
-                return {
-                  status: "success",
-                  value: {
-                    type: "history_entry",
-                    title: titleInfoFromSearchResult(
-                      recommendationRailItemToSearchResult(postAction.item),
-                    ),
-                  },
-                };
-              }
-              if (postAction.type === "queue-recommendation") {
-                await enqueuePostPlaybackRecommendation(container, postAction.item);
-              } else if (postAction.type === "open-recommendation-actions") {
-                await openPostPlaybackRecommendationActionPanel({
-                  container,
-                  items: postAction.items,
-                  mode,
-                });
-              }
-              continue postPlayback;
-            }
-
-            const routedAction = await routePlaybackShellAction({
-              action: postAction,
-              container,
-            });
-
-            const exitOutcome = resolvePostPlaybackExitOutcome(routedAction);
-            if (exitOutcome) {
-              await teardownPlaybackForPostPlayExit(
-                container,
-                episodePrefetch,
-                playbackIterationAbort,
-              );
-              return exitOutcome;
-            } else if (routedAction === "toggle-autoplay") {
-              const playbackAction = resolvePostPlaybackSessionAction(
-                "toggle-autoplay",
-                run.playbackSession,
-              );
-              run.playbackSession = playbackAction.session;
-              stateManager.dispatch({
-                type: "SET_SESSION_AUTOPLAY_PAUSED",
-                paused: playbackAction.session.autoplayPaused,
-              });
-              continue postPlayback;
-            } else if (routedAction === "toggle-autoskip") {
-              stateManager.dispatch({
-                type: "SET_SESSION_AUTOSKIP_PAUSED",
-                paused: !stateManager.getState().autoskipSessionPaused,
-              });
-              continue postPlayback;
-            } else if (routedAction === "stop-after-current") {
-              const enabled = !run.playbackSession.stopAfterCurrent;
-              stateManager.dispatch({
-                type: "SET_SESSION_STOP_AFTER_CURRENT",
-                enabled,
-              });
-              run.playbackSession = {
-                ...run.playbackSession,
-                stopAfterCurrent: enabled,
-              };
-              continue postPlayback;
-            } else {
-              const navigationRoute = resolvePostPlaybackEpisodeNavigationRoute({
-                action: routedAction,
-                titleType: title.type,
-                availability: episodeAvailability,
-              });
-              if (navigationRoute) {
-                run.pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
-                run.playbackSession = this.transitionPlaybackSession(
-                  context,
-                  run.playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: navigationRoute.episode,
-                    source: navigationRoute.source,
-                  }),
-                );
-                break postPlayback;
-              }
-              if (
-                routedAction === "next" ||
-                routedAction === "previous" ||
-                routedAction === "next-season"
-              ) {
-                continue postPlayback;
-              }
-            }
-
-            const trackPanelSection = resolvePostPlaybackTrackPanelSection(routedAction);
-
-            if (routedAction === "resume") {
-              run.pendingStart = startAtResumePoint(resumeSeconds, { suppressResumePrompt: true });
-              const playbackAction = resolvePostPlaybackSessionAction(
-                "resume",
-                run.playbackSession,
-              );
-              run.playbackSession = playbackAction.session;
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "resume-requested",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds,
-                },
-              );
-              if (!playbackAction.session.autoplayPaused) {
-                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
-              }
-              break postPlayback;
-            } else if (routedAction === "replay") {
-              run.pendingStart = startFromBeginning();
-              if (postPlayState.kind === "did-not-start") {
-                run.pendingSourceRefreshAction = "recover";
-                run.autoSourceRecoverAttempts = 0;
-                invalidateRecentEpisodeStream(currentEpisode);
-              }
-              const playbackAction = resolvePostPlaybackSessionAction(
-                "replay",
-                run.playbackSession,
-              );
-              run.playbackSession = playbackAction.session;
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "replay-requested",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                },
-              );
-              if (!playbackAction.session.autoplayPaused) {
-                stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused: false });
-              }
-              break postPlayback;
-            } else if (routedAction === "recompute") {
-              run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-              run.pendingSourceRefreshAction = "recover";
-              run.pendingRecomputeSources = true;
-              run.autoSourceRecoverAttempts = 0;
-              invalidateRecentEpisodeStream(currentEpisode);
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "recovery-started",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  provider: resolvedProviderId,
-                  action: "recompute",
-                },
-              );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Recomputing provider sources after shell command",
-                context: {
-                  provider: resolvedProviderId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds,
-                },
-              });
-              break postPlayback;
-            } else if (routedAction === "fallback") {
-              const fallback = pickCompatibleFallbackProvider(
-                providerRegistry.getCompatible(title, stateManager.getState().mode),
-                resolvedProviderId,
-              );
-              if (!fallback) {
-                continue postPlayback;
-              }
-              run.sessionSoftProviderId = null;
-              const switched = await switchPlaybackProviderFallback({
-                container,
-                fromProviderId: resolvedProviderId,
-                toProviderId: fallback.metadata.id,
-                title,
-                episode: currentEpisode,
-                mode: stateManager.getState().mode,
-                invalidateRecentEpisodeStream,
-              });
-              resolvedProviderId = switched.providerId;
-              postPlayProviderId = switched.providerId;
-              run.pendingSourceRefreshAction = "recover";
-              run.pendingRecomputeSources = false;
-              run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumeSeconds });
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "episode-navigation",
-                {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  fromProvider: switched.fromProviderId,
-                  provider: switched.providerId,
-                },
-              );
-              diagnosticsService.record({
-                category: "playback",
-                message: "Switching to fallback provider after shell command",
-                context: {
-                  from: switched.fromProviderId,
-                  fallback: switched.providerId,
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                  resumeSeconds,
-                },
-              });
-              break postPlayback;
-            } else if (trackPanelSection) {
-              // Unified Tracks panel: each command deep-links its section. The
-              // user may switch any section from the same panel, so restart
-              // semantics follow the picked section, not the opening command.
-              const picked = await openTracksPanel(
-                preparedStream,
-                { initialSection: trackPanelSection },
-                container,
-              );
-              if (!picked) {
-                continue postPlayback;
-              }
-              const selection = streamSelectionFromTrackPick(picked);
-              if (!selection && picked.section !== "subtitle") {
-                continue postPlayback;
-              }
-              const fromProviderId = resolvedProviderId;
-              run.pendingStart = await completeSourceTrackPick(
-                currentEpisode,
-                picked,
-                selection,
-                resumeSeconds,
-                "post-playback-tracks",
-              );
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "episode-navigation",
-                selection
-                  ? buildTrackPickTransitionContext({
-                      titleId: title.id,
-                      episode: currentEpisode,
-                      selection,
-                      fromProviderId,
-                    })
-                  : {
-                      titleId: title.id,
-                      season: currentEpisode.season,
-                      episode: currentEpisode.episode,
-                    },
-              );
-              break postPlayback;
-            } else if (routedAction === "download") {
-              await enqueueCurrentPlaybackDownload({
-                container,
-                reason: "post-playback-command",
-              });
-              continue postPlayback;
-            } else if (routedAction === "handled") {
-              const nextProviderId = stateManager.getState().provider;
-              if (nextProviderId !== postPlayProviderId) {
-                postPlayProviderId = nextProviderId;
-                resolvedProviderId = nextProviderId;
-                run.sessionSoftProviderId = null;
-                invalidateRecentEpisodeStream(currentEpisode);
-                run.pendingSourceRefreshAction = "recover";
-                run.pendingRecomputeSources = false;
-                diagnosticsService.record({
-                  category: "playback",
-                  message: "Post-play provider switch staged for fresh resolve",
-                  context: {
-                    provider: nextProviderId,
-                    titleId: title.id,
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                  },
-                });
-              }
-              continue postPlayback;
-            } else if (
-              postAction === "clear-cache" ||
-              postAction === "reset-provider-health" ||
-              postAction === "clear-history"
-            ) {
-              await handleShellAction({ action: postAction, container });
-              continue postPlayback;
-            } else if (routedAction === "pick-episode" && title.type === "series") {
+          const postPlaybackMenuDeps = createPostPlaybackMenuDeps({
+            container,
+            signal: context.signal,
+            quitNearEndBehavior: config.quitNearEndBehavior,
+            quitNearEndThresholdMode: config.quitNearEndThresholdMode,
+            recommendationRail,
+            historyRepository,
+            diagnosticsService,
+            getMode: () => stateManager.getState().mode,
+            getAutoplaySessionPaused: () => stateManager.getState().autoplaySessionPaused,
+            getAutoskipSessionPaused: () => stateManager.getState().autoskipSessionPaused,
+            getProvider: () => stateManager.getState().provider,
+            getAnimeSubtitlePreference: () => stateManager.getState().animeLanguageProfile.subtitle,
+            getSeriesSubtitlePreference: () =>
+              stateManager.getState().seriesLanguageProfile.subtitle,
+            dispatchAutoplayPaused: (paused) =>
+              stateManager.dispatch({ type: "SET_SESSION_AUTOPLAY_PAUSED", paused }),
+            dispatchAutoskipPaused: (paused) =>
+              stateManager.dispatch({ type: "SET_SESSION_AUTOSKIP_PAUSED", paused }),
+            dispatchStopAfterCurrent: (enabled) =>
+              stateManager.dispatch({ type: "SET_SESSION_STOP_AFTER_CURRENT", enabled }),
+            dispatchWatchTimeSummary: (summary) =>
+              stateManager.dispatch({ type: "SET_WATCH_TIME_SUMMARY", summary }),
+            updatePlaybackFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
+            transitionPlaybackSession: (session, event, meta) =>
+              this.transitionPlaybackSession(context, session, event, meta ?? {}),
+            runAutoNextCountdown: (nextEpisodeTarget) =>
+              this.runAutoNextCountdown(context, nextEpisodeTarget),
+            navigatePlaybackEpisode,
+            completeSourceTrackPick,
+            handoffNextEpisodePrefetch,
+            buildPrefetchTarget,
+            invalidateRecentEpisodeStream,
+            openPlaybackShell,
+            chooseEpisodeFromMetadata: async (input) => {
               const { chooseEpisodeFromMetadata } = await import("@/session-flow");
-              const selection = await chooseEpisodeFromMetadata({
-                currentId: title.id,
-                isAnime: stateManager.getState().mode === "anime",
-                currentSeason: currentEpisode.season,
-                currentEpisode: currentEpisode.episode,
-                animeEpisodeCount: title.episodeCount,
-                animeEpisodes: currentAnimeEpisodes,
-                container,
-              });
-              if (!selection) {
-                logger.info("Episode picker cancelled", {
-                  titleId: title.id,
-                  season: currentEpisode.season,
-                  episode: currentEpisode.episode,
-                });
-                continue postPlayback;
-              }
-              const pickedEpisode = episodeInfoFromSelection({
-                season: selection.season,
-                episode: selection.episode,
-                isAnime: stateManager.getState().mode === "anime",
-                titleId: title.id,
-                animeEpisodes: currentAnimeEpisodes,
-              });
-              run.pendingStart = await navigatePlaybackEpisode(pickedEpisode);
-              run.playbackSession = this.transitionPlaybackSession(
-                context,
-                run.playbackSession,
-                "episode-navigation",
-                buildEpisodeNavigationTransitionContext({
-                  titleId: title.id,
-                  episode: pickedEpisode,
-                  source: "episode-picker",
-                }),
-              );
-              break postPlayback;
-            } else {
-              const navigationRoute = resolvePostPlaybackEpisodeNavigationRoute({
-                action: postAction,
-                titleType: title.type,
-                availability: episodeAvailability,
-              });
-              if (navigationRoute) {
-                run.pendingStart = await navigatePlaybackEpisode(navigationRoute.episode);
-                run.playbackSession = this.transitionPlaybackSession(
-                  context,
-                  run.playbackSession,
-                  "episode-navigation",
-                  buildEpisodeNavigationTransitionContext({
-                    titleId: title.id,
-                    episode: navigationRoute.episode,
-                    source: navigationRoute.source,
-                  }),
-                );
-                break postPlayback;
-              }
-              if (
-                postAction === "next" ||
-                postAction === "previous" ||
-                postAction === "next-season"
-              ) {
-                continue postPlayback;
-              }
-            }
+              return chooseEpisodeFromMetadata(input);
+            },
+            episodeInfoFromSelection,
+            readAutoAdvanceGuards,
+            getCompatibleProviders: () =>
+              providerRegistry.getCompatible(title, stateManager.getState().mode),
+            teardownPlaybackForPostPlayExit: () =>
+              teardownPlaybackForPostPlayExit(container, episodePrefetch, playbackIterationAbort),
+          });
 
-            {
-              logger.warn("Unhandled post-play shell action; staying on post-play menu", {
-                postAction,
-                routedAction,
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-              });
-              continue postPlayback;
-            }
+          const postPlaybackResult = await runPostPlaybackMenuAfterEpisode({
+            run,
+            iteration,
+            deps: postPlaybackMenuDeps,
+          });
+          resolvedProviderId = iteration.resolvedProviderId;
+          if (postPlaybackResult.kind === "exit") {
+            return postPlaybackResult.result;
+          }
+          if (postPlaybackResult.kind === "playlist-advance") {
+            return { status: "success", value: postPlaybackResult.value };
           }
         } catch (e) {
           if (resolveController.signal.aborted && !context.signal.aborted) {
@@ -3660,6 +3029,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stateManager.getState().mode === "anime"
         ? stateManager.getState().animeLanguageProfile.subtitle
         : stateManager.getState().seriesLanguageProfile.subtitle;
+
+    if (shouldSkipExternalSubtitleLookup(stream, subLang)) {
+      logger.info("Subtitle resolution skipped", {
+        provider: stateManager.getState().provider,
+        titleId: title.id,
+        requestedSubLang: subLang,
+        reason: "hardsub-satisfied-or-disabled",
+      });
+      return stream;
+    }
+
     const subtitleDecision = await choosePlaybackSubtitle({
       stream,
       subLang,

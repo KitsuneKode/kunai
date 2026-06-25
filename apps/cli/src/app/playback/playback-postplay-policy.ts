@@ -49,6 +49,7 @@ export function canResumePlayback(input: {
  * auto-continue into the top recommendation (YouTube-style continuous play).
  */
 export function canAutoContinueIntoRecommendation(input: {
+  readonly sessionMode: string;
   readonly hasNextEpisode: boolean;
   readonly endReason: string;
   readonly autoplayPaused: boolean;
@@ -58,6 +59,7 @@ export function canAutoContinueIntoRecommendation(input: {
   readonly autoplayRecommendationsEnabled: boolean;
 }): boolean {
   return (
+    input.sessionMode === "autoplay-chain" &&
     !input.hasNextEpisode &&
     input.endReason === "eof" &&
     !input.autoplayPaused &&

@@ -78,6 +78,7 @@ test("canResumePlayback: needs >10s watched and not effectively at the end", () 
 });
 
 const autoContinueBase = {
+  sessionMode: "autoplay-chain",
   hasNextEpisode: false,
   endReason: "eof",
   autoplayPaused: false,
@@ -92,6 +93,9 @@ test("canAutoContinueIntoRecommendation: true at a clean end of series with recs
 });
 
 test("canAutoContinueIntoRecommendation: false when blocked", () => {
+  expect(canAutoContinueIntoRecommendation({ ...autoContinueBase, sessionMode: "single" })).toBe(
+    false,
+  );
   expect(canAutoContinueIntoRecommendation({ ...autoContinueBase, hasNextEpisode: true })).toBe(
     false,
   );

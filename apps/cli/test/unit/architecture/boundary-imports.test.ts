@@ -47,12 +47,31 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     ["@/app-shell/pickers/choose-from-list-shell", "@/app-shell/workflows"],
   ],
   [
-    "apps/cli/src/app/playback/PlaybackPhase.ts",
+    "apps/cli/src/app/playback/run-post-playback-menu.ts",
+    [
+      "@/app-shell/commands",
+      "@/app-shell/title-control/title-control-post-play",
+      "@/app-shell/types",
+      "@/app-shell/workflows",
+    ],
+  ],
+  [
+    "apps/cli/src/app/playback/playback-post-play-entry.ts",
     [
       "@/app-shell/command-router",
       "@/app-shell/commands",
+      "@/app-shell/title-control/open-title-control-menu",
+      "@/app-shell/types",
+      "@/app-shell/workflows",
+    ],
+  ],
+  [
+    "apps/cli/src/app/playback/PlaybackPhase.ts",
+    [
       "@/app-shell/playback-shell-error-capture",
       "@/app-shell/workflows",
+      "@/app-shell/title-control/smart-auto-launch",
+      "@/app/playback/playback-post-play-entry",
       "../../app-shell/ink-shell",
     ],
   ],

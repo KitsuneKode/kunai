@@ -12,29 +12,31 @@ describe("overlay footer actions", () => {
     const actions = queueFooterActions();
 
     expect(actions[0]).toMatchObject({ key: "enter", label: "play", primary: true });
+    expect(actions[1]).toMatchObject({ key: "J / K", label: "reorder" });
     expect(actions.at(-2)).toMatchObject({ key: "/", label: "commands", action: "command-mode" });
     expect(actions.at(-1)).toMatchObject({ key: "esc", label: "close", action: "quit" });
   });
 
-  test("history footer exposes resume, queue and filter hints", () => {
+  test("history footer exposes resume, queue and tab hints", () => {
     expect(historyFooterActions().map((action) => action.label)).toEqual([
       "resume",
       "queue",
-      "filter",
+      "tabs",
       "commands",
       "close",
     ]);
   });
 
-  test("notifications footer carries inbox controls", () => {
-    expect(notificationsFooterActions().map((action) => action.label)).toEqual([
-      "action",
-      "read",
-      "archive",
-      "delete",
-      "switch",
-      "commands",
-      "close",
+  test("notifications footer carries inbox controls from live bindings", () => {
+    expect(notificationsFooterActions().map((action) => `${action.key}:${action.label}`)).toEqual([
+      "enter:action",
+      "A:read all",
+      "x:archive",
+      "C:clear",
+      "[ / ]:page",
+      "tab:switch",
+      "/:commands",
+      "esc:close",
     ]);
   });
 
