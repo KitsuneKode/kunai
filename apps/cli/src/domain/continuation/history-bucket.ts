@@ -48,7 +48,7 @@ export type HistoryReleaseSignal = {
 };
 
 /** A new episode is "fresh" when it aired AFTER the user last watched the title. */
-function isFreshlyAiredSinceWatch(
+export function isFreshlyAiredSinceWatch(
   latestKnownReleaseAt: string | null | undefined,
   lastWatchedAt: string,
 ): boolean {

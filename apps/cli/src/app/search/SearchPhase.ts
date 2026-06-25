@@ -51,7 +51,10 @@ import { readLatestHistoryByTitle } from "@/services/continuation/history-progre
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
-import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import {
+  enqueueReleaseReconciliation,
+  collectReleaseReconciliationRows,
+} from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
@@ -255,7 +258,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           allHistory = readLatestHistoryByTitle(container.historyRepository);
           enqueueReleaseReconciliation(
             container,
-            Object.values(allHistory),
+            collectReleaseReconciliationRows(container),
             this.hasQueuedStartupReleaseReconciliation ? "browse-idle" : "startup",
             context.signal,
           );
@@ -749,6 +752,15 @@ async function loadSearchRoute(
           : route === "random"
             ? await loadRandomResults(container, { signal: context.signal })
             : await loadDiscoverResults(container);
+
+  if (route === "calendar") {
+    enqueueReleaseReconciliation(
+      container,
+      collectReleaseReconciliationRows(container),
+      "calendar",
+      context.signal,
+    );
+  }
 
   const results = [...bundle.results];
   stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });

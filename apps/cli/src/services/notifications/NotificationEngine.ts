@@ -10,6 +10,7 @@ export type NotificationSignal =
       readonly season?: number;
       readonly episode?: number;
       readonly providerId: string;
+      readonly catalogSource?: string;
       readonly availableAt: string;
       readonly streamUrl?: string;
     }
@@ -86,6 +87,9 @@ export function deriveNotifications(
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
           : "new episode";
+      const body = signal.catalogSource
+        ? `${episodePart} reported by catalog (${signal.catalogSource})`
+        : `${episodePart} is available on ${signal.providerId}`;
       derived.push({
         dedupKey: [
           "new-playable-episode",
@@ -96,7 +100,7 @@ export function deriveNotifications(
         ].join(":"),
         kind: "new-episode",
         title: `${signal.title} ${episodePart}`,
-        body: `${episodePart} is available on ${signal.providerId}`,
+        body,
         item: {
           mediaKind: signal.mediaKind,
           titleId: signal.titleId,

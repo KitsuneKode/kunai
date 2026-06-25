@@ -1,7 +1,8 @@
 import type { Container } from "@/container";
+import { isFreshlyAiredSinceWatch } from "@/domain/continuation/history-bucket";
 import { toEpisodeCursor } from "@/domain/media/episode-cursor";
-import { isFinished } from "@/services/continuation/history-progress";
-import type { HistoryProgress } from "@kunai/storage";
+import { readLatestHistoryByTitle, isFinished } from "@/services/continuation/history-progress";
+import type { FollowedTitleRecord, HistoryProgress } from "@kunai/storage";
 
 import type {
   ReleaseReconciliationAttention,
@@ -18,6 +19,8 @@ type ReleaseReconciliationContainer = Pick<
   | "config"
   | "releaseProgressCache"
   | "notificationService"
+  | "historyRepository"
+  | "followedTitleRepository"
 >;
 
 const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = new Set([
@@ -27,6 +30,49 @@ const POWER_SAVER_PASSIVE_TRIGGERS: ReadonlySet<ReleaseReconciliationTrigger> = 
   "calendar",
   "post-playback",
 ]);
+
+function syntheticHistoryFromFollowed(record: FollowedTitleRecord): HistoryProgress {
+  const now = record.updatedAt;
+  return {
+    key: `followed:${record.titleId}`,
+    titleId: record.titleId,
+    mediaKind: record.mediaKind as HistoryProgress["mediaKind"],
+    title: record.title,
+    season: 1,
+    episode: 0,
+    positionSeconds: 0,
+    completed: false,
+    updatedAt: now,
+    createdAt: now,
+  };
+}
+
+/** History anchors plus followed titles that have no watch history yet. */
+export function collectReleaseReconciliationRows(
+  container: Pick<Container, "historyRepository" | "followedTitleRepository">,
+): readonly HistoryProgress[] {
+  const history = Object.values(readLatestHistoryByTitle(container.historyRepository));
+  const historyIds = new Set(history.map((row) => row.titleId));
+  const followedOnly = container.followedTitleRepository
+    .listByPreference("following")
+    .filter((record) => !historyIds.has(record.titleId))
+    .map(syntheticHistoryFromFollowed);
+  return [...history, ...followedOnly];
+}
+
+function catalogSourceLabel(source: string): boolean {
+  return source === "anilist" || source === "tmdb";
+}
+
+function shouldNotifyForProjection(
+  projection: { readonly newEpisodeCount: number; readonly latestKnownReleaseAt?: string | null },
+  historyRow: HistoryProgress | undefined,
+): boolean {
+  if (projection.newEpisodeCount <= 0) return false;
+  if (!historyRow) return true;
+  if (!isFinished(historyRow)) return false;
+  return isFreshlyAiredSinceWatch(projection.latestKnownReleaseAt, historyRow.updatedAt);
+}
 
 export function enqueueReleaseReconciliation(
   container: ReleaseReconciliationContainer,
@@ -78,19 +124,27 @@ export function enqueueReleaseReconciliation(
       // resolved upstream (ReleaseProgressWriter).
       const reconciledTitleIds = historyRows.map((row) => row.titleId);
       if (reconciledTitleIds.length > 0) {
+        const historyByTitle = new Map(rows.map((row) => [row.titleId, row] as const));
         const projections = container.releaseProgressCache.getByTitleIds(reconciledTitleIds);
         const newEpisodeSignals = [...projections.values()]
-          .filter((projection) => projection.newEpisodeCount > 0)
-          .map((projection) => ({
-            type: "new-playable-episode" as const,
-            titleId: projection.titleId,
-            mediaKind: projection.mediaKind,
-            title: projection.title,
-            season: projection.latestAiredSeason,
-            episode: projection.latestAiredEpisode,
-            providerId: projection.source,
-            availableAt: projection.checkedAt,
-          }));
+          .filter((projection) =>
+            shouldNotifyForProjection(projection, historyByTitle.get(projection.titleId)),
+          )
+          .map((projection) => {
+            const historyRow = historyByTitle.get(projection.titleId);
+            const providerId = historyRow?.providerId ?? projection.source;
+            return {
+              type: "new-playable-episode" as const,
+              titleId: projection.titleId,
+              mediaKind: projection.mediaKind,
+              title: projection.title,
+              season: projection.latestAiredSeason,
+              episode: projection.latestAiredEpisode,
+              providerId,
+              catalogSource: catalogSourceLabel(projection.source) ? projection.source : undefined,
+              availableAt: projection.checkedAt,
+            };
+          });
         if (newEpisodeSignals.length > 0) {
           container.notificationService.recordSignals(newEpisodeSignals);
         }

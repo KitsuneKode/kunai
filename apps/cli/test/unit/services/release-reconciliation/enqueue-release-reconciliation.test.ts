@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import type { HistoryProgress } from "@kunai/storage";
+import {
+  collectReleaseReconciliationRows,
+  enqueueReleaseReconciliation,
+} from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import type { FollowedTitleRecord, HistoryProgress } from "@kunai/storage";
 
 function row(over: Partial<HistoryProgress> & { titleId: string }): HistoryProgress {
   return {
@@ -19,6 +22,40 @@ function row(over: Partial<HistoryProgress> & { titleId: string }): HistoryProgr
     ...over,
   };
 }
+
+test("collectReleaseReconciliationRows merges history with followed-only titles", () => {
+  const historyRow = row({ titleId: "anilist:1", title: "Watched" });
+  const followedOnly: FollowedTitleRecord = {
+    titleId: "anilist:2",
+    mediaKind: "anime",
+    title: "Followed Only",
+    preference: "following",
+    updatedAt: "2026-05-24T12:00:00.000Z",
+  };
+  const container = {
+    historyRepository: {
+      listLatestByTitle: () => [historyRow],
+    },
+    followedTitleRepository: {
+      listByPreference: () => [
+        followedOnly,
+        {
+          titleId: "anilist:1",
+          mediaKind: "anime",
+          title: "Watched",
+          preference: "following",
+          updatedAt: "2026-05-24T12:00:00.000Z",
+        } satisfies FollowedTitleRecord,
+      ],
+    },
+  };
+
+  const rows = collectReleaseReconciliationRows(container as never);
+
+  expect(rows.map((entry) => entry.titleId)).toEqual(["anilist:1", "anilist:2"]);
+  expect(rows[1]?.key).toBe("followed:anilist:2");
+  expect(rows[1]?.episode).toBe(0);
+});
 
 test("release reconciliation triggers share one coalescing scheduler identity", () => {
   const ids: string[] = [];
