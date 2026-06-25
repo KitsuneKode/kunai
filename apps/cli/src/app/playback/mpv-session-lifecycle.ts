@@ -1,6 +1,6 @@
 import type { PlaybackSessionMode } from "@/app/playback/playback-session-controller";
 import { didPlaybackFailToStart } from "@/app/playback/playback-session-controller";
-import type { PlaybackResult } from "@/domain/types";
+import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
 import type { PlayerControlService } from "@/infra/player/PlayerControlService";
 import type { PlayerService } from "@/infra/player/PlayerService";
 
@@ -65,4 +65,17 @@ export async function releasePersistentMpvForTerminalFailure(input: {
       userMessage: input.userMessage,
     },
   });
+}
+
+/** Episode/movie title string passed to mpv and loading chrome. */
+export function formatMpvEpisodeDisplayTitle(title: TitleInfo, episode: EpisodeInfo): string {
+  if (title.type === "movie") return title.name;
+  return `${title.name} - S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`;
+}
+
+export function shouldAbortPlaybackBeforeLaunch(
+  sessionAborted: boolean,
+  iterationAborted: boolean,
+): boolean {
+  return sessionAborted || iterationAborted;
 }

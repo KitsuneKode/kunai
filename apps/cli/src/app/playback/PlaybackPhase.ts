@@ -23,12 +23,14 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
+import { describeMpvPlayerEvent } from "@/app/playback/mpv-playback-event-copy";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
   releasePersistentMpvForTerminalFailure,
   shouldReleasePersistentMpvBeforePostPlay,
 } from "@/app/playback/mpv-session-lifecycle";
+import { planCatalogAutoAdvance } from "@/app/playback/playback-catalog-autoadvance";
 import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
@@ -37,6 +39,7 @@ import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import type { PlaybackOutcome } from "@/app/playback/playback-outcome";
+import { planPlaylistAutoAdvance } from "@/app/playback/playback-playlist-autoadvance";
 import {
   createPostPlaybackMenuDeps,
   runPostPlaybackMenuAfterEpisode,
@@ -67,9 +70,6 @@ import { createPlaybackRunState } from "@/app/playback/playback-run-state";
 import { PlaybackSelectionCoordinator } from "@/app/playback/playback-selection-coordinator";
 import {
   createPlaybackSessionState,
-  explainAutoplayBlockReason,
-  explainAutoplayNoNextEpisodeCatalogHint,
-  resolveAutoplayAdvanceEpisode,
   didPlaybackFailToStart,
   resolvePlaybackResultDecision,
   syncPlaybackSessionState,
@@ -88,16 +88,12 @@ import {
   applyPlaybackControlTrackSelection,
   buildTrackOverrideDiagnosticContext,
 } from "@/app/playback/playback-track-selection-policy";
-import {
-  evaluateAutoAdvanceNextUp,
-  type AutoAdvanceGuards,
-} from "@/app/playback/policies/auto-advance-policy";
+import { type AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
 import {
   applyMpvEpisodeLoadingOverlay,
   applyMpvStreamSwitchOverlay,
 } from "@/app/playback/policies/mpv-transition-overlay-policy";
 import {
-  formatPlaybackStreamRoute,
   playbackStartupStageForPlayerEvent,
   summarizeStartupStreamSource,
 } from "@/app/playback/policies/startup-stage-policy";
@@ -108,6 +104,7 @@ import {
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
 import { createResolveTraceStub } from "@/app/playback/resolve-trace";
+import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import {
   applyPreferredStreamSelection,
   shouldSkipExternalSubtitleLookup,
@@ -125,7 +122,6 @@ import {
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
-import { formatCaughtUpReleaseBanner } from "@/app/post-play/caught-up-banner";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
@@ -157,11 +153,7 @@ import type {
   SearchResult,
 } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
-import {
-  classifyPlaybackFailureFromEvent,
-  classifyPlaybackFailureFromResult,
-  recoveryForPlaybackFailure,
-} from "@/infra/player/playback-failure-classifier";
+import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import {
   AniSkipTimingSource,
@@ -406,120 +398,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     detail?: string | null;
     note?: string | null;
   } {
-    switch (event.type) {
-      case "media-materialized":
-        return {
-          detail:
-            event.kind === "dash-mpd"
-              ? "Preparing DASH media"
-              : event.kind === "hls-manifest"
-                ? "Preparing HLS playlist for mpv"
-                : "Preparing media",
-        };
-      case "launching-player":
-        return { detail: "Launching player" };
-      case "mpv-process-started":
-        return { detail: "mpv launched" };
-      case "ipc-connected":
-        return { detail: "Player control connected" };
-      case "ipc-command-failed":
-        return {
-          note: `Player command failed: ${event.command} (${event.error})`,
-        };
-      case "ipc-stalled":
-        return {
-          detail: "Player control stalled",
-          note: `mpv did not answer ${event.command}; playback may still be alive`,
-        };
-      case "opening-stream":
-        return { detail: "Opening provider stream" };
-      case "resolving-playback":
-        return { detail: "Resolving playback" };
-      case "network-buffering": {
-        const cacheAhead =
-          typeof event.cacheAheadSeconds === "number"
-            ? `${event.cacheAheadSeconds.toFixed(1)}s cached ahead`
-            : null;
-        const percent = typeof event.percent === "number" ? `${Math.round(event.percent)}%` : null;
-        const status = [percent, cacheAhead].filter(Boolean).join(" / ") || "Filling demuxer cache";
-        return {
-          detail: "Building playback buffer",
-          note: `${status}`,
-        };
-      }
-      case "network-sample":
-        return {};
-      case "stream-slow":
-        return {
-          detail:
-            event.state === "slow-network-suspected"
-              ? "Slow source (network read)"
-              : "Building playback buffer",
-          note: `${event.secondsBuffering}s buffering`,
-        };
-      case "subtitle-inventory-ready":
-        return {
-          detail: "Attaching subtitles",
-          note:
-            event.trackCount > 0
-              ? `${event.trackCount} alternate subtitle tracks are ready in mpv`
-              : "Primary subtitle is ready",
-        };
-      case "subtitle-attached":
-        return {
-          note:
-            event.trackCount > 0
-              ? `${event.trackCount} subtitle tracks attached`
-              : "Primary subtitle attached",
-        };
-      case "late-subtitles-attached":
-        return {
-          note: `${event.trackCount} late subtitle ${event.trackCount === 1 ? "track" : "tracks"} attached`,
-        };
-      case "player-ready":
-        return { detail: "Player controls ready" };
-      case "playback-started":
-        return { detail: "Playing" };
-      case "stream-stalled": {
-        const dead = event.stallKind === "network-read-dead";
-        return {
-          detail: dead ? "Stream stalled (network read idle)" : "Stream stalled",
-          note: `${dead ? "Demuxer underrun with no incoming bytes" : `No playback progress for ${event.secondsWithoutProgress}s`} · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
-        };
-      }
-      case "seek-stalled":
-        return {
-          detail: "Seek stalled",
-          note: `mpv has been seeking for ${event.secondsSeeking}s · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
-        };
-      case "player-closing":
-        return { detail: "Closing player" };
-      case "player-closed":
-        return { detail: "Player closed" };
-      case "segment-skipped":
-        return {
-          note: `${event.kind.charAt(0).toUpperCase()}${event.kind.slice(1)} ${event.automatic ? "skipped automatically" : "skipped"}`,
-        };
-      case "track-changed":
-        return {
-          note: `${event.trackType === "audio" ? "Audio" : "Subtitle"} track switched in mpv (id ${event.id})`,
-        };
-      case "mpv-in-process-reconnect": {
-        const phaseLabel =
-          event.phase === "started"
-            ? "Reloading same stream in mpv"
-            : event.phase === "complete"
-              ? "Reload finished"
-              : "Reload failed";
-        return {
-          detail: phaseLabel,
-          note: event.detail
-            ? `Attempt ${event.attempt} · ${event.detail}`
-            : `Attempt ${event.attempt}`,
-        };
-      }
-    }
-    return {};
+    return describeMpvPlayerEvent(event);
   }
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
@@ -2543,50 +2422,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               quitNearEndThresholdMode: config.quitNearEndThresholdMode,
             },
           };
-          const nextEpisode = await resolveAutoplayAdvanceEpisode(autoplayAdvanceArgs);
-          // Read live at each decision site: the post-play loop can pause
-          // autoplay (catalog/playlist cancel, menu toggle) or abort between the
-          // catalog, playlist, and recommendation checks. A frozen snapshot would
-          // let a stale "not paused / not aborted" leak a later auto-advance.
           const readAutoAdvanceGuards = (): AutoAdvanceGuards => ({
             endReason: result.endReason,
             autoplayPaused: run.playbackSession.autoplayPaused,
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             signalAborted: context.signal.aborted,
           });
-          const catalogAutoNext = evaluateAutoAdvanceNextUp({
-            guards: readAutoAdvanceGuards(),
-            nextEpisode,
-            queueHead: undefined,
-            topRecommendation: null,
-            seriesDone: !episodeAvailability.nextEpisode,
-            autoplayRecommendations: container.config.autoplayRecommendations,
-          });
-          let catalogAutoplayEndBanner: string | undefined;
-          if (!catalogAutoNext || catalogAutoNext.kind !== "episode") {
-            const blockedBy = explainAutoplayBlockReason(autoplayAdvanceArgs);
-            catalogAutoplayEndBanner = explainAutoplayNoNextEpisodeCatalogHint({
-              ...autoplayAdvanceArgs,
+          const { nextEpisode, catalogAutoNext, catalogAutoplayEndBanner, blockedBy } =
+            await planCatalogAutoAdvance({
+              autoplayAdvanceArgs,
+              guards: readAutoAdvanceGuards(),
+              seriesDone: !episodeAvailability.nextEpisode,
+              autoplayRecommendations: container.config.autoplayRecommendations,
               isAnime: stateManager.getState().mode === "anime",
+              anilistTitleId: title.id,
+              catalogScheduleService: container.catalogScheduleService,
             });
-
-            // Enrich the anime banner with precise schedule data from cache when available.
-            // Overrides the generic "release schedules not shown here" message with a real date.
-            if (stateManager.getState().mode === "anime" && title.id.startsWith("anilist:")) {
-              const schedule = container.catalogScheduleService.peekNextRelease(
-                "anilist",
-                title.id,
-              );
-              const scheduledBanner = formatCaughtUpReleaseBanner({
-                episode: schedule?.episode,
-                releaseAt: schedule?.releaseAt,
-                now: Date.now(),
-              });
-              if (scheduledBanner) {
-                catalogAutoplayEndBanner = scheduledBanner;
-              }
-            }
-
+          if (blockedBy) {
             diagnosticsService.record({
               category: "playback",
               message: "Auto-next blocked",
@@ -2702,16 +2554,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           );
 
-          const playlistAutoNext = !nextEpisode
-            ? evaluateAutoAdvanceNextUp({
-                guards: readAutoAdvanceGuards(),
-                nextEpisode: null,
-                queueHead: container.queueService.peekNext(),
-                topRecommendation: null,
-                seriesDone: !episodeAvailability.nextEpisode,
-                autoplayRecommendations: container.config.autoplayRecommendations,
-              })
-            : null;
+          const playlistAutoNext = planPlaylistAutoAdvance({
+            catalogNextEpisode: nextEpisode,
+            guards: readAutoAdvanceGuards(),
+            queueHead: container.queueService.peekNext(),
+            seriesHasNextEpisode: Boolean(episodeAvailability.nextEpisode),
+            autoplayRecommendations: container.config.autoplayRecommendations,
+          });
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
             const episodeLabel =
@@ -3108,16 +2957,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   ): Promise<PlaybackResult> {
     const { player, stateManager, config } = context.container;
 
-    if (context.signal.aborted || playbackIterationSignal?.aborted) {
-      throw new PlaybackAbortedError("playback aborted before launch");
-    }
-
-    const displayTitle =
-      title.type === "movie"
-        ? title.name
-        : `${title.name} - S${String(episode.season).padStart(2, "0")}E${String(
-            episode.episode,
-          ).padStart(2, "0")}`;
     const subtitleStatus = describePlaybackSubtitleStatus(
       stream,
       stateManager.getState().mode === "anime"
@@ -3125,54 +2964,44 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         : stateManager.getState().seriesLanguageProfile.subtitle,
     );
 
-    let bootstrapStallTimer: ReturnType<typeof setTimeout> | null = null;
-    const clearBootstrapStallTimer = () => {
-      if (bootstrapStallTimer !== null) {
-        clearTimeout(bootstrapStallTimer);
-        bootstrapStallTimer = null;
-      }
-    };
+    this.startLateSubtitleResolver({
+      stream,
+      title,
+      episode,
+      context,
+      playbackIterationSignal,
+    });
 
-    try {
-      this.updatePlaybackFeedback(context, {
-        detail: "Launching player",
-        note: subtitleStatus,
-      });
-      const initialSubtitleCount = stream.subtitleList?.length
-        ? stream.subtitleList.length
-        : stream.subtitle
-          ? 1
-          : undefined;
-      let latestPresencePositionSeconds = startAt > 0 ? startAt : 0;
-      let latestPresenceDurationSeconds = 0;
-      this.updatePresenceInBackground(
-        context,
-        "presence.updatePlaybackLaunch",
-        {
-          mode: stateManager.getState().mode,
-          title,
-          episode,
-          providerId: stateManager.getState().provider,
-          stream,
-          startedAtMs: Date.now(),
-          positionSeconds: latestPresencePositionSeconds,
-          subtitleCount: initialSubtitleCount,
-        },
-        correlation,
-      );
-      this.startLateSubtitleResolver({
-        stream,
+    const presenceBase = () => ({
+      mode: stateManager.getState().mode,
+      title,
+      episode,
+      providerId: stateManager.getState().provider,
+      stream,
+      startedAtMs: Date.now(),
+    });
+
+    return runMpvPlaybackSession({
+      stream,
+      title,
+      episode,
+      player,
+      subtitleStatus,
+      startAt,
+      sessionAborted: context.signal.aborted,
+      iterationAborted: playbackIterationSignal?.aborted ?? false,
+      correlation,
+      timing,
+      shareLinkContext: {
+        mode: stateManager.getState().mode,
         title,
-        episode,
-        context,
-        playbackIterationSignal,
-      });
-      const result = await player.play(stream, {
-        url: stream.url,
-        headers: stream.headers,
-        subtitle: stream.subtitle,
-        subtitleStatus,
-        correlation,
+        episode:
+          title.type === "series"
+            ? { season: episode.season, episode: episode.episode }
+            : undefined,
+        providerId: stateManager.getState().provider,
+      },
+      playOptions: {
         abortSignal: context.signal,
         audioPreference:
           stateManager.getState().mode === "anime"
@@ -3192,12 +3021,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             : title.type === "movie"
               ? stateManager.getState().movieLanguageProfile.quality
               : stateManager.getState().seriesLanguageProfile.quality,
-        displayTitle,
-        startAt,
         resumePromptAt,
         attach: false,
         playbackMode,
-        timing,
         resumeStartChoicePrompt: suppressResumePrompt ? false : config.resumeStartChoicePrompt,
         autoSkipEnabled: !stateManager.getState().autoskipSessionPaused,
         skipRecap: config.skipRecap,
@@ -3205,196 +3031,106 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         skipPreview: config.skipPreview,
         skipCredits: config.skipCredits,
         onNearEof,
-        shareLinkContext: {
-          mode: stateManager.getState().mode,
-          title,
-          episode:
-            title.type === "series"
-              ? { season: episode.season, episode: episode.episode }
-              : undefined,
-          providerId: stateManager.getState().provider,
-          onCopied: (shareCopy) => {
-            this.updatePlaybackFeedback(context, {
-              note: shareCopy?.copied
-                ? "Share link copied from mpv."
-                : shareCopy
-                  ? `Share link (copy manually): ${shareCopy.url}`
-                  : "Could not build a share link for this title.",
-            });
-          },
+      },
+      hooks: {
+        onFeedback: (update) => this.updatePlaybackFeedback(context, update),
+        onStartupMark,
+        onPresenceLaunch: ({ positionSeconds, subtitleCount }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackLaunch",
+            { ...presenceBase(), positionSeconds, subtitleCount },
+            correlation,
+          );
         },
-        onPlaybackEvent: (event) => {
-          const startupStage = playbackStartupStageForPlayerEvent(event);
-          if (startupStage) onStartupMark?.(startupStage);
-          if (startupStage === "subtitle-attached") {
-            clearBootstrapStallTimer();
-            bootstrapStallTimer = setTimeout(() => {
-              const status = stateManager.getState().playbackStatus;
-              if (status === "playing" || status === "buffering" || status === "seeking") {
-                return;
-              }
-              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "stalled" });
-              const route = formatPlaybackStreamRoute(stream);
-              this.updatePlaybackFeedback(context, {
-                detail: "Bootstrap stalled",
-                note: [
-                  "bootstrap-stall: no playback progress within 45s after subtitles",
-                  route,
-                  "o source · f fallback · purge via /commands",
-                ]
-                  .filter(Boolean)
-                  .join(" · "),
-              });
-            }, 45_000);
-          }
-          if (startupStage === "first-progress" || event.type === "playback-started") {
-            clearBootstrapStallTimer();
-          }
-          if (event.type !== "network-sample") {
-            const feedback = this.describePlayerEvent(event);
-            this.updatePlaybackFeedback(
-              context,
-              event.type === "stream-slow" || event.type === "stream-stalled"
-                ? {
-                    ...feedback,
-                    note: [feedback.note, formatPlaybackStreamRoute(stream)]
-                      .filter(Boolean)
-                      .join(" · "),
-                  }
-                : feedback,
-            );
-          }
-          if (event.type === "network-buffering") {
-            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "buffering" });
-          } else if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "stalled" });
-          } else if (event.type === "seek-stalled") {
-            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "seeking" });
-          } else if (event.type === "playback-started") {
-            stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "playing" });
-            // Update presence with accurate start time (after buffering)
-            this.updatePresenceInBackground(
-              context,
-              "presence.updatePlaybackStarted",
-              {
-                mode: stateManager.getState().mode,
-                title,
-                episode,
-                providerId: stateManager.getState().provider,
-                stream,
-                startedAtMs: Date.now(),
-                positionSeconds: latestPresencePositionSeconds,
-                durationSeconds: latestPresenceDurationSeconds,
-                subtitleCount: undefined,
-              },
-              correlation,
-            );
-          } else if (event.type === "playback-progress") {
-            latestPresencePositionSeconds = event.positionSeconds;
-            latestPresenceDurationSeconds = event.durationSeconds;
-            this.updatePresenceInBackground(
-              context,
-              "presence.updatePlaybackProgress",
-              {
-                mode: stateManager.getState().mode,
-                title,
-                episode,
-                providerId: stateManager.getState().provider,
-                stream,
-                startedAtMs: Date.now(),
-                positionSeconds: latestPresencePositionSeconds,
-                durationSeconds: latestPresenceDurationSeconds,
-              },
-              correlation,
-            );
-          } else if (event.type === "late-subtitles-attached") {
-            this.updatePresenceInBackground(
-              context,
-              "presence.updatePlaybackSubtitles",
-              {
-                mode: stateManager.getState().mode,
-                title,
-                episode,
-                providerId: stateManager.getState().provider,
-                stream,
-                startedAtMs: Date.now(),
-                positionSeconds: latestPresencePositionSeconds,
-                durationSeconds: latestPresenceDurationSeconds,
-                subtitleCount: event.trackCount,
-              },
-              correlation,
-            );
-          } else if (event.type === "playback-paused") {
-            this.updatePresenceInBackground(
-              context,
-              "presence.updatePlaybackPaused",
-              {
-                mode: stateManager.getState().mode,
-                title,
-                episode,
-                providerId: stateManager.getState().provider,
-                stream,
-                startedAtMs: Date.now(),
-                positionSeconds: latestPresencePositionSeconds,
-                durationSeconds: latestPresenceDurationSeconds,
-                paused: true,
-              },
-              correlation,
-            );
-          } else if (event.type === "playback-resumed") {
-            this.updatePresenceInBackground(
-              context,
-              "presence.updatePlaybackResumed",
-              {
-                mode: stateManager.getState().mode,
-                title,
-                episode,
-                providerId: stateManager.getState().provider,
-                stream,
-                startedAtMs: Date.now(),
-                positionSeconds: latestPresencePositionSeconds,
-                durationSeconds: latestPresenceDurationSeconds,
-              },
-              correlation,
-            );
-          } else if (event.type === "track-changed") {
-            // Keep session state aligned when users switch tracks directly in mpv.
-            const currentStream = stateManager.getState().stream;
-            if (currentStream && event.trackType === "sub" && event.id === 0) {
-              stateManager.dispatch({
-                type: "SET_STREAM",
-                stream: { ...currentStream, subtitle: undefined },
-              });
-            }
-            context.container.diagnosticsService.record({
-              category: "playback",
-              message: "Track changed from mpv",
-              context: {
-                trackType: event.trackType,
-                id: event.id,
-              },
+        onPresenceStarted: ({ positionSeconds, durationSeconds }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackStarted",
+            {
+              ...presenceBase(),
+              positionSeconds,
+              durationSeconds,
+              subtitleCount: undefined,
+            },
+            correlation,
+          );
+        },
+        onPresenceProgress: ({ positionSeconds, durationSeconds }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackProgress",
+            { ...presenceBase(), positionSeconds, durationSeconds },
+            correlation,
+          );
+        },
+        onPresenceSubtitles: ({ positionSeconds, durationSeconds, trackCount }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackSubtitles",
+            {
+              ...presenceBase(),
+              positionSeconds,
+              durationSeconds,
+              subtitleCount: trackCount,
+            },
+            correlation,
+          );
+        },
+        onPresencePaused: ({ positionSeconds, durationSeconds }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackPaused",
+            {
+              ...presenceBase(),
+              positionSeconds,
+              durationSeconds,
+              paused: true,
+            },
+            correlation,
+          );
+        },
+        onPresenceResumed: ({ positionSeconds, durationSeconds }) => {
+          this.updatePresenceInBackground(
+            context,
+            "presence.updatePlaybackResumed",
+            { ...presenceBase(), positionSeconds, durationSeconds },
+            correlation,
+          );
+        },
+        setPlaybackStatus: (status) => {
+          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status });
+        },
+        getPlaybackStatus: () => stateManager.getState().playbackStatus,
+        onTrackChanged: (event) => {
+          const currentStream = stateManager.getState().stream;
+          if (currentStream && event.trackType === "sub" && event.id === 0) {
+            stateManager.dispatch({
+              type: "SET_STREAM",
+              stream: { ...currentStream, subtitle: undefined },
             });
           }
-        },
-        onPlayerReady: () => {
-          this.updatePlaybackFeedback(context, {
-            detail: "Player controls ready",
+          context.container.diagnosticsService.record({
+            category: "playback",
+            message: "Track changed from mpv",
+            context: {
+              trackType: event.trackType,
+              id: event.id,
+            },
           });
-          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
         },
-      });
-
-      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "finished" });
-      return result;
-    } finally {
-      clearBootstrapStallTimer();
-      // Don't clear presence here — between autoplay-chain episodes we want
-      // continuous "watching" presence like Netflix/Crunchyroll. The
-      // updatePlayback at the start of the next episode will seamlessly
-      // transition the activity. Presence is cleared only when the user
-      // explicitly navigates away from playback (back_to_search or
-      // back_to_results outcomes above).
-    }
+        onShareCopied: (shareCopy) => {
+          this.updatePlaybackFeedback(context, {
+            note: shareCopy?.copied
+              ? "Share link copied from mpv."
+              : shareCopy
+                ? `Share link (copy manually): ${shareCopy.url}`
+                : "Could not build a share link for this title.",
+          });
+        },
+        onPlayerReady: () => {},
+      },
+    });
   }
 
   private startLateSubtitleResolver({
