@@ -9,7 +9,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 - Kitty/Ghostty for native Kitty poster previews
 - `chafa` for poster previews in Windows Terminal/WezTerm/other terminals
 - ImageMagick (`magick`) if you want Kitty/Ghostty non-PNG poster conversion
-- `yt-dlp` if you want downloads/offline queue (must be on `PATH` when downloads are enabled)
+- `yt-dlp` for YouTube playback and downloads/offline queue (must be on `PATH` for YouTube resolve/play and when downloads are enabled)
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
 
 Deeper reference for terminal graphics, env overrides, and testing: [.docs/poster-image-rendering.md](poster-image-rendering.md).
@@ -65,12 +65,17 @@ bun run dev -- -S "Attack on Titan"
 bun run dev -- -i 1429 -t series
 bun run dev -- -i 438631 -t movie
 bun run dev -- -a
+bun run dev -- --youtube -S "lofi beats"
 bun run dev -- -m
 bun run dev -- -S "Dune" --jump 1
 bun run dev -- -S "Dune" -q
 bun run dev -- --debug
 kunai -S "Dune"   # after bun run link:global
 ```
+
+Inside the shell, press `m` to cycle `series -> anime -> YouTube`, or run
+`/youtube` / `/yt` to switch straight into the YouTube lane. YouTube search can
+use Invidious/Piped metadata, but playback needs `yt-dlp` on `PATH`.
 
 ## Dev Checks
 

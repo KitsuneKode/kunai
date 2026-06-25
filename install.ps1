@@ -116,6 +116,22 @@ function Install-OptionalDeps {
     return
   }
   Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
+
+  $installYtDlp = $true
+  if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
+    $reply = Read-Host 'Install yt-dlp (YouTube playback and downloads)? [Y/n]'
+    if ($reply -match '^[Nn]') { $installYtDlp = $false }
+  }
+  if (-not $installYtDlp) { return }
+  if (Test-Cmd 'winget') {
+    Invoke-Step 'winget install yt-dlp' { winget install yt-dlp --accept-package-agreements --accept-source-agreements }
+    return
+  }
+  if (Test-Cmd 'scoop') {
+    Invoke-Step 'scoop install yt-dlp' { scoop install yt-dlp }
+    return
+  }
+  Write-Warn 'No winget/scoop found. Install yt-dlp manually: https://github.com/yt-dlp/yt-dlp#installation'
 }
 
 function Install-Binary {

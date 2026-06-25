@@ -290,7 +290,7 @@ install_optional_deps() {
 	[[ "$SKIP_DEPS" == 1 || "$DRY" == 1 ]] && return
 	local pkgs=()
 	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
-	ask "Install yt-dlp (offline downloads)?" n && pkgs+=(yt-dlp)
+	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
 	ask "Install chafa (terminal poster previews)?" n && pkgs+=(chafa)
 	((${#pkgs[@]} == 0)) && return
 

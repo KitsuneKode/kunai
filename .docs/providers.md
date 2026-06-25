@@ -224,6 +224,22 @@ interface ApiProvider extends BaseProvider {
 `opts.embedScraper` is a legacy pattern kept for archival/reference providers.
 Active beta providers resolve through direct modules in `packages/providers`.
 
+### YouTube (`packages/providers/src/youtube`)
+
+Third lane provider for standalone videos, playlists, and channels.
+
+- **Search/browse:** Invidious primary with instance rotation; optional Piped fallback (`config.youtubeMetadata.pipedApiUrl`); tertiary `ytsearch:` via yt-dlp when both fail.
+- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent.
+- **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live-from-start). Upcoming premieres blocked; live streams use live-tolerant format.
+- **Downloads:** yt-dlp spawn passes cookies/extractor args and optional `--sponsorblock-remove`; live streams rejected at enqueue.
+- **History:** persisted as `mediaKind: "video"`; resume/continue restores youtube shell mode; playlist rows label `#N`.
+- **Share:** `kunai://` links use `cat=youtube:VIDEO_ID` and `kind=video`.
+- **Settings:** `/settings` → YouTube section for Invidious instance, Piped URL, cookies, extractor args, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.
+- **Diagnostics:** `/diagnostics` shows yt-dlp version and Invidious health (`youtube.ytdlp.probe`, `youtube.invidious.health` events).
+- **Stats:** watch time aggregates under the `video` kind in `/stats`.
+- **Dependencies:** `yt-dlp` required for playback and downloads; search can work via Invidious/Piped without it.
+- **Age-restricted / members content:** configure `config.youtubeMetadata.cookiesFromBrowser` or `cookiesFile` (no shipped default cookies).
+
 ## When A Playwright Provider Can Become Browser-Less
 
 Do not assume every iframe or embed site can be converted into an HTTP-only provider just because AllAnime can.

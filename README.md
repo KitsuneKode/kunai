@@ -173,15 +173,15 @@ winget install yt-dlp hpjansson.Chafa ImageMagick.ImageMagick Gyan.FFmpeg
 
 ### What you need up front
 
-| Tool            | Required?      | Why                                                                         |
-| --------------- | -------------- | --------------------------------------------------------------------------- |
-| **Bun** ≥1.3.9  | npm/bun/source | Runtime for non-binary installs. The default binary embeds it — not needed. |
-| **mpv**         | Required       | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                 |
-| **yt-dlp**      | Optional       | Offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp`          |
-| **ffprobe**     | Optional       | Post-download integrity checks (ships with FFmpeg)                          |
-| **chafa**       | Optional       | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`              |
-| **ImageMagick** | Optional       | Broader poster format support. `sudo pacman -S imagemagick`                 |
-| **Discord**     | Optional       | Rich Presence (watching status on profile)                                  |
+| Tool            | Required?            | Why                                                                                     |
+| --------------- | -------------------- | --------------------------------------------------------------------------------------- |
+| **Bun** ≥1.3.9  | npm/bun/source       | Runtime for non-binary installs. The default binary embeds it — not needed.             |
+| **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
+| **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
+| **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
+| **chafa**       | Optional             | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`                          |
+| **ImageMagick** | Optional             | Broader poster format support. `sudo pacman -S imagemagick`                             |
+| **Discord**     | Optional             | Rich Presence (watching status on profile)                                              |
 
 If mpv is missing, Kunai won't start playback. Everything else is optional and
 detected automatically — the setup wizard (`/setup` or `kunai --setup`) walks
@@ -203,6 +203,9 @@ kunai -S "Cowboy Bebop" --jump 1
 
 # Anime mode
 kunai -a -S "Attack on Titan"
+
+# YouTube mode
+kunai --youtube -S "lofi beats"
 
 # Open a known TMDB id directly
 kunai -i 438631 -t movie
@@ -229,6 +232,11 @@ kunai --setup
 kunai --debug
 ```
 
+Inside the shell, press `m` to cycle series -> anime -> YouTube. Use `/youtube`
+or `/yt` to jump directly to YouTube mode; `/series` and `/anime` switch back.
+YouTube search may work without `yt-dlp`, but playback and downloads will ask
+you to install it instead of failing as a generic provider error.
+
 ### Inside the shell
 
 Every screen has a context-sensitive footer showing the keys available right
@@ -239,7 +247,7 @@ there. The ones you'll reach for most:
 Enter             Search, open, confirm
 Esc               Close, clear, go back
 ↑↓                Navigate results, episodes, options
-Tab               Switch between anime/series mode
+m                 Cycle series / anime / YouTube mode
 Ctrl+T            Reload trending recommendations
 Ctrl+D            Download selected result (from browse)
 ```
@@ -256,7 +264,7 @@ Ctrl+D            Download selected result (from browse)
 | `Enter`       | Open selected result                                             |
 | `Esc`         | Clear query / go back                                            |
 | `↑↓`          | Navigate results                                                 |
-| `Tab`         | Toggle anime/series mode                                         |
+| `m`           | Cycle series / anime / YouTube mode                              |
 | `Ctrl+T`      | Reload trending                                                  |
 | `Ctrl+D`      | Download selected result                                         |
 | Type a filter | Narrow provider, season, subtitle, history, and settings pickers |
@@ -389,14 +397,14 @@ install; just have the Discord desktop app running. It shows what you're watchin
 
 ### Optional — what each enables
 
-| Tool                | What it gives you                                                                                    | Without it                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **yt-dlp**          | Download queue. Required for `/download`, `/library`, `Ctrl+D`.                                      | Download features are hidden. Everything else works. |
-| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)                   | Downloads still work; integrity check is skipped.    |
-| **chafa**           | Poster previews in terminals that don't support the Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.               |
-| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                       | Posters work but may fail on unusual formats.        |
-| **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                      | No Discord integration.                              |
-| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                                | Falls back to chafa or none.                         |
+| Tool                | What it gives you                                                                                    | Without it                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.         | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
+| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)                   | Downloads still work; integrity check is skipped.                                    |
+| **chafa**           | Poster previews in terminals that don't support the Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.                                               |
+| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                       | Posters work but may fail on unusual formats.                                        |
+| **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                      | No Discord integration.                                                              |
+| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                                | Falls back to chafa or none.                                                         |
 
 ### Poster previews by terminal
 
@@ -486,8 +494,9 @@ memory. Persistent issues → `/diagnostics`, then `/export-diagnostics` for a
 redacted snapshot to attach to a bug report.
 
 **"No results found" for a title I know exists.**
-Try the other mode — anime and series use different provider sets (`Tab` toggles,
-or launch with `-a`). Some titles are only indexed under an alternate name.
+Try the other mode — series, anime, and YouTube use different provider sets (`m`
+cycles modes, `/anime` and `/series` jump directly, or launch with `-a`). Some
+titles are only indexed under an alternate name.
 
 **Kunai won't start playback.**
 mpv isn't installed or isn't on your `PATH`. Install it (see

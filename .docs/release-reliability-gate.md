@@ -56,6 +56,14 @@ bun run test:live:allanime
 bun run test:live:miruro 1159 21 "One Piece"
 ```
 
+YouTube provider:
+
+```sh
+bun run test:live:youtube
+# optional cold cache:
+KITSUNE_CLEAR_CACHE=1 bun run test:live:youtube
+```
+
 Expected result for each provider:
 
 - JSON output has `ok: true`
@@ -146,3 +154,30 @@ Run these when notifications, queue recovery, history, recommendations, download
 - dismiss or ignore the recoverable queue notice and confirm Kunai does not auto-restore
 - export a Kunai playlist and inspect the JSON for no stream URLs, headers, cookies, tokens, or local paths
 - import a playlist with an unresolved item and confirm the item does not autoplay
+
+## YouTube Golden Path Gate
+
+Run when the YouTube lane, yt-dlp integration, or `youtubeMetadata` settings change:
+
+| Step           | Action                                              | Pass criteria                                          |
+| -------------- | --------------------------------------------------- | ------------------------------------------------------ |
+| Mode cycle     | `m` through series → anime → youtube                | Lands in youtube lane                                  |
+| Search         | `/S` query in youtube mode                          | Results with duration/channel                          |
+| Play           | Enter on result                                     | mpv opens; progress saves                              |
+| Quality        | Change quality pre-play                             | Different ytdl-format applied                          |
+| Continue       | Quit mid-video, resume from history                 | Restores youtube mode + position                       |
+| Playlist       | Open playlist, pick `#N` item                       | Label `#N`, plays                                      |
+| Share          | `/share` + `kunai open`                             | Round-trip to same video                               |
+| Download       | Enqueue youtube job                                 | Completes; subs sidecar when configured                |
+| SponsorBlock   | Enable categories in settings, play sponsored video | Segments skipped (manual verify)                       |
+| Diagnostics    | `/diagnostics` in youtube mode                      | yt-dlp version + Invidious health                      |
+| Settings       | Change cookies/instance, save                       | Rebind without restart                                 |
+| Missing yt-dlp | Temporarily hide yt-dlp binary                      | Play blocked with clear message; search may still work |
+
+Live smoke (opt-in):
+
+```sh
+bun run test:live:youtube
+```
+
+Expected: `ok: true`, `streamResolved: true`, `streamHost` contains `youtube.com`. When yt-dlp is intentionally absent on the runner, `skipped: true` is acceptable.
