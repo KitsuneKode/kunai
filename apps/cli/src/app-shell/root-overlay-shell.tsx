@@ -32,6 +32,7 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
+import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
 import {
@@ -109,7 +110,7 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { FooterAction, ShellAction, ShellPanelLine } from "./types";
+import type { FooterAction, ShellPanelLine } from "./types";
 import { handleHistoryOverlayInput } from "./use-history-overlay-input";
 import { handleNotificationsOverlayInput } from "./use-notifications-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
@@ -119,32 +120,6 @@ const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 
 const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
 
-const ROOT_OVERLAY_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
-  "setup",
-  "update",
-  "report-issue",
-  "clear-cache",
-  "reset-provider-health",
-  "clear-history",
-  "export-diagnostics",
-  "docs",
-  "sync",
-  "sync-connect-anilist",
-  "sync-connect-tmdb",
-  "sync-disconnect",
-  "stats",
-  "menu",
-  "download",
-  "watchlist",
-  "bookmark",
-  "follow",
-  "mute",
-  "share",
-  "mark-watched",
-  "playlist-add",
-  "mark-anime",
-  "mark-series",
-]);
 type HelpTab = (typeof HELP_TABS_INTERNAL)[number];
 
 const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
@@ -682,6 +657,13 @@ export function RootOverlayShell({
         action === "history" ||
         action === "provider"
       ) {
+        if (action === "notifications" && !container.featureFlags.attentionInbox) {
+          container.stateManager.dispatch({
+            type: "SET_PLAYBACK_FEEDBACK",
+            note: "Attention inbox is disabled.",
+          });
+          return;
+        }
         const nextOverlay =
           action === "provider"
             ? {
@@ -722,7 +704,7 @@ export function RootOverlayShell({
         }
         return;
       }
-      if (ROOT_OVERLAY_WORKFLOW_ACTIONS.has(action)) {
+      if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
         void import("./workflows").then(({ runShellWorkflowFromOverlay }) =>
           runShellWorkflowFromOverlay(container, action, {
             cancelPickerId:

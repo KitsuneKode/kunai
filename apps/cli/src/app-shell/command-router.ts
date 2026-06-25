@@ -1,14 +1,7 @@
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
-import {
-  episodeFromHistorySelection,
-  recordLocalHistorySourceDecision,
-} from "@/app/bootstrap/launch-entry";
-import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
-import { switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { historyContentType } from "@/services/continuation/history-progress";
 
 import {
   dispatchAppCommand,
@@ -17,11 +10,8 @@ import {
   type AppCommandSource,
 } from "./app-command-dispatcher";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
-import { waitForRootHistorySelection } from "./root-history-bridge";
-import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
-import { waitForRootQueueSelection } from "./root-queue-bridge";
+import { dispatchPaletteCommand } from "./dispatch-palette-command";
 import type { ShellAction } from "./types";
-import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
 
 export {
   dispatchAppCommand,
@@ -31,30 +21,6 @@ export {
 };
 
 export type CommandPaletteSurface = "browse" | "playback" | "list" | "post-play";
-
-/**
- * Opens the attention inbox, honoring the `attentionInbox` feature flag. When the
- * flag is disabled the inbox surface is suppressed and the user is told why,
- * rather than silently doing nothing.
- */
-async function routeNotificationsInbox(container: Container): Promise<RoutedActionResult> {
-  if (!container.featureFlags.attentionInbox) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: "Attention inbox is disabled.",
-    });
-    return "handled";
-  }
-  const { playback } = await openNotificationsOverlay(container);
-  if (playback) {
-    return {
-      type: "history-entry",
-      title: playback.title,
-      episode: playback.episode,
-    };
-  }
-  return "handled";
-}
 
 export function resolveCommandsForPaletteSurface(
   state: SessionState,
@@ -106,146 +72,7 @@ type RoutedActionResult =
   | { type: "history-entry"; title: TitleInfo; episode?: EpisodeInfo; startSeconds?: number }
   | "unhandled";
 
-async function openRootHistorySelection(
-  container: Container,
-  reason: "continue" | "history",
-): Promise<RoutedActionResult> {
-  const { stateManager } = container;
-  const selectionPromise = waitForRootHistorySelection();
-  await openRootOwnedOverlay(
-    container,
-    reason === "continue"
-      ? { type: "history", initialFilterMode: "watching" }
-      : { type: "history", initialFilterMode: "all" },
-  );
-  const selection = await selectionPromise;
-  if (!selection) return "handled";
-  if (selection.localJobId) {
-    const result = await requestUnifiedOfflinePlayback(container, selection.localJobId);
-    if (!result) return "handled";
-    return {
-      type: "history-entry",
-      title: result.launch.title,
-      episode: result.launch.episode,
-    };
-  }
-  const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
-  if (providerMetadata) {
-    stateManager.dispatch({
-      type: "SET_MODE",
-      mode: providerMetadata.metadata.isAnimeProvider ? "anime" : "series",
-      provider: providerMetadata.metadata.id,
-    });
-  } else {
-    stateManager.dispatch({
-      type: "SET_PROVIDER",
-      provider: selection.entry.providerId ?? "unknown",
-    });
-  }
-  await recordLocalHistorySourceDecision(container, selection, reason);
-  return {
-    type: "history-entry",
-    title: {
-      id: selection.titleId,
-      type: historyContentType(selection.entry),
-      name: selection.entry.title,
-      launchSource: reason === "history" ? "history" : "continue",
-    },
-    episode: episodeFromHistorySelection(selection),
-  };
-}
-
-async function openRootQueueSelection(container: Container): Promise<RoutedActionResult> {
-  const selectionPromise = waitForRootQueueSelection();
-  await openRootOwnedOverlay(container, { type: "queue" });
-  const selection = await selectionPromise;
-  if (!selection) return "handled";
-  return {
-    type: "history-entry",
-    title: {
-      id: selection.titleId,
-      type: selection.mediaKind === "movie" ? "movie" : "series",
-      name: selection.title,
-    },
-    episode:
-      selection.season !== undefined && selection.episode !== undefined
-        ? { season: selection.season, episode: selection.episode }
-        : undefined,
-  };
-}
-
-export async function routeSearchShellAction({
-  action,
-  container,
-}: {
-  action: ShellAction;
-  container: Container;
-}): Promise<RoutedActionResult> {
-  const { stateManager } = container;
-
-  if (action === "quit")
-    return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
-  if (action === "trending") return "handled";
-  if (action === "recommendation") return "handled";
-  if (action === "calendar") return "handled";
-  if (action === "anime-calendar") return "handled";
-  if (action === "series-calendar") return "handled";
-  if (action === "random") return "handled";
-  if (action === "surprise") return "handled";
-  if (action === "toggle-mode") {
-    switchSessionMode(stateManager);
-    stateManager.dispatch({ type: "RESET_SEARCH" });
-    stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-    return "mode-switch";
-  }
-  if (action === "help") {
-    await openRootOwnedOverlay(container, { type: "help" });
-    return "handled";
-  }
-  if (action === "about") {
-    await openRootOwnedOverlay(container, { type: "about" });
-    return "handled";
-  }
-  if (action === "diagnostics") {
-    await openRootOwnedOverlay(container, { type: "diagnostics" });
-    return "handled";
-  }
-  if (action === "notifications") {
-    return routeNotificationsInbox(container);
-  }
-  if (action === "provider") return "provider";
-  if (action === "playlist") return openRootQueueSelection(container);
-  if (action === "continue") return openRootHistorySelection(container, "continue");
-  if (action === "history") return openRootHistorySelection(container, "history");
-  if (action === "settings" || action === "presence") {
-    await openRootOwnedOverlay(container, { type: "settings" });
-    return "handled";
-  }
-  if (action === "setup") {
-    const { openSetupWizardFromShell } = await import("./workflows/setup-workflows");
-    await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
-    return "handled";
-  }
-
-  const result = await handleShellAction({ action, container });
-  return result === "quit" ? "quit" : result;
-}
-
-export async function routePlaybackShellAction({
-  action,
-  container,
-}: {
-  action: ShellAction;
-  container: Container;
-}): Promise<RoutedActionResult> {
-  const { stateManager } = container;
-
-  if (action === "quit")
-    return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
-  if (action === "toggle-mode") {
-    switchSessionMode(stateManager);
-    return "mode-switch";
-  }
+function playbackPassthrough(action: ShellAction): RoutedActionResult | null {
   if (action === "search") return "back-to-search";
   if (action === "back-to-results") return "back-to-results";
   if (action === "toggle-autoplay") return "toggle-autoplay";
@@ -270,34 +97,36 @@ export async function routePlaybackShellAction({
   if (action === "anime-calendar") return "anime-calendar";
   if (action === "series-calendar") return "series-calendar";
   if (action === "random") return "random";
-  if (action === "help") {
-    await openRootOwnedOverlay(container, { type: "help" });
-    return "handled";
-  }
-  if (action === "about") {
-    await openRootOwnedOverlay(container, { type: "about" });
-    return "handled";
-  }
-  if (action === "diagnostics") {
-    await openRootOwnedOverlay(container, { type: "diagnostics" });
-    return "handled";
-  }
-  if (action === "notifications") {
-    return routeNotificationsInbox(container);
-  }
-  if (action === "provider") return "provider";
-  if (action === "playlist") return openRootQueueSelection(container);
-  if (action === "continue") return openRootHistorySelection(container, "continue");
-  if (action === "history") return openRootHistorySelection(container, "history");
-  if (action === "settings" || action === "presence") {
-    await openRootOwnedOverlay(container, { type: "settings" });
-    return "handled";
-  }
-  if (action === "setup") {
-    const { openSetupWizardFromShell } = await import("./workflows/setup-workflows");
-    await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
-    return "handled";
-  }
+  return null;
+}
+
+export async function routeSearchShellAction({
+  action,
+  container,
+}: {
+  action: ShellAction;
+  container: Container;
+}): Promise<RoutedActionResult> {
+  if (action === "trending") return "handled";
+  if (action === "recommendation") return "handled";
+  if (action === "calendar") return "handled";
+  if (action === "anime-calendar") return "handled";
+  if (action === "series-calendar") return "handled";
+  if (action === "random") return "handled";
+  if (action === "surprise") return "handled";
+
+  return dispatchPaletteCommand("browse", action, container) as Promise<RoutedActionResult>;
+}
+
+export async function routePlaybackShellAction({
+  action,
+  container,
+}: {
+  action: ShellAction;
+  container: Container;
+}): Promise<RoutedActionResult> {
+  const { stateManager } = container;
+
   if (action === "recommendation") {
     const [
       { loadDiscoverResults },
@@ -330,6 +159,10 @@ export async function routePlaybackShellAction({
     };
   }
 
-  const result = await handleShellAction({ action, container });
-  return result === "quit" ? "quit" : result;
+  return dispatchPaletteCommand(
+    "playback",
+    action,
+    container,
+    playbackPassthrough,
+  ) as Promise<RoutedActionResult>;
 }
