@@ -8,6 +8,7 @@ import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
 import { ShellServiceImpl } from "../infra/shell/ShellServiceImpl";
 import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
+import { createProviderAvailabilityRefresh } from "../services/attention/provider-availability-refresh";
 import { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
 import { createCatalogScheduleService } from "../services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "../services/catalog/ResultEnrichmentService";
@@ -74,6 +75,7 @@ export function bootstrapServices(input: {
     config,
     diagnosticsService,
     historyRepository,
+    playbackEventRepository,
     downloadJobs,
     offlineAssets,
     offlineTitlePolicies,
@@ -275,6 +277,24 @@ export function bootstrapServices(input: {
   const attentionRefreshWorker = new AttentionRefreshWorker({
     flags: featureFlags,
     diagnostics: diagnosticsService,
+    refreshAvailability: featureFlags.providerAvailabilitySync
+      ? createProviderAvailabilityRefresh({
+          playbackResolveWork,
+          releaseProgressCache,
+          historyRepository,
+          diagnostics: diagnosticsService,
+          getMode: () => stateManager.getState().mode,
+          getProviderId: () => stateManager.getState().provider,
+          getAudioPreference: () =>
+            stateManager.getState().mode === "anime"
+              ? stateManager.getState().animeLanguageProfile.audio
+              : stateManager.getState().seriesLanguageProfile.audio,
+          getSubtitlePreference: () =>
+            stateManager.getState().mode === "anime"
+              ? stateManager.getState().animeLanguageProfile.subtitle
+              : stateManager.getState().seriesLanguageProfile.subtitle,
+        })
+      : undefined,
   });
   const backgroundWorkScheduler = new BackgroundWorkScheduler({
     maxConcurrent: 2,
@@ -363,12 +383,14 @@ export function bootstrapServices(input: {
   });
 
   return {
+    dataDir: persistence.paths.dataDir,
     shell,
     player,
     playerControl,
     workControl,
     storage,
     historyRepository,
+    playbackEventRepository,
     configStore,
     cacheStore,
     diagnosticsStore,

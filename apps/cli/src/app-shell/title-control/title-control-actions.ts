@@ -25,6 +25,8 @@ export type TitleControlActionId =
   | "clear-cache"
   | "download"
   | "mark-watched"
+  | "mark-unwatched"
+  | "mark-season-watched"
   | "share"
   | "diagnostics"
   | "bookmark"
@@ -297,9 +299,33 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     group: "this-title",
     shellAction: "mark-watched",
     when: (ctx) =>
-      ctx.hasTitle && (ctx.surface === "playing" || ctx.surface === "post-play")
+      ctx.hasTitle &&
+      (ctx.surface === "playing" || ctx.surface === "post-play" || ctx.surface === "browse")
         ? enabled()
-        : disabled("Mark watched during or after playback"),
+        : disabled("Select a title to mark watched"),
+  },
+  {
+    id: "mark-unwatched",
+    label: "Mark unwatched",
+    group: "this-title",
+    shellAction: "mark-unwatched",
+    when: (ctx) =>
+      ctx.hasTitle &&
+      (ctx.surface === "playing" || ctx.surface === "post-play" || ctx.surface === "browse")
+        ? enabled()
+        : disabled("Select a title to mark unwatched"),
+  },
+  {
+    id: "mark-season-watched",
+    label: "Mark season watched",
+    group: "this-title",
+    shellAction: "mark-season-watched",
+    when: (ctx) =>
+      ctx.hasTitle &&
+      ctx.titleType === "series" &&
+      (ctx.surface === "playing" || ctx.surface === "post-play" || ctx.surface === "browse")
+        ? enabled()
+        : disabled("Select a series episode to mark the season watched"),
   },
   {
     id: "share",
@@ -363,6 +389,8 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "reset-provider-health",
     "clear-cache",
     "download",
+    "mark-watched",
+    "mark-unwatched",
     "share",
     "bookmark",
     "setup",
@@ -401,6 +429,8 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "stop",
     "download",
     "mark-watched",
+    "mark-unwatched",
+    "mark-season-watched",
     "share",
     "diagnostics",
   ],
@@ -417,6 +447,9 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "switch-provider",
     "watchlist",
     "search",
+    "mark-watched",
+    "mark-unwatched",
+    "mark-season-watched",
     "share",
     "setup",
     "diagnostics",

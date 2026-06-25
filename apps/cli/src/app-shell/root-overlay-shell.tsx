@@ -17,6 +17,7 @@ import type { ContinueSourcePreference } from "@/services/continuation/continuat
 import { continuationSignalsForHistoryEntry } from "@/services/continuation/history-continuation-signals";
 import {
   historyContentType,
+  isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
@@ -547,7 +548,10 @@ export function RootOverlayShell({
         : overlay.type === "diagnostics"
           ? buildDiagnosticsPanelLines({
               state,
-              recentEvents: container.diagnosticsService.getRecent(25),
+              recentEvents: container.diagnosticsService.getRecent(
+                container.debugTracePath ? 50 : 25,
+              ),
+              developerMode: Boolean(container.debugTracePath),
               capabilitySnapshot: container.capabilitySnapshot,
               downloadSummary: {
                 active: container.downloadService.listActive(200).length,
@@ -1407,11 +1411,11 @@ export function RootOverlayShell({
           const episode = Number(episodeRaw);
           if (Number.isFinite(season) && Number.isFinite(episode)) {
             const mediaKind = pickerState.mode === "anime" ? "anime" : pickerTitle.type;
-            const alreadyWatched =
-              container.historyRepository.getProgress(
-                { id: pickerTitle.id, kind: mediaKind, title: pickerTitle.name },
-                { season, episode },
-              )?.completed === true;
+            const progress = container.historyRepository.getProgress(
+              { id: pickerTitle.id, kind: mediaKind, title: pickerTitle.name },
+              { season, episode },
+            );
+            const alreadyWatched = progress ? isFinished(progress) : false;
             void createContainerMediaActionRouter(container).run({
               actionId: alreadyWatched ? "mark-unwatched" : "mark-watched",
               item: {

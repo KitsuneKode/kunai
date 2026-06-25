@@ -48,6 +48,9 @@ export type AppCommandId =
   | "follow"
   | "mute"
   | "mark-watched"
+  | "mark-unwatched"
+  | "mark-season-watched"
+  | "mark-up-to-episode"
   | "pick-episode"
   | "next"
   | "previous"
@@ -64,6 +67,7 @@ export type AppCommandId =
   | "favorites"
   | "playlist"
   | "playlist-add"
+  | "queue-season"
   | "stats"
   | "sync"
   | "sync-connect-anilist"
@@ -129,6 +133,9 @@ export const COMMAND_CONTEXTS = {
     "follow",
     "mute",
     "mark-watched",
+    "mark-unwatched",
+    "mark-season-watched",
+    "mark-up-to-episode",
     "pick-episode",
     "download",
     "next",
@@ -165,6 +172,9 @@ export const COMMAND_CONTEXTS = {
     "follow",
     "mute",
     "mark-watched",
+    "mark-unwatched",
+    "mark-season-watched",
+    "mark-up-to-episode",
     "pick-episode",
     "download",
     "library",
@@ -528,6 +538,24 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Mark the current movie or episode as fully watched",
   },
   {
+    id: "mark-unwatched",
+    label: "Mark Unwatched",
+    aliases: ["mark-unwatched", "unwatched", "unwatch"],
+    description: "Clear the watched flag while keeping resume position",
+  },
+  {
+    id: "mark-season-watched",
+    label: "Mark Season Watched",
+    aliases: ["mark-season-watched", "season-watched", "mark-season"],
+    description: "Mark every episode in the current season up to the current episode as watched",
+  },
+  {
+    id: "mark-up-to-episode",
+    label: "Mark Up To Episode",
+    aliases: ["mark-up-to-episode", "mark-through", "mark-through-episode"],
+    description: "Pick an episode and mark the whole season through that episode as watched",
+  },
+  {
     id: "watch",
     label: "Watch a Shared Code",
     aliases: ["watch", "open-share", "open-link"],
@@ -610,6 +638,12 @@ export const COMMANDS: readonly AppCommand[] = [
     label: "Add to Queue",
     aliases: ["playlist-add", "pl-add", "add-to-playlist"],
     description: "Queue the current title for sequential playback",
+  },
+  {
+    id: "queue-season",
+    label: "Queue Rest of Season",
+    aliases: ["queue-season", "season-queue", "queue-rest-season"],
+    description: "Queue remaining episodes in the current season",
   },
   {
     id: "stats",
@@ -1069,8 +1103,17 @@ function resolveCommandState(
     case "follow":
     case "mute":
     case "mark-watched":
+    case "mark-unwatched":
+    case "mark-season-watched":
+    case "mark-up-to-episode":
       return state.currentTitle
-        ? { enabled: true }
+        ? (id === "mark-season-watched" || id === "mark-up-to-episode") &&
+          state.currentTitle.type !== "series"
+          ? {
+              enabled: false,
+              reason: "Mark season watched requires a series episode context.",
+            }
+          : { enabled: true }
         : {
             enabled: false,
             reason:
@@ -1082,9 +1125,13 @@ function resolveCommandState(
                     ? "Play or select a title before following releases."
                     : id === "mute"
                       ? "Play or select a title before muting releases."
-                      : id === "mark-watched"
-                        ? "Play or select a title before marking it watched."
-                        : "Play or select a title before reclassifying it.",
+                      : id === "mark-unwatched"
+                        ? "Play or select a title before marking it unwatched."
+                        : id === "mark-season-watched" || id === "mark-up-to-episode"
+                          ? "Select a series episode before marking a season watched."
+                          : id === "mark-watched"
+                            ? "Play or select a title before marking it watched."
+                            : "Play or select a title before reclassifying it.",
           };
 
     case "watch":
@@ -1161,6 +1208,14 @@ function resolveCommandState(
         : {
             enabled: false,
             reason: "Select a title before adding it to the queue.",
+          };
+
+    case "queue-season":
+      return state.currentTitle?.type === "series" && state.currentEpisode
+        ? { enabled: true }
+        : {
+            enabled: false,
+            reason: "Select a series episode before queueing the rest of the season.",
           };
 
     case "previous":

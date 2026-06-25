@@ -75,7 +75,11 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "mute",
   "share",
   "mark-watched",
+  "mark-unwatched",
+  "mark-season-watched",
+  "mark-up-to-episode",
   "playlist-add",
+  "queue-season",
   "mark-anime",
   "mark-series",
 ]);

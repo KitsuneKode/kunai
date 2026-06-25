@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { initLogger } from "@/logger";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
+import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import {
   CalendarArchiveRepository,
   DiagnosticEventsRepository,
@@ -16,6 +17,7 @@ import {
   OfflineMaintenanceJobsRepository,
   OfflineTitlePoliciesRepository,
   openKunaiDatabase,
+  PlaybackEventRepository,
   PlaylistsRepository,
   ProviderTitleBridgeRepository,
   ProviderEndpointHealthRepository,
@@ -25,7 +27,9 @@ import {
   ReleaseProgressCacheRepository,
   runMigrations,
   isHistoryIdentityConsolidatorApplied,
+  isWatchLedgerBackfillApplied,
   markHistoryIdentityConsolidatorApplied,
+  markWatchLedgerBackfillApplied,
   ScheduleCacheRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
@@ -89,6 +93,7 @@ export type PersistenceBootstrap = {
   readonly config: ConfigService;
   readonly configStore: ConfigStoreImpl;
   readonly historyRepository: HistoryRepository;
+  readonly playbackEventRepository: PlaybackEventRepository;
   readonly cacheStore: SqliteCacheStoreImpl;
   readonly mediaTrackService: MediaTrackService;
   readonly recommendationCache: RecommendationCacheRepository;
@@ -166,8 +171,17 @@ export async function bootstrapPersistence(
     }
   }
 
+  if (!isWatchLedgerBackfillApplied(dataDb)) {
+    const stats = runHistoryWatchLedgerBackfill(dataDb);
+    if (debug) {
+      logger.info(`Watch ledger backfill updated ${stats.rowsUpdated} history rows`);
+    }
+    markWatchLedgerBackfillApplied(dataDb);
+  }
+
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
+  const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
@@ -281,6 +295,7 @@ export async function bootstrapPersistence(
     config,
     configStore,
     historyRepository,
+    playbackEventRepository,
     cacheStore,
     mediaTrackService,
     recommendationCache,

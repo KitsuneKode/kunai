@@ -14,6 +14,7 @@ import {
 import {
   correctedHistoryMediaKind,
   historyContentType,
+  isFinished,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
@@ -133,14 +134,6 @@ export function cycleHistoryTab(tab: HistoryTab): HistoryTab {
   return HISTORY_TABS[(index + 1) % HISTORY_TABS.length] ?? "continue";
 }
 
-function isHistoryCompleted(entry: HistoryProgress): boolean {
-  // The persisted completed flag (e.g. "mark as watched", or credits/EOF) is the
-  // authority; the 95% ratio is only a fallback when a positive duration is known.
-  if (entry.completed) return true;
-  const duration = entry.durationSeconds ?? 0;
-  return duration > 0 && entry.positionSeconds / duration >= 0.95;
-}
-
 function matchesHistoryTab(
   titleId: string,
   entry: HistoryProgress,
@@ -211,7 +204,7 @@ function deriveResumeAction(
   context: HistoryPickerOptionsContext,
 ): string {
   if (historyContentType(entry) === "movie") {
-    return isHistoryCompleted(entry) ? "Restart" : "Resume";
+    return isFinished(entry) ? "Restart" : "Resume";
   }
   const decision = reconcileContinueHistory({
     titleId,

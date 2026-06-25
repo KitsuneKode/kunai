@@ -52,6 +52,9 @@ export type ShellAction =
   | "follow"
   | "mute"
   | "mark-watched"
+  | "mark-unwatched"
+  | "mark-season-watched"
+  | "mark-up-to-episode"
   | "watch"
   | "download"
   | "downloads"
@@ -60,6 +63,7 @@ export type ShellAction =
   | "favorites"
   | "playlist"
   | "playlist-add"
+  | "queue-season"
   | "stats"
   | "sync"
   | "sync-connect-anilist"
@@ -395,6 +399,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "favorites":
     case "playlist":
     case "playlist-add":
+    case "queue-season":
     case "stats":
     case "sync":
     case "sync-connect-anilist":
@@ -407,6 +412,9 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "follow":
     case "mute":
     case "mark-watched":
+    case "mark-unwatched":
+    case "mark-season-watched":
+    case "mark-up-to-episode":
     case "watch":
     case "continue":
     case "play-local":

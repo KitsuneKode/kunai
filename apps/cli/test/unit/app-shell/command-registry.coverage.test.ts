@@ -95,6 +95,7 @@ describe("command registry — full surface coverage", () => {
       "clear-history",
       "favorites",
       "playlist-add",
+      "queue-season",
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",

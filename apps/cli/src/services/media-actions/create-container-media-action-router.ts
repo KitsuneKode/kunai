@@ -6,6 +6,7 @@ import {
   commitDownloadIntent,
   resolveDownloadIntentEpisodes,
 } from "@/services/download/DownloadIntentService";
+import type { MediaKind } from "@kunai/types";
 
 import { MediaActionRouter, type MediaActionRouterDeps } from "./MediaActionRouter";
 
@@ -110,24 +111,25 @@ export function markMediaItemWatched(
   completed: boolean,
 ): void {
   const hasEpisode = typeof item.season === "number" && typeof item.episode === "number";
-  const kind =
+  const kind: MediaKind =
     item.mediaKind === "movie" ? "movie" : item.mediaKind === "anime" ? "anime" : "series";
-  container.historyRepository.upsertProgress({
-    title: {
-      id: item.titleId,
-      kind,
-      title: item.title,
-    },
-    episode: hasEpisode
-      ? {
-          season: item.season,
-          episode: item.episode,
-          absoluteEpisode: item.absoluteEpisode,
-        }
-      : undefined,
-    positionSeconds: 0,
-    completed,
-  });
+  const title = {
+    id: item.titleId,
+    kind,
+    title: item.title,
+  };
+  const episode = hasEpisode
+    ? {
+        season: item.season,
+        episode: item.episode,
+        absoluteEpisode: item.absoluteEpisode,
+      }
+    : undefined;
+  if (completed) {
+    container.historyRepository.markWatched(title, episode);
+    return;
+  }
+  container.historyRepository.markUnwatched(title, episode);
 }
 
 function upsertAttentionPreference(

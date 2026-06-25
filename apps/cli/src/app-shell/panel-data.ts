@@ -13,8 +13,11 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
-import { historyContentType } from "@/services/continuation/history-progress";
-import { formatTimestamp } from "@/services/continuation/history-progress";
+import {
+  historyContentType,
+  formatTimestamp,
+  isFinished,
+} from "@/services/continuation/history-progress";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
@@ -255,6 +258,7 @@ export function buildDiagnosticsPanelLines({
   memorySamples,
   providers,
   getProviderHealth,
+  developerMode = false,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
@@ -266,6 +270,7 @@ export function buildDiagnosticsPanelLines({
   memorySamples?: readonly RuntimeMemorySample[];
   providers?: readonly ProviderMetadata[];
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  developerMode?: boolean;
 }): readonly ShellPanelLine[] {
   const subtitleState = describeSubtitleState(state);
   const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
@@ -502,7 +507,7 @@ export function buildDiagnosticsPanelLines({
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
     { label: "─── Timeline", detail: "", tone: "info" },
-    ...formatDiagnosticTimelineLines(recentEvents, 8),
+    ...formatDiagnosticTimelineLines(recentEvents, developerMode ? 20 : 8),
     { label: "─── Export", detail: "", tone: "info" },
     { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
     { label: "/report-issue", detail: "Open the GitHub issue template with context" },
@@ -1094,11 +1099,7 @@ function buildHistoryOptionRow(
   context: HistoryPickerOptionsContext,
 ): ShellPickerOption<string> {
   const details = historyProgressDetails(entry);
-  const isCompleted = projectWatchProgress({
-    timestamp: entry.positionSeconds,
-    duration: entry.durationSeconds,
-    completed: entry.completed,
-  }).completed;
+  const isCompleted = isFinished(entry);
   const projection = context.projections?.get(id);
   const entrySeason = entry.season ?? 1;
   const entryEpisode = entry.episode ?? entry.absoluteEpisode ?? 1;

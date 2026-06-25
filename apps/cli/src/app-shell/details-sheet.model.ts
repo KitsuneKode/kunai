@@ -8,6 +8,8 @@
 // =============================================================================
 
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
+import { isFinished } from "@/services/continuation/history-progress";
+import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
 export type DetailsSheetSeed = {
   readonly title: string;
@@ -79,7 +81,7 @@ function progressLabel(history: DetailsSheetHistory | null): string | undefined 
     history.season && history.episode
       ? `S${String(history.season).padStart(2, "0")}E${String(history.episode).padStart(2, "0")}`
       : null;
-  if (history.completed) return [code, "watched"].filter(Boolean).join(" · ");
+  if (isFinished(history as HistoryProgress)) return [code, "watched"].filter(Boolean).join(" · ");
   const pct =
     history.durationSeconds && history.durationSeconds > 0
       ? `${Math.min(100, Math.round((history.positionSeconds / history.durationSeconds) * 100))}%`

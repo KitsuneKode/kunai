@@ -1,4 +1,4 @@
-export { relativeHistoryDate, openHistoryShell } from "./history-workflows";
+export { relativeHistoryDate } from "./history-workflows";
 export {
   openAnimeEpisodeListPicker,
   openAnimeEpisodePicker,

@@ -7,6 +7,7 @@ import type {
   NotificationRepository,
   OfflineMaintenanceJobsRepository,
   OfflineTitlePoliciesRepository,
+  PlaybackEventRepository,
   PlaylistsRepository,
   ProviderHealthRepository,
   QueueRepository,
@@ -97,6 +98,7 @@ export interface Container {
   // Persistence stores
   /** Raw SQLite repository — use when you need HistoryProgress directly (no adapter mapping). */
   readonly historyRepository: HistoryRepository;
+  readonly playbackEventRepository: PlaybackEventRepository;
   readonly configStore: ConfigStore;
   readonly cacheStore: CacheStore;
   readonly diagnosticsStore: DiagnosticsStore;
@@ -169,6 +171,8 @@ export interface Container {
   readonly debugTracePath?: string;
   /** Human-readable startup notes for developer debug sessions only. */
   readonly debugSessionInstructions?: readonly string[];
+  /** OS app data directory for user-owned exports (stats, traces). */
+  readonly dataDir: string;
 }
 
 export function effectiveFooterHints(

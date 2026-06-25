@@ -14,6 +14,7 @@ import {
   resolveContinueSourceAction,
   type ContinueSourcePreference,
 } from "@/services/continuation/continuation-source";
+import { isFinished } from "@/services/continuation/history-progress";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 
 export type HistoryOverlayInputContext = {
@@ -93,6 +94,36 @@ export function handleHistoryOverlayInput(
   }
   if (key.tab) {
     ctx.setHistoryTab((prev) => cycleHistoryTab(prev));
+    return "handled";
+  }
+  if (input.toLowerCase() === "m" && selected) {
+    const entry = selected.entry;
+    const mediaItem = mediaItemFromHistoryEntry(selected.titleId, entry);
+    const watched = isFinished(entry);
+    void createContainerMediaActionRouter(ctx.container)
+      .run({
+        actionId: watched ? "mark-unwatched" : "mark-watched",
+        item: mediaItem,
+        source: "history",
+      })
+      .then((result) => {
+        ctx.setOverlayStatus(
+          result.status === "unsupported"
+            ? result.reason
+            : watched
+              ? "Marked unwatched (resume kept)"
+              : "Marked watched",
+        );
+        ctx.onRedraw();
+        return undefined;
+      })
+      .catch((error: unknown) => {
+        ctx.setOverlayStatus(
+          error instanceof Error ? error.message : "Unable to update watch state",
+        );
+        ctx.onRedraw();
+        return undefined;
+      });
     return "handled";
   }
   if (input.toLowerCase() === "q") {
