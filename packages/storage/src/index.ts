@@ -5,8 +5,10 @@ export type { Migration, MigrationDatabase } from "./migrations";
 export {
   isDataMigrationApplied,
   isHistoryIdentityConsolidatorApplied,
+  isWatchLedgerBackfillApplied,
   markDataMigrationApplied,
   markHistoryIdentityConsolidatorApplied,
+  markWatchLedgerBackfillApplied,
 } from "./migrations";
 export { runDatabaseMaintenance } from "./maintenance";
 export type {
@@ -26,6 +28,24 @@ export {
   HistoryRepository,
 } from "./repositories/history";
 export type { HistoryProgress, HistoryProgressInput } from "./repositories/history";
+export { PlaybackEventRepository } from "./repositories/playback-events";
+export type {
+  PlaybackEventInput,
+  PlaybackEventRecord,
+  PlaybackEventType,
+} from "./repositories/playback-events";
+export { WatchStatsRepository } from "./repositories/watch-stats";
+export type {
+  WatchStatsDailyKindRow,
+  WatchStatsDayRow,
+  WatchStatsHourRow,
+  WatchStatsKindRow,
+  WatchStatsProviderRow,
+  WatchStatsShowRow,
+  WatchStatsTitleSecondsRow,
+  WatchStatsTotalsRow,
+  WatchStatsWeekRow,
+} from "./repositories/watch-stats";
 export { DownloadJobsRepository } from "./repositories/download-jobs";
 export type {
   DownloadArtifactStatus,

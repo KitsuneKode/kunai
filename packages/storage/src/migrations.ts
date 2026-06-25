@@ -492,6 +492,18 @@ export const dataMigrations: readonly Migration[] = [
     // TypeScript consolidator runs at CLI bootstrap; this marker reserves the slot.
     sql: "",
   },
+  {
+    id: "024_data_history_watch_ledger",
+    database: "data",
+    sql: `
+      ALTER TABLE history_progress ADD COLUMN watched_seconds INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE history_progress ADD COLUMN last_watched_at TEXT;
+      ALTER TABLE history_progress ADD COLUMN completed_at TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_history_progress_last_watched
+        ON history_progress(last_watched_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
@@ -801,6 +813,7 @@ export function runMigrations(
 }
 
 const CONSOLIDATOR_MIGRATION_ID = "history_identity_consolidator_v1";
+const WATCH_LEDGER_BACKFILL_ID = "history_watch_ledger_backfill_v1";
 
 export function isDataMigrationApplied(db: KunaiDatabase, migrationId: string): boolean {
   const row = db
@@ -831,4 +844,12 @@ export function isHistoryIdentityConsolidatorApplied(db: KunaiDatabase): boolean
 
 export function markHistoryIdentityConsolidatorApplied(db: KunaiDatabase): void {
   markDataMigrationApplied(db, CONSOLIDATOR_MIGRATION_ID);
+}
+
+export function isWatchLedgerBackfillApplied(db: KunaiDatabase): boolean {
+  return isDataMigrationApplied(db, WATCH_LEDGER_BACKFILL_ID);
+}
+
+export function markWatchLedgerBackfillApplied(db: KunaiDatabase): void {
+  markDataMigrationApplied(db, WATCH_LEDGER_BACKFILL_ID);
 }

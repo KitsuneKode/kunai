@@ -19,6 +19,9 @@ export interface HistoryProgressInput {
   readonly positionSeconds: number;
   readonly durationSeconds?: number;
   readonly completed?: boolean;
+  readonly watchedSeconds?: number;
+  readonly lastWatchedAt?: string;
+  readonly completedAt?: string | null;
   readonly providerId?: ProviderId;
   readonly posterUrl?: string;
   readonly updatedAt?: string;
@@ -34,10 +37,13 @@ export interface HistoryProgress {
   readonly absoluteEpisode?: number;
   readonly positionSeconds: number;
   readonly durationSeconds?: number;
+  readonly watchedSeconds?: number;
   readonly completed: boolean;
   readonly providerId?: ProviderId;
   readonly externalIds?: ProviderExternalIds;
   readonly posterUrl?: string;
+  readonly lastWatchedAt?: string;
+  readonly completedAt?: string;
   readonly updatedAt: string;
   readonly createdAt: string;
 }
@@ -53,6 +59,9 @@ interface HistoryProgressRow {
   readonly position_seconds: number;
   readonly duration_seconds: number | null;
   readonly completed: number;
+  readonly watched_seconds: number;
+  readonly last_watched_at: string | null;
+  readonly completed_at: string | null;
   readonly provider_id: string | null;
   readonly external_ids_json: string | null;
   readonly poster_url: string | null;
@@ -69,6 +78,18 @@ export class HistoryRepository {
       : input.title;
     const key = createHistoryKey(persistedTitle, input.episode);
     const now = input.updatedAt ?? new Date().toISOString();
+    const existing = this.getProgressByKey(key);
+    const watchedSeconds = resolveWatchedSeconds(input, existing);
+    const lastWatchedAt = input.lastWatchedAt ?? now;
+    const resolvedCompleted = input.completed ?? existing?.completed ?? false;
+    const completedAt =
+      input.completedAt === null
+        ? null
+        : resolvedCompleted
+          ? (input.completedAt ?? existing?.completedAt ?? now)
+          : input.completed === false
+            ? null
+            : (existing?.completedAt ?? null);
 
     this.db
       .query(
@@ -84,21 +105,26 @@ export class HistoryRepository {
             position_seconds,
             duration_seconds,
             completed,
+            watched_seconds,
+            last_watched_at,
+            completed_at,
             provider_id,
             external_ids_json,
             poster_url,
             updated_at,
             created_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(key) DO UPDATE SET
             title = excluded.title,
             position_seconds = excluded.position_seconds,
             duration_seconds = excluded.duration_seconds,
             completed = excluded.completed,
+            watched_seconds = excluded.watched_seconds,
+            last_watched_at = excluded.last_watched_at,
+            completed_at = excluded.completed_at,
             provider_id = excluded.provider_id,
             external_ids_json = excluded.external_ids_json,
-            -- keep an existing poster when a later write lacks one
             poster_url = COALESCE(excluded.poster_url, history_progress.poster_url),
             updated_at = excluded.updated_at
         `,
@@ -113,13 +139,113 @@ export class HistoryRepository {
         input.episode?.absoluteEpisode ?? null,
         Math.max(0, Math.trunc(input.positionSeconds)),
         input.durationSeconds === undefined ? null : Math.max(0, Math.trunc(input.durationSeconds)),
-        input.completed === true ? 1 : 0,
+        resolvedCompleted ? 1 : 0,
+        watchedSeconds,
+        lastWatchedAt,
+        completedAt,
         input.providerId ?? null,
         serializeExternalIds(persistedTitle.externalIds),
         input.posterUrl ?? null,
         now,
         now,
       );
+  }
+
+  /**
+   * Mark an episode (or movie) watched: completed flag + snap position to end.
+   * Preserves watched_seconds accumulated so far unless caller overrides.
+   */
+  markWatched(
+    title: TitleIdentity,
+    episode?: EpisodeIdentity,
+    now = new Date().toISOString(),
+  ): void {
+    const existing = this.getProgress(title, episode);
+    const duration = existing?.durationSeconds ?? 0;
+    const positionSeconds = duration > 0 ? duration : (existing?.positionSeconds ?? 0);
+    const watchedSeconds = Math.max(
+      existing?.watchedSeconds ?? 0,
+      duration > 0 ? duration : positionSeconds,
+    );
+    this.upsertProgress({
+      title,
+      episode,
+      positionSeconds,
+      durationSeconds: existing?.durationSeconds,
+      completed: true,
+      watchedSeconds,
+      lastWatchedAt: now,
+      completedAt: now,
+      providerId: existing?.providerId,
+      posterUrl: existing?.posterUrl,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Clear the completed flag while preserving resume position and engaged seconds.
+   */
+  markUnwatched(
+    title: TitleIdentity,
+    episode?: EpisodeIdentity,
+    now = new Date().toISOString(),
+  ): void {
+    const existing = this.getProgress(title, episode);
+    if (!existing) {
+      this.upsertProgress({
+        title,
+        episode,
+        positionSeconds: 0,
+        completed: false,
+        completedAt: null,
+        updatedAt: now,
+      });
+      return;
+    }
+    this.upsertProgress({
+      title: {
+        id: existing.titleId,
+        kind: existing.mediaKind,
+        title: existing.title,
+        externalIds: existing.externalIds,
+      },
+      episode: {
+        season: existing.season,
+        episode: existing.episode,
+        absoluteEpisode: existing.absoluteEpisode,
+      },
+      positionSeconds: existing.positionSeconds,
+      durationSeconds: existing.durationSeconds,
+      completed: false,
+      watchedSeconds: existing.watchedSeconds,
+      completedAt: null,
+      providerId: existing.providerId,
+      posterUrl: existing.posterUrl,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Mid-play checkpoint: position + engaged seconds without forcing completion.
+   */
+  checkpointProgress(input: HistoryProgressInput): void {
+    const persistedTitle = input.providerId
+      ? resolvePersistedHistoryTitle(input.title, input.providerId)
+      : input.title;
+    const existing = this.getProgress(persistedTitle, input.episode);
+    const now = input.lastWatchedAt ?? input.updatedAt ?? new Date().toISOString();
+    this.upsertProgress({
+      ...input,
+      title: persistedTitle,
+      completed: input.completed ?? existing?.completed ?? false,
+      completedAt:
+        input.completedAt !== undefined
+          ? input.completedAt
+          : (input.completed ?? existing?.completed)
+            ? (existing?.completedAt ?? now)
+            : null,
+      lastWatchedAt: now,
+    });
   }
 
   getProgress(title: TitleIdentity, episode?: EpisodeIdentity): HistoryProgress | undefined {
@@ -327,6 +453,9 @@ export function historyProgressToInput(progress: HistoryProgress): HistoryProgre
     positionSeconds: progress.positionSeconds,
     durationSeconds: progress.durationSeconds,
     completed: progress.completed,
+    watchedSeconds: progress.watchedSeconds,
+    lastWatchedAt: progress.lastWatchedAt,
+    completedAt: progress.completedAt ?? null,
     providerId: progress.providerId,
     posterUrl: progress.posterUrl,
     updatedAt: progress.updatedAt,
@@ -361,13 +490,39 @@ function mapHistoryRow(row: HistoryProgressRow): HistoryProgress {
     absoluteEpisode: row.absolute_episode ?? undefined,
     positionSeconds: row.position_seconds,
     durationSeconds: row.duration_seconds ?? undefined,
+    watchedSeconds: row.watched_seconds,
     completed: row.completed === 1,
     providerId: row.provider_id === null ? undefined : migrateLegacyProviderId(row.provider_id),
     externalIds: parseExternalIds(row.external_ids_json),
     posterUrl: row.poster_url ?? undefined,
+    lastWatchedAt: row.last_watched_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   };
+}
+
+function resolveWatchedSeconds(
+  input: HistoryProgressInput,
+  existing: HistoryProgress | undefined,
+): number {
+  const prior = existing?.watchedSeconds ?? 0;
+  if (input.watchedSeconds !== undefined) {
+    return Math.max(prior, Math.max(0, Math.trunc(input.watchedSeconds)));
+  }
+  if (input.completed === true) {
+    const duration = input.durationSeconds ?? existing?.durationSeconds ?? 0;
+    if (duration > 0) return Math.max(prior, duration);
+    return Math.max(prior, Math.trunc(input.positionSeconds));
+  }
+  const fromPosition = Math.min(
+    Math.max(0, Math.trunc(input.positionSeconds)),
+    input.durationSeconds ?? existing?.durationSeconds ?? Number.POSITIVE_INFINITY,
+  );
+  if (!Number.isFinite(fromPosition)) {
+    return prior;
+  }
+  return Math.max(prior, fromPosition);
 }
 
 function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
