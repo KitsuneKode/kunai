@@ -23,6 +23,19 @@ describe("resolveCommandsForPaletteSurface", () => {
     expect(commands).not.toContain("surprise");
     expect(commands).not.toContain("favorites");
   });
+
+  test("post-play palette excludes Experimental command group by default", () => {
+    const commands = resolveCommandsForPaletteSurface(baseState(), "post-play").map(
+      (command) => command.id,
+    );
+
+    expect(commands).toContain("next");
+    expect(commands).toContain("recommendation");
+    expect(commands).not.toContain("stats");
+    expect(commands).not.toContain("random");
+    expect(commands).not.toContain("surprise");
+    expect(commands).not.toContain("sync");
+  });
 });
 
 describe("routePlaybackShellAction", () => {
