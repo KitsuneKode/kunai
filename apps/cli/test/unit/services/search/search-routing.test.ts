@@ -457,6 +457,76 @@ describe("searchTitles", () => {
     expect(result.results[0]?.id).toBe("youtube:cross-mode");
   });
 
+  test("coerces stale non-youtube provider ids when session mode is youtube", async () => {
+    let providerNativeCalls = 0;
+    const youtubeProvider: any = {
+      metadata: {
+        id: "youtube",
+        name: "YouTube",
+        description: "",
+        recommended: true,
+        isAnimeProvider: false,
+        isYoutubeProvider: true,
+        domain: "youtube.com",
+      } as ProviderMetadata,
+      search: async () => {
+        providerNativeCalls += 1;
+        return [
+          {
+            id: "youtube:stale-lane",
+            title: "Harkirat",
+            type: "movie",
+            contentShape: "video",
+            externalIds: { youtubeId: "stale-lane" },
+          },
+        ];
+      },
+    };
+    const videasyProvider: any = {
+      metadata: {
+        id: "videasy",
+        name: "Videasy",
+        description: "",
+        recommended: true,
+        isAnimeProvider: false,
+        isYoutubeProvider: false,
+        domain: "videasy.net",
+      } as ProviderMetadata,
+    };
+
+    const result = await searchTitles("Harkirat", {
+      mode: "youtube",
+      providerId: "videasy",
+      animeLanguageProfile: { audio: "original", subtitle: "en" },
+      youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
+      searchRegistry: createSearchRegistry({
+        defaultResults: [
+          {
+            id: "tmdb-wrong",
+            type: "movie",
+            title: "Wrong Registry Result",
+            year: "",
+            overview: "",
+            posterPath: null,
+          },
+        ],
+      }) as any,
+      providerRegistry: {
+        get: (id: string) => (id === "youtube" ? youtubeProvider : videasyProvider),
+        getDefaultForMode: (mode: string) => {
+          expect(mode).toBe("youtube");
+          return youtubeProvider;
+        },
+      } as any,
+    });
+
+    expect(providerNativeCalls).toBe(1);
+    expect(result.strategy).toBe("provider-native");
+    expect(result.sourceId).toBe("youtube");
+    expect(result.sourceName).toBe("YouTube");
+    expect(result.results[0]?.title).toBe("Harkirat");
+  });
+
   test("applies text search filters locally when TMDB search cannot push them upstream", async () => {
     const searchRegistry = createSearchRegistry({
       providerResults: [

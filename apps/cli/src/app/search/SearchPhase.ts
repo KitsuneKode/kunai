@@ -41,6 +41,7 @@ import {
   titleInfoFromQueueEntry,
 } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
+import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
@@ -332,30 +333,34 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         const initialCalendarTypeTab = pendingCalendarType;
         pendingCalendarType = undefined;
+        const browseState = currentState;
+        ensureSessionProviderMatchesLane(stateManager, providerRegistry);
+        const syncedState = stateManager.getState();
+
         const outcome = await openBrowseShell({
-          mode: currentState.mode,
-          provider: currentState.provider,
+          mode: syncedState.mode,
+          provider: syncedState.provider,
           settings: container.config.getRaw(),
           initialCalendarTypeTab,
-          initialQuery: currentState.searchQuery,
-          initialResults: currentState.searchResults.map((r) =>
+          initialQuery: browseState.searchQuery,
+          initialResults: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
           initialResultSubtitle:
-            currentState.searchResults.length > 0
-              ? currentState.searchQuery.trim().length === 0
+            browseState.searchResults.length > 0
+              ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
-                  `${currentState.searchResults.length} recommendation picks · loaded`)
-                : `${currentState.searchResults.length} results · previous search`
+                  `${browseState.searchResults.length} recommendation picks · loaded`)
+                : `${browseState.searchResults.length} results · previous search`
               : undefined,
-          initialSelectedIndex: currentState.selectedResultIndex,
+          initialSelectedIndex: browseState.selectedResultIndex,
           placeholder:
-            currentState.mode === "anime"
+            syncedState.mode === "anime"
               ? "Demon Slayer"
-              : currentState.mode === "youtube"
+              : syncedState.mode === "youtube"
                 ? "lofi hip hop"
                 : "Breaking Bad",
-          commands: resolveCommands(currentState, SEARCH_BROWSE_COMMAND_IDS, {
+          commands: resolveCommands(syncedState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
           idleContext,
@@ -414,6 +419,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           },
           onOpenLink: (url) => openExternalUrl(url),
           onSearch: async (query) => {
+            ensureSessionProviderMatchesLane(stateManager, providerRegistry);
             const searchIntent = createSearchIntentEngine().fromText(query, {
               currentMode: stateManager.getState().mode,
             });
@@ -768,7 +774,12 @@ async function loadSearchRoute(
     route === "trending"
       ? {
           results: await loadDiscoveryList(mode, context.signal),
-          subtitle: `${mode === "anime" ? "AniList" : "TMDB"} trending`,
+          subtitle:
+            mode === "anime"
+              ? "AniList trending"
+              : mode === "youtube"
+                ? "YouTube trending"
+                : "TMDB trending",
         }
       : route === "calendar"
         ? await loadCalendarResults(container, context.signal)

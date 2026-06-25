@@ -1,3 +1,4 @@
+import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
 import {
   normalizeSearchIntent,
   type SearchIntent,
@@ -177,7 +178,22 @@ function resolveSearchRouting(
     };
   }
 
-  return { mode: context.mode, providerId: context.providerId };
+  return coerceProviderToLane({ mode: context.mode, providerId: context.providerId }, context);
+}
+
+function coerceProviderToLane(
+  routing: { readonly mode: ShellMode; readonly providerId: string },
+  context: SearchRoutingContext,
+): { readonly mode: ShellMode; readonly providerId: string } {
+  const lane = shellModeToProviderLane(routing.mode);
+  const provider = context.providerRegistry.get(routing.providerId);
+  if (provider && providerMetadataMatchesLane(provider.metadata, lane)) {
+    return routing;
+  }
+  return {
+    mode: routing.mode,
+    providerId: context.providerRegistry.getDefaultForMode(routing.mode).metadata.id,
+  };
 }
 
 function normalizeSearchInput(query: string, mode: ShellMode): SearchIntent {

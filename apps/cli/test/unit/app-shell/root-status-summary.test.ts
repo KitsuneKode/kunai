@@ -219,6 +219,30 @@ describe("buildRootStatusSummary", () => {
     expect(summary.crumb).toContain("vidking→rivestream");
   });
 
+  test("labels youtube lane and provider as YouTube in the crumb", () => {
+    const base = createInitialState(
+      "videasy",
+      "hianime",
+      {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      },
+      "youtube",
+    );
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "youtube",
+        provider: "videasy",
+      },
+      currentViewLabel: "search",
+      rootStatus: "ready",
+    });
+
+    expect(summary.crumb).toBe("YouTube · YouTube");
+  });
+
   test("uses plain language for download status alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },

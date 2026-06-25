@@ -195,19 +195,19 @@ export async function dispatchPaletteCommand(
     return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
   }
   if (action === "toggle-mode") {
-    switchSessionMode(stateManager);
+    switchSessionMode(stateManager, container.providerRegistry);
     return "mode-switch";
   }
   if (action === "series-mode") {
-    setSessionLane(stateManager, "series");
+    setSessionLane(stateManager, "series", container.providerRegistry);
     return "mode-switch";
   }
   if (action === "anime-mode") {
-    setSessionLane(stateManager, "anime");
+    setSessionLane(stateManager, "anime", container.providerRegistry);
     return "mode-switch";
   }
   if (action === "youtube-mode") {
-    setSessionLane(stateManager, "youtube");
+    setSessionLane(stateManager, "youtube", container.providerRegistry);
     return "mode-switch";
   }
   if (action === "help") {

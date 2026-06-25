@@ -1,3 +1,8 @@
+import {
+  ensureSessionProviderMatchesLane,
+  resolveProviderIdForSessionLane,
+  type SessionProviderLaneLookup,
+} from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { ShellMode } from "@/domain/types";
@@ -26,18 +31,36 @@ export function sessionTargetForMode(
 }
 
 /** Switch session to a specific catalog lane and clear stale browse/search context. */
-export function setSessionLane(stateManager: SessionStateManager, mode: ShellMode): void {
+export function setSessionLane(
+  stateManager: SessionStateManager,
+  mode: ShellMode,
+  providerRegistry?: SessionProviderLaneLookup,
+): void {
   const state = stateManager.getState();
-  if (state.mode === mode) return;
-  const target = sessionTargetForMode(state, mode);
+  if (state.mode === mode) {
+    if (providerRegistry) {
+      ensureSessionProviderMatchesLane(stateManager, providerRegistry);
+    }
+    return;
+  }
+  const configuredTarget = sessionTargetForMode(state, mode);
+  const provider = providerRegistry
+    ? resolveProviderIdForSessionLane(
+        { ...state, mode: configuredTarget.mode, provider: configuredTarget.provider },
+        providerRegistry,
+      )
+    : configuredTarget.provider;
   stateManager.dispatch({
     type: "SET_MODE",
-    mode: target.mode,
-    provider: target.provider,
+    mode: configuredTarget.mode,
+    provider,
   });
 }
 
-export function switchSessionMode(stateManager: SessionStateManager): void {
+export function switchSessionMode(
+  stateManager: SessionStateManager,
+  providerRegistry?: SessionProviderLaneLookup,
+): void {
   const target = getModeSwitchTarget(stateManager.getState());
-  setSessionLane(stateManager, target.mode);
+  setSessionLane(stateManager, target.mode, providerRegistry);
 }

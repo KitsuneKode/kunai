@@ -759,6 +759,7 @@ function AppRoot({ container }: { container: Container }) {
       offlineMode: container.config.offlineMode,
       networkAvailable,
       playbackIsLocal,
+      providerRegistry: container.providerRegistry,
     }),
   );
   useEffect(() => {
@@ -777,11 +778,12 @@ function AppRoot({ container }: { container: Container }) {
           offlineMode: rootStatusSummaryInput.offlineMode,
           networkAvailable: rootStatusSummaryInput.networkAvailable,
           playbackIsLocal: rootStatusSummaryInput.playbackIsLocal,
+          providerRegistry: container.providerRegistry,
         }),
       );
     }, ROOT_STATUS_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [rootStatusSummaryInput]);
+  }, [rootStatusSummaryInput, container.providerRegistry]);
   const rootSurface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
     hasMountedScreen: false,
@@ -879,10 +881,10 @@ function AppRoot({ container }: { container: Container }) {
                 });
               },
               switchSessionMode: () => {
-                switchSessionMode(container.stateManager);
+                switchSessionMode(container.stateManager, container.providerRegistry);
               },
               setSessionLane: (_sm, mode) => {
-                setSessionLane(container.stateManager, mode);
+                setSessionLane(container.stateManager, mode, container.providerRegistry);
               },
               routeSearchShellAction: async (nextAction) => {
                 const { routeSearchShellAction } = await import("./command-router");

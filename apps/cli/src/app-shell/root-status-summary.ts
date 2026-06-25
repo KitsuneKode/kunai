@@ -1,7 +1,16 @@
-import { resolveContentKind } from "@/domain/media/content-kind";
+import {
+  formatSessionLaneLabel,
+  formatSessionProviderLabel,
+} from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 
 import type { ShellStatusTone } from "./types";
+
+type ProviderNameLookup = {
+  readonly get: (
+    providerId: string,
+  ) => { readonly metadata: { readonly name?: string } } | null | undefined;
+};
 
 export type RootStatusAlert = {
   text: string;
@@ -74,6 +83,7 @@ export function buildRootStatusSummary({
   offlineMode = false,
   networkAvailable = true,
   playbackIsLocal = false,
+  providerRegistry,
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -87,6 +97,7 @@ export function buildRootStatusSummary({
   offlineMode?: boolean;
   networkAvailable?: boolean;
   playbackIsLocal?: boolean;
+  providerRegistry?: ProviderNameLookup;
 }): RootStatusSummary {
   const isActivePlayback =
     rootStatus === "playing" ||
@@ -100,10 +111,26 @@ export function buildRootStatusSummary({
   // Crumb: show the provider actually serving the active stream when it differs from the
   // session selection (for example after recovery fallback or stale shell state).
   const streamProviderId = state.stream?.providerResolveResult?.providerId;
-  const providerCrumb =
-    isActivePlayback && streamProviderId && streamProviderId !== state.provider
-      ? `${state.provider}→${streamProviderId}`
-      : state.provider;
+  const providerCrumb = (() => {
+    if (isActivePlayback && streamProviderId && streamProviderId !== state.provider) {
+      const selected = formatSessionProviderLabel(
+        state.mode,
+        state.provider,
+        providerRegistry?.get(state.provider)?.metadata.name,
+      );
+      const active = formatSessionProviderLabel(
+        state.mode,
+        streamProviderId,
+        providerRegistry?.get(streamProviderId)?.metadata.name,
+      );
+      return `${selected}→${active}`;
+    }
+    return formatSessionProviderLabel(
+      state.mode,
+      state.provider,
+      providerRegistry?.get(state.provider)?.metadata.name,
+    );
+  })();
 
   // Crumb: stable session context only. Title/episode live in the Now Playing body;
   // subtitle state lives in the NOW row — avoid repeating facts in the header strip.
@@ -116,7 +143,7 @@ export function buildRootStatusSummary({
   if (isActivePlayback && playbackIsLocal) {
     crumbParts.push("↓ offline");
   } else {
-    crumbParts.push(resolveContentKind(state.currentTitle, state.mode), providerCrumb);
+    crumbParts.push(formatSessionLaneLabel(state.mode), providerCrumb);
   }
   if (!isActivePlayback) {
     if (streak !== undefined && streak >= 2) {
