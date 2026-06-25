@@ -1,52 +1,38 @@
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { resolveHonestLoadingStageDetail } from "@/app-shell/loading-shell-model";
 import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
-import { formatPlaybackSessionKeysHint } from "@/app-shell/playback-session-key-hints";
 import {
   buildPlaybackBootstrapPresentation,
   formatBootstrapInventorySummary,
+  latestPlaybackStartupStage,
 } from "@/app/playback/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
-  formatPlaybackSessionFactsStrip,
-  formatPlaybackSourceLine,
   isCurrentStreamSelection,
   streamSelectionFromTrackPick,
 } from "@/app/playback/source-quality";
-import {
-  compactPlaybackSubtitleStatus,
-  describePlaybackSubtitleStatus,
-} from "@/app/playback/subtitle-status";
 import { switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
-import { effectiveFooterHints } from "@/container";
-import { mediaLanguageProfileFor, showsEpisodeLabel } from "@/domain/media/content-kind";
-import { toErrorScenario } from "@/domain/playback/playback-problem";
 import {
   describePlaybackTelemetrySnapshot,
   type PlaybackTelemetrySnapshot,
 } from "@/domain/playback/playback-telemetry-snapshot";
-import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
-import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
-import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
-import type { ProviderId } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { dispatchAppCommand } from "./command-router";
-import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { recordRender } from "./diagnostics/render-trace";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { useSettledValue } from "./hooks/use-settled-value";
-import { deleteAllKittyImages, usePosterSurfaceBoundaryCleanup } from "./image-pane";
+import { deleteAllKittyImages } from "./image-pane";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
-import { LoadingShell } from "./loading-shell";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -54,23 +40,20 @@ import {
   tickNotificationQueue,
   type NotificationPriority,
 } from "./notification-queue";
-import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
-import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
-import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
-import { buildPostPlayFooterActions } from "./post-play-footer-actions";
-import { PostPlayShell } from "./post-play-shell";
 import {
-  buildPostPlayView,
-  isPostPlayPlaybackRestartResult,
-  resolvePostPlayUnhandledInput,
-  resolvePostPlayMenuAction,
-} from "./post-play-view";
+  buildPlaybackSubtitleLine,
+  buildPlaybackSubtitleStatusLine,
+  type PlaybackRootContentHandlers,
+} from "./playback-mount-shell";
+import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
+import { RootContentBody } from "./root-content-shell";
 import {
   clearRootContentSession,
   mountRootContent,
+  resolveRootContentFromSession,
   useRootContentSession,
 } from "./root-content-state";
 import { getRootOverlayResetKey } from "./root-overlay-model";
@@ -80,11 +63,9 @@ import {
   resolveRootShellSurface,
   type RootOwnedOverlay,
 } from "./root-shell-state";
-import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { openSessionPicker } from "./session-picker";
 import {
-  fallbackCommandState,
   getCommandAutocompleteTarget,
   getCommandMatches,
   getHighlightedCommand,
@@ -92,11 +73,11 @@ import {
   shouldHideCompanionForCommandPalette,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
-import { InputField, ShellFrame } from "./shell-frame";
+import { InputField } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
-import { APP_LABEL, palette, statusColor } from "./shell-theme";
+import { palette, statusColor } from "./shell-theme";
 import {
   buildStatsView,
   STATS_KINDS,
@@ -111,16 +92,16 @@ import { selectTransientRow } from "./transient-row";
 import {
   toShellAction,
   type FooterAction,
-  type ShellFooterMode,
-  type PlaybackShellState,
-  type PlaybackShellResult,
   type ShellAction,
+  type ShellFooterMode,
   type ShellStatusTone,
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useSessionSelector } from "./use-session-selector";
 import { useTerminalResizeCleanup } from "./use-terminal-resize-cleanup";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
+
+export { openPlaybackShell } from "./playback-mount-shell";
 
 const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
 const ROOT_STATUS_DEBOUNCE_MS = 250;
@@ -685,16 +666,8 @@ function AppRoot({ container }: { container: Container }) {
         : state.playbackStatus === "error"
           ? "error"
           : "ready";
-  const playbackSubtitle =
-    state.currentEpisode && showsEpisodeLabel(state.currentTitle)
-      ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(
-          state.currentEpisode.episode,
-        ).padStart(2, "0")}`
-      : undefined;
-  const playbackSubtitleStatus = describePlaybackSubtitleStatus(
-    state.stream,
-    mediaLanguageProfileFor(state).subtitle,
-  );
+  const playbackSubtitle = buildPlaybackSubtitleLine(state);
+  const playbackSubtitleStatus = buildPlaybackSubtitleStatusLine(state);
   const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
   const currentViewLabel =
     state.playbackStatus === "loading" || playbackIsActive
@@ -844,19 +817,12 @@ function AppRoot({ container }: { container: Container }) {
       }),
     [state.playbackStatus, state.playbackDetail, container.diagnosticsService],
   );
-  const playbackFailureWaterfall = useMemo(
-    () =>
-      state.playbackStatus === "error"
-        ? buildPlaybackFailureWaterfall({
-            state,
-            recentEvents: container.diagnosticsService.getRecent(40),
-          })
-        : null,
-    [state, container.diagnosticsService],
-  );
   const playbackBootstrapStageDetail = useMemo(() => {
-    const base =
-      playbackBootstrapPresentation.stageDetail ?? state.playbackDetail?.trim() ?? undefined;
+    const startupStage = latestPlaybackStartupStage(container.diagnosticsService.getRecent(40));
+    const base = resolveHonestLoadingStageDetail({
+      startupStage,
+      playbackDetail: playbackBootstrapPresentation.stageDetail ?? state.playbackDetail,
+    });
     if (
       !state.stream?.providerResolveResult ||
       (state.playbackStatus !== "loading" && state.playbackStatus !== "ready")
@@ -867,6 +833,7 @@ function AppRoot({ container }: { container: Container }) {
     if (!inventorySummary) return base;
     return base ? `${base} · ${inventorySummary}` : inventorySummary;
   }, [
+    container.diagnosticsService,
     playbackBootstrapPresentation.stageDetail,
     state.playbackDetail,
     state.playbackStatus,
@@ -999,6 +966,101 @@ function AppRoot({ container }: { container: Container }) {
 
   const onExitDone = useCallback(() => requestHardExit(0), []);
 
+  const playbackHandlers = useMemo<PlaybackRootContentHandlers>(
+    () => ({
+      onCommandAction,
+      onCancel,
+      onStop,
+      onNext: onNextHandler,
+      onPrevious: onPreviousHandler,
+      onRecover,
+      onFallback,
+      onPickStreams,
+      onPickEpisode,
+      onReloadSubtitles,
+      onSkipSegment,
+      onToggleAutoplay,
+      onToggleAutoskip,
+      onStopAfterCurrent,
+      onPickSource,
+      onPickQuality,
+      onReturnToSearch,
+    }),
+    [
+      onCommandAction,
+      onCancel,
+      onStop,
+      onNextHandler,
+      onPreviousHandler,
+      onRecover,
+      onFallback,
+      onPickStreams,
+      onPickEpisode,
+      onReloadSubtitles,
+      onSkipSegment,
+      onToggleAutoplay,
+      onToggleAutoskip,
+      onStopAfterCurrent,
+      onPickSource,
+      onPickQuality,
+      onReturnToSearch,
+    ],
+  );
+
+  const playbackRootInput = useMemo(
+    () => ({
+      container,
+      state,
+      playbackSubtitle,
+      playbackSubtitleStatus,
+      playbackBootstrapPresentation,
+      playbackBootstrapStageDetail,
+      downloadStatus,
+      playbackCanCancel,
+      playbackTrace,
+      fallbackProvider,
+      activeProvider,
+      hasStreamCandidates,
+      isSeriesPlayback,
+      activePlaybackTelemetrySnapshot,
+      canGoNext,
+      canGoPrevious,
+      canToggleAutoplay,
+      canStopAfterCurrent,
+      playingTitleDetail,
+      playingNextEpisodeThumbUrl,
+      handlers: playbackHandlers,
+    }),
+    [
+      container,
+      state,
+      playbackSubtitle,
+      playbackSubtitleStatus,
+      playbackBootstrapPresentation,
+      playbackBootstrapStageDetail,
+      downloadStatus,
+      playbackCanCancel,
+      playbackTrace,
+      fallbackProvider,
+      activeProvider,
+      hasStreamCandidates,
+      isSeriesPlayback,
+      activePlaybackTelemetrySnapshot,
+      canGoNext,
+      canGoPrevious,
+      canToggleAutoplay,
+      canStopAfterCurrent,
+      playingTitleDetail,
+      playingNextEpisodeThumbUrl,
+      playbackHandlers,
+    ],
+  );
+
+  const resolvedRootContent = useMemo(
+    () => resolveRootContentFromSession(state, { rootContent }),
+    [state, rootContent],
+  );
+
   if (exiting) {
     return <ExitShell onDone={onExitDone} />;
   }
@@ -1053,209 +1115,17 @@ function AppRoot({ container }: { container: Container }) {
       </TransientRowSlot>
       <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
         <Box flexDirection="column" flexGrow={1}>
-          {rootSurface === "error" ? (
-            <ErrorShell
-              message={state.playbackError || "An unknown error occurred"}
-              scenario={toErrorScenario(state.playbackProblem, {
-                providerName: activeProvider?.metadata.name ?? state.provider,
-                title: state.currentTitle?.name,
-                resolveRetryCount: state.resolveRetryCount,
-              })}
-              waterfall={playbackFailureWaterfall}
-              debugEnabled={Boolean(container.debugTracePath)}
-              debugError={peekPlaybackShellError()}
-              onResolve={() => {
-                clearPlaybackShellError();
-                stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
-                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-              }}
-              onRetry={() => {
-                clearPlaybackShellError();
-                stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
-                stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
-              }}
-            />
-          ) : rootSurface === "playback" ? (
-            <LoadingShell
-              key={`playback-ep-${state.currentTitle?.id ?? "none"}:${state.currentEpisode?.season ?? 0}:${state.currentEpisode?.episode ?? 0}`}
-              state={{
-                title: state.currentTitle?.name || "Resolving...",
-                subtitle: playbackSubtitle,
-                operation: playbackBootstrapPresentation.operation,
-                stage: playbackBootstrapPresentation.stage,
-                stageDetail: playbackBootstrapStageDetail,
-                dominantPhaseLabel: playbackBootstrapPresentation.dominantPhaseLabel,
-                details: state.playbackDetail ?? `Provider: ${state.provider}`,
-                providerName: activeProvider?.metadata.name ?? state.provider,
-                providerId: state.provider,
-                subtitleStatus:
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? playbackSubtitleStatus
-                    : undefined,
-                downloadStatus: downloadStatus ?? undefined,
-                cancellable: playbackCanCancel,
-                trace: playbackTrace,
-                showMemory: container.config.showMemory,
-                posterUrl: state.currentTitle?.posterUrl,
-                getRuntimeHealth: () => {
-                  const persisted = state.provider
-                    ? container.providerHealth.get(state.provider as ProviderId)
-                    : undefined;
-                  const snapshot = buildRuntimeHealthSnapshot({
-                    recentEvents: container.diagnosticsService.getRecent(25),
-                    currentProvider: state.provider,
-                    persistedProviderHealth: persisted,
-                  });
-                  return state.playbackStatus === "playing" ||
-                    state.playbackStatus === "buffering" ||
-                    state.playbackStatus === "seeking" ||
-                    state.playbackStatus === "stalled"
-                    ? snapshot.network
-                    : snapshot.provider;
-                },
-                fallbackAvailable: Boolean(fallbackProvider),
-                fallbackProviderName:
-                  fallbackProvider?.metadata.name ?? fallbackProvider?.metadata.id,
-                hasStreamCandidates,
-                autoskipPaused: state.autoskipSessionPaused,
-                autoplayPaused: state.autoplaySessionPaused,
-                isSeriesPlayback,
-                latestIssue: state.playbackNote,
-                currentPosition: activePlaybackTelemetrySnapshot?.positionSeconds,
-                duration: activePlaybackTelemetrySnapshot?.durationSeconds,
-                bufferHealth:
-                  state.playbackStatus === "stalled"
-                    ? "stalled"
-                    : state.playbackStatus === "buffering" ||
-                        activePlaybackTelemetrySnapshot?.pausedForCache
-                      ? "buffering"
-                      : activePlaybackTelemetrySnapshot
-                        ? "healthy"
-                        : undefined,
-                playbackSourceLine: formatPlaybackSourceLine(state.stream) ?? undefined,
-                sourceToggleHint: (() => {
-                  const episode = state.currentEpisode;
-                  const title = state.currentTitle;
-                  if (!episode || !title) return undefined;
-                  if (isLocalPlaybackStream(state.stream)) {
-                    return "/watch-online to stream this episode online";
-                  }
-                  if (
-                    isEpisodeDownloaded(
-                      container.offlineAssetService,
-                      title.id,
-                      episode.season,
-                      episode.episode,
-                    )
-                  ) {
-                    return "/play-local to use the downloaded copy";
-                  }
-                  return undefined;
-                })(),
-                playbackFactsStrip:
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? formatPlaybackSessionFactsStrip({
-                        stream: state.stream,
-                        autoplayPaused: state.autoplaySessionPaused,
-                        autoskipPaused: state.autoskipSessionPaused,
-                        canToggleAutoplay,
-                        stopAfterCurrent: state.stopAfterCurrent,
-                        isSeries: state.currentTitle?.type === "series",
-                      })
-                    : undefined,
-                playbackKeysHint:
-                  state.playbackStatus === "playing" ||
-                  state.playbackStatus === "buffering" ||
-                  state.playbackStatus === "seeking" ||
-                  state.playbackStatus === "stalled"
-                    ? formatPlaybackSessionKeysHint({
-                        stream: state.stream,
-                        autoplayPaused: state.autoplaySessionPaused,
-                        autoskipPaused: state.autoskipSessionPaused,
-                        canToggleAutoplay,
-                        stopAfterCurrent: state.stopAfterCurrent,
-                        isSeries: state.currentTitle?.type === "series",
-                        hasNextEpisode: canGoNext,
-                        hasPreviousEpisode: canGoPrevious,
-                      })
-                    : undefined,
-                commands: resolveCommandContext(state, "activePlayback"),
-                footerMode: effectiveFooterHints(container),
-                qualityLabel: (() => {
-                  const result = state.stream?.providerResolveResult;
-                  const selected = result?.streams.find(
-                    (candidate) => candidate.id === result.selectedStreamId,
-                  );
-                  return selected?.qualityLabel ?? selected?.container;
-                })(),
-                audioTrack: state.stream?.audioLanguages?.length
-                  ? state.stream.audioLanguages.join(", ")
-                  : undefined,
-                subtitleTrack: compactPlaybackSubtitleStatus(playbackSubtitleStatus),
-                nextEpisodeLabel: state.episodeNavigation.nextLabel,
-                previousEpisodeLabel: state.episodeNavigation.previousLabel,
-                hasNextEpisode: state.episodeNavigation.hasNext,
-                hasPreviousEpisode: state.episodeNavigation.hasPrevious,
-                // Up next = the next episode, else the Up Next queue head (a queued
-                // title that will auto-play when this one finishes).
-                upNextLabel: state.episodeNavigation.hasNext
-                  ? state.episodeNavigation.nextLabel
-                  : (() => {
-                      const queued = container.queueService.peekNext();
-                      if (!queued) return undefined;
-                      const code =
-                        queued.season && queued.episode
-                          ? ` · S${String(queued.season).padStart(2, "0")}E${String(queued.episode).padStart(2, "0")}`
-                          : "";
-                      return `${queued.title}${code}`;
-                    })(),
-                titleDetail: playingTitleDetail,
-                nextEpisodeThumbUrl: playingNextEpisodeThumbUrl,
-                episodeLabel:
-                  state.currentEpisode && state.currentTitle?.type === "series"
-                    ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(state.currentEpisode.episode).padStart(2, "0")}`
-                    : undefined,
-                currentSeason: state.currentEpisode?.season,
-                onCommandAction: onCommandAction,
-              }}
-              onCancel={onCancel}
-              onStop={onStop}
-              onNext={canGoNext ? onNextHandler : undefined}
-              onPrevious={canGoPrevious ? onPreviousHandler : undefined}
-              onRecover={onRecover}
-              onFallback={onFallback}
-              onPickStreams={onPickStreams}
-              onPickEpisode={state.currentTitle?.type === "series" ? onPickEpisode : undefined}
-              onReloadSubtitles={onReloadSubtitles}
-              onSkipSegment={onSkipSegment}
-              onToggleAutoplay={canToggleAutoplay ? onToggleAutoplay : undefined}
-              onToggleAutoskip={onToggleAutoskip}
-              onStopAfterCurrent={canStopAfterCurrent ? onStopAfterCurrent : undefined}
-              onPickSource={onPickSource}
-              onPickQuality={onPickQuality}
-              onReturnToSearch={onReturnToSearch}
-            />
-          ) : rootSurface === "root-content" && rootContent ? (
-            <Box key={rootContent.id} flexGrow={1}>
-              {rootContent.element}
-            </Box>
-          ) : rootSurface === "root-overlay" && rootOverlay ? (
-            <RootOverlayShell
-              key={getRootOverlayResetKey(rootOverlay)}
-              overlay={rootOverlay}
-              state={state}
-              container={container}
-              onRedraw={clearShellScreen}
-            />
-          ) : (
-            <RootIdleShell state={state} />
-          )}
+          <RootContentBody
+            resolved={resolvedRootContent}
+            ctx={{
+              container,
+              state,
+              stateManager,
+              rootOverlay,
+              playbackRootInput,
+              clearShellScreen,
+            }}
+          />
         </Box>
 
         {rootSurface === "root-content" &&
@@ -1317,242 +1187,6 @@ export async function shutdownSessionApp(): Promise<void> {
   ink.cleanup();
   await exitPromise.catch(() => {});
   deleteAllKittyImages();
-}
-
-function PlaybackShell({
-  container,
-  state,
-  onResolve,
-}: {
-  container: Container;
-  state: PlaybackShellState;
-  onResolve: (result: PlaybackShellResult) => void;
-}) {
-  usePosterSurfaceBoundaryCleanup(true);
-  const playbackViewport = useDebouncedViewportPolicy("playback");
-  const overlayBlocksInput = useSessionSelector(
-    container.stateManager,
-    (session) => session.activeModals.length > 0,
-    (left, right) => left === right,
-  );
-  const watchTimeSummary = useSessionSelector(
-    container.stateManager,
-    (session) => session.watchTimeSummary,
-    (left, right) => left === right,
-  );
-  const commands = state.commands ?? fallbackCommandState(COMMAND_CONTEXTS.postPlayback);
-  const postPlayState = state.postPlayState ?? { kind: "mid-series" as const };
-  const canResume = Boolean(state.resumeLabel);
-  const footerActions = buildPostPlayFooterActions(postPlayState, {
-    canResume,
-    autoplayPaused: state.autoplayPaused,
-    autoskipPaused: state.autoskipPaused,
-    stopAfterCurrent: state.stopAfterCurrent,
-  });
-  const contextStrip = [
-    "post-play",
-    state.provider,
-    state.episodeLabel,
-    state.mode === "anime" ? "anime" : null,
-  ]
-    .filter((item): item is string => Boolean(item))
-    .join("  ·  ");
-  const recommendations = state.recommendationRailItems ?? [];
-  const postPlayView = buildPostPlayView({
-    title: state.title,
-    episodeLabel: state.episodeLabel ?? "",
-    nextEpisodeLabel: state.nextEpisodeLabel,
-    queueNextLabel: state.queueNextLabel,
-    resumeLabel: state.resumeLabel,
-    postPlayState,
-    recommendations,
-    totalEpisodes: state.totalEpisodes,
-    watchedEpisodes: state.watchedEpisodes,
-    currentSeason: state.currentSeason ?? state.season,
-    titleDetail: state.titleDetail,
-    autoplayPaused: state.autoplayPaused,
-    autoskipPaused: state.autoskipPaused,
-    stopAfterCurrent: state.stopAfterCurrent,
-  });
-  const [selectedActionIndex, setSelectedActionIndex] = useState(0);
-  // Reset the highlighted action when the post-play context changes. Done inline
-  // during render with a prev-key compare (React's "adjust state on prop change"
-  // pattern) rather than a useEffect, which would commit a stale selection first
-  // and force an extra render. See react.dev/learn/you-might-not-need-an-effect.
-  const postPlayResetKey = `${postPlayState.kind}|${state.episodeLabel ?? ""}|${state.resumeLabel ?? ""}`;
-  const [prevPostPlayResetKey, setPrevPostPlayResetKey] = useState(postPlayResetKey);
-  if (postPlayResetKey !== prevPostPlayResetKey) {
-    setPrevPostPlayResetKey(postPlayResetKey);
-    setSelectedActionIndex(0);
-  }
-
-  const openInlineTracks = useCallback(
-    async (initialSection: DecodedTrackSelection["section"]) => {
-      const stream = container.stateManager.getState().stream;
-      if (!stream) {
-        onResolve("source");
-        return;
-      }
-      const { openTracksPanel } = await import("./workflows");
-      const picked = await openTracksPanel(stream, { initialSection }, container);
-      if (picked) {
-        onResolve({ type: "track-selection", pick: picked });
-      }
-    },
-    [container, onResolve],
-  );
-
-  const resolvePostPlayAction = useCallback(
-    (result: PlaybackShellResult) => {
-      if (
-        result === "source" ||
-        result === "quality" ||
-        result === "audio" ||
-        result === "subtitle"
-      ) {
-        void openInlineTracks(
-          result === "source"
-            ? "source"
-            : result === "quality"
-              ? "quality"
-              : result === "audio"
-                ? "audio"
-                : "subtitle",
-        );
-        return;
-      }
-      // Flip to the playback surface before unmounting post-play so the root shell
-      // never flashes the idle/home screen between menu close and resolve restart.
-      if (isPostPlayPlaybackRestartResult(result)) {
-        container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          detail: result === "resume" ? "Resuming playback" : "Preparing playback",
-        });
-      }
-      onResolve(result);
-    },
-    [container.stateManager, onResolve, openInlineTracks],
-  );
-
-  const runSelectedPostPlayAction = useCallback(() => {
-    const action = postPlayView.actions[selectedActionIndex];
-    if (!action) return;
-    const resolved = resolvePostPlayMenuAction(action);
-    if (resolved) {
-      resolvePostPlayAction(resolved);
-    }
-  }, [resolvePostPlayAction, postPlayView.actions, selectedActionIndex]);
-
-  return (
-    <ShellFrame
-      eyebrow={APP_LABEL}
-      title={state.title}
-      subtitle={contextStrip}
-      status={state.status}
-      footerTask="Post-play"
-      footerActions={footerActions}
-      footerMode="minimal"
-      commands={commands}
-      inputLocked={overlayBlocksInput}
-      escapeAction="back-to-results"
-      onUnhandledInput={(input, key) => {
-        // No overlay re-check here: ShellFrame already suppresses onUnhandledInput
-        // while `inputLocked` (= overlayBlocksInput) is set — proven by
-        // shell-frame-input-bridge.test.tsx. The resolver below still receives
-        // `blockedByOverlay` as a defensive pure-function guard for direct callers.
-        if (key.upArrow || input === "k") {
-          setSelectedActionIndex((index) => Math.max(0, index - 1));
-          return;
-        }
-        if (key.downArrow || input === "j") {
-          setSelectedActionIndex((index) =>
-            Math.min(Math.max(0, postPlayView.actions.length - 1), index + 1),
-          );
-          return;
-        }
-        const resolved = resolvePostPlayUnhandledInput(input, key, {
-          blockedByOverlay: overlayBlocksInput,
-          postPlayStateKind: postPlayState.kind,
-          canResume,
-          hasNextSeason:
-            postPlayState.kind === "season-finale" ? postPlayState.hasNextSeason : false,
-          selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
-          recommendationCount: recommendations.length,
-        });
-        if (!resolved) return;
-        if (resolved.type === "run-selected-action") {
-          runSelectedPostPlayAction();
-          return;
-        }
-        if (resolved.type === "recommendation") {
-          const item = recommendations[resolved.index];
-          if (item) onResolve({ type: "play-recommendation", item });
-          return;
-        }
-        if (resolved.type === "recommendation-actions") {
-          const item = recommendations[resolved.index];
-          if (item) onResolve({ type: "open-recommendation-actions", items: [item] });
-          return;
-        }
-        if (resolved.result === "source") {
-          void openInlineTracks("source");
-          return;
-        }
-        onResolve(resolved.result);
-      }}
-      onResolve={resolvePostPlayAction}
-    >
-      {playbackViewport.tooSmall ? (
-        <ResizeBlocker
-          columns={playbackViewport.columns}
-          rows={playbackViewport.rows}
-          minColumns={playbackViewport.minColumns}
-          minRows={playbackViewport.minRows}
-          message="Resize terminal for post-play controls"
-        />
-      ) : (
-        <PostPlayShell
-          title={state.title}
-          episodeLabel={state.episodeLabel ?? ""}
-          nextEpisodeLabel={state.nextEpisodeLabel}
-          queueNextLabel={state.queueNextLabel}
-          resumeLabel={state.resumeLabel}
-          postPlayState={postPlayState}
-          recommendations={recommendations}
-          totalEpisodes={state.totalEpisodes}
-          watchedEpisodes={state.watchedEpisodes}
-          currentSeason={state.currentSeason ?? state.season}
-          posterUrl={state.posterUrl}
-          nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
-          titleDetail={state.titleDetail}
-          autoplayPaused={state.autoplayPaused}
-          autoskipPaused={state.autoskipPaused}
-          stopAfterCurrent={state.stopAfterCurrent}
-          selectedActionIndex={selectedActionIndex}
-          watchTimeSummary={watchTimeSummary ?? undefined}
-        />
-      )}
-    </ShellFrame>
-  );
-}
-
-export function openPlaybackShell({
-  state,
-  container,
-}: {
-  state: PlaybackShellState;
-  container: Container;
-}): Promise<PlaybackShellResult> {
-  const session = mountRootContent<PlaybackShellResult>({
-    kind: state.postPlayState ? "post-playback" : "playback",
-    renderContent: (finish) => (
-      <PlaybackShell container={container} state={state} onResolve={finish} />
-    ),
-    fallbackValue: "quit",
-  });
-
-  return session.result;
 }
 
 type ListShellActionResult = {

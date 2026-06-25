@@ -1,5 +1,5 @@
 import { detectImageCapability } from "@/image";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { recordPosterFetch } from "./diagnostics/render-trace";
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
@@ -47,8 +47,21 @@ export function usePlaybackPosterSurfaceCleanup(
   operation: "resolving" | "loading" | "playing",
 ): void {
   const phase = playbackPosterSurfacePhase(operation);
+  const sawBootstrapRef = useRef(false);
   useEffect(() => {
-    clearRenderedPosterImages();
+    if (phase === "bootstrap") {
+      sawBootstrapRef.current = true;
+      clearRenderedPosterImages();
+      return;
+    }
+    if (phase === "playing") {
+      if (sawBootstrapRef.current) {
+        // Loading → playing keeps the same poster in cache; clearing here caused flicker.
+        sawBootstrapRef.current = false;
+        return;
+      }
+      clearRenderedPosterImages();
+    }
   }, [phase]);
 }
 

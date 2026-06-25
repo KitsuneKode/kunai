@@ -1,3 +1,5 @@
+import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
+
 import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { selectFooterActions } from "./shell-primitives";
 import type { FooterAction, LoadingShellState } from "./types";
@@ -34,6 +36,40 @@ function footerActionFromBinding(
     primary: options.primary,
     disabled: options.disabled,
   };
+}
+
+const STARTUP_STAGE_COPY: Record<PlaybackStartupStage, string> = {
+  "episode-bootstrap-started": "Preparing episode context",
+  "timing-fetch-started": "Fetching skip timing",
+  "episode-context-ready": "Loading episode metadata",
+  "resolve-started": "Resolving provider stream",
+  "resolve-complete": "Verifying stream availability",
+  "timing-wait-started": "Waiting for skip timing",
+  "timing-ready": "Skip timing ready",
+  "stream-prepared": "Preparing media for player",
+  "media-materialized": "Media ready for playback",
+  "player-launch": "Launching player",
+  "mpv-process-started": "Starting mpv",
+  "ipc-connected": "Connected to player",
+  "player-ready": "Player ready",
+  "subtitle-attached": "Subtitles attached",
+  "first-progress": "Buffering playback",
+};
+
+/** User-facing status line for a playback startup timeline stage. */
+export function loadingStageCopy(stage: PlaybackStartupStage): string {
+  return STARTUP_STAGE_COPY[stage];
+}
+
+/** Prefer explicit playback detail; otherwise derive honest copy from startup stage. */
+export function resolveHonestLoadingStageDetail(input: {
+  readonly startupStage: PlaybackStartupStage | null;
+  readonly playbackDetail?: string | null;
+}): string | undefined {
+  const explicit = input.playbackDetail?.trim();
+  if (explicit) return explicit;
+  if (input.startupStage) return loadingStageCopy(input.startupStage);
+  return undefined;
 }
 
 export function buildLoadingFooterActions(state: LoadingShellState): readonly FooterAction[] {

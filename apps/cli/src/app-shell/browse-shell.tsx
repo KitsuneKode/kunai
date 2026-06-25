@@ -77,11 +77,12 @@ import {
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
-import { buildDetailsSheet, type DetailsSheetSeed } from "./details-sheet.model";
+import { buildDetailsSheet } from "./details-sheet.model";
 import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
+import { buildFooterActionsFromBindings } from "./keybindings";
 import {
   getBrowseChromeRows,
   getBrowseCommandPaletteMaxVisible,
@@ -134,7 +135,7 @@ function clearShellScreen() {
 }
 
 export function BrowseShell<T>({
-  mode,
+  mode: _mode,
   provider,
   initialQuery,
   initialResults,
@@ -1055,6 +1056,11 @@ export function BrowseShell<T>({
       return;
     }
 
+    if (listFocused && input.toLowerCase() === "m" && selectedOption && searchState === "ready") {
+      onResolve("menu");
+      return;
+    }
+
     const canFocusContinueInInput = canFocusIdleRows;
 
     const resolveFocusedIdleAction = (): ShellAction | null => {
@@ -1605,6 +1611,21 @@ export function BrowseShell<T>({
       )}
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       {(() => {
+        const browseBindingIds: string[] = [
+          ...(listFocused && searchState === "ready" ? ["browse-details"] : []),
+          ...(options.length > 0 && !queryDirty && searchState === "ready" && !listFocused
+            ? ["browse-details-ctrl", "browse-filter"]
+            : []),
+          "browse-mode",
+          ...(onLoadDiscovery ? ["browse-trending"] : []),
+          ...(options.length > 0 && !queryDirty
+            ? [
+                "browse-download",
+                ...(onQueueSelected ? ["browse-queue"] : []),
+                ...(onFollowSelected ? ["browse-follow"] : []),
+              ]
+            : []),
+        ];
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
             key: "enter",
@@ -1617,32 +1638,26 @@ export function BrowseShell<T>({
             label: listFocused ? "navigate · ↑ top → search" : "navigate",
             action: "search",
           },
-          ...(listFocused && searchState === "ready"
-            ? [{ key: "i", label: "details", action: "details" as const }]
-            : options.length > 0 && !queryDirty && searchState === "ready"
-              ? [
-                  { key: "^O", label: "details", action: "details" as const },
-                  { key: "ctrl+f", label: "filter", action: "filters" as const },
-                ]
-              : []),
-          {
-            key: "tab",
-            label: getCommandLabel(commands, "toggle-mode", "switch mode"),
-            action: "toggle-mode",
-          },
+          ...buildFooterActionsFromBindings("browse", {
+            ids: browseBindingIds,
+            tail: false,
+            actions: {
+              "browse-details": "details",
+              "browse-details-ctrl": "details",
+              "browse-filter": "filters",
+              "browse-mode": "toggle-mode",
+              "browse-trending": "trending",
+              "browse-download": "download",
+              "browse-queue": "playlist",
+              "browse-follow": "follow",
+            },
+            overrides: {
+              "browse-mode": {
+                label: getCommandLabel(commands, "toggle-mode", "switch mode"),
+              },
+            },
+          }),
           { key: "/", label: "commands", action: "command-mode" },
-          ...(onLoadDiscovery
-            ? [{ key: "ctrl+t", label: "trending", action: "trending" as const }]
-            : []),
-          ...(options.length > 0 && !queryDirty
-            ? [{ key: "^D", label: "download", action: "download" as const }]
-            : []),
-          ...(onQueueSelected && options.length > 0 && !queryDirty
-            ? [{ key: "q", label: "up next", action: "playlist" as const }]
-            : []),
-          ...(onFollowSelected && options.length > 0 && !queryDirty
-            ? [{ key: "w", label: "follow", action: "follow" as const }]
-            : []),
           { key: "esc", label: "clear/back", action: "quit" },
         ];
         const visibleBrowseFooterActions = selectFooterActions(

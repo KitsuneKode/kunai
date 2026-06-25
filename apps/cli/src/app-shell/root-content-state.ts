@@ -1,6 +1,9 @@
 import { clearRootContentTransitionFrame } from "@/app-shell/shell-screen-clear";
+import type { SessionState } from "@/domain/session/SessionState";
 import type { ReactElement } from "react";
 import { useSyncExternalStore } from "react";
+
+import { resolveRootShellSurface, type RootShellSurface } from "./root-shell-state";
 
 export type RootContentKind = "browse" | "loading" | "playback" | "post-playback" | "picker";
 
@@ -78,6 +81,50 @@ export function forceCloseRootContent<TResult>(value: TResult): boolean {
   if (!mount) return false;
   mount.settle(value);
   return true;
+}
+
+export type ResolvedRootContent =
+  | { readonly kind: "idle" }
+  | { readonly kind: "error" }
+  | { readonly kind: "playback" }
+  | { readonly kind: "mounted"; readonly session: RootContentSession }
+  | { readonly kind: "overlay" };
+
+export function resolveRootContentFromSession(
+  state: SessionState,
+  {
+    rootContent,
+    hasMountedScreen = false,
+  }: {
+    readonly rootContent: RootContentSession | null;
+    readonly hasMountedScreen?: boolean;
+  },
+): ResolvedRootContent {
+  const surface = resolveRootShellSurface(state, {
+    hasRootContent: Boolean(rootContent),
+    hasMountedScreen,
+  });
+  return resolvedRootContentFromSurface(surface, rootContent);
+}
+
+export function resolvedRootContentFromSurface(
+  surface: RootShellSurface,
+  rootContent: RootContentSession | null,
+): ResolvedRootContent {
+  switch (surface) {
+    case "error":
+      return { kind: "error" };
+    case "playback":
+      return { kind: "playback" };
+    case "root-content":
+      return rootContent ? { kind: "mounted", session: rootContent } : { kind: "idle" };
+    case "root-overlay":
+      return { kind: "overlay" };
+    case "mounted-screen":
+    case "idle":
+    default:
+      return { kind: "idle" };
+  }
 }
 
 export function mountRootContent<TResult>({
