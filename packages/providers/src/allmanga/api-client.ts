@@ -247,6 +247,13 @@ function extractRawSourcesFromPlaintext(
   return results;
 }
 
+function normalizeShowThumbnail(path: string | undefined): string | undefined {
+  if (!path?.trim()) return undefined;
+  const trimmed = path.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return `${ALLMANGA_EPISODE_THUMBNAIL_ORIGIN}/${trimmed.replace(/^\//, "")}`;
+}
+
 function normalizeAllMangaEpisodeThumbnail(path: string | undefined): string | undefined {
   if (!path?.trim()) return undefined;
   const trimmed = path.trim();
@@ -455,7 +462,7 @@ export async function loadShowCatalogInfo(
     episodeCount: show?.episodeCount ? Number(show.episodeCount) : undefined,
     aniListId: show?.aniListId ? Number(show.aniListId) : undefined,
     malId: show?.malId ? Number(show.malId) : undefined,
-    thumbnail: show?.thumbnail ?? undefined,
+    thumbnail: normalizeShowThumbnail(show?.thumbnail),
   };
 
   showCatalogCache.set(cacheKey, info);

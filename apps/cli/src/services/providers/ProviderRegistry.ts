@@ -109,7 +109,15 @@ export class ProviderRegistryImpl implements ProviderRegistry {
                 },
                 this.engine.createRuntimeContext(module.providerId, signal),
               );
-              return episodes ? [...episodes] : null;
+              if (!episodes) return null;
+              return episodes.map((ep) => ({
+                index: ep.index,
+                label: ep.label,
+                name: ep.name,
+                detail: ep.detail,
+                previewImageUrl: ep.artwork?.thumbnailUrl,
+                totalEpisodeCount: ep.totalEpisodeCount,
+              }));
             }
           : undefined,
       });

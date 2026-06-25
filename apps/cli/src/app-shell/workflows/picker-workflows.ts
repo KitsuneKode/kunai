@@ -220,6 +220,7 @@ export async function openAnimeEpisodeListPicker(
         value: String(episode.index),
         label: episode.label,
         detail: episode.detail,
+        previewImageUrl: episode.previewImageUrl,
         tone: episode.index === currentEpisode ? "info" : undefined,
         badge: episode.index === currentEpisode ? "current" : undefined,
       })),
