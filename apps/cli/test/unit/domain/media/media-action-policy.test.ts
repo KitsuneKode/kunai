@@ -91,4 +91,20 @@ test("attention actions respect explicit follow preference", () => {
   expect(muted).toContain("unfollow");
   expect(muted).not.toContain("mute");
   expect(muted).not.toContain("follow");
+
+  const mutedActions = getMediaActions({
+    item,
+    context: {
+      surface: "history",
+      playbackActive: false,
+      downloadsEnabled: true,
+      playlistsEnabled: true,
+      followEnabled: true,
+      canDismiss: false,
+      followPreference: "muted",
+    },
+  });
+  expect(mutedActions.find((action) => action.id === "unfollow")?.label).toBe(
+    "Unmute release notices",
+  );
 });

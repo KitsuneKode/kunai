@@ -242,8 +242,8 @@ function buildManagementFacts(
 
   if (optionContext?.inUpNextQueue) {
     facts.push({
-      label: "Up Next Queue",
-      detail: "Queued for playback · /playlist to review order",
+      label: "Up Next",
+      detail: "Queued for playback · /up-next to review order",
       tone: "info",
     });
   }

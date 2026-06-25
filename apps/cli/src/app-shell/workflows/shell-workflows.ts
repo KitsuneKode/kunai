@@ -2,10 +2,13 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import {
+  buildPickerActionContext,
   chooseFromListShell,
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+
+export { buildPickerActionContext };
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -14,7 +17,6 @@ import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-la
 import { applyProviderPickerSelection } from "@/app/playback/playback-provider-switch";
 import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
-import { effectiveFooterHints } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
@@ -66,7 +68,6 @@ import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storag
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
-import { resolveCommands } from "../commands";
 import { buildDiagnosticsPanelLines } from "../panel-data";
 import { openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
@@ -697,28 +698,6 @@ async function openIssueUrl(
 
 async function openDocsUrl(url = defaultKunaiDocsUrl()): Promise<void> {
   await openExternalUrlAndWait(url);
-}
-
-export function buildPickerActionContext({
-  container,
-  taskLabel,
-  footerMode = effectiveFooterHints(container),
-  allowed = ["settings", "history", "diagnostics", "help", "about", "quit", "downloads", "library"],
-}: {
-  container: Container;
-  taskLabel: string;
-  footerMode?: "detailed" | "minimal";
-  allowed?: readonly import("../commands").AppCommandId[];
-}): ListShellActionContext {
-  return {
-    taskLabel,
-    footerMode,
-    commands: resolveCommands(container.stateManager.getState(), allowed),
-    onAction: async (action) => {
-      const result = await handleShellAction({ action, container });
-      return typeof result === "string" ? result : "handled";
-    },
-  };
 }
 
 export type ShellWorkflowResult =
@@ -2283,7 +2262,26 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
             : "Selected playlist is empty.",
       });
     } else if (itemAction === "rename") {
-      const nextName = `Playlist ${new Date().toISOString().slice(0, 10)}`;
+      const suggestedName = `Playlist ${new Date().toISOString().slice(0, 10)}`;
+      const nextName = await chooseFromListShell({
+        title: "Rename playlist",
+        subtitle: picked.name,
+        actionContext,
+        options: [
+          {
+            value: suggestedName,
+            label: suggestedName,
+            detail:
+              suggestedName === picked.name
+                ? "Current name already matches"
+                : "Use dated playlist name",
+          },
+          { value: null, label: "Cancel" },
+        ],
+      });
+      if (!nextName || nextName === picked.name) {
+        continue;
+      }
       const renamed = durablePlaylistService.renamePlaylist(picked.id, nextName);
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
@@ -2718,7 +2716,7 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
   if (!title) {
     stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "No current title to add to queue.",
+      note: "No current title to add to Up Next.",
     });
     return "handled";
   }
@@ -2734,7 +2732,7 @@ async function handlePlaylistAdd(container: Container): Promise<"handled"> {
 
   stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
-    note: `Added "${title.name}" to queue.`,
+    note: `Added "${title.name}" to Up Next.`,
   });
   return "handled";
 }

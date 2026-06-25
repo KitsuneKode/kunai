@@ -1,8 +1,6 @@
-import { chooseFromListShell } from "@/app-shell/pickers";
+import { buildPickerActionContext, chooseFromListShell } from "@/app-shell/pickers";
 import type { Container } from "@/container";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
-
-import { buildPickerActionContext } from "./shell-workflows";
 
 export type PlaylistAddResult = {
   readonly playlistId: string;

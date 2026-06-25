@@ -42,7 +42,7 @@ describe("panel-data", () => {
       expect(lines).toContainEqual({ label: registryLine.label, detail: registryLine.detail });
     }
     expect(lines.find((line) => line.label === "/history")?.detail).toContain("watch history");
-    expect(lines.find((line) => line.label === "/wl")?.detail).toContain("watchlist");
+    expect(lines.find((line) => line.label === "/watchlist")?.detail).toContain("Watchlist");
   });
 
   test("buildAboutPanelLines includes default mode summary", () => {

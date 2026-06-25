@@ -212,7 +212,7 @@ describe("command registry contexts", () => {
     expect(resolveCommands(state, ["playlist-add"])[0]).toMatchObject({
       id: "playlist-add",
       enabled: false,
-      reason: "Select a title before adding it to the queue.",
+      reason: "Select a title before adding it to Up Next.",
     });
   });
 

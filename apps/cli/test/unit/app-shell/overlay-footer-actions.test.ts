@@ -20,7 +20,7 @@ describe("overlay footer actions", () => {
   test("history footer exposes resume, queue and tab hints", () => {
     expect(historyFooterActions().map((action) => action.label)).toEqual([
       "resume",
-      "queue",
+      "up next",
       "tabs",
       "commands",
       "close",

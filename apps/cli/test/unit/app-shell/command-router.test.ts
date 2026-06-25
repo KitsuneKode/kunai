@@ -1,10 +1,29 @@
 import { describe, expect, test } from "bun:test";
 
-import { routePlaybackShellAction, routeSearchShellAction } from "@/app-shell/command-router";
+import {
+  resolveCommandsForPaletteSurface,
+  routePlaybackShellAction,
+  routeSearchShellAction,
+} from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
 import { type OverlayState, type SessionState } from "@/domain/session/SessionState";
 
 import { createSessionStateFixture } from "../../support/session-state-fixture";
+
+describe("resolveCommandsForPaletteSurface", () => {
+  test("browse palette excludes Experimental command group by default", () => {
+    const commands = resolveCommandsForPaletteSurface(baseState(), "browse").map(
+      (command) => command.id,
+    );
+
+    expect(commands).toContain("watchlist");
+    expect(commands).toContain("up-next");
+    expect(commands).not.toContain("sync");
+    expect(commands).not.toContain("random");
+    expect(commands).not.toContain("surprise");
+    expect(commands).not.toContain("favorites");
+  });
+});
 
 describe("routePlaybackShellAction", () => {
   test("returns post-playback episode picker intent without opening a local picker", async () => {

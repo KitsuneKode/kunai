@@ -162,7 +162,7 @@ export function resolveBrowseDetailsSecondary<T>(
 
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
-const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Release follow", "Up Next Queue"]);
+const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Release follow", "Up Next"]);
 
 export type BrowseDetailsPanel = {
   title: string;
@@ -270,7 +270,7 @@ function buildDetailsActionGuidance(
   const onWatchlist = facts.managementFacts.some(
     (fact) => fact.label === "Watchlist" && fact.detail?.startsWith("On watchlist"),
   );
-  const inQueue = facts.managementFacts.some((fact) => fact.label === "Up Next Queue");
+  const inQueue = facts.managementFacts.some((fact) => fact.label === "Up Next");
   const newEpisodes = facts.releaseFacts.some(
     (fact) => fact.label === "Release" && /\d+\s+new/i.test(fact.detail ?? ""),
   );
@@ -291,7 +291,7 @@ function buildDetailsActionGuidance(
     parts.push("/follow releases");
   }
   if (!hasOffline) parts.push("/download offline");
-  if (!inQueue) parts.push("/playlist-add for Up Next Queue");
+  if (!inQueue) parts.push("/playlist-add for Up Next");
   if (newEpisodes) parts.push("/mark-watched when caught up");
   return parts.join(" · ");
 }

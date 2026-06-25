@@ -102,6 +102,10 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     ["@/app-shell/types", "@/app-shell/workflows", "../../app-shell/ink-shell"],
   ],
   [
+    "apps/cli/src/services/media-actions/create-container-media-action-router.ts",
+    ["@/app-shell/workflows/playlist-add-workflow"],
+  ],
+  [
     "apps/cli/src/services/offline/offline-library-action-router.ts",
     ["@/app-shell/pickers", "@/app-shell/workflows"],
   ],

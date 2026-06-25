@@ -631,7 +631,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "watchlist",
     label: "Watchlist",
     aliases: ["watchlist", "wl", "watch-list", "watch-later", "bookmarks"],
-    description: "View and manage the built-in Watchlist playlist",
+    description: "View and manage the built-in Watchlist",
   },
   {
     id: "favorites",
@@ -1288,7 +1288,7 @@ function resolveCommandState(
         ? { enabled: true }
         : {
             enabled: false,
-            reason: "Select a title before adding it to the queue.",
+            reason: "Select a title before adding it to Up Next.",
           };
 
     case "queue-season":
