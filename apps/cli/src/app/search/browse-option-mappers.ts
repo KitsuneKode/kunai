@@ -268,21 +268,7 @@ function buildLocalEnrichmentFacts(
   });
 }
 
-function formatAnimeAvailability(result: SearchResult): string | undefined {
-  if (result.type !== "series") return undefined;
-  const audio = result.availableAudioModes?.length
-    ? `${result.availableAudioModes.join("/")} audio`
-    : null;
-  const subtitles =
-    result.subtitleAvailability === "hardsub"
-      ? "hardsub available"
-      : result.subtitleAvailability === "softsub"
-        ? "soft subs available"
-        : null;
-  return [audio, subtitles].filter(Boolean).join(" · ") || undefined;
-}
-
-function describeSearchResultAvailability(result: SearchResult): string {
+export function describeSearchResultAvailability(result: SearchResult): string {
   const audio = result.availableAudioModes?.length
     ? `${result.availableAudioModes.join("/")} audio available`
     : "audio availability unknown until resolve";
@@ -293,6 +279,20 @@ function describeSearchResultAvailability(result: SearchResult): string {
         ? "soft subtitle evidence from provider search"
         : "subtitle availability unknown until resolve";
   return `${audio}  ·  ${subtitles}`;
+}
+
+function formatAnimeAvailability(result: SearchResult): string | undefined {
+  if (result.type !== "series") return undefined;
+  const audio = result.availableAudioModes?.length
+    ? `${result.availableAudioModes.join("/")} audio`
+    : "audio unknown";
+  const subtitles =
+    result.subtitleAvailability === "hardsub"
+      ? "hardsub available"
+      : result.subtitleAvailability === "softsub"
+        ? "soft subs available"
+        : "subs unknown";
+  return `${audio} · ${subtitles}`;
 }
 
 export function chooseSearchResultTitle(

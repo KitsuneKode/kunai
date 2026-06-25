@@ -22,7 +22,7 @@ describe("toBrowseResultOption", () => {
       label: "Demon Slayer (2019)",
       detail: "Series · A young swordsman joins the demon slayer corps.",
       previewTitle: "Demon Slayer",
-      previewMeta: ["Series", "2019", "26 episodes", "8.5/10 TMDB"],
+      previewMeta: ["Series", "2019", "26 episodes", "audio unknown · subs unknown", "8.5/10 TMDB"],
       previewFacts: [
         {
           label: "Watchlist",

@@ -4,6 +4,7 @@ import {
 } from "@/app/playback/playback-source-ui";
 import { formatPlaybackStreamRoute } from "@/app/playback/playback-startup-format";
 import { formatLanguageBadge, formatSourceEvidence } from "@/app/playback/track-format";
+import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import {
   describeStreamCandidateMediaDetail,
   subtitlesForStreamCandidate,
@@ -13,6 +14,7 @@ import {
   decodeCrossProviderSourceValue,
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
+import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { buildPlaybackSourceInventoryView } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type {
@@ -86,6 +88,20 @@ export type StreamSelectionIntent = {
 
 export function emptyStreamSelectionIntent(): StreamSelectionIntent {
   return { sourceId: null, streamId: null };
+}
+
+/**
+ * Skip Wyzie / external subtitle services when provider hard-sub already satisfies
+ * the configured subtitle preference and the user did not request soft subtitles.
+ */
+export function shouldSkipExternalSubtitleLookup(
+  stream: StreamInfo | null,
+  requestedSubLang: string,
+): boolean {
+  if (!stream) return true;
+  if (requestedSubLang === "interactive" || requestedSubLang === "fzf") return false;
+  if (isSubtitlePreferenceDisabled(requestedSubLang)) return true;
+  return hardSubSatisfiesSubtitlePreference(stream, requestedSubLang);
 }
 
 export function streamSelectionFromSource(sourceId: string): StreamSelectionIntent {

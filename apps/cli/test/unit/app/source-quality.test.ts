@@ -13,6 +13,7 @@ import {
   streamSelectionFromSource,
   streamSelectionFromStream,
   streamSelectionFromTrackPick,
+  shouldSkipExternalSubtitleLookup,
 } from "@/app/playback/source-quality";
 import type { StreamInfo } from "@/domain/types";
 
@@ -477,4 +478,9 @@ test("streamSelectionFromTrackPick maps each panel section to a restart intent",
   expect(
     streamSelectionFromTrackPick({ section: "subtitle", value: "https://x/sub.vtt" }),
   ).toBeNull();
+});
+
+test("shouldSkipExternalSubtitleLookup is true when hardsub satisfies preference", () => {
+  expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "en")).toBe(true);
+  expect(shouldSkipExternalSubtitleLookup(streamWithCandidates, "interactive")).toBe(false);
 });

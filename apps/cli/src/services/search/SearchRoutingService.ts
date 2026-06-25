@@ -83,8 +83,9 @@ export async function searchTitles(
         const hasNativeMetadata = normalized.some(
           (r) => r.posterPath && r.metadataSource === "AniList",
         );
+        const hasCachedAliases = normalized.some((r) => (r.titleAliases?.length ?? 0) > 0);
         const enriched =
-          context.enrichAnimeMetadata === false || hasNativeMetadata
+          context.enrichAnimeMetadata === false || hasNativeMetadata || hasCachedAliases
             ? normalized
             : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
 

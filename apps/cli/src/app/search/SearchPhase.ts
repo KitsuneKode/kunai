@@ -24,7 +24,11 @@ import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-pr
 import { loadDiscoverResults } from "@/app/discover/discover-results";
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import { loadRandomResults, loadSurpriseResults } from "@/app/discover/random-results";
-import { chooseSearchResultTitle, toBrowseResultOption } from "@/app/search/browse-option-mappers";
+import {
+  chooseSearchResultTitle,
+  describeSearchResultAvailability,
+  toBrowseResultOption,
+} from "@/app/search/browse-option-mappers";
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
@@ -64,6 +68,22 @@ export type SearchPhaseInput = {
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 
 export { SEARCH_BROWSE_COMMAND_IDS };
+
+/** Projection-only display title from cached aliases — does not hit providers. */
+export function projectSearchResultDisplayTitle(
+  result: import("@/domain/types").SearchResult,
+  titlePreference: import("@/domain/types").TitleAliasKind | "provider",
+): string {
+  return chooseSearchResultTitle(result, titlePreference);
+}
+
+export function searchResultsHaveCachedTitleAliases(
+  results: readonly import("@/domain/types").SearchResult[],
+): boolean {
+  return results.some((result) => (result.titleAliases?.length ?? 0) > 0);
+}
+
+export { describeSearchResultAvailability };
 
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
