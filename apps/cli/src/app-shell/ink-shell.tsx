@@ -1926,6 +1926,101 @@ function StatsShell({
   );
 }
 
+function TextInputShell({
+  title,
+  subtitle,
+  initialValue,
+  placeholder,
+  label,
+  onSubmit,
+  onCancel,
+}: {
+  title: string;
+  subtitle: string;
+  initialValue: string;
+  placeholder?: string;
+  label: string;
+  onSubmit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const { cols } = useShellDimensions();
+  const clearShellScreen = useCallback(() => {
+    clearShellScreenArtifacts();
+  }, []);
+
+  useInput((_input, key) => {
+    if (key.escape) {
+      onCancel();
+    }
+  });
+
+  return (
+    <Box flexDirection="column" paddingX={1} flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1}>
+        <Text bold color={palette.text}>
+          {title}
+        </Text>
+        <Text color={palette.muted}>{truncateLine(subtitle, Math.max(20, cols - 6))}</Text>
+        <InputField
+          label={label}
+          value={value}
+          onChange={setValue}
+          placeholder={placeholder}
+          hint="Enter confirms · Esc cancels"
+          onSubmit={(nextValue) => {
+            const normalized = nextValue.trim();
+            if (normalized.length > 0) {
+              onSubmit(normalized);
+            }
+          }}
+          onRedraw={clearShellScreen}
+          focus
+        />
+      </Box>
+      <ShellFooter
+        taskLabel="Enter a name and press Return to confirm"
+        actions={[
+          { key: "enter", label: "confirm", primary: true },
+          { key: "esc", label: "cancel", action: "quit" },
+        ]}
+        mode="minimal"
+      />
+    </Box>
+  );
+}
+
+export function openTextInputShell({
+  title,
+  subtitle,
+  initialValue = "",
+  placeholder,
+  label = "Name",
+}: {
+  title: string;
+  subtitle: string;
+  initialValue?: string;
+  placeholder?: string;
+  label?: string;
+}): Promise<string | null> {
+  const session = mountRootContent<string | null>({
+    kind: "picker",
+    renderContent: (finish) => (
+      <TextInputShell
+        title={title}
+        subtitle={subtitle}
+        initialValue={initialValue}
+        placeholder={placeholder}
+        label={label}
+        onSubmit={(value) => finish(value)}
+        onCancel={() => finish(null)}
+      />
+    ),
+    fallbackValue: null,
+  });
+  return session.result;
+}
+
 export function openStatsShell(container: Container): Promise<void> {
   const session = mountRootContent<undefined>({
     kind: "picker",
