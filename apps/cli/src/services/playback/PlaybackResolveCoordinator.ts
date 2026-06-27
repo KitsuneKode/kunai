@@ -1,6 +1,12 @@
 import { summarizeProviderAttemptTimeline } from "@/domain/provider/ProviderAttemptTimeline";
 import type { StreamInfo } from "@/domain/types";
 import { withDiagnosticCorrelation } from "@/services/diagnostics/correlation";
+import {
+  buildDiagnosticEvent,
+  buildRecoveryDiagnosticEvent,
+  mapFailureToRecommendedAction,
+  type DiagnosticFailureClass,
+} from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import {
@@ -117,56 +123,78 @@ export class PlaybackResolveCoordinator {
         "fresh-source-failed-using-cache": "resolve.refetch.failed.cached-fallback",
         "source-inventory-hit": "source-inventory.cache.hit",
       } as const;
-      this.deps.diagnostics.record({
-        ...input.correlation,
-        category: "cache",
-        operation: operationByType[event.type],
-        message: `Playback resolve ${event.type}`,
-        providerId: event.providerId,
-        titleId: input.title.id,
-        season: input.episode.season,
-        episode: input.episode.episode,
-      });
+      this.deps.diagnostics.record(
+        buildDiagnosticEvent({
+          category: "cache",
+          operation: operationByType[event.type],
+          stage: event.type,
+          status:
+            event.type === "cache-miss" || event.type === "cache-stale" ? "progress" : "succeeded",
+          severity: "healthy",
+          recommendedAction: "none",
+          spanFamily:
+            event.type === "source-inventory-hit" ? "source.inventory" : "provider.resolve",
+          message: `Playback resolve ${event.type}`,
+          correlation: input.correlation,
+          providerId: event.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+        }),
+      );
       return;
     }
 
     if (event.type === "cache-health-check") {
-      this.deps.diagnostics.record({
-        ...input.correlation,
-        category: "cache",
-        operation: "stream-health-check",
-        message: event.healthy
-          ? "Cached stream health check passed"
-          : "Cached stream health check failed",
-        providerId: event.providerId,
-        titleId: input.title.id,
-        season: input.episode.season,
-        episode: input.episode.episode,
-        context: {
-          strategy: event.strategy,
-          ageMs: event.ageMs,
-        },
-      });
+      this.deps.diagnostics.record(
+        buildDiagnosticEvent({
+          category: "cache",
+          operation: "stream-health-check",
+          stage: event.strategy,
+          status: event.healthy ? "succeeded" : "failed",
+          severity: event.healthy ? "healthy" : "recoverable",
+          failureClass: event.healthy ? undefined : "http",
+          recommendedAction: event.healthy ? "none" : "refresh-source",
+          spanFamily: "provider.resolve",
+          message: event.healthy
+            ? "Cached stream health check passed"
+            : "Cached stream health check failed",
+          correlation: input.correlation,
+          providerId: event.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: {
+            strategy: event.strategy,
+            ageMs: event.ageMs,
+          },
+        }),
+      );
       return;
     }
 
     if (event.type === "recovery-decision") {
       this.deps.diagnostics.record({
-        ...input.correlation,
-        category: "playback",
-        operation: "playback-recovery-decision",
+        ...buildRecoveryDiagnosticEvent({
+          operation: "playback-recovery-decision",
+          stage: event.decision,
+          status: event.userVisible ? "progress" : "skipped",
+          severity: event.userVisible ? "recoverable" : "healthy",
+          recommendedAction: event.userVisible ? "recover" : "none",
+          message: `Playback recovery decision: ${event.decision}`,
+          correlation: input.correlation,
+          providerId: event.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: {
+            decision: event.decision,
+            reason: event.reason,
+            recoveryMode: event.recoveryMode,
+            userVisible: event.userVisible,
+          },
+        }),
         level: event.userVisible ? "info" : "debug",
-        message: `Playback recovery decision: ${event.decision}`,
-        providerId: event.providerId,
-        titleId: input.title.id,
-        season: input.episode.season,
-        episode: input.episode.episode,
-        context: {
-          decision: event.decision,
-          reason: event.reason,
-          recoveryMode: event.recoveryMode,
-          userVisible: event.userVisible,
-        },
       });
       return;
     }
@@ -193,19 +221,26 @@ export class PlaybackResolveCoordinator {
     }
 
     if (event.type === "provider-resolve-started") {
-      this.deps.diagnostics.record({
-        ...input.correlation,
-        category: "provider",
-        operation: "provider.resolve.started",
-        message: "Provider resolution started",
-        providerId: event.providerId,
-        titleId: input.title.id,
-        season: input.episode.season,
-        episode: input.episode.episode,
-        context: {
-          candidateCount: event.candidateCount,
-        },
-      });
+      this.deps.diagnostics.record(
+        buildDiagnosticEvent({
+          category: "provider",
+          operation: "provider.resolve.started",
+          stage: "provider-start",
+          status: "started",
+          severity: "healthy",
+          recommendedAction: "none",
+          spanFamily: "provider.resolve",
+          message: "Provider resolution started",
+          correlation: input.correlation,
+          providerId: event.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: {
+            candidateCount: event.candidateCount,
+          },
+        }),
+      );
       return;
     }
 
@@ -234,12 +269,17 @@ export class PlaybackResolveCoordinator {
       const engineEvent = event.event;
       if (engineEvent.type === "provider-fallback-started") {
         this.deps.diagnostics.record(
-          withDiagnosticCorrelation(input.correlation, {
+          buildDiagnosticEvent({
             category: "provider",
             operation: "provider.resolve.fallback",
-            level: "warn",
+            stage: "fallback",
+            status: "progress",
+            severity: "recoverable",
+            failureClass: "unknown",
+            recommendedAction: "fallback-provider",
+            spanFamily: "provider.resolve",
             message: "Provider fallback started",
-            providerAttemptId: input.correlation?.providerAttemptId,
+            correlation: input.correlation,
             providerId: engineEvent.toProviderId,
             titleId: input.title.id,
             season: input.episode.season,
@@ -258,12 +298,19 @@ export class PlaybackResolveCoordinator {
       }
 
       this.deps.diagnostics.record(
-        withDiagnosticCorrelation(input.correlation, {
+        buildDiagnosticEvent({
           category: "provider",
           operation: "provider.resolve.attempt",
-          level: engineEvent.type === "provider-attempt-failed" ? "warn" : "debug",
+          stage: engineEvent.type,
+          status: engineEvent.type === "provider-attempt-failed" ? "failed" : "progress",
+          severity: engineEvent.type === "provider-attempt-failed" ? "recoverable" : "healthy",
+          failureClass: engineEvent.type === "provider-attempt-failed" ? "unknown" : undefined,
+          recommendedAction:
+            engineEvent.type === "provider-attempt-failed" ? "fallback-provider" : "none",
+          spanFamily: "provider.resolve",
           message: describeProviderEngineEvent(engineEvent.type),
-          providerAttemptId: input.correlation?.providerAttemptId,
+          level: engineEvent.type === "provider-attempt-failed" ? "warn" : "debug",
+          correlation: input.correlation,
           providerId: engineEvent.providerId,
           titleId: input.title.id,
           season: input.episode.season,
@@ -282,35 +329,56 @@ export class PlaybackResolveCoordinator {
       (attempt) => attempt.status === "failed",
     );
     const sourceTrace = summarizeResolveSourceTrace(result);
+    const failureClassRaw = failedAttempt?.failureClass ?? "none";
+    const failureClass =
+      failureClassRaw === "none" ? undefined : (failureClassRaw as DiagnosticFailureClass);
     this.deps.diagnostics.record(
       withDiagnosticCorrelation(input.correlation, {
-        category: "provider",
-        operation: "provider.resolve.timeline",
-        level: summary.status === "failed" ? "warn" : "info",
-        message: summary.currentUserMessage,
+        ...buildDiagnosticEvent({
+          category: "provider",
+          operation: "provider.resolve.timeline",
+          stage: summary.status,
+          status: summary.status === "failed" ? "failed" : "succeeded",
+          severity: summary.status === "failed" ? "recoverable" : "healthy",
+          failureClass,
+          recommendedAction:
+            summary.status === "failed"
+              ? mapFailureToRecommendedAction(failureClass ?? "unknown")
+              : "none",
+          message: summary.currentUserMessage,
+          spanFamily: "provider.resolve",
+          correlation: {
+            sessionId: input.correlation?.sessionId,
+            playbackCycleId: input.correlation?.playbackCycleId,
+            providerAttemptId: input.correlation?.providerAttemptId ?? summary.traceId,
+            traceId: summary.traceId,
+          },
+          subject: {
+            providerId: result.providerId,
+            titleId: input.title.id,
+          },
+          providerId: result.providerId,
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: {
+            primaryFailure: summary.primaryFailure,
+            attempts: summary.attempts.length,
+            attemptTimeline: summary.attempts.slice(0, 6).map((attempt) => ({
+              reason: attempt.reason,
+              providerId: attempt.providerId,
+              status: attempt.status,
+              failureClass: attempt.failureClass ?? null,
+              summary: attempt.userSummary ?? null,
+            })),
+            truncated: result.providerTimeline.truncated,
+            sourceAttemptCount: sourceTrace.sourceAttempts.length,
+            sourceAttempts: sourceTrace.sourceAttempts.slice(0, 8),
+            lastTraceEvent: sourceTrace.lastEvent,
+          },
+        }),
         traceId: summary.traceId,
         providerAttemptId: input.correlation?.providerAttemptId ?? summary.traceId,
-        providerId: result.providerId,
-        titleId: input.title.id,
-        season: input.episode.season,
-        episode: input.episode.episode,
-        context: {
-          status: summary.status,
-          primaryFailure: summary.primaryFailure,
-          attempts: summary.attempts.length,
-          attemptTimeline: summary.attempts.slice(0, 6).map((attempt) => ({
-            reason: attempt.reason,
-            providerId: attempt.providerId,
-            status: attempt.status,
-            failureClass: attempt.failureClass ?? null,
-            summary: attempt.userSummary ?? null,
-          })),
-          failureClass: failedAttempt?.failureClass ?? "none",
-          truncated: result.providerTimeline.truncated,
-          sourceAttemptCount: sourceTrace.sourceAttempts.length,
-          sourceAttempts: sourceTrace.sourceAttempts.slice(0, 8),
-          lastTraceEvent: sourceTrace.lastEvent,
-        },
       }),
     );
   }

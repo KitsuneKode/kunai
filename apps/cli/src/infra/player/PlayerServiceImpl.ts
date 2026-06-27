@@ -11,6 +11,10 @@ import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import { formatTimestamp } from "@/services/continuation/history-progress";
+import {
+  buildPlaybackDiagnosticEvent,
+  type DiagnosticFailureClass,
+} from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
@@ -88,22 +92,27 @@ export class PlayerServiceImpl implements PlayerService {
       startAt: options.startAt,
       resumePromptAt: options.resumePromptAt ?? 0,
     });
-    this.deps.diagnostics.record({
-      ...options.correlation,
-      category: "playback",
-      message: "Launching MPV",
-      context: {
-        title: options.displayTitle,
-        hasSubtitle: Boolean(playbackStream.subtitle),
-        streamHost: safeUrlHost(playbackStream.url),
-        subtitleHost: safeUrlHost(playbackStream.subtitle),
-        subtitleStatus: options.subtitleStatus ?? null,
-        startAt: options.startAt ?? 0,
-        resumePromptAt: options.resumePromptAt ?? 0,
-        deferredMedia: Boolean(stream.deferredLocator),
-        materializedMedia: materialized.kind,
-      },
-    });
+    this.deps.diagnostics.record(
+      buildPlaybackDiagnosticEvent({
+        operation: "mpv.launch.started",
+        status: "started",
+        severity: "healthy",
+        recommendedAction: "none",
+        message: "Launching MPV",
+        correlation: options.correlation,
+        context: {
+          title: options.displayTitle,
+          hasSubtitle: Boolean(playbackStream.subtitle),
+          streamHost: safeUrlHost(playbackStream.url),
+          subtitleHost: safeUrlHost(playbackStream.subtitle),
+          subtitleStatus: options.subtitleStatus ?? null,
+          startAt: options.startAt ?? 0,
+          resumePromptAt: options.resumePromptAt ?? 0,
+          deferredMedia: Boolean(stream.deferredLocator),
+          materializedMedia: materialized.kind,
+        },
+      }),
+    );
 
     try {
       const result =
@@ -123,26 +132,33 @@ export class PlayerServiceImpl implements PlayerService {
         lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
         lastTrustedProgressSeconds: result.lastTrustedProgressSeconds ?? 0,
       });
-      this.deps.diagnostics.record({
-        ...options.correlation,
-        category: "playback",
-        message: "MPV playback complete",
-        context: {
-          watchedSeconds: result.watchedSeconds,
-          duration: result.duration,
-          endReason: result.endReason,
-          resultSource: result.resultSource ?? "unknown",
-          playerExitedCleanly: result.playerExitedCleanly ?? false,
-          playerExitCode: result.playerExitCode ?? null,
-          playerExitSignal: result.playerExitSignal ?? null,
-          socketPathCleanedUp: result.socketPathCleanedUp ?? true,
-          lastNonZeroPositionSeconds: result.lastNonZeroPositionSeconds ?? 0,
-          lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
-          lastTrustedProgressSeconds: result.lastTrustedProgressSeconds ?? 0,
-          failureClass: classifyPlaybackFailureFromResult(result),
-          recovery: recoveryForPlaybackFailure(classifyPlaybackFailureFromResult(result)),
-        },
-      });
+      const playbackFailureClass = classifyPlaybackFailureFromResult(result);
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: "mpv.playback.completed",
+          status: result.endReason === "error" ? "failed" : "succeeded",
+          severity: result.endReason === "error" ? "recoverable" : "healthy",
+          failureClass: result.endReason === "error" ? "unknown" : undefined,
+          recommendedAction: result.endReason === "error" ? undefined : "none",
+          message: "MPV playback complete",
+          correlation: options.correlation,
+          context: {
+            watchedSeconds: result.watchedSeconds,
+            duration: result.duration,
+            endReason: result.endReason,
+            resultSource: result.resultSource ?? "unknown",
+            playerExitedCleanly: result.playerExitedCleanly ?? false,
+            playerExitCode: result.playerExitCode ?? null,
+            playerExitSignal: result.playerExitSignal ?? null,
+            socketPathCleanedUp: result.socketPathCleanedUp ?? true,
+            lastNonZeroPositionSeconds: result.lastNonZeroPositionSeconds ?? 0,
+            lastNonZeroDurationSeconds: result.lastNonZeroDurationSeconds ?? 0,
+            lastTrustedProgressSeconds: result.lastTrustedProgressSeconds ?? 0,
+            failureClass: playbackFailureClass,
+            recovery: recoveryForPlaybackFailure(playbackFailureClass),
+          },
+        }),
+      );
 
       return result;
     } catch (e) {
@@ -151,12 +167,17 @@ export class PlayerServiceImpl implements PlayerService {
         ? "mpv is required for playback. Install mpv and retry."
         : "Run / export-diagnostics and / report-issue if this keeps failing.";
       this.deps.logger.error("MPV playback failed", { error: String(e) });
-      this.deps.diagnostics.record({
-        ...options.correlation,
-        category: "playback",
-        message: "MPV playback failed",
-        context: { error: errorMessage, hint: actionableHint },
-      });
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: "mpv.playback.failed",
+          status: "failed",
+          severity: "blocked",
+          failureClass: "dependency",
+          message: "MPV playback failed",
+          correlation: options.correlation,
+          context: { error: errorMessage, hint: actionableHint },
+        }),
+      );
       return {
         watchedSeconds: 0,
         duration: 0,
@@ -384,17 +405,24 @@ export class PlayerServiceImpl implements PlayerService {
   ): (event: PlayerPlaybackEvent) => void {
     return (event) => {
       const failureClass = classifyPlaybackFailureFromEvent(event);
-      this.deps.diagnostics.record({
-        ...correlation,
-        category: "playback",
-        message: "MPV runtime event",
-        context: {
-          event: event.type,
-          ...event,
-          failureClass,
-          recovery: recoveryForPlaybackFailure(failureClass),
-        },
-      });
+      const diagnosticFailureClass = mapPlaybackFailureToDiagnosticFailure(failureClass);
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: operationForPlaybackEvent(event),
+          stage: event.type,
+          status: diagnosticFailureClass ? "failed" : "progress",
+          severity: diagnosticFailureClass ? "degraded" : "healthy",
+          failureClass: diagnosticFailureClass,
+          message: "MPV runtime event",
+          correlation,
+          context: {
+            event: event.type,
+            ...event,
+            playbackFailureClass: failureClass,
+            recovery: recoveryForPlaybackFailure(failureClass),
+          },
+        }),
+      );
       handler?.(event);
     };
   }
@@ -411,5 +439,40 @@ function safeUrlHost(url: string | null | undefined): string | null {
     return new URL(url).hostname;
   } catch {
     return null;
+  }
+}
+
+function operationForPlaybackEvent(event: PlayerPlaybackEvent): string {
+  switch (event.type) {
+    case "network-buffering":
+    case "network-sample":
+    case "stream-slow":
+    case "stream-stalled":
+      return "mpv.network.sample";
+    case "ipc-command-failed":
+    case "ipc-stalled":
+    case "mpv-in-process-reconnect":
+      return "mpv.ipc.event";
+    default:
+      return "mpv.runtime.event";
+  }
+}
+
+function mapPlaybackFailureToDiagnosticFailure(
+  failureClass: ReturnType<typeof classifyPlaybackFailureFromEvent>,
+): DiagnosticFailureClass | undefined {
+  switch (failureClass) {
+    case "none":
+      return undefined;
+    case "network-buffering":
+    case "slow-stream":
+    case "expired-stream":
+      return "http";
+    case "seek-stuck":
+      return "timeout";
+    case "ipc-stuck":
+      return "ipc";
+    default:
+      return "unknown";
   }
 }

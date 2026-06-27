@@ -9,6 +9,10 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
+import {
+  buildDiagnosticsPanelInput,
+  recordDiagnosticsPanelMemorySample,
+} from "@/app-shell/diagnostics-panel-source";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -39,13 +43,14 @@ import {
   isFinished,
   isFinished as isProgressFinished,
 } from "@/services/continuation/history-progress";
+import {
+  buildDiagnosticEvent,
+  buildDownloadDiagnosticEvent,
+  buildSearchDiagnosticEvent,
+  buildUiDiagnosticEvent,
+} from "@/services/diagnostics/diagnostic-event-helpers";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
-import {
-  getRuntimeMemoryLine,
-  getRuntimeMemorySamples,
-  summarizeRuntimeMemoryTrend,
-} from "@/services/diagnostics/runtime-memory";
 import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
@@ -262,20 +267,27 @@ export async function openOfflineLibraryGroupPicker(
             ? `Integrity check passed for ${entries.length} local item(s).`
             : `Integrity check found ${issueCount} item(s) needing repair.`,
       });
-      container.diagnosticsService.record({
-        category: "download",
-        message: "Offline group integrity checked",
-        context: {
+      container.diagnosticsService.record(
+        buildDownloadDiagnosticEvent({
+          operation: "download.artifact.integrity.checked",
+          status: "succeeded",
+          severity: issueCount === 0 ? "healthy" : "recoverable",
+          recommendedAction: issueCount === 0 ? "none" : "retry-download",
+          message: "Offline group integrity checked",
           titleId: first.titleId,
-          total: entries.length,
-          issueCount,
-          statuses: statuses.map((entry) => ({
-            jobId: entry.job.id,
-            status: entry.status,
-            outputPath: entry.job.outputPath,
-          })),
-        },
-      });
+          providerId: first.providerId,
+          context: {
+            titleId: first.titleId,
+            total: entries.length,
+            issueCount,
+            statuses: statuses.map((entry) => ({
+              jobId: entry.job.id,
+              status: entry.status,
+              outputConfigured: Boolean(entry.job.outputPath),
+            })),
+          },
+        }),
+      );
       continue;
     }
     if (picked.type === "repair-missing") {
@@ -376,15 +388,22 @@ export async function openOfflineLibraryGroupPicker(
         type: "SET_PLAYBACK_FEEDBACK",
         note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
       });
-      container.diagnosticsService.record({
-        category: "search",
-        message: "Offline title requested online continuation",
-        context: {
+      container.diagnosticsService.record(
+        buildSearchDiagnosticEvent({
+          operation: "search.offline-continuation.requested",
+          status: "started",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "Offline title requested online continuation",
           titleId: first.titleId,
-          titleName: first.titleName,
-          provider: first.providerId,
-        },
-      });
+          providerId: first.providerId,
+          context: {
+            titleId: first.titleId,
+            titleName: first.titleName,
+            provider: first.providerId,
+          },
+        }),
+      );
       return;
     }
     if (picked.type === "protect-group" || picked.type === "unprotect-group") {
@@ -487,15 +506,25 @@ export async function openOfflineLibraryGroupPicker(
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Offline file unavailable: ${artifactStatus}. Check integrity first.`,
         });
-        container.diagnosticsService.record({
-          category: "download",
-          message: "Completed download playback blocked",
-          context: {
-            jobId: job.id,
-            artifactStatus,
-            outputPath: job.outputPath,
-          },
-        });
+        container.diagnosticsService.record(
+          buildDownloadDiagnosticEvent({
+            operation: "download.playback.blocked",
+            status: "skipped",
+            severity: "recoverable",
+            recommendedAction: "retry-download",
+            message: "Completed download playback blocked",
+            correlation: { downloadJobId: job.id },
+            titleId: job.titleId,
+            season: job.season,
+            episode: job.episode,
+            providerId: job.providerId,
+            context: {
+              jobId: job.id,
+              artifactStatus,
+              outputConfigured: Boolean(job.outputPath),
+            },
+          }),
+        );
         continue;
       }
       await requestUnifiedOfflinePlayback(container, job.id);
@@ -520,11 +549,25 @@ export async function openOfflineLibraryGroupPicker(
             ? `Integrity check passed: ${formatOfflineJobListingTitle(job)}`
             : `Integrity check failed: ${formatOfflineJobListingTitle(job)} is ${checkedStatus}`,
       });
-      container.diagnosticsService.record({
-        category: "download",
-        message: "Offline artifact integrity checked",
-        context: { jobId: job.id, artifactStatus: checkedStatus, outputPath: job.outputPath },
-      });
+      container.diagnosticsService.record(
+        buildDownloadDiagnosticEvent({
+          operation: "download.artifact.integrity.checked",
+          status: "succeeded",
+          severity: checkedStatus === "ready" ? "healthy" : "recoverable",
+          recommendedAction: checkedStatus === "ready" ? "none" : "retry-download",
+          message: "Offline artifact integrity checked",
+          correlation: { downloadJobId: job.id },
+          titleId: job.titleId,
+          season: job.season,
+          episode: job.episode,
+          providerId: job.providerId,
+          context: {
+            jobId: job.id,
+            artifactStatus: checkedStatus,
+            outputConfigured: Boolean(job.outputPath),
+          },
+        }),
+      );
       continue;
     }
     if (action === "retry") {
@@ -640,16 +683,23 @@ export async function queueMoreOfflineTitleEpisodes(
     { title },
     { container, signal: new AbortController().signal },
   );
-  container.diagnosticsService.record({
-    category: "download",
-    message: "Offline title download-more action completed",
-    context: {
+  container.diagnosticsService.record(
+    buildDownloadDiagnosticEvent({
+      operation: "download.offline-more.completed",
+      status: result.status === "success" ? "succeeded" : "failed",
+      severity: result.status === "success" ? "healthy" : "recoverable",
+      recommendedAction: result.status === "success" ? "none" : "retry-download",
+      message: "Offline title download-more action completed",
       titleId: first.titleId,
-      provider: first.providerId,
-      result: result.status === "success" ? result.value : result.status,
-      task: actionContext?.taskLabel,
-    },
-  });
+      providerId: first.providerId,
+      context: {
+        titleId: first.titleId,
+        provider: first.providerId,
+        result: result.status === "success" ? result.value : result.status,
+        task: actionContext?.taskLabel,
+      },
+    }),
+  );
 }
 
 async function setOfflineGroupProtection(
@@ -934,36 +984,12 @@ async function handleStaticOverlay(
 }
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
-  const { stateManager, diagnosticsService } = container;
-  const memoryLine = getRuntimeMemoryLine();
-  const memoryTrend = summarizeRuntimeMemoryTrend(getRuntimeMemorySamples());
-  diagnosticsService.record({
-    category: "runtime",
-    operation: "runtime.memory.sample",
-    message: "Runtime memory sample",
-    context: { memory: memoryLine, trend: memoryTrend.detail, source: "diagnostics-command" },
-  });
+  const { stateManager } = container;
+  recordDiagnosticsPanelMemorySample(container, "diagnostics-command");
   const { runYoutubeDiagnosticsProbes } =
     await import("@/services/youtube/youtube-diagnostics-probes");
   const youtubeProbe = await runYoutubeDiagnosticsProbes(container);
-  const lines = buildDiagnosticsPanelLines({
-    state: stateManager.getState(),
-    recentEvents: diagnosticsService.getRecent(container.debugTracePath ? 50 : 25),
-    developerMode: Boolean(container.debugTracePath),
-    memorySamples: getRuntimeMemorySamples(),
-    capabilitySnapshot: container.capabilitySnapshot,
-    youtubeProbe,
-    downloadSummary: {
-      active: container.downloadService.listActive(200).length,
-      completed: container.downloadService.listCompleted(200).length,
-      failed: container.downloadService.listFailed(200).length,
-    },
-    releaseSummary: container.releaseProgressCache.summarizeActive(),
-    releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
-    presenceSnapshot: container.presence.getSnapshot(),
-    providers: container.providerRegistry.getAll().map((provider) => provider.metadata),
-    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
-  });
+  const lines = buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container, { youtubeProbe }));
   await withOverlay(stateManager, { type: "diagnostics" }, () =>
     openStaticInfoShell({
       title: "Diagnostics",
@@ -1109,7 +1135,17 @@ async function handleClearCache(container: Container): Promise<"handled"> {
   }
   if (choice === "streams") {
     await container.cacheStore.clear();
-    container.diagnosticsService.record({ category: "cache", message: "Stream cache cleared" });
+    container.diagnosticsService.record(
+      buildDiagnosticEvent({
+        category: "cache",
+        operation: "cache.streams.cleared",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        spanFamily: "shell.overlay",
+        message: "Stream cache cleared",
+      }),
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Entire stream cache cleared. Provider failure memory was not changed.",
@@ -1120,10 +1156,17 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     await container.cacheStore.clear();
     container.providerHealth.clearAll();
     container.titleProviderHealth.clearAll();
-    container.diagnosticsService.record({
-      category: "cache",
-      message: "Stream cache and provider memory cleared",
-    });
+    container.diagnosticsService.record(
+      buildDiagnosticEvent({
+        category: "cache",
+        operation: "cache.provider-memory.cleared",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        spanFamily: "shell.overlay",
+        message: "Stream cache and provider memory cleared",
+      }),
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Stream cache and all provider failure memory cleared.",
@@ -1143,7 +1186,17 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
   });
   if (confirm) {
     container.historyRepository.clear();
-    container.diagnosticsService.record({ category: "session", message: "Watch history cleared" });
+    container.diagnosticsService.record(
+      buildDiagnosticEvent({
+        category: "session",
+        operation: "session.history.cleared",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        spanFamily: "shell.overlay",
+        message: "Watch history cleared",
+      }),
+    );
   }
   return "handled";
 }
@@ -1159,6 +1212,7 @@ async function handleExportDiagnostics(container: Container): Promise<"handled">
           selectedSubtitleUrl: state.stream.subtitle,
         })
       : null,
+    sessionState: state,
   });
   await writeAtomicJson(path, bundle);
   await pruneOldDiagnosticFiles({
@@ -1166,12 +1220,16 @@ async function handleExportDiagnostics(container: Container): Promise<"handled">
     prefix: "kunai-diagnostics-export-",
     maxFiles: 10,
   });
-  container.diagnosticsService.record({
-    category: "ui",
-    operation: "export-diagnostics",
-    message: "Diagnostics exported to file",
-    context: { path: fileName, tracePath: container.debugTracePath },
-  });
+  container.diagnosticsService.record(
+    buildUiDiagnosticEvent({
+      operation: "export-diagnostics",
+      status: "succeeded",
+      severity: "healthy",
+      recommendedAction: "none",
+      message: "Diagnostics exported to file",
+      context: { path: fileName, tracePath: container.debugTracePath },
+    }),
+  );
   return "handled";
 }
 
@@ -1206,6 +1264,7 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
             selectedSubtitleUrl: state.stream.subtitle,
           })
         : null,
+      sessionState: state,
     });
     await writeAtomicJson(path, bundle);
     const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });
@@ -1214,11 +1273,16 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
       prefix: "kunai-diagnostics-report-",
       maxFiles: 10,
     });
-    container.diagnosticsService.record({
-      category: "ui",
-      message: "Diagnostics report bundle exported",
-      context: { path: fileName, issueTitle: draft.title, tracePath: container.debugTracePath },
-    });
+    container.diagnosticsService.record(
+      buildUiDiagnosticEvent({
+        operation: "diagnostics.report.exported",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        message: "Diagnostics report bundle exported",
+        context: { path: fileName, issueTitle: draft.title, tracePath: container.debugTracePath },
+      }),
+    );
     await openIssueUrl(draft.issueUrl);
     return "handled";
   }
@@ -1332,14 +1396,19 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download unavailable: ${eligibility.reason}`,
     });
-    container.diagnosticsService.record({
-      category: "download",
-      message: "Download enqueue blocked by feature gate",
-      context: {
-        reason,
-        code: eligibility.code,
-      },
-    });
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.enqueue.blocked",
+        status: "skipped",
+        severity: "blocked",
+        recommendedAction: "open-settings",
+        message: "Download enqueue blocked by feature gate",
+        context: {
+          reason,
+          code: eligibility.code,
+        },
+      }),
+    );
     return false;
   }
 
@@ -1391,19 +1460,30 @@ export async function enqueueCurrentPlaybackDownload({
       ),
       timing,
     });
-    container.diagnosticsService.record({
-      category: "download",
-      message: "Download queued",
-      context: {
-        reason,
-        jobId: job.id,
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.enqueue.succeeded",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        message: "Download queued",
+        correlation: { downloadJobId: job.id },
+        subject: { titleId: job.titleId, providerId: job.providerId },
         titleId: job.titleId,
         season: job.season,
         episode: job.episode,
-        provider: job.providerId,
-        outputPath: job.outputPath,
-      },
-    });
+        providerId: job.providerId,
+        context: {
+          reason,
+          jobId: job.id,
+          titleId: job.titleId,
+          season: job.season,
+          episode: job.episode,
+          provider: job.providerId,
+          outputConfigured: Boolean(job.outputPath),
+        },
+      }),
+    );
     const successNote = `Download queued: ${job.titleName} S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode ?? 1).padStart(2, "0")}`;
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
@@ -1430,14 +1510,19 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download queue failed: ${message}`,
     });
-    container.diagnosticsService.record({
-      category: "download",
-      message: "Download queue failed",
-      context: {
-        reason,
-        error: message,
-      },
-    });
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.enqueue.failed",
+        status: "failed",
+        severity: "recoverable",
+        failureClass: error instanceof DownloadEnqueueRejectedError ? "dependency" : "unknown",
+        message: "Download queue failed",
+        context: {
+          reason,
+          error: message,
+        },
+      }),
+    );
     return false;
   }
 }

@@ -64,6 +64,7 @@ import {
 import type { PhaseResult } from "@/app/session/Phase";
 import type { Container } from "@/container";
 import { episodeThumbKey } from "@/domain/catalog/title-detail";
+import { resolveContentKind } from "@/domain/media/content-kind";
 import { toHistoryTimestamp } from "@/domain/playback/playback-history";
 import { didPlaybackEndNearNaturalEnd } from "@/domain/playback/playback-policy";
 import type { QuitNearEndThresholdMode } from "@/domain/playback/playback-policy";
@@ -405,6 +406,12 @@ export async function runPostPlaybackMenu(
             (option) => option.value === `${upcomingEpisode.season}:${upcomingEpisode.episode}`,
           )
         : undefined;
+      const priorEpisode = episodeAvailability.previousEpisode;
+      const previousEpisodePickerOption = priorEpisode
+        ? iteration.shellEpisodePicker.options.find(
+            (option) => option.value === `${priorEpisode.season}:${priorEpisode.episode}`,
+          )
+        : undefined;
       const episodesInCurrentSeason = iteration.shellEpisodePicker.options.filter((option) =>
         option.value.startsWith(`${currentEpisode.season}:`),
       ).length;
@@ -416,6 +423,12 @@ export async function runPostPlaybackMenu(
         upcomingEpisode && postPlayTitleDetail?.artwork?.episodeThumbnails
           ? postPlayTitleDetail.artwork.episodeThumbnails[
               episodeThumbKey(upcomingEpisode.season, upcomingEpisode.episode)
+            ]
+          : undefined;
+      const previousEpisodeThumbUrl =
+        priorEpisode && postPlayTitleDetail?.artwork?.episodeThumbnails
+          ? postPlayTitleDetail.artwork.episodeThumbnails[
+              episodeThumbKey(priorEpisode.season, priorEpisode.episode)
             ]
           : undefined;
       postAction = await deps.openPlaybackShell({
@@ -458,11 +471,21 @@ export async function runPostPlaybackMenu(
             upcomingEpisode,
             nextEpisodePickerOption?.label,
           ),
+          previousEpisodeLabel: buildPostPlayNextEpisodeLabel(
+            priorEpisode,
+            previousEpisodePickerOption?.label,
+          ),
           queueNextLabel: buildPostPlayQueueNextLabel(container.queueService.peekNext()),
           nextEpisodeThumbUrl,
+          previousEpisodeThumbUrl,
           totalEpisodes: title.episodeCount ?? iteration.shellEpisodePicker.options.length,
           watchedEpisodes,
           currentSeason: currentEpisode.season,
+          currentEpisode: currentEpisode.episode,
+          contentKind: resolveContentKind(title, mode),
+          // Carry the session's captured video metadata so the post-play `video`
+          // panel keeps channel/views/length facts that were shown during playback.
+          videoMeta: container.stateManager.getState().videoMeta,
           recommendationRailItems: recommendationRailItems.slice(0, 4).map((item) => ({
             id: item.id,
             title: item.title,

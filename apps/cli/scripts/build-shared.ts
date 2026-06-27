@@ -187,6 +187,59 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 /** Soft guard for the published npm JS bundle (excludes dist/assets). */
 export const NPM_BUNDLE_BUDGET_KB = 2_560;
 
+/** Packed tarball size budget for `npm pack` (excludes gzip; npm reports packed size). */
+export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;
+
+/** Unpacked tarball size budget for `npm pack` dry-run contents. */
+export const NPM_PACK_UNPACKED_BUDGET_BYTES = 20 * 1024 * 1024;
+
+const NPM_PACK_ALLOWED_PATHS = new Set(["dist/kunai.js", "README.md", "LICENSE", "package.json"]);
+
+/** Returns a human-readable reason when a tarball path must not ship on npm. */
+export function forbiddenNpmPackPath(path: string): string | null {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.startsWith("dist/bin/") || normalized.includes("/dist/bin/")) {
+    return "compiled binaries must not ship on npm (use GitHub Releases)";
+  }
+  if (normalized.endsWith(".meta.json") || normalized.includes("/.meta.json")) {
+    return "build analyze metafiles must not ship on npm";
+  }
+  if (normalized === "dist/build-meta.json") {
+    return "build metafiles must not ship on npm";
+  }
+  if (normalized.startsWith("dist/assets/")) {
+    return null;
+  }
+  if (NPM_PACK_ALLOWED_PATHS.has(normalized)) {
+    return null;
+  }
+  return `path is not in the npm files allowlist: ${normalized}`;
+}
+
+export function assertNpmPackContents(paths: readonly string[]): void {
+  const violations = paths
+    .map((path) => ({ path, reason: forbiddenNpmPackPath(path) }))
+    .filter((entry): entry is { path: string; reason: string } => entry.reason !== null);
+  if (violations.length === 0) return;
+  const detail = violations.map((entry) => `  - ${entry.path}: ${entry.reason}`).join("\n");
+  throw new Error(`[pkg:check] npm pack includes forbidden paths:\n${detail}`);
+}
+
+export function assertNpmPackBudgets(packedBytes: number, unpackedBytes: number): void {
+  if (packedBytes > NPM_PACK_PACKED_BUDGET_BYTES) {
+    throw new Error(
+      `[pkg:check] packed tarball is ${formatBuildSize(packedBytes)} ` +
+        `(budget ${formatBuildSize(NPM_PACK_PACKED_BUDGET_BYTES)}).`,
+    );
+  }
+  if (unpackedBytes > NPM_PACK_UNPACKED_BUDGET_BYTES) {
+    throw new Error(
+      `[pkg:check] unpacked tarball is ${formatBuildSize(unpackedBytes)} ` +
+        `(budget ${formatBuildSize(NPM_PACK_UNPACKED_BUDGET_BYTES)}).`,
+    );
+  }
+}
+
 export function assertNpmBundleBudget(bytes: number): void {
   const budgetBytes = NPM_BUNDLE_BUDGET_KB * 1024;
   if (bytes <= budgetBytes) return;

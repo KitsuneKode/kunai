@@ -1,4 +1,3 @@
-import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
   classifyHistoryBucket,
@@ -18,12 +17,12 @@ import {
   formatTimestamp,
   isFinished,
 } from "@/services/continuation/history-progress";
+import { buildDiagnosticsInsight } from "@/services/diagnostics/diagnostics-insight";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import {
   formatProviderHealthBadge,
   formatProviderHealthPickerLabelSuffix,
@@ -46,130 +45,10 @@ import type { CapabilitySnapshot } from "@/ui";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import { buildHelpPanelCommandLines } from "../domain/session/command-registry";
+import { buildDiagnosticsPanelLinesFromInsight } from "./diagnostics-panel-lines";
 import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
-
-function summarizeHeaderKeys(headers: Record<string, string> | undefined): string {
-  const keys = Object.keys(headers ?? {});
-  return keys.length > 0 ? keys.join(", ") : "none";
-}
-
-function describeSubtitleState(
-  state: SessionState,
-  config?: { readonly youtubeLanguageProfile: { readonly subtitle: string } },
-): {
-  label: string;
-  tone: ShellPanelLine["tone"];
-} {
-  const subtitlePref =
-    state.mode === "anime"
-      ? state.animeLanguageProfile.subtitle
-      : state.mode === "youtube"
-        ? (config?.youtubeLanguageProfile.subtitle ?? "en")
-        : state.seriesLanguageProfile.subtitle;
-  if (subtitlePref === "none") {
-    return { label: "disabled by preference", tone: "neutral" };
-  }
-  if (!state.stream) {
-    return { label: "not resolved yet", tone: "neutral" };
-  }
-  const label = describePlaybackSubtitleStatus(state.stream, subtitlePref);
-  if (state.stream.subtitle) {
-    return { label: "attached", tone: "success" };
-  }
-  if (label.startsWith("hardsub")) {
-    return { label, tone: "success" };
-  }
-  if (state.stream.subtitleList?.length) {
-    return { label: `${state.stream.subtitleList.length} tracks available`, tone: "warning" };
-  }
-  return { label: "not found", tone: "warning" };
-}
-
-function findRecentMpvEvent(
-  recentEvents: readonly DiagnosticEvent[],
-  eventType: string,
-): DiagnosticEvent | undefined {
-  return recentEvents.find(
-    (event) => event.message === "MPV runtime event" && event.context?.event === eventType,
-  );
-}
-
-function formatMpvRuntimeDetail(event: DiagnosticEvent | undefined): string {
-  if (!event?.context) return "not observed yet";
-  const parts: string[] = [];
-  if (typeof event.context.percent === "number") {
-    parts.push(`${Math.round(event.context.percent)}%`);
-  }
-  if (typeof event.context.cacheAheadSeconds === "number") {
-    parts.push(`${event.context.cacheAheadSeconds.toFixed(1)}s cache ahead`);
-  }
-  if (typeof event.context.cacheSpeed === "number") {
-    parts.push(`${(event.context.cacheSpeed / 1024).toFixed(1)} KiB/s cache speed`);
-  }
-  if (typeof event.context.secondsWithoutProgress === "number") {
-    parts.push(`${event.context.secondsWithoutProgress}s without progress`);
-  }
-  if (typeof event.context.stallKind === "string") {
-    parts.push(`kind ${event.context.stallKind}`);
-  }
-  if (typeof event.context.secondsSeeking === "number") {
-    parts.push(`${event.context.secondsSeeking}s seeking`);
-  }
-  if (event.context.failureClass && event.context.failureClass !== "none") {
-    parts.push(`class ${String(event.context.failureClass)}`);
-  }
-  if (
-    event.context.recovery &&
-    typeof event.context.recovery === "object" &&
-    "label" in event.context.recovery
-  ) {
-    parts.push(String(event.context.recovery.label));
-  }
-  return parts.length > 0 ? parts.join("  ·  ") : JSON.stringify(event.context);
-}
-
-type DiagnosticCorrelation = {
-  readonly playbackCycleId?: string;
-  readonly providerAttemptId?: string;
-  readonly traceId?: string;
-};
-
-function findActiveCorrelation(events: readonly DiagnosticEvent[]): DiagnosticCorrelation | null {
-  for (const event of events) {
-    const correlation: DiagnosticCorrelation = {
-      playbackCycleId: event.playbackCycleId,
-      providerAttemptId: event.providerAttemptId,
-      traceId: event.traceId,
-    };
-    if (correlation.playbackCycleId || correlation.providerAttemptId || correlation.traceId) {
-      return correlation;
-    }
-  }
-  return null;
-}
-
-function compactId(value: string): string {
-  if (value.length <= 18) return value;
-  return `${value.slice(0, 8)}…${value.slice(-6)}`;
-}
-
-function formatCorrelation(correlation: DiagnosticCorrelation | null): string {
-  if (!correlation) return "no active correlation yet";
-  return [
-    correlation.playbackCycleId ? `cycle ${compactId(correlation.playbackCycleId)}` : null,
-    correlation.providerAttemptId ? `provider ${compactId(correlation.providerAttemptId)}` : null,
-    correlation.traceId ? `trace ${compactId(correlation.traceId)}` : null,
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-}
-
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(Math.round(ms / 100) / 10).toFixed(1)}s`;
-}
 
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   // Key chords are derived from the keybinding registry (single source of truth)
@@ -253,6 +132,21 @@ export function buildAboutPanelLines({
   ];
 }
 
+export type DiagnosticsPanelLineInput = {
+  state: SessionState;
+  recentEvents: readonly DiagnosticEvent[];
+  capabilitySnapshot?: CapabilitySnapshot | null;
+  downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  releaseSummary?: { titleCount: number; episodeCount: number } | null;
+  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
+  presenceSnapshot?: PresenceSnapshot | null;
+  memorySamples?: readonly RuntimeMemorySample[];
+  providers?: readonly ProviderMetadata[];
+  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  youtubeProbe?: YoutubeDiagnosticsProbe | null;
+  developerMode?: boolean;
+};
+
 export function buildDiagnosticsPanelLines({
   state,
   recentEvents,
@@ -266,52 +160,54 @@ export function buildDiagnosticsPanelLines({
   getProviderHealth,
   youtubeProbe,
   developerMode = false,
+}: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
+  const insight = buildDiagnosticsInsight({
+    state,
+    recentEvents,
+    downloadSummary,
+    releaseSummary,
+    releaseDiagnostics,
+    presenceSnapshot,
+    memorySamples,
+    getProviderHealth,
+  });
+
+  const baseLines = buildDiagnosticsPanelLinesFromInsight({ insight, developerMode });
+  const supplemental = buildDiagnosticsSupplementalLines({
+    state,
+    recentEvents,
+    capabilitySnapshot,
+    providers,
+    getProviderHealth,
+    youtubeProbe,
+    memorySamples,
+  });
+
+  if (supplemental.length === 0) return baseLines;
+
+  const healthEnd = baseLines.findIndex((line) => line.label === "─── Current Playback Evidence");
+  if (healthEnd < 0) return [...baseLines, ...supplemental];
+  return [...baseLines.slice(0, healthEnd), ...supplemental, ...baseLines.slice(healthEnd)];
+}
+
+function buildDiagnosticsSupplementalLines({
+  state,
+  recentEvents,
+  capabilitySnapshot,
+  providers,
+  getProviderHealth,
+  youtubeProbe,
+  memorySamples,
 }: {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
-  downloadSummary?: { active: number; completed: number; failed?: number } | null;
-  releaseSummary?: { titleCount: number; episodeCount: number } | null;
-  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
-  presenceSnapshot?: PresenceSnapshot | null;
-  memorySamples?: readonly RuntimeMemorySample[];
   providers?: readonly ProviderMetadata[];
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
   youtubeProbe?: YoutubeDiagnosticsProbe | null;
-  developerMode?: boolean;
-}): readonly ShellPanelLine[] {
-  const subtitleState = describeSubtitleState(state);
-  const bufferingEvent = findRecentMpvEvent(recentEvents, "network-buffering");
-  const streamStallEvent = findRecentMpvEvent(recentEvents, "stream-stalled");
-  const seekStallEvent = findRecentMpvEvent(recentEvents, "seek-stalled");
-  const ipcStallEvent = findRecentMpvEvent(recentEvents, "ipc-stalled");
-  const _presenceEvent = recentEvents.find((event) => event.category === "presence");
-  const providerTimelineEvent = recentEvents.find(
-    (event) => event.operation === "provider.resolve.timeline",
-  );
-  const playbackStartupEvent = recentEvents.find(
-    (event) => event.operation === "playback.startup.timeline",
-  );
-  const continuationEvents = recentEvents.filter(
-    (event) =>
-      event.operation === "continuation.project" || event.operation === "continuation.source",
-  );
-  const releaseReconciliationEvent = recentEvents.find(
-    (event) => event.operation === "release-reconciliation.refresh",
-  );
-  const activeCorrelation = findActiveCorrelation(recentEvents);
-  const subtitleOutcome = formatSubtitleOutcome(recentEvents);
-  const sourceInventorySummary = state.stream?.providerResolveResult
-    ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-        selectedSubtitleUrl: state.stream.subtitle,
-      })
-    : null;
-  const runtimeHealth = buildRuntimeHealthSnapshot({
-    recentEvents,
-    currentProvider: state.provider,
-    memorySamples,
-    persistedProviderHealth: getProviderHealth?.(state.provider as ProviderId),
-  });
+  memorySamples?: readonly RuntimeMemorySample[];
+}): ShellPanelLine[] {
+  const lines: ShellPanelLine[] = [];
   const providerMemoryLines =
     providers && getProviderHealth
       ? buildProviderMemoryPanelLines({
@@ -320,461 +216,57 @@ export function buildDiagnosticsPanelLines({
           mode: state.mode,
         })
       : [];
+  lines.push(...providerMemoryLines);
+
+  const runtimeHealth = buildRuntimeHealthSnapshot({
+    recentEvents,
+    currentProvider: state.provider,
+    memorySamples,
+  });
+  if (memorySamples && memorySamples.length > 0) {
+    lines.push(runtimeHealth.memoryTrend);
+  }
+
   const resolvedYoutubeProbe = youtubeProbe ?? extractYoutubeProbeFromEvents(recentEvents);
   const youtubeDiagnostics = resolvedYoutubeProbe
     ? formatYoutubeDiagnosticsDetail(resolvedYoutubeProbe)
     : null;
-  const healthSummary = buildDiagnosticsHealthSummary({
-    state,
-    recentEvents,
-    downloadSummary,
-    releaseSummary,
-    releaseDiagnostics,
-    presenceSnapshot,
-    runtimeProviderLine: runtimeHealth.provider,
-    runtimeNetworkLine: runtimeHealth.network,
-    runtimeMemoryLine: runtimeHealth.memory,
-    runtimeMemoryTrendLine: runtimeHealth.memoryTrend,
-    releaseReconciliationEvent,
-  });
+  if (youtubeDiagnostics) {
+    lines.push(
+      {
+        label: "YouTube tooling",
+        detail: youtubeDiagnostics.tooling,
+        tone: youtubeDiagnostics.toolingTone,
+      },
+      {
+        label: "Invidious metadata",
+        detail: youtubeDiagnostics.invidious,
+        tone: youtubeDiagnostics.invidiousTone,
+      },
+    );
+  }
 
-  const issueCount = healthSummary.filter(
-    (line) => line.tone === "error" || line.tone === "warning",
-  ).length;
+  if (capabilitySnapshot?.issues.length) {
+    lines.push({
+      label: "Capabilities",
+      detail: capabilitySnapshot.issues.map((issue) => issue.id).join("  ·  "),
+      tone: "warning",
+    });
+  }
 
-  const sessionVerdictTone: ShellPanelLine["tone"] = state.playbackProblem
-    ? "error"
-    : state.playbackStatus === "error"
-      ? "error"
-      : state.playbackStatus === "playing"
-        ? "success"
-        : state.playbackStatus === "loading" || state.playbackStatus === "stalled"
-          ? "warning"
-          : "neutral";
-
-  const sessionVerdictDetail = state.playbackProblem
-    ? `${state.playbackProblem.stage}  ·  ${state.playbackProblem.cause}  ·  ${state.playbackProblem.recommendedAction}`
-    : `${state.view}  ·  ${state.playbackStatus}  ·  ${state.searchResults.length} results cached`;
-
-  const providerTraceEvent = recentEvents.find(
-    (event) => event.category === "provider" && event.context?.trace,
+  const continuationEvents = recentEvents.filter(
+    (event) =>
+      event.operation === "continuation.project" || event.operation === "continuation.source",
   );
-  const providerFailed = providerTimelineEvent?.context?.status === "failed";
-  const traceStreamCandidates =
-    typeof providerTraceEvent?.context?.streamCandidates === "number"
-      ? providerTraceEvent.context.streamCandidates
-      : 0;
-  const providerVerdictTone: ShellPanelLine["tone"] = providerFailed
-    ? "error"
-    : sourceInventorySummary?.warnings.some((warning) => warning.tone === "danger")
-      ? "error"
-      : sourceInventorySummary?.warnings.length
-        ? "warning"
-        : state.stream?.url || traceStreamCandidates > 0
-          ? "success"
-          : "neutral";
-  const providerVerdictDetail = state.stream?.url
-    ? `${state.provider}  ·  stream resolved  ·  ${sourceInventorySummary ? formatSourceInventorySummary(sourceInventorySummary) : "inventory pending"}  ·  headers ${summarizeHeaderKeys(state.stream?.headers)}`
-    : providerTraceEvent
-      ? `${state.provider}  ·  ${providerTraceEvent.message}  ·  ${typeof providerTraceEvent.context?.streamCandidates === "number" ? `${providerTraceEvent.context.streamCandidates} streams` : "trace recorded"}`
-      : `${state.provider}  ·  ${formatProviderTimelineEvent(providerTimelineEvent)}`;
-
-  const networkIssue =
-    Boolean(bufferingEvent) ||
-    Boolean(streamStallEvent) ||
-    Boolean(seekStallEvent) ||
-    Boolean(ipcStallEvent) ||
-    runtimeHealth.network.tone === "error" ||
-    runtimeHealth.network.tone === "warning";
-  const networkVerdictTone: ShellPanelLine["tone"] = networkIssue ? "warning" : "success";
-  const networkVerdictDetail = networkIssue
-    ? [
-        bufferingEvent ? formatMpvRuntimeDetail(bufferingEvent) : null,
-        streamStallEvent ? formatMpvRuntimeDetail(streamStallEvent) : null,
-        seekStallEvent ? formatMpvRuntimeDetail(seekStallEvent) : null,
-        ipcStallEvent ? formatMpvRuntimeDetail(ipcStallEvent) : null,
-        runtimeHealth.network.detail,
-      ]
-        .filter((part): part is string => Boolean(part))
-        .join("  ·  ")
-    : `${runtimeHealth.network.label}: ${runtimeHealth.network.detail ?? "healthy"}`;
-
-  const startupVerdictTone: ShellPanelLine["tone"] =
-    playbackStartupEvent?.context?.stage === "first-progress"
-      ? "success"
-      : playbackStartupEvent
-        ? "info"
-        : "neutral";
-  const startupVerdictDetail = playbackStartupEvent
-    ? `${formatPlaybackStartupTimelineEvent(playbackStartupEvent)}  ·  slowest: ${findSlowestStartupStage(playbackStartupEvent)}`
-    : "No startup timeline recorded this session";
-  const sourceAttemptDetail = formatProviderSourceAttempts(providerTimelineEvent);
-
-  return [
-    {
-      label:
-        issueCount === 0 ? "Diagnostics" : `${issueCount} open issue${issueCount === 1 ? "" : "s"}`,
-      detail:
-        issueCount === 0
-          ? "Session, provider, network, and startup paths look healthy"
-          : "Review the sections below, then export if you need to share logs",
-      tone: issueCount === 0 ? "success" : issueCount > 2 ? "error" : "warning",
-    },
-    {
-      label: "Session",
-      detail: sessionVerdictDetail,
-      tone: sessionVerdictTone,
-    },
-    {
+  if (continuationEvents.length > 0) {
+    lines.push({
       label: "Continue decision",
       detail: formatContinuationDecisionTimeline(continuationEvents),
-      tone: continuationEvents.length > 0 ? "info" : "neutral",
-    },
-    {
-      label: "Mode",
-      detail: `${state.mode}  ·  correlation ${formatCorrelation(activeCorrelation)}`,
-      tone: "neutral",
-    },
-    {
-      label: "Provider",
-      detail: providerVerdictDetail,
-      tone: providerVerdictTone,
-    },
-    ...providerMemoryLines,
-    {
-      label: "Resolve trace",
-      detail: (() => {
-        const attempts = formatProviderAttemptEvidence(recentEvents);
-        if (attempts !== "no physical provider attempts yet") return attempts;
-        return formatProviderTimelineEvent(providerTimelineEvent);
-      })(),
-      tone: providerVerdictTone,
-    },
-    ...(sourceAttemptDetail
-      ? [
-          {
-            label: "Source attempts",
-            detail: sourceAttemptDetail.detail,
-            tone: sourceAttemptDetail.tone,
-          } satisfies ShellPanelLine,
-        ]
-      : []),
-    {
-      label: "Network",
-      detail: networkVerdictDetail,
-      tone: networkVerdictTone,
-    },
-    runtimeHealth.memory,
-    runtimeHealth.memoryTrend,
-    {
-      label: "Playback startup",
-      detail: startupVerdictDetail,
-      tone: startupVerdictTone,
-    },
-    {
-      label: "Subtitles",
-      detail: `${subtitleState.label}  ·  ${subtitleOutcome}`,
-      tone: subtitleState.tone,
-    },
-    {
-      label: "Downloads",
-      detail: downloadSummary
-        ? `${downloadSummary.active} active  ·  ${downloadSummary.completed} completed${
-            (downloadSummary.failed ?? 0) > 0 ? `  ·  ${downloadSummary.failed} failed` : ""
-          }`
-        : "queue idle",
-      tone: downloadSummary
-        ? (downloadSummary.failed ?? 0) > 0
-          ? "warning"
-          : downloadSummary.active > 0
-            ? "info"
-            : "success"
-        : "neutral",
-    },
-    {
-      label: "Release sync",
-      detail: formatReleaseSyncSummary(
-        releaseSummary,
-        releaseDiagnostics,
-        releaseReconciliationEvent,
-      ),
-      tone: formatReleaseSyncTone(releaseSummary, releaseDiagnostics),
-    },
-    {
-      label: "Presence",
-      detail: presenceSnapshot
-        ? `${presenceSnapshot.provider}  ·  ${presenceSnapshot.status}`
-        : "off this session",
-      tone:
-        presenceSnapshot?.status === "unavailable" || presenceSnapshot?.status === "error"
-          ? "warning"
-          : "neutral",
-    },
-    ...(youtubeDiagnostics
-      ? ([
-          {
-            label: "YouTube tooling",
-            detail: youtubeDiagnostics.tooling,
-            tone: youtubeDiagnostics.toolingTone,
-          },
-          {
-            label: "Invidious metadata",
-            detail: youtubeDiagnostics.invidious,
-            tone: youtubeDiagnostics.invidiousTone,
-          },
-        ] as const)
-      : []),
-    {
-      label: "Capabilities",
-      detail:
-        capabilitySnapshot?.issues.length && capabilitySnapshot.issues.length > 0
-          ? capabilitySnapshot.issues.map((issue) => issue.id).join("  ·  ")
-          : "Core playback tooling available",
-      tone: capabilitySnapshot?.issues.length ? "warning" : "success",
-    },
-    { label: "─── Timeline", detail: "", tone: "info" },
-    ...formatDiagnosticTimelineLines(recentEvents, developerMode ? 20 : 8),
-    { label: "─── Export", detail: "", tone: "info" },
-    { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
-    { label: "/report-issue", detail: "Open the GitHub issue template with context" },
-    {
-      label: "kunai diagnostics recent",
-      detail: "Print redacted recent events as JSONL or Markdown for agents",
-    },
-  ];
-}
-
-function formatDiagnosticTimelineLines(
-  recentEvents: readonly DiagnosticEvent[],
-  limit: number,
-): readonly ShellPanelLine[] {
-  if (recentEvents.length === 0) {
-    return [{ label: "No events", detail: "No diagnostic events recorded yet", tone: "neutral" }];
+      tone: "info",
+    });
   }
 
-  return recentEvents.slice(0, limit).map((event) => ({
-    label: `${new Date(event.timestamp).toISOString()} [${event.level}]`,
-    detail: [
-      `${event.category}.${event.operation}`,
-      event.message,
-      formatTimelineCorrelation(event),
-    ]
-      .filter(Boolean)
-      .join("  ·  "),
-    tone: event.level === "error" ? "error" : event.level === "warn" ? "warning" : "neutral",
-  }));
-}
-
-function formatTimelineCorrelation(event: DiagnosticEvent): string {
-  return [
-    event.sessionId ? `session ${compactId(event.sessionId)}` : null,
-    event.playbackCycleId ? `cycle ${compactId(event.playbackCycleId)}` : null,
-    event.providerAttemptId ? `provider ${compactId(event.providerAttemptId)}` : null,
-    event.traceId ? `trace ${compactId(event.traceId)}` : null,
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-}
-
-function buildDiagnosticsHealthSummary({
-  state,
-  recentEvents,
-  downloadSummary,
-  releaseSummary,
-  releaseDiagnostics,
-  presenceSnapshot,
-  runtimeProviderLine,
-  runtimeNetworkLine,
-  runtimeMemoryLine,
-  runtimeMemoryTrendLine,
-  releaseReconciliationEvent,
-}: {
-  state: SessionState;
-  recentEvents: readonly DiagnosticEvent[];
-  downloadSummary?: { active: number; completed: number; failed?: number } | null;
-  releaseSummary?: { titleCount: number; episodeCount: number } | null;
-  releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
-  presenceSnapshot?: PresenceSnapshot | null;
-  runtimeProviderLine: ShellPanelLine;
-  runtimeNetworkLine: ShellPanelLine;
-  runtimeMemoryLine: ShellPanelLine;
-  runtimeMemoryTrendLine: ShellPanelLine;
-  releaseReconciliationEvent?: DiagnosticEvent;
-}): readonly ShellPanelLine[] {
-  const playbackIssue = recentEvents.find(
-    (event) =>
-      event.category === "playback" &&
-      (event.level === "warn" ||
-        event.level === "error" ||
-        event.operation === "playback.refresh.cooldown"),
-  );
-  const cacheFallback = recentEvents.find(
-    (event) => event.operation === "resolve.refetch.failed.cached-fallback",
-  );
-  const failedDownloads = downloadSummary?.failed ?? 0;
-  return [
-    {
-      label: "Playback",
-      detail:
-        state.playbackProblem || playbackIssue || state.playbackStatus === "stalled"
-          ? `Needs attention  ·  ${state.playbackProblem?.userMessage ?? playbackIssue?.message ?? "Playback is stalled"}  ·  try recover or fallback`
-          : "OK  ·  no playback issue in recent events",
-      tone:
-        state.playbackProblem?.severity === "blocking"
-          ? "error"
-          : state.playbackProblem || playbackIssue || state.playbackStatus === "stalled"
-            ? "warning"
-            : "success",
-    },
-    {
-      label: "Provider",
-      detail: `${runtimeProviderLine.tone === "error" ? "Failed" : runtimeProviderLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeProviderLine.detail ?? runtimeProviderLine.label}`,
-      tone: runtimeProviderLine.tone,
-    },
-    {
-      label: "Cache",
-      detail: cacheFallback
-        ? "Needs attention  ·  fresh source unavailable; kept current playable stream"
-        : recentEvents.some((event) => event.operation === "resolve.cache.stale")
-          ? "Needs attention  ·  stale stream was detected and refreshed"
-          : recentEvents.some((event) => event.operation === "resolve.cache.hit")
-            ? "OK  ·  stream cache hit"
-            : "OK  ·  no cache issue in recent events",
-      tone: cacheFallback ? "warning" : "success",
-    },
-    {
-      label: "Discord",
-      detail: presenceSnapshot
-        ? `${presenceSnapshot.status === "error" || presenceSnapshot.status === "unavailable" ? "Needs attention" : "OK"}  ·  ${presenceSnapshot.detail}`
-        : "OK  ·  disabled or not used this session",
-      tone:
-        presenceSnapshot?.status === "error" || presenceSnapshot?.status === "unavailable"
-          ? "warning"
-          : "success",
-    },
-    {
-      label: "Downloads",
-      detail: downloadSummary
-        ? failedDownloads > 0
-          ? `Needs attention  ·  ${failedDownloads} download job${failedDownloads === 1 ? "" : "s"}`
-          : downloadSummary.active > 0
-            ? `OK  ·  ${downloadSummary.active} active job${downloadSummary.active === 1 ? "" : "s"}`
-            : "OK  ·  queue idle"
-        : "Unknown  ·  queue status unavailable",
-      tone: downloadSummary ? (failedDownloads > 0 ? "warning" : "success") : "neutral",
-    },
-    {
-      label: "Release sync",
-      detail: formatReleaseSyncSummary(
-        releaseSummary,
-        releaseDiagnostics,
-        releaseReconciliationEvent,
-      ),
-      tone: formatReleaseSyncTone(releaseSummary, releaseDiagnostics),
-    },
-    {
-      label: "Network",
-      detail: `${runtimeNetworkLine.tone === "error" ? "Failed" : runtimeNetworkLine.tone === "warning" ? "Needs attention" : "OK"}  ·  ${runtimeNetworkLine.detail ?? runtimeNetworkLine.label}`,
-      tone: runtimeNetworkLine.tone,
-    },
-    {
-      label: "Memory",
-      detail: `${runtimeMemoryLine.tone === "warning" || runtimeMemoryTrendLine.tone === "warning" ? "Watch" : "OK"}  ·  ${runtimeMemoryLine.detail ?? runtimeMemoryLine.label}`,
-      tone:
-        runtimeMemoryLine.tone === "warning" || runtimeMemoryTrendLine.tone === "warning"
-          ? "warning"
-          : runtimeMemoryLine.tone,
-    },
-  ];
-}
-
-function formatReleaseSyncSummary(
-  summary: { titleCount: number; episodeCount: number } | null | undefined,
-  diagnostics?: ReleaseProgressDiagnosticsSummary | null,
-  recentReconciliation?: DiagnosticEvent,
-): string {
-  if (!summary && !diagnostics) return "cache summary unavailable";
-
-  const parts: string[] = [];
-  if (summary && summary.episodeCount > 0) {
-    parts.push(
-      `${summary.episodeCount} new episode${summary.episodeCount === 1 ? "" : "s"} across ${summary.titleCount} tracked title${summary.titleCount === 1 ? "" : "s"}`,
-    );
-  } else {
-    parts.push("no active new-episode projections");
-  }
-
-  if (diagnostics) {
-    parts.push(`${diagnostics.trackedCount} tracked in cache`);
-    if (diagnostics.lastCheckedAt) {
-      parts.push(`last checked ${formatDiagnosticsTimestamp(diagnostics.lastCheckedAt)}`);
-    }
-    if (diagnostics.nextDueAt) {
-      parts.push(`next due ${formatDiagnosticsTimestamp(diagnostics.nextDueAt)}`);
-    }
-    if (diagnostics.dueNowCount > 0) {
-      parts.push(`${diagnostics.dueNowCount} due now`);
-    }
-    if (diagnostics.staleCount > 0) {
-      parts.push(`${diagnostics.staleCount} stale`);
-    }
-    if (diagnostics.errorTitleCount > 0) {
-      parts.push(`${diagnostics.errorTitleCount} with errors`);
-    }
-  }
-
-  const context = recentReconciliation?.context;
-  if (context) {
-    const skippedCount = context.skippedCount;
-    const fetchedCount = context.fetchedCount;
-    const trigger = context.trigger;
-    if (typeof trigger === "string") parts.push(`last run ${trigger}`);
-    if (typeof fetchedCount === "number") parts.push(`${fetchedCount} refreshed`);
-    if (typeof skippedCount === "number" && skippedCount > 0) {
-      parts.push(`${skippedCount} skipped by budget`);
-    }
-  }
-
-  return parts.join("  ·  ");
-}
-
-function formatReleaseSyncTone(
-  summary: { titleCount: number; episodeCount: number } | null | undefined,
-  diagnostics?: ReleaseProgressDiagnosticsSummary | null,
-): ShellPanelLine["tone"] {
-  if (diagnostics && (diagnostics.errorTitleCount > 0 || diagnostics.staleCount > 0)) {
-    return "warning";
-  }
-  if (summary && summary.episodeCount > 0) return "success";
-  return "neutral";
-}
-
-function formatDiagnosticsTimestamp(iso: string): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  const deltaMinutes = Math.round((Date.now() - ms) / 60_000);
-  if (deltaMinutes < 1) return "just now";
-  if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
-  const deltaHours = Math.round(deltaMinutes / 60);
-  if (deltaHours < 48) return `${deltaHours}h ago`;
-  return iso.slice(0, 10);
-}
-
-function formatProviderTimelineEvent(event: DiagnosticEvent | undefined): string {
-  if (!event) return "no provider timeline yet";
-  const attempts = event.context?.attempts;
-  const attemptTimeline = formatProviderAttemptTimeline(event.context?.attemptTimeline);
-  const failureClass = event.context?.failureClass;
-  const primaryFailure = event.context?.primaryFailure;
-  return [
-    event.message,
-    attemptTimeline,
-    typeof attempts === "number" ? `${attempts} attempts` : null,
-    typeof failureClass === "string" && failureClass !== "none" ? failureClass : null,
-    typeof primaryFailure === "string" ? primaryFailure : null,
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
+  return lines;
 }
 
 function formatContinuationDecisionTimeline(events: readonly DiagnosticEvent[]): string {
@@ -797,167 +289,6 @@ function formatContinuationDecisionTimeline(events: readonly DiagnosticEvent[]):
     `${events.length} event${events.length === 1 ? "" : "s"}`,
   ].filter(Boolean);
   return parts.join("  ·  ");
-}
-
-function formatPlaybackStartupTimelineEvent(event: DiagnosticEvent | undefined): string {
-  if (!event) return "no playback startup timeline yet";
-  return typeof event.context?.summary === "string" ? event.context.summary : event.message;
-}
-
-function findSlowestStartupStage(event: DiagnosticEvent | undefined): string {
-  if (!event?.context) return "no playback startup timing yet";
-  const timeline = event.context.timeline;
-  if (!timeline || typeof timeline !== "object" || !("marks" in timeline)) {
-    return "startup timing marks unavailable";
-  }
-  const marks = Array.isArray(timeline.marks) ? timeline.marks : [];
-  let slowest: { stage: string; deltaMs: number } | null = null;
-  for (const mark of marks) {
-    if (!mark || typeof mark !== "object") continue;
-    const record = mark as Record<string, unknown>;
-    if (typeof record.stage !== "string" || typeof record.deltaMs !== "number") continue;
-    if (!Number.isFinite(record.deltaMs)) continue;
-    if (!slowest || record.deltaMs > slowest.deltaMs) {
-      slowest = { stage: record.stage, deltaMs: record.deltaMs };
-    }
-  }
-  return slowest
-    ? `${slowest.stage} ${formatMs(slowest.deltaMs)}`
-    : "startup timing marks unavailable";
-}
-
-function formatProviderAttemptEvidence(events: readonly DiagnosticEvent[]): string {
-  const attempts = events
-    .filter(
-      (event) =>
-        event.operation === "provider.resolve.attempt" ||
-        event.operation === "provider.resolve.fallback",
-    )
-    .slice(0, 5)
-    .map((event) => {
-      const context = event.context ?? {};
-      if (event.operation === "provider.resolve.fallback") {
-        const from =
-          typeof context.fromProviderId === "string" ? context.fromProviderId : "provider";
-        const to =
-          typeof context.toProviderId === "string" ? context.toProviderId : event.providerId;
-        return `${from} -> ${to} fallback`;
-      }
-      const provider = event.providerId ?? "provider";
-      const phase = typeof context.phase === "string" ? context.phase : "changed";
-      const elapsed =
-        typeof context.elapsedMs === "number" ? ` in ${formatMs(context.elapsedMs)}` : "";
-      const failure =
-        phase === "failed" && typeof context.failureCode === "string"
-          ? ` (${context.failureCode})`
-          : "";
-      return `${provider} ${phase}${elapsed}${failure}`;
-    });
-  return attempts.length > 0 ? attempts.join("  ·  ") : "no physical provider attempts yet";
-}
-
-function formatProviderSourceAttempts(
-  event: DiagnosticEvent | undefined,
-): { detail: string; tone: ShellPanelLine["tone"] } | null {
-  const attempts = Array.isArray(event?.context?.sourceAttempts)
-    ? event.context.sourceAttempts
-    : [];
-  if (!attempts.length) return null;
-  const formatted = attempts.slice(0, 5).map(formatProviderSourceAttempt).filter(Boolean);
-  if (!formatted.length) return null;
-  const failed = attempts.some(
-    (attempt) =>
-      attempt &&
-      typeof attempt === "object" &&
-      "type" in attempt &&
-      attempt.type === "source:failed",
-  );
-  return {
-    detail: formatted.join("  ·  "),
-    tone: failed ? "warning" : "info",
-  };
-}
-
-function formatProviderSourceAttempt(attempt: unknown): string | null {
-  if (!attempt || typeof attempt !== "object") return null;
-  const record = attempt as Record<string, unknown>;
-  const type = typeof record.type === "string" ? record.type : null;
-  const sourceId = typeof record.sourceId === "string" ? record.sourceId : null;
-  const serverId =
-    typeof record.serverId === "string" || typeof record.serverId === "number"
-      ? String(record.serverId)
-      : null;
-  const failureClass =
-    typeof record.failureClass === "string" || typeof record.failureClass === "number"
-      ? String(record.failureClass)
-      : null;
-  const attemptNumber = typeof record.attempt === "number" ? `#${record.attempt}` : null;
-  const label = serverId ?? sourceId?.split(":").at(-1) ?? "source";
-  if (type === "source:failed") {
-    return [label, "failed", failureClass, attemptNumber].filter(Boolean).join(" ");
-  }
-  if (type === "source:success") {
-    return [label, "succeeded", attemptNumber].filter(Boolean).join(" ");
-  }
-  if (type === "source:start") {
-    return [label, "started", attemptNumber].filter(Boolean).join(" ");
-  }
-  return null;
-}
-
-function formatSubtitleOutcome(events: readonly DiagnosticEvent[]): string {
-  const event = events.find((candidate) => candidate.operation === "subtitle.attach.outcome");
-  if (!event?.context) return "no subtitle attachment outcome yet";
-  const outcome = typeof event.context.outcome === "string" ? event.context.outcome : "unknown";
-  const delivery = typeof event.context.delivery === "string" ? event.context.delivery : "unknown";
-  const attachedCount =
-    typeof event.context.attachedCount === "number"
-      ? `${event.context.attachedCount} attached`
-      : null;
-  return [outcome, delivery, attachedCount].filter(Boolean).join("  ·  ");
-}
-
-function formatSourceInventorySummary(
-  summary: ReturnType<typeof buildPlaybackSourceInventoryDiagnosticsSummary>,
-): string {
-  const selected = summary.selected
-    ? `${summary.selected.sourceId ?? "source?"}/${summary.selected.qualityLabel ?? "quality?"}`
-    : "none";
-  const selectedSourceHints = summary.sourceGroups.find(
-    (group) => group.state === "selected",
-  )?.hints;
-  return [
-    summary.status,
-    `selected ${selected}`,
-    selectedSourceHints?.length ? `selected source ${selectedSourceHints.join("  ·  ")}` : null,
-    `${summary.sourceGroups.length} sources`,
-    `${summary.qualityOptions.length} qualities`,
-    `${summary.languageOptions.length} languages`,
-    `${summary.subtitleOptions.length} subtitle choices`,
-    summary.warnings.length ? `${summary.warnings.length} warnings` : null,
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-}
-
-function formatProviderAttemptTimeline(value: unknown): string | null {
-  if (!Array.isArray(value)) return null;
-  const parts = value
-    .slice(0, 4)
-    .map((attempt) => {
-      if (!attempt || typeof attempt !== "object") return null;
-      const record = attempt as Record<string, unknown>;
-      const providerId = typeof record.providerId === "string" ? record.providerId : "provider";
-      const status = typeof record.status === "string" ? record.status : "unknown";
-      const failureClass =
-        typeof record.failureClass === "string" && record.failureClass !== "none"
-          ? record.failureClass
-          : null;
-      return `${providerId} ${status}${failureClass ? ` (${failureClass})` : ""}`;
-    })
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-  return parts.join(" -> ");
 }
 
 export function renderHistoryProgressBar(percentage: number): string {

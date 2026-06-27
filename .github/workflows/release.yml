@@ -39,6 +39,7 @@ permissions:
 env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_SCM_BASE: ""
 
 jobs:
   release:
@@ -49,23 +50,9 @@ jobs:
       published: ${{ steps.changesets.outputs.published }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
         with:
-          fetch-depth: 0
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Cache Bun install
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
+          turbo-cache-prefix: release
 
       - uses: actions/setup-node@v6
         with:
@@ -73,9 +60,6 @@ jobs:
 
       - name: Update npm
         run: npm install -g npm@latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Verify
         run: bun run ci
@@ -116,27 +100,12 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-monorepo
         with:
-          bun-version-file: package.json
-
-      - name: Cache Bun install
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+          turbo-cache-prefix: release-binaries
 
       - name: Build binaries
-        run: bun run build:binaries
+        run: bunx turbo run build:binaries --filter=@kitsunekode/kunai -- --jobs 2
 
       - name: Verify release binaries
         run: bash apps/cli/scripts/verify-release-binaries.sh

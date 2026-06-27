@@ -41,6 +41,36 @@ The gap is that the current panel is still mostly a flat list. It has useful fac
 
 Phase 1 upgrades the panel and its view model without requiring broad instrumentation changes.
 
+### Severity Taxonomy
+
+Diagnostics should use one shared severity vocabulary across the panel, support bundles, and tests:
+
+- `healthy`: no action needed.
+- `degraded`: the app can continue, but one subsystem is impaired.
+- `recoverable`: the current task is affected, and a user or app action can reasonably fix it.
+- `blocked`: the current task cannot continue without a different source, dependency, config, or bug fix.
+- `unknown`: Kunai does not have enough evidence to make a truthful claim.
+
+The UI may still render friendly labels such as `OK`, `Needs attention`, `Failed`, and `Unknown`, but those labels should come from this taxonomy rather than ad hoc row logic.
+
+### Next Best Action Contract
+
+Every degraded, recoverable, or blocked verdict should include one primary next action. Use a small action vocabulary so the panel, command palette, support bundle, and agents can agree:
+
+- `none`: no action needed.
+- `wait`: background work is still running.
+- `recover`: refetch the same playback intent and resume near the last trusted position.
+- `fallback-provider`: try another compatible provider/source.
+- `refresh-source`: advanced fresh-source request while preserving the current playable stream when possible.
+- `retry`: retry the failed operation.
+- `retry-download`: retry or repair a failed download job.
+- `check-dependency`: inspect missing or broken local tools such as `mpv` or `yt-dlp`.
+- `open-settings`: inspect config that may be causing the failure.
+- `export-diagnostics`: write a local redacted support bundle.
+- `report-issue`: prepare a redacted issue report.
+
+Rows should avoid generic advice like "check logs" when a more specific action is available. Example: `VidKing timed out. Try fallback provider.` is better than `Provider failed. Check diagnostics.`
+
 ### User Experience
 
 The diagnostics overlay is reorganized into these stable sections:
@@ -105,6 +135,44 @@ Add a diagnostics insight builder that converts raw events and current session s
 
 This builder should be pure and unit-tested with representative event sequences.
 
+### Diagnostic Event Envelope
+
+New instrumentation should prefer a shared event envelope over arbitrary free-form context. Not every event needs every field, but these names should be the default vocabulary:
+
+- `category`: existing diagnostic category.
+- `operation`: stable operation name, not prose.
+- `stage`: current step inside a multi-step flow.
+- `status`: `started`, `progress`, `succeeded`, `failed`, `skipped`, `cancelled`, or `timed-out`.
+- `severity`: `healthy`, `degraded`, `recoverable`, `blocked`, or `unknown` when the event represents a user-visible condition.
+- `durationMs`: elapsed time for completed work.
+- `failureClass`: stable failure family such as `timeout`, `http`, `parse`, `dependency`, `not-found`, `rate-limited`, `cancelled`, `storage`, `ipc`, or `unknown`.
+- `recommendedAction`: one value from the next-best-action contract.
+- `correlation`: session, playback cycle, provider attempt, trace, span, download job, and notification IDs when available.
+- `subject`: safe media/provider/job identity, never raw URLs or secrets.
+- `summary`: short user/developer-readable explanation.
+- `context`: small redacted supporting facts.
+
+Existing `DiagnosticEvent` fields can remain, but new helpers should make this envelope easy to emit consistently.
+
+### Flow-Level Spans
+
+Complex flows need span-like grouping so diagnostics can explain a whole operation, not just isolated rows. A span should have a start event, step events, and an end event with outcome and duration.
+
+Required span families:
+
+- `playback.startup`
+- `provider.resolve`
+- `source.inventory`
+- `subtitle.attach`
+- `download.job`
+- `recovery.attempt`
+- `cache.maintenance`
+- `search.routing`
+- `presence.session`
+- `shell.overlay`
+
+The implementation can model these as ordinary diagnostic events with shared `spanId` and stable `operation`/`stage` names; it does not need a heavyweight tracing library.
+
 ### Network Observation
 
 Network-related behavior should be observable in enough detail to explain slow, stalled, broken, or recovered playback without exposing sensitive URLs.
@@ -147,6 +215,9 @@ The implementation should enforce:
 
 - A small in-memory ring for active-session events.
 - A bounded durable ring in the cache DB, preserving the current "newest 10,000 events or 14 days" policy unless the implementation finds a safer repo-defined constant.
+- A maximum pending durable-sink queue size; when the queue is full, drop or coalesce lowest-value debug/progress events before warning/error/final outcome events.
+- Coalescing for repetitive progress samples such as mpv network samples, download progress, render/input drops, and repeated provider retry progress.
+- Sampling or throttling for high-frequency network and render events in the normal diagnostics path.
 - Best-effort asynchronous persistence through the durable sink.
 - Flush on clean shutdown and container disposal.
 - Non-blocking failure behavior: diagnostics write/read/flush failures log a warning and never block playback, search, shell input, provider resolution, or shutdown.
@@ -200,6 +271,30 @@ Phase 2 tests:
 - Redaction tests for sensitive context in new event fields.
 - Support bundle tests for readable summary, correlation summary, and privacy block.
 - Durable sink/store tests for bounded retention and flush failure behavior.
+
+## Diagnostic Quality Gates
+
+The implementation is not complete unless these gates pass:
+
+- New diagnostics tests must prove that raw stream URLs, subtitle URLs, authorization headers, cookies, tokens, request bodies, and home-directory paths are redacted or omitted.
+- Every newly instrumented major flow must have at least one success test and one failure/degraded test for its insight output.
+- The diagnostics panel must explain a provider failure without requiring `--debug`.
+- The support bundle summary must be useful before reading raw events.
+- Diagnostics record, read, export, and flush paths must not throw through user-facing search, playback, provider, shell input, or shutdown flows.
+- Memory and durable retention behavior must be covered by tests that prove events are bounded.
+- Normal progress observation must not grow memory linearly during long playback or large downloads.
+
+## Agent Implementation Guardrails
+
+Future implementation agents should work in slices and keep the contracts centralized:
+
+1. Build or extend the diagnostics insight model first.
+2. Render the diagnostics cockpit from that model second.
+3. Upgrade support bundles to reuse the same model third.
+4. Add instrumentation flow by flow, starting with provider resolve, playback startup, mpv/network, recovery, subtitle attach, and downloads/offline.
+5. Update docs and targeted captures after behavior is implemented.
+
+Do not sprinkle ad hoc `diagnostics.record(...)` calls with one-off context shapes. Add small shared helpers or adapters for repeated event families so operation names, severity, recommended actions, redaction, and correlation stay consistent.
 
 ## Rollout Plan
 

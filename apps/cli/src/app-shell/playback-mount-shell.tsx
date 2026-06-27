@@ -10,7 +10,11 @@ import {
 } from "@/app/playback/subtitle-status";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
-import { mediaLanguageProfileFor, showsEpisodeLabel } from "@/domain/media/content-kind";
+import {
+  mediaLanguageProfileFor,
+  resolveContentKind,
+  showsEpisodeLabel,
+} from "@/domain/media/content-kind";
 import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { SessionState } from "@/domain/session/SessionState";
@@ -86,7 +90,6 @@ export type PlaybackRootContentInput = {
   readonly canToggleAutoplay: boolean;
   readonly canStopAfterCurrent: boolean;
   readonly playingTitleDetail: ReturnType<typeof peekTitleDetail>;
-  readonly playingNextEpisodeThumbUrl: string | undefined;
   readonly handlers: PlaybackRootContentHandlers;
 };
 
@@ -112,7 +115,6 @@ export function buildPlaybackRootLoadingShellState(
     canGoPrevious,
     canToggleAutoplay,
     playingTitleDetail,
-    playingNextEpisodeThumbUrl,
     handlers,
   } = input;
 
@@ -121,6 +123,16 @@ export function buildPlaybackRootLoadingShellState(
     state.playbackStatus === "buffering" ||
     state.playbackStatus === "seeking" ||
     state.playbackStatus === "stalled";
+
+  const queueNextLabel = (() => {
+    const queued = container.queueService.peekNext();
+    if (!queued) return undefined;
+    const code =
+      queued.season && queued.episode
+        ? ` · S${String(queued.season).padStart(2, "0")}E${String(queued.episode).padStart(2, "0")}`
+        : "";
+    return `${queued.title}${code}`;
+  })();
 
   return {
     title: state.currentTitle?.name || "Resolving...",
@@ -227,22 +239,20 @@ export function buildPlaybackRootLoadingShellState(
     hasPreviousEpisode: state.episodeNavigation.hasPrevious,
     upNextLabel: state.episodeNavigation.hasNext
       ? state.episodeNavigation.nextLabel
-      : (() => {
-          const queued = container.queueService.peekNext();
-          if (!queued) return undefined;
-          const code =
-            queued.season && queued.episode
-              ? ` · S${String(queued.season).padStart(2, "0")}E${String(queued.episode).padStart(2, "0")}`
-              : "";
-          return `${queued.title}${code}`;
-        })(),
-    titleDetail: playingTitleDetail,
-    nextEpisodeThumbUrl: playingNextEpisodeThumbUrl,
+      : queueNextLabel,
+    queueNextLabel: state.episodeNavigation.hasNext ? undefined : queueNextLabel,
+    titleDetail: playingTitleDetail ?? undefined,
+    // The media panel resolves the next-episode still itself (season-aware, with
+    // a graceful poster fallback) from titleDetail + the next-episode label, so
+    // there is one resolution path instead of a redundant precomputed value.
     episodeLabel:
       state.currentEpisode && state.currentTitle?.type === "series"
         ? `S${String(state.currentEpisode.season).padStart(2, "0")}E${String(state.currentEpisode.episode).padStart(2, "0")}`
         : undefined,
     currentSeason: state.currentEpisode?.season,
+    currentEpisode: state.currentEpisode?.episode,
+    contentKind: resolveContentKind(state.currentTitle, state.mode),
+    videoMeta: state.videoMeta,
     onCommandAction: handlers.onCommandAction,
   };
 }
@@ -485,6 +495,7 @@ function PlaybackShell({
           title={state.title}
           episodeLabel={state.episodeLabel ?? ""}
           nextEpisodeLabel={state.nextEpisodeLabel}
+          previousEpisodeLabel={state.previousEpisodeLabel}
           queueNextLabel={state.queueNextLabel}
           resumeLabel={state.resumeLabel}
           postPlayState={postPlayState}
@@ -492,8 +503,12 @@ function PlaybackShell({
           totalEpisodes={state.totalEpisodes}
           watchedEpisodes={state.watchedEpisodes}
           currentSeason={state.currentSeason ?? state.season}
+          currentEpisode={state.currentEpisode ?? state.episode}
+          contentKind={state.contentKind}
+          videoMeta={state.videoMeta}
           posterUrl={state.posterUrl}
           nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
+          previousEpisodeThumbUrl={state.previousEpisodeThumbUrl}
           titleDetail={state.titleDetail}
           autoplayPaused={state.autoplayPaused}
           autoskipPaused={state.autoskipPaused}

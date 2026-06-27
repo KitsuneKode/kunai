@@ -3,7 +3,7 @@
 //
 // Order:
 //   1. validate entry
-//   2. clean dist/
+//   2. clean npm dist artifacts (preserve dist/bin/)
 //   3. Bun.build npm bundle (workspace packages inlined)
 //   4. metafile guard (no tests/experiments/legacy in graph)
 //   5. optional bundle budget check
@@ -51,6 +51,12 @@ async function assetBytes(): Promise<number> {
   return total;
 }
 
+async function cleanNpmDistArtifacts(): Promise<void> {
+  await rm(BIN, { force: true });
+  await rm(join(DIST, "build-meta.json"), { force: true });
+  await rm(ASSETS, { recursive: true, force: true });
+}
+
 async function main(): Promise<void> {
   const start = Date.now();
 
@@ -58,11 +64,13 @@ async function main(): Promise<void> {
     throw new Error(`[build] missing CLI entry: ${ENTRY}`);
   }
 
-  await rm(DIST, { recursive: true, force: true });
   if (clean) {
+    await rm(DIST, { recursive: true, force: true });
     console.log("[build] cleaned dist/");
     return;
   }
+
+  await cleanNpmDistArtifacts();
 
   const result = await Bun.build(npmBundleBuildOptions(ROOT, { minify: !noMinify }));
 

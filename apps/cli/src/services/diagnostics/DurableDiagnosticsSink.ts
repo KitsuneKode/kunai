@@ -22,13 +22,54 @@ export class AsyncDurableDiagnosticsSink {
   enqueue(event: DiagnosticEvent): void {
     if (this.failed) return;
 
+    if (isHighPriorityEvent(event)) {
+      this.evictCoalescableProgress();
+    }
+
+    if (
+      isCoalescableProgressEvent(event) &&
+      this.queue.some((queued) => isHighPriorityEvent(queued))
+    ) {
+      return;
+    }
+
+    if (this.coalesceProgressSample(event)) {
+      this.scheduleFlush();
+      return;
+    }
+
     if (this.queue.length >= this.maxQueueSize) {
       const dropped = this.dropBackpressureCandidate();
-      if (!dropped) return;
+      if (!dropped) {
+        if (isCoalescableProgressEvent(event)) return;
+        return;
+      }
     }
 
     this.queue.push(event);
     this.scheduleFlush();
+  }
+
+  private coalesceProgressSample(event: DiagnosticEvent): boolean {
+    if (!isCoalescableProgressEvent(event)) return false;
+    const key = progressCoalesceKey(event);
+    const existingIndex = this.queue.findIndex(
+      (queued) => isCoalescableProgressEvent(queued) && progressCoalesceKey(queued) === key,
+    );
+    if (existingIndex >= 0) {
+      this.queue[existingIndex] = event;
+      return true;
+    }
+    return false;
+  }
+
+  private evictCoalescableProgress(): void {
+    for (let index = this.queue.length - 1; index >= 0; index -= 1) {
+      const queued = this.queue[index];
+      if (queued && isCoalescableProgressEvent(queued)) {
+        this.queue.splice(index, 1);
+      }
+    }
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
@@ -83,6 +124,12 @@ export class AsyncDurableDiagnosticsSink {
   }
 
   private dropBackpressureCandidate(): boolean {
+    const progressIndex = this.queue.findIndex((event) => isCoalescableProgressEvent(event));
+    if (progressIndex >= 0) {
+      this.queue.splice(progressIndex, 1);
+      return true;
+    }
+
     const lowPriorityIndex = this.queue.findIndex(
       (event) => event.level === "debug" || event.level === "info",
     );
@@ -93,4 +140,19 @@ export class AsyncDurableDiagnosticsSink {
 
     return false;
   }
+}
+
+function isCoalescableProgressEvent(event: DiagnosticEvent): boolean {
+  if (event.level !== "debug" && event.level !== "info") return false;
+  const status = event.context?.status;
+  return status === "progress" || event.operation.endsWith(".sample");
+}
+
+function isHighPriorityEvent(event: DiagnosticEvent): boolean {
+  return event.level === "error" || event.level === "warn";
+}
+
+function progressCoalesceKey(event: DiagnosticEvent): string {
+  const stage = typeof event.context?.stage === "string" ? event.context.stage : "";
+  return `${event.category}:${event.operation}:${stage}`;
 }

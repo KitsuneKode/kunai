@@ -36,6 +36,33 @@ describe("diagnostic operation taxonomy", () => {
     });
   });
 
+  test("documents the active structured-envelope operations", () => {
+    const operations = [
+      "search.bootstrap.completed",
+      "search.query.completed",
+      "search.phase.failed",
+      "search.route.loaded",
+      "subtitle.lookup.skipped",
+      "subtitle.lookup.started",
+      "subtitle.lookup.empty",
+      "subtitle.lookup.no-selectable-url",
+      "subtitle.lookup.failed",
+      "cache.streams.cleared",
+      "cache.provider-memory.cleared",
+      "session.history.cleared",
+      "download.enqueue.blocked",
+      "download.enqueue.succeeded",
+      "download.enqueue.failed",
+      "export-diagnostics",
+      "diagnostics.report.exported",
+      "playback.phase.failed",
+    ];
+
+    for (const operation of operations) {
+      expect(getDiagnosticOperation(operation), operation).toBeDefined();
+    }
+  });
+
   test("does not duplicate operation names across categories", () => {
     const names = DIAGNOSTIC_OPERATION_CATALOG.map((entry) => entry.operation);
     expect(new Set(names).size).toBe(names.length);

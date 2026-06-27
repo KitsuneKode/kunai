@@ -2,7 +2,6 @@ import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
-import { DotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { buildLoadingFooterActions } from "./loading-shell-model";
@@ -10,7 +9,6 @@ import {
   getLoadingDisclosure,
   getLoadingShellTimerPolicy,
   getProviderResolveWaitPresentation,
-  getStageAnimationVariant,
   isPlaybackSupervisionOperation,
   normalizeLoadingIssue,
   normalizeProviderDetail,
@@ -22,12 +20,13 @@ import {
   stageLabel,
 } from "./loading-shell-runtime";
 import type { StageRailItem } from "./loading-shell-runtime";
+import { buildMediaPanel } from "./media-panel-model";
+import { MediaPanel } from "./MediaPanel";
 import { OffscreenFreeze } from "./offscreen-freeze";
-import { PlaybackPlayingRail } from "./playback-playing-rail";
-import { buildPlaybackPlayingRailView } from "./playback-playing-view";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
 import { ProgressBar } from "./primitives/ProgressBar";
+import { GlimmerLabel, SakuraBloom } from "./SakuraLoader";
 import { useShellCommandModeOpen } from "./shell-command-mode";
 import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
@@ -430,33 +429,51 @@ export const LoadingShell = React.memo(function LoadingShell({
       setMemoryPanelVisible((visible) => !visible);
     });
   });
-  const isWidePlaying = isPlaying && loadingViewport.breakpoint === "wide";
+  const isWide = loadingViewport.breakpoint === "wide";
+  const isWidePlaying = isPlaying && isWide;
+  // Show the metadata panel during bootstrap too — not only once mpv starts — so
+  // the right side is populated (poster, facts, synopsis stream in reactively)
+  // instead of an empty column while we resolve. Gate on having real content so
+  // a bare title never renders a lonely panel.
+  const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
+  const showSidePanel = isWide && (isPlaying || hasPanelContent);
   const totalPlayingWidth = Math.max(60, terminalColumns - 2);
-  const playingRailWidth = isWidePlaying
+  const sidePanelWidth = showSidePanel
     ? Math.min(36, Math.max(28, Math.floor(totalPlayingWidth * 0.27)))
     : 0;
-  const infoWidth = isWidePlaying
-    ? Math.max(28, totalPlayingWidth - playingRailWidth - 4)
+  const infoWidth = showSidePanel
+    ? Math.max(28, totalPlayingWidth - sidePanelWidth - 4)
     : Math.max(40, terminalColumns - 4);
-  const playingRailView = React.useMemo(
+  const playingPanelModel = React.useMemo(
     () =>
-      buildPlaybackPlayingRailView({
+      buildMediaPanel({
+        surface: "playing",
+        contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
         title: state.title,
         titleDetail: state.titleDetail,
+        videoMeta: state.videoMeta,
         posterUrl: state.posterUrl,
-        upNextLabel: state.upNextLabel,
-        nextEpisodeLabel: state.nextEpisodeLabel,
         currentSeason: state.currentSeason,
-        isSeries: Boolean(state.isSeriesPlayback),
+        currentEpisode: state.currentEpisode,
+        nextEpisodeLabel: state.hasNextEpisode ? state.nextEpisodeLabel : undefined,
+        nextEpisodeThumbUrl: state.nextEpisodeThumbUrl,
+        queueNextLabel: state.queueNextLabel,
+        autoplayPaused: state.autoplayPaused,
       }),
     [
+      state.contentKind,
+      state.isSeriesPlayback,
       state.title,
       state.titleDetail,
+      state.videoMeta,
       state.posterUrl,
-      state.upNextLabel,
-      state.nextEpisodeLabel,
       state.currentSeason,
-      state.isSeriesPlayback,
+      state.currentEpisode,
+      state.hasNextEpisode,
+      state.nextEpisodeLabel,
+      state.nextEpisodeThumbUrl,
+      state.queueNextLabel,
+      state.autoplayPaused,
     ],
   );
 
@@ -547,129 +564,138 @@ export const LoadingShell = React.memo(function LoadingShell({
         <Box flexDirection="column" flexGrow={1} width="100%">
           {/* ── Resolving / Loading ───────────────────────────────────────── */}
           {!isPlaying && (
-            <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
-              {/* Animation grid + stage context side-by-side */}
-              <Box flexDirection="row" marginTop={1} alignItems="flex-start">
-                <Box marginRight={2}>
-                  <OffscreenFreeze
-                    active={timerPolicy.animate}
-                    frozen={timerPolicy.freezeWhenOffscreen}
-                  >
-                    <DotMatrixLoader
-                      variant={getStageAnimationVariant(activeStage)}
-                      active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
-                      onColor={palette.accent}
-                      offColor={palette.dim}
-                    />
-                  </OffscreenFreeze>
-                </Box>
-                <Box flexDirection="column" flexGrow={1}>
-                  <Text bold color={palette.text}>
-                    {state.stageDetail || stageLabel(activeStage)}
-                  </Text>
-                  <Box marginTop={1}>
-                    <StageRail items={stageRailItems} />
-                  </Box>
-                  {/* Session toggles surfaced early so autoplay/autoskip intent is
-                      visible before playback starts (Mission card). */}
-                  <Box marginTop={1}>
-                    <Text color={palette.dim}>{"session  "}</Text>
-                    <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
-                      {state.autoskipPaused ? "autoskip off" : "autoskip on"}
-                    </Text>
-                    <Text color={palette.dim}>{" · "}</Text>
-                    <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
-                      {state.autoplayPaused ? "autoplay off" : "autoplay on"}
-                    </Text>
-                  </Box>
-                  {/* Provider context — revealed after 2s */}
-                  {disclosure.showProvider && providerDetail && (
-                    <Box marginTop={1}>
-                      <Text color={palette.dim} dimColor>
-                        {providerDetail}
-                      </Text>
-                    </Box>
-                  )}
-                  {/* Subtitle status — revealed after 2s */}
-                  {disclosure.showSubtitleStatus && state.subtitleStatus && (
-                    <Box marginTop={1}>
-                      <Text color={subtitleReady ? palette.ok : palette.accentDeep}>
-                        {state.subtitleStatus}
-                      </Text>
-                    </Box>
-                  )}
-                </Box>
-              </Box>
-
-              {/* Diagnostics strip — revealed after 5s */}
-              {disclosure.showDiagnostics && (
-                <Box flexDirection="column" marginTop={2}>
-                  {state.trace && (
-                    <Text color={palette.dim} dimColor>
-                      {state.trace}
-                    </Text>
-                  )}
-                  {shouldShowLoadingElapsed(state.operation, elapsed) && (
-                    <Text color={palette.dim} dimColor>
-                      {formatElapsed(elapsed)} elapsed
-                    </Text>
-                  )}
-                  {showStallPrompt && (
-                    <Box flexDirection="column" marginTop={1}>
-                      <Text color={statusColor("warning")} bold>
-                        Source not responding
-                      </Text>
-                      <Text color={palette.dim}>
-                        {stallRecoveryPromptDetail({
-                          canOpenDiagnostics: Boolean(state.onCommandAction),
-                        })}
-                      </Text>
-                    </Box>
-                  )}
-                  {memoryPanelVisible && memoryLine && (
-                    <Text color={palette.dim} dimColor>
-                      Memory: {memoryLine}
-                    </Text>
-                  )}
-                  {runtimeHealthLine && (
-                    <Text
-                      color={
-                        !runtimeHealthLine.tone || runtimeHealthLine.tone === "neutral"
-                          ? palette.dim
-                          : statusColor(runtimeHealthLine.tone)
-                      }
+            <Box flexDirection="row" flexGrow={1}>
+              <Box flexDirection="column" justifyContent="center" flexGrow={1} paddingY={1}>
+                {/* Signature ❀ bloom + glimmer stage label, then stage context */}
+                <Box flexDirection="row" marginTop={1} alignItems="flex-start">
+                  <Box marginRight={2}>
+                    <OffscreenFreeze
+                      active={timerPolicy.animate}
+                      frozen={timerPolicy.freezeWhenOffscreen}
                     >
-                      {runtimeHealthLine.label}: {runtimeHealthLine.detail}
+                      <SakuraBloom
+                        active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                        stalled={showStallPrompt}
+                      />
+                    </OffscreenFreeze>
+                  </Box>
+                  <Box flexDirection="column" flexGrow={1}>
+                    <GlimmerLabel
+                      label={state.stageDetail || stageLabel(activeStage)}
+                      active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                      stalled={showStallPrompt}
+                    />
+                    <Box marginTop={1}>
+                      <StageRail items={stageRailItems} />
+                    </Box>
+                    {/* Session toggles surfaced early so autoplay/autoskip intent is
+                      visible before playback starts (Mission card). */}
+                    <Box marginTop={1}>
+                      <Text color={palette.dim}>{"session  "}</Text>
+                      <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
+                        {state.autoskipPaused ? "autoskip off" : "autoskip on"}
+                      </Text>
+                      <Text color={palette.dim}>{" · "}</Text>
+                      <Text color={state.autoplayPaused ? palette.muted : palette.ok}>
+                        {state.autoplayPaused ? "autoplay off" : "autoplay on"}
+                      </Text>
+                    </Box>
+                    {/* Provider context — revealed after 2s */}
+                    {disclosure.showProvider && providerDetail && (
+                      <Box marginTop={1}>
+                        <Text color={palette.dim} dimColor>
+                          {providerDetail}
+                        </Text>
+                      </Box>
+                    )}
+                    {/* Subtitle status — revealed after 2s */}
+                    {disclosure.showSubtitleStatus && state.subtitleStatus && (
+                      <Box marginTop={1}>
+                        <Text color={subtitleReady ? palette.ok : palette.accentDeep}>
+                          {state.subtitleStatus}
+                        </Text>
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Diagnostics strip — revealed after 5s */}
+                {disclosure.showDiagnostics && (
+                  <Box flexDirection="column" marginTop={2}>
+                    {state.trace && (
+                      <Text color={palette.dim} dimColor>
+                        {state.trace}
+                      </Text>
+                    )}
+                    {shouldShowLoadingElapsed(state.operation, elapsed) && (
+                      <Text color={palette.dim} dimColor>
+                        {formatElapsed(elapsed)} elapsed
+                      </Text>
+                    )}
+                    {showStallPrompt && (
+                      <Box flexDirection="column" marginTop={1}>
+                        <Text color={statusColor("warning")} bold>
+                          Source not responding
+                        </Text>
+                        <Text color={palette.dim}>
+                          {stallRecoveryPromptDetail({
+                            canOpenDiagnostics: Boolean(state.onCommandAction),
+                          })}
+                        </Text>
+                      </Box>
+                    )}
+                    {memoryPanelVisible && memoryLine && (
+                      <Text color={palette.dim} dimColor>
+                        Memory: {memoryLine}
+                      </Text>
+                    )}
+                    {runtimeHealthLine && (
+                      <Text
+                        color={
+                          !runtimeHealthLine.tone || runtimeHealthLine.tone === "neutral"
+                            ? palette.dim
+                            : statusColor(runtimeHealthLine.tone)
+                        }
+                      >
+                        {runtimeHealthLine.label}: {runtimeHealthLine.detail}
+                      </Text>
+                    )}
+                  </Box>
+                )}
+
+                {/* Progress bar or wait message */}
+                {disclosure.showProgress && state.progress !== undefined ? (
+                  <Box marginTop={1} flexDirection="row">
+                    <ProgressBar value={state.progress} max={100} width={barWidth} />
+                    <Text color={palette.accent}> {Math.round(state.progress)}%</Text>
+                  </Box>
+                ) : disclosure.showElapsed ? (
+                  <Box marginTop={1}>
+                    <Text color={palette.dim} dimColor>
+                      {waitPresentation.message}
                     </Text>
-                  )}
-                </Box>
-              )}
+                  </Box>
+                ) : null}
 
-              {/* Progress bar or wait message */}
-              {disclosure.showProgress && state.progress !== undefined ? (
-                <Box marginTop={1} flexDirection="row">
-                  <ProgressBar value={state.progress} max={100} width={barWidth} />
-                  <Text color={palette.accent}> {Math.round(state.progress)}%</Text>
-                </Box>
-              ) : disclosure.showElapsed ? (
-                <Box marginTop={1}>
-                  <Text color={palette.dim} dimColor>
-                    {waitPresentation.message}
-                  </Text>
-                </Box>
-              ) : null}
-
-              {/* Failure / recovery surface takes priority over the bare issue
+                {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/
                   diagnostics. Falls back to the quiet warning when not a failure. */}
-              {recoveryView ? (
-                <Box marginTop={1}>
-                  <PlaybackRecoveryView model={recoveryView} state={state} width={infoWidth} />
-                </Box>
-              ) : disclosure.showIssue && loadingIssue ? (
-                <Box marginTop={1}>
-                  <Text color={palette.accentDeep}>⚠ {loadingIssue}</Text>
-                </Box>
+                {recoveryView ? (
+                  <Box marginTop={1}>
+                    <PlaybackRecoveryView model={recoveryView} state={state} width={infoWidth} />
+                  </Box>
+                ) : disclosure.showIssue && loadingIssue ? (
+                  <Box marginTop={1}>
+                    <Text color={palette.accentDeep}>⚠ {loadingIssue}</Text>
+                  </Box>
+                ) : null}
+              </Box>
+              {showSidePanel ? (
+                <MediaPanel
+                  model={playingPanelModel}
+                  railWidth={sidePanelWidth}
+                  active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                />
               ) : null}
             </Box>
           )}
@@ -826,13 +852,8 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
               </Box>
-              {isWidePlaying ? (
-                <PlaybackPlayingRail
-                  title={state.title}
-                  railWidth={playingRailWidth}
-                  view={playingRailView}
-                  nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}
-                />
+              {showSidePanel ? (
+                <MediaPanel model={playingPanelModel} railWidth={sidePanelWidth} />
               ) : null}
             </Box>
           )}

@@ -29,7 +29,8 @@
     "kunai": "dist/kunai.js"
   },
   "files": [
-    "dist",
+    "dist/kunai.js",
+    "dist/assets/**",
     "README.md",
     "LICENSE"
   ],
@@ -79,11 +80,11 @@
     "build:watch": "bun --watch run scripts/build.ts",
     "build:analyze": "KUNAI_BUILD_ANALYZE=1 bun run scripts/build.ts",
     "build:binaries": "bun run scripts/build-binaries.ts",
-    "build:binary:host": "bun run scripts/build-host-binary.ts",
+    "build:binary:host": "bun run scripts/build-host-binary.ts --skip-typecheck",
     "build:binary:host:test": "bun run scripts/build-host-binary.ts --smoke",
     "verify:binary:host": "bash scripts/verify-host-binary.sh",
     "build:prod": "bun run check && bun run build",
-    "pkg:check": "npm pack --dry-run --ignore-scripts",
+    "pkg:check": "bun run scripts/verify-npm-pack.ts",
     "release:dry-run": "bun run build:prod && bun run pkg:check",
     "link:global": "bun link",
     "unlink:global": "bun unlink",

@@ -19,7 +19,7 @@ import {
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
-import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
+import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { loadDiscoverResults } from "@/app/discover/discover-results";
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
@@ -49,6 +49,7 @@ import {
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
+import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { observeOnline } from "@/services/network/network-observation";
@@ -201,18 +202,23 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             source: search.sourceId,
             filters: searchIntent.chips,
           });
-          diagnosticsService.record({
-            category: "search",
-            message: "Bootstrap search complete",
-            context: {
-              query: searchIntent.intent.query,
-              count: results.length,
-              strategy: search.strategy,
-              source: search.sourceId,
-              filters: searchIntent.chips,
-              warnings: searchIntent.warnings,
-            },
-          });
+          diagnosticsService.record(
+            buildSearchDiagnosticEvent({
+              operation: "search.bootstrap.completed",
+              status: "succeeded",
+              severity: "healthy",
+              recommendedAction: "none",
+              message: "Bootstrap search complete",
+              context: {
+                query: searchIntent.intent.query,
+                count: results.length,
+                strategy: search.strategy,
+                source: search.sourceId,
+                filters: searchIntent.chips,
+                warnings: searchIntent.warnings,
+              },
+            }),
+          );
 
           stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
@@ -251,7 +257,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 mapped,
                 chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
               );
-              stateManager.dispatch({ type: "SELECT_TITLE", title });
+              stateManager.dispatch({
+                type: "SELECT_TITLE",
+                title,
+                videoMeta: videoMetaFromSearchResult(mapped),
+              });
               return { status: "success", value: title };
             }
           }
@@ -447,17 +457,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               source: search.sourceId,
               filters: search.evidence,
             });
-            diagnosticsService.record({
-              category: "search",
-              message: "Search complete",
-              context: {
-                query,
-                count: results.length,
-                strategy: search.strategy,
-                source: search.sourceId,
-                filters: search.evidence,
-              },
-            });
+            diagnosticsService.record(
+              buildSearchDiagnosticEvent({
+                operation: "search.query.completed",
+                status: "succeeded",
+                severity: "healthy",
+                recommendedAction: "none",
+                message: "Search complete",
+                context: {
+                  query,
+                  count: results.length,
+                  strategy: search.strategy,
+                  source: search.sourceId,
+                  filters: search.evidence,
+                },
+              }),
+            );
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
 
@@ -483,14 +498,19 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               mode,
               count: results.length,
             });
-            diagnosticsService.record({
-              category: "search",
-              message: "Discovery list loaded",
-              context: {
-                mode,
-                count: results.length,
-              },
-            });
+            diagnosticsService.record(
+              buildSearchDiagnosticEvent({
+                operation: "search.discovery.loaded",
+                status: "succeeded",
+                severity: "healthy",
+                recommendedAction: "none",
+                message: "Discovery list loaded",
+                context: {
+                  mode,
+                  count: results.length,
+                },
+              }),
+            );
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
@@ -586,14 +606,20 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 note: `Filter added: ${chip}`,
               });
             }
-            diagnosticsService.record({
-              category: "search",
-              message: chip ? "Search filter chip added" : "Search filter help opened",
-              context: {
-                chip,
-                supported: "mode, provider, downloaded, watched, year, release, sort, type, rating",
-              },
-            });
+            diagnosticsService.record(
+              buildSearchDiagnosticEvent({
+                operation: chip ? "search.filter.applied" : "search.filter.help",
+                status: chip ? "succeeded" : "skipped",
+                severity: "healthy",
+                recommendedAction: "none",
+                message: chip ? "Search filter chip added" : "Search filter help opened",
+                context: {
+                  chip,
+                  supported:
+                    "mode, provider, downloaded, watched, year, release, sort, type, rating",
+                },
+              }),
+            );
             continue;
           }
 
@@ -733,7 +759,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           chooseSearchResultTitle(selected, container.config.animeTitlePreference),
         );
 
-        stateManager.dispatch({ type: "SELECT_TITLE", title });
+        stateManager.dispatch({
+          type: "SELECT_TITLE",
+          title,
+          videoMeta: videoMetaFromSearchResult(selected),
+        });
 
         return { status: "success", value: title };
       }
@@ -742,11 +772,16 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         return { status: "cancelled" };
       }
       logger.error("Search phase error", { error: String(e) });
-      diagnosticsService.record({
-        category: "search",
-        message: "Search phase error",
-        context: { error: String(e) },
-      });
+      diagnosticsService.record(
+        buildSearchDiagnosticEvent({
+          operation: "search.phase.failed",
+          status: "failed",
+          severity: "recoverable",
+          failureClass: "unknown",
+          message: "Search phase error",
+          context: { error: String(e) },
+        }),
+      );
       return {
         status: "error",
         error: kitsuneErrorFromUnknown(e, {
@@ -810,15 +845,20 @@ async function loadSearchRoute(
     mode,
     count: results.length,
   });
-  diagnosticsService.record({
-    category: "search",
-    message: "Search route loaded",
-    context: {
-      route,
-      mode,
-      count: results.length,
-    },
-  });
+  diagnosticsService.record(
+    buildSearchDiagnosticEvent({
+      operation: "search.route.loaded",
+      status: "succeeded",
+      severity: "healthy",
+      recommendedAction: "none",
+      message: "Search route loaded",
+      context: {
+        route,
+        mode,
+        count: results.length,
+      },
+    }),
+  );
 
   return "subtitle" in bundle && typeof bundle.subtitle === "string" ? bundle.subtitle : undefined;
 }

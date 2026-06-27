@@ -29,7 +29,18 @@
     },
     "build": {
       "dependsOn": ["^typecheck", "typecheck"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/kunai.js", "dist/assets/**", "dist/build-meta.json", ".next/**", "!.next/cache/**"],
+      "env": ["KUNAI_BUILD_ANALYZE"]
+    },
+    "build:binary:host": {
+      "dependsOn": ["^typecheck", "typecheck"],
+      "outputs": ["dist/bin/kunai-*", "dist/bin/SHA256SUMS", "dist/bin/*.meta.json"],
+      "env": ["KUNAI_BUILD_ANALYZE"]
+    },
+    "build:binaries": {
+      "dependsOn": ["^typecheck", "typecheck"],
+      "outputs": ["dist/bin/**"],
+      "env": ["KUNAI_BUILD_ANALYZE"]
     },
     "check": {
       "dependsOn": ["typecheck", "lint", "fmt"],

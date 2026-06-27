@@ -35,6 +35,24 @@ export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 export type YouTubeContentShape = "video" | "playlist" | "channel";
 
+/**
+ * YouTube/video metadata captured from the originating {@link SearchResult} at
+ * launch. These fields live on `SearchResult` but NOT on `TitleInfo`, and video
+ * titles never populate a `TitleDetail`, so the session carries this snapshot to
+ * give the `video` media-panel kind a real data source during playback.
+ */
+export interface VideoMeta {
+  readonly channelTitle?: string;
+  readonly channelId?: string;
+  readonly viewCount?: number;
+  readonly publishedAt?: string;
+  readonly durationSeconds?: number;
+  readonly contentShape?: YouTubeContentShape;
+  readonly liveStatus?: YouTubeLiveStatus;
+  readonly premium?: boolean;
+  readonly paid?: boolean;
+}
+
 export interface TitleInfo {
   readonly id: string;
   readonly type: ContentType;

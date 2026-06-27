@@ -1,6 +1,7 @@
 import type { Container } from "@/container";
 import { mediaLanguageProfileFor } from "@/domain/media/content-kind";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 
 import { DownloadEnqueueRejectedError } from "./DownloadService";
 
@@ -89,11 +90,16 @@ export async function commitDownloadIntent(
 ): Promise<DownloadIntentCommitResult> {
   const eligibility = container.downloadService.getEnqueueEligibility();
   if (!eligibility.allowed) {
-    container.diagnosticsService.record({
-      category: "download",
-      message: "Download intent enqueue blocked",
-      context: { code: eligibility.code, reason: eligibility.reason },
-    });
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.intent.blocked",
+        status: "skipped",
+        severity: "blocked",
+        message: "Download intent enqueue blocked",
+        recommendedAction: "check-dependency",
+        context: { code: eligibility.code, reason: eligibility.reason },
+      }),
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download unavailable: ${eligibility.reason}`,
@@ -161,11 +167,17 @@ export async function commitDownloadIntent(
         : error instanceof Error
           ? error.message
           : String(error);
-    container.diagnosticsService.record({
-      category: "download",
-      message: "Download intent batch enqueue stopped",
-      context: { queuedCount, error: message, titleId: title.id },
-    });
+    container.diagnosticsService.record(
+      buildDownloadDiagnosticEvent({
+        operation: "download.intent.enqueue.failed",
+        status: "failed",
+        severity: queuedCount > 0 ? "recoverable" : "blocked",
+        failureClass: "storage",
+        message: "Download intent batch enqueue stopped",
+        titleId: title.id,
+        context: { queuedCount, error: message, titleId: title.id },
+      }),
+    );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note:
@@ -178,20 +190,26 @@ export async function commitDownloadIntent(
     return { status: queuedCount > 0 ? "queued" : "none", queuedCount };
   }
 
-  container.diagnosticsService.record({
-    category: "download",
-    operation: "download.profile.confirmed",
-    message: "Download intent job(s) queued",
-    context: {
-      jobId: lastJobId,
-      count: queuedCount,
+  container.diagnosticsService.record(
+    buildDownloadDiagnosticEvent({
+      operation: "download.profile.confirmed",
+      status: "succeeded",
+      severity: "healthy",
+      recommendedAction: "none",
+      message: "Download intent job(s) queued",
       titleId: title.id,
-      titleName: title.name,
-      cacheArtwork: profile.cacheArtwork,
-      keepWatchingOffline: profile.enrollKeepWatchingOffline,
-      runwayTarget: profile.runwayTarget ?? null,
-    },
-  });
+      correlation: lastJobId ? { downloadJobId: lastJobId } : undefined,
+      context: {
+        jobId: lastJobId,
+        count: queuedCount,
+        titleId: title.id,
+        titleName: title.name,
+        cacheArtwork: profile.cacheArtwork,
+        keepWatchingOffline: profile.enrollKeepWatchingOffline,
+        runwayTarget: profile.runwayTarget ?? null,
+      },
+    }),
+  );
   persistSeriesPolicy();
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",

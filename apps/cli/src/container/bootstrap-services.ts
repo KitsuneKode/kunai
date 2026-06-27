@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-import { getRootContentSession } from "../app-shell/root-content-state";
+import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
@@ -118,7 +118,7 @@ export function bootstrapServices(input: {
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const playerPresentation: PlayerPresentationPort = {
-    isInteractiveShellMounted: () => getRootContentSession() !== null,
+    isInteractiveShellMounted,
   };
   const player = new PlayerServiceImpl({
     logger,

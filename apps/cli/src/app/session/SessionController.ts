@@ -11,6 +11,7 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { abortOrphanDownloadResolve, type Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import { buildDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 
 export type SessionOutcome = "quit" | "mode_switch";
 
@@ -40,11 +41,17 @@ export class SessionController {
     ]);
     for (const result of cleanupResults) {
       if (result.status === "fulfilled") continue;
-      this.container.diagnosticsService.record({
-        category: "session",
-        message: "Session shutdown cleanup failed",
-        context: { error: String(result.reason) },
-      });
+      this.container.diagnosticsService.record(
+        buildDiagnosticEvent({
+          category: "session",
+          operation: "session.shutdown.cleanup.failed",
+          status: "failed",
+          severity: "recoverable",
+          failureClass: "unknown",
+          message: "Session shutdown cleanup failed",
+          context: { error: String(result.reason) },
+        }),
+      );
     }
   }
 
@@ -59,15 +66,21 @@ export class SessionController {
 
     await tracer.span("session", async () => {
       try {
-        diagnosticsService.record({
-          category: "session",
-          message: "Session started",
-          sessionId: this.container.sessionId,
-          context: {
-            mode: stateManager.getState().mode,
-            provider: stateManager.getState().provider,
-          },
-        });
+        diagnosticsService.record(
+          buildDiagnosticEvent({
+            category: "session",
+            operation: "session.started",
+            status: "started",
+            severity: "healthy",
+            recommendedAction: "none",
+            message: "Session started",
+            correlation: { sessionId: this.container.sessionId },
+            context: {
+              mode: stateManager.getState().mode,
+              provider: stateManager.getState().provider,
+            },
+          }),
+        );
         while (true) {
           let title: TitleInfo;
           if (pendingInitialTitle) {
@@ -127,9 +140,30 @@ export class SessionController {
           if (playbackResult.status === "cancelled") continue;
           if (playbackResult.status === "error") {
             logger.error("Playback phase failed", { error: playbackResult.error });
-            console.error(
-              `\n⚠ Playback failed: ${playbackResult.error.message}${playbackResult.error.retryable ? " (try a different provider)" : ""}`,
+            diagnosticsService.record(
+              buildDiagnosticEvent({
+                category: "playback",
+                operation: "playback.phase.failed",
+                status: "failed",
+                severity: playbackResult.error.retryable ? "recoverable" : "blocked",
+                recommendedAction: playbackResult.error.retryable
+                  ? "fallback-provider"
+                  : "export-diagnostics",
+                spanFamily: "playback.startup",
+                message: "Playback phase failed",
+                context: {
+                  code: playbackResult.error.code,
+                  retryable: playbackResult.error.retryable,
+                  message: playbackResult.error.message,
+                },
+              }),
             );
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Playback failed: ${playbackResult.error.message}${
+                playbackResult.error.retryable ? " (try a different provider)" : ""
+              }`,
+            });
             continue;
           }
 
@@ -191,11 +225,17 @@ export class SessionController {
         }
       } catch (e) {
         logger.error("Session fatal error", { error: String(e) });
-        diagnosticsService.record({
-          category: "session",
-          message: "Session fatal error",
-          context: { error: String(e) },
-        });
+        diagnosticsService.record(
+          buildDiagnosticEvent({
+            category: "session",
+            operation: "session.fatal",
+            status: "failed",
+            severity: "blocked",
+            failureClass: "unknown",
+            message: "Session fatal error",
+            context: { error: String(e) },
+          }),
+        );
         throw e;
       }
     });

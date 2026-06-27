@@ -38,10 +38,10 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       homeDir: process.env.HOME,
     }) as DiagnosticEventInput;
     const normalizedEvent = normalizeDiagnosticEvent(redactedEvent, this.deps.now?.().getTime());
-    this.deps.store.record(redactedEvent);
+    this.deps.store.record(normalizedEvent);
     this.persist(normalizedEvent);
-    this.log(redactedEvent);
-    this.deps.traceReporter?.record(redactedEvent);
+    this.log(normalizedEvent);
+    this.deps.traceReporter?.record(normalizedEvent);
   }
 
   recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void {
@@ -94,6 +94,8 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       playbackSourceInventory: input?.playbackSourceInventory ?? null,
       resolveWorkLedgers: this.resolveWorkLedgers,
       events: this.getSnapshot(),
+      sessionState: input?.sessionState ?? null,
+      downloadSummary: input?.downloadSummary ?? null,
       now: this.deps.now,
     });
   }

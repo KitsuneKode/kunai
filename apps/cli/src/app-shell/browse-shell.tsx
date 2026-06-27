@@ -79,7 +79,6 @@ import {
   type DetailsPanelData,
 } from "./details-panel";
 import { buildDetailsSheet } from "./details-sheet.model";
-import { InlineDotMatrixLoader } from "./dot-matrix-loader";
 import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
@@ -108,6 +107,7 @@ import {
   subscribeNotificationDetails,
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
+import { InlineSakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -1327,10 +1327,7 @@ export function BrowseShell<T>({
             AppHeader above; keep only the browse-specific search indicator. */}
         <Box justifyContent="flex-end">
           {searchState === "loading" ? (
-            <>
-              <InlineDotMatrixLoader variant="flux-columns" active onColor={palette.accent} />
-              <Text color={palette.accent}> searching</Text>
-            </>
+            <InlineSakuraLoader label="searching" active />
           ) : searchState === "error" ? (
             <Text color={palette.danger}>search failed</Text>
           ) : null}

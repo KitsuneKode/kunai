@@ -27,6 +27,7 @@ describe("DiagnosticsSupportBundle", () => {
     });
 
     expect(bundle.summary.headline).toBe("Network unavailable");
+    expect(bundle.triage.likelyCause).toBe("Network unavailable");
     expect(bundle.summary.sections).toEqual(["network", "provider"]);
     expect(bundle.sections.network).toMatchObject({ tone: "warning", eventCount: 1 });
     expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
@@ -330,5 +331,66 @@ describe("DiagnosticsSupportBundle", () => {
     expect(JSON.stringify(bundle.insights.resolveWork)).not.toContain("cdn.example");
     expect(JSON.stringify(bundle)).not.toContain("token=secret");
     expect(JSON.stringify(bundle)).not.toContain("session=secret");
+  });
+
+  test("includes readable triage summary before raw events", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: true,
+      events: [
+        {
+          timestamp: 1,
+          level: "error",
+          category: "provider",
+          operation: "provider.resolve.timeline",
+          message: "Provider resolve exhausted",
+          providerId: "vidking",
+          playbackCycleId: "cycle-1",
+          providerAttemptId: "attempt-1",
+          context: { status: "failed", failureClass: "timeout" },
+        },
+        {
+          timestamp: 2,
+          level: "warn",
+          category: "cache",
+          operation: "resolve.refetch.failed.cached-fallback",
+          message: "Kept cached stream",
+        },
+      ],
+    });
+
+    expect(bundle.triage.verdict).toMatch(/Needs attention|Broken/);
+    expect(bundle.triage.likelyCause.toLowerCase()).toMatch(/vidking|timeout/);
+    expect(bundle.triage.affectedSubsystems).toContain("provider");
+    expect(bundle.triage.recommendedActions).toContain("fallback-provider");
+    expect(bundle.triage.correlationSummary).toContain("cycle-1");
+    expect(bundle.triage.lastEventBySubsystem.provider).toContain("exhausted");
+    expect(bundle.triage.privacy.redacted).toBe(true);
+    expect(bundle.events.length).toBe(2);
+  });
+
+  test("event-only triage treats unmodeled errors as issues instead of healthy", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: false,
+      events: [
+        {
+          timestamp: 1,
+          level: "error",
+          category: "runtime",
+          operation: "storage.maintenance.startup",
+          message: "Cache database maintenance failed",
+          context: {
+            failureClass: "storage",
+            recommendedAction: "retry",
+          },
+        },
+      ],
+    });
+
+    expect(bundle.triage.verdict).not.toBe("Healthy");
+    expect(bundle.triage.likelyCause).toBe("Cache database maintenance failed");
+    expect(bundle.triage.affectedSubsystems).toContain("runtime");
+    expect(bundle.triage.recommendedActions).toContain("retry");
   });
 });

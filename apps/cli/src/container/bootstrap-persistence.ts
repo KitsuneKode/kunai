@@ -37,6 +37,7 @@ import {
   type KunaiDatabase,
 } from "@kunai/storage";
 
+import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { resolveAttentionFeatureFlags } from "../domain/features/feature-flags";
 import { ListService } from "../domain/lists/ListService";
 import { StatsFormatter } from "../domain/lists/StatsFormatter";
@@ -135,6 +136,7 @@ export function bootstrapCoreInfra(options?: ContainerOptions): CoreInfra {
   const debug = options?.debug ?? false;
   const logger = new StructuredLogger({
     debug,
+    console: () => !isInteractiveShellMounted(),
     sanitize: (value) => redactDiagnosticValue(value, { homeDir: process.env.HOME }),
   });
   initLogger(debug || process.env.KITSUNE_DEBUG === "1", logger);

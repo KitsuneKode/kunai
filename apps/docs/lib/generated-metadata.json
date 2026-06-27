@@ -1,12 +1,12 @@
 {
-  "syncedAt": "2026-06-25T06:08:00.635Z",
+  "syncedAt": "2026-06-25T13:05:37.472Z",
   "version": "0.2.5",
   "cliVersion": "0.2.5",
-  "cliSourceRevision": "77f0ec34",
-  "cliSourceFingerprint": "b2105bb4982e00f5a7eccd011021556530fdbcdcd5b9ff1a761e2cc739b26768",
-  "docsContentFingerprint": "3d0464415299620f254b02977c7f22ba086581f2efbcef44b18505ab15ba65f1",
+  "cliSourceRevision": "d37c694d",
+  "cliSourceFingerprint": "2689fd9e7b0aeae4f91c5238dfe89da558624202fd9cc08d4aa0fcc42f731bdb",
+  "docsContentFingerprint": "5b572c95ae8de7f3987c85862891529ec93993ff95efa401e69778ccdfe39123",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
-  "commandCount": 75,
+  "commandCount": 78,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
   "providers": [
     {
@@ -196,8 +196,26 @@
     {
       "id": "toggle-mode",
       "label": "Toggle Mode",
-      "aliases": ["mode", "toggle-mode", "anime"],
-      "description": "Switch between anime and series mode"
+      "aliases": ["mode", "toggle-mode"],
+      "description": "Cycle catalog mode: series, anime, then YouTube"
+    },
+    {
+      "id": "series-mode",
+      "label": "Series Mode",
+      "aliases": ["series-mode", "series", "tv-mode"],
+      "description": "Switch into series and movies mode"
+    },
+    {
+      "id": "anime-mode",
+      "label": "Anime Mode",
+      "aliases": ["anime-mode", "anime"],
+      "description": "Switch into anime mode"
+    },
+    {
+      "id": "youtube-mode",
+      "label": "YouTube Mode",
+      "aliases": ["youtube-mode", "youtube", "yt"],
+      "description": "Switch into YouTube mode"
     },
     {
       "id": "quit",
@@ -577,6 +595,11 @@
       "short": "-a",
       "long": "--anime",
       "description": "Anime mode (AllAnime providers)"
+    },
+    {
+      "short": "-y",
+      "long": "--youtube",
+      "description": "YouTube mode (YouTube provider)"
     },
     {
       "short": "",

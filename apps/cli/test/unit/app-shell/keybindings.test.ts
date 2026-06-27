@@ -12,6 +12,7 @@ import {
   footerKeyFromBinding,
   formatChord,
   helpSections,
+  helpSectionsForScope,
   matchBinding,
 } from "@/app-shell/keybindings";
 
@@ -94,6 +95,28 @@ test("helpSections groups every binding under a labelled group", () => {
       expect(item.label.length).toBeGreaterThan(0);
     }
   }
+});
+
+test("helpSectionsForScope returns only the chords live on the surface plus globals", () => {
+  const playerSections = helpSectionsForScope("player");
+  expect(playerSections.length).toBeGreaterThan(0);
+  const playerItems = playerSections.flatMap((section) => section.items);
+  // The scoped help matches the scoped binding set (own scope + globals).
+  expect(playerItems.length).toBe(bindingsForScope("player").length);
+  // Player-only chord shows up; an unrelated browse-only chord does not.
+  expect(playerItems.some((item) => item.label.toLowerCase().includes("quality"))).toBe(true);
+  expect(playerItems.some((item) => item.label.includes("Up Next"))).toBe(false);
+  // Globals are always reachable, so the "back" chord is documented everywhere.
+  expect(playerItems.some((item) => item.keys.toLowerCase().includes("esc"))).toBe(true);
+});
+
+test("helpSectionsForScope is narrower than the full registry", () => {
+  const scopedTotal = helpSectionsForScope("postPlayback").reduce(
+    (sum, section) => sum + section.items.length,
+    0,
+  );
+  expect(scopedTotal).toBe(bindingsForScope("postPlayback").length);
+  expect(scopedTotal).toBeLessThan(KEYBINDINGS.length);
 });
 
 test("player-scope bindings mirror the mpv bridge (k = quality, not streams)", () => {

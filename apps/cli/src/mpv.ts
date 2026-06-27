@@ -84,7 +84,9 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
-  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), { mpv: opts.mpv });
+  const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
+    mpv: opts.mpv,
+  });
   const telemetry = createPlayerTelemetryState(ipcEndpoint.path);
   noteTrustedSeek(telemetry, opts.startAt ?? 0);
   const baseEmit = opts.onPlaybackEvent ?? (() => {});
@@ -195,7 +197,11 @@ async function launchMpvInner(
       .then((result) => {
         if (result.ok) {
           skippedSegments.add(activeSkip.key);
-          emitPlaybackEvent({ type: "segment-skipped", kind: activeSkip.kind, automatic });
+          emitPlaybackEvent({
+            type: "segment-skipped",
+            kind: activeSkip.kind,
+            automatic,
+          });
         }
         return undefined;
       })
@@ -443,7 +449,9 @@ export function buildMpvArgs(
     args.push(`--sub-file=${opts.subtitle}`);
   }
 
-  const alang = toMpvLanguageToken(opts.audioPreference, { forSubtitle: false });
+  const alang = toMpvLanguageToken(opts.audioPreference, {
+    forSubtitle: false,
+  });
   if (alang) {
     args.push(`--alang=${alang}`);
   }

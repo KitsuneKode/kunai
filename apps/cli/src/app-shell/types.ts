@@ -147,13 +147,23 @@ export type PlaybackShellState = {
   readonly postPlayState?: PostPlayState;
   readonly episodeLabel?: string;
   readonly nextEpisodeLabel?: string;
+  /** Previous-episode label so the post-play rail can render a PREVIOUS mini-card. */
+  readonly previousEpisodeLabel?: string;
   /** Cross-title queue head label, shown as Up Next when no episode chain remains. */
   readonly queueNextLabel?: string;
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
+  /** Current episode number — feeds the season-aware media panel art chain. */
+  readonly currentEpisode?: number;
+  /** Content kind that selects the post-play media-panel layout. */
+  readonly contentKind?: import("@/domain/media/content-kind").ContentKind;
+  /** YouTube/video metadata for the `video` post-play panel kind. */
+  readonly videoMeta?: import("@/domain/types").VideoMeta | null;
   /** Next-episode thumbnail for the post-play rail (preferred over the poster). */
   readonly nextEpisodeThumbUrl?: string;
+  /** Previous-episode thumbnail for the post-play PREVIOUS mini-card. */
+  readonly previousEpisodeThumbUrl?: string;
   /**
    * Rich catalog metadata + best-of-provider artwork (Agent ART). Optional:
    * surfaces render what is present and show honest placeholders otherwise.
@@ -236,8 +246,16 @@ export type LoadingShellState = {
   titleDetail?: import("@/domain/catalog/title-detail").TitleDetail;
   /** Next-episode still for the playing up-next card. */
   nextEpisodeThumbUrl?: string;
+  /** Cross-title queue head label, shown as Up Next when no episode chain remains. */
+  queueNextLabel?: string;
   episodeLabel?: string;
   currentSeason?: number;
+  /** Current episode number — feeds the season-aware media panel art chain. */
+  currentEpisode?: number;
+  /** Content kind that selects the media-panel layout (movie/series/anime/video). */
+  contentKind?: import("@/domain/media/content-kind").ContentKind;
+  /** YouTube/video metadata for the `video` media-panel kind. */
+  videoMeta?: import("@/domain/types").VideoMeta | null;
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;

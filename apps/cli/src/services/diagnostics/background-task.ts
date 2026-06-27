@@ -1,5 +1,9 @@
 import type { DiagnosticCorrelation } from "./correlation";
 import type { DiagnosticCategory } from "./diagnostic-event";
+import {
+  buildCacheMaintenanceDiagnosticEvent,
+  buildDiagnosticEvent,
+} from "./diagnostic-event-helpers";
 import type { DiagnosticsService } from "./DiagnosticsService";
 
 type BackgroundTaskLogger = {
@@ -30,29 +34,7 @@ export function runBackgroundTask(input: BackgroundTaskInput): void {
     };
 
     if (input.diagnostics) {
-      input.diagnostics.record({
-        level: "warn",
-        category: input.category,
-        operation: `background.${input.task}`,
-        message: `Background task failed: ${input.task}`,
-        providerId:
-          typeof input.context?.providerId === "string" ? input.context.providerId : undefined,
-        titleId: typeof input.context?.titleId === "string" ? input.context.titleId : undefined,
-        season: typeof input.context?.season === "number" ? input.context.season : undefined,
-        episode: typeof input.context?.episode === "number" ? input.context.episode : undefined,
-        sessionId:
-          typeof input.context?.sessionId === "string" ? input.context.sessionId : undefined,
-        playbackCycleId:
-          typeof input.context?.playbackCycleId === "string"
-            ? input.context.playbackCycleId
-            : undefined,
-        providerAttemptId:
-          typeof input.context?.providerAttemptId === "string"
-            ? input.context.providerAttemptId
-            : undefined,
-        traceId: typeof input.context?.traceId === "string" ? input.context.traceId : undefined,
-        context: failureContext,
-      });
+      input.diagnostics.record(buildBackgroundTaskFailureEvent(input, failureContext));
       return;
     }
 
@@ -62,6 +44,53 @@ export function runBackgroundTask(input: BackgroundTaskInput): void {
       error: error instanceof Error ? error.message : String(error),
     });
   });
+}
+
+function buildBackgroundTaskFailureEvent(
+  input: BackgroundTaskInput,
+  failureContext: Record<string, unknown>,
+) {
+  const eventInput = {
+    operation: `background.${input.task}`,
+    stage: input.task,
+    status: "failed" as const,
+    severity: "degraded" as const,
+    failureClass: input.category === "cache" ? ("storage" as const) : ("unknown" as const),
+    message: `Background task failed: ${input.task}`,
+    correlation: {
+      sessionId: typeof input.context?.sessionId === "string" ? input.context.sessionId : undefined,
+      playbackCycleId:
+        typeof input.context?.playbackCycleId === "string"
+          ? input.context.playbackCycleId
+          : undefined,
+      providerAttemptId:
+        typeof input.context?.providerAttemptId === "string"
+          ? input.context.providerAttemptId
+          : undefined,
+      traceId: typeof input.context?.traceId === "string" ? input.context.traceId : undefined,
+    },
+    providerId:
+      typeof input.context?.providerId === "string" ? input.context.providerId : undefined,
+    titleId: typeof input.context?.titleId === "string" ? input.context.titleId : undefined,
+    season: typeof input.context?.season === "number" ? input.context.season : undefined,
+    episode: typeof input.context?.episode === "number" ? input.context.episode : undefined,
+    context: failureContext,
+  };
+
+  if (input.category === "cache") {
+    return {
+      ...buildCacheMaintenanceDiagnosticEvent(eventInput),
+      level: "warn" as const,
+    };
+  }
+
+  return {
+    ...buildDiagnosticEvent({
+      ...eventInput,
+      category: input.category,
+    }),
+    level: "warn" as const,
+  };
 }
 
 function contextWithoutPromotedFields(

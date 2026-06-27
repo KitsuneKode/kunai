@@ -1,12 +1,30 @@
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent } from "./diagnostic-event";
+import {
+  mapFailureToRecommendedAction,
+  type DiagnosticFailureClass,
+} from "./diagnostic-event-helpers";
+import type { DiagnosticsInsight, RecommendedAction } from "./diagnostics-insight";
 import { getDiagnosticOperation } from "./operation-taxonomy";
 import { redactDiagnosticValue } from "./redaction";
 import {
   buildResolveWorkDiagnosticsInsight,
   type ResolveWorkDiagnosticsInsight,
 } from "./resolve-work-insight";
+
+export type DiagnosticsBundleTriage = {
+  readonly verdict: string;
+  readonly likelyCause: string;
+  readonly affectedSubsystems: readonly string[];
+  readonly recommendedActions: readonly RecommendedAction[];
+  readonly correlationSummary: string;
+  readonly lastEventBySubsystem: Record<string, string>;
+  readonly privacy: {
+    readonly redacted: true;
+    readonly excludes: readonly string[];
+  };
+};
 
 export type DiagnosticsSupportBundle = {
   readonly exportedAt: string;
@@ -18,6 +36,7 @@ export type DiagnosticsSupportBundle = {
     readonly headline: string;
     readonly sections: readonly string[];
   };
+  readonly triage: DiagnosticsBundleTriage;
   readonly runtime: {
     readonly platform: string;
     readonly arch: string;
@@ -76,6 +95,7 @@ export type BuildDiagnosticsSupportBundleInput = {
   readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
   readonly resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[] | null;
   readonly events: readonly DiagnosticEvent[];
+  readonly insight?: DiagnosticsInsight | null;
   readonly now?: () => Date;
 };
 
@@ -96,6 +116,7 @@ export function buildDiagnosticsSupportBundle(
       ) as PlaybackSourceInventoryDiagnosticsSummary)
     : undefined;
   const sections = buildBundleSections(events);
+  const triage = buildBundleTriage(events, input.insight);
 
   return {
     exportedAt: now().toISOString(),
@@ -104,9 +125,10 @@ export function buildDiagnosticsSupportBundle(
       debug: input.debug,
     },
     summary: {
-      headline: buildBundleHeadline(events),
+      headline: triage.likelyCause,
       sections: Object.keys(sections),
     },
+    triage,
     runtime: {
       platform: process.platform,
       arch: process.arch,
@@ -231,13 +253,164 @@ function collectUnique(
   return [...ids];
 }
 
+function buildBundleTriage(
+  events: readonly DiagnosticEvent[],
+  providedInsight?: DiagnosticsInsight | null,
+): DiagnosticsBundleTriage {
+  const lastEventBySubsystem: Record<string, string> = {};
+  for (const name of [
+    "network",
+    "provider",
+    "cache",
+    "playback",
+    "subtitle",
+    "presence",
+    "download",
+    "runtime",
+  ]) {
+    const latest = [...events].reverse().find((event) => event.category === name);
+    if (latest) {
+      lastEventBySubsystem[name] = latest.message;
+    }
+  }
+
+  if (!providedInsight) {
+    const eventOnly = buildEventOnlyTriage(events);
+    return {
+      ...eventOnly,
+      lastEventBySubsystem,
+      privacy: {
+        redacted: true,
+        excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
+      },
+    };
+  }
+
+  return {
+    verdict: providedInsight.exportSummary.verdict,
+    likelyCause:
+      providedInsight.likelyCause === "No issues detected in recent diagnostics"
+        ? (buildBundleHeadline(events) ?? providedInsight.likelyCause)
+        : providedInsight.likelyCause,
+    affectedSubsystems: providedInsight.exportSummary.affectedSubsystems,
+    recommendedActions: providedInsight.exportSummary.recommendedActions,
+    correlationSummary: providedInsight.exportSummary.correlationSummary,
+    lastEventBySubsystem,
+    privacy: {
+      redacted: true,
+      excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
+    },
+  };
+}
+
+function buildEventOnlyTriage(
+  events: readonly DiagnosticEvent[],
+): Omit<DiagnosticsBundleTriage, "lastEventBySubsystem" | "privacy"> {
+  const issueEvents = events.filter((event) => event.level === "error" || event.level === "warn");
+  const affectedSubsystems = collectAffectedSubsystems(issueEvents);
+  const recommendedActions = collectRecommendedActions(issueEvents);
+  return {
+    verdict: issueEvents.some((event) => event.level === "error")
+      ? "Broken"
+      : issueEvents.length > 0
+        ? "Needs attention"
+        : "Healthy",
+    likelyCause: buildBundleHeadline(events),
+    affectedSubsystems,
+    recommendedActions: recommendedActions.length > 0 ? recommendedActions : ["none"],
+    correlationSummary: formatBundleCorrelationSummary(buildBundleCorrelation(events)),
+  };
+}
+
+function collectAffectedSubsystems(events: readonly DiagnosticEvent[]): readonly string[] {
+  const subsystems = new Set<string>();
+  for (const event of events) {
+    subsystems.add(event.category);
+  }
+  return [...subsystems];
+}
+
+function collectRecommendedActions(
+  events: readonly DiagnosticEvent[],
+): readonly RecommendedAction[] {
+  const actions = new Set<RecommendedAction>();
+  for (const event of events) {
+    const action = parseRecommendedAction(event.context?.recommendedAction);
+    if (action && action !== "none") actions.add(action);
+    const failureClass =
+      typeof event.context?.failureClass === "string" ? event.context.failureClass : null;
+    if (isDiagnosticFailureClass(failureClass)) {
+      actions.add(mapFailureToRecommendedAction(failureClass));
+    }
+  }
+  return [...actions];
+}
+
+function isDiagnosticFailureClass(value: string | null): value is DiagnosticFailureClass {
+  return (
+    value === "timeout" ||
+    value === "http" ||
+    value === "parse" ||
+    value === "dependency" ||
+    value === "not-found" ||
+    value === "rate-limited" ||
+    value === "cancelled" ||
+    value === "storage" ||
+    value === "ipc" ||
+    value === "unknown"
+  );
+}
+
+function parseRecommendedAction(value: unknown): RecommendedAction | null {
+  if (
+    value === "none" ||
+    value === "wait" ||
+    value === "recover" ||
+    value === "fallback-provider" ||
+    value === "refresh-source" ||
+    value === "retry" ||
+    value === "retry-download" ||
+    value === "check-dependency" ||
+    value === "open-settings" ||
+    value === "export-diagnostics" ||
+    value === "report-issue"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function formatBundleCorrelationSummary(correlation: DiagnosticsBundleCorrelation): string {
+  const parts = [
+    correlation.sessionIds.length > 0 ? `session ${correlation.sessionIds[0]}` : null,
+    correlation.playbackCycleIds.length > 0 ? `cycle ${correlation.playbackCycleIds[0]}` : null,
+    correlation.providerAttemptIds.length > 0
+      ? `provider ${correlation.providerAttemptIds[0]}`
+      : null,
+    correlation.traceIds.length > 0 ? `trace ${correlation.traceIds[0]}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join("  ·  ") : "no correlation ids";
+}
+
 function buildBundleHeadline(events: readonly DiagnosticEvent[]): string {
-  const issue = [...events]
-    .reverse()
-    .find((event) => event.level === "error" || event.level === "warn");
-  if (issue) return issue.message;
+  const issue =
+    [...events].reverse().find((event) => event.level === "error") ??
+    [...events].reverse().find((event) => event.level === "warn");
+  if (issue) return formatIssueHeadline(issue);
   const latest = events.at(-1);
   return latest?.message ?? "No diagnostic events recorded.";
+}
+
+function formatIssueHeadline(event: DiagnosticEvent): string {
+  if (event.operation === "provider.resolve.timeline") {
+    const provider = event.providerId ?? "provider";
+    const failureClass =
+      typeof event.context?.failureClass === "string" ? event.context.failureClass : null;
+    if (failureClass && failureClass !== "none") {
+      return `${provider} ${failureClass.replaceAll("-", " ")}`;
+    }
+  }
+  return event.message;
 }
 
 function buildBundleSections(

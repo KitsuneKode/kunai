@@ -172,6 +172,10 @@ import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
+import {
+  buildRecoveryDiagnosticEvent,
+  buildSubtitleDiagnosticEvent,
+} from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import {
   createPlaybackStartupTimeline,
@@ -956,11 +960,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           };
           recordStartupMark("episode-bootstrap-started");
 
-          // Warm the catalog-detail cache early (fire-and-forget) so the post-play
-          // rail can read it synchronously instead of racing a cold fetch. Errors
-          // are swallowed; post-play falls back to honest placeholders if it never
-          // resolves, and the next open reads it warm.
-          void fetchTitleDetail(title.id, title.type).catch(() => undefined);
+          // Warm the catalog-detail cache early so the playback/post-play panels
+          // can read it. On resolve we dispatch SET_TITLE_DETAIL so the UI reacts
+          // (the rail reads SessionState.titleDetail). Errors are swallowed; the
+          // panels fall back to honest placeholders if it never resolves.
+          void fetchTitleDetail(title.id, title.type, undefined, {
+            externalIds: title.externalIds,
+          })
+            .then((detail) => {
+              stateManager.dispatch({
+                type: "SET_TITLE_DETAIL",
+                titleId: title.id,
+                titleType: title.type,
+                detail,
+              });
+              return undefined;
+            })
+            .catch(() => undefined);
 
           // Kick off timing fetch in parallel with everything else — IntroDB is a
           // lightweight API call and should resolve well before stream resolution.
@@ -2209,24 +2225,35 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               if (isAutoSourceRecover) {
                 run.autoSourceRecoverAttempts += 1;
               }
-              diagnosticsService.record({
-                category: "playback",
-                message:
-                  run.pendingSourceRefreshAction === "recover"
-                    ? "Recovery requested for current provider source"
-                    : "Refresh requested for current provider source",
-                context: {
-                  provider: resolvedProviderId,
+              diagnosticsService.record(
+                buildRecoveryDiagnosticEvent({
+                  operation: "playback.source-refresh.requested",
+                  stage: run.pendingSourceRefreshAction,
+                  status: "started",
+                  severity: isAutoSourceRecover ? "recoverable" : "degraded",
+                  recommendedAction:
+                    run.pendingSourceRefreshAction === "recover" ? "recover" : "refresh-source",
+                  message:
+                    run.pendingSourceRefreshAction === "recover"
+                      ? "Recovery requested for current provider source"
+                      : "Refresh requested for current provider source",
+                  providerId: resolvedProviderId,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: run.pendingStart.startAt,
-                  action: run.pendingSourceRefreshAction,
-                  recomputeSources: run.pendingRecomputeSources,
-                  autoRecover: isAutoSourceRecover,
-                  autoRecoverAttempts: run.autoSourceRecoverAttempts,
-                },
-              });
+                  context: {
+                    provider: resolvedProviderId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    resumeSeconds: run.pendingStart.startAt,
+                    action: run.pendingSourceRefreshAction,
+                    recomputeSources: run.pendingRecomputeSources,
+                    autoRecover: isAutoSourceRecover,
+                    autoRecoverAttempts: run.autoSourceRecoverAttempts,
+                  },
+                }),
+              );
               run.playbackSession = this.transitionPlaybackSession(
                 context,
                 run.playbackSession,
@@ -2270,32 +2297,52 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               resolvedProviderId = switched.providerId;
               run.pendingSourceRefreshAction = "recover";
               run.pendingRecomputeSources = false;
-              diagnosticsService.record({
-                category: "playback",
-                message: "Switching to fallback provider after playback control request",
-                context: {
-                  from: switched.fromProviderId,
-                  fallback: switched.providerId,
+              diagnosticsService.record(
+                buildRecoveryDiagnosticEvent({
+                  operation: "playback.provider-fallback.started",
+                  stage: "fallback-provider",
+                  status: "started",
+                  severity: "recoverable",
+                  recommendedAction: "fallback-provider",
+                  message: "Switching to fallback provider after playback control request",
+                  providerId: switched.providerId,
                   titleId: title.id,
                   season: currentEpisode.season,
                   episode: currentEpisode.episode,
-                  resumeSeconds: run.pendingStart.resumePromptAt,
-                },
-              });
+                  context: {
+                    from: switched.fromProviderId,
+                    fallback: switched.providerId,
+                    titleId: title.id,
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                    resumeSeconds: run.pendingStart.resumePromptAt,
+                  },
+                }),
+              );
               continue;
             }
 
-            diagnosticsService.record({
-              category: "playback",
-              message:
-                "Fallback playback control requested but no compatible provider was available",
-              context: {
-                provider: resolvedProviderId,
+            diagnosticsService.record(
+              buildRecoveryDiagnosticEvent({
+                operation: "playback.provider-fallback.unavailable",
+                stage: "fallback-provider",
+                status: "failed",
+                severity: "blocked",
+                failureClass: "not-found",
+                message:
+                  "Fallback playback control requested but no compatible provider was available",
+                providerId: resolvedProviderId,
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-              },
-            });
+                context: {
+                  provider: resolvedProviderId,
+                  titleId: title.id,
+                  season: currentEpisode.season,
+                  episode: currentEpisode.episode,
+                },
+              }),
+            );
             // Keep the pending start intent for this episode; re-resolve instead of falling
             // through to auto-advance / post-playback with a poisoned resume offset.
             continue;
@@ -3313,42 +3360,66 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         lookupDecision.reason !== "attached" &&
         lookupDecision.reason !== "hardsub-satisfied"
       ) {
-        diagnosticsService.record({
-          category: "subtitle",
-          message: "Late subtitle lookup skipped",
-          context: {
+        diagnosticsService.record(
+          buildSubtitleDiagnosticEvent({
+            operation: "subtitle.lookup.skipped",
+            status: "skipped",
+            severity: "degraded",
+            recommendedAction: "none",
+            message: "Late subtitle lookup skipped",
             titleId: title.id,
-            requestedSubLang,
-            reason: lookupDecision.reason,
-            availableTracks: lookupDecision.availableTracks,
-          },
-        });
+            season: episode.season,
+            episode: episode.episode,
+            context: {
+              titleId: title.id,
+              requestedSubLang,
+              reason: lookupDecision.reason,
+              availableTracks: lookupDecision.availableTracks,
+            },
+          }),
+        );
       }
       return;
     }
 
     const inflightKey = `${title.id}:${episode.season}:${episode.episode}:${requestedSubLang}`;
     if (PlaybackPhase.lateSubtitleInflight.has(inflightKey)) {
-      diagnosticsService.record({
-        category: "subtitle",
-        message: "Late subtitle lookup skipped (already in flight)",
-        context: { inflightKey },
-      });
+      diagnosticsService.record(
+        buildSubtitleDiagnosticEvent({
+          operation: "subtitle.lookup.skipped",
+          status: "skipped",
+          severity: "healthy",
+          recommendedAction: "wait",
+          message: "Late subtitle lookup skipped (already in flight)",
+          titleId: title.id,
+          season: episode.season,
+          episode: episode.episode,
+          context: { reason: "already-in-flight" },
+        }),
+      );
       return;
     }
     PlaybackPhase.lateSubtitleInflight.add(inflightKey);
 
-    diagnosticsService.record({
-      category: "subtitle",
-      message: "Late subtitle lookup started",
-      context: {
+    diagnosticsService.record(
+      buildSubtitleDiagnosticEvent({
+        operation: "subtitle.lookup.started",
+        status: "started",
+        severity: "healthy",
+        recommendedAction: "wait",
+        message: "Late subtitle lookup started",
         titleId: title.id,
-        type: title.type,
         season: episode.season,
         episode: episode.episode,
-        requestedSubLang,
-      },
-    });
+        context: {
+          titleId: title.id,
+          type: title.type,
+          season: episode.season,
+          episode: episode.episode,
+          requestedSubLang,
+        },
+      }),
+    );
 
     void (async () => {
       try {
@@ -3362,15 +3433,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         if (iterationSignal.aborted) return;
         if (result.list.length === 0) {
-          diagnosticsService.record({
-            category: "subtitle",
-            message: result.failed ? "Late subtitle lookup failed" : "Late subtitle lookup empty",
-            context: {
+          diagnosticsService.record(
+            buildSubtitleDiagnosticEvent({
+              operation: result.failed ? "subtitle.lookup.failed" : "subtitle.lookup.empty",
+              status: result.failed ? "failed" : "skipped",
+              severity: result.failed ? "recoverable" : "degraded",
+              failureClass: result.failed ? "unknown" : undefined,
+              recommendedAction: result.failed ? undefined : "none",
+              message: result.failed ? "Late subtitle lookup failed" : "Late subtitle lookup empty",
               titleId: title.id,
-              requestedSubLang,
-              failed: result.failed,
-            },
-          });
+              season: episode.season,
+              episode: episode.episode,
+              context: {
+                titleId: title.id,
+                requestedSubLang,
+                failed: result.failed,
+              },
+            }),
+          );
           return;
         }
 
@@ -3381,11 +3461,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const selected = selectSubtitle(mergedSubtitleList as never, requestedSubLang);
         const selectedUrl = selected?.url ?? result.selected ?? null;
         if (!selectedUrl) {
-          diagnosticsService.record({
-            category: "subtitle",
-            message: "Late subtitle lookup found tracks but no selectable URL",
-            context: { titleId: title.id, trackCount: mergedSubtitleList.length },
-          });
+          diagnosticsService.record(
+            buildSubtitleDiagnosticEvent({
+              operation: "subtitle.lookup.no-selectable-url",
+              status: "failed",
+              severity: "recoverable",
+              failureClass: "parse",
+              message: "Late subtitle lookup found tracks but no selectable URL",
+              titleId: title.id,
+              season: episode.season,
+              episode: episode.episode,
+              context: { titleId: title.id, trackCount: mergedSubtitleList.length },
+            }),
+          );
           return;
         }
 
@@ -3418,25 +3506,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
         }
 
-        diagnosticsService.record({
-          category: "subtitle",
-          operation: "subtitle.attach.outcome",
-          message: "Late subtitle lookup attached tracks",
-          context: {
+        diagnosticsService.record(
+          buildSubtitleDiagnosticEvent({
+            operation: "subtitle.attach.outcome",
+            status: "succeeded",
+            severity: "healthy",
+            recommendedAction: "none",
+            message: "Late subtitle lookup attached tracks",
             titleId: title.id,
-            outcome: "attached",
-            delivery: "late",
-            trackCount: mergedSubtitleList.length,
-          },
-        });
+            context: {
+              titleId: title.id,
+              outcome: "attached",
+              delivery: "late",
+              trackCount: mergedSubtitleList.length,
+            },
+          }),
+        );
       } catch (error) {
         if (iterationSignal.aborted) return;
         logger.warn("Late subtitle lookup failed", { error: String(error) });
-        diagnosticsService.record({
-          category: "subtitle",
-          message: "Late subtitle lookup failed",
-          context: { titleId: title.id, error: String(error) },
-        });
+        diagnosticsService.record(
+          buildSubtitleDiagnosticEvent({
+            operation: "subtitle.lookup.failed",
+            status: "failed",
+            severity: "recoverable",
+            failureClass: "unknown",
+            message: "Late subtitle lookup failed",
+            titleId: title.id,
+            context: { titleId: title.id, error: String(error) },
+          }),
+        );
       } finally {
         PlaybackPhase.lateSubtitleInflight.delete(inflightKey);
       }
@@ -3470,16 +3569,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
       await Bun.sleep(250);
     }
-    context.container.diagnosticsService.record({
-      category: "subtitle",
-      operation: "subtitle.attach.outcome",
-      message: "Late subtitle attachment timed out waiting for player",
-      context: {
-        outcome: "player-ready-timeout",
-        delivery: "late",
-        trackCount: attachment.subtitleTracks.length,
-      },
-    });
+    context.container.diagnosticsService.record(
+      buildSubtitleDiagnosticEvent({
+        operation: "subtitle.attach.outcome",
+        status: "timed-out",
+        severity: "recoverable",
+        failureClass: "timeout",
+        message: "Late subtitle attachment timed out waiting for player",
+        context: {
+          outcome: "player-ready-timeout",
+          delivery: "late",
+          trackCount: attachment.subtitleTracks.length,
+        },
+      }),
+    );
     return false;
   }
 

@@ -45,9 +45,13 @@ describe("DiagnosticsStoreImpl", () => {
 
     const event = store.getSnapshot()[0];
     expect(event?.message).toBe(`${"a".repeat(497)}...`);
-    expect(event?.context).toEqual({
+    expect(event?.context).toMatchObject({
       streamUrl: "https://cdn.example/stream.m3u8?token=[redacted]",
       detail: `${"b".repeat(997)}...`,
+      status: "succeeded",
+      severity: "healthy",
+      recommendedAction: "none",
+      spanFamily: "provider.resolve",
     });
   });
 });

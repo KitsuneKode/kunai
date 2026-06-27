@@ -12,7 +12,7 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 - keep copyable templates for new contract tests under `test/templates/`
 - keep VHS tapes and captured golden outputs under `test/vhs/` for UI demos and visual regression review
 
-The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist`, `README.md`, and `LICENSE`.
+The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
 ## Ink Render Harness (`apps/cli/test/harness/render-capture.ts`)
 

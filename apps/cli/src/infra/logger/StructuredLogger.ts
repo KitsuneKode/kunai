@@ -7,7 +7,7 @@
 import type { Logger, LogEntry } from "./Logger";
 
 export interface StructuredLoggerOptions {
-  console?: boolean;
+  console?: boolean | (() => boolean);
   file?: string;
   debug?: boolean;
   write?: (line: string) => unknown;
@@ -73,12 +73,17 @@ export class StructuredLogger implements Logger {
       traceId: this.traceId,
     };
 
-    if (this.options.console !== false) {
+    if (this.isConsoleEnabled()) {
       const ctx = entry.context ? ` ${JSON.stringify(entry.context)}` : "";
       const line = `[${entry.timestamp}] ${level.toUpperCase()}: ${entry.message}${ctx}\n`;
       (this.options.write ?? ((output) => process.stderr.write(output)))(line);
     }
 
     // File logging would go here
+  }
+
+  private isConsoleEnabled(): boolean {
+    if (typeof this.options.console === "function") return this.options.console();
+    return this.options.console !== false;
   }
 }

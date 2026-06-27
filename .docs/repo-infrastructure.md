@@ -63,32 +63,42 @@ bun run test
 
 ## CI
 
-Pull requests and pushes to `main` run checks with Bun install caching and Turborepo
-task caching (`TURBO_TOKEN` / `TURBO_TEAM` on `main` for optional remote cache).
+Pull requests and pushes to `main` use the composite setup action
+[`.github/actions/setup-bun-monorepo`](../.github/actions/setup-bun-monorepo/action.yml):
+Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
+`TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
 
-**Pull requests**
+**Parallel jobs** (`.github/workflows/ci.yml`):
+
+| Job              | PR                                                          | Main         |
+| ---------------- | ----------------------------------------------------------- | ------------ |
+| `fmt`            | `turbo run fmt:check --affected`                            | full         |
+| `lint`           | `turbo run lint --affected`                                 | full         |
+| `typecheck`      | `turbo run typecheck --affected`                            | full         |
+| `test`           | `turbo run test --affected`                                 | full         |
+| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change | same on main |
+| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change   | same         |
+| `checks-docs`    | docs gate when docs paths change                            | same         |
+
+Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
+`~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
+
+**Build tasks** (Turbo):
+
+- `build` — npm bundle (`dist/kunai.js`, `dist/assets/**`)
+- `build:binary:host` — host compiled binary (`dist/bin/kunai-*`)
+- `build:binaries` — release cross-compiles (`dist/bin/**`)
+
+`bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
+Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
+
+**Local pipeline verification**
 
 ```sh
-bun install --frozen-lockfile
-bun run ci:affected    # turbo run typecheck lint fmt:check test --affected
+bun run verify:build-pipeline       # fast: build + pkg:check + turbo cache
+bun run verify:build-pipeline:pr    # PR parity: + 2 Linux binaries
+KUNAI_VERIFY_ALL_BINARIES=1 bun run verify:build-pipeline:all-targets  # opt-in 8-target build
 ```
-
-CLI build and `pkg:check` run only when CLI-related paths change. Docs build runs in
-a separate `checks-docs` job when `apps/docs` or `packages/design` change.
-
-**Main branch**
-
-```sh
-bun install --frozen-lockfile
-bun run ci             # full workspace sweep
-bun run build
-bun run pkg:check
-```
-
-Docs build runs in `checks-docs` (same path filter as PRs).
-
-Install cache key: `bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}` covering
-`~/.bun/install/cache` and `node_modules`.
 
 ## Release guardrails
 

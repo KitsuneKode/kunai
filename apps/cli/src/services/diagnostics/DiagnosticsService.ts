@@ -1,3 +1,5 @@
+import type { SessionState } from "@/domain/session/SessionState";
+
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
@@ -13,5 +15,7 @@ export interface DiagnosticsService {
   buildSupportBundle(input?: {
     readonly capabilities?: Record<string, unknown> | null;
     readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
+    readonly sessionState?: SessionState | null;
+    readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
   }): DiagnosticsSupportBundle;
 }

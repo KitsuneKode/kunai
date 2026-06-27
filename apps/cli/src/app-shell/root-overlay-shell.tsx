@@ -25,7 +25,6 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
-import { getRuntimeMemorySamples } from "@/services/diagnostics/runtime-memory";
 import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import {
@@ -38,6 +37,7 @@ import { Box, Text, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
+import { buildDiagnosticsPanelInput } from "./diagnostics-panel-source";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
@@ -48,7 +48,7 @@ import {
   type HistoryTypeFilter,
 } from "./history-view";
 import { routeOverlayInput } from "./input-router";
-import { helpSections, type HelpSection } from "./keybindings";
+import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
 import {
   getOverlayContentViewport,
   getOverlayHostChromeRows,
@@ -104,7 +104,7 @@ import {
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
-import { type RootOwnedOverlay } from "./root-shell-state";
+import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
@@ -126,7 +126,20 @@ const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
 
 const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
 
-type HelpTab = (typeof HELP_TABS_INTERNAL)[number];
+/** Human-readable scope labels for the help overlay header. */
+const HELP_SCOPE_LABELS: Record<KeyScope, string> = {
+  global: "global",
+  editing: "editing",
+  browse: "browse",
+  search: "search",
+  loading: "loading",
+  library: "library",
+  player: "playing",
+  postPlayback: "post-play",
+  queue: "queue",
+  history: "history",
+  notifications: "notifications",
+};
 
 const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
   helpSections().map((section) => [section.group, section]),
@@ -171,6 +184,8 @@ function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
 }
 
 function HelpShell({
+  sections,
+  scopeLabel,
   commandMode,
   commandInput,
   commandCursor,
@@ -179,6 +194,10 @@ function HelpShell({
   footerActions,
   onClose,
 }: {
+  /** Scope-filtered help sections for the surface beneath the overlay. */
+  sections: readonly HelpSection[];
+  /** Human label for the active scope, shown in the header (e.g. "playing"). */
+  scopeLabel: string;
   commandMode: boolean;
   commandInput: string;
   commandCursor: number;
@@ -187,18 +206,25 @@ function HelpShell({
   footerActions: readonly FooterAction[];
   onClose: () => void;
 }) {
-  const initialTab = (HELP_TABS[0] ?? "Global") as HelpTab;
-  const [activeTab, setActiveTab] = useState<HelpTab>(initialTab);
+  const tabs = sections.length > 0 ? sections.map((section) => section.group) : HELP_TABS;
+  const sectionByGroup = useMemo(
+    () => new Map(sections.map((section) => [section.group, section])),
+    [sections],
+  );
+  const [activeTab, setActiveTab] = useState<string>(tabs[0] ?? "Global");
+  // Scope can change while the overlay is open (playback starts/ends); keep the
+  // active tab valid instead of rendering an empty body.
+  const safeActiveTab = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? "Global");
 
   useInput(
     (input, key) => {
       if (commandMode) return;
       if (key.tab) {
         setActiveTab((prev) => {
-          const idx = HELP_TABS.indexOf(prev);
+          const idx = tabs.indexOf(prev);
           const delta = key.shift ? -1 : 1;
-          const next = HELP_TABS[(idx + delta + HELP_TABS.length) % HELP_TABS.length];
-          return (next ?? HELP_TABS[0] ?? prev) as HelpTab;
+          const next = tabs[(idx + delta + tabs.length) % tabs.length];
+          return next ?? tabs[0] ?? prev;
         });
         return;
       }
@@ -212,34 +238,52 @@ function HelpShell({
     { isActive: !commandMode },
   );
 
-  const rows = helpTabRows(activeTab);
+  const rows = (sectionByGroup.get(safeActiveTab)?.items ?? []).map((hint) => ({
+    key: hint.keys,
+    desc: hint.label,
+  }));
+  // Dense reference card: split the active section's rows into two balanced
+  // columns so a long surface (player/postPlayback) reads without scrolling.
+  const half = Math.ceil(rows.length / 2);
+  const leftRows = rows.slice(0, half);
+  const rightRows = rows.slice(half);
+  const keyColWidth = Math.max(8, ...rows.map((row) => row.key.length));
+  const renderColumn = (columnRows: typeof rows, side: "left" | "right") => (
+    <Box flexDirection="column" flexGrow={1} marginRight={side === "left" ? 2 : 0}>
+      {columnRows.map((row) => (
+        <Box key={row.key} flexDirection="row" marginBottom={0} flexWrap="nowrap">
+          <Text color={palette.accent}>{row.key.padEnd(keyColWidth)}</Text>
+          <Text color={palette.textDim}> {row.desc}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
 
   return (
     <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
       <Box flexDirection="column" flexGrow={1} paddingX={1} marginTop={1}>
-        <Text color={palette.text} bold>
-          {"▸ Help"}
-        </Text>
+        <Box flexDirection="row" flexWrap="nowrap">
+          <Text color={palette.accent} bold>
+            {"❀ Help"}
+          </Text>
+          <Text color={palette.muted}>{`  ·  ${scopeLabel}`}</Text>
+        </Box>
         <Text color={palette.dim}>{"Tab / Shift+Tab cycles sections · Esc or ? closes"}</Text>
         {/* Tab strip */}
-        <Box flexDirection="row" marginTop={1} marginBottom={0}>
-          {HELP_TABS.map((tab) => (
+        <Box flexDirection="row" marginTop={1} marginBottom={0} flexWrap="wrap">
+          {tabs.map((tab) => (
             <Box key={tab} marginRight={3} flexDirection="column">
-              <Text color={activeTab === tab ? palette.accent : palette.dim}>{tab}</Text>
-              {activeTab === tab ? (
+              <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>{tab}</Text>
+              {safeActiveTab === tab ? (
                 <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
               ) : null}
             </Box>
           ))}
         </Box>
-        {/* Tab content */}
-        <Box flexDirection="column" marginTop={1}>
-          {rows.map((row) => (
-            <Box key={row.key} flexDirection="row" marginBottom={0}>
-              <Text color={palette.text}>{row.key.padEnd(16)}</Text>
-              <Text color={palette.dim}>{row.desc}</Text>
-            </Box>
-          ))}
+        {/* Tab content — two dense columns */}
+        <Box flexDirection="row" marginTop={1}>
+          {renderColumn(leftRows, "left")}
+          {rightRows.length > 0 ? renderColumn(rightRows, "right") : null}
         </Box>
       </Box>
       <Box flexDirection="column">
@@ -546,25 +590,7 @@ export function RootOverlayShell({
             capabilitySnapshot: container.capabilitySnapshot,
           })
         : overlay.type === "diagnostics"
-          ? buildDiagnosticsPanelLines({
-              state,
-              recentEvents: container.diagnosticsService.getRecent(
-                container.debugTracePath ? 50 : 25,
-              ),
-              developerMode: Boolean(container.debugTracePath),
-              capabilitySnapshot: container.capabilitySnapshot,
-              downloadSummary: {
-                active: container.downloadService.listActive(200).length,
-                completed: container.downloadService.listCompleted(200).length,
-                failed: container.downloadService.listFailed(200).length,
-              },
-              releaseSummary: container.releaseProgressCache.summarizeActive(),
-              releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
-              presenceSnapshot: container.presence.getSnapshot(),
-              memorySamples: getRuntimeMemorySamples(),
-              providers: container.providerRegistry.getAll().map((provider) => provider.metadata),
-              getProviderHealth: (providerId) => container.providerHealth.get(providerId),
-            })
+          ? buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container))
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const genericPickerOptions = useMemo(
@@ -1777,9 +1803,25 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "help") {
+    const helpScope = resolveHelpScope(state);
+    const scopeSections = helpSectionsForScope(helpScope);
+    // Merge the slash commands that are actually live on this surface so the
+    // overlay documents both chords and `/commands` in one reference.
+    const commandItems = commands
+      .filter((command) => command.enabled)
+      .map((command) => ({
+        keys: `/${command.aliases[0] ?? command.label.toLowerCase()}`,
+        label: command.description || command.label,
+      }));
+    const helpScopeSections =
+      commandItems.length > 0
+        ? [...scopeSections, { group: "Commands", items: commandItems }]
+        : scopeSections;
     return wrapOverlayLayout(
       overlayLayout,
       <HelpShell
+        sections={helpScopeSections}
+        scopeLabel={HELP_SCOPE_LABELS[helpScope]}
         commandMode={commandMode}
         commandInput={commandInput}
         commandCursor={commandCursor}

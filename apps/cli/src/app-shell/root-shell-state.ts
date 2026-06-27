@@ -1,5 +1,7 @@
 import type { OverlayState, SessionState, StateTransition } from "@/domain/session/SessionState";
 
+import type { KeyScope } from "./keybindings";
+
 export type RootOwnedOverlay = Extract<
   OverlayState,
   {
@@ -86,9 +88,14 @@ export function resolveRootShellSurface(
     }
     return "playback";
   }
-  // Tracks replaces the whole terminal during post-play / browse pickers — stacking it
-  // under root-content duplicated footers and left post-play actions visible.
-  if (hasRootContent && rootOverlay?.type === "tracks_panel") {
+  // Any root-owned overlay (tracks, season/episode/provider pickers, settings,
+  // history, queue, help, …) opened while a root-content session (browse /
+  // post-play / picker) is mounted must take over the whole terminal. The old
+  // code only promoted `tracks_panel`; every other overlay fell through to
+  // "root-content", which renders the mounted session and silently drops the
+  // overlay — so post-play submenus, the browse `m` menu, provider switching,
+  // and cache-purge dialogs all looked broken (they were just hidden underneath).
+  if (hasRootContent && rootOverlay) {
     return "root-overlay";
   }
   if (hasRootContent) {
@@ -101,6 +108,30 @@ export function resolveRootShellSurface(
     return "mounted-screen";
   }
   return "idle";
+}
+
+/**
+ * Keybinding scope the `?` help overlay should document, derived from what the
+ * user is actually doing beneath the overlay. Help is pushed on top of the live
+ * surface, so we read playback truth rather than the (now "root-overlay")
+ * RootShellSurface: active playback → player, just-finished → postPlayback,
+ * otherwise the browse surface. Globals are folded in by `bindingsForScope`.
+ */
+export function resolveHelpScope(state: SessionState): KeyScope {
+  switch (state.playbackStatus) {
+    case "loading":
+    case "ready":
+    case "buffering":
+    case "seeking":
+    case "stalled":
+    case "playing":
+    case "paused":
+      return "player";
+    case "finished":
+      return "postPlayback";
+    default:
+      return "browse";
+  }
 }
 
 export function resolveEscTransition(state: SessionState): StateTransition | null {

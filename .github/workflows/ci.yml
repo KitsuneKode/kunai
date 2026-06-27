@@ -14,7 +14,8 @@ permissions:
 
 env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
-  TURBO_TOKEN: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.TURBO_TOKEN || '' }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
 
 jobs:
   # Decide which expensive release-artifact jobs are worth running for this diff.
@@ -62,52 +63,89 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
 
-  checks:
-    name: Checks
-    needs: changes
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: fmt
+
+      - name: Format check (affected on PR)
+        if: github.event_name == 'pull_request'
+        run: bunx turbo run fmt:check --affected --summarize
+
+      - name: Format check (full on main)
+        if: github.event_name == 'push'
+        run: bunx turbo run fmt:check --summarize
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: lint
+
+      - name: Lint (affected on PR)
+        if: github.event_name == 'pull_request'
+        run: bunx turbo run lint --affected --summarize
+
+      - name: Lint (full on main)
+        if: github.event_name == 'push'
+        run: bunx turbo run lint --summarize
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: typecheck
+
+      - name: Typecheck (affected on PR)
+        if: github.event_name == 'pull_request'
+        run: bunx turbo run typecheck --affected --summarize
+
+      - name: Typecheck (full on main)
+        if: github.event_name == 'push'
+        run: bunx turbo run typecheck --summarize
+
+  test:
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
         with:
-          fetch-depth: 0
+          turbo-cache-prefix: test
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Cache Bun install
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Verify (affected on PR)
+      - name: Test (affected on PR)
         if: github.event_name == 'pull_request'
-        run: bun run ci:affected
+        run: bunx turbo run test --affected --summarize
 
-      - name: Verify (full on main)
+      - name: Test (full on main)
         if: github.event_name == 'push'
-        run: bun run ci
+        run: bunx turbo run test --summarize
 
-      - name: Build CLI
-        if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
-        run: bun run build
+  installer-lint:
+    name: Installer script lint
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-      - name: Package check
-        if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
-        run: bun run pkg:check
+    steps:
+      - uses: actions/checkout@v5
 
       - name: Lint installer scripts
-        if: needs.changes.outputs.installer == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck shfmt
@@ -115,13 +153,30 @@ jobs:
           shfmt -d install.sh
 
       - name: Lint PowerShell installer
-        if: needs.changes.outputs.installer == 'true'
         shell: pwsh
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
           $issues = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error
           if ($issues) { $issues | Format-Table; exit 1 }
+
+  build-cli:
+    name: Build CLI + npm pack guard
+    needs: [changes, typecheck]
+    if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: build
+
+      - name: Build npm bundle and host binary
+        run: bun run build
+
+      - name: Package check (no dist/bin bloat)
+        run: bun run pkg:check
 
   checks-docs:
     name: Docs build
@@ -131,26 +186,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
         with:
-          fetch-depth: 0
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Cache Bun install
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+          turbo-cache-prefix: docs
 
       - name: Verify docs gate
         run: |
@@ -163,33 +201,20 @@ jobs:
 
   build-binaries:
     name: Build linux binaries
-    needs: [changes, checks]
+    needs: [changes, typecheck]
     if: needs.changes.outputs.cli == 'true' || needs.changes.outputs.installer == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-monorepo
         with:
-          bun-version-file: package.json
-
-      - name: Cache Bun install
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+          turbo-cache-prefix: binaries
 
       - name: Build linux binaries (glibc + musl)
-        run: bun run build:binaries -- --only linux-x64 --only linux-x64-musl --jobs 2
+        run: >-
+          bunx turbo run build:binaries --filter=@kitsunekode/kunai --
+          --only linux-x64 --only linux-x64-musl --jobs 2
 
       - name: Smoke test compiled binaries
         run: bash apps/cli/scripts/verify-release-binaries.sh --partial
@@ -231,7 +256,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Cache installer smoke images
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/.buildx-cache
           key: installer-smoke-${{ runner.os }}-${{ hashFiles('apps/cli/test/docker/native-installer/Dockerfile') }}

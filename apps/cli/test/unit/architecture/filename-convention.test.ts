@@ -16,7 +16,6 @@ const TSX_NAMING_ALLOWLIST = new Set([
   "app-shell/overlay-panel.tsx",
   "app-shell/overlay-picker-row.tsx",
   "app-shell/picker-overlay.tsx",
-  "app-shell/playback-playing-rail.tsx",
   "app-shell/poster-initial-block.tsx",
   "app-shell/root-status-shells.tsx",
   "app-shell/shell-command-mode.tsx",

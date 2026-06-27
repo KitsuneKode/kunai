@@ -64,6 +64,35 @@ describe("DiagnosticsServiceImpl", () => {
     expect(logger.messages).toEqual(["info:Playback started"]);
   });
 
+  test("promotes legacy bare events into the shared envelope shape", () => {
+    const store = new DiagnosticsStoreImpl();
+    const service = new DiagnosticsServiceImpl({
+      store,
+      logger: createLogger(),
+      now: () => new Date("2026-06-25T00:00:00.000Z"),
+    });
+
+    service.record({
+      category: "playback",
+      message: "Legacy playback event",
+      context: { phase: "resolve" },
+    });
+
+    const event = store.getSnapshot()[0];
+    expect(event).toMatchObject({
+      category: "playback",
+      operation: "playback.event",
+      message: "Legacy playback event",
+      context: {
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        spanFamily: "playback.startup",
+        phase: "resolve",
+      },
+    });
+  });
+
   test("fans a redacted event out to store logger and trace reporter", async () => {
     const dir = await mkdtemp(join(tmpdir(), "kunai-diagnostics-service-"));
     try {
@@ -87,10 +116,14 @@ describe("DiagnosticsServiceImpl", () => {
 
       const expectedUrl =
         "https://cdn.example/stream.m3u8?X-Amz-Signature=[redacted]&Policy=[redacted]&quality=1080p";
-      expect(store.getSnapshot()[0]?.context).toEqual({ streamUrl: expectedUrl });
+      expect(store.getSnapshot()[0]?.context).toMatchObject({
+        streamUrl: expectedUrl,
+        status: "succeeded",
+        spanFamily: "playback.startup",
+      });
       expect(logger.entries[0]?.context).toMatchObject({ streamUrl: expectedUrl });
       const trace = JSON.parse((await readFile(filePath, "utf8")).trim());
-      expect(trace.context).toEqual({ streamUrl: expectedUrl });
+      expect(trace.context).toMatchObject({ streamUrl: expectedUrl });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -121,8 +154,10 @@ describe("DiagnosticsServiceImpl", () => {
 
     expect(bundle.app).toEqual({ version: "1.2.3", debug: true });
     expect(bundle.eventCount).toBe(1);
-    expect(bundle.events[0]?.context).toEqual({
+    expect(bundle.events[0]?.context).toMatchObject({
       streamUrl: "https://cdn.example/stream.m3u8?token=[redacted]",
+      status: "succeeded",
+      spanFamily: "cache.maintenance",
     });
     expect(bundle.correlation).toEqual({
       sessionIds: ["session-1"],
@@ -198,9 +233,11 @@ describe("DiagnosticsServiceImpl", () => {
     expect(store.getSnapshot()).toHaveLength(1);
     expect(persisted).toEqual([
       expect.objectContaining({
-        context: {
+        context: expect.objectContaining({
           url: "https://cdn.example/stream.m3u8?token=[redacted]&quality=1080p",
-        },
+          status: "failed",
+          severity: "blocked",
+        }),
       }),
     ]);
   });
@@ -236,7 +273,11 @@ describe("DiagnosticsServiceImpl", () => {
       expect(secondService.buildSupportBundle().events).toEqual([
         expect.objectContaining({
           operation: "provider.resolve.timeline",
-          context: { url: "https://cdn.example/watch?token=[redacted]" },
+          context: expect.objectContaining({
+            url: "https://cdn.example/watch?token=[redacted]",
+            status: "failed",
+            spanFamily: "provider.resolve",
+          }),
         }),
       ]);
     } finally {

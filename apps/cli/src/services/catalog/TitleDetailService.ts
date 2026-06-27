@@ -108,6 +108,7 @@ export async function fetchTitleDetail(
   id: string,
   type: ContentType,
   signal?: AbortSignal,
+  hints?: TitleDetailHints,
 ): Promise<TitleDetail> {
   const key = cacheKey(id, type);
   const now = Date.now();
@@ -116,9 +117,18 @@ export async function fetchTitleDetail(
     return cached.detail;
   }
 
-  const detail = await resolveTitleDetail(id, type, signal);
+  const detail = await resolveTitleDetail(id, type, signal, hints);
   detailCache.set(key, { detail, fetchedAt: now });
   return detail;
+}
+
+/**
+ * Resolution hints carried from the calling title. Lets anime (whose ids are
+ * often opaque provider hashes or bare AniList numbers) resolve AniList detail —
+ * and avoids a bare-numeric AniList id being mistaken for a TMDB id.
+ */
+export interface TitleDetailHints {
+  readonly externalIds?: ProviderExternalIds;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +139,19 @@ async function resolveTitleDetail(
   id: string,
   type: ContentType,
   signal?: AbortSignal,
+  hints?: TitleDetailHints,
 ): Promise<TitleDetail> {
-  const tmdbId = extractTmdbId(id);
-  const anilistId = extractAnilistId(id);
+  // An explicit AniList id (from id prefix or the calling title's externalIds)
+  // is authoritative for anime — including when the id is a bare number that
+  // would otherwise be mistaken for a TMDB id.
+  const anilistId = extractAnilistId(id) ?? hints?.externalIds?.anilistId ?? null;
+  const hintedTmdbId = hints?.externalIds?.tmdbId ?? null;
+  let tmdbId = extractTmdbId(id) ?? hintedTmdbId;
+  // Bare-numeric anime id that is really the AniList id must not drive a TMDB
+  // fetch (it would resolve a wrong unrelated title).
+  if (tmdbId && anilistId && tmdbId === anilistId && !hintedTmdbId) {
+    tmdbId = null;
+  }
 
   // Determine what to fetch in parallel
   const fetches: Promise<unknown>[] = [];
@@ -143,13 +163,11 @@ async function resolveTitleDetail(
     fetches.push(tmdbFetch);
   }
 
-  // AniList is relevant for anime series or when we have an explicit anilistId
-  if (anilistId || (type === "series" && !tmdbId)) {
-    const alId = anilistId ?? (tmdbId ? null : null);
-    if (alId) {
-      anilistFetch = fetchAniListDetail(alId, signal);
-      fetches.push(anilistFetch);
-    }
+  // AniList is relevant when we have an explicit anilistId, or for an anime
+  // series that lacks a TMDB id to anchor on.
+  if (anilistId) {
+    anilistFetch = fetchAniListDetail(anilistId, signal);
+    fetches.push(anilistFetch);
   }
 
   // If we have a tmdbId but this might be anime, also fetch AniList via
@@ -619,6 +637,7 @@ query($id: Int) {
     endDate { year }
     coverImage { extraLarge large }
     bannerImage
+    streamingEpisodes { title thumbnail }
     trailer { id site }
     studios(isMain: true) { nodes { name } }
     characters(role: MAIN, page: 1, perPage: 15, sort: [ROLE]) {
@@ -690,10 +709,25 @@ async function fetchAniListDetail(
   const posterUrl = readString(coverImage.extraLarge) || readString(coverImage.large) || undefined;
   const backdropUrl = readString(media.bannerImage) || undefined;
 
+  // AniList `streamingEpisodes` are ordered, so index+1 is the episode number.
+  // These are the anime episode stills the rail/picker need (TMDB has none for
+  // most anime). Single-season assumption matches anime's flat 1..N numbering.
+  const streamingEpisodes = Array.isArray(media.streamingEpisodes)
+    ? media.streamingEpisodes.map(readRecord)
+    : [];
+  const episodeThumbnails: Record<string, string> = {};
+  streamingEpisodes.forEach((row, index) => {
+    const thumbnail = readString(row.thumbnail);
+    if (thumbnail) {
+      episodeThumbnails[episodeThumbKey(1, index + 1)] = thumbnail;
+    }
+  });
+
   const artwork: ArtworkCandidate = {
     source: "anilist",
     poster: posterUrl,
     backdrop: backdropUrl,
+    ...(Object.keys(episodeThumbnails).length ? { episodeThumbnails } : {}),
   };
 
   const rawStatus = readString(media.status).toLowerCase();

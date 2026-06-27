@@ -39,11 +39,17 @@ describe("runBackgroundTask", () => {
       providerAttemptId: "provider-1",
       traceId: "trace-1",
     });
-    expect(event?.context).toEqual({
+    expect(event?.context).toMatchObject({
       errorName: "Error",
       errorMessage:
         "failed for https://cdn.example/watch/[redacted-id]/master.m3u8?token=[redacted]",
       streamUrl: "https://cdn.example/watch/[redacted-id]/master.m3u8?token=[redacted]",
+      stage: "presence.heartbeat",
+      status: "failed",
+      severity: "degraded",
+      failureClass: "unknown",
+      recommendedAction: "retry",
+      spanFamily: "presence.session",
     });
   });
 

@@ -307,7 +307,11 @@ describe("SessionState overlays", () => {
     expect(resolveEscTransition(state)).toBeNull();
   });
 
-  test("mounted root content remains primary while overlays render inside it", () => {
+  test("a root-owned overlay opened over mounted root content takes the full screen", () => {
+    // Browse / post-play / picker sessions do not composite root-owned overlays
+    // themselves, so an open overlay must escape to the full-screen root-overlay
+    // surface instead of being hidden under the mounted session. Previously only
+    // tracks_panel escaped, which silently dropped every other submenu.
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },
@@ -316,6 +320,21 @@ describe("SessionState overlays", () => {
     state = reduceState(state, {
       type: "OPEN_OVERLAY",
       overlay: { type: "diagnostics" },
+    });
+
+    expect(
+      resolveRootShellSurface(state, {
+        hasRootContent: true,
+        hasMountedScreen: false,
+      }),
+    ).toBe("root-overlay");
+  });
+
+  test("mounted root content stays primary when no root-owned overlay is open", () => {
+    const state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
     });
 
     expect(

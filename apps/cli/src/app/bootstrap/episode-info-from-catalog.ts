@@ -16,6 +16,7 @@ export function episodeInfoFromSelection(args: {
       season,
       episode,
       name: match?.name ?? match?.label,
+      ...(match?.previewImageUrl ? { artwork: { thumbnailUrl: match.previewImageUrl } } : {}),
     };
   }
 
@@ -26,6 +27,7 @@ export function episodeInfoFromSelection(args: {
     name: cached?.name,
     airDate: cached?.airDate,
     overview: cached?.overview,
+    ...(cached?.stillPath ? { artwork: { thumbnailUrl: cached.stillPath } } : {}),
   };
 }
 
@@ -37,5 +39,6 @@ export function episodeInfoFromAnimePickerOption(
     season,
     episode: option.index,
     name: option.name ?? option.label,
+    ...(option.previewImageUrl ? { artwork: { thumbnailUrl: option.previewImageUrl } } : {}),
   };
 }

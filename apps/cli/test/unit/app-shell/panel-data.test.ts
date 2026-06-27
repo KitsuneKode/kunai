@@ -86,8 +86,8 @@ describe("panel-data", () => {
     });
 
     expect(lines.find((line) => line.label === "Subtitles")?.detail).toContain("not resolved yet");
-    expect(lines.find((line) => line.label === "Presence")?.detail).toContain("unavailable");
-    expect(lines.find((line) => line.label === "Presence")?.tone).toBe("warning");
+    expect(lines.find((line) => line.label === "Discord")?.detail).toContain("unavailable");
+    expect(lines.find((line) => line.label === "Discord")?.tone).toBe("warning");
   });
 
   test("buildDiagnosticsPanelLines surfaces YouTube probe rows", () => {
@@ -136,10 +136,10 @@ describe("panel-data", () => {
       recentEvents: [],
     });
 
-    const session = lines.find((line) => line.label === "Session");
-    expect(session?.detail).toContain("expired-stream");
-    expect(session?.detail).toContain("refresh");
-    expect(session?.tone).toBe("error");
+    const verdict = lines.find((line) => line.label === "Verdict");
+    expect(verdict?.detail).toContain("stream expired");
+    expect(verdict?.detail).toMatch(/refresh source|Refresh source/i);
+    expect(verdict?.tone).toBe("warning");
   });
 
   test("buildDiagnosticsPanelLines surfaces direct provider trace summary", () => {
@@ -247,7 +247,7 @@ describe("panel-data", () => {
     });
 
     expect(lines.find((line) => line.label === "Provider")?.detail).toContain("rivestream");
-    expect(lines.find((line) => line.label === "Resolve trace")?.detail).toContain(
+    expect(lines.find((line) => line.label === "Provider timeline")?.detail).toContain(
       "vidking failed (timeout) -> rivestream succeeded",
     );
   });
@@ -325,7 +325,7 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Playback startup")?.detail).toContain(
       "first-progress 2.1s",
     );
-    expect(lines.find((line) => line.label === "Playback startup")?.tone).toBe("success");
+    expect(lines.find((line) => line.label === "Slowest startup stage")?.detail).toBeDefined();
   });
 
   test("buildDiagnosticsPanelLines surfaces correlated runtime evidence honestly", () => {
@@ -409,32 +409,32 @@ describe("panel-data", () => {
 
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Mode",
+        label: "Correlation",
         detail: expect.stringContaining("cycle-42"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Playback startup",
-        detail: expect.stringContaining("resolve-complete 850ms"),
+        label: "Slowest startup stage",
+        detail: expect.stringContaining("resolve-complete"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
-        label: "Resolve trace",
-        detail: expect.stringContaining("vidking failed in 742ms"),
+        label: "Provider attempts",
+        detail: expect.stringContaining("vidking failed"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
         label: "Subtitles",
-        detail: expect.stringContaining("late"),
+        detail: expect.stringContaining("attached"),
       }),
     );
     expect(lines).toContainEqual(
       expect.objectContaining({
         label: "Downloads",
-        detail: expect.stringContaining("queue idle"),
+        detail: expect.stringContaining("Unknown"),
         tone: "neutral",
       }),
     );
@@ -663,16 +663,17 @@ describe("panel-data", () => {
       },
     });
 
-    expect(lines[0]?.label).toMatch(/Diagnostics|issue/);
-    expect(lines[0]?.tone).toMatch(/warning|error|success/);
-    expect(lines.find((line) => line.label === "Session")?.detail).toContain("stalled");
+    expect(lines[0]?.label).toBe("─── Verdict");
+    expect(lines.find((line) => line.label === "Verdict")?.detail).toMatch(
+      /stalled|Needs attention/i,
+    );
     expect(lines.find((line) => line.label === "Downloads")?.tone).toBe("warning");
     expect(lines.find((line) => line.label === "Release sync")?.detail).toContain("4 new episodes");
     expect(lines.find((line) => line.label === "Release sync")?.detail).toContain(
       "5 tracked in cache",
     );
-    expect(lines.findIndex((line) => line.label === "Session")).toBeLessThan(
-      lines.findIndex((line) => line.label === "─── Export"),
+    expect(lines.findIndex((line) => line.label === "─── Verdict")).toBeLessThan(
+      lines.findIndex((line) => line.label === "─── Export And Report"),
     );
   });
 

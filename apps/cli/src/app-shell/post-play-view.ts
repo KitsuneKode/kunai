@@ -764,17 +764,13 @@ export function resolvePostPlayUnhandledInput(
   }
   const bindingResult = binding ? resolvePostPlaybackBindingResult(binding) : null;
   if (binding && bindingResult) {
+    // Bookmark/watchlist only makes sense while caught up on an airing series.
     if (binding.id === "post-watchlist" && context.postPlayStateKind !== "caught-up") return null;
-    if (
-      (binding.id === "post-replay" ||
-        binding.id === "post-fallback" ||
-        binding.id === "post-source" ||
-        binding.id === "post-diagnostics" ||
-        binding.id === "post-search") &&
-      context.postPlayStateKind !== "did-not-start"
-    ) {
-      return null;
-    }
+    // Replay / fallback / source / diagnostics / search are valid accelerators in
+    // every post-play state (the footer advertises source + replay in mid-series),
+    // so they are no longer gated to `did-not-start`. `history` was always global;
+    // these match it. State-specific availability is enforced by the footer + the
+    // action list, not by silently dropping the key here.
     return { type: "shell-result", result: bindingResult };
   }
   if (context.postPlayStateKind === "did-not-start") {

@@ -946,11 +946,11 @@ export function footerHints(scope: KeyScope, max?: number): readonly KeyHint[] {
   return max === undefined ? hints : hints.slice(0, max);
 }
 
-/** All bindings grouped by their help group, in registry order, for the `?` overlay. */
-export function helpSections(): readonly HelpSection[] {
+/** Group a set of bindings into help sections, preserving first-seen group order. */
+function groupHelpSections(bindings: readonly KeyBinding[]): readonly HelpSection[] {
   const order: string[] = [];
   const byGroup = new Map<string, KeyHint[]>();
-  for (const binding of KEYBINDINGS) {
+  for (const binding of bindings) {
     if (!byGroup.has(binding.group)) {
       byGroup.set(binding.group, []);
       order.push(binding.group);
@@ -958,4 +958,20 @@ export function helpSections(): readonly HelpSection[] {
     byGroup.get(binding.group)?.push({ keys: bindingKeys(binding), label: binding.label });
   }
   return order.map((group) => ({ group, items: byGroup.get(group) ?? [] }));
+}
+
+/** All bindings grouped by their help group, in registry order, for the `?` overlay. */
+export function helpSections(): readonly HelpSection[] {
+  return groupHelpSections(KEYBINDINGS);
+}
+
+/**
+ * Context-aware help: only the chords that apply on `scope` (its own plus the
+ * inherited globals via {@link bindingsForScope}), grouped for the `?` overlay.
+ * Drops irrelevant surfaces so the overlay reads as "what can I do here" rather
+ * than the whole registry. `helpOnly` entries are kept — they document keys
+ * owned by another layer (line editor / list / mpv) that are still live here.
+ */
+export function helpSectionsForScope(scope: KeyScope): readonly HelpSection[] {
+  return groupHelpSections(bindingsForScope(scope));
 }

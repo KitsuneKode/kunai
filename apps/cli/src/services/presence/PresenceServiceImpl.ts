@@ -1,4 +1,5 @@
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import { buildPresenceDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 
@@ -105,11 +106,16 @@ export class PresenceServiceImpl implements PresenceService {
     this.lastActivityHash = null;
     if (client) {
       await client.destroy().catch(() => undefined);
-      this.deps.diagnostics.record({
-        category: "presence",
-        message: "Discord presence disconnected",
-        context: { provider: "discord", reason },
-      });
+      this.deps.diagnostics.record(
+        buildPresenceDiagnosticEvent({
+          operation: "presence.disconnect.succeeded",
+          status: "succeeded",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "Discord presence disconnected",
+          context: { provider: "discord", reason },
+        }),
+      );
     }
     this.status = this.deps.config.presenceProvider === "off" ? "disabled" : "idle";
     return this.getSnapshot();
@@ -140,20 +146,24 @@ export class PresenceServiceImpl implements PresenceService {
         if (this.deps.config.presencePrivacy === "full") {
           const posterAsset = buildDiscordPosterAsset(coalesced.title, coalesced.episode);
           if (posterAsset.fallbackReason) {
-            this.deps.diagnostics.record({
-              category: "presence",
-              operation: "presence.poster.fallback",
-              message: "Discord poster fell back to portal asset",
-              context: {
-                reason: posterAsset.fallbackReason,
-                titleId: coalesced.title.id,
-                candidates: [
-                  coalesced.title.posterUrl,
-                  coalesced.title.artwork?.posterUrl,
-                  coalesced.title.artwork?.thumbnailUrl,
-                ].filter((value): value is string => Boolean(value?.trim())),
-              },
-            });
+            this.deps.diagnostics.record(
+              buildPresenceDiagnosticEvent({
+                operation: "presence.poster.fallback",
+                status: "skipped",
+                severity: "degraded",
+                recommendedAction: "none",
+                message: "Discord poster fell back to portal asset",
+                context: {
+                  reason: posterAsset.fallbackReason,
+                  titleId: coalesced.title.id,
+                  candidates: [
+                    coalesced.title.posterUrl,
+                    coalesced.title.artwork?.posterUrl,
+                    coalesced.title.artwork?.thumbnailUrl,
+                  ].filter((value): value is string => Boolean(value?.trim())),
+                },
+              }),
+            );
           }
         }
         const activityHash = stableJsonHash(payload);
@@ -235,11 +245,16 @@ export class PresenceServiceImpl implements PresenceService {
   private async clearDiscordActivity(client: DiscordPresenceClient, reason: string): Promise<void> {
     try {
       await client.clearActivity();
-      this.deps.diagnostics.record({
-        category: "presence",
-        message: "Presence cleared",
-        context: { provider: "discord", reason },
-      });
+      this.deps.diagnostics.record(
+        buildPresenceDiagnosticEvent({
+          operation: "presence.clear.succeeded",
+          status: "succeeded",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "Presence cleared",
+          context: { provider: "discord", reason },
+        }),
+      );
     } catch (error) {
       this.markUnavailable("Discord presence clear failed", error, {
         suspectedDuplicateDiscordConsumer: true,
@@ -300,11 +315,16 @@ export class PresenceServiceImpl implements PresenceService {
       this.unavailableReason = null;
       this.unavailableRetryAtMs = 0;
       this.unavailableBackoffMs = 1_000;
-      this.deps.diagnostics.record({
-        category: "presence",
-        message: "Discord presence connected",
-        context: { provider: "discord", transport: "bun-discord-ipc" },
-      });
+      this.deps.diagnostics.record(
+        buildPresenceDiagnosticEvent({
+          operation: "presence.connect.succeeded",
+          status: "succeeded",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "Discord presence connected",
+          context: { provider: "discord", transport: "bun-discord-ipc" },
+        }),
+      );
       return client;
     } catch (error) {
       this.markUnavailable("Discord presence unavailable", error, {
@@ -324,18 +344,27 @@ export class PresenceServiceImpl implements PresenceService {
     this.unavailableReason = normalizePresenceError(error);
     this.unavailableRetryAtMs = Date.now() + this.unavailableBackoffMs;
     this.unavailableBackoffMs = Math.min(this.unavailableBackoffMs * 2, 60_000);
-    this.deps.diagnostics.record({
-      category: "presence",
-      message,
-      context: {
-        provider: "discord",
-        error: this.unavailableReason ?? String(error),
-        retry: `auto-retry-in-${Math.max(1, Math.ceil((this.unavailableRetryAtMs - Date.now()) / 1000))}s`,
-        ...(options?.suspectedDuplicateDiscordConsumer
-          ? { suspectedDuplicateDiscordConsumer: DISCORD_PRESENCE_MULTI_INSTANCE_DIAGNOSTIC }
-          : {}),
-      },
-    });
+    this.deps.diagnostics.record(
+      buildPresenceDiagnosticEvent({
+        operation: message.toLowerCase().includes("clear")
+          ? "presence.clear.failed"
+          : message.toLowerCase().includes("update")
+            ? "presence.update.failed"
+            : "presence.connect.failed",
+        status: "failed",
+        severity: "degraded",
+        failureClass: "ipc",
+        message,
+        context: {
+          provider: "discord",
+          error: this.unavailableReason ?? String(error),
+          retry: `auto-retry-in-${Math.max(1, Math.ceil((this.unavailableRetryAtMs - Date.now()) / 1000))}s`,
+          ...(options?.suspectedDuplicateDiscordConsumer
+            ? { suspectedDuplicateDiscordConsumer: DISCORD_PRESENCE_MULTI_INSTANCE_DIAGNOSTIC }
+            : {}),
+        },
+      }),
+    );
   }
 
   private startHeartbeat(): void {

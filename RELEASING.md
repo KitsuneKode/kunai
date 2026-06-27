@@ -66,7 +66,9 @@ Short one-line summary of the release.
   2. **Binaries** (only after a real publish) — `bun run build:binaries` (all 8 targets), `verify-release-binaries.sh`, merges per-asset SHA256 checksums into `.release/kunai-v<version>.json`, then `softprops/action-gh-release` uploads assets + `SHA256SUMS` to tag `v<version>` with body from `.release/kunai-v<version>.md`.
 - `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` via `bun run release:notes`.
 - Publish uses OIDC (`id-token: write`) with npm provenance enabled.
-- **CI** (`.github/workflows/ci.yml`): on installer-related diffs, runs Docker `install.sh → upgrade → uninstall` smoke after building linux glibc + musl binaries (images cached; binaries not rebuilt in Docker job).
+- **CI** (`.github/workflows/ci.yml`): parallel Turbo jobs (`fmt`, `lint`, `typecheck`, `test`, `build-cli`, `build-binaries`); on installer-related diffs, runs Docker `install.sh → upgrade → uninstall` smoke after building linux glibc + musl binaries (images cached; binaries not rebuilt in Docker job).
+
+**npm vs GitHub Release artifacts:** npm publishes only `dist/kunai.js` and `dist/assets/**` (allowlisted in `apps/cli/package.json` `files`). Standalone binaries live under `dist/bin/` on disk and ship exclusively via the **binaries** job to GitHub Releases — `bun run pkg:check` fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 

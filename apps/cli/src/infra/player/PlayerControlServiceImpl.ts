@@ -1,6 +1,7 @@
 import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
 import type { EpisodeInfo, PlaybackTimingMetadata } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
+import { buildSubtitleDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 
 import type { SubtitleAttachmentResult } from "./persistent-subtitle-manager";
@@ -310,33 +311,41 @@ export class PlayerControlServiceImpl implements PlayerControlService {
   ): Promise<boolean> {
     const active = this.active;
     if (!active) {
-      this.deps.diagnostics.record({
-        category: "subtitle",
-        operation: "subtitle.attach.outcome",
-        message: "Late subtitle attach requested without active player",
-        context: {
-          reason,
-          outcome: "no-active-player",
-          delivery: "late",
-          trackCount: attachment.subtitleTracks?.length ?? 0,
-        },
-      });
+      this.deps.diagnostics.record(
+        buildSubtitleDiagnosticEvent({
+          operation: "subtitle.attach.outcome",
+          status: "skipped",
+          severity: "degraded",
+          recommendedAction: "recover",
+          message: "Late subtitle attach requested without active player",
+          context: {
+            reason,
+            outcome: "no-active-player",
+            delivery: "late",
+            trackCount: attachment.subtitleTracks?.length ?? 0,
+          },
+        }),
+      );
       return false;
     }
 
     if (!active.attachSubtitles) {
-      this.deps.diagnostics.record({
-        category: "subtitle",
-        operation: "subtitle.attach.outcome",
-        message: "Late subtitle attach unavailable for active player",
-        context: {
-          id: active.id,
-          reason,
-          outcome: "unsupported",
-          delivery: "late",
-          trackCount: attachment.subtitleTracks?.length ?? 0,
-        },
-      });
+      this.deps.diagnostics.record(
+        buildSubtitleDiagnosticEvent({
+          operation: "subtitle.attach.outcome",
+          status: "skipped",
+          severity: "degraded",
+          recommendedAction: "open-settings",
+          message: "Late subtitle attach unavailable for active player",
+          context: {
+            id: active.id,
+            reason,
+            outcome: "unsupported",
+            delivery: "late",
+            trackCount: attachment.subtitleTracks?.length ?? 0,
+          },
+        }),
+      );
       return false;
     }
 
@@ -347,19 +356,23 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     );
     const result = normalizeSubtitleAttachmentResult(attachedRaw);
     if (result.attachedCount <= 0) {
-      this.deps.diagnostics.record({
-        category: "subtitle",
-        operation: "subtitle.attach.outcome",
-        message: "Late subtitle attachment did not attach tracks",
-        context: {
-          id: active.id,
-          reason,
-          outcome: result.status,
-          delivery: "late",
-          attachedCount: result.attachedCount,
-          failedTrack: "failedTrack" in result ? result.failedTrack : null,
-        },
-      });
+      this.deps.diagnostics.record(
+        buildSubtitleDiagnosticEvent({
+          operation: "subtitle.attach.outcome",
+          status: "failed",
+          severity: "recoverable",
+          failureClass: "unknown",
+          message: "Late subtitle attachment did not attach tracks",
+          context: {
+            id: active.id,
+            reason,
+            outcome: result.status,
+            delivery: "late",
+            attachedCount: result.attachedCount,
+            failedTrack: "failedTrack" in result ? result.failedTrack : null,
+          },
+        }),
+      );
       return false;
     }
     this.deps.logger.info("Attached late subtitles", {
@@ -367,18 +380,22 @@ export class PlayerControlServiceImpl implements PlayerControlService {
       reason,
       attached: result.attachedCount,
     });
-    this.deps.diagnostics.record({
-      category: "subtitle",
-      operation: "subtitle.attach.outcome",
-      message: "Attached late subtitles",
-      context: {
-        id: active.id,
-        reason,
-        outcome: result.status,
-        delivery: "late",
-        attachedCount: result.attachedCount,
-      },
-    });
+    this.deps.diagnostics.record(
+      buildSubtitleDiagnosticEvent({
+        operation: "subtitle.attach.outcome",
+        status: "succeeded",
+        severity: "healthy",
+        recommendedAction: "none",
+        message: "Attached late subtitles",
+        context: {
+          id: active.id,
+          reason,
+          outcome: result.status,
+          delivery: "late",
+          attachedCount: result.attachedCount,
+        },
+      }),
+    );
     return true;
   }
 

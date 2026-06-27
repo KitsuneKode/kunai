@@ -18,9 +18,12 @@ Use the test tree by responsibility:
 
 The npm package already excludes this tree because `package.json` only publishes:
 
-- `dist`
+- `dist/kunai.js`
+- `dist/assets/**`
 - `README.md`
 - `LICENSE`
+
+Compiled binaries under `dist/bin/` may exist locally after `bun run build` but are excluded from npm via the allowlist, `.npmignore`, and `pkg:check`.
 
 So these tests are safe to keep in-repo without shipping them to npm.
 

@@ -11,18 +11,20 @@
 // =============================================================================
 
 import type { TitleDetail } from "@/domain/catalog/title-detail";
+import type { ContentKind } from "@/domain/media/content-kind";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
+import type { VideoMeta } from "@/domain/types";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { buildMediaPanel } from "./media-panel-model";
+import { MediaPanel } from "./MediaPanel";
 import {
   buildPostPlayView,
   type PostPlayActionRow,
   type PostPlayDiscoveryCard,
   type PostPlayNextUpHero,
   type PostPlayProgressBar,
-  type PostPlayRailFact,
-  type PostPlayUpNextCard,
   type PostPlayView,
 } from "./post-play-view";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
@@ -40,6 +42,8 @@ export type PostPlayShellProps = {
   title: string;
   episodeLabel: string;
   nextEpisodeLabel?: string;
+  /** Previous-episode label so the rail can render a distinct PREVIOUS mini-card. */
+  previousEpisodeLabel?: string;
   queueNextLabel?: string;
   resumeLabel?: string;
   postPlayState: PostPlayState;
@@ -47,10 +51,18 @@ export type PostPlayShellProps = {
   totalEpisodes?: number;
   watchedEpisodes?: number;
   currentSeason?: number;
+  /** Current episode number — feeds the season-aware rail art chain. */
+  currentEpisode?: number;
+  /** Content kind that selects the rail media-panel layout. */
+  contentKind?: ContentKind;
+  /** YouTube/video metadata for the `video` rail kind. */
+  videoMeta?: VideoMeta | null;
   /** Optional poster URL — rendered wide-only in the rail artwork slot. */
   posterUrl?: string;
   /** Optional next-episode thumbnail; preferred over the series poster in the rail. */
   nextEpisodeThumbUrl?: string;
+  /** Optional previous-episode thumbnail for the PREVIOUS mini-card. */
+  previousEpisodeThumbUrl?: string;
   /** Optional rich catalog metadata; surfaces what is present, never hangs on absent fields. */
   titleDetail?: TitleDetail;
   autoplayPaused?: boolean;
@@ -240,72 +252,6 @@ function DiscoveryCards({
   );
 }
 
-// ── Rail — poster slot + facts ─────────────────────────────────────────────────
-
-function UpNextCard({
-  card,
-  width,
-}: {
-  readonly card: PostPlayUpNextCard;
-  readonly width: number;
-}) {
-  const textWidth = Math.max(8, width - 2);
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box flexDirection="row" flexWrap="nowrap">
-        <Box
-          borderStyle="single"
-          borderColor={palette.lineSoft}
-          paddingX={1}
-          flexDirection="column"
-          width={width}
-        >
-          <Text color={palette.text} bold>
-            {truncateLine(card.label, textWidth)}
-          </Text>
-          <Text color={palette.muted}>{truncateLine(card.meta, textWidth)}</Text>
-        </Box>
-      </Box>
-    </Box>
-  );
-}
-
-function RailFacts({
-  facts,
-  width,
-}: {
-  readonly facts: readonly PostPlayRailFact[];
-  readonly width: number;
-}) {
-  if (facts.length === 0) return null;
-  const labelWidth = 10;
-  const valueWidth = Math.max(8, width - labelWidth - 2);
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      {facts.map((fact) => (
-        <Box key={`${fact.label}:${fact.value}`} flexDirection="row" flexWrap="nowrap">
-          <Text color={palette.muted}>
-            {padColumnsEnd(truncateLine(fact.label, labelWidth), labelWidth)}{" "}
-          </Text>
-          <Text color={fact.tone === "success" ? palette.ok : palette.textDim}>
-            {truncateLine(fact.value, valueWidth)}
-          </Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
-function RailLabel({ label }: { readonly label: string }) {
-  return (
-    <Box marginTop={1}>
-      <Text color={palette.muted} bold>
-        {label.toUpperCase()}
-      </Text>
-    </Box>
-  );
-}
-
 // ── Title initials fallback (shared by hero + pick posters) ────────────────────
 
 function initialsOf(title: string): string {
@@ -379,45 +325,6 @@ function NextUpHeroCard({
   );
 }
 
-// ── Right rail ─────────────────────────────────────────────────────────────────
-
-function PostPlayRail({
-  view,
-  railWidth,
-}: {
-  readonly view: PostPlayView;
-  readonly railWidth: number;
-}) {
-  return (
-    <Box
-      flexDirection="column"
-      width={railWidth}
-      paddingLeft={2}
-      borderStyle="single"
-      borderColor={palette.lineSoft}
-      borderTop={false}
-      borderRight={false}
-      borderBottom={false}
-    >
-      {/* Up next card */}
-      {view.upNext ? (
-        <>
-          <RailLabel label="Up next" />
-          <UpNextCard card={view.upNext} width={railWidth - 3} />
-        </>
-      ) : null}
-
-      {/* Season / series facts */}
-      {view.railFacts.length > 0 ? (
-        <>
-          <RailLabel label="Details" />
-          <RailFacts facts={view.railFacts} width={railWidth - 3} />
-        </>
-      ) : null}
-    </Box>
-  );
-}
-
 // ── Shell ──────────────────────────────────────────────────────────────────────
 
 const EMPTY_RECOMMENDATIONS: readonly PlaybackRecommendationRailItem[] = [];
@@ -426,6 +333,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   title,
   episodeLabel,
   nextEpisodeLabel,
+  previousEpisodeLabel,
   queueNextLabel,
   resumeLabel,
   postPlayState,
@@ -433,8 +341,12 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   totalEpisodes,
   watchedEpisodes,
   currentSeason,
+  currentEpisode,
+  contentKind,
+  videoMeta,
   posterUrl,
   nextEpisodeThumbUrl,
+  previousEpisodeThumbUrl,
   titleDetail,
   autoplayPaused,
   autoskipPaused,
@@ -475,6 +387,47 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
   const hColor = heroColor(view.heroColor);
   const barWidth = Math.min(36, bodyWidth - 4);
+
+  // The rail renders the SAME MediaPanel as Now Playing (surface: post-play), so
+  // the two surfaces share one composition. The body keeps Resume as the "what
+  // Enter does" hero; the rail carries the episode chain (prev + up next) as
+  // distinct, labeled mini-cards so they never contradict the hero.
+  // contentKind is threaded from the post-play menu (resolveContentKind); the
+  // fallback only guards the rare missing case. Infer it from the data we hold
+  // instead of forcing movies/videos into a "series" layout: a video snapshot
+  // means video, an episode/season signal means series, otherwise movie.
+  const resolvedContentKind =
+    contentKind ??
+    (videoMeta
+      ? "video"
+      : currentEpisode !== undefined ||
+          currentSeason !== undefined ||
+          Boolean(nextEpisodeLabel) ||
+          Boolean(previousEpisodeLabel) ||
+          Boolean(episodeLabel)
+        ? "series"
+        : "movie");
+
+  const railModel = buildMediaPanel({
+    surface: "post-play",
+    contentKind: resolvedContentKind,
+    title,
+    titleDetail,
+    videoMeta,
+    posterUrl,
+    currentSeason,
+    currentEpisode,
+    nextEpisodeLabel,
+    nextEpisodeThumbUrl,
+    previousEpisodeLabel,
+    previousEpisodeThumbUrl,
+    queueNextLabel,
+    autoplayPaused,
+    progress:
+      totalEpisodes && totalEpisodes > 0
+        ? { watched: watchedEpisodes ?? 0, total: totalEpisodes }
+        : undefined,
+  });
 
   return (
     <ViewportResizeGate kind="playback" message="Resize terminal to see post-play options">
@@ -593,7 +546,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
 
         {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-        {showRail ? <PostPlayRail view={view} railWidth={railWidth} /> : null}
+        {showRail ? <MediaPanel model={railModel} railWidth={railWidth} /> : null}
       </Box>
     </ViewportResizeGate>
   );

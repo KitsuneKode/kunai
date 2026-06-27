@@ -5,9 +5,11 @@
 // Keep it pure, explicit, and testable.
 // =============================================================================
 
+import type { TitleDetail } from "../catalog/title-detail";
+import { videoMetaFromSearchResult } from "../media/video-meta";
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
-import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo } from "../types";
+import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo, VideoMeta } from "../types";
 import { rankFuzzyMatches } from "./fuzzy-match";
 import {
   DEFAULT_LAYOUT_PREFERENCES,
@@ -130,6 +132,14 @@ export interface SessionState {
 
   readonly currentTitle: TitleInfo | null;
   readonly currentEpisode: EpisodeInfo | null;
+  /**
+   * Catalog detail for `currentTitle`, made reactive so the playback/post-play
+   * panels light up when the warm `fetchTitleDetail` resolves. `null` until it
+   * lands; surfaces may peek the synchronous cache as an initial fallback.
+   */
+  readonly titleDetail: TitleDetail | null;
+  /** YouTube/video metadata for `currentTitle` (video kind only); `null` otherwise. */
+  readonly videoMeta: VideoMeta | null;
   readonly episodeNavigation: EpisodeNavigationState;
   readonly autoplaySessionPaused: boolean;
   readonly autoskipSessionPaused: boolean;
@@ -175,7 +185,13 @@ export type StateTransition =
   | { type: "SET_SEARCH_RESULTS"; results: SearchResult[] }
   | { type: "SET_SEARCH_STATE"; state: SearchStatus }
   | { type: "SELECT_RESULT"; index: number }
-  | { type: "SELECT_TITLE"; title: TitleInfo }
+  | { type: "SELECT_TITLE"; title: TitleInfo; videoMeta?: VideoMeta | null }
+  | {
+      type: "SET_TITLE_DETAIL";
+      titleId: string;
+      titleType: import("../types").ContentType;
+      detail: TitleDetail;
+    }
   | { type: "SELECT_EPISODE"; episode: EpisodeInfo }
   | {
       type: "SET_EPISODE_NAVIGATION";
@@ -253,6 +269,8 @@ export function createInitialState(
     movieLanguageProfile: initialProfiles.movie,
     currentTitle: null,
     currentEpisode: null,
+    titleDetail: null,
+    videoMeta: null,
     episodeNavigation: DEFAULT_EPISODE_NAVIGATION,
     autoplaySessionPaused: false,
     autoskipSessionPaused: false,
@@ -291,6 +309,8 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         provider: transition.provider,
         currentTitle: null,
         currentEpisode: null,
+        titleDetail: null,
+        videoMeta: null,
         stream: null,
         searchQuery: "",
         searchResults: [],
@@ -372,6 +392,14 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         view: "details",
         currentTitle: transition.title,
         currentEpisode: null,
+        // Reset detail/video metadata so a new title never shows the previous
+        // one's facts; the warm fetch re-dispatches SET_TITLE_DETAIL when ready.
+        titleDetail: null,
+        // Prefer an explicitly threaded snapshot; otherwise derive it from the
+        // matching search result so every results-based launch path (not just the
+        // two that pass it explicitly) lights up the `video` panel facts.
+        videoMeta:
+          transition.videoMeta ?? deriveVideoMetaForTitle(state.searchResults, transition.title.id),
         episodeNavigation: DEFAULT_EPISODE_NAVIGATION,
         autoplaySessionPaused: false,
         autoskipSessionPaused: false,
@@ -380,6 +408,15 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         playbackStatus: "idle",
         playbackProblem: null,
       };
+
+    case "SET_TITLE_DETAIL": {
+      // Guard against a late fetch for a previous title overwriting the current
+      // one (titles switch fast during autonext).
+      if (!state.currentTitle || state.currentTitle.id !== transition.titleId) {
+        return state;
+      }
+      return { ...state, titleDetail: transition.detail };
+    }
 
     case "SELECT_EPISODE":
       return {
@@ -639,6 +676,8 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         view: "home",
         currentTitle: null,
         currentEpisode: null,
+        titleDetail: null,
+        videoMeta: null,
         episodeNavigation: DEFAULT_EPISODE_NAVIGATION,
         autoplaySessionPaused: false,
         autoskipSessionPaused: false,
@@ -698,6 +737,20 @@ function deriveSearchSelection(
     index,
     id: results[index]?.id ?? null,
   };
+}
+
+/**
+ * Build a {@link VideoMeta} snapshot from the search result that matches the
+ * selected title, when it carries any video-shaped fields. Pure domain logic
+ * over domain types, so the reducer can light up the `video` panel for any
+ * results-based launch path without each dispatch site threading it by hand.
+ */
+function deriveVideoMetaForTitle(
+  results: readonly SearchResult[],
+  titleId: string,
+): VideoMeta | null {
+  const match = results.find((result) => result.id === titleId);
+  return match ? videoMetaFromSearchResult(match) : null;
 }
 
 function clamp(value: number, min: number, max: number): number {

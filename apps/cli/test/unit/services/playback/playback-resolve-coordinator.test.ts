@@ -369,7 +369,8 @@ describe("PlaybackResolveCoordinator", () => {
         message: "Recovered via Rivestream",
         providerId: "rivestream",
         context: expect.objectContaining({
-          status: "recovered",
+          stage: "recovered",
+          status: "succeeded",
           primaryFailure: "VidKing timed out",
           failureClass: "timeout",
           attemptTimeline: expect.arrayContaining([

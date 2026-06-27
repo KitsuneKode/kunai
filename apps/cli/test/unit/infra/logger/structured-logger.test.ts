@@ -38,6 +38,27 @@ describe("StructuredLogger", () => {
     expect(lines[1]).toContain("visible error");
   });
 
+  test("suppresses console writes when console output is disabled dynamically", () => {
+    const lines: string[] = [];
+    let consoleEnabled = true;
+    const logger = new StructuredLogger({
+      debug: false,
+      console: () => consoleEnabled,
+      write: (line) => lines.push(line),
+    });
+
+    logger.error("visible before shell");
+    consoleEnabled = false;
+    logger.error("hidden while shell owns terminal");
+    consoleEnabled = true;
+    logger.warn("visible after shell");
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("visible before shell");
+    expect(lines[1]).toContain("visible after shell");
+    expect(lines.join("")).not.toContain("hidden while shell owns terminal");
+  });
+
   test("sanitizes log messages and context before serializing captured output", () => {
     const lines: string[] = [];
     const home = process.env.HOME ?? "/home/tester";

@@ -2,6 +2,12 @@
 
 Use this gate before release candidates and after changes to playback lifecycle, provider resolution, Discord presence, storage, or startup behavior.
 
+```sh
+bun run verify:build-pipeline:pr
+```
+
+Use the command above before CLI build or release-pipeline changes (covers build, pkg:check, and partial Linux binary compile).
+
 ## Required Deterministic Gate
 
 Run from the repo root:
@@ -22,8 +28,8 @@ Expected result:
 - lint reports 0 warnings and 0 errors
 - unit and integration tests report 0 failures
 - typecheck exits 0
-- build writes `apps/cli/dist/kunai.js`
-- package check prints npm pack contents without leaking source-only test fixtures
+- build writes `apps/cli/dist/kunai.js` and the host compiled binary under `apps/cli/dist/bin/`
+- package check rejects `dist/bin/**`, analyze metafiles, and oversized tarballs (npm ships JS + assets only)
 - release dry-run completes build, checks, and packability without publishing
 
 ## Changelog Gate

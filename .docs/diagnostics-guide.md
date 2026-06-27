@@ -22,13 +22,15 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
-The diagnostics panel starts with a plain-language health summary for Playback,
-Provider, Cache, Discord, Downloads, and Network. Each row should say whether
-Kunai is OK, needs attention, failed, or unknown, then give one short reason and
-action. The detailed provider timeline, correlated IDs, slowest startup stage,
-physical provider attempt evidence, playback startup path, source evidence,
-cache decisions, subtitle attachment outcome, mpv events, and recent event log
-stay below the summary for developer debugging.
+The diagnostics panel is organized into five sections:
+
+1. **Verdict** — plain-language session health, likely cause, and one recommended next action.
+2. **Health** — Playback, Provider, Network, Cache, Subtitles, Downloads, Discord, Release sync, and Memory rows using `OK`, `Needs attention`, `Failed`, or `Unknown`.
+3. **Current Playback Evidence** — title, episode, provider, playback state, cache/source state, subtitle outcome, recover status, and slowest startup stage.
+4. **Developer Evidence** — correlation IDs, provider timeline/attempts, playback startup, source inventory warnings, mpv/network samples, and recent events.
+5. **Export And Report** — `/export-diagnostics`, `/report-issue`, and `kunai diagnostics recent`.
+
+Each health row uses the grammar `OK`, `Needs attention`, `Failed`, or `Unknown`, then a short reason and one practical next step when degraded. Example: `Provider  Needs attention · VidKing timed out · Try fallback provider`.
 
 Diagnostics are first-party and local. Always-on summary events are written to
 an in-memory buffer immediately, then best-effort persisted to the local cache
@@ -37,7 +39,7 @@ the newest 10,000 events or 14 days by default and is pruned with the rest of
 disposable cache maintenance. Diagnostics write/read failures must not block
 search, playback, provider resolution, shell input, or shutdown.
 
-Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
+Export a redacted support bundle with `/export-diagnostics`. The exported JSON includes app/runtime metadata, startup capability checks, a readable `triage` summary (verdict, likely cause, affected subsystems, recommended actions, correlation summary, and last relevant event per subsystem), and the bounded diagnostics event buffer. Stream URLs, auth headers, cookies, tokens, and local home-directory prefixes are redacted before writing the file.
 
 For agent-friendly local inspection without launching the shell:
 
@@ -57,12 +59,16 @@ KUNAI_TRACE=provider,playback bun run dev -- -S "Dune" --debug-json
 
 `--debug-json` also enables `--debug` and writes newline-delimited redacted diagnostic events under the Kunai state `traces/` directory. `KUNAI_TRACE` is optional; when present it is a comma-separated category allowlist such as `provider,playback,cache`. URL redaction keeps host/path shape and non-sensitive query keys, but redacts tokens, signatures, cookies, authorization headers, and private home-directory prefixes.
 
-Diagnostic events can carry stable correlation fields:
+Diagnostic events can carry stable correlation fields and structured envelope context:
 
 - `sessionId`: one Kunai process/session.
 - `playbackCycleId`: one title/episode playback cycle.
 - `providerAttemptId`: one provider resolve timeline for that cycle.
 - `traceId`: the provider timeline or lower-level trace identifier when present.
+- `spanId`: groups step events inside a multi-step flow such as `provider.resolve` or `playback.startup`.
+- Envelope context fields: `stage`, `status`, `severity`, `durationMs`, `failureClass`, `recommendedAction`, and redacted `subject` facts.
+
+Use `buildDiagnosticEvent(...)` from `apps/cli/src/services/diagnostics/diagnostic-event-helpers.ts` for new instrumentation so operation names, severity, recommended actions, correlation, and redaction stay consistent.
 
 For playback recovery debugging, prefer stable operation names over free-form log text:
 

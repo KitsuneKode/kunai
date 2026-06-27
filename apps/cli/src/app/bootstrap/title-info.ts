@@ -2,6 +2,11 @@ import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import { resolveHistoryLookupTitleId } from "@kunai/core";
 
+// Re-export the canonical domain helper so existing bootstrap/search call sites
+// keep importing it from here, while the reducer and any other layer share the
+// single implementation in domain/media/video-meta.ts.
+export { videoMetaFromSearchResult } from "@/domain/media/video-meta";
+
 export function searchResultFromTitleInfo(title: TitleInfo): SearchResult {
   return {
     id: title.id,

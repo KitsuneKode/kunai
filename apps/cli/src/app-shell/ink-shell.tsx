@@ -35,6 +35,10 @@ import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { useSettledValue } from "./hooks/use-settled-value";
 import { deleteAllKittyImages } from "./image-pane";
+import {
+  clearInteractiveShellMounted,
+  markInteractiveShellMounted,
+} from "./interactive-shell-state";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import {
   createNotificationQueueState,
@@ -48,7 +52,6 @@ import {
   buildPlaybackSubtitleStatusLine,
   type PlaybackRootContentHandlers,
 } from "./playback-mount-shell";
-import { resolveNextEpisodeThumbUrl } from "./playback-playing-view";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
@@ -849,12 +852,10 @@ function AppRoot({ container }: { container: Container }) {
   const playingTitleDetail = useMemo(() => {
     const title = state.currentTitle;
     if (!title) return undefined;
-    return peekTitleDetail(title.id, title.type);
-  }, [state.currentTitle]);
-  const playingNextEpisodeThumbUrl = useMemo(
-    () => resolveNextEpisodeThumbUrl(playingTitleDetail, state.episodeNavigation.nextLabel),
-    [playingTitleDetail, state.episodeNavigation.nextLabel],
-  );
+    // Prefer the reactive session value (dispatched when the warm fetch lands);
+    // peek the synchronous cache only as an initial fallback before it resolves.
+    return state.titleDetail ?? peekTitleDetail(title.id, title.type) ?? undefined;
+  }, [state.currentTitle, state.titleDetail]);
 
   const onCommandAction = useCallback(
     (action: ShellAction) => {
@@ -1038,7 +1039,6 @@ function AppRoot({ container }: { container: Container }) {
       canToggleAutoplay,
       canStopAfterCurrent,
       playingTitleDetail,
-      playingNextEpisodeThumbUrl,
       handlers: playbackHandlers,
     }),
     [
@@ -1061,7 +1061,6 @@ function AppRoot({ container }: { container: Container }) {
       canToggleAutoplay,
       canStopAfterCurrent,
       playingTitleDetail,
-      playingNextEpisodeThumbUrl,
       playbackHandlers,
     ],
   );
@@ -1165,6 +1164,7 @@ export async function launchSessionApp(container: Container) {
   }
 
   stdinManager.enterShell();
+  markInteractiveShellMounted();
   clearShellScreen();
 
   rootShellInk = render(<AppRoot container={container} />, {
@@ -1178,6 +1178,7 @@ export async function launchSessionApp(container: Container) {
     rootShellInk = null;
     rootShellExitPromise = null;
     clearRootContentSession();
+    clearInteractiveShellMounted();
     stdinManager.exitShell();
   })();
 
