@@ -1,8 +1,6 @@
----
-"@kitsunekode/kunai": minor
----
+# Kunai 0.2.6
 
-Ship the post-0.2.5 Kunai release train.
+0.2.6 — 2583ec8: Ship the post-0.2.5 Kunai release train.
 
 This release includes the YouTube provider lane with Invidious/Piped/ytsearch metadata, yt-dlp playback gating, playlist/channel selection, live/upcoming handling, SponsorBlock/cookie settings, metadata cache, diagnostics probes, download/playback parity, video watch-history stats, and an opt-in live YouTube smoke.
 

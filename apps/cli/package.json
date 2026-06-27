@@ -1,6 +1,6 @@
 {
   "name": "@kitsunekode/kunai",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Terminal-first media streaming CLI that resolves provider streams and launches mpv.",
   "keywords": [
     "anime",

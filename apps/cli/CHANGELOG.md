@@ -1,5 +1,17 @@
 # @kitsunekode/kunai
 
+## 0.2.6
+
+### Patch Changes
+
+- 2583ec8: Ship the post-0.2.5 Kunai release train.
+
+  This release includes the YouTube provider lane with Invidious/Piped/ytsearch metadata, yt-dlp playback gating, playlist/channel selection, live/upcoming handling, SponsorBlock/cookie settings, metadata cache, diagnostics probes, download/playback parity, video watch-history stats, and an opt-in live YouTube smoke.
+
+  It also rolls up the unreleased CLI work since 0.2.5: persistent playback and mpv lifecycle hardening, provider fallback and endpoint-health diagnostics, share links and `kunai://` round trips, offline/download library improvements, watch-ledger stats and continuation identity reconciliation, queue/playlist/notification/calendar/detail surfaces, settings-shell polish, storage migrations, native installer/update/release-note infrastructure, docs truth-sync, and package/build reliability gates.
+
+  Release notes should call out that YouTube playback requires `yt-dlp`, YouTube age-restricted content requires user-supplied cookies, provider relay remains user-owned, live provider smokes are opt-in, and the release gate now includes deterministic checks plus targeted provider reality checks.
+
 ## 0.2.5
 
 ### Patch Changes
@@ -65,6 +77,7 @@
 - [`21b89ec`](https://github.com/KitsuneKode/kunai/commit/21b89ec21235b8934253296e1fbce9e66a3ec81e) Thanks [@KitsuneKode](https://github.com/KitsuneKode)! - Kunai 0.2.0 is the beta-shell release. It bundles the large runtime, playback, provider, offline, diagnostics, and docs work landed since 0.1.4, with release notes written from the current codebase instead of plan shorthand.
 
   **Playback, recovery, and mpv**
+
   - Added the persistent mpv runtime path with IPC-backed controls, Lua bridge wiring, episode navigation from the player window, in-process reconnects, subtitle/audio/source updates, and clearer teardown so autoplay chains do not repeatedly respawn mpv.
   - Added typed playback phases and user-facing playback problem state: preparing provider, waiting for player, active playback, did-not-start, failed, post-playback, recovery, replay, fallback, and stop-after-current now flow through explicit state instead of scattered copy.
   - Added dead-stream and preflight safeguards: stalled/dead playback is detected separately from slow-but-healthy playback, suspected dead cached URLs are invalidated, retry/fallback decisions are bounded, and local/offline failures no longer poison provider health.
@@ -77,6 +90,7 @@
   - Improved autoskip/timing wiring with provider-native timing metadata, IntroDB/AniSkip context, startup diagnostics, and clearer skip/autoplay state in the live playback surface.
 
   **Provider engine and stream inventory**
+
   - Added the provider-cycle engine and provider-cycle contracts in shared packages, with bounded retries, cancellation handling, network-offline classification, retryable/non-retryable failure taxonomy, and fallback decisions.
   - Added provider metadata v2 across types, schemas, providers, app adapters, and history so native ids, release metadata, artwork, audio/subtitle language evidence, source labels, and seek-thumbnail evidence survive provider-to-UI boundaries.
   - Added normalized source inventory helpers, provider inventory facade, startup selection helpers, and variant tree utilities so VidKing, Rivestream, Miruro, and AllManga expose comparable source/stream/subtitle/quality facts.
@@ -87,6 +101,7 @@
   - Added live provider matrix smoke coverage and richer fixture suites for direct providers, negative cases, language normalization, source presentation, startup selection, and m3u8 variant extraction.
 
   **Shell, Sakura design system, and shortcuts**
+
   - Migrated the CLI shell to the Sakura semantic palette and primitive kit: selection rows, tab/segmented controls, switches, progress bars, heatmaps, context cards, preview rails, action lists, state blocks, headers, and responsive layout helpers are now shared instead of duplicated.
   - Rebuilt the launch, loading, active playback, post-playback, browse idle, search/details, discover, calendar, history, library, downloads, setup, diagnostics, settings, help, and picker surfaces around calmer hierarchy and fewer bordered/card-heavy layouts.
   - Added a keybinding registry as the source of truth for help and stable footer hints. Help no longer drifts from runtime shortcuts, browse hotkeys no longer hijack the search input, command palette rows are width-aware, and footer keys use consistent glyph/label treatment.
@@ -98,6 +113,7 @@
   - Improved history and continue watching with grouped rows, progress bars, poster fallback blocks, continue/restart actions, new-episode labels, mark-as-watched, and stable row selection.
 
   **Lists, queue, sync, attention, and stats**
+
   - Added list, watchlist, favorites, playlist, queue, stats, and sync service/repository foundations with command-palette workflows and shell panels.
   - Added durable queue recovery and queue restore behavior that explicitly moves pending items without autoplaying them.
   - Added queue planning, queueable post-playback recommendations, playlist import/export, playlist projection, and safe media identity contracts that avoid storing raw stream URLs in durable exports.
@@ -106,6 +122,7 @@
   - Added sync service seams for AniList/TMDB, sync token storage via atomic secret JSON, protocol handoff registration, and safe handoff URL parsing for local actions.
 
   **Continuation, history, release calendar, and catalog data**
+
   - Added canonical HistoryProgress usage through offline shelves, resume-from-history, episode pickers, cleanup, runway planning, and continuation services; retired lossy/dead JSON history/cache implementations where the SQLite path is now authoritative.
   - Added continuation read models and Netflix-style anchoring: caught-up/continue decisions anchor on the most-recent episode, finished older episodes do not make ongoing series look complete, and movies are handled separately from episodic chains.
   - Added release reconciliation and schedule progress caching: AniList sequel/cross-cour detection, TMDB later-season detection, new-season signals, release progress cache, date-only release boundaries, and background reconciliation services.
@@ -113,6 +130,7 @@
   - Added browse result enrichment for watched/downloaded/local/next-release/provider metadata without unnecessary provider calls.
 
   **Offline downloads and local library**
+
   - Added durable download queue behavior with storage admission, per-job destination overrides, media-server friendly output paths, progress parsing, retries, pause/abort semantics, repair sweeps, and startup recovery.
   - Added download artifact states that distinguish completed video from expected/optional sidecar problems. Subtitle/artwork sidecars can be repaired without redownloading a valid video.
   - Added offline asset manifests, offline title policies, offline maintenance jobs, runway planning, capacity bounds, and local-only continuation behavior so offline mode does not silently fall back to provider calls.
@@ -121,12 +139,14 @@
   - Updated installer, setup copy, root README, package README, user docs, and release docs so `mpv` is the required playback dependency, `yt-dlp` gates downloads, `ffprobe` is optional validation, and `ffmpeg` is not presented as needed for normal Kunai use.
 
   **Diagnostics, support bundles, and runtime feedback**
+
   - Added correlated diagnostic events, operation taxonomy, background task diagnostics, runtime health summaries, memory trend reporting, resolve work evidence, provider selection decisions, playback startup timelines, and redacted support bundle fields.
   - Added `--debug-session`, safer `/export-diagnostics` and `/report-issue` flows, redaction boundary tests, and diagnostics panels that group state into scannable verdict sections.
   - Added runtime memory and mpv child-process feedback where the platform exposes it, plus docs explaining what is measured and when values can be unavailable.
   - Added redaction scope documentation and support-bundle privacy handling so provider/cache/source evidence is useful without leaking stream URLs or local secrets.
 
   **Docs, package, and CI/release readiness**
+
   - Added the docs app, public user/developer docs, docs home page, docs search route, install/update docs, command/shortcut docs, playback/offline/diagnostics/runtime feedback docs, and docs maintenance guidance.
   - Fixed the docs CI build by narrowing Fumadocs to the public `docs/users` and `docs/developer` trees. Internal `docs/superpowers` plans/specs remain repository context, not public MDX pages requiring published frontmatter.
   - Added CI coverage for docs build and package check, release dry-run installer guidance, package README updates, and a generated 0.2.0 changeset path.
@@ -140,6 +160,7 @@
 - Ship the production-readiness playback and diagnostics pass.
 
   Highlights:
+
   - Route playback recovery through a shared policy so guided, manual, and fallback-first modes behave predictably.
   - Detect slow-but-still-healthy playback separately from dead streams, avoiding premature provider cycling while keeping refresh/fallback actions available.
   - Make provider fallback smarter by filtering incompatible media kinds, skipping known-down providers automatically, and allowing explicit provider selections to try once.

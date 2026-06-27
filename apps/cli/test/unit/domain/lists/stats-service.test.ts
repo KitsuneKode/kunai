@@ -42,6 +42,12 @@ test("getStats uses watched_seconds and completed episodes for honesty", () => {
 test("getStats honors windowDays for heatmap and weekly buckets", () => {
   const { service, history } = makeStatsService();
 
+  // Use relative dates so this test stays valid regardless of when it runs.
+  // "recent" is 2 days ago (well inside the 7-day window).
+  // "old" is 200 days ago (outside the 7-day window but captured by allTime).
+  const recentDate = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const oldDate = new Date(Date.now() - 200 * 86_400_000).toISOString();
+
   history.upsertProgress({
     title: { id: "recent", kind: "series", title: "Recent" },
     episode: { season: 1, episode: 1 },
@@ -49,7 +55,7 @@ test("getStats honors windowDays for heatmap and weekly buckets", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 1_000,
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: recentDate,
   });
   history.upsertProgress({
     title: { id: "old", kind: "series", title: "Old" },
@@ -58,7 +64,7 @@ test("getStats honors windowDays for heatmap and weekly buckets", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 2_000,
-    updatedAt: "2026-01-01T12:00:00.000Z",
+    updatedAt: oldDate,
   });
 
   const sevenDay = service.getStats(7);
