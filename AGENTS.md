@@ -162,3 +162,13 @@ Relay smoke is opt-in: run `bun run dev:relay`, set `KUNAI_RELAY_BASE_URL=http:/
 - [.plans/catalog-release-schedule-service.md](.plans/catalog-release-schedule-service.md): anime/TV release dates, releasing-today, and shared schedule cache
 - [.plans/download-offline-onboarding.md](.plans/download-offline-onboarding.md): planned download, offline library, and setup wizard slices
 - [.plans/architecture-review.md](.plans/architecture-review.md): architecture deepening orchestrator status board and phase tracker (visual report in `.plans/architecture-review.html`)
+
+## Cursor Cloud specific instructions
+
+Dependencies (`bun`, `mpv`, `yt-dlp`, `chafa`) are preinstalled in the VM image and `bun install` runs automatically on startup. `bun` is symlinked into `/usr/local/bin`, so it is on `PATH` in non-login shells. Standard commands live in [.docs/quickstart.md](.docs/quickstart.md) and the root `package.json`; do not duplicate them here.
+
+- The CLI is an Ink TUI that needs a real TTY (raw mode). It cannot be driven by piping into `bun run dev`; that throws `Raw mode is not supported`. To exercise it headlessly, run it inside a PTY (e.g. `tmux`) and drive it with `send-keys` / `capture-pane`, or use a desktop terminal.
+- First launch shows a 6-step setup wizard; press Enter to advance through it. It persists to `~/.config/kunai/config.json`, so later runs skip straight to the browse screen.
+- Core flow verified end to end here: search (TMDB via `proxy.kunai.app`) → open title → season → episode → stream resolution → `mpv` playback with the IPC bridge. Search/metadata and TMDB posters work without any secrets.
+- Provider caveats: Videasy/VidKing needs a browser session token (`KUNAI_VIDEASY_SESSION_TOKEN`) and will report a session error, then automatically fall back to another source (VidLink resolved and played in testing). AllAnime metadata may be geo-blocked (`403` / `NEED_CAPTCHA`) from the VM; the optional user-owned relay (`bun run dev:relay`) exists for that but is not needed for a basic demo.
+- `bun run test` has one pre-existing failure in the optional docs app (`@kunai/docs` → `release-notes.test.ts`): the committed `.release/kunai-v0.2.6.json` artifact has an empty `sections` array. It is unrelated to environment setup and does not affect the CLI product, whose unit/integration suite passes.
