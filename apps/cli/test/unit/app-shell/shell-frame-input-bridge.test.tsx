@@ -90,6 +90,25 @@ describe("ShellFrame input ownership (bridge)", () => {
     handle.unmount();
   });
 
+  test("unlocked: footer-owned letters are not double-delivered to onUnhandledInput", () => {
+    // Post-play wires both footer resolution and onUnhandledInput. Without this
+    // gate, pressing `g` would resolve AND re-enter the unhandled path — the
+    // classic "first press does nothing / needs two presses" failure mode.
+    const resolved: ShellAction[] = [];
+    const unhandled: string[] = [];
+    const handle = render(
+      <Frame
+        onResolve={(action) => resolved.push(action)}
+        onUnhandledInput={(input) => unhandled.push(input)}
+      />,
+      { columns: 100 },
+    );
+    handle.stdin.enqueue("g");
+    expect(resolved).toEqual(["help"]);
+    expect(unhandled).not.toContain("g");
+    handle.unmount();
+  });
+
   test("letterKeysHandledExternally: footer letter is delivered to onUnhandledInput, not resolved", () => {
     const resolved: ShellAction[] = [];
     const unhandled: string[] = [];

@@ -79,6 +79,17 @@ export function ShellFrame({
       onResolve("help");
       return;
     }
+    // Footer-owned letters are already resolved by useShellInput. Forwarding
+    // them again to onUnhandledInput double-dispatches post-play/playback
+    // actions (open tracks twice, replay twice, …) so the first press looks
+    // like a no-op. Surfaces that own letters themselves opt in via
+    // letterKeysHandledExternally and still receive the key here.
+    if (!letterKeysHandledExternally) {
+      const matchKey = input.toLowerCase();
+      if (footerActions.some((action) => action.key === matchKey && !action.disabled)) {
+        return;
+      }
+    }
     onUnhandledInput?.(input, key);
   });
 
