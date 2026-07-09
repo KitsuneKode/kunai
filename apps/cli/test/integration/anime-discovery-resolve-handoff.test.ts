@@ -8,8 +8,7 @@ import { handoffAniListSearchPick } from "./helpers/anime-search-handoff";
 import { createIsolatedContainer } from "./helpers/isolated-container";
 
 /** Live Miruro/network checks — opt in so default CI stays deterministic. */
-const describeLiveProviders =
-  process.env.KUNAI_LIVE_PROVIDERS === "1" ? describe : describe.skip;
+const describeLiveProviders = process.env.KUNAI_LIVE_PROVIDERS === "1" ? describe : describe.skip;
 
 const FARMING_LIFE_S2: SearchResult = {
   id: "197824",
