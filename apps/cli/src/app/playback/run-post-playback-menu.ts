@@ -686,6 +686,13 @@ export async function runPostPlaybackMenu(
       const fallback = pickCompatibleFallbackProvider(
         deps.getCompatibleProviders(),
         resolvedProviderId,
+        {
+          getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+          suggestedProviderId: container.titleProviderHealth.getSwitchSuggestion(
+            title.id,
+            resolvedProviderId,
+          )?.suggestedProviderId,
+        },
       );
       if (!fallback) {
         continue postPlayback;

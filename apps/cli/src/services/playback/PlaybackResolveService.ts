@@ -323,6 +323,7 @@ export class PlaybackResolveService {
       episode: input.episode.episode,
       audioMode: input.audioPreference,
       subtitleLanguage: input.subtitlePreference,
+      qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
@@ -732,20 +733,41 @@ export class PlaybackResolveService {
     await this.clearQuarantinedTitleSourcePin(input);
 
     if (cachedStream && input.preserveCachedStreamOnFreshFailure === true) {
-      input.onEvent?.({ type: "fresh-source-failed-using-cache", providerId: input.providerId });
-      return {
-        stream: { ...cachedStream, cacheProvenance: "cached" },
-        providerId: input.providerId,
-        attempts: engineResult.attempts.map((a) => ({
-          providerId: a.providerId,
-          stream: null,
-          result: a.result,
-          failure: a.failure,
-        })),
-        providerTimeline,
-        cacheStatus: "hit",
-        cacheProvenance: "cached",
-      };
+      const health = await this.checkCachedStreamHealth(cachedStream, {
+        force: true,
+        signal: input.signal,
+        phase: "cache-revalidate",
+      });
+      if (health.checked) {
+        input.onEvent?.({
+          type: "cache-health-check",
+          providerId: input.providerId,
+          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+          healthy: health.healthy,
+          ageMs: health.ageMs,
+        });
+      }
+      if (!health.checked || !health.healthy) {
+        if (health.checked && !health.healthy) {
+          await this.deps.cacheStore.delete(cacheKey);
+          input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
+        }
+      } else {
+        input.onEvent?.({ type: "fresh-source-failed-using-cache", providerId: input.providerId });
+        return {
+          stream: { ...cachedStream, cacheProvenance: "cached" },
+          providerId: input.providerId,
+          attempts: engineResult.attempts.map((a) => ({
+            providerId: a.providerId,
+            stream: null,
+            result: a.result,
+            failure: a.failure,
+          })),
+          providerTimeline,
+          cacheStatus: "hit",
+          cacheProvenance: "cached",
+        };
+      }
     }
 
     return {

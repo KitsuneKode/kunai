@@ -5,6 +5,7 @@ import {
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
@@ -14,20 +15,82 @@ const config = {
   titleProviderPreferences: {},
 } as KitsuneConfig;
 
+const providers = [
+  { metadata: { id: "vidking" } },
+  { metadata: { id: "rivestream" } },
+  { metadata: { id: "miruro" } },
+];
+
+function health(
+  providerId: string,
+  status: ProviderHealth["status"],
+  checkedAt = new Date().toISOString(),
+): ProviderHealth {
+  return {
+    providerId: providerId as ProviderId,
+    status,
+    checkedAt,
+  };
+}
+
 describe("playback provider fallback", () => {
   test("picks the first compatible provider that is not current", () => {
-    expect(
-      pickCompatibleFallbackProvider(
-        [{ metadata: { id: "vidking" } }, { metadata: { id: "rivestream" } }],
-        "vidking",
-      )?.metadata.id,
-    ).toBe("rivestream");
+    expect(pickCompatibleFallbackProvider(providers, "vidking")?.metadata.id).toBe("rivestream");
   });
 
   test("returns undefined when no alternate provider exists", () => {
     expect(
       pickCompatibleFallbackProvider([{ metadata: { id: "vidking" } }], "vidking"),
     ).toBeUndefined();
+  });
+
+  test("skips unhealthy providers when health data is available", () => {
+    const healthById = new Map<string, ProviderHealth>([
+      ["rivestream", health("rivestream", "down")],
+      ["miruro", health("miruro", "healthy")],
+    ]);
+
+    expect(
+      pickCompatibleFallbackProvider(providers, "vidking", {
+        getProviderHealth: (providerId) => healthById.get(providerId),
+      })?.metadata.id,
+    ).toBe("miruro");
+  });
+
+  test("prefers a title-health suggestion when that provider is eligible", () => {
+    expect(
+      pickCompatibleFallbackProvider(providers, "vidking", {
+        suggestedProviderId: "miruro",
+        getProviderHealth: () => undefined,
+      })?.metadata.id,
+    ).toBe("miruro");
+  });
+
+  test("falls back to first alternate when all candidates are down", () => {
+    const healthById = new Map<string, ProviderHealth>([
+      ["rivestream", health("rivestream", "down")],
+      ["miruro", health("miruro", "down")],
+    ]);
+
+    expect(
+      pickCompatibleFallbackProvider(providers, "vidking", {
+        getProviderHealth: (providerId) => healthById.get(providerId),
+      })?.metadata.id,
+    ).toBe("rivestream");
+  });
+
+  test("still prefers a title-health suggestion when every alternate is down", () => {
+    const healthById = new Map<string, ProviderHealth>([
+      ["rivestream", health("rivestream", "down")],
+      ["miruro", health("miruro", "down")],
+    ]);
+
+    expect(
+      pickCompatibleFallbackProvider(providers, "vidking", {
+        getProviderHealth: (providerId) => healthById.get(providerId),
+        suggestedProviderId: "miruro",
+      })?.metadata.id,
+    ).toBe("miruro");
   });
 
   test("switches provider through the shared user-switch path and invalidates recent stream", async () => {
