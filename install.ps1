@@ -20,12 +20,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Windows uses LOCALAPPDATA/APPDATA. On Linux CI (pwsh dry-run), fall back so
+# Join-Path never receives a null Path and dry-run stays network-free.
+$LocalAppData = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:HOME) { Join-Path $env:HOME '.local/share' } else { [System.IO.Path]::GetTempPath().TrimEnd('\', '/') }
+$RoamingAppData = if ($env:APPDATA) { $env:APPDATA } elseif ($env:HOME) { Join-Path $env:HOME '.config' } else { $LocalAppData }
+
 $DlBase = if ($env:KUNAI_DL_BASE) { $env:KUNAI_DL_BASE } else { 'https://github.com/KitsuneKode/kunai/releases' }
 $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { 'https://api.github.com/repos/KitsuneKode/kunai/releases/latest' }
 $Package = '@kitsunekode/kunai'
-$BinDir = Join-Path $env:LOCALAPPDATA 'kunai\bin'
-$DataDir = Join-Path $env:LOCALAPPDATA 'kunai'
-$ConfigDir = Join-Path $env:APPDATA 'kunai'
+$BinDir = Join-Path $LocalAppData 'kunai\bin'
+$DataDir = Join-Path $LocalAppData 'kunai'
+$ConfigDir = Join-Path $RoamingAppData 'kunai'
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'
 
@@ -142,8 +147,10 @@ function Install-Binary {
   $base = if ($Version -eq 'latest') { "$DlBase/latest/download" } else { "$DlBase/download/v$Version" }
   $versionPath = Join-Path (Join-Path $VersionsDir $resolved) 'kunai.exe'
 
-  New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-  New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
+  if (-not $DryRun) {
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
+  }
   $tmp = Join-Path $BinDir '.kunai-new.exe'
 
   Write-Info "Downloading $asset (v$resolved) ..."

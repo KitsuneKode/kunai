@@ -1,33 +1,24 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
-const openSetupWizardFromShell = mock(async () => {});
-const handleShellAction = mock(async () => "handled" as const);
-const openRootOwnedOverlay = mock(async () => {});
+import { dispatchPaletteCommand } from "@/app-shell/dispatch-palette-command";
+import * as rootOverlayBridge from "@/app-shell/root-overlay-bridge";
+import * as rootQueueBridge from "@/app-shell/root-queue-bridge";
+import * as workflows from "@/app-shell/workflows";
+import * as setupWorkflows from "@/app-shell/workflows/setup-workflows";
 
-mock.module("@/app-shell/workflows/setup-workflows", () => ({
-  openSetupWizardFromShell,
-}));
-
-mock.module("@/app-shell/root-overlay-bridge", () => ({
-  openRootOwnedOverlay,
-  openNotificationsOverlay: async () => {},
-}));
-
-mock.module("@/app-shell/root-queue-bridge", () => ({
-  waitForRootQueueSelection: async () => null,
-}));
-
-mock.module("@/app-shell/workflows", () => ({
-  handleShellAction,
-  resolveQuitWithDownloadQueue: async () => "handled" as const,
-}));
-
-const { dispatchPaletteCommand } = await import("@/app-shell/dispatch-palette-command");
+beforeEach(() => {
+  spyOn(setupWorkflows, "openSetupWizardFromShell").mockImplementation(async () => {});
+  spyOn(rootOverlayBridge, "openRootOwnedOverlay").mockImplementation(async () => {});
+  spyOn(rootOverlayBridge, "openNotificationsOverlay").mockImplementation(async () => ({
+    playback: null,
+  }));
+  spyOn(rootQueueBridge, "waitForRootQueueSelection").mockImplementation(async () => null);
+  spyOn(workflows, "handleShellAction").mockImplementation(async () => "handled" as const);
+  spyOn(workflows, "resolveQuitWithDownloadQueue").mockImplementation(async () => "handled" as const);
+});
 
 afterEach(() => {
-  openSetupWizardFromShell.mockClear();
-  handleShellAction.mockClear();
-  openRootOwnedOverlay.mockClear();
+  mock.restore();
 });
 
 describe("dispatchPaletteCommand", () => {
@@ -39,19 +30,19 @@ describe("dispatchPaletteCommand", () => {
 
     expect(browseResult).toBe("handled");
     expect(playbackResult).toBe("handled");
-    expect(openSetupWizardFromShell).toHaveBeenCalledTimes(2);
-    expect(openSetupWizardFromShell).toHaveBeenCalledWith(container, {
+    expect(setupWorkflows.openSetupWizardFromShell).toHaveBeenCalledTimes(2);
+    expect(setupWorkflows.openSetupWizardFromShell).toHaveBeenCalledWith(container, {
       force: true,
       closeOverlays: true,
     });
-    expect(handleShellAction).not.toHaveBeenCalled();
+    expect(workflows.handleShellAction).not.toHaveBeenCalled();
   });
 
   test("provider command returns provider picker intent from the shared dispatcher", async () => {
     const result = await dispatchPaletteCommand("playback", "provider", {} as never);
 
     expect(result).toBe("provider");
-    expect(handleShellAction).not.toHaveBeenCalled();
+    expect(workflows.handleShellAction).not.toHaveBeenCalled();
   });
 
   test("routes saved-media palette actions to distinct workflows", async () => {
@@ -60,8 +51,10 @@ describe("dispatchPaletteCommand", () => {
     await expect(dispatchPaletteCommand("browse", "up-next", container as never)).resolves.toBe(
       "handled",
     );
-    expect(openRootOwnedOverlay).toHaveBeenCalledWith(container, { type: "queue" });
-    expect(handleShellAction).not.toHaveBeenCalled();
+    expect(rootOverlayBridge.openRootOwnedOverlay).toHaveBeenCalledWith(container, {
+      type: "queue",
+    });
+    expect(workflows.handleShellAction).not.toHaveBeenCalled();
 
     await expect(dispatchPaletteCommand("browse", "playlists", container as never)).resolves.toBe(
       "handled",
@@ -69,7 +62,10 @@ describe("dispatchPaletteCommand", () => {
     await expect(dispatchPaletteCommand("browse", "playlist", container as never)).resolves.toBe(
       "handled",
     );
-    expect(handleShellAction).toHaveBeenCalledTimes(2);
-    expect(handleShellAction).toHaveBeenCalledWith({ action: "playlists", container });
+    expect(workflows.handleShellAction).toHaveBeenCalledTimes(2);
+    expect(workflows.handleShellAction).toHaveBeenCalledWith({
+      action: "playlists",
+      container,
+    });
   });
 });

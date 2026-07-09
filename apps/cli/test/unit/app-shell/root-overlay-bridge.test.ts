@@ -83,7 +83,10 @@ describe("root-overlay-bridge notification intents", () => {
 
     const container = createOverlayContainer();
     const resultPromise = openNotificationsOverlay(container);
-    await Promise.resolve();
+    // Wait until the overlay is actually open before closing — a single
+    // microtask is not enough if OPEN_OVERLAY is deferred.
+    await Bun.sleep(0);
+    expect(container.stateManager.getState().activeModals.at(-1)?.type).toBe("notifications");
     container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
     const result = await resultPromise;
 

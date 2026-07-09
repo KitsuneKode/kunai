@@ -9,7 +9,9 @@ describe("history workflow action", () => {
     const { container, dispatches, closeTopOverlay } = createContainerFixture();
 
     const result = handleShellAction({ action: "continue", container });
-    await Promise.resolve();
+    // openRootOwnedOverlay dispatches synchronously; yield so the promise settles
+    // after OPEN_OVERLAY before we assert and close.
+    await Bun.sleep(0);
 
     expect(dispatches).toEqual(["open:history"]);
 
@@ -23,7 +25,7 @@ describe("history workflow action", () => {
     const { container, dispatches, closeTopOverlay } = createContainerFixture();
 
     const result = handleShellAction({ action: "history", container });
-    await Promise.resolve();
+    await Bun.sleep(0);
 
     expect(dispatches).toEqual(["open:history"]);
 

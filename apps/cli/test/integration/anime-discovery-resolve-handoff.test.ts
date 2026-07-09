@@ -7,6 +7,10 @@ import { ProviderResolveFailureError } from "@kunai/core";
 import { handoffAniListSearchPick } from "./helpers/anime-search-handoff";
 import { createIsolatedContainer } from "./helpers/isolated-container";
 
+/** Live Miruro/network checks — opt in so default CI stays deterministic. */
+const describeLiveProviders =
+  process.env.KUNAI_LIVE_PROVIDERS === "1" ? describe : describe.skip;
+
 const FARMING_LIFE_S2: SearchResult = {
   id: "197824",
   type: "series",
@@ -124,72 +128,74 @@ describe("anime discovery → resolve handoff (CLI-shaped)", () => {
     expect(failure?.result?.streams.length).toBe(0);
   });
 
-  test(
-    "miruro listEpisodes after AniList handoff uses pipe titles without AniList/Jikan enrichment",
-    async () => {
-      const { container, dispose } = await createIsolatedContainer("miruro-episodes");
-      disposers.push(dispose);
+  describeLiveProviders("miruro live provider (opt-in)", () => {
+    test(
+      "miruro listEpisodes after AniList handoff uses pipe titles without AniList/Jikan enrichment",
+      async () => {
+        const { container, dispose } = await createIsolatedContainer("miruro-episodes");
+        disposers.push(dispose);
 
-      const { title } = await handoffAniListSearchPick(container, {
-        discovery: FARMING_LIFE_S2,
-        providerId: "miruro",
-      });
+        const { title } = await handoffAniListSearchPick(container, {
+          discovery: FARMING_LIFE_S2,
+          providerId: "miruro",
+        });
 
-      const miruro = container.providerRegistry.get("miruro");
-      expect(miruro?.listEpisodes).toBeDefined();
+        const miruro = container.providerRegistry.get("miruro");
+        expect(miruro?.listEpisodes).toBeDefined();
 
-      let externalMetadataRequests = 0;
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = (async (input, init) => {
-        const url = String(input);
-        if (url.includes("graphql.anilist.co") || url.includes("api.jikan.moe")) {
-          externalMetadataRequests += 1;
+        let externalMetadataRequests = 0;
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async (input, init) => {
+          const url = String(input);
+          if (url.includes("graphql.anilist.co") || url.includes("api.jikan.moe")) {
+            externalMetadataRequests += 1;
+          }
+          return originalFetch(input, init);
+        }) as typeof fetch;
+
+        try {
+          const episodes = await miruro!.listEpisodes!({ title }, new AbortController().signal);
+          expect(externalMetadataRequests).toBe(0);
+          expect(episodes && episodes.length > 0).toBe(true);
+          expect(
+            episodes?.some((episode) => episode.name && !/^Episode \d+$/.test(episode.name)),
+          ).toBe(true);
+        } finally {
+          globalThis.fetch = originalFetch;
         }
-        return originalFetch(input, init);
-      }) as typeof fetch;
+      },
+      { timeout: 60_000 },
+    );
 
-      try {
-        const episodes = await miruro!.listEpisodes!({ title }, new AbortController().signal);
-        expect(externalMetadataRequests).toBe(0);
-        expect(episodes && episodes.length > 0).toBe(true);
-        expect(
-          episodes?.some((episode) => episode.name && !/^Episode \d+$/.test(episode.name)),
-        ).toBe(true);
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    },
-    { timeout: 60_000 },
-  );
+    test(
+      "miruro resolves a playable stream after AniList search handoff (Farming Life S2)",
+      async () => {
+        const { container, dispose } = await createIsolatedContainer("miruro-resolve");
+        disposers.push(dispose);
 
-  test(
-    "miruro resolves a playable stream after AniList search handoff (Farming Life S2)",
-    async () => {
-      const { container, dispose } = await createIsolatedContainer("miruro-resolve");
-      disposers.push(dispose);
+        const { request, resolveInput, title } = await handoffAniListSearchPick(container, {
+          discovery: FARMING_LIFE_S2,
+          providerId: "miruro",
+          episode: 1,
+        });
 
-      const { request, resolveInput, title } = await handoffAniListSearchPick(container, {
-        discovery: FARMING_LIFE_S2,
-        providerId: "miruro",
-        episode: 1,
-      });
+        expect(title.id).toBe("197824");
 
-      expect(title.id).toBe("197824");
+        const startedAt = Date.now();
+        const result = await container.engine.resolve(resolveInput, "miruro");
+        const resolveDurationMs = Date.now() - startedAt;
 
-      const startedAt = Date.now();
-      const result = await container.engine.resolve(resolveInput, "miruro");
-      const resolveDurationMs = Date.now() - startedAt;
+        const stream = providerResolveResultToStreamInfo({
+          result,
+          title: request.title.name,
+          subtitlePreference: request.subtitlePreference,
+        });
 
-      const stream = providerResolveResultToStreamInfo({
-        result,
-        title: request.title.name,
-        subtitlePreference: request.subtitlePreference,
-      });
-
-      expect(stream?.url).toBeTruthy();
-      expect(result.failures).toHaveLength(0);
-      expect(resolveDurationMs).toBeLessThan(60_000);
-    },
-    { timeout: 90_000 },
-  );
+        expect(stream?.url).toBeTruthy();
+        expect(result.failures).toHaveLength(0);
+        expect(resolveDurationMs).toBeLessThan(60_000);
+      },
+      { timeout: 90_000 },
+    );
+  });
 });
