@@ -12,8 +12,7 @@ describe("release notes artifacts", () => {
     expect(latest?.install.bunx).toContain("@kitsunekode/kunai@");
     // Artifacts may be summary-only when the changelog has no ### headings
     // (see scripts/generate-release-notes.ts). Prefer sections when present.
-    const hasBody =
-      (latest?.sections.length ?? 0) > 0 || (latest?.summary.trim().length ?? 0) > 0;
+    const hasBody = (latest?.sections.length ?? 0) > 0 || (latest?.summary.trim().length ?? 0) > 0;
     expect(hasBody).toBe(true);
   });
 });
