@@ -103,8 +103,39 @@ describe("root content state", () => {
     clearRootContentSession();
   });
 
-  test("resolvedRootContentFromSurface prefers overlay during active playback", () => {
+  test("resolvedRootContentFromSurface keeps mounted session under overlay", () => {
+    const session = mountRootContent({
+      kind: "browse",
+      fallbackValue: "done",
+      renderContent: () => React.createElement("text", null, "browse"),
+    });
+    const mounted = getRootContentSession();
+    expect(resolvedRootContentFromSurface("root-overlay", mounted)).toEqual({
+      kind: "overlay-over-mounted",
+      session: mounted,
+    });
     expect(resolvedRootContentFromSurface("root-overlay", null)).toEqual({ kind: "overlay" });
     expect(resolvedRootContentFromSurface("playback", null)).toEqual({ kind: "playback" });
+    session.close("done");
+    clearRootContentSession();
+  });
+
+  test("resolveRootContentFromSession preserves browse under diagnostics overlay", () => {
+    const session = mountRootContent({
+      kind: "browse",
+      fallbackValue: "done",
+      renderContent: () => React.createElement("text", null, "browse"),
+    });
+    const mounted = getRootContentSession();
+    expect(
+      resolveRootContentFromSession(
+        baseSession({
+          activeModals: [{ type: "diagnostics" }],
+        }),
+        { rootContent: mounted },
+      ),
+    ).toEqual({ kind: "overlay-over-mounted", session: mounted });
+    session.close("done");
+    clearRootContentSession();
   });
 });

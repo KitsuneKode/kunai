@@ -101,6 +101,7 @@ import {
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { StateBlock } from "./primitives/StateBlock";
+import { useRootContentInputSuspended } from "./root-content-input-gate";
 import { mountRootContent } from "./root-content-state";
 import {
   getNotificationDetailsPending,
@@ -212,6 +213,7 @@ export function BrowseShell<T>({
   idleContext?: import("./types").BrowseIdleContext;
 }) {
   recordRender("browse");
+  const inputSuspended = useRootContentInputSuspended();
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
   });
@@ -884,6 +886,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    if (inputSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestHardExit(0);

@@ -95,6 +95,10 @@ export function resolveRootShellSurface(
   // "root-content", which renders the mounted session and silently drops the
   // overlay — so post-play submenus, the browse `m` menu, provider switching,
   // and cache-purge dialogs all looked broken (they were just hidden underneath).
+  //
+  // RootContentBody maps this surface to `overlay-over-mounted` when a session
+  // exists: the overlay paints full-screen while the mounted React tree stays
+  // alive (input-suspended) so browse/post-play local state survives close.
   if (hasRootContent && rootOverlay) {
     return "root-overlay";
   }

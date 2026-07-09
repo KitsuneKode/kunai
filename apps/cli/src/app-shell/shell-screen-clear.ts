@@ -8,12 +8,12 @@ export function clearShellScreenArtifacts(): void {
 }
 
 /**
- * Erase the prior root-content frame before mounting a new session.
- * Used on root-content id transitions to avoid stale terminal rows.
+ * Clean image artifacts before mounting a new root-content session.
+ *
+ * Prefer Kitty/Ghostty image cleanup only — a full ANSI `\x1b[2J` clear caused
+ * blank-frame flashes between browse ↔ picker ↔ post-play. Ink's alternate
+ * screen redraws the next frame; stale image protocols are the real leak.
  */
 export function clearRootContentTransitionFrame(): void {
-  if (process.stdout.isTTY) {
-    deleteAllKittyImages();
-    process.stdout.write("\x1b[2J\x1b[H");
-  }
+  clearShellScreenArtifacts();
 }

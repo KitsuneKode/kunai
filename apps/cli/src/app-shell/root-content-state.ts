@@ -88,7 +88,9 @@ export type ResolvedRootContent =
   | { readonly kind: "error" }
   | { readonly kind: "playback" }
   | { readonly kind: "mounted"; readonly session: RootContentSession }
-  | { readonly kind: "overlay" };
+  | { readonly kind: "overlay" }
+  /** Overlay is visible; keep the mounted session mounted (hidden) so React state survives. */
+  | { readonly kind: "overlay-over-mounted"; readonly session: RootContentSession };
 
 export function resolveRootContentFromSession(
   state: SessionState,
@@ -119,7 +121,11 @@ export function resolvedRootContentFromSurface(
     case "root-content":
       return rootContent ? { kind: "mounted", session: rootContent } : { kind: "idle" };
     case "root-overlay":
-      return { kind: "overlay" };
+      // Browse / post-play keep local React state (query, selection, calendar).
+      // Unmounting them when an overlay opens was resetting that state on close.
+      return rootContent
+        ? { kind: "overlay-over-mounted", session: rootContent }
+        : { kind: "overlay" };
     case "mounted-screen":
     case "idle":
     default:

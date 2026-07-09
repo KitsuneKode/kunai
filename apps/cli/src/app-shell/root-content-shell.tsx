@@ -8,6 +8,7 @@ import React from "react";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
+import { RootContentInputGate } from "./root-content-input-gate";
 import type { ResolvedRootContent, RootContentSession } from "./root-content-state";
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import { RootOverlayShell } from "./root-overlay-shell";
@@ -102,7 +103,27 @@ export function RootContentBody({
     case "playback":
       return renderPlaybackRootContent(ctx.playbackRootInput);
     case "mounted":
-      return renderMountedRootContent(resolved.session);
+      return (
+        <RootContentInputGate suspended={false}>
+          {renderMountedRootContent(resolved.session)}
+        </RootContentInputGate>
+      );
+    case "overlay-over-mounted":
+      // Keep the mounted session in the tree (hidden) so browse/post-play local
+      // state survives settings/help/history. Suspend its input while the overlay
+      // owns the keyboard.
+      return (
+        <Box flexDirection="column" flexGrow={1}>
+          <Box display="none">
+            <RootContentInputGate suspended>
+              {renderMountedRootContent(resolved.session)}
+            </RootContentInputGate>
+          </Box>
+          {ctx.rootOverlay
+            ? renderRootOverlayContent(ctx.rootOverlay, ctx)
+            : renderIdleRootContent(ctx.state)}
+        </Box>
+      );
     case "overlay":
       return ctx.rootOverlay
         ? renderRootOverlayContent(ctx.rootOverlay, ctx)
