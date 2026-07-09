@@ -101,13 +101,13 @@ import {
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { StateBlock } from "./primitives/StateBlock";
-import { useRootContentInputSuspended } from "./root-content-input-gate";
 import { mountRootContent } from "./root-content-state";
 import {
   getNotificationDetailsPending,
   subscribeNotificationDetails,
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
+import { useRootContentInputSuspended } from "./RootContentInputGate";
 import { InlineSakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,

@@ -8,12 +8,12 @@ import React from "react";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
-import { RootContentInputGate } from "./root-content-input-gate";
 import type { ResolvedRootContent, RootContentSession } from "./root-content-state";
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import { RootOverlayShell } from "./root-overlay-shell";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import { RootContentInputGate } from "./RootContentInputGate";
 
 export type RootContentRendererContext = {
   readonly container: Container;

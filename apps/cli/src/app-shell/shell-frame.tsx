@@ -5,7 +5,7 @@ import React from "react";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
-import { useRootContentInputSuspended } from "./root-content-input-gate";
+import { useRootContentInputSuspended } from "./RootContentInputGate";
 import { useShellInput } from "./shell-command-input";
 import { ShellCommandModeProvider } from "./shell-command-mode";
 import {
