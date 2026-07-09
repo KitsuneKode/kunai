@@ -1,5 +1,5 @@
 name: Setup Bun monorepo
-description: Checkout, Bun, dependency caches, and install for Kunai workspace jobs.
+description: Bun, dependency caches, and install for Kunai workspace jobs. Callers must run actions/checkout first — local composite actions are not on disk until the repo is checked out.
 
 inputs:
   turbo-cache-prefix:
@@ -13,12 +13,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout
-      uses: actions/checkout@v5
-      with:
-        fetch-depth: 0
-        filter: blob:none
-
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
       with:

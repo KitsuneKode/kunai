@@ -106,16 +106,17 @@ function Install-OptionalDeps {
     $reply = Read-Host 'Install mpv (required for playback)? [Y/n]'
     if ($reply -match '^[Nn]') { $installMpv = $false }
   }
-  if (-not $installMpv) { return }
-  if (Test-Cmd 'winget') {
-    Invoke-Step 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
-    return
+  if ($installMpv) {
+    if (Test-Cmd 'winget') {
+      Invoke-Step 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
+    }
+    elseif (Test-Cmd 'scoop') {
+      Invoke-Step 'scoop install mpv' { scoop install mpv }
+    }
+    else {
+      Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
+    }
   }
-  if (Test-Cmd 'scoop') {
-    Invoke-Step 'scoop install mpv' { scoop install mpv }
-    return
-  }
-  Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
 
   $installYtDlp = $true
   if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
@@ -153,8 +154,9 @@ function Install-Binary {
     }
     catch {
       Write-Warn "Download failed for $asset."
+      Write-Warn 'The latest GitHub Release may be missing binary assets (empty release).'
       Write-Warn 'Try: -Method npm | -Method bun | -Method source'
-      Write-Warn 'Or pin a version: -Version X.Y.Z'
+      Write-Warn 'Or pin a known-good version: -Version X.Y.Z'
       throw
     }
     $want = ($sums -split "`n" | Where-Object { $_ -match "\s$([regex]::Escape($asset))$" }) -replace '\s.*', ''
