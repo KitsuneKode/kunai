@@ -46,13 +46,29 @@ function buildIssueBody(bundle: DiagnosticsSupportBundle, diagnosticsPath?: stri
       event.operation
     }${provider}: ${event.message}`;
   });
+  const triage = bundle.triage;
+  const insightLines = Object.entries(bundle.insights)
+    .filter(([, value]) => value != null)
+    .slice(0, 6)
+    .map(([name]) => `- ${name}`);
 
   return [
     "## Summary",
     bundle.summary.headline,
     "",
+    "## Triage",
+    `- Verdict: ${triage.verdict}`,
+    `- Likely cause: ${triage.likelyCause}`,
+    `- Correlation: ${triage.correlationSummary}`,
+    triage.recommendedActions.length
+      ? `- Recommended: ${triage.recommendedActions.join(", ")}`
+      : "- Recommended: none",
+    "",
     "## Diagnostics Sections",
     sectionLines.length ? sectionLines.join("\n") : "- No diagnostics sections recorded.",
+    "",
+    "## Insights present",
+    insightLines.length ? insightLines.join("\n") : "- No insight blocks recorded.",
     "",
     "## Runtime",
     `- App: ${bundle.app.version}`,

@@ -13,6 +13,9 @@ export interface DurableDiagnosticsSink {
   enqueue(event: DiagnosticEvent): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   getSnapshot(limit?: number): readonly DiagnosticEvent[];
+  listBySession?(sessionId: string, limit?: number): readonly DiagnosticEvent[];
+  /** True when durable writes failed and reads should not mask the in-memory ring. */
+  isFailed?(): boolean;
   flush(): void;
   clear(): void;
 }
@@ -22,6 +25,7 @@ export type DiagnosticsServiceDeps = {
   readonly logger: Logger;
   readonly appVersion?: string;
   readonly debug?: boolean;
+  readonly sessionId?: string;
   readonly now?: () => Date;
   readonly traceReporter?: DebugTraceReporter;
   readonly durableSink?: DurableDiagnosticsSink;
@@ -55,15 +59,11 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
-    const durableEvents = this.readDurable((sink) => sink.getRecent(limit));
-    if (durableEvents && durableEvents.length > 0) return durableEvents;
-    return this.deps.store.getRecent(limit);
+    return this.mergeRecentEvents(limit);
   }
 
   getSnapshot(): readonly DiagnosticEvent[] {
-    const durableEvents = this.readDurable((sink) => sink.getSnapshot());
-    if (durableEvents && durableEvents.length > 0) return durableEvents;
-    return this.deps.store.getSnapshot();
+    return [...this.mergeRecentEvents(500)].reverse();
   }
 
   flush(): void {
@@ -96,8 +96,42 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       events: this.getSnapshot(),
       sessionState: input?.sessionState ?? null,
       downloadSummary: input?.downloadSummary ?? null,
+      releaseSummary: input?.releaseSummary ?? null,
+      releaseDiagnostics: input?.releaseDiagnostics ?? null,
+      presenceSnapshot: input?.presenceSnapshot ?? null,
+      memorySamples: input?.memorySamples,
+      getProviderHealth: input?.getProviderHealth,
       now: this.deps.now,
     });
+  }
+
+  /**
+   * Prefer current-session memory + durable session rows over a global durable
+   * recent list. Stale prior-session DB rows previously masked live events and
+   * made `/diagnostics` disagree with what just happened.
+   */
+  private mergeRecentEvents(limit = 20): readonly DiagnosticEvent[] {
+    const capped = Math.max(1, limit);
+    const memory = this.deps.store.getRecent(capped);
+    const sessionId = this.deps.sessionId;
+    const durableFailed = this.deps.durableSink?.isFailed?.() === true;
+
+    if (durableFailed || !this.deps.durableSink) {
+      return memory;
+    }
+
+    const durable = this.readDurable((sink) => {
+      if (sessionId && sink.listBySession) {
+        return sink.listBySession(sessionId, capped);
+      }
+      return sink.getRecent(capped);
+    });
+
+    if (!durable || durable.length === 0) {
+      return memory;
+    }
+
+    return mergeDiagnosticEventsByKey(memory, durable, capped);
   }
 
   private persist(event: DiagnosticEvent): void {
@@ -151,4 +185,49 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     else if (level === "error") this.deps.logger.error(event.message, context);
     else this.deps.logger.info(event.message, context);
   }
+}
+
+function diagnosticEventKey(event: DiagnosticEvent): string {
+  return [
+    event.timestamp,
+    event.operation,
+    event.message,
+    event.sessionId ?? "",
+    event.playbackCycleId ?? "",
+    event.providerAttemptId ?? "",
+    event.traceId ?? "",
+  ].join("|");
+}
+
+/** Newest-first merge of memory + durable rows, deduped by event identity. */
+export function mergeDiagnosticEventsByKey(
+  memoryNewestFirst: readonly DiagnosticEvent[],
+  durableNewestFirst: readonly DiagnosticEvent[],
+  limit: number,
+): readonly DiagnosticEvent[] {
+  const seen = new Set<string>();
+  const merged: DiagnosticEvent[] = [];
+  let memoryIndex = 0;
+  let durableIndex = 0;
+
+  while (
+    merged.length < limit &&
+    (memoryIndex < memoryNewestFirst.length || durableIndex < durableNewestFirst.length)
+  ) {
+    const memoryEvent = memoryNewestFirst[memoryIndex];
+    const durableEvent = durableNewestFirst[durableIndex];
+    const pickMemory =
+      !durableEvent ||
+      (memoryEvent !== undefined && memoryEvent.timestamp >= durableEvent.timestamp);
+    const next = pickMemory ? memoryEvent : durableEvent;
+    if (pickMemory) memoryIndex += 1;
+    else durableIndex += 1;
+    if (!next) continue;
+    const key = diagnosticEventKey(next);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(next);
+  }
+
+  return merged;
 }
