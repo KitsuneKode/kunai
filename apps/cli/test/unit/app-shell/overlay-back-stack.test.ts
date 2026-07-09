@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { resolveOverlayBackStack } from "@/app-shell/overlay-back-stack";
+import { resolveEscTransition } from "@/app-shell/root-shell-state";
+import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
 describe("resolveOverlayBackStack", () => {
   test("clears filters before backing out of panes or confirmations", () => {
@@ -43,5 +45,24 @@ describe("resolveOverlayBackStack", () => {
 
   test("closes root overlays when no local state remains", () => {
     expect(resolveOverlayBackStack({})).toBe("close-overlay");
+  });
+
+  test("root-overlay Esc close-overlay matches resolveEscTransition CLOSE_TOP_OVERLAY", () => {
+    // Production Esc for root-owned overlays is owned by root-overlay-shell +
+    // resolveOverlayBackStack. When the back-stack says close-overlay, the shell
+    // dispatches CLOSE_TOP_OVERLAY — the same transition resolveEscTransition
+    // would return. Do not wire both into the same key handler.
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "help" },
+    });
+
+    expect(resolveOverlayBackStack({})).toBe("close-overlay");
+    expect(resolveEscTransition(state)).toEqual({ type: "CLOSE_TOP_OVERLAY" });
   });
 });
