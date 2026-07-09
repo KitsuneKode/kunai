@@ -7,14 +7,16 @@ import * as workflows from "@/app-shell/workflows";
 import * as setupWorkflows from "@/app-shell/workflows/setup-workflows";
 
 beforeEach(() => {
-  spyOn(setupWorkflows, "openSetupWizardFromShell").mockImplementation(async () => {});
+  spyOn(setupWorkflows, "openSetupWizardFromShell").mockImplementation(async () => "completed");
   spyOn(rootOverlayBridge, "openRootOwnedOverlay").mockImplementation(async () => {});
   spyOn(rootOverlayBridge, "openNotificationsOverlay").mockImplementation(async () => ({
     playback: null,
   }));
   spyOn(rootQueueBridge, "waitForRootQueueSelection").mockImplementation(async () => null);
   spyOn(workflows, "handleShellAction").mockImplementation(async () => "handled" as const);
-  spyOn(workflows, "resolveQuitWithDownloadQueue").mockImplementation(async () => "handled" as const);
+  spyOn(workflows, "resolveQuitWithDownloadQueue").mockImplementation(
+    async () => "handled" as const,
+  );
 });
 
 afterEach(() => {
