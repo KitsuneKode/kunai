@@ -640,7 +640,9 @@ function displayMiruroSourceLabel(
       ? "soft sub"
       : serverProfile.subtitleDelivery === "hardcoded"
         ? "hard sub"
-        : "subtitles unknown";
+        : audioCategory === "dub"
+          ? "no soft subs"
+          : "subtitles unknown";
   return `${audioLabel} · ${serverProfile.label} · ${subLabel}`;
 }
 

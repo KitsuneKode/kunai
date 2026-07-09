@@ -3,18 +3,22 @@ import type {
   CachePolicy,
   ProviderFailure,
   ProviderId,
+  ProviderLanguageEvidence,
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
   ProviderTraceEvent,
   ProviderVariantCandidate,
   StreamCandidate,
+  StreamPresentation,
   SubtitleCandidate,
+  SubtitleDelivery,
   TitleIdentity,
 } from "@kunai/types";
 
 import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
 import {
+  createProviderLanguageEvidence,
   createStreamId,
   createVariantId,
   normalizeQualityLabel,
@@ -147,8 +151,14 @@ export async function resolveDirectStreamSource(
       context,
     });
 
+    const subtitles = normalizeSubtitles(
+      payload?.subtitles ?? [],
+      providerId,
+      sourceId,
+      cachePolicy,
+    );
     const streams = payload
-      ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy)
+      ? normalizeStreams(payload, providerId, sourceId, label, cachePolicy, subtitles)
       : [];
     let selectedStream = streams[0];
     if (!selectedStream) {
@@ -221,12 +231,6 @@ export async function resolveDirectStreamSource(
       attributes: { streams: streams.length },
     });
 
-    const subtitles = normalizeSubtitles(
-      payload?.subtitles ?? [],
-      providerId,
-      sourceId,
-      cachePolicy,
-    );
     const variants = streams.map<ProviderVariantCandidate>((stream) => ({
       id: stream.variantId ?? stream.id,
       providerId,
@@ -236,13 +240,18 @@ export async function resolveDirectStreamSource(
       qualityRank: stream.qualityRank,
       protocol: stream.protocol,
       container: stream.container,
+      audioLanguages: stream.audioLanguages,
+      presentation: stream.presentation,
+      hardSubLanguage: stream.hardSubLanguage,
+      subtitleDelivery: stream.subtitleDelivery,
+      subtitleLanguages:
+        stream.subtitleLanguages ??
+        subtitles.map((sub) => sub.language).filter((lang): lang is string => Boolean(lang)),
       streamIds: [stream.id],
       subtitleIds: subtitles.map((sub) => sub.id),
-      subtitleLanguages: subtitles
-        .map((sub) => sub.language)
-        .filter((lang): lang is string => Boolean(lang)),
       selected: stream.id === selectedStream.id,
       confidence: stream.confidence,
+      languageEvidence: stream.languageEvidence,
     }));
 
     emitTraceEvent(events, context, {
@@ -336,10 +345,14 @@ function normalizeStreams(
   sourceId: string,
   label: string,
   cachePolicy: CachePolicy,
+  subtitles: readonly SubtitleCandidate[],
 ): StreamCandidate[] {
   const streams: StreamCandidate[] = [];
   const seen = new Set<string>();
   const headers = payload.headers;
+  const subtitleLanguages = uniqueLanguages(subtitles.map((subtitle) => subtitle.language));
+  const subtitleDelivery = inferSubtitleDelivery(subtitles);
+  const sharedLanguageEvidence = buildSubtitleLanguageEvidence(subtitles, sourceId);
 
   for (const entry of payload.streams) {
     if (!entry.url || seen.has(entry.url)) continue;
@@ -347,6 +360,12 @@ function normalizeStreams(
     const protocol = inferProtocol(entry.url);
     const qualityLabel = normalizeQualityLabel(entry.qualityHint);
     const qualityRank = qualityRankFromLabel(entry.qualityHint) ?? 0;
+    const audioLanguages = uniqueLanguages(entry.audioLanguages ?? []);
+    const presentation = inferPresentation(entry.presentation, audioLanguages);
+    const languageEvidence = [
+      ...buildAudioLanguageEvidence(audioLanguages, sourceId, entry.serverLabel ?? label),
+      ...sharedLanguageEvidence,
+    ];
     streams.push({
       id: createStreamId(providerId, [entry.url]),
       providerId,
@@ -359,8 +378,11 @@ function normalizeStreams(
       qualityRank,
       serverName: entry.serverLabel ?? label,
       flavorLabel: entry.serverLabel ?? label,
-      audioLanguages: entry.audioLanguages,
-      presentation: entry.presentation,
+      audioLanguages: audioLanguages.length > 0 ? audioLanguages : undefined,
+      presentation,
+      subtitleDelivery,
+      subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
+      languageEvidence: languageEvidence.length > 0 ? languageEvidence : undefined,
       headers,
       confidence: qualityRank > 0 ? 0.9 : 0.82,
       cachePolicy,
@@ -368,6 +390,74 @@ function normalizeStreams(
   }
 
   return streams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
+}
+
+function inferSubtitleDelivery(
+  subtitles: readonly SubtitleCandidate[],
+): SubtitleDelivery | undefined {
+  if (subtitles.length === 0) return undefined;
+  return "external";
+}
+
+function inferPresentation(
+  explicit: StreamPresentation | undefined,
+  audioLanguages: readonly string[],
+): StreamPresentation | undefined {
+  if (explicit) return explicit;
+  if (audioLanguages.includes("ja") && !audioLanguages.includes("en")) return "sub";
+  if (audioLanguages.includes("en") && !audioLanguages.includes("ja")) return "dub";
+  return undefined;
+}
+
+function buildAudioLanguageEvidence(
+  audioLanguages: readonly string[],
+  sourceId: string,
+  nativeLabel: string,
+): ProviderLanguageEvidence[] {
+  return audioLanguages.map((language) =>
+    createProviderLanguageEvidence({
+      role: "audio",
+      value: language,
+      nativeLabel,
+      sourceId,
+      confidence: 0.75,
+    }),
+  );
+}
+
+function buildSubtitleLanguageEvidence(
+  subtitles: readonly SubtitleCandidate[],
+  sourceId: string,
+): ProviderLanguageEvidence[] {
+  const seen = new Set<string>();
+  const evidence: ProviderLanguageEvidence[] = [];
+  for (const subtitle of subtitles) {
+    const language = subtitle.language;
+    if (!language || seen.has(language)) continue;
+    seen.add(language);
+    evidence.push(
+      createProviderLanguageEvidence({
+        role: "subtitle",
+        value: language,
+        nativeLabel: subtitle.label ?? language,
+        sourceId,
+        confidence: subtitle.confidence,
+      }),
+    );
+  }
+  return evidence;
+}
+
+function uniqueLanguages(values: readonly (string | undefined)[]): string[] {
+  const languages: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeIsoLanguageCode(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    languages.push(normalized);
+  }
+  return languages;
 }
 
 function normalizeSubtitles(
