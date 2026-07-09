@@ -1201,13 +1201,13 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
   });
 
   expect(candidates.map((candidate) => candidate.label)).toEqual([
-    "Dub · Kiwi · subtitles unknown",
-    "Dub · Bee · subtitles unknown",
-    "Dub · Hop · subtitles unknown",
-    "Dub · Ally · subtitles unknown",
-    "Dub · Pewe · subtitles unknown",
-    "Dub · Moo · subtitles unknown",
-    "Dub · Bonk · subtitles unknown",
+    "Dub · Kiwi · no soft subs",
+    "Dub · Bee · no soft subs",
+    "Dub · Hop · no soft subs",
+    "Dub · Ally · no soft subs",
+    "Dub · Pewe · no soft subs",
+    "Dub · Moo · no soft subs",
+    "Dub · Bonk · no soft subs",
     "Sub · Kiwi · subtitles unknown",
     "Sub · Bee · subtitles unknown",
     "Sub · Hop · subtitles unknown",
