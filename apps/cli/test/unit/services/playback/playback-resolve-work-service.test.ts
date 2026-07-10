@@ -125,4 +125,36 @@ describe("PlaybackResolveWorkService", () => {
     expect((await foreground).stream?.url).toContain("stream.m3u8");
     expect(physicalSignal?.aborted).toBe(false);
   });
+
+  test("keeps cancellationReason live for late abort during physical resolve", async () => {
+    const cancellation: { reason: PlaybackResolveInput["cancellationReason"] } = {
+      reason: undefined,
+    };
+    let seenReason: PlaybackResolveInput["cancellationReason"];
+    let release!: () => void;
+    const service = new PlaybackResolveWorkService({
+      resolve: async (input) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        seenReason = input.cancellationReason;
+        return output;
+      },
+    });
+
+    const resolveInput = baseInput();
+    Object.defineProperty(resolveInput, "cancellationReason", {
+      configurable: true,
+      enumerable: true,
+      get: () => cancellation.reason,
+    });
+    const pending = service.resolve(resolveInput, {
+      intentKind: "playback",
+      budgetLane: "user-blocking",
+    });
+    cancellation.reason = "user-navigation";
+    release();
+    await pending;
+    expect(seenReason).toBe("user-navigation");
+  });
 });

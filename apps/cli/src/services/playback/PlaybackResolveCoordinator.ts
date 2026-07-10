@@ -65,14 +65,21 @@ export class PlaybackResolveCoordinator {
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveCoordinatorOutput> {
     const events: PlaybackResolveEvent[] = [];
     const resolver = this.createResolver();
-    const result = await resolver.resolve({
+    const resolveInput: PlaybackResolveInput = {
       ...input,
-      onEvent: (event) => {
+      onEvent: (event: PlaybackResolveEvent) => {
         events.push(event);
         this.recordEvent(input, event);
         input.onEvent?.(event);
       },
+    };
+    // Spread snapshots getters; re-bind so late abort reasons stay live.
+    Object.defineProperty(resolveInput, "cancellationReason", {
+      configurable: true,
+      enumerable: true,
+      get: () => input.cancellationReason,
     });
+    const result = await resolver.resolve(resolveInput);
     this.recordProviderTimeline(input, result);
 
     return {

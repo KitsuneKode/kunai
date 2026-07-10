@@ -184,6 +184,8 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
+import type { PlaybackResolveEvent } from "@/services/playback/PlaybackResolveService";
+import type { ResolveCancellationReason } from "@/services/playback/ResolveResultCommitPolicy";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -756,7 +758,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const resolveController = new AbortController();
         let resolveAbortIntent: "cancel" | "fallback" | null = null;
-        const abortOnSessionStop = () => resolveController.abort();
+        const resolveCancellation: { reason: ResolveCancellationReason | undefined } = {
+          reason: undefined,
+        };
+        const abortOnSessionStop = () => {
+          resolveCancellation.reason = "user-shutdown";
+          resolveController.abort();
+        };
         context.signal.addEventListener("abort", abortOnSessionStop, { once: true });
         resolveController.signal.addEventListener(
           "abort",
@@ -779,6 +787,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           label: `${title.name} S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`,
           cancel: (reason) => {
             resolveAbortIntent = reason?.includes("fallback") ? "fallback" : "cancel";
+            resolveCancellation.reason =
+              resolveAbortIntent === "fallback" ? "provider-fallback" : "user-navigation";
             resolveController.abort();
           },
         });
@@ -1317,125 +1327,130 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               config.getRaw(),
               title.id,
             );
-            const resolveResult = await container.playbackResolveWork.resolve(
-              {
-                title,
-                episode: currentEpisode,
-                mode: stateManager.getState().mode,
-                providerId: currentProvider.metadata.id,
-                audioPreference: playbackAudioPreference(profileContext),
-                subtitlePreference: playbackSubtitlePreference(profileContext),
-                qualityPreference: playbackQualityPreference(profileContext),
-                startupPriority: config.startupPriority,
-                favoriteSourceNames: config.favoriteSources,
-                selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
-                selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
-                recoveryMode: resolvePolicy.recoveryMode,
-                preferFreshStream: resolvePolicy.preferFreshStream,
-                forceHealthCheck: resolvePolicy.forceHealthCheck,
-                preserveCachedStreamOnFreshFailure:
-                  resolvePolicy.preserveCachedStreamOnFreshFailure,
-                ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
-                ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
-                resolveIntent: resolvePolicy.resolveIntent,
-                blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
-                signal: resolveController.signal,
-                correlation: playbackCorrelation,
-                onFeedback: (feedback) => this.updatePlaybackFeedback(context, feedback),
-                onEvent: (event) => {
-                  if (event.type === "cache-hit" || event.type === "cache-miss") {
-                    const hit = event.type === "cache-hit";
-                    if (hit) {
-                      logger.info("Provider resolve cache hit", {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                      });
-                    }
-                    diagnosticsService.record({
-                      ...playbackCorrelation,
-                      category: "cache",
-                      message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
-                      context: {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                      },
+            const resolveInput = {
+              title,
+              episode: currentEpisode,
+              mode: stateManager.getState().mode,
+              providerId: currentProvider.metadata.id,
+              audioPreference: playbackAudioPreference(profileContext),
+              subtitlePreference: playbackSubtitlePreference(profileContext),
+              qualityPreference: playbackQualityPreference(profileContext),
+              startupPriority: config.startupPriority,
+              favoriteSourceNames: config.favoriteSources,
+              selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
+              selectedStreamId: currentPreferredStreamSelection.streamId ?? undefined,
+              recoveryMode: resolvePolicy.recoveryMode,
+              preferFreshStream: resolvePolicy.preferFreshStream,
+              forceHealthCheck: resolvePolicy.forceHealthCheck,
+              preserveCachedStreamOnFreshFailure: resolvePolicy.preserveCachedStreamOnFreshFailure,
+              ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
+              ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
+              resolveIntent: resolvePolicy.resolveIntent,
+              blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
+              signal: resolveController.signal,
+              correlation: playbackCorrelation,
+              onFeedback: (feedback: { detail?: string | null; note?: string | null }) =>
+                this.updatePlaybackFeedback(context, feedback),
+              onEvent: (event: PlaybackResolveEvent) => {
+                if (event.type === "cache-hit" || event.type === "cache-miss") {
+                  const hit = event.type === "cache-hit";
+                  if (hit) {
+                    logger.info("Provider resolve cache hit", {
+                      provider: event.providerId,
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
                     });
-                    return;
                   }
+                  diagnosticsService.record({
+                    ...playbackCorrelation,
+                    category: "cache",
+                    message: hit ? "Provider resolve cache hit" : "Provider resolve cache miss",
+                    context: {
+                      provider: event.providerId,
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
+                    },
+                  });
+                  return;
+                }
 
-                  if (event.type === "fresh-source-failed-using-cache") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: "No fresher source found. Continuing current stream.",
-                      note: "The cached stream stayed available, so playback can resume.",
-                    });
-                    return;
-                  }
+                if (event.type === "fresh-source-failed-using-cache") {
+                  this.updatePlaybackFeedback(context, {
+                    detail: "No fresher source found. Continuing current stream.",
+                    note: "The cached stream stayed available, so playback can resume.",
+                  });
+                  return;
+                }
 
-                  if (event.type === "title-provider-suggestion") {
-                    const suggestedName =
-                      providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
-                      event.suggestedProviderId;
-                    this.updatePlaybackFeedback(context, {
-                      note: `VidKing struggled on this title before. ${suggestedName} worked — switch providers or retry VidKing.`,
-                    });
-                    return;
-                  }
+                if (event.type === "title-provider-suggestion") {
+                  const failingName =
+                    providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
+                  const suggestedName =
+                    providerRegistry.get(event.suggestedProviderId)?.metadata.name ??
+                    event.suggestedProviderId;
+                  this.updatePlaybackFeedback(context, {
+                    note: `${failingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${failingName}.`,
+                  });
+                  return;
+                }
 
-                  if (event.type === "cache-health-check") {
-                    diagnosticsService.record({
-                      ...playbackCorrelation,
-                      category: "cache",
-                      message: event.healthy
-                        ? "Cached stream health check passed"
-                        : "Cached stream health check failed",
-                      context: {
-                        provider: event.providerId,
-                        titleId: title.id,
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                        strategy: event.strategy,
-                        ageMs: event.ageMs,
-                      },
-                    });
-                    return;
-                  }
+                if (event.type === "cache-health-check") {
+                  diagnosticsService.record({
+                    ...playbackCorrelation,
+                    category: "cache",
+                    message: event.healthy
+                      ? "Cached stream health check passed"
+                      : "Cached stream health check failed",
+                    context: {
+                      provider: event.providerId,
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
+                      strategy: event.strategy,
+                      ageMs: event.ageMs,
+                    },
+                  });
+                  return;
+                }
 
-                  if (event.type === "attempt") {
-                    stateManager.dispatch({
-                      type: "SET_RESOLVE_RETRY_COUNT",
-                      count: Math.max(0, event.attempt - 1),
-                    });
-                    this.updatePlaybackFeedback(context, {
-                      detail: describeProviderResolveAttemptDetail(event),
-                      note: describeProviderResolveAttemptNote(event),
-                    });
-                    return;
-                  }
+                if (event.type === "attempt") {
+                  stateManager.dispatch({
+                    type: "SET_RESOLVE_RETRY_COUNT",
+                    count: Math.max(0, event.attempt - 1),
+                  });
+                  this.updatePlaybackFeedback(context, {
+                    detail: describeProviderResolveAttemptDetail(event),
+                    note: describeProviderResolveAttemptNote(event),
+                  });
+                  return;
+                }
 
-                  if (event.type === "failure") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: event.retryable
-                        ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
-                        : "Provider returned a non-recoverable issue",
-                      note: event.issue,
-                    });
-                  } else if (event.type === "cache-stale") {
-                    this.updatePlaybackFeedback(context, {
-                      detail: "Cached stream expired, refetching…",
-                      note: null,
-                    });
-                  }
-                },
+                if (event.type === "failure") {
+                  this.updatePlaybackFeedback(context, {
+                    detail: event.retryable
+                      ? `Recoverable provider issue (${event.attempt}/${event.maxAttempts})`
+                      : "Provider returned a non-recoverable issue",
+                    note: event.issue,
+                  });
+                } else if (event.type === "cache-stale") {
+                  this.updatePlaybackFeedback(context, {
+                    detail: "Cached stream expired, refetching…",
+                    note: null,
+                  });
+                }
               },
-              {
-                intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
-                budgetLane: "user-blocking",
-              },
-            );
+            };
+            Object.defineProperty(resolveInput, "cancellationReason", {
+              configurable: true,
+              enumerable: true,
+              get: () => resolveCancellation.reason,
+            });
+            const resolveResult = await container.playbackResolveWork.resolve(resolveInput, {
+              intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
+              budgetLane: "user-blocking",
+            });
 
             stream = resolveResult.stream;
             resolvedProviderId = resolveResult.providerId;
@@ -2281,6 +2296,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const fallback = pickCompatibleFallbackProvider(
               providerRegistry.getCompatible(title, stateManager.getState().mode),
               resolvedProviderId,
+              {
+                getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+                suggestedProviderId: container.titleProviderHealth.getSwitchSuggestion(
+                  title.id,
+                  resolvedProviderId,
+                )?.suggestedProviderId,
+              },
             );
 
             if (fallback) {

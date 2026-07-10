@@ -57,29 +57,23 @@ describe("SourceInventoryService", () => {
     expect(keys.size).toBe(5);
   });
 
-  test("does not include selected quality in the inventory key", () => {
-    const key = buildSourceInventoryCacheKey({
+  test("separates quality preference in the inventory key", () => {
+    const base = {
       providerId: "vidking",
-      mediaKind: "series",
+      mediaKind: "series" as const,
       titleId: "127529",
       season: 1,
       episode: 2,
       audioMode: "sub",
       subtitleLanguage: "en",
       runtime: "direct-http" as const,
-    });
+    };
 
-    expect(key).toBe(
-      buildSourceInventoryCacheKey({
-        providerId: "vidking",
-        mediaKind: "series",
-        titleId: "127529",
-        season: 1,
-        episode: 2,
-        audioMode: "sub",
-        subtitleLanguage: "en",
-        runtime: "direct-http",
-      }),
+    expect(buildSourceInventoryCacheKey({ ...base, qualityPreference: "1080p" })).not.toBe(
+      buildSourceInventoryCacheKey({ ...base, qualityPreference: "720p" }),
+    );
+    expect(buildSourceInventoryCacheKey({ ...base, qualityPreference: "1080p" })).not.toBe(
+      buildSourceInventoryCacheKey(base),
     );
   });
 
@@ -98,6 +92,7 @@ describe("SourceInventoryService", () => {
 
     expect(buildSourceInventoryCacheKey({ ...base, audioMode: "dub" })).not.toBe(baseKey);
     expect(buildSourceInventoryCacheKey({ ...base, subtitleLanguage: "none" })).not.toBe(baseKey);
+    expect(buildSourceInventoryCacheKey({ ...base, qualityPreference: "1080p" })).not.toBe(baseKey);
     expect(buildSourceInventoryCacheKey({ ...base, episode: 3 })).not.toBe(baseKey);
     expect(buildSourceInventoryCacheKey({ ...base, absoluteEpisode: 8 })).not.toBe(baseKey);
     expect(buildSourceInventoryCacheKey({ ...base, runtime: "browser-safe-fetch" })).not.toBe(

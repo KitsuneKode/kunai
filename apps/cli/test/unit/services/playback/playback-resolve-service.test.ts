@@ -739,7 +739,17 @@ test("PlaybackResolveService can try a fresh source without deleting a playable 
       },
     },
   );
-  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealthService: {
+      check: async () => ({
+        healthy: true,
+        checked: true,
+        strategy: "hls-manifest-get",
+      }),
+    } as never,
+  });
 
   const events: string[] = [];
   const result = await service.resolve({
@@ -756,10 +766,68 @@ test("PlaybackResolveService can try a fresh source without deleting a playable 
   });
 
   expect(providerCalled).toBe(true);
+  expect(events).toContain("cache-health-check");
   expect(events).toContain("fresh-source-failed-using-cache");
   expect(result.cacheStatus).toBe("hit");
   expect(result.cacheProvenance).toBe("cached");
   expect(result.stream?.url).toBe(cachedStream.url);
+});
+
+test("PlaybackResolveService refuses a dead cached stream after fresh-source failure", async () => {
+  const cachedStream = {
+    ...stream,
+    timestamp: Date.now(),
+    url: "https://cdn.example/dead-cached.m3u8",
+  };
+  const cache = createMemoryCache(cachedStream);
+  const engine = createMockEngine({
+    result: null,
+    providerId: null,
+    attempts: [
+      {
+        providerId: "vidking" as ProviderId,
+        failure: {
+          providerId: "vidking" as ProviderId,
+          code: "not-found",
+          message: "No fresher source",
+          retryable: true,
+          at: new Date().toISOString(),
+        },
+      },
+    ],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealthService: {
+      check: async () => ({
+        healthy: false,
+        checked: true,
+        strategy: "hls-manifest-get",
+      }),
+    } as never,
+  });
+
+  const events: string[] = [];
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    preferFreshStream: true,
+    preserveCachedStreamOnFreshFailure: true,
+    onEvent: (e) => events.push(e.type),
+  });
+
+  expect(events).toContain("cache-health-check");
+  expect(events).toContain("cache-stale");
+  expect(events).not.toContain("fresh-source-failed-using-cache");
+  expect(result.stream).toBeNull();
+  expect(result.cacheStatus).toBe("miss");
+  expect(await cache.get("any")).toBeNull();
 });
 
 test("PlaybackResolveService skips a blocked cached stream during recovery", async () => {

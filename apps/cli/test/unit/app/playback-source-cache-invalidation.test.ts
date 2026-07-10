@@ -29,6 +29,7 @@ describe("playback-source-cache-invalidation", () => {
       titleId: "1396",
       season: 1,
       episode: 5,
+      qualityPreference: "auto",
     });
   });
 

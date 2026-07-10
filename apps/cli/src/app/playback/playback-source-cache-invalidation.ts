@@ -28,6 +28,7 @@ export function buildSourceInventoryCacheInput(
     episode: episode.episode,
     audioMode: playbackAudioPreference(profileContext),
     subtitleLanguage: playbackSubtitlePreference(profileContext),
+    qualityPreference: playbackQualityPreference(profileContext),
     startupPriority: config.startupPriority,
   };
 }
