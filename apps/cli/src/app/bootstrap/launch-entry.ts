@@ -294,7 +294,7 @@ export function applyHistorySelectionProvider(
     container.stateManager.dispatch({
       type: "SET_MODE",
       mode: "anime",
-      provider: state.provider,
+      provider: state.defaultProviders.anime,
     });
   }
 

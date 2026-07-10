@@ -238,7 +238,16 @@ describe("launch entry helpers", () => {
         },
         stateManager: {
           getState() {
-            return { provider: "allanime", providerSwitchSeq: 1, mode: "series" };
+            return {
+              provider: "allanime",
+              providerSwitchSeq: 1,
+              mode: "series",
+              defaultProviders: {
+                series: "videasy",
+                anime: "allanime",
+                youtube: "youtube",
+              },
+            };
           },
           dispatch(transition: unknown) {
             transitions.push(transition);
@@ -253,6 +262,57 @@ describe("launch entry helpers", () => {
           externalIds: { anilistId: "20431" },
           providerId: "miruro",
         }),
+      },
+    );
+
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "anime",
+      provider: "allanime",
+    });
+  });
+
+  test("applyHistorySelectionProvider never carries YouTube into anime history", () => {
+    const transitions: unknown[] = [];
+
+    applyHistorySelectionProvider(
+      {
+        config: {
+          getRaw() {
+            return { titleProviderPreferences: {} };
+          },
+        },
+        providerRegistry: {
+          get() {
+            return {
+              metadata: {
+                id: "allanime",
+                isAnimeProvider: true,
+              },
+            };
+          },
+        },
+        stateManager: {
+          getState() {
+            return {
+              provider: "youtube",
+              providerSwitchSeq: 1,
+              mode: "youtube",
+              defaultProviders: {
+                series: "videasy",
+                anime: "allanime",
+                youtube: "youtube",
+              },
+            };
+          },
+          dispatch(transition: unknown) {
+            transitions.push(transition);
+          },
+        },
+      } as never,
+      {
+        titleId: "anilist:123",
+        entry: history({ providerId: "allanime", mediaKind: "anime" }),
       },
     );
 
@@ -339,7 +399,15 @@ describe("launch entry helpers", () => {
         },
         stateManager: {
           getState() {
-            return { provider: "allanime", providerSwitchSeq: 0 };
+            return {
+              provider: "allanime",
+              providerSwitchSeq: 0,
+              defaultProviders: {
+                series: "videasy",
+                anime: "allanime",
+                youtube: "youtube",
+              },
+            };
           },
           dispatch(transition: unknown) {
             transitions.push(transition);
