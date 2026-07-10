@@ -1,5 +1,6 @@
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
+import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
@@ -248,7 +249,7 @@ export function BrowseShell<T>({
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
-  const [calendarNow, setCalendarNow] = useState(() => Date.now());
+  const calendarNow = useCalendarNow(inputSuspended);
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
     initialResults && initialResults.length > 0 ? "ready" : "idle",
   );
@@ -301,10 +302,6 @@ export function BrowseShell<T>({
     };
   }, []);
 
-  useEffect(() => {
-    const id = setInterval(() => setCalendarNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
   );
