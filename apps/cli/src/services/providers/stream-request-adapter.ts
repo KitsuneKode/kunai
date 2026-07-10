@@ -1,3 +1,4 @@
+import { assertTitleMatchesShellMode } from "@/domain/provider-lane-contract";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import { resolveProviderTitleIdentity, type ProviderCatalogIdentity } from "@kunai/core";
 import { normalizeLegacyVideasySourceId, resolveAnimeAudioIntent } from "@kunai/providers";
@@ -27,6 +28,7 @@ export function streamRequestToResolveInput(
   catalogIdentity?: ProviderCatalogIdentity,
   providerId?: string,
 ): ProviderResolveInput {
+  assertTitleMatchesShellMode(request.title, mode);
   const animeAudioIntent =
     mode === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
   return {
