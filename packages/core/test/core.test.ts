@@ -498,6 +498,76 @@ test("ProviderEngine falls back after a provider returns an exhausted empty resu
   });
 });
 
+test("ProviderEngine never invokes an incompatible fallback candidate", async () => {
+  let incompatibleCalls = 0;
+  const animeOnlyProvider: CoreProviderModule = {
+    providerId: "anime-only",
+    manifest: { ...allanimeManifest, id: "anime-only", displayName: "Anime Only" },
+    async resolve() {
+      incompatibleCalls += 1;
+      throw new Error("incompatible providers must not resolve");
+    },
+  };
+  const seriesProvider: CoreProviderModule = {
+    providerId: "series-fallback",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "series-fallback",
+      displayName: "Series Fallback",
+    }),
+    async resolve(input, context) {
+      return {
+        status: "resolved",
+        providerId: "series-fallback",
+        selectedStreamId: "stream:series-fallback:1",
+        streams: [
+          {
+            id: "stream:series-fallback:1",
+            providerId: "series-fallback",
+            url: "https://cdn.example/series.m3u8",
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: "trace:series-fallback",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      };
+    },
+  };
+  const engine = createProviderEngine({
+    modules: [animeOnlyProvider, seriesProvider],
+    maxAttempts: 1,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "series", title: "Demo" },
+      mediaKind: "series",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["anime-only", "series-fallback"],
+  );
+
+  expect(incompatibleCalls).toBe(0);
+  expect(resolved.providerId).toBe("series-fallback");
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    providerId: "anime-only",
+    code: "unsupported-title",
+    retryable: false,
+  });
+});
+
 test("ProviderEngine retries retryable exhausted results before falling back", async () => {
   let primaryAttempts = 0;
   const flakyProvider: CoreProviderModule = {

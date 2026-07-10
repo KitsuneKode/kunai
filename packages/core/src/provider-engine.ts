@@ -165,6 +165,15 @@ export class ProviderEngine {
     if (!module) {
       throw new Error(`Provider module not found: ${providerId}`);
     }
+    if (!module.manifest.mediaKinds.includes(input.mediaKind)) {
+      throw new ProviderResolveFailureError({
+        providerId,
+        code: "unsupported-title",
+        message: `Provider ${providerId} does not support ${input.mediaKind} media`,
+        retryable: false,
+        at: this.now(),
+      });
+    }
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       if (signal?.aborted) throw this.abortError();
