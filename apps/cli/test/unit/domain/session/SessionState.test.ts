@@ -310,8 +310,8 @@ describe("SessionState overlays", () => {
   test("a root-owned overlay opened over mounted root content takes the full screen", () => {
     // Browse / post-play / picker sessions do not composite root-owned overlays
     // themselves, so an open overlay must escape to the full-screen root-overlay
-    // surface instead of being hidden under the mounted session. Previously only
-    // tracks_panel escaped, which silently dropped every other submenu.
+    // surface. RootContentBody then keeps the mounted session alive under the
+    // overlay (overlay-over-mounted) so local React state is not reset on close.
     let state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "none" },

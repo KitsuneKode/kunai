@@ -5,6 +5,7 @@ import React from "react";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
+import { useRootContentInputSuspended } from "./RootContentInputGate";
 import { useShellInput } from "./shell-command-input";
 import { ShellCommandModeProvider } from "./shell-command-mode";
 import {
@@ -58,7 +59,11 @@ export function ShellFrame({
   terminalWidth?: number;
   terminalRows?: number;
 }) {
+  const inputSuspended = useRootContentInputSuspended();
+  const effectivelyLocked = inputLocked || inputSuspended;
+
   useInput((input, key) => {
+    if (inputSuspended) return;
     if (isHardGlobalQuit(input, key)) {
       requestHardExit(0);
     }
@@ -67,14 +72,14 @@ export function ShellFrame({
   const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
-    disabled: inputLocked,
+    disabled: effectivelyLocked,
     letterKeysHandledExternally,
     escapeAction,
     onResolve,
   });
 
   useInput((input, key) => {
-    if (inputLocked || commandMode) return;
+    if (effectivelyLocked || commandMode) return;
     if (input === "?") {
       onResolve("help");
       return;
@@ -131,7 +136,7 @@ export function ShellFrame({
           taskLabel={footerTask}
           actions={footerActions}
           mode={footerMode}
-          commandMode={commandMode && !inputLocked}
+          commandMode={commandMode && !effectivelyLocked}
           terminalWidth={cols}
         />
       </Box>
