@@ -590,7 +590,11 @@ export function RootOverlayShell({
             capabilitySnapshot: container.capabilitySnapshot,
           })
         : overlay.type === "diagnostics"
-          ? buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container))
+          ? buildDiagnosticsPanelLines(
+              buildDiagnosticsPanelInput(container, {
+                youtubeProbe: overlay.youtubeProbe,
+              }),
+            )
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const genericPickerOptions = useMemo(
@@ -675,12 +679,21 @@ export function RootOverlayShell({
     commands,
     escapeAction: null,
     onResolve: (action) => {
+      if (action === "diagnostics") {
+        void (async () => {
+          const { openDiagnosticsOverlay } = await import("./root-overlay-bridge");
+          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          }
+          await openDiagnosticsOverlay(container, "diagnostics-overlay-command");
+        })();
+        return;
+      }
       if (
         action === "settings" ||
         action === "presence" ||
         action === "help" ||
         action === "about" ||
-        action === "diagnostics" ||
         action === "downloads" ||
         action === "notifications" ||
         action === "continue" ||

@@ -9,7 +9,11 @@ import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { historyContentType } from "@/services/continuation/history-progress";
 
 import { waitForRootHistorySelection } from "./root-history-bridge";
-import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
+import {
+  openDiagnosticsOverlay,
+  openNotificationsOverlay,
+  openRootOwnedOverlay,
+} from "./root-overlay-bridge";
 import { waitForRootQueueSelection } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
@@ -219,7 +223,7 @@ export async function dispatchPaletteCommand(
     return "handled";
   }
   if (action === "diagnostics") {
-    await openRootOwnedOverlay(container, { type: "diagnostics" });
+    await openDiagnosticsOverlay(container, "diagnostics-palette");
     return "handled";
   }
   if (action === "notifications") {

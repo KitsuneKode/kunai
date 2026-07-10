@@ -5,6 +5,8 @@
 // Keep it pure, explicit, and testable.
 // =============================================================================
 
+import type { YoutubeDiagnosticsProbe } from "@/services/youtube/youtube-diagnostics-probes";
+
 import type { TitleDetail } from "../catalog/title-detail";
 import { videoMetaFromSearchResult } from "../media/video-meta";
 import type { PlaybackProblem } from "../playback/playback-problem";
@@ -97,7 +99,10 @@ export type OverlayState =
   | { type: "queue" }
   | { type: "downloads" }
   | { type: "library"; view?: "library" | "queue" }
-  | { type: "diagnostics" }
+  | {
+      type: "diagnostics";
+      youtubeProbe?: YoutubeDiagnosticsProbe;
+    }
   | { type: "help" }
   | { type: "about" }
   | { type: "setup"; missing: readonly string[] }

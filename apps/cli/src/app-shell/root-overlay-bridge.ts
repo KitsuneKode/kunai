@@ -83,6 +83,19 @@ export async function openRootOwnedOverlay(
   });
 }
 
+/** Open `/diagnostics` with a fresh YouTube tooling/Invidious probe on the overlay payload. */
+export async function openDiagnosticsOverlay(
+  container: Container,
+  source = "diagnostics-command",
+): Promise<void> {
+  const { recordDiagnosticsPanelMemorySample } = await import("./diagnostics-panel-source");
+  const { runYoutubeDiagnosticsProbes } =
+    await import("@/services/youtube/youtube-diagnostics-probes");
+  recordDiagnosticsPanelMemorySample(container, source);
+  const youtubeProbe = await runYoutubeDiagnosticsProbes(container);
+  await openRootOwnedOverlay(container, { type: "diagnostics", youtubeProbe });
+}
+
 export async function openNotificationsOverlay(container: Container): Promise<{
   readonly playback: NotificationPlaybackIntent | null;
 }> {

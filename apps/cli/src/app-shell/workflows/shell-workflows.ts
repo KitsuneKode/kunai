@@ -10,7 +10,6 @@ import {
 
 export { buildPickerActionContext };
 import { buildSupportBundleInputFromContainer } from "@/app-shell/diagnostics-bundle-input";
-import { recordDiagnosticsPanelMemorySample } from "@/app-shell/diagnostics-panel-source";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -71,7 +70,7 @@ import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storag
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
-import { openRootOwnedOverlay } from "../root-overlay-bridge";
+import { openDiagnosticsOverlay, openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { openProviderPicker } from "./picker-workflows";
@@ -982,8 +981,7 @@ async function handleStaticOverlay(
 async function handleDiagnostics(container: Container): Promise<"handled"> {
   // Same scrollable overlay as the command palette `/diagnostics` path.
   // The old list-picker presentation made every panel line a selectable row.
-  recordDiagnosticsPanelMemorySample(container, "diagnostics-command");
-  await openRootOwnedOverlay(container, { type: "diagnostics" });
+  await openDiagnosticsOverlay(container, "diagnostics-command");
   return "handled";
 }
 
