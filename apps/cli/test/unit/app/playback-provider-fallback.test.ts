@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   pickCompatibleFallbackProvider,
+  pickCompatibleFallbackProviderDetailed,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -79,18 +80,53 @@ describe("playback provider fallback", () => {
     ).toBe("rivestream");
   });
 
+  test("marks degradedAllDown when every alternate is down", () => {
+    const healthById = new Map<string, ProviderHealth>([
+      ["rivestream", health("rivestream", "down")],
+      ["miruro", health("miruro", "down")],
+    ]);
+
+    const pick = pickCompatibleFallbackProviderDetailed(providers, "vidking", {
+      getProviderHealth: (providerId) => healthById.get(providerId),
+    });
+
+    expect(pick).toEqual({
+      provider: { metadata: { id: "rivestream" } },
+      degradedAllDown: true,
+    });
+  });
+
+  test("does not mark degradedAllDown when an eligible alternate exists", () => {
+    const healthById = new Map<string, ProviderHealth>([
+      ["rivestream", health("rivestream", "down")],
+      ["miruro", health("miruro", "healthy")],
+    ]);
+
+    const pick = pickCompatibleFallbackProviderDetailed(providers, "vidking", {
+      getProviderHealth: (providerId) => healthById.get(providerId),
+    });
+
+    expect(pick).toEqual({
+      provider: { metadata: { id: "miruro" } },
+      degradedAllDown: false,
+    });
+  });
+
   test("still prefers a title-health suggestion when every alternate is down", () => {
     const healthById = new Map<string, ProviderHealth>([
       ["rivestream", health("rivestream", "down")],
       ["miruro", health("miruro", "down")],
     ]);
 
-    expect(
-      pickCompatibleFallbackProvider(providers, "vidking", {
-        getProviderHealth: (providerId) => healthById.get(providerId),
-        suggestedProviderId: "miruro",
-      })?.metadata.id,
-    ).toBe("miruro");
+    const pick = pickCompatibleFallbackProviderDetailed(providers, "vidking", {
+      getProviderHealth: (providerId) => healthById.get(providerId),
+      suggestedProviderId: "miruro",
+    });
+
+    expect(pick).toEqual({
+      provider: { metadata: { id: "miruro" } },
+      degradedAllDown: true,
+    });
   });
 
   test("switches provider through the shared user-switch path and invalidates recent stream", async () => {

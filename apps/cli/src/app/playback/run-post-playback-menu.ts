@@ -20,7 +20,7 @@ import {
 } from "@/app/playback/playback-postplay-policy";
 import { alignPostPlayProviderRestart } from "@/app/playback/playback-provider-align";
 import {
-  pickCompatibleFallbackProvider,
+  pickCompatibleFallbackProviderDetailed,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import {
@@ -683,7 +683,7 @@ export async function runPostPlaybackMenu(
       break postPlayback;
     }
     if (routedAction === "fallback") {
-      const fallback = pickCompatibleFallbackProvider(
+      const fallbackPick = pickCompatibleFallbackProviderDetailed(
         deps.getCompatibleProviders(),
         resolvedProviderId,
         {
@@ -694,13 +694,24 @@ export async function runPostPlaybackMenu(
           )?.suggestedProviderId,
         },
       );
-      if (!fallback) {
+      if (!fallbackPick) {
         continue postPlayback;
+      }
+      if (fallbackPick.degradedAllDown) {
+        deps.diagnosticsService.record({
+          category: "playback",
+          operation: "playback.fallback.degraded",
+          message: "All alternate providers unhealthy; trying first alternate anyway",
+          context: {
+            fromProviderId: resolvedProviderId,
+            toProviderId: fallbackPick.provider.metadata.id,
+          },
+        });
       }
       const switched = await deps.switchPlaybackProviderFallback({
         container,
         fromProviderId: resolvedProviderId,
-        toProviderId: fallback.metadata.id,
+        toProviderId: fallbackPick.provider.metadata.id,
         title,
         episode: currentEpisode,
         mode,

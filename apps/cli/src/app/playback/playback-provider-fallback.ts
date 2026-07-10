@@ -19,11 +19,16 @@ export type PickCompatibleFallbackProviderOptions = {
   readonly now?: () => Date;
 };
 
-export function pickCompatibleFallbackProvider(
+export type FallbackPickResult = {
+  readonly provider: FallbackProviderCandidate;
+  readonly degradedAllDown: boolean;
+};
+
+export function pickCompatibleFallbackProviderDetailed(
   providers: readonly FallbackProviderCandidate[],
   currentProviderId: string,
   options: PickCompatibleFallbackProviderOptions = {},
-): FallbackProviderCandidate | undefined {
+): FallbackPickResult | undefined {
   const now = options.now ?? (() => new Date());
   const alternates = providers.filter((candidate) => candidate.metadata.id !== currentProviderId);
   if (alternates.length === 0) return undefined;
@@ -35,13 +40,24 @@ export function pickCompatibleFallbackProvider(
     return isProviderFallbackEligible(effective);
   });
 
-  const pool = eligible.length > 0 ? eligible : alternates;
+  const degradedAllDown = eligible.length === 0 && alternates.length > 0;
+  const pool = degradedAllDown ? alternates : eligible;
   const suggestedId = options.suggestedProviderId?.trim();
   if (suggestedId) {
     const suggested = pool.find((candidate) => candidate.metadata.id === suggestedId);
-    if (suggested) return suggested;
+    if (suggested) return { provider: suggested, degradedAllDown };
   }
-  return pool[0];
+  const provider = pool[0];
+  if (!provider) return undefined;
+  return { provider, degradedAllDown };
+}
+
+export function pickCompatibleFallbackProvider(
+  providers: readonly FallbackProviderCandidate[],
+  currentProviderId: string,
+  options: PickCompatibleFallbackProviderOptions = {},
+): FallbackProviderCandidate | undefined {
+  return pickCompatibleFallbackProviderDetailed(providers, currentProviderId, options)?.provider;
 }
 
 export async function switchPlaybackProviderFallback(input: {

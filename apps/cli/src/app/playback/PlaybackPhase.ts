@@ -55,7 +55,7 @@ import {
   playbackSubtitlePreference,
 } from "@/app/playback/playback-profile-context";
 import {
-  pickCompatibleFallbackProvider,
+  pickCompatibleFallbackProviderDetailed,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import {
@@ -2291,7 +2291,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 quitThresholdMode,
               ),
             });
-            const fallback = pickCompatibleFallbackProvider(
+            const fallbackPick = pickCompatibleFallbackProviderDetailed(
               providerRegistry.getCompatible(title, stateManager.getState().mode),
               resolvedProviderId,
               {
@@ -2303,12 +2303,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               },
             );
 
-            if (fallback) {
+            if (fallbackPick) {
+              if (fallbackPick.degradedAllDown) {
+                diagnosticsService.record({
+                  category: "playback",
+                  operation: "playback.fallback.degraded",
+                  message: "All alternate providers unhealthy; trying first alternate anyway",
+                  context: {
+                    fromProviderId: resolvedProviderId,
+                    toProviderId: fallbackPick.provider.metadata.id,
+                  },
+                });
+              }
               run.sessionSoftProviderId = null;
               const switched = await switchPlaybackProviderFallback({
                 container,
                 fromProviderId: resolvedProviderId,
-                toProviderId: fallback.metadata.id,
+                toProviderId: fallbackPick.provider.metadata.id,
                 title,
                 episode: currentEpisode,
                 mode: stateManager.getState().mode,
