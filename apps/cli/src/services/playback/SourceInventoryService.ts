@@ -10,7 +10,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
-export const SOURCE_INVENTORY_SCHEMA_VERSION = "v4";
+export const SOURCE_INVENTORY_SCHEMA_VERSION = "v5";
 
 export type SourceInventoryCacheInput = {
   readonly providerId: string;
@@ -214,6 +214,8 @@ export function buildSourceInventoryCachePreimage(input: SourceInventoryCacheInp
     normalizePart(input.absoluteEpisode),
     normalizePart(input.audioMode),
     normalizePart(input.subtitleLanguage),
+    // qualityPreference partitions inventory so 1080p vs 720p prefs do not share a row.
+    // Bumping schemaVersion intentionally invalidates pre-qualityPreference cache entries.
     normalizePart(input.qualityPreference),
     normalizePart(input.startupPriority ?? "balanced"),
     normalizePart(input.runtime),
