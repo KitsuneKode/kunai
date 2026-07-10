@@ -14,7 +14,15 @@ export function titleMatchesShellMode(
   title: Pick<TitleInfo, "id" | "externalIds" | "isAnime">,
   mode: ShellMode,
 ): boolean {
-  return resolveTitleProviderLane(title) === shellModeToProviderLane(mode);
+  const lane = resolveTitleProviderLane(title);
+  const modeLane = shellModeToProviderLane(mode);
+
+  // YouTube identities are globally unique and must never cross lanes. Explicit
+  // AniList/anime identities need anime mode too, but opaque provider-native IDs
+  // have no lane marker until their adapter maps them, so anime mode may accept
+  // that unclassified form.
+  if (lane === "youtube" || modeLane === "youtube") return lane === modeLane;
+  return lane !== "anime" || modeLane === "anime";
 }
 
 export function assertTitleMatchesShellMode(
@@ -22,7 +30,7 @@ export function assertTitleMatchesShellMode(
   mode: ShellMode,
 ): void {
   const lane = resolveTitleProviderLane(title);
-  if (lane !== shellModeToProviderLane(mode)) {
+  if (!titleMatchesShellMode(title, mode)) {
     throw new Error(`Title belongs to ${lane} lane, not ${mode} mode`);
   }
 }

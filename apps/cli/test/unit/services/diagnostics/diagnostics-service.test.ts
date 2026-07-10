@@ -252,7 +252,7 @@ describe("DiagnosticsServiceImpl", () => {
         store: new DiagnosticsStoreImpl(),
         logger: createLogger(),
         durableSink: new AsyncDurableDiagnosticsSink({ repository }),
-        now: () => new Date("2026-06-24T12:00:00.000Z"),
+        now: () => new Date(),
       });
 
       firstService.record({

@@ -194,6 +194,7 @@ test("exportStatsJson and exportStatsCsv include extended metrics", () => {
 
 test("avgEpisodesPerDay divides completed episodes by window length", () => {
   const { service, history } = makeStatsService();
+  const now = Date.now();
 
   history.upsertProgress({
     title: { id: "show", kind: "series", title: "Show" },
@@ -202,7 +203,7 @@ test("avgEpisodesPerDay divides completed episodes by window length", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 1_000,
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: new Date(now - 2 * 86400000).toISOString(),
   });
   history.upsertProgress({
     title: { id: "show", kind: "series", title: "Show" },
@@ -211,7 +212,7 @@ test("avgEpisodesPerDay divides completed episodes by window length", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 1_000,
-    updatedAt: "2026-06-21T12:00:00.000Z",
+    updatedAt: new Date(now - 86400000).toISOString(),
   });
 
   const stats = service.getStats(10);

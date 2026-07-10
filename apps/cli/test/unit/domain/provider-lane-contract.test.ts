@@ -25,6 +25,17 @@ test("classifies explicit anime titles as the anime provider lane", () => {
   expect(resolveTitleProviderLane({ id: "anilist:1", isAnime: true })).toBe("anime");
 });
 
+test("allows unclassified provider-native titles through anime mode", () => {
+  expect(
+    titleMatchesShellMode(
+      {
+        id: "SJms742bSTrcyJZay",
+      },
+      "anime",
+    ),
+  ).toBe(true);
+});
+
 test("refuses to construct a series resolve request for a YouTube title", () => {
   expect(() =>
     streamRequestToResolveInput(
