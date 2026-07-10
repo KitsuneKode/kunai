@@ -2988,13 +2988,26 @@ async function handleSync(container: Container): Promise<"handled"> {
         note: `Syncing ${entries.length} entries…`,
       });
 
+      let connected = 0;
+      let succeeded = 0;
+      let failed = 0;
+      const failures: string[] = [];
       for (const entry of entries) {
-        await syncService.pushWatched(entry);
+        const summary = await syncService.pushWatched(entry);
+        connected = Math.max(connected, summary.connected);
+        succeeded += summary.succeeded;
+        failed += summary.failed;
+        failures.push(...summary.failures);
       }
 
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: "Sync complete.",
+        note:
+          connected === 0
+            ? "No services connected."
+            : failed > 0
+              ? `Sync finished with ${failed} failed push(es).${failures[0] ? ` ${failures[0]}` : ""}`
+              : `Synced ${entries.length} entries to ${connected} service${connected === 1 ? "" : "s"}.`,
       });
       continue;
     }
