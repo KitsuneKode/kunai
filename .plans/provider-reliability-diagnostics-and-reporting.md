@@ -25,11 +25,11 @@ Implemented:
 - `--debug-json` with optional `KUNAI_TRACE=category,category` JSONL trace filtering.
 - Diagnostics guide updated with trace, redaction, and report flow usage.
 
-Follow-up hardening still worth doing:
+Follow-up hardening:
 
-- Rotate old diagnostics exports and trace files to enforce the latest-10 retention policy.
-- Add a richer `/diagnostics` panel section that renders the full provider attempt timeline, not just the summary event.
-- Add an issue-report preview screen that shows bundle contents before export, instead of only describing the action in the picker.
+- ~~Rotate old diagnostics exports and trace files to enforce the latest-10 retention policy.~~ **Done (2026-07-10, AD11 Task 12)** — prune keeps latest 10 export/trace files after write.
+- ~~Add a richer `/diagnostics` panel section that renders the full provider attempt timeline, not just the summary event.~~ **Done (2026-07-10, AD11 Task 11)** — bounded provider attempt timeline lines in the diagnostics panel (no raw URLs).
+- Add an issue-report preview screen that shows bundle contents before export, instead of only describing the action in the picker. _(still open; not in AD11 scope)_
 
 ## Decisions Locked By Grill Session
 
