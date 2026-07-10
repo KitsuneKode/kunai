@@ -6,7 +6,9 @@ export type ErrorScenario =
   | { kind: "stream-broken"; attempt: number; maxAttempts: number }
   | { kind: "network-offline" }
   | { kind: "provider-session"; providerName: string }
-  | { kind: "title-unavailable"; title: string };
+  | { kind: "provider-empty"; title: string; providerName?: string }
+  | { kind: "title-unavailable"; title: string }
+  | { kind: "user-cancelled" };
 
 export type PlaybackProblemStage =
   | "provider-resolve"
@@ -36,6 +38,22 @@ export interface PlaybackProblem {
   readonly diagnosticId?: string;
 }
 
+const RETRYABLE_PROBLEM_ACTIONS = new Set<PlaybackProblemAction>([
+  "refresh",
+  "relaunch",
+  "pick-stream",
+  "try-next-provider",
+]);
+
+/** Whether ErrorShell should bind `r` retry for this playback problem. */
+export function errorShellOffersRetry(problem: PlaybackProblem | null | undefined): boolean {
+  if (!problem) return true;
+  if (problem.cause === "user-cancelled" || problem.cause === "none") return false;
+  if (problem.recommendedAction === "wait" && problem.severity === "info") return false;
+  if (RETRYABLE_PROBLEM_ACTIONS.has(problem.recommendedAction)) return true;
+  return problem.secondaryActions.some((action) => RETRYABLE_PROBLEM_ACTIONS.has(action));
+}
+
 export function buildProviderResolveProblem({
   attempts,
 }: {
@@ -63,6 +81,28 @@ export function buildProviderResolveProblem({
       userMessage: "yt-dlp is required for YouTube playback. Install yt-dlp, then refresh.",
       recommendedAction: "settings",
       secondaryActions: ["diagnostics"],
+    };
+  }
+
+  if (hasUserCancelledFailure(attempts)) {
+    return {
+      stage: "provider-resolve",
+      severity: "info",
+      cause: "user-cancelled",
+      userMessage: "Playback resolution was cancelled.",
+      recommendedAction: "wait",
+      secondaryActions: [],
+    };
+  }
+
+  if (hasProviderEmptyFailure(attempts)) {
+    return {
+      stage: "provider-resolve",
+      severity: "blocking",
+      cause: "no-stream",
+      userMessage: "No playable stream was found for this episode.",
+      recommendedAction: "pick-stream",
+      secondaryActions: ["try-next-provider", "diagnostics"],
     };
   }
 
@@ -132,7 +172,7 @@ export function buildProviderResolveProblem({
   }
 
   if (
-    /no stream|stream not found|no streams found|no playable stream|no stream candidates/i.test(
+    /no stream|stream not found|no streams found|no playable stream|no stream candidates|provider.?empty/i.test(
       failureMessages,
     )
   ) {
@@ -271,7 +311,14 @@ export function toErrorScenario(
         kind: "provider-session",
         providerName: context.providerName ?? "provider",
       };
+    case "user-cancelled":
+      return { kind: "user-cancelled" };
     case "no-stream":
+      return {
+        kind: "provider-empty",
+        title: context.title ?? extractUnavailableTitle(problem.userMessage),
+        ...(context.providerName ? { providerName: context.providerName } : {}),
+      };
     case "provider-access":
       return {
         kind: "title-unavailable",
@@ -315,5 +362,33 @@ function hasYtDlpMissingFailure(
     const code = attempt.failure?.code?.toLowerCase() ?? "";
     const message = attempt.failure?.message?.toLowerCase() ?? "";
     return code === "yt-dlp-missing" || message.includes("yt-dlp");
+  });
+}
+
+function hasUserCancelledFailure(
+  attempts: readonly {
+    readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
+  }[],
+): boolean {
+  return attempts.some((attempt) => {
+    const code = attempt.failure?.code?.toLowerCase() ?? "";
+    const message = attempt.failure?.message?.toLowerCase() ?? "";
+    return (
+      code === "cancelled" ||
+      message.includes("cancelled") ||
+      message.includes("canceled") ||
+      message.includes("user cancel")
+    );
+  });
+}
+
+function hasProviderEmptyFailure(
+  attempts: readonly {
+    readonly failure?: { readonly code?: string; readonly message?: string } | undefined;
+  }[],
+): boolean {
+  return attempts.some((attempt) => {
+    const code = attempt.failure?.code?.toLowerCase() ?? "";
+    return code === "not-found" || code === "provider-empty";
   });
 }

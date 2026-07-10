@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
+  errorShellOffersRetry,
   toErrorScenario,
 } from "@/domain/playback/playback-problem";
 
@@ -16,6 +17,7 @@ describe("playback problem model", () => {
     expect(problem.cause).toBe("runtime-missing");
     expect(problem.severity).toBe("blocking");
     expect(problem.recommendedAction).toBe("diagnostics");
+    expect(errorShellOffersRetry(problem)).toBe(false);
   });
 
   test("maps missing yt-dlp to an actionable YouTube setup problem", () => {
@@ -39,6 +41,7 @@ describe("playback problem model", () => {
     });
     expect(problem.userMessage).toContain("Install yt-dlp");
     expect(toErrorScenario(problem)).toBeUndefined();
+    expect(errorShellOffersRetry(problem)).toBe(false);
   });
 
   test("maps player exit to relaunch before provider fallback", () => {
@@ -47,6 +50,7 @@ describe("playback problem model", () => {
     expect(problem.stage).toBe("mpv");
     expect(problem.recommendedAction).toBe("relaunch");
     expect(problem.secondaryActions).toContain("try-next-provider");
+    expect(errorShellOffersRetry(problem)).toBe(true);
   });
 
   test("toErrorScenario maps provider timeout and network failures", () => {
@@ -116,6 +120,53 @@ describe("playback problem model", () => {
     });
   });
 
+  test("toErrorScenario maps provider-empty / timeout / user-cancel scenarios", () => {
+    const emptyByMessage = buildProviderResolveProblem({
+      attempts: [{ failure: { message: "Direct provider returned no stream candidates" } }],
+    });
+    expect(
+      toErrorScenario(emptyByMessage, { title: "Severance", providerName: "VidKing" }),
+    ).toEqual({
+      kind: "provider-empty",
+      title: "Severance",
+      providerName: "VidKing",
+    });
+    expect(errorShellOffersRetry(emptyByMessage)).toBe(true);
+
+    const emptyByCode = buildProviderResolveProblem({
+      attempts: [{ failure: { code: "not-found", message: "episode missing on source" } }],
+    });
+    expect(emptyByCode.cause).toBe("no-stream");
+    expect(toErrorScenario(emptyByCode, { title: "Dune" })).toEqual({
+      kind: "provider-empty",
+      title: "Dune",
+    });
+
+    const timeout = buildProviderResolveProblem({
+      attempts: [{ failure: { code: "timeout", message: "provider timed out after 30s" } }],
+    });
+    expect(timeout.cause).toBe("provider-timeout");
+    expect(toErrorScenario(timeout, { providerName: "Miruro" })).toEqual({
+      kind: "provider-timeout",
+      providerName: "Miruro",
+      elapsedSec: 30,
+    });
+    expect(errorShellOffersRetry(timeout)).toBe(true);
+
+    const cancelled = buildProviderResolveProblem({
+      attempts: [
+        { failure: { code: "cancelled", message: "Resolution was cancelled by the user" } },
+      ],
+    });
+    expect(cancelled).toMatchObject({
+      cause: "user-cancelled",
+      severity: "info",
+      userMessage: "Playback resolution was cancelled.",
+    });
+    expect(toErrorScenario(cancelled)).toEqual({ kind: "user-cancelled" });
+    expect(errorShellOffersRetry(cancelled)).toBe(false);
+  });
+
   test("maps missing stream candidates to a blocking no-stream problem", () => {
     const problem = buildProviderResolveProblem({
       attempts: [{ failure: { message: "Direct provider returned no stream candidates" } }],
@@ -140,5 +191,6 @@ describe("playback problem model", () => {
       secondaryActions: ["refresh"],
     });
     expect(toErrorScenario(problem)).toEqual({ kind: "network-offline" });
+    expect(errorShellOffersRetry(problem)).toBe(true);
   });
 });

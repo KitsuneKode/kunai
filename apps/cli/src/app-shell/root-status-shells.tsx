@@ -94,6 +94,9 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
         <Box flexDirection="column">
           <Text color={palette.dim}>{"○  offline"}</Text>
           <Text color={palette.accent}>/library for downloaded titles</Text>
+          <Text color={palette.dim} dimColor>
+            r retry when back online · Enter / Esc dismiss
+          </Text>
         </Box>
       );
     case "provider-session":
@@ -104,7 +107,20 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
             /settings · add Videasy session token
           </Text>
           <Text color={palette.dim} dimColor>
-            /fallback for another provider
+            r retry · /fallback for another provider
+          </Text>
+        </Box>
+      );
+    case "provider-empty":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.danger}>
+            {scenario.providerName
+              ? `◌  ${scenario.providerName} returned no playable stream`
+              : `◌  no playable stream for ${scenario.title}`}
+          </Text>
+          <Text color={palette.dim} dimColor>
+            r retry · /fallback for another provider
           </Text>
         </Box>
       );
@@ -114,6 +130,15 @@ function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
           <Text color={palette.dim}>{`◌  ${scenario.title} not found`}</Text>
           <Text color={palette.dim} dimColor>
             r retry · /watchlist to save for later
+          </Text>
+        </Box>
+      );
+    case "user-cancelled":
+      return (
+        <Box flexDirection="column">
+          <Text color={palette.dim}>{"○  resolution cancelled"}</Text>
+          <Text color={palette.dim} dimColor>
+            Enter / Esc to continue
           </Text>
         </Box>
       );

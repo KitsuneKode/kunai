@@ -2,6 +2,12 @@
 
 This plan outlines the transition from imperative shell orchestration to a persistent, state-driven architecture to eliminate UI bugs (like shell piling) and improve application robustness.
 
+## Status (AD11 Task 13 — 2026-07-10)
+
+**Actionable ErrorShell gap closed.** Playback/provider failures already flow `playbackProblem` → `toErrorScenario` → `ErrorShell` with consistent `r` retry (when recovery is possible) and Enter/Esc dismiss. Coverage now includes provider-empty, provider-timeout, and user-cancelled scenarios; `errorShellOffersRetry` gates the retry binding. A thin `SoftFailBoundary` (`componentDidCatch`, &lt;50 LOC) wraps `RootContentBody` so child render throws fail soft into dismissible ErrorShell copy.
+
+**Deferred:** a full React `<AppErrorBoundary />` architecture (dedicated error phase, recovery orchestration beyond playbackProblem) remains out of scope — see §2 below. Do not invent a new boundary stack; extend the existing ErrorShell path instead.
+
 ## User Review Required
 
 > [!IMPORTANT]
@@ -19,9 +25,10 @@ Currently, `SessionController` manually opens and closes shells (`Home`, `Playba
 
 ### 2. Robust Error Boundaries
 
-- **NEW**: `<AppErrorBoundary />` component.
-- **Behavior**: If a provider resolution fails or a scraper crashes, instead of exiting to the terminal prompt, the app will transition to an **Error Phase**.
-- **UI**: Display a diagnostic card with the error message and a `[R] Retry` / `[ESC] Back` interaction.
+- **DEFERRED**: Full `<AppErrorBoundary />` component / dedicated Error Phase architecture.
+- **LANDED (AD11 Task 13 substitute):** `playbackProblem` → `ErrorShell` recovery actions + thin `SoftFailBoundary` around root content in `root-content-shell.tsx`.
+- **Behavior (landed):** Provider resolve / playback failures transition to the existing error surface with diagnostic waterfall, `[R] Retry` when recoverable, and `[Enter]/[Esc] Back/dismiss`.
+- **UI**: Scenario-aware copy for timeout, provider-empty, offline, session, stream-broken, and user-cancelled.
 
 ### 3. Terminal Polish & Cleanup
 
@@ -38,5 +45,10 @@ Currently, `SessionController` manually opens and closes shells (`Home`, `Playba
 ### Manual Verification
 
 - **Stress Test Transitions**: Rapidly switch between episodes (Next/Prev) to verify no UI pile-up or "🦊 KitsuneSnipe" duplication.
-- **Simulate Failures**: Force a provider to throw an error and verify the Error Boundary UI triggers instead of a process crash.
+- **Simulate Failures**: Force a provider to throw an error and verify the ErrorShell UI triggers instead of a process crash.
 - **Resize Testing**: Verify the state-driven UI adapts correctly to terminal resize events without breaking the layout.
+
+### Automated (AD11 Task 13)
+
+- `bun run --cwd apps/cli test -- test/unit/app/playback-problem.test.ts`
+- `bun run --cwd apps/cli test -- test/unit/app-shell/error-shell.test.tsx`

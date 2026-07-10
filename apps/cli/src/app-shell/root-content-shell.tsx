@@ -1,5 +1,5 @@
 import type { Container } from "@/container";
-import { toErrorScenario } from "@/domain/playback/playback-problem";
+import { errorShellOffersRetry, toErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { Box } from "ink";
@@ -55,6 +55,7 @@ export function renderErrorRootContent(
     state,
     recentEvents: container.diagnosticsService.getRecent(40),
   });
+  const offerRetry = errorShellOffersRetry(state.playbackProblem);
 
   return (
     <ErrorShell
@@ -73,13 +74,54 @@ export function renderErrorRootContent(
         stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
         stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
       }}
-      onRetry={() => {
-        clearPlaybackShellError();
-        stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
-        stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
-      }}
+      onRetry={
+        offerRetry
+          ? () => {
+              clearPlaybackShellError();
+              stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+              stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
+            }
+          : undefined
+      }
     />
   );
+}
+
+/**
+ * Thin Ink soft-fail wrapper — not a full AppErrorBoundary.
+ * Catches child render throws and shows dismissible copy so the shell stays up.
+ */
+class SoftFailBoundary extends React.Component<
+  { readonly children: React.ReactNode; readonly onDismiss?: () => void },
+  { readonly error: Error | null }
+> {
+  override state: { readonly error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error): { readonly error: Error } {
+    return { error };
+  }
+
+  override componentDidCatch(error: Error): void {
+    // Keep a breadcrumb for debug overlays without crashing the process.
+    if (typeof console !== "undefined") {
+      console.error("[SoftFailBoundary]", error.message);
+    }
+  }
+
+  override render(): React.ReactNode {
+    if (this.state.error) {
+      return (
+        <ErrorShell
+          message={this.state.error.message || "A shell render error occurred"}
+          onResolve={() => {
+            this.setState({ error: null });
+            this.props.onDismiss?.();
+          }}
+        />
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function renderIdleRootContent(state: SessionState): React.ReactElement {
@@ -90,13 +132,10 @@ export function renderPlaybackRootContent(input: PlaybackRootContentInput): Reac
   return <PlaybackRootContent {...input} />;
 }
 
-export function RootContentBody({
-  resolved,
-  ctx,
-}: {
-  readonly resolved: ResolvedRootContent;
-  readonly ctx: RootContentRendererContext;
-}): React.ReactElement | null {
+function renderResolvedRootContent(
+  resolved: ResolvedRootContent,
+  ctx: RootContentRendererContext,
+): React.ReactElement | null {
   switch (resolved.kind) {
     case "error":
       return renderErrorRootContent(ctx);
@@ -132,6 +171,26 @@ export function RootContentBody({
     default:
       return renderIdleRootContent(ctx.state);
   }
+}
+
+export function RootContentBody({
+  resolved,
+  ctx,
+}: {
+  readonly resolved: ResolvedRootContent;
+  readonly ctx: RootContentRendererContext;
+}): React.ReactElement {
+  return (
+    <SoftFailBoundary
+      onDismiss={() => {
+        clearPlaybackShellError();
+        ctx.stateManager.dispatch({ type: "CLEAR_PLAYBACK_PROBLEM" });
+        ctx.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+      }}
+    >
+      {renderResolvedRootContent(resolved, ctx)}
+    </SoftFailBoundary>
+  );
 }
 
 export function mountedRootContentKindLabel(
