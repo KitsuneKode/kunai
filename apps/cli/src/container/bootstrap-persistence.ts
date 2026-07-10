@@ -244,6 +244,7 @@ export async function bootstrapPersistence(
     logger,
     appVersion: options?.appVersion,
     debug,
+    sessionId,
     traceReporter,
     durableSink: new AsyncDurableDiagnosticsSink({
       repository: diagnosticEvents,

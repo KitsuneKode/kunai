@@ -8,6 +8,9 @@ import {
 
 import type { DiagnosticsPanelLineInput } from "./panel-data";
 
+/** Shared panel/export event window — keep waterfall/panel/export aligned. */
+export const DIAGNOSTICS_PANEL_EVENT_LIMIT = 50;
+
 export function buildDiagnosticsPanelInput(
   container: Container,
   options: {
@@ -16,10 +19,14 @@ export function buildDiagnosticsPanelInput(
   } = {},
 ): DiagnosticsPanelLineInput {
   const memorySamples = getRuntimeMemorySamples();
+  // Developer timeline expands when a JSONL debug session is active (same signal
+  // as `--debug` / debug-session bootstrap). Keep this tied to debugTracePath so
+  // we do not invent a Container.debug field.
+  const developerMode = Boolean(container.debugTracePath);
   return {
     state: container.stateManager.getState(),
-    recentEvents: container.diagnosticsService.getRecent(container.debugTracePath ? 50 : 25),
-    developerMode: Boolean(container.debugTracePath),
+    recentEvents: container.diagnosticsService.getRecent(DIAGNOSTICS_PANEL_EVENT_LIMIT),
+    developerMode,
     memorySamples,
     capabilitySnapshot: container.capabilitySnapshot,
     youtubeProbe: options.youtubeProbe,

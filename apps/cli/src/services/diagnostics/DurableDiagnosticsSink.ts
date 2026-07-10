@@ -82,6 +82,15 @@ export class AsyncDurableDiagnosticsSink {
     return this.options.repository.getSnapshot(limit) as readonly DiagnosticEvent[];
   }
 
+  listBySession(sessionId: string, limit?: number): readonly DiagnosticEvent[] {
+    this.flush();
+    return this.options.repository.listBySession(sessionId, limit) as readonly DiagnosticEvent[];
+  }
+
+  isFailed(): boolean {
+    return this.failed;
+  }
+
   flush(): void {
     this.scheduled = false;
     if (this.failed) {

@@ -9,10 +9,8 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
-import {
-  buildDiagnosticsPanelInput,
-  recordDiagnosticsPanelMemorySample,
-} from "@/app-shell/diagnostics-panel-source";
+import { buildSupportBundleInputFromContainer } from "@/app-shell/diagnostics-bundle-input";
+import { recordDiagnosticsPanelMemorySample } from "@/app-shell/diagnostics-panel-source";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -68,13 +66,11 @@ import {
   resolveOfflineArtifactStatus,
   resolveOfflineJobPreviewImage,
 } from "@/services/offline/offline-library";
-import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
-import { buildDiagnosticsPanelLines } from "../panel-data";
 import { openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
@@ -984,19 +980,10 @@ async function handleStaticOverlay(
 }
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
-  const { stateManager } = container;
+  // Same scrollable overlay as the command palette `/diagnostics` path.
+  // The old list-picker presentation made every panel line a selectable row.
   recordDiagnosticsPanelMemorySample(container, "diagnostics-command");
-  const { runYoutubeDiagnosticsProbes } =
-    await import("@/services/youtube/youtube-diagnostics-probes");
-  const youtubeProbe = await runYoutubeDiagnosticsProbes(container);
-  const lines = buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container, { youtubeProbe }));
-  await withOverlay(stateManager, { type: "diagnostics" }, () =>
-    openStaticInfoShell({
-      title: "Diagnostics",
-      subtitle: "Health summary and redacted runtime evidence",
-      lines,
-    }),
-  );
+  await openRootOwnedOverlay(container, { type: "diagnostics" });
   return "handled";
 }
 
@@ -1204,16 +1191,9 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
 async function handleExportDiagnostics(container: Container): Promise<"handled"> {
   const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   const path = join(process.cwd(), fileName);
-  const state = container.stateManager.getState();
-  const bundle = container.diagnosticsService.buildSupportBundle({
-    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-    playbackSourceInventory: state.stream?.providerResolveResult
-      ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-          selectedSubtitleUrl: state.stream.subtitle,
-        })
-      : null,
-    sessionState: state,
-  });
+  const bundle = container.diagnosticsService.buildSupportBundle(
+    buildSupportBundleInputFromContainer(container),
+  );
   await writeAtomicJson(path, bundle);
   await pruneOldDiagnosticFiles({
     dir: process.cwd(),
@@ -1256,16 +1236,9 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
   if (reportAction === "export-and-open") {
     const fileName = `kunai-diagnostics-report-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     const path = join(process.cwd(), fileName);
-    const state = container.stateManager.getState();
-    const bundle = container.diagnosticsService.buildSupportBundle({
-      capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-      playbackSourceInventory: state.stream?.providerResolveResult
-        ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-            selectedSubtitleUrl: state.stream.subtitle,
-          })
-        : null,
-      sessionState: state,
-    });
+    const bundle = container.diagnosticsService.buildSupportBundle(
+      buildSupportBundleInputFromContainer(container),
+    );
     await writeAtomicJson(path, bundle);
     const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });
     await pruneOldDiagnosticFiles({

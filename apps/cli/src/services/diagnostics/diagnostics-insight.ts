@@ -632,8 +632,36 @@ function isTimeoutFailure(event: DiagnosticEvent | undefined): boolean {
   return recentAttemptHasTimeout(event);
 }
 
-function recentAttemptHasTimeout(_event: DiagnosticEvent): boolean {
-  return false;
+function recentAttemptHasTimeout(event: DiagnosticEvent): boolean {
+  const attempts = event.context?.attempts;
+  if (!Array.isArray(attempts)) {
+    const attemptTimeline = event.context?.attemptTimeline;
+    if (Array.isArray(attemptTimeline)) {
+      return attemptTimeline.some((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const record = entry as Record<string, unknown>;
+        const failure = record.failureClass ?? record.failure ?? record.status;
+        return (
+          failure === "timeout" ||
+          failure === "provider-timeout" ||
+          failure === "timed_out" ||
+          failure === "timed-out"
+        );
+      });
+    }
+    return false;
+  }
+  return attempts.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const record = entry as Record<string, unknown>;
+    const failure = record.failureClass ?? record.failure ?? record.status;
+    return (
+      failure === "timeout" ||
+      failure === "provider-timeout" ||
+      failure === "timed_out" ||
+      failure === "timed-out"
+    );
+  });
 }
 
 function resolvePlaybackReason(
@@ -803,14 +831,22 @@ function formatReleaseReason(
 }
 
 function findActiveCorrelation(events: readonly DiagnosticEvent[]): DiagnosticsCorrelation {
+  // Panel/export pass newest-first events. Prefer a recent event with playback
+  // cycle / attempt / trace IDs over a bare sessionId (e.g. memory samples),
+  // which previously hid the active cycle from developer evidence.
   for (const event of events) {
-    if (
-      event.sessionId ||
-      event.playbackCycleId ||
-      event.providerAttemptId ||
-      event.traceId ||
-      event.spanId
-    ) {
+    if (event.playbackCycleId || event.providerAttemptId || event.traceId) {
+      return {
+        sessionId: event.sessionId,
+        playbackCycleId: event.playbackCycleId,
+        providerAttemptId: event.providerAttemptId,
+        traceId: event.traceId,
+        spanId: event.spanId,
+      };
+    }
+  }
+  for (const event of events) {
+    if (event.sessionId || event.spanId) {
       return {
         sessionId: event.sessionId,
         playbackCycleId: event.playbackCycleId,
