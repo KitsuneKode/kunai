@@ -157,6 +157,38 @@ describe("root content state", () => {
     clearRootContentSession();
   });
 
+  test("browse session identity is unchanged across overlay open and close resolution", () => {
+    const session = mountRootContent({
+      kind: "browse",
+      fallbackValue: "done",
+      renderContent: () => React.createElement("text", null, "browse"),
+    });
+    const mounted = getRootContentSession();
+
+    const withOverlay = resolveRootContentFromSession(
+      baseSession({
+        activeModals: [{ type: "diagnostics" }],
+      }),
+      { rootContent: mounted },
+    );
+    expect(withOverlay.kind).toBe("overlay-over-mounted");
+    if (withOverlay.kind === "overlay-over-mounted") {
+      expect(withOverlay.session).toBe(mounted);
+    }
+
+    const afterClose = resolveRootContentFromSession(baseSession({ activeModals: [] }), {
+      rootContent: mounted,
+    });
+    expect(afterClose.kind).toBe("mounted");
+    if (afterClose.kind === "mounted") {
+      expect(afterClose.session).toBe(mounted);
+    }
+
+    expect(getRootContentSession()).toBe(mounted);
+    session.close("done");
+    clearRootContentSession();
+  });
+
   test("resolveRootContentFromSession does not keep picker under diagnostics overlay", () => {
     const session = mountRootContent({
       kind: "picker",
