@@ -105,6 +105,7 @@ import {
 } from "./root-overlay-model";
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
+import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
@@ -735,12 +736,11 @@ export function RootOverlayShell({
         return;
       }
       if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-        void import("./workflows").then(({ runShellWorkflowFromOverlay }) =>
-          runShellWorkflowFromOverlay(container, action, {
-            cancelPickerId:
-              isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
-          }),
-        );
+        void runRootWorkflowSafely({
+          container,
+          action,
+          cancelPickerId: isRootMediaPickerOverlay(overlay) && overlay.id ? overlay.id : undefined,
+        });
       }
     },
   });
