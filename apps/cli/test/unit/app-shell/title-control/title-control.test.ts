@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { buildTitleControlContextFromContainer } from "@/app-shell/title-control/open-title-control-menu";
 import {
   resolvePlaybackEpisodeEntry,
   shouldAutoLaunchPlayback,
@@ -45,6 +46,61 @@ describe("buildTitleControlActions", () => {
     const actions = buildTitleControlActions(baseCtx({ surface: "browse" }));
     expect(actions.some((action) => action.id === "play" && action.enabled)).toBe(true);
     expect(actions.some((action) => action.id === "stop")).toBe(false);
+  });
+
+  test("counts only providers in the active lane", () => {
+    const context = buildTitleControlContextFromContainer(
+      {
+        stateManager: {
+          getState: () => ({
+            mode: "series",
+            provider: "vidking",
+            currentTitle: undefined,
+            currentEpisode: undefined,
+            episodeNavigation: {
+              hasNext: false,
+              hasPrevious: false,
+              hasNextSeason: false,
+            },
+            playbackStatus: "idle",
+            stream: null,
+          }),
+        },
+        providerRegistry: {
+          getAll: () => [
+            {
+              metadata: {
+                id: "vidking",
+                isAnimeProvider: false,
+                isYoutubeProvider: false,
+                providerLane: "series",
+              },
+            },
+            {
+              metadata: {
+                id: "youtube",
+                isAnimeProvider: false,
+                isYoutubeProvider: true,
+                providerLane: "youtube",
+              },
+            },
+            {
+              metadata: {
+                id: "allanime",
+                isAnimeProvider: true,
+                isYoutubeProvider: false,
+                providerLane: "anime",
+              },
+            },
+          ],
+        },
+        providerHealth: { get: () => undefined },
+        historyRepository: {},
+      } as never,
+      "browse",
+    );
+
+    expect(context.providerCount).toBe(1);
   });
 
   test("playing surface enables next when available and disables resume", () => {

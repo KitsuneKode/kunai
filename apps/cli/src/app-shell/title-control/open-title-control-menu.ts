@@ -1,6 +1,7 @@
 import type { ShellAction } from "@/app-shell/types";
 import type { Container } from "@/container";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
+import { providerLaneMatchesMode } from "@/domain/provider-lane";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isFinished } from "@/services/continuation/history-progress";
 import type { MediaKind } from "@kunai/types";
@@ -85,7 +86,7 @@ export function buildTitleControlContextFromContainer(
   const episode = state.currentEpisode;
   const providers = container.providerRegistry
     .getAll()
-    .filter((provider) => provider.metadata.isAnimeProvider === (state.mode === "anime"));
+    .filter((provider) => providerLaneMatchesMode(provider.metadata.providerLane, state.mode));
   const providerHealth = container.providerHealth.get(state.provider);
   const failedProvider = providerHealth?.status === "degraded" || providerHealth?.status === "down";
 
