@@ -1,5 +1,10 @@
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import type { Container } from "@/container";
+import {
+  providerLaneMatchesMode,
+  providerLaneToShellMode,
+  resolveProviderLaneFromMetadata,
+} from "@/domain/provider-lane";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
@@ -68,9 +73,11 @@ export function applyTitleProviderPreferenceToSession(
 
   const provider = container.providerRegistry.get(preferred);
   if (provider) {
+    const providerLane = resolveProviderLaneFromMetadata(provider.metadata);
+    if (mode && !providerLaneMatchesMode(providerLane, mode)) return false;
     container.stateManager.dispatch({
       type: "SET_MODE",
-      mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+      mode: providerLaneToShellMode(providerLane),
       provider: preferred,
     });
   } else {

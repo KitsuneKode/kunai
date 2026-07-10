@@ -1,13 +1,15 @@
 import { persistProviderNativeMapping } from "@/app/bootstrap/title-identity-persist";
 import { applyTitleProviderPreferenceToSession } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
-import { isAnimeContent, isYoutubeProviderId } from "@/domain/media/content-kind";
+import { isAnimeContent } from "@/domain/media/content-kind";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
+import { providerLaneToShellMode, providerMetadataMatchesLane } from "@/domain/provider-lane";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
 import {
   correctedHistoryMediaKind,
   historyContentType,
+  historyProviderLane,
   isFinished,
   isYoutubeHistoryEntry,
 } from "@/services/continuation/history-progress";
@@ -286,44 +288,38 @@ export function applyHistorySelectionProvider(
   selection: HistoryLaunchSelection,
 ): void {
   const titleId = selection.titleId;
-  const appliedPreference = applyTitleProviderPreferenceToSession(container, titleId);
-  const state = container.stateManager.getState();
-  const keepSessionProvider = state.providerSwitchSeq > 0;
+  const lane = historyProviderLane(selection.entry);
+  const mode = providerLaneToShellMode(lane);
+  const initialState = container.stateManager.getState();
+  const activeProvider = container.providerRegistry.get(initialState.provider);
+  const keepSessionProvider =
+    initialState.providerSwitchSeq > 0 &&
+    initialState.mode === mode &&
+    Boolean(activeProvider && providerMetadataMatchesLane(activeProvider.metadata, lane));
 
-  if (isAnimeHistoryEntry(selection.entry) && state.mode !== "anime") {
+  if (!keepSessionProvider) {
     container.stateManager.dispatch({
       type: "SET_MODE",
-      mode: "anime",
-      provider: state.defaultProviders.anime,
+      mode,
+      provider: initialState.defaultProviders[lane],
     });
   }
 
-  if (isYoutubeHistoryEntry(selection.entry) && state.mode !== "youtube") {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode: "youtube",
-      provider: state.defaultProviders.youtube,
-    });
-  }
+  const appliedPreference = applyTitleProviderPreferenceToSession(
+    container,
+    titleId,
+    titleFromHistorySelection(selection),
+    mode,
+  );
 
   if (!appliedPreference) {
     if (!keepSessionProvider) {
       const provider = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
-      if (provider) {
-        const mode = provider.metadata.isAnimeProvider
-          ? "anime"
-          : isYoutubeProviderId(provider.metadata.id)
-            ? "youtube"
-            : "series";
+      if (provider && providerMetadataMatchesLane(provider.metadata, lane)) {
         container.stateManager.dispatch({
           type: "SET_MODE",
           mode,
           provider: provider.metadata.id,
-        });
-      } else {
-        container.stateManager.dispatch({
-          type: "SET_PROVIDER",
-          provider: selection.entry.providerId ?? "unknown",
         });
       }
     }

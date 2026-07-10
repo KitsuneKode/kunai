@@ -8,6 +8,12 @@ export function shellModeToProviderLane(mode: ShellMode): ProviderLane {
   return "series";
 }
 
+export function providerLaneToShellMode(lane: ProviderLane): ShellMode {
+  if (lane === "youtube") return "youtube";
+  if (lane === "anime") return "anime";
+  return "series";
+}
+
 export function providerLaneMatchesMode(lane: ProviderLane, mode: ShellMode): boolean {
   return lane === shellModeToProviderLane(mode);
 }

@@ -25,10 +25,29 @@ function createRoutingContainer() {
       },
       providerRegistry: {
         get: (id: string) =>
-          id === "vidking" ? { metadata: { id: "vidking", isAnimeProvider: false } } : null,
+          id === "vidking"
+            ? {
+                metadata: {
+                  id: "vidking",
+                  isAnimeProvider: false,
+                  isYoutubeProvider: false,
+                },
+              }
+            : id === "youtube"
+              ? {
+                  metadata: {
+                    id: "youtube",
+                    isAnimeProvider: false,
+                    isYoutubeProvider: true,
+                  },
+                }
+              : null,
       },
       stateManager: {
-        getState: () => ({ provider: "default" }),
+        getState: () => ({
+          provider: "default",
+          defaultProviders: { series: "vidking", anime: "allanime", youtube: "youtube" },
+        }),
         dispatch: (event: unknown) => {
           dispatches.push(event);
         },
@@ -79,6 +98,24 @@ describe("notification-media-session", () => {
         type: "SET_MODE",
         mode: "anime",
         provider: "allanime",
+      },
+    ]);
+  });
+
+  test("applyMediaItemSessionRouting switches video items into the YouTube lane", () => {
+    const { container, dispatches } = createRoutingContainer();
+
+    applyMediaItemSessionRouting(container as never, {
+      mediaKind: "video",
+      titleId: "youtube:abc123",
+      title: "Example Video",
+    });
+
+    expect(dispatches).toEqual([
+      {
+        type: "SET_MODE",
+        mode: "youtube",
+        provider: "youtube",
       },
     ]);
   });

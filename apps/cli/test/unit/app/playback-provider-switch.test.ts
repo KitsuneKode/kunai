@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyProviderPickerSelection,
+  applyTitleProviderPreferenceToSession,
   applyUserProviderSwitch,
   resolveTitleProviderPreferenceForTitle,
 } from "@/app/playback/playback-provider-switch";
@@ -117,6 +118,73 @@ describe("playback provider switch", () => {
         "anime",
       ),
     ).toBe("allanime");
+  });
+
+  test("applyTitleProviderPreferenceToSession enters YouTube mode for a saved YouTube provider", () => {
+    const transitions: unknown[] = [];
+
+    const applied = applyTitleProviderPreferenceToSession(
+      {
+        config: {
+          getRaw: () => ({ titleProviderPreferences: { "youtube:abc123": "youtube" } }),
+        },
+        stateManager: {
+          getState: () => ({ provider: "vidking" }),
+          dispatch: (transition: unknown) => transitions.push(transition),
+        },
+        providerRegistry: {
+          get: (providerId: string) =>
+            providerId === "youtube"
+              ? {
+                  metadata: {
+                    id: "youtube",
+                    isAnimeProvider: false,
+                    isYoutubeProvider: true,
+                  },
+                }
+              : undefined,
+        },
+      } as never,
+      "youtube:abc123",
+    );
+
+    expect(applied).toBeTrue();
+    expect(transitions).toContainEqual({
+      type: "SET_MODE",
+      mode: "youtube",
+      provider: "youtube",
+    });
+  });
+
+  test("applyTitleProviderPreferenceToSession ignores a saved provider from another lane", () => {
+    const transitions: unknown[] = [];
+
+    const applied = applyTitleProviderPreferenceToSession(
+      {
+        config: {
+          getRaw: () => ({ titleProviderPreferences: { "anilist:123": "youtube" } }),
+        },
+        stateManager: {
+          getState: () => ({ provider: "allanime" }),
+          dispatch: (transition: unknown) => transitions.push(transition),
+        },
+        providerRegistry: {
+          get: () => ({
+            metadata: {
+              id: "youtube",
+              isAnimeProvider: false,
+              isYoutubeProvider: true,
+            },
+          }),
+        },
+      } as never,
+      "anilist:123",
+      undefined,
+      "anime",
+    );
+
+    expect(applied).toBeFalse();
+    expect(transitions).toEqual([]);
   });
 
   test("applyUserProviderSwitch persists preference under canonical id and drops opaque key", async () => {

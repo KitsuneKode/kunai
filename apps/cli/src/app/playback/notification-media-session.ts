@@ -5,12 +5,20 @@ import {
   titleInfoFromMediaItemIdentity,
 } from "@/domain/media/media-item-adapters";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
+import { providerLaneToShellMode, resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
+import type { ShellMode } from "@/domain/types";
 
 export function applyMediaItemSessionRouting(
   container: Pick<Container, "config" | "providerRegistry" | "stateManager">,
   item: MediaItemIdentity,
 ): void {
-  const appliedPreference = applyTitleProviderPreferenceToSession(container, item.titleId);
+  const mode = mediaItemShellMode(item);
+  const appliedPreference = applyTitleProviderPreferenceToSession(
+    container,
+    item.titleId,
+    titleInfoFromMediaItemIdentity(item),
+    mode,
+  );
   if (appliedPreference) return;
 
   const hintedProviderId = item.providerHints?.[0]?.providerId;
@@ -19,7 +27,7 @@ export function applyMediaItemSessionRouting(
     if (provider) {
       container.stateManager.dispatch({
         type: "SET_MODE",
-        mode: provider.metadata.isAnimeProvider ? "anime" : "series",
+        mode: providerLaneToShellMode(resolveProviderLaneFromMetadata(provider.metadata)),
         provider: provider.metadata.id,
       });
       return;
@@ -31,13 +39,22 @@ export function applyMediaItemSessionRouting(
     return;
   }
 
-  if (item.mediaKind === "anime") {
+  if (mode === "anime" || mode === "youtube") {
     container.stateManager.dispatch({
       type: "SET_MODE",
-      mode: "anime",
-      provider: container.config.animeProvider,
+      mode,
+      provider:
+        mode === "youtube"
+          ? container.stateManager.getState().defaultProviders.youtube
+          : container.config.animeProvider,
     });
   }
+}
+
+function mediaItemShellMode(item: MediaItemIdentity): ShellMode {
+  if (item.mediaKind === "video") return "youtube";
+  if (item.mediaKind === "anime") return "anime";
+  return "series";
 }
 
 export function playbackIntentFromMediaItem(item: MediaItemIdentity) {

@@ -187,7 +187,15 @@ describe("launch entry helpers", () => {
         },
         stateManager: {
           getState() {
-            return { provider: "rivestream", providerSwitchSeq: 0 };
+            return {
+              provider: "rivestream",
+              providerSwitchSeq: 0,
+              defaultProviders: {
+                series: "videasy",
+                anime: "allanime",
+                youtube: "youtube",
+              },
+            };
           },
           dispatch(transition: unknown) {
             transitions.push(transition);
@@ -283,11 +291,12 @@ describe("launch entry helpers", () => {
           },
         },
         providerRegistry: {
-          get() {
+          get(providerId: string) {
             return {
               metadata: {
-                id: "allanime",
-                isAnimeProvider: true,
+                id: providerId,
+                isAnimeProvider: providerId === "allanime",
+                isYoutubeProvider: providerId === "youtube",
               },
             };
           },
@@ -297,7 +306,7 @@ describe("launch entry helpers", () => {
             return {
               provider: "youtube",
               providerSwitchSeq: 1,
-              mode: "youtube",
+              mode: "anime",
               defaultProviders: {
                 series: "videasy",
                 anime: "allanime",

@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
-import type { ContentType } from "@/domain/types";
+import type { ContentType, ProviderLane } from "@/domain/types";
 import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
 
@@ -45,6 +45,14 @@ export function isYoutubeHistoryEntry(
     progress.providerId === "youtube" ||
     Boolean(progress.externalIds?.youtubeId)
   );
+}
+
+/** Canonical provider lane for replaying a persisted history row. */
+export function historyProviderLane(
+  progress: Pick<HistoryProgress, "mediaKind" | "providerId" | "externalIds">,
+): ProviderLane {
+  if (isYoutubeHistoryEntry(progress)) return "youtube";
+  return correctedHistoryMediaKind(progress) === "anime" ? "anime" : "series";
 }
 
 /**
