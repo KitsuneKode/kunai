@@ -26,7 +26,14 @@ import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
 /**
  * Quality / stream pickers only offer candidates that already have a playable URL.
- * Deferred locators still need materialization before they are selectable as quality.
+ * Deferred locators are intentionally excluded here — they are not selectable as
+ * quality until materialization produces a concrete URL.
+ *
+ * Resolve still auto-selects deferred-only inventory: `providerResolveResultToStreamInfo`
+ * accepts `url ?? deferredLocator`, and playback materializes via
+ * `materializeDeferredMediaForPlayback`. Covered by picker exclusion in
+ * `source-quality.test.ts` plus resolve/adapter/materializer deferredLocator tests —
+ * do not treat picker filtering as "unresolvable".
  */
 function isPlayableStreamCandidate(stream: StreamCandidate): boolean {
   return typeof stream.url === "string" && stream.url.length > 0;

@@ -18,6 +18,19 @@ import { availableAudioModesFromTrace } from "@/services/playback/PlaybackSource
 /** Inventory older than this is still cache-valid but presented as aged/stale. */
 export const CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS = 2 * 60 * 1000;
 
+/**
+ * Stale presentation threshold: half of remaining inventory TTL when `expiresAt`
+ * is known, floored to at least {@link CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS}.
+ */
+export function crossProviderInventoryStaleAfterMs(expiresAt?: string, nowMs = Date.now()): number {
+  if (!expiresAt) return CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS;
+  const exp = Date.parse(expiresAt);
+  if (!Number.isFinite(exp)) return CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS;
+  const ttl = Math.max(0, exp - nowMs);
+  // Mark stale at half TTL, floored to at least 2 minutes.
+  return Math.max(CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS, Math.floor(ttl / 2));
+}
+
 export type TracksPanelData = {
   readonly groups: readonly TrackCapabilityGroup[];
   readonly providerLabel: string;
@@ -56,10 +69,11 @@ export function formatCrossProviderCachedInventoryDetail(
   providerName: string,
   createdAt: string | undefined,
   nowMs = Date.now(),
+  expiresAt?: string,
 ): string {
   const ageLabel = formatInventoryValidationAge(createdAt, nowMs);
   if (!ageLabel) return `${providerName} · cached`;
-  if (isStaleInventoryAge(createdAt, nowMs)) {
+  if (isStaleInventoryAge(createdAt, nowMs, expiresAt)) {
     return `${providerName} · stale inventory · ${ageLabel}`;
   }
   return `${providerName} · cached ${ageLabel}`;
@@ -82,11 +96,15 @@ function formatInventoryValidationAge(
   return `${deltaDays}d ago`;
 }
 
-function isStaleInventoryAge(createdAt: string | undefined, nowMs: number): boolean {
+function isStaleInventoryAge(
+  createdAt: string | undefined,
+  nowMs: number,
+  expiresAt?: string,
+): boolean {
   if (!createdAt) return false;
   const then = Date.parse(createdAt);
   if (!Number.isFinite(then)) return false;
-  return nowMs - then >= CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS;
+  return nowMs - then >= crossProviderInventoryStaleAfterMs(expiresAt, nowMs);
 }
 
 async function appendCrossProviderSourceHints(
@@ -129,8 +147,15 @@ async function appendCrossProviderSourceHints(
       value: encodeCrossProviderSourceValue(provider.id, sourceId),
       selected: false,
       enabled: true,
-      detail: formatCrossProviderCachedInventoryDetail(provider.name, cachedEntry.createdAt, nowMs),
-      risk: isStaleInventoryAge(cachedEntry.createdAt, nowMs) ? "fallback" : "normal",
+      detail: formatCrossProviderCachedInventoryDetail(
+        provider.name,
+        cachedEntry.createdAt,
+        nowMs,
+        cachedEntry.expiresAt,
+      ),
+      risk: isStaleInventoryAge(cachedEntry.createdAt, nowMs, cachedEntry.expiresAt)
+        ? "fallback"
+        : "normal",
     });
   }
 

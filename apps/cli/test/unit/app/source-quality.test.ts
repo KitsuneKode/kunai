@@ -16,6 +16,7 @@ import {
   shouldSkipExternalSubtitleLookup,
 } from "@/app/playback/source-quality";
 import type { StreamInfo } from "@/domain/types";
+import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 
 const streamWithCandidates: StreamInfo = {
   url: "https://cdn.example/1080.m3u8",
@@ -232,30 +233,28 @@ test("buildQualityPickerOptions sorts by highest quality first", () => {
   ]);
 });
 
-test("deferredLocator-only streams are not playable quality candidates", () => {
+test("deferredLocator-only streams are excluded from quality pickers but remain resolvable", () => {
+  const deferredOnly = {
+    id: "stream-deferred",
+    providerId: "vidking" as const,
+    sourceId: "source-a",
+    protocol: "hls" as const,
+    container: "m3u8" as const,
+    qualityLabel: "720p",
+    qualityRank: 720,
+    deferredLocator: "allmanga-ak:pending",
+    confidence: 0.9,
+    cachePolicy: {
+      ttlClass: "stream-manifest" as const,
+      scope: "local" as const,
+      keyParts: [],
+    },
+  };
   const stream = {
     ...streamWithCandidates,
     providerResolveResult: {
       ...streamWithCandidates.providerResolveResult!,
-      streams: [
-        streamWithCandidates.providerResolveResult!.streams[0]!,
-        {
-          id: "stream-deferred",
-          providerId: "vidking",
-          sourceId: "source-a",
-          protocol: "hls",
-          container: "m3u8",
-          qualityLabel: "720p",
-          qualityRank: 720,
-          deferredLocator: "allmanga-ak:pending",
-          confidence: 0.9,
-          cachePolicy: {
-            ttlClass: "stream-manifest",
-            scope: "local",
-            keyParts: [],
-          },
-        },
-      ],
+      streams: [streamWithCandidates.providerResolveResult!.streams[0]!, deferredOnly],
     },
   } satisfies StreamInfo;
 
@@ -268,6 +267,25 @@ test("deferredLocator-only streams are not playable quality candidates", () => {
   expect(summary.streamCount).toBe(1);
   expect(summary.qualityCount).toBe(1);
   expect(summary.showQualityControl).toBe(false);
+
+  // Picker honesty must not block resolve auto-select: deferred-only inventory
+  // still adapts via url ?? deferredLocator (see provider-result-adapter +
+  // playback-resolve-service deferredLocator coverage).
+  const resolved = providerResolveResultToStreamInfo({
+    result: {
+      status: "resolved",
+      providerId: "vidking",
+      selectedStreamId: deferredOnly.id,
+      streams: [deferredOnly],
+      subtitles: [],
+      trace: stream.providerResolveResult!.trace,
+      failures: [],
+    },
+    title: "Deferred",
+    subtitlePreference: "none",
+  });
+  expect(resolved?.deferredLocator).toBe("allmanga-ak:pending");
+  expect(resolved?.url).toBe("allmanga-ak:pending");
 });
 
 test("buildQualityPickerOptions exposes audio and hard-subtitle language details", () => {

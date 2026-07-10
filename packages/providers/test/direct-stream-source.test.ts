@@ -94,3 +94,35 @@ test("resolveDirectStreamSource stays backward compatible without captions or au
   expect(result.streams[0]?.languageEvidence).toBeUndefined();
   expect(result.streams[0]?.subtitleLanguages).toBeUndefined();
 });
+
+test("resolveDirectStreamSource preserves explicit and hardsub subtitle delivery", async () => {
+  const result = await resolveDirectStreamSource({
+    providerId: "vidlink",
+    host: "vidlink.pro",
+    label: "VidLink",
+    input: baseInput,
+    context: createContext(),
+    fetchPayload: async () => ({
+      streams: [
+        {
+          url: "https://cdn.example/hardsub.m3u8",
+          qualityHint: "1080p",
+          hardSubLanguage: "en",
+        },
+        {
+          url: "https://cdn.example/embedded.m3u8",
+          qualityHint: "720p",
+          subtitleDelivery: "embedded",
+        },
+      ],
+      subtitles: [{ url: "https://subs.example/en.vtt", language: "en" }],
+    }),
+  });
+
+  expect(result.status).toBe("resolved");
+  expect(result.streams[0]).toMatchObject({
+    hardSubLanguage: "en",
+    subtitleDelivery: "hardcoded",
+  });
+  expect(result.streams[1]?.subtitleDelivery).toBe("embedded");
+});

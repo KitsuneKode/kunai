@@ -41,6 +41,10 @@ export interface DirectStreamInput {
   readonly serverLabel?: string;
   readonly audioLanguages?: readonly string[];
   readonly presentation?: import("@kunai/types").StreamPresentation;
+  /** Burned-in subtitle language when the provider already knows hardsub delivery. */
+  readonly hardSubLanguage?: string;
+  /** Explicit delivery when known; avoids defaulting hardsub/embedded to "external". */
+  readonly subtitleDelivery?: SubtitleDelivery;
 }
 
 export interface DirectSubtitleInput {
@@ -351,7 +355,6 @@ function normalizeStreams(
   const seen = new Set<string>();
   const headers = payload.headers;
   const subtitleLanguages = uniqueLanguages(subtitles.map((subtitle) => subtitle.language));
-  const subtitleDelivery = inferSubtitleDelivery(subtitles);
   const sharedLanguageEvidence = buildSubtitleLanguageEvidence(subtitles, sourceId);
 
   for (const entry of payload.streams) {
@@ -362,6 +365,14 @@ function normalizeStreams(
     const qualityRank = qualityRankFromLabel(entry.qualityHint) ?? 0;
     const audioLanguages = uniqueLanguages(entry.audioLanguages ?? []);
     const presentation = inferPresentation(entry.presentation, audioLanguages);
+    const hardSubLanguage = entry.hardSubLanguage
+      ? normalizeIsoLanguageCode(entry.hardSubLanguage)
+      : undefined;
+    const subtitleDelivery = inferSubtitleDelivery(
+      subtitles,
+      entry.subtitleDelivery,
+      hardSubLanguage,
+    );
     const languageEvidence = [
       ...buildAudioLanguageEvidence(audioLanguages, sourceId, entry.serverLabel ?? label),
       ...sharedLanguageEvidence,
@@ -380,6 +391,7 @@ function normalizeStreams(
       flavorLabel: entry.serverLabel ?? label,
       audioLanguages: audioLanguages.length > 0 ? audioLanguages : undefined,
       presentation,
+      hardSubLanguage,
       subtitleDelivery,
       subtitleLanguages: subtitleLanguages.length > 0 ? subtitleLanguages : undefined,
       languageEvidence: languageEvidence.length > 0 ? languageEvidence : undefined,
@@ -392,9 +404,18 @@ function normalizeStreams(
   return streams.sort((a, b) => (b.qualityRank ?? 0) - (a.qualityRank ?? 0));
 }
 
+/**
+ * Prefer explicit stream delivery / hardsub evidence over assuming soft external
+ * captions. Only default to `"external"` when captions exist and delivery is unknown.
+ */
 function inferSubtitleDelivery(
   subtitles: readonly SubtitleCandidate[],
+  explicit?: SubtitleDelivery,
+  hardSubLanguage?: string,
 ): SubtitleDelivery | undefined {
+  if (explicit) return explicit;
+  if (hardSubLanguage) return "hardcoded";
+  if (subtitles.some((subtitle) => subtitle.source === "embedded")) return "embedded";
   if (subtitles.length === 0) return undefined;
   return "external";
 }
