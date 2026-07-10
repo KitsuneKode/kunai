@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import type { PlaybackResolveCoordinatorOutput } from "@/services/playback/PlaybackResolveCoordinator";
-import type { PlaybackResolveInput } from "@/services/playback/PlaybackResolveService";
+import {
+  readCancellationReason,
+  type PlaybackResolveInput,
+} from "@/services/playback/PlaybackResolveService";
 import { PlaybackResolveWorkService } from "@/services/playback/PlaybackResolveWorkService";
 import type { ResolveWorkLedgerSnapshot } from "@/services/playback/ResolveWorkLedger";
 
@@ -127,32 +130,30 @@ describe("PlaybackResolveWorkService", () => {
   });
 
   test("keeps cancellationReason live for late abort during physical resolve", async () => {
-    const cancellation: { reason: PlaybackResolveInput["cancellationReason"] } = {
-      reason: undefined,
+    const cancellationReasonRef: NonNullable<PlaybackResolveInput["cancellationReasonRef"]> = {
+      current: undefined,
     };
-    let seenReason: PlaybackResolveInput["cancellationReason"];
+    let seenReason: ReturnType<typeof readCancellationReason>;
     let release!: () => void;
     const service = new PlaybackResolveWorkService({
       resolve: async (input) => {
         await new Promise<void>((resolve) => {
           release = resolve;
         });
-        seenReason = input.cancellationReason;
+        seenReason = readCancellationReason(input);
         return output;
       },
     });
 
-    const resolveInput = baseInput();
-    Object.defineProperty(resolveInput, "cancellationReason", {
-      configurable: true,
-      enumerable: true,
-      get: () => cancellation.reason,
-    });
+    const resolveInput: PlaybackResolveInput = {
+      ...baseInput(),
+      cancellationReasonRef,
+    };
     const pending = service.resolve(resolveInput, {
       intentKind: "playback",
       budgetLane: "user-blocking",
     });
-    cancellation.reason = "user-navigation";
+    cancellationReasonRef.current = "user-navigation";
     release();
     await pending;
     expect(seenReason).toBe("user-navigation");

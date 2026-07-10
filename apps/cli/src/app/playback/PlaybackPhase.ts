@@ -184,8 +184,10 @@ import {
   type PlaybackStartupStage,
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
-import type { PlaybackResolveEvent } from "@/services/playback/PlaybackResolveService";
-import type { ResolveCancellationReason } from "@/services/playback/ResolveResultCommitPolicy";
+import type {
+  PlaybackResolveEvent,
+  ResolveCancellationReasonRef,
+} from "@/services/playback/PlaybackResolveService";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
@@ -758,11 +760,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
         const resolveController = new AbortController();
         let resolveAbortIntent: "cancel" | "fallback" | null = null;
-        const resolveCancellation: { reason: ResolveCancellationReason | undefined } = {
-          reason: undefined,
+        const cancellationReasonRef: ResolveCancellationReasonRef = {
+          current: undefined,
         };
         const abortOnSessionStop = () => {
-          resolveCancellation.reason = "user-shutdown";
+          cancellationReasonRef.current = "user-shutdown";
           resolveController.abort();
         };
         context.signal.addEventListener("abort", abortOnSessionStop, { once: true });
@@ -787,7 +789,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           label: `${title.name} S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`,
           cancel: (reason) => {
             resolveAbortIntent = reason?.includes("fallback") ? "fallback" : "cancel";
-            resolveCancellation.reason =
+            cancellationReasonRef.current =
               resolveAbortIntent === "fallback" ? "provider-fallback" : "user-navigation";
             resolveController.abort();
           },
@@ -1348,6 +1350,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               resolveIntent: resolvePolicy.resolveIntent,
               blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
               signal: resolveController.signal,
+              cancellationReasonRef,
               correlation: playbackCorrelation,
               onFeedback: (feedback: { detail?: string | null; note?: string | null }) =>
                 this.updatePlaybackFeedback(context, feedback),
@@ -1442,11 +1445,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 }
               },
             };
-            Object.defineProperty(resolveInput, "cancellationReason", {
-              configurable: true,
-              enumerable: true,
-              get: () => resolveCancellation.reason,
-            });
             const resolveResult = await container.playbackResolveWork.resolve(resolveInput, {
               intentKind: sourceRefreshDecision?.kind === "recover" ? "recovery" : "playback",
               budgetLane: "user-blocking",

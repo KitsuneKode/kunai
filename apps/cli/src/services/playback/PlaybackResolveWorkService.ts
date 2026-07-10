@@ -112,6 +112,9 @@ export class PlaybackResolveWorkService {
     const physicalInput: PlaybackResolveInput = {
       ...input,
       signal: abortController.signal,
+      cancellationReasonRef: input.cancellationReasonRef ?? {
+        current: input.cancellationReason,
+      },
       onEvent: (event: PlaybackResolveEvent) => {
         recordResolveEvent(ledger, event);
         for (const waiting of consumers) waiting.onEvent?.(event);
@@ -120,12 +123,6 @@ export class PlaybackResolveWorkService {
         for (const waiting of consumers) waiting.onFeedback?.(feedback);
       },
     };
-    // Spread snapshots getters; re-bind so late abort reasons stay live.
-    Object.defineProperty(physicalInput, "cancellationReason", {
-      configurable: true,
-      enumerable: true,
-      get: () => input.cancellationReason,
-    });
     const promise = this.coordinator.resolve(physicalInput).then((output) => {
       if (output.cacheStatus === "prefetched") recordCacheDecision(ledger, "prefetched");
       if (output.stream?.providerResolveResult) {

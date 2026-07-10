@@ -61,6 +61,16 @@ import type {
   TitleProviderHealthService,
 } from "./TitleProviderHealthService";
 
+export type ResolveCancellationReasonRef = {
+  current?: ResolveCancellationReason;
+};
+
+export function readCancellationReason(
+  input: Pick<PlaybackResolveInput, "cancellationReason" | "cancellationReasonRef">,
+): ResolveCancellationReason | undefined {
+  return input.cancellationReasonRef?.current ?? input.cancellationReason;
+}
+
 export type PlaybackResolveFeedback = {
   readonly detail?: string | null;
   readonly note?: string | null;
@@ -172,6 +182,9 @@ export type PlaybackResolveInput = {
   readonly ignoreProviderHealth?: boolean;
   readonly resolveIntent?: ProviderResolveInput["intent"];
   readonly recoveryMode?: RecoveryMode;
+  /** Live holder for late abort updates; prefer over cancellationReason. */
+  readonly cancellationReasonRef?: ResolveCancellationReasonRef;
+  /** Snapshot at call time; prefer cancellationReasonRef for late updates. */
   readonly cancellationReason?: ResolveCancellationReason;
   readonly correlation?: DiagnosticCorrelation;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
@@ -678,7 +691,7 @@ export class PlaybackResolveService {
         const commitDecision = decideResolveResultCommit({
           hasResolvedStream: true,
           signalAborted: input.signal.aborted,
-          cancellationReason: input.cancellationReason,
+          cancellationReason: readCancellationReason(input),
         });
 
         if (commitDecision.action !== "discard") {

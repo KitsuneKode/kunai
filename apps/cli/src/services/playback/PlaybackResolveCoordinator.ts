@@ -67,18 +67,15 @@ export class PlaybackResolveCoordinator {
     const resolver = this.createResolver();
     const resolveInput: PlaybackResolveInput = {
       ...input,
+      cancellationReasonRef: input.cancellationReasonRef ?? {
+        current: input.cancellationReason,
+      },
       onEvent: (event: PlaybackResolveEvent) => {
         events.push(event);
         this.recordEvent(input, event);
         input.onEvent?.(event);
       },
     };
-    // Spread snapshots getters; re-bind so late abort reasons stay live.
-    Object.defineProperty(resolveInput, "cancellationReason", {
-      configurable: true,
-      enumerable: true,
-      get: () => input.cancellationReason,
-    });
     const result = await resolver.resolve(resolveInput);
     this.recordProviderTimeline(input, result);
 
