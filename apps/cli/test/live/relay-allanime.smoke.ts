@@ -103,6 +103,7 @@ const title = {
   overview: selected.overview,
   posterUrl: selected.posterPath ?? undefined,
   episodeCount: selected.episodeCount,
+  isAnime: true,
 };
 
 let resolveError: unknown = null;

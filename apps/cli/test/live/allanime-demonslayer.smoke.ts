@@ -91,6 +91,7 @@ const title = {
   overview: selected.overview,
   posterUrl: selected.posterPath ?? undefined,
   episodeCount: selected.episodeCount,
+  isAnime: true,
 };
 
 const episodes = provider.listEpisodes ? await provider.listEpisodes({ title }) : null;

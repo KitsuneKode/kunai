@@ -33,6 +33,7 @@ const title: TitleInfo = {
   id: titleId,
   type: "series",
   name: titleName,
+  isAnime: true,
 };
 
 let resolveError: unknown = null;
