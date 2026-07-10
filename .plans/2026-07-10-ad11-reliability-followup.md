@@ -13,7 +13,7 @@ Landed the six unique `ad11` PR merges (duplicate CI branch left unmerged), then
 
 **Still deferred (Non-Goals):** subtitle/source preference learning, HLS user-config benchmarks, full player actor, greenfield `AppErrorBoundary`, live provider CI.
 
-**Task 15** (full fmt/lint/typecheck/test gate + manual smoke) remains the integration PR verification checklist; code Tasks 0–14 are complete.
+**Task 15** verification gate run on 2026-07-10: `bun run fmt` / `lint` / `typecheck` / `test` all green (2543 pass, 9 skip, 0 fail). Manual smoke remains for the human PR reviewer.
 
 ---
 
