@@ -248,11 +248,14 @@ describe("DiagnosticsServiceImpl", () => {
     try {
       runMigrations(db, "cache");
       const repository = new DiagnosticEventsRepository(db);
+      // Use a recent wall-clock timestamp so the 14-day durable prune does not
+      // delete the row before the restart read (hardcoded June dates went stale).
+      const recordedAt = new Date();
       const firstService = new DiagnosticsServiceImpl({
         store: new DiagnosticsStoreImpl(),
         logger: createLogger(),
         durableSink: new AsyncDurableDiagnosticsSink({ repository }),
-        now: () => new Date("2026-06-24T12:00:00.000Z"),
+        now: () => recordedAt,
       });
 
       firstService.record({

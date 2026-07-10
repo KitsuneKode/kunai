@@ -63,16 +63,26 @@ Short one-line summary of the release.
 - **Release Guard** (`.github/workflows/release-guard.yml`): PR-time check that `package.json`, both changelogs, pending changesets, and installer/release paths agree.
 - **Release** (`.github/workflows/release.yml`): runs on pushes to `main` that touch release paths. Two jobs:
   1. **Publish** — `bun run ci` + `bun run build` + `bun run pkg:check` + `bun run guard` + `changesets/action` (`bun run version:packages` then `bun run release` for npm).
-  2. **Binaries** (only after a real publish) — `bun run build:binaries` (all 8 targets), `verify-release-binaries.sh`, merges per-asset SHA256 checksums into `.release/kunai-v<version>.json`, then `softprops/action-gh-release` uploads assets + `SHA256SUMS` to tag `v<version>` with body from `.release/kunai-v<version>.md`.
+  2. **Binaries** (only after a real publish) — `bun run build:binaries` (all 8 targets), `verify-release-binaries.sh`, merges per-asset SHA256 checksums into `.release/kunai-v<version>.json`, then `softprops/action-gh-release` uploads assets + `SHA256SUMS` to tag `v<version>` with body from `.release/kunai-v<version>.md`. The job asserts the published release has ≥9 assets (`fail_on_unmatched_files` + `gh release view` count) so `install.sh` / `install.ps1` never see an empty `latest`.
 - `version:packages` runs `changeset version`, mirrors changelog, and regenerates `.release/kunai-v*.md` via `bun run release:notes`.
 - Publish uses OIDC (`id-token: write`) with npm provenance enabled.
 - **CI** (`.github/workflows/ci.yml`): parallel Turbo jobs (`fmt`, `lint`, `typecheck`, `test`, `build-cli`, `build-binaries`); on installer-related diffs, runs Docker `install.sh → upgrade → uninstall` smoke after building linux glibc + musl binaries (images cached; binaries not rebuilt in Docker job).
+- **Build all release binaries** (`.github/workflows/build-binaries.yml`): weekly/manual 8-target cross-compile plus native smoke on Linux/macOS/Windows runners.
 
 **npm vs GitHub Release artifacts:** npm publishes only `dist/kunai.js` and `dist/assets/**` (allowlisted in `apps/cli/package.json` `files`). Standalone binaries live under `dist/bin/` on disk and ship exclusively via the **binaries** job to GitHub Releases — `bun run pkg:check` fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 
 Prefer tag `vX.Y.Z` with binary assets attached by the **binaries** job (not a separate empty GitHub release from Changesets alone). Release notes body comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
+
+### Backfilling an empty release
+
+If `releases/latest` has a tag but **zero assets** (installers 404), do **not** tell users to curl the default binary path. Either:
+
+1. Re-run the Release workflow after CI is green so the **binaries** job uploads assets, or
+2. Manually: `bun run build:binaries` → `bash apps/cli/scripts/verify-release-binaries.sh` → `gh release upload vX.Y.Z apps/cli/dist/bin/kunai-* apps/cli/dist/bin/SHA256SUMS --clobber`.
+
+Until assets exist, point users at `npm i -g @kitsunekode/kunai` / `bun i -g @kitsunekode/kunai`.
 
 ## Local release utilities
 

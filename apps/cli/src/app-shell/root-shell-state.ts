@@ -134,6 +134,16 @@ export function resolveHelpScope(state: SessionState): KeyScope {
   }
 }
 
+/**
+ * Pure Esc → transition helper for root-owned overlays.
+ *
+ * Runtime Esc ownership lives in `root-overlay-shell.tsx` via
+ * `resolveOverlayBackStack` (`overlay-back-stack.ts`): filters, nested panes,
+ * confirmations, and surface-owned Esc clear first; only then does the shell
+ * dispatch `CLOSE_TOP_OVERLAY`. Wiring this helper into that path would create
+ * a second Esc owner and risk double-close. Keep this as the pure
+ * "overlay open → CLOSE_TOP_OVERLAY" contract used by SessionState tests.
+ */
 export function resolveEscTransition(state: SessionState): StateTransition | null {
   if (state.activeModals.length > 0) {
     return { type: "CLOSE_TOP_OVERLAY" };

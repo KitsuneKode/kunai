@@ -30,21 +30,32 @@ function runInstallPs1(
 
 describePwsh("install.ps1 dry-run", () => {
   test("prints the binary install plan without downloading", () => {
-    const result = runInstallPs1(["-DryRun", "-Yes"]);
+    // Clear Windows-only env vars so Linux CI pwsh exercises the fallback paths.
+    const result = runInstallPs1(["-DryRun", "-Yes"], {
+      ...process.env,
+      LOCALAPPDATA: "",
+      APPDATA: "",
+    });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Kunai installer");
     expect(result.stdout).toContain("Downloading kunai-windows-");
     expect(result.stdout).toContain("versions");
     expect(result.stdout).toContain("[dry-run]");
+    expect(result.stdout).toContain("vdry-run");
     expect(result.stderr).toBe("");
   });
 
   test("honors pinned -Version in dry-run output", () => {
-    const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"]);
+    const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], {
+      ...process.env,
+      LOCALAPPDATA: "",
+      APPDATA: "",
+    });
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("v9.8.7");
+    expect(result.stdout).toContain("[dry-run]");
   });
 
   test("rejects lifecycle switches — use kunai upgrade / kunai uninstall instead", () => {

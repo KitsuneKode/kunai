@@ -68,6 +68,11 @@ Pull requests and pushes to `main` use the composite setup action
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 `TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
 
+**Hard rule:** every job that uses `./.github/actions/setup-bun-monorepo` must run
+`actions/checkout` first. GitHub resolves local composite actions from the
+workspace before any step runs, so nesting checkout inside the composite fails
+with `Can't find 'action.yml' … Did you forget to run actions/checkout`.
+
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
 | Job              | PR                                                          | Main         |
@@ -78,7 +83,13 @@ Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 | `test`           | `turbo run test --affected`                                 | full         |
 | `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change | same on main |
 | `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change   | same         |
+| `installer-*`    | shellcheck/PSScriptAnalyzer + Docker glibc/musl smoke when installer paths change | same |
 | `checks-docs`    | docs gate when docs paths change                            | same         |
+
+**Full 8-target workflow** (`.github/workflows/build-binaries.yml`, weekly /
+manual / path-triggered): cross-compiles all release assets on `ubuntu-latest`,
+then a `native-smoke` matrix boots the host-matching binary on
+`ubuntu-latest` / `macos-latest` / `windows-latest`.
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).

@@ -1,18 +1,12 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import {
   buildWatchGenreBreakdown,
   resolveTmdbIdentityFromStoredIds,
   resolveWatchTitleTmdbIdentity,
 } from "@/domain/lists/WatchGenreStats";
+import * as tmdbProxy from "@/services/catalog/tmdb-proxy";
 import type { WatchStatsTitleSecondsRow } from "@kunai/storage";
-
-const fetchTmdbJsonCached = mock(async (_path: string): Promise<unknown> => ({ genres: [] }));
-
-mock.module("@/services/catalog/tmdb-proxy", () => ({
-  fetchTmdbJsonCached,
-  clearTmdbSessionCache: () => {},
-}));
 
 function row(
   patch: Partial<WatchStatsTitleSecondsRow> & Pick<WatchStatsTitleSecondsRow, "titleId">,
@@ -26,9 +20,10 @@ function row(
   };
 }
 
+let fetchSpy: ReturnType<typeof spyOn<typeof tmdbProxy, "fetchTmdbJsonCached">>;
+
 beforeEach(() => {
-  fetchTmdbJsonCached.mockReset();
-  fetchTmdbJsonCached.mockImplementation(async (path: string) => {
+  fetchSpy = spyOn(tmdbProxy, "fetchTmdbJsonCached").mockImplementation(async (path: string) => {
     if (path.startsWith("/search/")) {
       return { results: [{ id: 42 }] };
     }
@@ -37,6 +32,10 @@ beforeEach(() => {
     }
     return { genres: [] };
   });
+});
+
+afterEach(() => {
+  mock.restore();
 });
 
 describe("resolveTmdbIdentityFromStoredIds", () => {
@@ -69,15 +68,13 @@ describe("resolveWatchTitleTmdbIdentity", () => {
       row({ titleId: "anilist:1", title: "Barakamon" }),
     );
     expect(resolved).toEqual({ id: "42", mediaType: "tv" });
-    expect(fetchTmdbJsonCached).toHaveBeenCalledWith(
-      "/search/tv?query=Barakamon&include_adult=false&page=1",
-    );
+    expect(fetchSpy).toHaveBeenCalledWith("/search/tv?query=Barakamon&include_adult=false&page=1");
   });
 });
 
 describe("buildWatchGenreBreakdown", () => {
   test("allocates watched seconds equally across genres", async () => {
-    fetchTmdbJsonCached.mockImplementation(async (path: string) => {
+    fetchSpy.mockImplementation(async (path: string) => {
       if (path.startsWith("/search/")) return { results: [{ id: 7 }] };
       if (path === "/tv/7") {
         return {
@@ -101,7 +98,7 @@ describe("buildWatchGenreBreakdown", () => {
   });
 
   test("returns empty genres when TMDB resolution fails", async () => {
-    fetchTmdbJsonCached.mockImplementation(async () => ({ results: [] }));
+    fetchSpy.mockImplementation(async () => ({ results: [] }));
 
     const breakdown = await buildWatchGenreBreakdown([
       row({ titleId: "no-match", title: "Unknown Title" }),

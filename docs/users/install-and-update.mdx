@@ -84,6 +84,20 @@ kunai
 </Tab>
 </Tabs>
 
+## If the binary download 404s
+
+`install.sh` / `install.ps1` pull from GitHub Releases (`…/releases/latest/download/…`).
+If that release was published **without** binary assets (empty release), the download fails.
+Use a package channel until assets are backfilled:
+
+```sh
+bun install -g @kitsunekode/kunai
+# or
+npm install -g @kitsunekode/kunai
+```
+
+Or pin a release that has assets: `bash install.sh --version X.Y.Z` (when that tag’s assets exist).
+
 ## Unsigned binaries (beta)
 
 Release binaries are **not code-signed or notarized** today. That is intentional for beta:

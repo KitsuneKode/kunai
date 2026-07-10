@@ -50,6 +50,11 @@ jobs:
       published: ${{ steps.changesets.outputs.published }}
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release
@@ -100,6 +105,11 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-binaries
@@ -121,11 +131,13 @@ jobs:
       # download contract (`releases/latest/download/<asset>` and
       # `releases/download/v<version>/<asset>`) resolves to these binaries.
       - name: Upload binaries to GitHub Release
+        id: upload
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
           make_latest: true
           body_path: .release/kunai-${{ steps.ver.outputs.tag }}.md
+          fail_on_unmatched_files: true
           files: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-arm64
@@ -138,3 +150,16 @@ jobs:
             apps/cli/dist/bin/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Guard against empty "latest" releases that break install.sh / install.ps1.
+      - name: Assert release has binary assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+          count="$(gh release view "$tag" --json assets --jq '.assets | length')"
+          echo "Release $tag asset count: $count"
+          test "$count" -ge 9
+          gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'SHA256SUMS'
+          gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx 'kunai-linux-x64'

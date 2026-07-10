@@ -56,6 +56,7 @@ import {
   flavorSourceId,
   normalizeLegacyVideasySourceId,
   getPhaseAVidkingFlavorIds,
+  listDeprecatedVidkingEndpoints,
   listEligibleVidkingFlavorIds,
   listVidkingFlavors,
   isVidkingSourceDeprecated,
@@ -281,11 +282,23 @@ export async function resolveVideasyDirect(
   });
 
   const exhaustiveRefresh = input.intent === "refresh";
-  const preferredSourceId =
-    input.preferredSourceId &&
-    !isVidkingSourceDeprecated(normalizeLegacyVideasySourceId(input.preferredSourceId))
-      ? normalizeLegacyVideasySourceId(input.preferredSourceId)
-      : undefined;
+  const rawPreferredSourceId = input.preferredSourceId
+    ? normalizeLegacyVideasySourceId(input.preferredSourceId)
+    : undefined;
+  const preferredSourceDeprecated =
+    rawPreferredSourceId !== undefined && isVidkingSourceDeprecated(rawPreferredSourceId);
+  // Deprecated preferred ids (e.g. Sanji / 1movies) must not bias cycle order or
+  // stream selection — treat them as unset and fall through to Phase A mirrors.
+  const preferredSourceId = preferredSourceDeprecated ? undefined : rawPreferredSourceId;
+  if (preferredSourceDeprecated && rawPreferredSourceId) {
+    emitTraceEvent(events, context, {
+      type: "source:skipped",
+      providerId: VIDEOSY_PROVIDER_ID,
+      sourceId: rawPreferredSourceId,
+      message: "Preferred Videasy source is deprecated; falling back to Phase A mirrors",
+      attributes: { preferredSourceId: rawPreferredSourceId, reason: "deprecated-endpoint" },
+    });
+  }
   const preferredFlavorIds =
     !exhaustiveRefresh && !resolvedOptions?.serverEndpoint && preferredSourceId
       ? listVidkingFlavors()
@@ -303,10 +316,22 @@ export async function resolveVideasyDirect(
     preferredFlavorIds.length === 0 &&
     !resolvedOptions?.serverEndpoint &&
     !resolvedOptions?.customReferer;
+  const deprecatedEndpoints = new Set(listDeprecatedVidkingEndpoints());
   let activeServers: VidkingServerEndpoint[] = (
     phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_SERVERS]
-  ).filter((s) => createVideasyEndpointHealth(context).shouldTry(s));
+  )
+    .filter((s) => !deprecatedEndpoints.has(s))
+    .filter((s) => createVideasyEndpointHealth(context).shouldTry(s));
   const exhaustiveFlavorIds =
+    exhaustiveRefresh && !resolvedOptions?.serverEndpoint
+      ? listVidkingFlavors()
+          .filter((flavor) => flavor.deprecated !== true)
+          .filter((flavor) => input.mediaKind !== "series" || flavor.moviesOnly !== true)
+          .map((flavor) => flavor.id)
+      : [];
+  // Keep deprecated flavors in inventory for UI (failed/unsupported), but never
+  // cycle-probe them during refresh.
+  const inventoryExhaustiveFlavorIds =
     exhaustiveRefresh && !resolvedOptions?.serverEndpoint
       ? listVidkingFlavors()
           .filter((flavor) => input.mediaKind !== "series" || flavor.moviesOnly !== true)
@@ -331,8 +356,8 @@ export async function resolveVideasyDirect(
     input.mediaKind === "movie" || input.mediaKind === "series" ? input.mediaKind : undefined;
   const inventoryFlavorIds = resolvedOptions?.flavorId
     ? [resolvedOptions.flavorId]
-    : exhaustiveFlavorIds.length > 0
-      ? exhaustiveFlavorIds
+    : inventoryExhaustiveFlavorIds.length > 0
+      ? inventoryExhaustiveFlavorIds
       : preferredFlavorIds.length > 0
         ? preferredFlavorIds
         : resolvedOptions?.serverEndpoint
@@ -413,12 +438,12 @@ export async function resolveVideasyDirect(
             ? [resolvedOptions.serverEndpoint]
             : exhaustiveFlavorIds.length > 0
               ? []
-              : [...VIDKING_SERVERS]
+              : [...VIDKING_SERVERS].filter((server) => !deprecatedEndpoints.has(server))
           : [],
     flavorIds: exhaustiveFlavorIds.length > 0 ? exhaustiveFlavorIds : preferredFlavorIds,
     embedReferer: resolvedOptions.customReferer ?? embedReferer ?? undefined,
     engineOptions: resolvedOptions,
-    preferredSourceId: input.preferredSourceId,
+    preferredSourceId,
   });
 
   const resolveVidkingCycleCandidate = async (candidate: ProviderCycleCandidate) => {
@@ -554,7 +579,10 @@ export async function resolveVideasyDirect(
     );
     const embedCandidates = buildVidkingCycleCandidates({
       directServers: [],
-      embedServers: embedServers.length > 0 ? embedServers : [...VIDKING_SERVERS],
+      embedServers:
+        embedServers.length > 0
+          ? embedServers
+          : [...VIDKING_SERVERS].filter((server) => !deprecatedEndpoints.has(server)),
       flavorIds: [],
       embedReferer,
       engineOptions: resolvedOptions,
@@ -923,7 +951,11 @@ export function createVidkingResultFromPayload({
     startupPriority: input.startupPriority,
     qualityPreference: input.qualityPreference,
     preferredStreamId: input.preferredStreamId,
-    preferredSourceId: input.preferredSourceId,
+    preferredSourceId:
+      input.preferredSourceId &&
+      !isVidkingSourceDeprecated(normalizeLegacyVideasySourceId(input.preferredSourceId))
+        ? normalizeLegacyVideasySourceId(input.preferredSourceId)
+        : undefined,
     favoriteSourceNames: input.favoriteSourceNames,
   });
   const selectedStream = selection.selected;
@@ -1184,7 +1216,11 @@ async function probeSelectedVidkingPayloadStream({
     startupPriority: input.startupPriority,
     qualityPreference: input.qualityPreference,
     preferredStreamId: input.preferredStreamId,
-    preferredSourceId: input.preferredSourceId,
+    preferredSourceId:
+      input.preferredSourceId &&
+      !isVidkingSourceDeprecated(normalizeLegacyVideasySourceId(input.preferredSourceId))
+        ? normalizeLegacyVideasySourceId(input.preferredSourceId)
+        : undefined,
     favoriteSourceNames: input.favoriteSourceNames,
   });
   const selected = selection.selected;

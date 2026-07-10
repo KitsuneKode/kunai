@@ -107,8 +107,9 @@ resolve_published_version() {
 download_failed_hint() {
 	local asset="$1"
 	err "Download failed for $asset."
+	err "The latest GitHub Release may be missing binary assets (empty release)."
 	err "Try: --method npm | --method bun | --method source"
-	err "Or pin a version: --version X.Y.Z"
+	err "Or pin a known-good version: --version X.Y.Z"
 	err "Override mirror: KUNAI_DL_BASE=https://github.com/KitsuneKode/kunai/releases"
 }
 
@@ -213,8 +214,13 @@ install_binary() {
 	if [[ "$DRY" != 1 ]]; then
 		want="$(awk -v a="$asset" '$2==a {print $1}' "$tmp/SHA256SUMS")"
 		got="$(sha256_of "$tmp/$asset")"
-		if [[ -z "$want" || "$want" != "$got" ]]; then
-			err "Checksum mismatch for $asset (expected ${want:-<none>}, got $got)."
+		if [[ -z "$want" ]]; then
+			err "SHA256SUMS has no entry for $asset — this release likely has incomplete binary assets."
+			download_failed_hint "$asset"
+			exit 1
+		fi
+		if [[ "$want" != "$got" ]]; then
+			err "Checksum mismatch for $asset (expected $want, got $got)."
 			exit 1
 		fi
 		mkdir -p "$(dirname "$version_path")"

@@ -2,6 +2,8 @@ name: Build all release binaries
 
 # Full 8-target cross-compile is too slow for every PR (~5+ min). Run on a
 # schedule, manually, or when release binaries workflow inputs change.
+# Cross-compile happens on Linux; a follow-up matrix smokes the host-native
+# darwin/windows/linux artifacts so we catch "builds but won't run" failures.
 on:
   workflow_dispatch:
   schedule:
@@ -12,7 +14,9 @@ on:
       - "apps/cli/scripts/build-binaries.ts"
       - "apps/cli/scripts/build-shared.ts"
       - "apps/cli/scripts/verify-release-binaries.sh"
+      - "apps/cli/src/services/update/platform-assets.ts"
       - ".github/workflows/build-binaries.yml"
+      - ".github/actions/setup-bun-monorepo/action.yml"
 
 concurrency:
   group: build-binaries-${{ github.workflow }}-${{ github.ref }}
@@ -32,6 +36,12 @@ jobs:
     timeout-minutes: 35
 
     steps:
+      # Local composite actions require checkout before `uses: ./…`.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: binaries-all
@@ -57,3 +67,73 @@ jobs:
             apps/cli/dist/bin/kunai-windows-x64.exe
             apps/cli/dist/bin/kunai-windows-arm64.exe
             apps/cli/dist/bin/SHA256SUMS
+
+  # Native smoke: run the host-matching binary on each OS. Cross-compile alone
+  # only proves the Linux runner can emit the files — not that they boot.
+  native-smoke:
+    name: Native smoke (${{ matrix.os }})
+    needs: all-targets
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: kunai-linux-x64
+          - os: macos-latest
+            asset: kunai-darwin-arm64
+          - os: windows-latest
+            asset: kunai-windows-x64.exe
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download release binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: kunai-release-binaries
+          path: apps/cli/dist/bin
+
+      - name: Smoke host binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="apps/cli/dist/bin/${{ matrix.asset }}"
+          chmod +x "$BIN"
+          cd apps/cli/dist/bin
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c SHA256SUMS | grep -F "${{ matrix.asset }}: OK"
+          else
+            want="$(awk -v a="${{ matrix.asset }}" '$2==a {print $1}' SHA256SUMS)"
+            got="$(shasum -a 256 "${{ matrix.asset }}" | awk '{print $1}')"
+            test -n "$want" && test "$want" = "$got"
+            echo "${{ matrix.asset }}: OK"
+          fi
+          version_out="$("./${{ matrix.asset }}" --version)"
+          echo "$version_out"
+          grep -q '^kunai ' <<<"$version_out"
+          "./${{ matrix.asset }}" --help >/dev/null
+          echo "✓ ${{ matrix.asset }} boots on ${{ matrix.os }}"
+
+      - name: Smoke host binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = "apps/cli/dist/bin/${{ matrix.asset }}"
+          if (-not (Test-Path $bin)) { throw "missing $bin" }
+          $sums = Get-Content apps/cli/dist/bin/SHA256SUMS
+          $want = ($sums | Where-Object { $_ -match "\s$([regex]::Escape('${{ matrix.asset }}'))$" }) -replace '\s.*', ''
+          $got = (Get-FileHash -Path $bin -Algorithm SHA256).Hash.ToLower()
+          if ([string]::IsNullOrEmpty($want) -or $want.ToLower() -ne $got) {
+            throw "Checksum mismatch for ${{ matrix.asset }} (expected '$want', got '$got')"
+          }
+          $versionOut = & $bin --version
+          Write-Host $versionOut
+          if ($versionOut -notmatch '^kunai ') {
+            throw "--version must print kunai semver, got: $versionOut"
+          }
+          & $bin --help | Out-Null
+          Write-Host "✓ ${{ matrix.asset }} boots on ${{ matrix.os }}"
