@@ -59,6 +59,15 @@ Use `/provider` from browse or playback command surfaces to change provider. Pro
 
 These keys are available while `mpv` is active and the shell is supervising it.
 
+### Persistent playing footer (terminal-owned)
+
+The dense footer during `operation === "playing"` keeps only high-frequency
+actions (capped by `selectFooterActions`): `/` commands, `n`/`p` when available,
+`o` source, and `q` stop. Series `e`/`a` follow those and may overflow the cap
+when next/prev are both present. It does **not** list every mpv bridge chord.
+
+### Live chords (terminal + mpv)
+
 | Key         | Action                                                                               |
 | ----------- | ------------------------------------------------------------------------------------ |
 | `q`         | Stop playback and enter post-playback controls                                       |
@@ -68,16 +77,28 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | `a`         | Pause/resume autoplay for the current chain                                          |
 | `u`         | Pause/resume autoskip for the current title/session                                  |
 | `e`         | Open episode picker without changing episode until selection is confirmed            |
-| `k`         | Open combined stream picker without changing stream until selection is confirmed     |
+| `k`         | Open quality picker without changing quality until selection is confirmed            |
 | `o`         | Open source picker without changing source until selection is confirmed              |
-| `v`         | Open quality picker without changing quality until selection is confirmed            |
 | `f`         | Try fallback provider when available                                                 |
 | `/provider` | Open provider picker without changing provider until selection is confirmed          |
-| `r`         | Recover current playback                                                             |
 | `s`         | Reload subtitles                                                                     |
 | `b`         | Manually skip the currently offered timing segment                                   |
-| `m`         | Temporarily show runtime memory/health panel                                         |
+| `m`         | Open title control menu (`/memory` documents the memory panel)                       |
 | `x`         | Toggle stop-after-current when available                                             |
+| `d`         | Open diagnostics                                                                     |
+
+### Overflow / mpv-owned (documented in `?`, not the footer)
+
+| Key       | Action                                                        |
+| --------- | ------------------------------------------------------------- |
+| `v` / `V` | Quality alias in mpv (same as `k`; terminal also accepts `v`) |
+| `Ctrl+R`  | Refresh the stream for the same episode (mpv bridge)          |
+| `Alt+R`   | Resume to the saved history position (mpv bridge)             |
+| `r`       | Recover current playback on stall/trouble surfaces            |
+
+Overflow actions also stay reachable from `/` commands and the `?` help overlay.
+Footer density follows `.docs/ux-architecture.md`: 3–4 live shortcuts plus
+`/ commands`, not a full chord dump.
 
 `Shift+S` is intentionally uppercase because lowercase `s` reloads subtitles
 during active playback. Lowercase `g` is not used for this action because `g`

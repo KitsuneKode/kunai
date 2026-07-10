@@ -160,19 +160,19 @@ Reference scratchpad: `apps/experiments/scratchpads/provider-videasy-player/VIDE
 
 Terminal shortcuts are centralized in `apps/cli/src/app-shell/playback-shell-input.ts`. `LoadingShell` dispatches through `resolvePlaybackShellInput`; footer letter keys are suppressed via `letterKeysHandledExternally` ( `/` still opens commands). mpv bridge remains the mpv-window owner for the same chords.
 
-| Priority | Item                                                    | Status                                                                        |
-| -------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| P0       | Unblock `r`/`f`/`d` during `operation === "playing"`    | **Done** — stall/trouble + healthy play paths                                 |
-| P1       | Defer HLS temp cleanup until persistent session release | **Done** — `PlayerServiceImpl` defers until `releasePersistentSession()`      |
-| P1       | Single playback key map                                 | **Done** — `playback-shell-input.ts`                                          |
-| P2       | Footer vs GO hint parity                                | **Open** — footer shows `e`/`a`/`o`/`q`/`/`; GO row lists `n`/`p`/`k`/`u`/`x` |
+| Priority | Item                                                    | Status                                                                                                                                                                      |
+| -------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Unblock `r`/`f`/`d` during `operation === "playing"`    | **Done** — stall/trouble + healthy play paths                                                                                                                               |
+| P1       | Defer HLS temp cleanup until persistent session release | **Done** — `PlayerServiceImpl` defers until `releasePersistentSession()`                                                                                                    |
+| P1       | Single playback key map                                 | **Done** — `playback-shell-input.ts`                                                                                                                                        |
+| P2       | Footer vs GO hint parity                                | **Done** — playing footer keeps `n`/`p`/`o`/`q`/`/` (series `e`/`a` when cap allows); mpv overflow (`k`/`v`/`u`/`x`/`Ctrl+R`/`Alt+R`) documented via `helpOnly` + `?` / `/` |
 
 ## Remaining Follow-Up
 
 - Add provider/source preference learning for subtitle quality and subtitle source success rate.
 - Benchmark HLS startup with the user config vs clean mpv config.
 - Promote the command queue into a fuller player actor if refresh/fallback/reload policies become more complex.
-- P2 footer/GO parity or document overflow behind `/`.
+- ~~P2 footer/GO parity or document overflow behind `/`.~~ **Done** — overflow lives in `?` help / `/` commands; playing footer stays terminal-owned and capped.
 
 ## Manual Verification Checklist
 

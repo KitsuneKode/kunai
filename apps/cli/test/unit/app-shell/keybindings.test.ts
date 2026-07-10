@@ -41,10 +41,11 @@ test("matchBinding matches a printable chord and respects ctrl modifier", () => 
   expect(matchBinding("global", "c", { ctrl: true })?.id).toBe("quit");
 });
 
-test("matchBinding distinguishes Ctrl+R (refresh) from Alt+R (resume-seek)", () => {
-  expect(matchBinding("player", "r", { ctrl: true })?.id).toBe("player-refresh");
-  expect(matchBinding("player", "r", { meta: true })?.id).toBe("player-resume-seek");
-  // bare "r" in the player is neither (replay is post-play).
+test("matchBinding skips mpv-owned refresh/resume chords (helpOnly)", () => {
+  // Ctrl+R / Alt+R are owned by kunai-bridge.lua — documented in help, not matched here.
+  expect(matchBinding("player", "r", { ctrl: true })).toBeNull();
+  expect(matchBinding("player", "r", { meta: true })).toBeNull();
+  // bare "r" in the player is neither (replay is post-play; recover is trouble-path).
   expect(matchBinding("player", "r", {})).toBeNull();
 });
 
@@ -123,10 +124,35 @@ test("player-scope bindings mirror the mpv bridge (k = quality, not streams)", (
   const quality = KEYBINDINGS.find((binding) => binding.id === "player-quality");
   expect(quality?.chord.input).toBe("k");
   expect(quality?.label.toLowerCase()).toContain("quality");
-  // there is no bare "v" player binding (the old help panel invented one).
-  expect(
-    KEYBINDINGS.some((binding) => binding.scope === "player" && binding.chord.input === "v"),
-  ).toBe(false);
+  expect(quality?.helpOnly).toBeUndefined();
+  // mpv also binds v/V as a quality alias — documented helpOnly, not a live terminal match.
+  const mpvAlias = KEYBINDINGS.find((binding) => binding.id === "player-quality-mpv-alias");
+  expect(mpvAlias?.chord.input).toBe("v");
+  expect(mpvAlias?.helpOnly).toBe(true);
+  expect(matchBinding("player", "v", {})).toBeNull();
+});
+
+test("player help documents mpv-owned quality and refresh chords", () => {
+  const sections = helpSectionsForScope("player");
+  const labels = sections.flatMap((section) => section.items.map((item) => item.label)).join(" ");
+  const keys = sections.flatMap((section) => section.items.map((item) => item.keys)).join(" ");
+  expect(labels.toLowerCase()).toMatch(/quality/);
+  expect(labels.toLowerCase()).toMatch(/refresh/);
+  expect(labels.toLowerCase()).toMatch(/autoskip/);
+  expect(keys.toLowerCase()).toMatch(/ctrl\+r/);
+  // Overflow clarity: help points at / and ? rather than stuffing the footer.
+  expect(labels.toLowerCase()).toMatch(/\/ and \?/);
+});
+
+test("mpv-owned player chords are helpOnly and stay out of footerHints", () => {
+  for (const id of ["player-refresh", "player-resume-seek", "player-quality-mpv-alias"] as const) {
+    const binding = KEYBINDINGS.find((candidate) => candidate.id === id);
+    expect(binding?.helpOnly).toBe(true);
+  }
+  const hintLabels = footerHints("player").map((hint) => hint.label.toLowerCase());
+  expect(hintLabels.some((label) => label.includes("refresh"))).toBe(false);
+  // Quality stays live for terminal `k`, but has no footerPriority — not a footer hint.
+  expect(hintLabels).not.toContain("quality");
 });
 
 test("buildFooterActionsFromBindings preserves display keys and appends the command tail", () => {

@@ -106,7 +106,10 @@ Honest rail labels; dominant phase after 10s; `resolveStageFromOperation` fix.
 
 ### 2D — Footer vs GO parity
 
-Document overflow behind `/`; align quality key to `k`.
+**Done.** Playing footer stays dense (`n`/`p`/`o`/`q`/`/` + series `e`/`a`).
+Quality is `k` (mpv also binds `v`). Overflow chords (`Ctrl+R`, `Alt+R`, `v`,
+`u`/`x` when not in the capped footer) are documented in `?` help / `/` commands
+via `helpOnly` bindings — see `.docs/keybindings.md`.
 
 ---
 

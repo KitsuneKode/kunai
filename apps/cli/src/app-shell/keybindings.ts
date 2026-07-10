@@ -12,10 +12,11 @@ import type { FooterAction, ShellAction } from "./types";
  * keys that are actually bound.
  *
  * Accuracy note: the in-player ("player" scope) chords mirror the mpv Lua bridge
- * (`apps/cli/assets/mpv/kunai-bridge.lua`) exactly — `n`/`p` navigate, `b` skips,
- * `k` opens the quality picker in the terminal, Ctrl+R refreshes the stream, Alt+R
- * resumes to the saved position. Surface-specific hint builders read these bindings
- * by action id, so changing a chord here updates help/footer playback copy together.
+ * (`apps/cli/assets/mpv/kunai-bridge.lua`) — `n`/`p` navigate, `b` skips, `k`/`v`
+ * open quality, Ctrl+R refreshes, Alt+R resumes. The persistent playing footer stays
+ * dense (`n`/`p`/`o`/`q`/`/` plus series `e`/`a`); mpv-owned overflow chords
+ * (`Ctrl+R`, `Alt+R`, `v`) are `helpOnly` so `?` documents them without stuffing
+ * the footer. Surface hint builders read bindings by action id.
  */
 
 export type KeyScope =
@@ -365,7 +366,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "player-autoskip",
     chord: { input: "u" },
-    label: "Toggle autoskip",
+    label: "Toggle autoskip (also via / and ?; not in the playing footer)",
     hintLabel: "autoskip",
     scope: "player",
     group: "In the player",
@@ -374,7 +375,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "player-stop-after-current",
     chord: { input: "x" },
-    label: "Stop after current episode",
+    label: "Stop after current episode (also via / and ?; not in the playing footer)",
     hintLabel: "stop after",
     scope: "player",
     group: "In the player",
@@ -409,25 +410,38 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-quality",
     chord: { input: "k" },
     display: "k / K",
-    label: "Choose quality (in the terminal; v in mpv)",
+    label: "Choose quality (terminal + mpv; overflow via / and ?)",
     hintLabel: "quality",
     scope: "player",
     group: "In the player",
   },
   {
-    id: "player-refresh",
-    chord: { input: "r", ctrl: true },
-    label: "Refresh the stream (same episode)",
+    id: "player-quality-mpv-alias",
+    chord: { input: "v" },
+    display: "v / V",
+    label: "Choose quality (mpv alias for k; also via / and ?)",
+    hintLabel: "quality",
     scope: "player",
     group: "In the player",
+    helpOnly: true,
+  },
+  {
+    id: "player-refresh",
+    chord: { input: "r", ctrl: true },
+    display: "Ctrl+R",
+    label: "Refresh the stream in mpv (same episode; also via / and ?)",
+    scope: "player",
+    group: "In the player",
+    helpOnly: true,
   },
   {
     id: "player-resume-seek",
     chord: { input: "r", meta: true },
     display: "Alt+R",
-    label: "Resume to your saved position",
+    label: "Resume to your saved position in mpv (also via / and ?)",
     scope: "player",
     group: "In the player",
+    helpOnly: true,
   },
 
   // ── Post-play — terminal footer ──

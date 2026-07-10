@@ -100,12 +100,17 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
   );
 
   if (state.operation === "playing") {
+    // Terminal-owned dense set: next/prev/source/stop (+ /). Series episode/autoplay
+    // follow so selectFooterActions can drop them first on narrow caps — never dump
+    // mpv overflow chords (k/u/x/Ctrl+R) into this row.
     const playingFooterActions: readonly FooterAction[] = [
       footerActionFromBinding("command-palette", "command-mode", bindings, { primary: true }),
       ...(state.hasNextEpisode ? [footerActionFromBinding("player-next", "next", bindings)] : []),
       ...(state.hasPreviousEpisode
         ? [footerActionFromBinding("player-previous", "previous", bindings)]
         : []),
+      footerActionFromBinding("player-source", "source", bindings),
+      footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
       ...(isSeriesPlayback
         ? [
             footerActionFromBinding("player-episode", "pick-episode", bindings),
@@ -114,8 +119,6 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
             }),
           ]
         : []),
-      footerActionFromBinding("player-source", "source", bindings),
-      footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
     ];
     return selectFooterActions(playingFooterActions, state.footerMode ?? "detailed");
   }
