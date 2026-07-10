@@ -47,7 +47,12 @@ import {
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
-import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
+import {
+  DIAGNOSTICS_EXPORT_FILE_PATTERN,
+  DIAGNOSTICS_FILE_RETENTION,
+  DIAGNOSTICS_REPORT_FILE_PATTERN,
+  pruneOldestFiles,
+} from "@/services/diagnostics/retention";
 import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
@@ -1193,11 +1198,11 @@ async function handleExportDiagnostics(container: Container): Promise<"handled">
     buildSupportBundleInputFromContainer(container),
   );
   await writeAtomicJson(path, bundle);
-  await pruneOldDiagnosticFiles({
-    dir: process.cwd(),
-    prefix: "kunai-diagnostics-export-",
-    maxFiles: 10,
-  });
+  await pruneOldestFiles(
+    process.cwd(),
+    DIAGNOSTICS_EXPORT_FILE_PATTERN,
+    DIAGNOSTICS_FILE_RETENTION,
+  );
   container.diagnosticsService.record(
     buildUiDiagnosticEvent({
       operation: "export-diagnostics",
@@ -1239,11 +1244,11 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
     );
     await writeAtomicJson(path, bundle);
     const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });
-    await pruneOldDiagnosticFiles({
-      dir: process.cwd(),
-      prefix: "kunai-diagnostics-report-",
-      maxFiles: 10,
-    });
+    await pruneOldestFiles(
+      process.cwd(),
+      DIAGNOSTICS_REPORT_FILE_PATTERN,
+      DIAGNOSTICS_FILE_RETENTION,
+    );
     container.diagnosticsService.record(
       buildUiDiagnosticEvent({
         operation: "diagnostics.report.exported",

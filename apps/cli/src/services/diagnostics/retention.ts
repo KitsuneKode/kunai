@@ -1,6 +1,18 @@
-import { readdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { pruneOldestFiles } from "./prune-oldest-files";
 
+export { pruneOldestFiles } from "./prune-oldest-files";
+
+/** Default retention for diagnostics exports and JSONL traces. */
+export const DIAGNOSTICS_FILE_RETENTION = 10;
+
+export const DIAGNOSTICS_EXPORT_FILE_PATTERN = /^kunai-diagnostics-export-.*\.json$/;
+export const DIAGNOSTICS_REPORT_FILE_PATTERN = /^kunai-diagnostics-report-.*\.json$/;
+export const DIAGNOSTICS_TRACE_FILE_PATTERN = /^kunai-trace-.*\.jsonl$/;
+
+/**
+ * @deprecated Prefer {@link pruneOldestFiles} with an explicit RegExp pattern.
+ * Kept for callers that still match by filename prefix.
+ */
 export async function pruneOldDiagnosticFiles({
   dir,
   prefix,
@@ -10,37 +22,6 @@ export async function pruneOldDiagnosticFiles({
   readonly prefix: string;
   readonly maxFiles: number;
 }): Promise<void> {
-  if (maxFiles < 1) return;
-
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return;
-  }
-
-  const matching = (
-    await Promise.all(
-      entries
-        .filter((entry) => entry.startsWith(prefix))
-        .map(async (entry) => {
-          const path = join(dir, entry);
-          try {
-            const stats = await stat(path);
-            return stats.isFile() ? { entry, path, mtimeMs: stats.mtimeMs } : null;
-          } catch {
-            return null;
-          }
-        }),
-    )
-  ).filter(
-    (entry): entry is { readonly entry: string; readonly path: string; readonly mtimeMs: number } =>
-      Boolean(entry),
-  );
-
-  const stale = matching
-    .sort((left, right) => right.mtimeMs - left.mtimeMs || right.entry.localeCompare(left.entry))
-    .slice(maxFiles);
-
-  await Promise.all(stale.map((entry) => rm(entry.path, { force: true })));
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await pruneOldestFiles(dir, new RegExp(`^${escaped}`), maxFiles);
 }

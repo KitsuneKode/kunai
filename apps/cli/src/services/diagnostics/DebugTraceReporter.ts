@@ -1,10 +1,14 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import type { DiagnosticCategory, DiagnosticEventInput } from "./diagnostic-event";
 import { normalizeDiagnosticEvent } from "./diagnostic-event";
 import { redactDiagnosticValue } from "./redaction";
-import { pruneOldDiagnosticFiles } from "./retention";
+import {
+  DIAGNOSTICS_FILE_RETENTION,
+  DIAGNOSTICS_TRACE_FILE_PATTERN,
+  pruneOldestFiles,
+} from "./retention";
 
 export type DebugTraceReporterOptions = {
   readonly filePath: string;
@@ -23,7 +27,9 @@ export class DebugTraceReporter {
   constructor(private readonly options: DebugTraceReporterOptions) {
     const traceDir = dirname(options.filePath);
     mkdirSync(traceDir, { recursive: true });
-    void pruneOldDiagnosticFiles({ dir: traceDir, prefix: "kunai-trace-", maxFiles: 10 });
+    // Create the new trace file before pruning so retention counts include it.
+    writeFileSync(options.filePath, "", { flag: "a" });
+    void pruneOldestFiles(traceDir, DIAGNOSTICS_TRACE_FILE_PATTERN, DIAGNOSTICS_FILE_RETENTION);
   }
 
   record(event: DiagnosticEventInput): void {
