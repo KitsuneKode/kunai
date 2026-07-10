@@ -34,6 +34,7 @@ const SOLO_LEVELING: SearchResult = {
 };
 
 const disposers: Array<() => void> = [];
+const liveProviderTest = process.env.KUNAI_LIVE_PROVIDER_TESTS === "1" ? test : test.skip;
 
 afterEach(() => {
   while (disposers.length > 0) {
@@ -124,7 +125,7 @@ describe("anime discovery → resolve handoff (CLI-shaped)", () => {
     expect(failure?.result?.streams.length).toBe(0);
   });
 
-  test(
+  liveProviderTest(
     "miruro listEpisodes after AniList handoff uses pipe titles without AniList/Jikan enrichment",
     async () => {
       const { container, dispose } = await createIsolatedContainer("miruro-episodes");
@@ -162,7 +163,7 @@ describe("anime discovery → resolve handoff (CLI-shaped)", () => {
     { timeout: 60_000 },
   );
 
-  test(
+  liveProviderTest(
     "miruro resolves a playable stream after AniList search handoff (Farming Life S2)",
     async () => {
       const { container, dispose } = await createIsolatedContainer("miruro-resolve");
