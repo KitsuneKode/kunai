@@ -123,9 +123,12 @@ export function resolvedRootContentFromSurface(
     case "root-overlay":
       // Browse / post-play keep local React state (query, selection, calendar).
       // Unmounting them when an overlay opens was resetting that state on close.
-      return rootContent
-        ? { kind: "overlay-over-mounted", session: rootContent }
-        : { kind: "overlay" };
+      // Other kinds (picker, loading, …) unmount so their useInput handlers do
+      // not compete under the overlay.
+      if (rootContent && (rootContent.kind === "browse" || rootContent.kind === "post-playback")) {
+        return { kind: "overlay-over-mounted", session: rootContent };
+      }
+      return { kind: "overlay" };
     case "mounted-screen":
     case "idle":
     default:

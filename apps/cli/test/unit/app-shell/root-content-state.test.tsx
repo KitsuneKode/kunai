@@ -103,20 +103,38 @@ describe("root content state", () => {
     clearRootContentSession();
   });
 
-  test("resolvedRootContentFromSurface keeps mounted session under overlay", () => {
-    const session = mountRootContent({
-      kind: "browse",
-      fallbackValue: "done",
-      renderContent: () => React.createElement("text", null, "browse"),
-    });
-    const mounted = getRootContentSession();
-    expect(resolvedRootContentFromSurface("root-overlay", mounted)).toEqual({
-      kind: "overlay-over-mounted",
-      session: mounted,
-    });
+  test("resolvedRootContentFromSurface keeps browse/post-playback under overlay", () => {
+    for (const kind of ["browse", "post-playback"] as const) {
+      const session = mountRootContent({
+        kind,
+        fallbackValue: "done",
+        renderContent: () => React.createElement("text", null, kind),
+      });
+      const mounted = getRootContentSession();
+      expect(resolvedRootContentFromSurface("root-overlay", mounted)).toEqual({
+        kind: "overlay-over-mounted",
+        session: mounted,
+      });
+      session.close("done");
+    }
     expect(resolvedRootContentFromSurface("root-overlay", null)).toEqual({ kind: "overlay" });
     expect(resolvedRootContentFromSurface("playback", null)).toEqual({ kind: "playback" });
-    session.close("done");
+    clearRootContentSession();
+  });
+
+  test("resolvedRootContentFromSurface unmounts picker/loading under overlay", () => {
+    for (const kind of ["picker", "loading"] as const) {
+      const session = mountRootContent({
+        kind,
+        fallbackValue: "done",
+        renderContent: () => React.createElement("text", null, kind),
+      });
+      const mounted = getRootContentSession();
+      expect(resolvedRootContentFromSurface("root-overlay", mounted)).toEqual({
+        kind: "overlay",
+      });
+      session.close("done");
+    }
     clearRootContentSession();
   });
 
@@ -135,6 +153,24 @@ describe("root content state", () => {
         { rootContent: mounted },
       ),
     ).toEqual({ kind: "overlay-over-mounted", session: mounted });
+    session.close("done");
+    clearRootContentSession();
+  });
+
+  test("resolveRootContentFromSession does not keep picker under diagnostics overlay", () => {
+    const session = mountRootContent({
+      kind: "picker",
+      fallbackValue: "done",
+      renderContent: () => React.createElement("text", null, "picker"),
+    });
+    expect(
+      resolveRootContentFromSession(
+        baseSession({
+          activeModals: [{ type: "diagnostics" }],
+        }),
+        { rootContent: getRootContentSession() },
+      ),
+    ).toEqual({ kind: "overlay" });
     session.close("done");
     clearRootContentSession();
   });
