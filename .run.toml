@@ -1,0 +1,56 @@
+version = 1
+default_profile = "dev"
+
+# Global environment variables applied to all profiles
+[env]
+FORCE_COLOR = "1"
+
+[profiles.dev]
+command = "trmw --profile editor -- bun dev"
+description = "Start the interactive CLI in development mode (hot-reloads apps/cli)."
+alias = "d"
+
+[profiles.default]
+command = "trmw --profile editor -- bun start"
+description = "Run the compiled production-ready bundle of the CLI locally."
+alias = "s"
+
+[profiles.bn]
+command = "trmw --profile editor -- ./apps/cli/dist/bin/kunai-linux-x64"
+description = "Execute the compiled local host binary directly."
+alias = "bin"
+
+[profiles.relay]
+command = "bun run dev:relay"
+description = "Start the local relay server in development mode."
+alias = "r"
+
+[profiles.docs]
+command = "bun run dev:docs"
+description = "Start the Next.js/Fumadocs documentation server."
+alias = "doc"
+
+[profiles.lint]
+command = "bun lint"
+description = "Run oxlint, formatting, and markdown checks across all packages."
+alias = "l"
+
+[profiles.typecheck]
+command = "turbo run typecheck"
+description = "Run TypeScript compilation checks across all monorepo workspaces."
+alias = "tc"
+
+[profiles.test]
+command = "turbo run test"
+description = "Run unit and integration test suites across apps and packages."
+alias = "t"
+
+[profiles.build]
+command = "bun run build"
+description = "Build all workspaces and package the host CLI binary."
+alias = "b"
+
+[profiles.ci]
+command = "bun run ci"
+description = "Execute full quality checks (typecheck + lint + fmt:check + tests)."
+alias = "ci"

@@ -4,7 +4,6 @@ node_modules
 
 
 next-env.d.ts
-.run.toml
 .claude
 .codex
 .antigravity
