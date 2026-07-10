@@ -1,3 +1,4 @@
+import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-async";
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
@@ -289,7 +290,8 @@ export function BrowseShell<T>({
     canFocusIdle: false,
     selectedIndex: 0,
   });
-  const requestIdRef = useRef(0);
+  const searchRequestGateRef = useRef(createLatestRequestGate());
+  const detailRequestGateRef = useRef(createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -395,12 +397,10 @@ export function BrowseShell<T>({
     const trimmed = parsedQuery.searchQuery.trim();
     const rawQuery = query.trim();
     const hasFilters = hasBrowseResultFilters(parsedQuery.filters);
-    if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters) || searchState === "loading")
-      return;
+    if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters)) return;
     const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
+    const requestId = searchRequestGateRef.current.begin();
     setSearchState("loading");
     setFocusZone("query");
     setErrorMessage(null);
@@ -409,7 +409,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onSearch(rawQuery);
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
       const needsLocalFilters =
         response.localFilterBadges === undefined && response.upstreamFilterBadges === undefined;
       const filteredOptions = needsLocalFilters
@@ -438,7 +438,7 @@ export function BrowseShell<T>({
       setActiveFilterBadges(activeBadges);
       setSearchState("ready");
     } catch (error) {
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -446,7 +446,7 @@ export function BrowseShell<T>({
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Search failed.");
     }
-  }, [query, searchState, onSearch, resetCalendar]);
+  }, [query, onSearch, resetCalendar]);
 
   const handleQuerySubmit = useCallback(() => {
     const isDirty = query.trim() !== lastSearchedQuery;
@@ -459,10 +459,9 @@ export function BrowseShell<T>({
   }, [query, lastSearchedQuery, displayOptions, selectedIndex, searchState, onSubmit, runSearch]);
 
   const loadDiscovery = async () => {
-    if (!onLoadDiscovery || searchState === "loading") return;
+    if (!onLoadDiscovery) return;
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
+    const requestId = searchRequestGateRef.current.begin();
     setQuery("");
     setSearchState("loading");
     setErrorMessage(null);
@@ -471,7 +470,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadDiscovery();
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setLastSearchedQuery("");
       setOptions(response.options);
@@ -481,7 +480,7 @@ export function BrowseShell<T>({
       setActiveFilterBadges([]);
       setSearchState("ready");
     } catch (error) {
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -492,10 +491,9 @@ export function BrowseShell<T>({
   };
 
   const loadRecommendations = async () => {
-    if (!onLoadRecommendations || searchState === "loading") return;
+    if (!onLoadRecommendations) return;
 
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
+    const requestId = searchRequestGateRef.current.begin();
     setQuery("");
     setSearchState("loading");
     setErrorMessage(null);
@@ -504,7 +502,7 @@ export function BrowseShell<T>({
 
     try {
       const response = await onLoadRecommendations();
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setLastSearchedQuery("");
       setOptions(response.options);
@@ -517,7 +515,9 @@ export function BrowseShell<T>({
       if (response.revalidate) {
         void response.revalidate
           .then((nextResponse) => {
-            if (!mountedRef.current || requestIdRef.current !== requestId) return undefined;
+            if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) {
+              return undefined;
+            }
             setOptions(nextResponse.options);
             setSelectedIndex(0);
             setResultSubtitle(nextResponse.subtitle);
@@ -532,7 +532,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (requestIdRef.current !== requestId) return;
+      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
@@ -543,6 +543,7 @@ export function BrowseShell<T>({
   };
 
   const closeOverlay = () => {
+    detailRequestGateRef.current.invalidate();
     setActiveOverlay(null);
   };
 
@@ -579,6 +580,7 @@ export function BrowseShell<T>({
     (option?: BrowseShellOption<T>) => {
       const resolved = option ?? selectedOption;
       if (!resolved) return;
+      const detailRequestId = detailRequestGateRef.current.begin();
       const panel = buildBrowseDetailsPanel(resolved);
       setCommandMode(false);
       setFocusZone("query");
@@ -606,7 +608,9 @@ export function BrowseShell<T>({
           try {
             const detail = await fetchTitleDetail(titleId, seed.type);
             setActiveOverlay((current) =>
-              current && current.type === "details"
+              detailRequestGateRef.current.isCurrent(detailRequestId) &&
+              current &&
+              current.type === "details"
                 ? {
                     ...current,
                     sheet: buildDetailsSheet({
@@ -626,6 +630,16 @@ export function BrowseShell<T>({
       }
     },
     [selectedOption],
+  );
+
+  const runMutationWithFeedback = useCallback(
+    (operation: () => Promise<void> | void, successMessage: string, failurePrefix: string) => {
+      void runBrowseMutation(operation).then((result) => {
+        flashActionFeedback(result.ok ? successMessage : `${failurePrefix}: ${result.message}`);
+        return undefined;
+      });
+    },
+    [flashActionFeedback],
   );
 
   const notificationDetailsPending = useSyncExternalStore(
@@ -930,13 +944,19 @@ export function BrowseShell<T>({
         }
         // Actions advertised in the sheet footer, dispatched against the highlighted row.
         if (input.toLowerCase() === "w" && selectedOption && onWatchlistSelected) {
-          void Promise.resolve(onWatchlistSelected(selectedOption.value));
-          flashActionFeedback(`Watchlisted ${selectedOption.label}`);
+          runMutationWithFeedback(
+            () => onWatchlistSelected(selectedOption.value),
+            `Watchlisted ${selectedOption.label}`,
+            "Could not watchlist",
+          );
           return;
         }
         if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
-          void Promise.resolve(onQueueSelected(selectedOption.value));
-          flashActionFeedback(`Queued ${selectedOption.label}`);
+          runMutationWithFeedback(
+            () => onQueueSelected(selectedOption.value),
+            `Queued ${selectedOption.label}`,
+            "Could not queue",
+          );
           return;
         }
         if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
@@ -1045,18 +1065,27 @@ export function BrowseShell<T>({
         searchState === "ready"
       ) {
         if (listEffect.kind === "add-to-up-next" && onQueueSelected) {
-          void Promise.resolve(onQueueSelected(selectedOption.value));
-          flashActionFeedback(`Added ${selectedOption.label} to Up Next`);
+          runMutationWithFeedback(
+            () => onQueueSelected(selectedOption.value),
+            `Added ${selectedOption.label} to Up Next`,
+            "Could not queue",
+          );
           return;
         }
         if (listEffect.kind === "add-to-watchlist" && onWatchlistSelected) {
-          void Promise.resolve(onWatchlistSelected(selectedOption.value));
-          flashActionFeedback(`Watchlisted ${selectedOption.label}`);
+          runMutationWithFeedback(
+            () => onWatchlistSelected(selectedOption.value),
+            `Watchlisted ${selectedOption.label}`,
+            "Could not watchlist",
+          );
           return;
         }
         if (listEffect.kind === "follow" && onFollowSelected) {
-          void Promise.resolve(onFollowSelected(selectedOption.value));
-          flashActionFeedback(`Following ${selectedOption.label}`);
+          runMutationWithFeedback(
+            () => onFollowSelected(selectedOption.value),
+            `Following ${selectedOption.label}`,
+            "Could not follow",
+          );
           return;
         }
       }
