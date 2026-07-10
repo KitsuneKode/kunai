@@ -141,7 +141,7 @@ export async function prepareReplayTitleForProvider(
     container.stateManager.dispatch({
       type: "SET_MODE",
       mode: "anime",
-      provider: state.provider,
+      provider: state.defaultProviders.anime,
     });
   }
 

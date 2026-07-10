@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
+  prepareReplayTitleForProvider,
   selectContinueHistoryEntry,
   selectContinueHistoryEntryFromRecent,
   selectLocalContinueCandidate,
@@ -116,6 +117,40 @@ describe("launch entry helpers", () => {
       launchSource: "history",
       isAnime: true,
     });
+  });
+
+  test("anime replay restores the anime default provider instead of the active YouTube provider", async () => {
+    const transitions: unknown[] = [];
+    let state: {
+      mode: "series" | "anime" | "youtube";
+      provider: string;
+      defaultProviders: { series: string; anime: string; youtube: string };
+    } = {
+      mode: "youtube",
+      provider: "youtube",
+      defaultProviders: { series: "vidking", anime: "allanime", youtube: "youtube" },
+    };
+    await prepareReplayTitleForProvider(
+      {
+        config: {} as never,
+        historyRepository: {} as never,
+        providerRegistry: {
+          get: () => ({ metadata: { catalogIdentity: "anilist" } }),
+        },
+        stateManager: {
+          getState: () => state,
+          dispatch: (transition: { type: string; mode?: "anime"; provider?: string }) => {
+            transitions.push(transition);
+            if (transition.type === "SET_MODE" && transition.mode && transition.provider) {
+              state = { ...state, mode: transition.mode, provider: transition.provider };
+            }
+          },
+        },
+      } as never,
+      { id: "anilist:1", type: "series", name: "Anime", isAnime: true },
+    );
+
+    expect(transitions).toContainEqual({ type: "SET_MODE", mode: "anime", provider: "allanime" });
   });
 
   test("episodeFromHistorySelection prefers explicit continuation targets", () => {
