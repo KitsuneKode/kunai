@@ -232,6 +232,44 @@ test("buildQualityPickerOptions sorts by highest quality first", () => {
   ]);
 });
 
+test("deferredLocator-only streams are not playable quality candidates", () => {
+  const stream = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...streamWithCandidates.providerResolveResult!,
+      streams: [
+        streamWithCandidates.providerResolveResult!.streams[0]!,
+        {
+          id: "stream-deferred",
+          providerId: "vidking",
+          sourceId: "source-a",
+          protocol: "hls",
+          container: "m3u8",
+          qualityLabel: "720p",
+          qualityRank: 720,
+          deferredLocator: "allmanga-ak:pending",
+          confidence: 0.9,
+          cachePolicy: {
+            ttlClass: "stream-manifest",
+            scope: "local",
+            keyParts: [],
+          },
+        },
+      ],
+    },
+  } satisfies StreamInfo;
+
+  const quality = buildQualityPickerOptions(stream);
+  const summary = buildPlaybackControlSummary(stream);
+  const picker = buildStreamPickerOptions(stream);
+
+  expect(quality.map((option) => option.value)).toEqual(["stream-1080"]);
+  expect(picker.map((option) => option.value)).toEqual(["stream-1080"]);
+  expect(summary.streamCount).toBe(1);
+  expect(summary.qualityCount).toBe(1);
+  expect(summary.showQualityControl).toBe(false);
+});
+
 test("buildQualityPickerOptions exposes audio and hard-subtitle language details", () => {
   const options = buildQualityPickerOptions(streamWithCandidates);
   expect(options[0]?.detail).toContain("hls  ·  m3u8  ·  audio ja  ·  hardsub en");

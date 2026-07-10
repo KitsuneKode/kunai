@@ -27,6 +27,12 @@ export type SourceInventoryCacheInput = {
   readonly schemaVersion?: string;
 };
 
+export type SourceInventoryCacheEntry = {
+  readonly inventory: ProviderResolveResult;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+};
+
 export class SourceInventoryService {
   constructor(
     private readonly repository: SourceInventoryRepository,
@@ -37,6 +43,14 @@ export class SourceInventoryService {
     input: SourceInventoryCacheInput,
     now = new Date(),
   ): Promise<ProviderResolveResult | null> {
+    const entry = await this.getEntry(input, now);
+    return entry?.inventory ?? null;
+  }
+
+  async getEntry(
+    input: SourceInventoryCacheInput,
+    now = new Date(),
+  ): Promise<SourceInventoryCacheEntry | null> {
     const key = buildSourceInventoryCacheKey(input);
     try {
       let hit = this.repository.get<ProviderResolveResult>(key, now);
@@ -54,7 +68,12 @@ export class SourceInventoryService {
           reason: hit ? "fresh-entry" : "missing-or-expired",
         },
       );
-      return hit?.inventory ?? null;
+      if (!hit) return null;
+      return {
+        inventory: hit.inventory,
+        createdAt: hit.createdAt,
+        expiresAt: hit.expiresAt,
+      };
     } catch (error) {
       this.recordCacheFailure("source-inventory.get", input, error);
       return null;

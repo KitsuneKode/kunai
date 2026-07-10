@@ -24,9 +24,12 @@ import type {
 } from "@/services/playback/PlaybackSourceInventoryView";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
+/**
+ * Quality / stream pickers only offer candidates that already have a playable URL.
+ * Deferred locators still need materialization before they are selectable as quality.
+ */
 function isPlayableStreamCandidate(stream: StreamCandidate): boolean {
-  if (typeof stream.url === "string" && stream.url.length > 0) return true;
-  return typeof stream.deferredLocator === "string" && stream.deferredLocator.length > 0;
+  return typeof stream.url === "string" && stream.url.length > 0;
 }
 
 type SourceOption = {

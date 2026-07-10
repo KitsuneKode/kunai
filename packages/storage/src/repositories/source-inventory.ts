@@ -50,6 +50,7 @@ export class SourceInventoryRepository {
             title_id = excluded.title_id,
             inventory_json = excluded.inventory_json,
             expires_at = excluded.expires_at,
+            created_at = excluded.created_at,
             last_accessed_at = excluded.last_accessed_at
         `,
       )

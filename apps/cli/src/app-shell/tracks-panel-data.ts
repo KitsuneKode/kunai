@@ -15,6 +15,9 @@ import {
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { availableAudioModesFromTrace } from "@/services/playback/PlaybackSourceInventoryProjection";
 
+/** Inventory older than this is still cache-valid but presented as aged/stale. */
+export const CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS = 2 * 60 * 1000;
+
 export type TracksPanelData = {
   readonly groups: readonly TrackCapabilityGroup[];
   readonly providerLabel: string;
@@ -49,6 +52,43 @@ function currentPresentationFromStream(
   return selected?.presentation;
 }
 
+export function formatCrossProviderCachedInventoryDetail(
+  providerName: string,
+  createdAt: string | undefined,
+  nowMs = Date.now(),
+): string {
+  const ageLabel = formatInventoryValidationAge(createdAt, nowMs);
+  if (!ageLabel) return `${providerName} · cached`;
+  if (isStaleInventoryAge(createdAt, nowMs)) {
+    return `${providerName} · stale inventory · ${ageLabel}`;
+  }
+  return `${providerName} · cached ${ageLabel}`;
+}
+
+function formatInventoryValidationAge(
+  createdAt: string | undefined,
+  nowMs: number,
+): string | undefined {
+  if (!createdAt) return undefined;
+  const then = Date.parse(createdAt);
+  if (!Number.isFinite(then) || then > nowMs) return undefined;
+  const deltaMs = nowMs - then;
+  const deltaMinutes = Math.max(0, Math.floor(deltaMs / 60_000));
+  if (deltaMinutes < 1) return "just now";
+  if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
+  const deltaHours = Math.floor(deltaMinutes / 60);
+  if (deltaHours < 48) return `${deltaHours}h ago`;
+  const deltaDays = Math.floor(deltaHours / 24);
+  return `${deltaDays}d ago`;
+}
+
+function isStaleInventoryAge(createdAt: string | undefined, nowMs: number): boolean {
+  if (!createdAt) return false;
+  const then = Date.parse(createdAt);
+  if (!Number.isFinite(then)) return false;
+  return nowMs - then >= CROSS_PROVIDER_INVENTORY_STALE_AFTER_MS;
+}
+
 async function appendCrossProviderSourceHints(
   groups: readonly TrackCapabilityGroup[],
   stream: StreamInfo | null,
@@ -71,23 +111,26 @@ async function appendCrossProviderSourceHints(
   if (compatible.length === 0) return groups;
 
   const hintRows: TrackCapability[] = [];
+  const nowMs = Date.now();
   for (const provider of compatible) {
-    const cached = await container.sourceInventory.get(
+    const cachedEntry = await container.sourceInventory.getEntry(
       buildSourceInventoryCacheInput(provider.id, title, episode, mode, config),
     );
-    if (!cached?.sources?.length) continue;
+    const sources = cachedEntry?.inventory?.sources;
+    if (!cachedEntry || !sources?.length) continue;
+    const cached = cachedEntry.inventory;
     const selected = cached.streams.find((candidate) => candidate.id === cached.selectedStreamId);
-    const sourceId = selected?.sourceId ?? cached.sources[0]?.id;
+    const sourceId = selected?.sourceId ?? sources[0]?.id;
     if (!sourceId) continue;
-    const source = cached.sources.find((entry) => entry.id === sourceId);
+    const source = sources.find((entry) => entry.id === sourceId);
     hintRows.push({
       section: "source",
       label: source?.label ?? sourceId,
       value: encodeCrossProviderSourceValue(provider.id, sourceId),
       selected: false,
       enabled: true,
-      detail: `${provider.name} · cached`,
-      risk: "normal",
+      detail: formatCrossProviderCachedInventoryDetail(provider.name, cachedEntry.createdAt, nowMs),
+      risk: isStaleInventoryAge(cachedEntry.createdAt, nowMs) ? "fallback" : "normal",
     });
   }
 
