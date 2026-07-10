@@ -6,6 +6,7 @@ import {
   buildHistoryPickerOptions,
   buildHelpPanelLines,
   buildHistoryPanelLines,
+  buildProviderAttemptTimelineLines,
   buildProviderPickerOptions,
   groupHistoryByRecency,
 } from "@/app-shell/panel-data";
@@ -249,6 +250,91 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Provider")?.detail).toContain("rivestream");
     expect(lines.find((line) => line.label === "Provider timeline")?.detail).toContain(
       "vidking failed (timeout) -> rivestream succeeded",
+    );
+  });
+
+  test("buildDiagnosticsPanelLines renders bounded provider attempt timeline under health", () => {
+    const recentEvents = [
+      {
+        timestamp: 2,
+        level: "warn" as const,
+        category: "provider" as const,
+        operation: "provider.resolve.timeline",
+        message: "Recovered via Rivestream",
+        providerId: "rivestream",
+        context: {
+          status: "recovered",
+          attempts: 2,
+          attemptTimeline: [
+            {
+              attemptId: "provider-attempt-1",
+              providerId: "vidking",
+              status: "failed",
+              failureClass: "timeout",
+              summary: "timed out fetching https://cdn.example/stream.m3u8?token=secret",
+            },
+            {
+              attemptId: "provider-attempt-2",
+              providerId: "rivestream",
+              status: "succeeded",
+              failureClass: null,
+            },
+          ],
+        },
+      },
+      {
+        timestamp: 1,
+        level: "error" as const,
+        category: "provider" as const,
+        operation: "provider.resolve.timeline",
+        message: "Earlier resolve failed",
+        providerId: "videasy",
+        context: {
+          status: "failed",
+          attempts: 1,
+          attemptTimeline: [
+            {
+              attemptId: "provider-attempt-9",
+              providerId: "videasy",
+              status: "failed",
+              failureClass: "provider-empty",
+            },
+          ],
+        },
+      },
+    ];
+
+    const timelineStrings = buildProviderAttemptTimelineLines(recentEvents);
+    expect(timelineStrings.length).toBeGreaterThan(0);
+    expect(timelineStrings.some((line) => line.includes("provider-attempt-1"))).toBe(true);
+    expect(timelineStrings.some((line) => line.includes("timeout"))).toBe(true);
+    expect(timelineStrings.some((line) => line.includes("vidking"))).toBe(true);
+    expect(timelineStrings.join("\n")).not.toContain("https://cdn.example");
+    expect(timelineStrings.join("\n")).not.toContain("token=secret");
+
+    const lines = buildDiagnosticsPanelLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents,
+    });
+
+    const healthIdx = lines.findIndex((line) => line.label === "─── Health");
+    const playbackIdx = lines.findIndex((line) => line.label === "─── Current Playback Evidence");
+    const sectionIdx = lines.findIndex((line) => line.label === "─── Provider Attempt Timeline");
+    expect(sectionIdx).toBeGreaterThan(healthIdx);
+    expect(sectionIdx).toBeLessThan(playbackIdx);
+
+    const attemptLines = lines.filter((line) => line.label.startsWith("Attempt "));
+    expect(attemptLines.length).toBeGreaterThanOrEqual(2);
+    expect(attemptLines.length).toBeLessThanOrEqual(8);
+    expect(attemptLines.some((line) => line.detail?.includes("provider-attempt-1"))).toBe(true);
+    expect(attemptLines.some((line) => line.detail?.includes("timeout"))).toBe(true);
+    expect(attemptLines.some((line) => line.detail?.includes("vidking"))).toBe(true);
+    expect(attemptLines.map((line) => line.detail ?? "").join("\n")).not.toContain(
+      "https://cdn.example",
     );
   });
 

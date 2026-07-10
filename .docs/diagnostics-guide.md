@@ -32,6 +32,8 @@ The diagnostics panel is organized into five sections:
 
 Each health row uses the grammar `OK`, `Needs attention`, `Failed`, or `Unknown`, then a short reason and one practical next step when degraded. Example: `Provider  Needs attention · VidKing timed out · Try fallback provider`.
 
+When recent `provider.resolve.timeline` events include an `attemptTimeline`, the panel inserts a bounded **Provider Attempt Timeline** section directly under Health (before Current Playback Evidence). It shows the newest attempts first (capped at eight), with attempt id, provider id, status, and failure class when present. Any embedded URLs in attempt summaries are stripped to `[redacted-url]` so stream hosts and tokens never appear in the overlay.
+
 Diagnostics are first-party and local. Always-on summary events are written to
 an in-memory buffer immediately, then best-effort persisted to the local cache
 SQLite DB (`diagnostic_events`) in the background. This cache ring is bounded to

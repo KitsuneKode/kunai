@@ -19,6 +19,7 @@ import {
 } from "@/services/continuation/history-progress";
 import { buildDiagnosticsInsight } from "@/services/diagnostics/diagnostics-insight";
 import type { DiagnosticEvent } from "@/services/diagnostics/DiagnosticsStore";
+import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory";
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
@@ -49,6 +50,8 @@ import { buildDiagnosticsPanelLinesFromInsight } from "./diagnostics-panel-lines
 import { helpSections } from "./keybindings";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
+
+const PROVIDER_ATTEMPT_TIMELINE_PANEL_LIMIT = 8;
 
 export function buildHelpPanelLines(): readonly ShellPanelLine[] {
   // Key chords are derived from the keybinding registry (single source of truth)
@@ -266,7 +269,93 @@ function buildDiagnosticsSupplementalLines({
     });
   }
 
+  lines.push(...buildProviderAttemptTimelinePanelLines(recentEvents));
+
   return lines;
+}
+
+/**
+ * Bounded, redacted provider attempt rows for the diagnostics panel.
+ * Reads `context.attemptTimeline` from `provider.resolve.timeline` events
+ * (newest first), capped at the last N attempts.
+ */
+export function buildProviderAttemptTimelineLines(
+  recentEvents: readonly DiagnosticEvent[],
+  options: { readonly maxAttempts?: number } = {},
+): string[] {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? PROVIDER_ATTEMPT_TIMELINE_PANEL_LIMIT);
+  const lines: string[] = [];
+
+  for (const event of recentEvents) {
+    if (event.operation !== "provider.resolve.timeline") continue;
+    const attemptTimeline = event.context?.attemptTimeline;
+    if (!Array.isArray(attemptTimeline) || attemptTimeline.length === 0) continue;
+
+    // Newest attempt within a resolve first so the panel matches "newest first".
+    for (const attempt of [...attemptTimeline].reverse()) {
+      const line = formatProviderAttemptTimelineLine(attempt, event);
+      if (!line) continue;
+      lines.push(line);
+      if (lines.length >= maxAttempts) return lines;
+    }
+  }
+
+  return lines;
+}
+
+function buildProviderAttemptTimelinePanelLines(
+  recentEvents: readonly DiagnosticEvent[],
+): ShellPanelLine[] {
+  const timelineLines = buildProviderAttemptTimelineLines(recentEvents);
+  if (timelineLines.length === 0) return [];
+
+  return [
+    { label: "─── Provider Attempt Timeline", detail: "", tone: "info" },
+    ...timelineLines.map((detail, index) => ({
+      label: `Attempt ${index + 1}`,
+      detail,
+      tone:
+        detail.includes(" · failed") || detail.endsWith(" failed")
+          ? ("warning" as const)
+          : ("neutral" as const),
+    })),
+  ];
+}
+
+function formatProviderAttemptTimelineLine(
+  attempt: unknown,
+  event: DiagnosticEvent,
+): string | null {
+  if (!attempt || typeof attempt !== "object") return null;
+  const record = attempt as Record<string, unknown>;
+  const providerId =
+    typeof record.providerId === "string"
+      ? record.providerId
+      : typeof event.providerId === "string"
+        ? event.providerId
+        : "provider";
+  const status = typeof record.status === "string" ? record.status : "unknown";
+  const failureClass =
+    typeof record.failureClass === "string" && record.failureClass !== "none"
+      ? record.failureClass
+      : null;
+  const attemptId =
+    typeof record.attemptId === "string"
+      ? record.attemptId
+      : typeof event.providerAttemptId === "string"
+        ? event.providerAttemptId
+        : null;
+  const summary = typeof record.summary === "string" ? record.summary : null;
+
+  const parts = [attemptId, providerId, status, failureClass, summary].filter(
+    (part): part is string => Boolean(part),
+  );
+
+  const raw = parts.join(" · ");
+  const redacted = redactDiagnosticValue(raw);
+  const text = typeof redacted === "string" ? redacted : raw;
+  // Panel copy must not show raw stream URLs even in host-preserving form.
+  return text.replace(/https?:\/\/[^\s"'<>]+/gi, "[redacted-url]");
 }
 
 function formatContinuationDecisionTimeline(events: readonly DiagnosticEvent[]): string {
