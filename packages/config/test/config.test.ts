@@ -51,4 +51,10 @@ describe("@kunai/config parse boundary", () => {
     });
     expect(merged.providerRelay).toEqual(DEFAULT_CONFIG.providerRelay);
   });
+
+  test("defaults demote Videasy from the series automatic lane", () => {
+    expect(DEFAULT_CONFIG.provider).toBe("rivestream");
+    expect(DEFAULT_CONFIG.providerPriority).not.toContain("rivestream");
+    expect(DEFAULT_CONFIG.providerPriority).toContain("videasy");
+  });
 });

@@ -188,11 +188,11 @@ export async function bootstrapPersistence(
   const mediaTrackService = new MediaTrackService();
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
-  const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
+  const { listVidkingEndpoints } = await import("@kunai/providers/videasy");
   const endpointHealth = new ProviderEndpointHealthService(
     new ProviderEndpointHealthRepository(cacheDb),
     () => new Date(),
-    listDeprecatedVidkingEndpoints().map((endpoint) => ({
+    listVidkingEndpoints().map((endpoint) => ({
       providerId: "videasy",
       endpoint,
       failureClass: "route-dead" as const,

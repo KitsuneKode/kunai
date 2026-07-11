@@ -40,9 +40,16 @@ import {
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 
-/** db.videasy enrich fetch is separate from api.videasy resolve requests. */
+/** TMDB enrich fetches (historically db.videasy.to, now often api.videasy.to/3)
+ *  are separate from stream resolve requests. */
 function videasyResolveUrls(urls: readonly string[]): string[] {
-  return urls.filter((url) => !url.includes("db.videasy.to"));
+  return urls.filter((url) => {
+    try {
+      return new URL(url).pathname.includes("sources-with-title");
+    } catch {
+      return false;
+    }
+  });
 }
 
 function videasyApiHeaders(seenHeaders: readonly Headers[]): Headers | undefined {

@@ -6,10 +6,11 @@ export const DEFAULT_OFFLINE_RUNWAY_TARGET = 2;
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
-  provider: "videasy",
+  // Rivestream is the healthy series default (2026-07-11). Videasy stream API is route-dead.
+  provider: "rivestream",
   animeProvider: "allanime",
   youtubeProvider: "youtube",
-  providerPriority: ["vidlink", "rivestream"],
+  providerPriority: ["vidlink", "videasy"],
   animeProviderPriority: ["allanime", "miruro"],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },

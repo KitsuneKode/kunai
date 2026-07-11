@@ -8,6 +8,9 @@ import {
   getVidkingFlavorForEndpoint,
   listEligibleVidkingFlavorIds,
   listPhaseBLazyProbeFlavorIds,
+  listDeprecatedVidkingEndpoints,
+  listVidkingEndpoints,
+  listVidkingFlavors,
   normalizeLegacyVideasySourceId,
   resolveFlavorEngineOptions,
   resolveVidkingPresentation,
@@ -38,6 +41,18 @@ describe("vidking flavors", () => {
 
   test("phase B excludes deprecated Sanji mirror", () => {
     expect(listPhaseBLazyProbeFlavorIds()).not.toContain("videasy-mirror-c");
+  });
+
+  test("listVidkingEndpoints seeds every flavor endpoint as curated route-dead candidates", () => {
+    const endpoints = listVidkingEndpoints();
+    expect(endpoints).toContain("mb-flix");
+    expect(endpoints).toContain("cdn");
+    expect(endpoints).toContain("downloader2");
+    expect(endpoints.length).toBe(new Set(listVidkingFlavors().map((f) => f.endpoint)).size);
+    // Deprecated-only list remains a subset; curated-dead list is the full inventory.
+    for (const endpoint of listDeprecatedVidkingEndpoints()) {
+      expect(endpoints).toContain(endpoint);
+    }
   });
 
   test("phase B includes every mapped non-blocking flavor in order", () => {

@@ -53,6 +53,7 @@ export const videasyManifest = defineProviderManifest({
     ],
   },
   notes: [
+    "2026-07-11: stream sources-with-title routes are curated route-dead; demoted from series default.",
     "Current CLI implementation uses the direct api.videasy.to payload/decryption path only.",
     "Cineplay (bc-frontend) is the default Videasy client profile; vidking.net remains an override.",
     "If the direct payload is unavailable, the CLI fails fast instead of leasing a browser.",

@@ -278,6 +278,17 @@ export function listDeprecatedVidkingEndpoints(): readonly string[] {
   return [...endpoints];
 }
 
+/** All Videasy flavor endpoints — the entire api.videasy.to/{server}/sources-with-title
+ *  API is dead (domain repurposed as a TMDB proxy). Seeded as curated-dead so the
+ *  provider engine skips them without wasting time on 404s. */
+export function listVidkingEndpoints(): readonly string[] {
+  const endpoints = new Set<string>();
+  for (const flavor of FLAVORS) {
+    endpoints.add(flavor.endpoint);
+  }
+  return [...endpoints];
+}
+
 export function isVidkingSourceDeprecated(sourceId: string): boolean {
   const normalized = sourceId.trim();
   if (!normalized) return false;
