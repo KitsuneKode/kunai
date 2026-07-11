@@ -51,19 +51,25 @@ Compared each tip against current `main` (merge-base `f6a5e1d7`; `main` is ~18 c
 
 ## B/C Research status
 
-- Videasy dossier update: pending research agent + live matrix.
-- Miruro dossier update: pending research agent + live matrix.
+- Videasy dossier updated (2026-07-11): route-dead `sources-with-title` 404; TMDB proxy `/3` still alive.
+- Miruro dossier updated (2026-07-11): reachable mirrors return pipe **403 HTML**; `.tv` TLS timeout; engine attempt timeout.
 
-## D Disposition (providers) — pending B/C
+## D Disposition (providers) — decided
 
-| Provider   | Lane    | Tentative                                                | Final |
-| ---------- | ------- | -------------------------------------------------------- | ----- |
-| YouTube    | youtube | keep                                                     |       |
-| Rivestream | series  | keep                                                     |       |
-| AllAnime   | anime   | keep                                                     |       |
-| Videasy    | series  | investigate (WIP suggests API domain drift / route-dead) |       |
-| Miruro     | anime   | investigate (pipe connect failure)                       |       |
+| Provider   | Lane    | Live class                | Final disposition                                                               |
+| ---------- | ------- | ------------------------- | ------------------------------------------------------------------------------- |
+| YouTube    | youtube | healthy                   | Keep enabled                                                                    |
+| Rivestream | series  | healthy                   | Keep enabled; become series **default**                                         |
+| AllAnime   | anime   | healthy                   | Keep enabled; remain anime default                                              |
+| Videasy    | series  | provider drift            | **Demote from default** + quarantine all stream endpoints as curated route-dead |
+| Miruro     | anime   | environment-network / WAF | **Demote from default** anime fallback; drop TLS-dead mirrors for fail-fast     |
 
-## E Repair / F Health / G Handoff
+## E Repair slices
 
-Pending decisions.
+1. Videasy: `listVidkingEndpoints` seed + default `provider` → `rivestream` + fixture tests.
+2. Miruro: remove from `animeProviderPriority`; keep `bz`/`ru` only in pipe base list + fixture tests.
+3. Do **not** commit user-owned `.run.toml` / `tmdb.ts` / `videasy/direct.ts` TMDB-base WIP.
+
+## F Health / G Handoff
+
+Pending after repairs land.

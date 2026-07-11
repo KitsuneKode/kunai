@@ -4,7 +4,20 @@
 
 - **Runtime class:** Direct HTTP pipe API by AniList ID, with browser harvest as research tooling.
 - **Production module:** `packages/providers/src/miruro/*`.
-- **Current status:** Pipe inventory is fast and browser-confirmed. Direct mpv playback can work for valid CDN HLS candidates, but some returned candidates are bad/blocked and production currently models only a small subset of Miruro's provider keys.
+- **Current status (2026-07-11):** **demote from default.** Live `container.engine.resolve(..., "miruro")` (One Piece AniList `21` / matrix E1159 fixture) fails before stream candidates. Anime default path remains AllAnime.
+
+## Production status (2026-07-11)
+
+- **Live matrix:** **fail** — One Piece fixture, isolated profile. Engine reports attempt timeout after `provider:start` (default ~12s) with zero streams.
+- **Mirror reachability (this environment, redacted):**
+  - `miruro.bz` / `miruro.ru`: DNS OK, TLS OK, root HTTP 200.
+  - `miruro.tv` / `www.miruro.tv`: DNS OK, **TLS connect timeout**.
+- **Pipe endpoint class:** On reachable mirrors, `/api/secure/pipe` returns **HTTP 403 HTML** (WAF / bot challenge shape) — not JSON/obfuscated pipe ciphertext. This is **not** pipe-key rotation and **not** decode-contract drift (those require HTTP 200 + body prefix / `x-obfuscated`).
+- **Failure taxonomy:** `environment-network` / host blocking on the pipe path, compounded by slow dead mirrors eating the engine attempt budget. Not anime lane contract breakage inside Kunai.
+- **Recommended disposition:** **demote from default** (remove from automatic `animeProviderPriority`). Keep module registered. Optional narrow repair: drop TLS-dead mirrors from the active list so failures surface as actionable pipe HTTP errors instead of opaque 12s timeouts.
+- **Sub/dub:** Not re-proven on 2026-07-11 (resolve never reached source cycling). Historical May-25 matrix still documents `kiwi`/`bee` sub/dub paths when pipe succeeds.
+- **Fixture:** One Piece AniList `21`, episode **1159** (live smoke / matrix). Research row: E100.
+- **Redaction:** do not store pipe ciphertext, CDN URLs, cookies, or local profile paths.
 
 ## Current Evidence
 
@@ -18,20 +31,20 @@ payload = { path, method: "GET", query, body: null, version: "0.2.0" }
 body = XOR with PIPE_KEY, optionally gzip, then JSON
 ```
 
-Current key still decodes live payloads:
+Decode key (public client constant; rotate when upstream rotates):
 
 ```text
 71951034f8fbcf53d89db52ceb3dc22c
 ```
 
-Official domains observed by the user and probes:
+Official domains observed historically:
 
 - `miruro.tv`
 - `miruro.to`
 - `miruro.bz`
 - `miruro.ru`
 
-From this environment, `miruro.bz` and `miruro.ru` have been the most reliable direct pipe mirrors. `miruro.tv`, `www.miruro.tv`, and `miruro.to` can close Bun fetch sockets.
+Historical note (2026-05): `miruro.bz` and `miruro.ru` were the most reliable direct pipe mirrors when the WAF allowed Bun fetch. `miruro.tv` / `www.miruro.tv` often timed out.
 
 ### Browser harvest, 2026-05-25
 
@@ -146,7 +159,13 @@ Pipe `streams[]` can include HLS-like candidates that are not equally playable f
 
 ## Recommended Fix Shape
 
-### P0: Expand Miruro provider-key inventory in experiments
+### P0 (2026-07-11): Demote + fail-fast mirrors
+
+1. Remove Miruro from default `animeProviderPriority` while AllAnime stays healthy.
+2. Prefer only mirrors that complete TLS in this class of environment; do not spend the engine timeout on known dead hosts.
+3. Re-promote only after opt-in live matrix passes with `container.engine.resolve` and honest diagnostics on WAF 403 vs connect failure.
+
+### P1: Expand Miruro provider-key inventory in experiments
 
 Before production changes:
 
@@ -158,7 +177,7 @@ Before production changes:
 3. Redact stream URLs; keep counts, hosts, qualities, referers, subtitle counts, and direct media status.
 4. Build a provider-key ranking table.
 
-### P1: Generalize production candidates
+### P2: Generalize production candidates
 
 After the table:
 
@@ -167,14 +186,14 @@ After the table:
 - Preserve audio category (`sub`/`dub`) from each episode entry.
 - Keep `subtitleDelivery` as evidence, not a hardcoded truth unless the source payload proves it.
 
-### P2: Filter and rank stream candidates
+### P3: Filter and rank stream candidates
 
 - Prefer active HLS candidates when `isActive === true`.
 - Prefer CDN HLS hosts over direct `kwik.cx` candidates when both are present.
 - Penalize candidates with recent HTTP 403 / mpv failure in source-health cache.
 - Use actual `mpv playing` latency as the strongest source-health signal.
 
-### P3: Keep browser work in the lab
+### P4: Keep browser work in the lab
 
 - Continue using Playwright browser harvest for evidence and fixtures.
 - Do not default production Miruro to Playwright.

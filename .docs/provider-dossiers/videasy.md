@@ -1,8 +1,17 @@
 # Provider: Videasy
 
-## Production status (2026-05-27)
+## Production status (2026-07-11)
 
 - **Module:** `packages/providers/src/videasy/direct.ts` + `packages/providers/src/videasy/flavors.ts`
+- **Live matrix:** **fail** — Bloodhounds S01E02 via `container.engine.resolve(..., "videasy")` (isolated profile). No playable stream; Phase A never yields candidates once stream routes are treated as route-dead.
+- **Upstream classification:** **provider drift / route-dead.** `GET api.videasy.to/{server}/sources-with-title` returns **HTTP 404** for `mb-flix` (and the stream-server shape generally). The same host still serves a working **TMDB-format proxy** under `api.videasy.to/3/*`. Former `db.videasy.to` returns 404.
+- **Recommended disposition:** **demote from default + quarantine stream endpoints.** Series default must not be Videasy while Rivestream is healthy. Seed **all** Videasy flavor endpoints as curated `route-dead` so resolve skips them instead of burning the attempt budget on 404s. Keep the module registered for rediscovery and manual picker use.
+- **Do not claim repair** until a new stream API contract is dossier-proven (not the TMDB proxy path).
+- **Fixtures:** Bloodhounds TMDB `127529` S01E02 (live smoke); Study Group TMDB `233347` S01E02 (historical mb-flix 200 in 2026-06 player capture — useful drift detector only).
+- **Redaction:** do not store signed HLS URLs, cookies, or session tokens in this dossier.
+
+## Production status (2026-05-27) — historical
+
 - **Videasy fetch timeout:** **90s** per server attempt; engine `attemptTimeoutMs` aligned (~300s cap for full cycle).
 - **Default resolve (Phase A):** up to **3** English mirrors in order — **Luffy** (`mb-flix`) → **Zoro** (`cdn`) → **Nami** (`downloader2`); no 4+4 embed fanout on the default path.
 - **Phase B (lazy):** remaining English flavors + preferred audio language (e.g. Brook / German) probed in background via `VideasyLazySourceProbeService`; inventory merges without blocking first play.
@@ -23,7 +32,7 @@
 - **Quality model:** Standard (1080p, 720p). Muxed in the `.m3u8` manifest or passed directly as stream metadata.
 - **Thumbnail/poster support:** Yes. Episode thumbnails via TMDB `still_path`. Seek-bar thumbnails natively available in `#EXT-X-IMAGE-STREAM-INF` within the resolved HLS manifest.
 - **Legacy alias:** `vidking` remains accepted as a config/cache/provider-id alias for this provider.
-- **Known failure modes:** Videasy slow responses (>12s historically caused false timeouts — now 90s). Empty WASM keys (`""`) causing decryption faults. Upstream TMDB rate-limiting. HLS manifests missing image streams randomly. Shared endpoints (`meine`, `hdmovie`) need `languageQuery` / `filterQuality` to pick the correct flavor row.
+- **Known failure modes (2026-07-11 primary):** stream API route-dead (`sources-with-title` HTTP 404). Historical: slow responses (>12s false timeouts — now 90s), empty WASM keys, TMDB rate-limiting, HLS image-stream gaps, shared endpoints needing `languageQuery` / `filterQuality`.
 
 ## User-Facing Capabilities
 
