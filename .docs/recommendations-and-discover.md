@@ -7,7 +7,7 @@ and `/random` / `/surprise` discovery surfaces.
 
 - Discovery surfaces are lazy-loaded and never slow startup.
 - Recommendations are explicit: the user opens `/recommendation`, chooses a post-playback nudge, or enables an optional startup hint.
-- Calendar is a schedule lens: it shows catalog release timing, not provider playability.
+- Calendar is a date-scoped schedule lens: it shows catalog release timing, not provider playability.
 - Random is controlled: it shows a small explained tray and never auto-plays.
 - Recommendation code stays outside provider adapters. Providers resolve streams; catalog/recommendation services provide browseable metadata.
 
@@ -22,7 +22,7 @@ and `/random` / `/surprise` discovery surfaces.
 | Unified discover result loader               | `apps/cli/src/app/discover-results.ts`                                                                           | Implemented |
 | Browse-shell discover loading + SWR          | `apps/cli/src/app-shell/ink-shell.tsx`, `apps/cli/src/app/SearchPhase.ts`                                        | Implemented |
 | Release schedule service + SQLite cache      | `apps/cli/src/services/catalog/CatalogScheduleService.ts`, `packages/storage/src/repositories/schedule-cache.ts` | Implemented |
-| Calendar result loader                       | `apps/cli/src/app/calendar-results.ts`                                                                           | Implemented |
+| Calendar result loader                       | `apps/cli/src/app/search/calendar-results.ts`                                                                    | Implemented |
 | Random result loader                         | `apps/cli/src/app/random-results.ts`                                                                             | Implemented |
 | Surprise catalog pool                        | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discovery-lists.ts`                | Implemented |
 | Command routing                              | `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/command-router.ts`                    | Implemented |

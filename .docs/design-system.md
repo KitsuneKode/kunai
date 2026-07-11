@@ -82,7 +82,7 @@ Keep these composable; screen-specific policy lives in the caller.
 - **`ClaudeTabRow`** (`apps/cli/src/app-shell/primitives/ClaudeTabRow.tsx`) — tier-1 tabs with `accentFill` active pill; used on History, Calendar type filters, and Stats. Prefer over ad-hoc tab text.
 - **`MediaListShell`** — list + `PreviewRail` two-pane layout; collapses rail on narrow terminals. Browse, Calendar, History, Discover, and Library queue rows should compose through it.
 - **`ListRow` / `SectionGroup` / `ResumeCard`** — History makeover list rhythm (title · ep · status · recency) with resume card under selection.
-- **Calendar (locked)** — visual authority: [`.design/cli/kunai-sakura-calendar-locked.html`](../.design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`), not the canonical 7-day grid comp.
+- **Calendar (locked)** — visual authority: [`.design/cli/kunai-sakura-calendar-locked.html`](../.design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`). Calendar is always scoped to one selected date (today or the first available date); it is not an all-days or week view.
 - **Discover** — hybrid list + preview rail per [`.design/cli/surfaces/recommendations-viewer.md`](../.design/cli/surfaces/recommendations-viewer.md); section header + **emphasized reason line** (`discover-reason.ts`) in the list, reason echoed in the rail note.
 - **Return loop copy** — shared strings in `return-loop-copy.ts` for browse idle “Unwatched releases”, calendar empty tail, history new-episodes section “Ready for you now”, and post-play caught-up calendar action.
 

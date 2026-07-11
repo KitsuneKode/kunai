@@ -1,33 +1,9 @@
+/* oxlint-disable promise/no-multiple-resolved -- child error and close can both fire; finish is idempotent. */
+
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-type MatrixProviderId = "videasy" | "rivestream" | "allanime" | "miruro" | "youtube";
-
-type MatrixEntry = {
-  readonly provider: MatrixProviderId;
-  readonly command: readonly string[];
-  readonly media: "series" | "anime" | "youtube";
-  readonly fixture: string;
-};
-
-type MatrixResult = {
-  readonly provider: MatrixProviderId;
-  readonly media: MatrixEntry["media"];
-  readonly fixture: string;
-  readonly ok: boolean;
-  readonly exitCode: number;
-  readonly streamResolved: boolean | null;
-  readonly streamCandidates: number | null;
-  readonly engine: string | null;
-  readonly runtime: string | null;
-  readonly cacheHit: boolean | null;
-  readonly isolatedProfile: boolean | null;
-  readonly failureCodes: readonly string[];
-  readonly error?: string;
-  readonly rawStdout?: string;
-  readonly rawStderr?: string;
-};
-
-const MATRIX: readonly MatrixEntry[] = [
+const MATRIX = [
   {
     provider: "videasy",
     command: ["bun", "-e", "await import('./test/live/videasy-bloodhounds.smoke.ts')"],
@@ -61,7 +37,7 @@ const MATRIX: readonly MatrixEntry[] = [
 ];
 
 const appRoot = fileURLToPath(new URL("../..", import.meta.url));
-const requested = new Set(process.argv.slice(1).map((arg) => arg.toLowerCase()));
+const requested = new Set(process.argv.slice(2).map((arg) => arg.toLowerCase()));
 const selected =
   requested.size > 0
     ? MATRIX.filter((entry) => requested.has(entry.provider) || requested.has(entry.media))
@@ -80,44 +56,34 @@ if (selected.length === 0) {
       2,
     ),
   );
-  process.exit(1);
+  process.exitCode = 1;
+} else {
+  const results = [];
+  for (const entry of selected) results.push(await runMatrixEntry(entry));
+
+  const failed = results.filter((result) => !result.ok);
+  console.log(
+    JSON.stringify(
+      {
+        ok: failed.length === 0,
+        generatedAt: new Date().toISOString(),
+        selectedProviders: selected.map((entry) => entry.provider),
+        summary: {
+          total: results.length,
+          passed: results.length - failed.length,
+          failed: failed.length,
+        },
+        results,
+      },
+      null,
+      2,
+    ),
+  );
+  if (failed.length > 0) process.exitCode = 1;
 }
 
-const results: MatrixResult[] = [];
-for (const entry of selected) {
-  results.push(await runMatrixEntry(entry));
-}
-
-const failed = results.filter((result) => !result.ok);
-const payload = {
-  ok: failed.length === 0,
-  generatedAt: new Date().toISOString(),
-  selectedProviders: selected.map((entry) => entry.provider),
-  summary: {
-    total: results.length,
-    passed: results.length - failed.length,
-    failed: failed.length,
-  },
-  results,
-};
-
-console.log(JSON.stringify(payload, null, 2));
-if (failed.length > 0) {
-  process.exit(1);
-}
-
-async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
-  const child = Bun.spawn([...entry.command], {
-    cwd: appRoot,
-    env: process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+async function runMatrixEntry(entry) {
+  const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
   const parsed = parseJsonPayload(stdout);
   if (!parsed) {
     return {
@@ -133,7 +99,9 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
       cacheHit: null,
       isolatedProfile: null,
       failureCodes: [],
-      error: "provider smoke did not emit parseable JSON",
+      error: timedOut
+        ? "provider smoke exceeded the 45 second deadline"
+        : "provider smoke did not emit parseable JSON",
       rawStdout: stdout.trim().slice(0, 2_000),
       rawStderr: stderr.trim().slice(0, 2_000),
     };
@@ -156,37 +124,70 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
   };
 }
 
-function parseJsonPayload(stdout: string): Record<string, unknown> | null {
+async function runLiveSmoke(command) {
+  // `error` can be followed by `close`; `finish` deliberately makes that race idempotent.
+  return new Promise((resolve) => {
+    const child = spawn(command[0], command.slice(1), {
+      cwd: appRoot,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+    const deadline = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, 45_000);
+    const finish = (exitCode, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      if (error) stderr += error instanceof Error ? error.message : String(error);
+      resolve({ stdout, stderr, exitCode: exitCode ?? 1, timedOut });
+    };
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", (error) => finish(1, error));
+    child.once("close", (code) => finish(code));
+  });
+}
+
+function parseJsonPayload(stdout) {
   try {
-    const value = JSON.parse(stdout) as unknown;
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+    const value = JSON.parse(stdout);
+    return value && typeof value === "object" ? value : null;
   } catch {
     const start = stdout.indexOf("{");
     const end = stdout.lastIndexOf("}");
     if (start < 0 || end <= start) return null;
     try {
-      const value = JSON.parse(stdout.slice(start, end + 1)) as unknown;
-      return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+      const value = JSON.parse(stdout.slice(start, end + 1));
+      return value && typeof value === "object" ? value : null;
     } catch {
       return null;
     }
   }
 }
 
-function booleanOrNull(value: unknown): boolean | null {
+function booleanOrNull(value) {
   return typeof value === "boolean" ? value : null;
 }
 
-function numberOrNull(value: unknown): number | null {
+function numberOrNull(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function stringOrNull(value: unknown): string | null {
+function stringOrNull(value) {
   return typeof value === "string" ? value : null;
 }
 
-function stringArray(value: unknown): readonly string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+function stringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }

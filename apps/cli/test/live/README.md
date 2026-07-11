@@ -7,13 +7,14 @@ Each smoke script creates an isolated temporary XDG profile for config, data, an
 Run them only when network access is intentional. Prefer one focused provider while debugging, then the full set once at the end of a release-candidate pass:
 
 ```sh
-bun run test:live:vidking 1 2
+bun run test:live:videasy 1 2
 bun run test:live:rivestream
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro 1159 21 "One Piece"
+bun run test:live:youtube
 bun run test:live:matrix
 bun run test:live:matrix anime
-bun run test:live:matrix vidking
+bun run test:live:matrix videasy
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
 
@@ -33,8 +34,9 @@ For each run, the JSON payload should include:
 - redacted diagnostics export path when a failure needs reporting
 
 `bun run test:live:matrix` runs the focused provider smokes as one serial pass and emits a single
-JSON report. Pass a provider id (`vidking`, `rivestream`, `allanime`, `miruro`) or media bucket
-(`series`, `anime`) to narrow the matrix while debugging.
+JSON report. Pass a provider id (`videasy`, `rivestream`, `allanime`, `miruro`, `youtube`) or
+media bucket (`series`, `anime`, `youtube`) to narrow the matrix while debugging. Each smoke has
+a 45-second deadline so a provider outage returns a diagnostic report instead of hanging the pass.
 
 Do not mark a provider down from a local offline/DNS failure. Confirm general connectivity first, then compare the smoke output with `/diagnostics` and the provider attempt timeline before changing provider code.
 

@@ -1,11 +1,9 @@
 // =============================================================================
 // use-calendar-state.ts — cohesive state for the calendar/schedule browse view.
 //
-// Consolidates what used to be two loose useState slices + a derived memo + four
-// scattered resets + three inline input handlers inside browse-shell. Owning them
-// in one hook keeps the type-tab and day-filter invariants together (a tab change
-// must clear the day filter, since the new tab has a different day strip) and lets
-// a caller seed an initial tab so commands like /anime-calendar open pre-filtered.
+// Consolidates calendar state and keeps it date-scoped. A caller can seed an
+// initial tab so commands like /anime-calendar open pre-filtered, but the list
+// always resolves to one concrete date instead of mixing date and week modes.
 // =============================================================================
 
 import type { BrowseShellOption } from "@/app-shell/types";
@@ -18,27 +16,23 @@ import {
   type CalendarTypeTab,
   buildCalendarDaysFromOptions,
   filterCalendarOptionsByType,
-  stepCalendarWeekKey,
+  resolveCalendarSelectedDayKey,
 } from "../calendar-ui.model";
 
 export type CalendarState = {
   readonly typeTab: CalendarTypeTab;
+  /** Effective date scope. Null only while the calendar has no dated entries. */
   readonly dayFilter: string | null;
-  readonly weekFilter: string | null;
   readonly days: readonly CalendarDay[];
-  /** Cycle the type tab (Tab / Shift+Tab). Clears the day filter — the new tab has a different strip. */
+  /** Cycle the type tab (Tab / Shift+Tab), then select its today/first date. */
   readonly cycleType: (direction: 1 | -1) => void;
-  /** Step one day earlier (-1) / later (+1). From "all days" enters at today (or first), clamped at ends. */
+  /** Step one day earlier (-1) / later (+1), clamped at the available dates. */
   readonly stepDay: (direction: 1 | -1) => void;
-  /** Step one week earlier (-1) / later (+1). Clears the day filter when entering week mode. */
-  readonly stepWeek: (direction: 1 | -1) => void;
-  /** Toggle all-days ⇄ day-by-day. */
-  readonly toggleAllDays: () => void;
-  /** Reset to the default view (all types, all days) — used when results clear / re-search. */
+  /** Reset to the default type; the effective date becomes today/first. */
   readonly reset: () => void;
   readonly setTypeTab: (tab: CalendarTypeTab) => void;
+  /** Request a date; invalid or unavailable keys resolve to today/first. */
   readonly setDayFilter: (key: string | null) => void;
-  readonly setWeekFilter: (key: string | null) => void;
 };
 
 export function useCalendarState(input: {
@@ -47,8 +41,7 @@ export function useCalendarState(input: {
   readonly initialTypeTab?: CalendarTypeTab;
 }): CalendarState {
   const { isCalendarView, options } = input;
-  const [dayFilter, setDayFilter] = useState<string | null>(null);
-  const [weekFilter, setWeekFilter] = useState<string | null>(null);
+  const [requestedDayKey, setDayFilter] = useState<string | null>(null);
   const [typeTab, setTypeTab] = useState<CalendarTypeTab>(input.initialTypeTab ?? "All");
 
   // Build the day strip from the TYPE-filtered options so every chip has content
@@ -58,6 +51,11 @@ export function useCalendarState(input: {
     return buildCalendarDaysFromOptions(filterCalendarOptionsByType(options, typeTab));
   }, [isCalendarView, options, typeTab]);
 
+  const dayFilter = useMemo(
+    () => resolveCalendarSelectedDayKey(days, requestedDayKey),
+    [days, requestedDayKey],
+  );
+
   const cycleType = useCallback((direction: 1 | -1) => {
     setTypeTab((current) => {
       const idx = CALENDAR_TYPE_TABS.indexOf(current);
@@ -65,55 +63,34 @@ export function useCalendarState(input: {
       return CALENDAR_TYPE_TABS[next] ?? "All";
     });
     setDayFilter(null);
-    setWeekFilter(null);
   }, []);
 
   const stepDay = useCallback(
     (direction: 1 | -1) => {
       setDayFilter((current) => {
         if (days.length === 0) return current;
-        if (current === null) {
-          return days.find((day) => day.isToday)?.key ?? days[0]?.key ?? null;
-        }
-        const idx = days.findIndex((day) => day.key === current);
+        const active = resolveCalendarSelectedDayKey(days, current);
+        const idx = days.findIndex((day) => day.key === active);
         const target = idx + direction;
-        return target >= 0 && target < days.length ? (days[target]?.key ?? current) : current;
+        return target >= 0 && target < days.length ? (days[target]?.key ?? active) : active;
       });
-      setWeekFilter(null);
     },
     [days],
   );
-
-  const stepWeek = useCallback(
-    (direction: 1 | -1) => {
-      setWeekFilter((current) => stepCalendarWeekKey(days, current, direction));
-      setDayFilter(null);
-    },
-    [days],
-  );
-
-  const toggleAllDays = useCallback(() => {
-    setDayFilter((current) => (current === null ? (days[0]?.key ?? null) : null));
-  }, [days]);
 
   const reset = useCallback(() => {
     setDayFilter(null);
-    setWeekFilter(null);
     setTypeTab("All");
   }, []);
 
   return {
     typeTab,
     dayFilter,
-    weekFilter,
     days,
     cycleType,
     stepDay,
-    stepWeek,
-    toggleAllDays,
     reset,
     setTypeTab,
     setDayFilter,
-    setWeekFilter,
   };
 }

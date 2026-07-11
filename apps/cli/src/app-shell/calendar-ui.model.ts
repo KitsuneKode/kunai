@@ -98,6 +98,20 @@ export function buildCalendarDaysFromOptions<T>(
   return days;
 }
 
+/**
+ * Calendar is intentionally date-scoped. A stale requested key falls back to
+ * today (or the earliest available date) when a type filter changes its strip.
+ */
+export function resolveCalendarSelectedDayKey(
+  days: readonly CalendarDay[],
+  requestedDayKey: string | null,
+): string | null {
+  if (requestedDayKey && days.some((day) => day.key === requestedDayKey)) {
+    return requestedDayKey;
+  }
+  return days.find((day) => day.isToday)?.key ?? days[0]?.key ?? null;
+}
+
 /** "2026-09-07" -> "SUN 7" (weekday + day-of-month, from the ISO key, local tz). */
 function calendarDayLabelFromIsoKey(isoKey: string): string {
   const date = new Date(`${isoKey}T00:00:00`);
@@ -166,36 +180,6 @@ export function filterCalendarOptionsByDay<T>(
     const key = option.calendar?.dayKey ?? option.previewDayKey ?? null;
     return key === dayKey;
   });
-}
-
-export function filterCalendarOptionsByWeek<T>(
-  options: readonly BrowseShellOption<T>[],
-  weekKey: string | null,
-): readonly BrowseShellOption<T>[] {
-  if (weekKey === null) return options;
-  return options.filter((option) => {
-    const dayKey = option.calendar?.dayKey ?? option.previewDayKey ?? null;
-    if (!dayKey) return false;
-    return calendarWeekKeyFromIsoDay(dayKey) === weekKey;
-  });
-}
-
-/** Step to the previous/next ISO week key; returns null when stepping past available weeks. */
-export function stepCalendarWeekKey(
-  days: readonly CalendarDay[],
-  currentWeekKey: string | null,
-  direction: 1 | -1,
-): string | null {
-  if (days.length === 0) return currentWeekKey;
-  const weekKeys = [...new Set(days.map((day) => calendarWeekKeyFromIsoDay(day.key)))].sort();
-  if (currentWeekKey === null) {
-    const todayKey = days.find((day) => day.isToday)?.key ?? days[0]?.key;
-    return todayKey ? calendarWeekKeyFromIsoDay(todayKey) : (weekKeys[0] ?? null);
-  }
-  const index = weekKeys.indexOf(currentWeekKey);
-  if (index < 0) return weekKeys[0] ?? null;
-  const target = index + direction;
-  return target >= 0 && target < weekKeys.length ? (weekKeys[target] ?? null) : currentWeekKey;
 }
 
 function trackedReleaseMs(option: BrowseShellOption<SearchResult>): number {

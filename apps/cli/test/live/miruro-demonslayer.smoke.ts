@@ -83,5 +83,6 @@ const payload = {
 console.log(JSON.stringify(payload, null, 2));
 
 if (!stream?.url) {
-  process.exit(1);
+  // Let stdout flush so the matrix parent can retain structured failure evidence.
+  process.exitCode = 1;
 }

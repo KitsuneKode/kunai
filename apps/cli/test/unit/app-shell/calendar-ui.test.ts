@@ -18,6 +18,7 @@ import {
   formatReleaseCountdown,
   hasProviderConfirmedAvailability,
   parsePreviewTimeTodayMs,
+  resolveCalendarSelectedDayKey,
   windowCalendarDayStrip,
 } from "@/app-shell/calendar-ui.model";
 import type { BrowseShellOption } from "@/app-shell/types";
@@ -136,6 +137,19 @@ test("buildCalendarDaysFromOptions keeps ISO-dated days, deduped + chronological
   ];
   const days = buildCalendarDaysFromOptions(options, true);
   expect(days.map((day) => day.key)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
+});
+
+test("resolveCalendarSelectedDayKey keeps the requested date or defaults to today", () => {
+  const days = [
+    { key: "2026-06-01", label: "MON 1", isToday: false },
+    { key: "2026-06-02", label: "TUE 2", isToday: true },
+    { key: "2026-06-03", label: "WED 3", isToday: false },
+  ];
+
+  expect(resolveCalendarSelectedDayKey(days, "2026-06-03")).toBe("2026-06-03");
+  expect(resolveCalendarSelectedDayKey(days, "2026-07-01")).toBe("2026-06-02");
+  expect(resolveCalendarSelectedDayKey(days, null)).toBe("2026-06-02");
+  expect(resolveCalendarSelectedDayKey([], null)).toBeNull();
 });
 
 test("windowCalendarDayStrip narrows to three days around today", () => {

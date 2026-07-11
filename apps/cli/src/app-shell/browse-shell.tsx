@@ -1,6 +1,7 @@
 import { createLatestRequestGate, runBrowseMutation } from "@/app-shell/browse-async";
 import { browseOptionFromMediaItem } from "@/app-shell/browse-option-from-media-item";
 import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-trace";
+import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
@@ -65,7 +66,6 @@ import {
   buildCalendarRenderRows,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
-  filterCalendarOptionsByWeek,
   windowCalendarRowsByLines,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
@@ -247,7 +247,6 @@ export function BrowseShell<T>({
   const [options, setOptions] = useState<readonly BrowseShellOption<T>[]>(initialResults ?? []);
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
-  const [calendarNow, setCalendarNow] = useState(() => Date.now());
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
     initialResults && initialResults.length > 0 ? "ready" : "idle",
   );
@@ -301,10 +300,6 @@ export function BrowseShell<T>({
     };
   }, []);
 
-  useEffect(() => {
-    const id = setInterval(() => setCalendarNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
   );
@@ -316,10 +311,9 @@ export function BrowseShell<T>({
     options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
+  const calendarNow = useCalendarNow(isCalendarView);
 
-  // Calendar UI state (type tab + day filter + derived day strip) lives in one hook.
-  // Reads are aliased below so the rest of the component is unchanged; writes go
-  // through the hook's actions (calendar.reset / cycleType / stepDay / toggleAllDays).
+  // Calendar UI state owns the active type and one concrete date scope.
   const calendar = useCalendarState({
     isCalendarView,
     options: options as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
@@ -327,19 +321,10 @@ export function BrowseShell<T>({
   });
   const calendarTypeTab = calendar.typeTab;
   const calendarDayFilter = calendar.dayFilter;
-  const calendarWeekFilter = calendar.weekFilter;
   const calendarDays = calendar.days;
   // Stable action refs (each is useCallback-memoized in the hook) so consuming
   // callbacks/effects can depend on them without re-creating every render.
-  const {
-    reset: resetCalendar,
-    cycleType: cycleCalendarType,
-    stepDay: stepCalendarDay,
-    stepWeek: stepCalendarWeek,
-    toggleAllDays: toggleCalendarAllDays,
-    setDayFilter: setCalendarDay,
-    setWeekFilter: setCalendarWeek,
-  } = calendar;
+  const { reset: resetCalendar, cycleType: cycleCalendarType, stepDay: stepCalendarDay } = calendar;
 
   const displayOptions = useMemo(() => {
     const narrowed = filterBrowseOptionsByResultFilter(options, resultFilter);
@@ -348,17 +333,9 @@ export function BrowseShell<T>({
       import("@/domain/types").SearchResult
     >[];
     const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
-    const byWeek = filterCalendarOptionsByWeek(typed, calendarWeekFilter);
-    const byDay = filterCalendarOptionsByDay(byWeek, calendarDayFilter);
+    const byDay = filterCalendarOptionsByDay(typed, calendarDayFilter);
     return sortCalendarOptions(byDay) as typeof options;
-  }, [
-    calendarDayFilter,
-    calendarTypeTab,
-    calendarWeekFilter,
-    isCalendarView,
-    options,
-    resultFilter,
-  ]);
+  }, [calendarDayFilter, calendarTypeTab, isCalendarView, options, resultFilter]);
 
   const clearResults = useCallback(() => {
     setOptions([]);
@@ -1175,9 +1152,7 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Calendar day strip navigation. From "all days" both arrows enter at today
-    // (or the first day) — never jump to the furthest-future day — then ←/→ step
-    // to the previous/next day, clamped at the ends (logic owned by the hook).
+    // Calendar remains date-scoped: arrows move only between available dates.
     if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
       stepCalendarDay(-1);
       setSelectedIndex(0);
@@ -1188,50 +1163,13 @@ export function BrowseShell<T>({
       setSelectedIndex(0);
       return;
     }
-    if (isCalendarView && calendarDays.length > 0 && input === "[") {
-      stepCalendarWeek(-1);
-      setSelectedIndex(0);
-      return;
-    }
-    if (isCalendarView && calendarDays.length > 0 && input === "]") {
-      stepCalendarWeek(1);
-      setSelectedIndex(0);
-      return;
-    }
-    // `a` toggles all-days ⇄ day-by-day view. Guarded to a focused list with a
-    // clean query so it never eats a filter keystroke.
-    if (
-      isCalendarView &&
-      calendarDays.length > 0 &&
-      listFocused &&
-      !queryDirty &&
-      input.toLowerCase() === "a"
-    ) {
-      toggleCalendarAllDays();
-      setSelectedIndex(0);
-      return;
-    }
-
     if (key.escape) {
       // Layered step-back: results focus → query focus → clear results → clear
       // query → cancel. Esc first hands the list's focus back to the search box.
       //
-      // Calendar is self-contained: it has no query box to fall back into (the
-      // focus effect above keeps it in `list`). So Esc clears a day filter first,
-      // then backs out of the schedule entirely — it must NOT route to `query`,
-      // or the focus effect would instantly pull it back to `list` and Esc would
-      // appear to do nothing.
+      // Calendar is self-contained: it has no query box to fall back into, so
+      // Escape closes it directly instead of entering a hidden focus state.
       if (isCalendarView) {
-        if (calendarDayFilter !== null) {
-          setCalendarDay(null);
-          setSelectedIndex(0);
-          return;
-        }
-        if (calendarWeekFilter !== null) {
-          setCalendarWeek(null);
-          setSelectedIndex(0);
-          return;
-        }
         clearResults();
         return;
       }
