@@ -46,12 +46,9 @@ import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
 export { MIRURO_PROVIDER_ID };
 export const MIRURO_REFERER = "https://miruro.bz/";
-export const MIRURO_PIPE_BASE_URLS = [
-  "https://miruro.bz",
-  "https://miruro.ru",
-  "https://miruro.tv",
-  "https://www.miruro.tv",
-] as const;
+/** Active pipe mirrors only. TLS-dead `.tv` hosts were dropped so resolve fails fast
+ *  with actionable HTTP errors instead of burning the engine attempt timeout. */
+export const MIRURO_PIPE_BASE_URLS = ["https://miruro.bz", "https://miruro.ru"] as const;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";

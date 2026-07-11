@@ -1323,12 +1323,10 @@ test("miruro stream selection prefers active CDN HLS over direct kwik candidates
   expect(result?.streams).toHaveLength(3);
 });
 
-test("miruro pipe requests prefer reachable official mirrors before legacy tv host", () => {
+test("miruro pipe requests use only TLS-reachable official mirrors", () => {
   expect(createMiruroPipeRequestUrls("payload")).toEqual([
     "https://miruro.bz/api/secure/pipe?e=payload",
     "https://miruro.ru/api/secure/pipe?e=payload",
-    "https://miruro.tv/api/secure/pipe?e=payload",
-    "https://www.miruro.tv/api/secure/pipe?e=payload",
   ]);
 });
 

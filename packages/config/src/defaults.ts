@@ -11,7 +11,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   animeProvider: "allanime",
   youtubeProvider: "youtube",
   providerPriority: ["vidlink", "videasy"],
-  animeProviderPriority: ["allanime", "miruro"],
+  // Miruro demoted from automatic anime fallback while pipe hosts return WAF 403.
+  animeProviderPriority: ["allanime"],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: {},

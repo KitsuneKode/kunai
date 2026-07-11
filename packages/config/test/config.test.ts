@@ -57,4 +57,10 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.providerPriority).not.toContain("rivestream");
     expect(DEFAULT_CONFIG.providerPriority).toContain("videasy");
   });
+
+  test("defaults demote Miruro from the anime automatic lane", () => {
+    expect(DEFAULT_CONFIG.animeProvider).toBe("allanime");
+    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["allanime"]);
+    expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain("miruro");
+  });
 });
