@@ -70,6 +70,10 @@ Compared each tip against current `main` (merge-base `f6a5e1d7`; `main` is ~18 c
 2. Miruro: remove from `animeProviderPriority`; keep `bz`/`ru` only in pipe base list + fixture tests.
 3. Do **not** commit user-owned `.run.toml` / `tmdb.ts` / `videasy/direct.ts` TMDB-base WIP.
 
-## F Health / G Handoff
+## F Health automation
 
-Pending after repairs land.
+Landed: `.github/workflows/provider-matrix.yml` (manual/scheduled, non-blocking) + matrix `healthClass` + `KUNAI_MATRIX_ARTIFACT` redacted write.
+
+## G Handoff
+
+Ready for staff review.

@@ -62,23 +62,39 @@ if (selected.length === 0) {
   for (const entry of selected) results.push(await runMatrixEntry(entry));
 
   const failed = results.filter((result) => !result.ok);
-  console.log(
-    JSON.stringify(
-      {
-        ok: failed.length === 0,
-        generatedAt: new Date().toISOString(),
-        selectedProviders: selected.map((entry) => entry.provider),
-        summary: {
-          total: results.length,
-          passed: results.length - failed.length,
-          failed: failed.length,
-        },
-        results,
-      },
-      null,
-      2,
-    ),
-  );
+  const byClass = {
+    healthy: results.filter((result) => result.healthClass === "healthy").length,
+    "provider-drift": results.filter((result) => result.healthClass === "provider-drift").length,
+    "environment-network": results.filter((result) => result.healthClass === "environment-network")
+      .length,
+    "harness-failure": results.filter((result) => result.healthClass === "harness-failure").length,
+  };
+  const report = {
+    ok: failed.length === 0,
+    generatedAt: new Date().toISOString(),
+    selectedProviders: selected.map((entry) => entry.provider),
+    summary: {
+      total: results.length,
+      passed: results.length - failed.length,
+      failed: failed.length,
+      byClass,
+    },
+    results,
+  };
+  console.log(JSON.stringify(report, null, 2));
+
+  const artifactPath = process.env.KUNAI_MATRIX_ARTIFACT?.trim();
+  if (artifactPath) {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { dirname, resolve } = await import("node:path");
+    const absoluteArtifactPath = resolve(artifactPath);
+    await mkdir(dirname(absoluteArtifactPath), { recursive: true });
+    await writeFile(
+      absoluteArtifactPath,
+      `${JSON.stringify(redactMatrixReport(report), null, 2)}\n`,
+    );
+  }
+
   if (failed.length > 0) process.exitCode = 1;
 }
 
@@ -86,7 +102,7 @@ async function runMatrixEntry(entry) {
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(entry.command);
   const parsed = parseJsonPayload(stdout);
   if (!parsed) {
-    return {
+    const result = {
       provider: entry.provider,
       media: entry.media,
       fixture: entry.fixture,
@@ -105,9 +121,10 @@ async function runMatrixEntry(entry) {
       rawStdout: stdout.trim().slice(0, 2_000),
       rawStderr: stderr.trim().slice(0, 2_000),
     };
+    return { ...result, healthClass: classifyProviderHealth(result, { timedOut, harness: true }) };
   }
 
-  return {
+  const result = {
     provider: entry.provider,
     media: entry.media,
     fixture: entry.fixture,
@@ -122,6 +139,65 @@ async function runMatrixEntry(entry) {
     failureCodes: stringArray(parsed.failureCodes),
     ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
   };
+  return {
+    ...result,
+    healthClass: classifyProviderHealth(result, { timedOut, harness: false }),
+  };
+}
+
+/**
+ * Release-evidence taxonomy for matrix rows. Default CI must not depend on these.
+ * - healthy: stream resolved
+ * - provider-drift: upstream contract/route failure while the harness ran
+ * - environment-network: timeout, connect, DNS/TLS, or WAF-shaped blocks
+ * - harness-failure: unparseable smoke output or matrix deadline without provider JSON
+ */
+function classifyProviderHealth(result, { timedOut, harness }) {
+  if (result.ok) return "healthy";
+  if (harness) return "harness-failure";
+
+  const haystack = [
+    result.error ?? "",
+    ...(Array.isArray(result.failureCodes) ? result.failureCodes : []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    timedOut ||
+    /within \d+s|timed out|timeout|econn|enotfound|network|cannot connect|connection|403|waf|socket/.test(
+      haystack,
+    )
+  ) {
+    return "environment-network";
+  }
+
+  if (
+    /404|not-found|did not find|no playable|exhausted|route-dead|unsupported-title/.test(haystack)
+  ) {
+    return "provider-drift";
+  }
+
+  return "provider-drift";
+}
+
+function redactMatrixReport(report) {
+  return {
+    ...report,
+    results: report.results.map((result) => {
+      const { rawStdout: _rawStdout, rawStderr: _rawStderr, ...rest } = result;
+      return {
+        ...rest,
+        error: typeof rest.error === "string" ? redactVolatileText(rest.error) : rest.error,
+      };
+    }),
+  };
+}
+
+function redactVolatileText(value) {
+  return value
+    .replace(/https?:\/\/[^\s"']+/gi, "https://REDACTED")
+    .replace(/\/tmp\/[^\s"']+/gi, "/tmp/REDACTED");
 }
 
 async function runLiveSmoke(command) {

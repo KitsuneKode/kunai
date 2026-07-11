@@ -38,6 +38,25 @@ JSON report. Pass a provider id (`videasy`, `rivestream`, `allanime`, `miruro`, 
 media bucket (`series`, `anime`, `youtube`) to narrow the matrix while debugging. Each smoke has
 a 45-second deadline so a provider outage returns a diagnostic report instead of hanging the pass.
 
+Each matrix row includes a `healthClass`:
+
+| Class                 | Meaning                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| `healthy`             | Stream resolved through `container.engine.resolve`                   |
+| `provider-drift`      | Upstream route/contract failure (404, exhausted, no playable source) |
+| `environment-network` | Timeout, connect/DNS/TLS, or WAF-shaped block                        |
+| `harness-failure`     | Unparseable smoke JSON or matrix deadline without provider evidence  |
+
+Optional artifact write (redacts URLs and `/tmp` paths):
+
+```sh
+KUNAI_MATRIX_ARTIFACT=./artifacts/provider-matrix.json bun run test:live:matrix
+```
+
+GitHub Actions workflow `.github/workflows/provider-matrix.yml` is **manual/scheduled only**, never a
+PR gate. It uploads the redacted JSON as an artifact and summarizes classifications in the job
+summary. Do not add shared relay URLs or credentials to that workflow.
+
 Do not mark a provider down from a local offline/DNS failure. Confirm general connectivity first, then compare the smoke output with `/diagnostics` and the provider attempt timeline before changing provider code.
 
 Provider etiquette:

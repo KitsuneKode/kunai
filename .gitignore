@@ -81,3 +81,4 @@ stream_cache.json
 .docs/implementation-notes.html
 .docs/playback-postplay-phase-workbook.html
 .design/cli/*.gif
+artifacts/

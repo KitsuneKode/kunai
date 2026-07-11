@@ -1,0 +1,98 @@
+name: Provider matrix (opt-in live)
+
+# Non-blocking release evidence. Never required by PR CI.
+# Stores a redacted matrix JSON artifact with healthy / provider-drift /
+# environment-network / harness-failure classifications.
+
+on:
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: "Space-separated provider ids or media lanes (empty = full matrix)"
+        required: false
+        default: ""
+  schedule:
+    # Weekly Monday 06:15 UTC — sparse on purpose.
+    - cron: "15 6 * * 1"
+
+concurrency:
+  group: provider-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: Live provider matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: provider-matrix
+          skip-turbo-cache: "true"
+
+      - name: Run serial provider matrix
+        id: matrix
+        working-directory: apps/cli
+        env:
+          KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/provider-matrix.json
+          # No shared relay URL or credentials. Operators may inject secrets later.
+        run: |
+          set +e
+          providers="${{ github.event.inputs.providers }}"
+          if [ -n "$providers" ]; then
+            # shellcheck disable=SC2086
+            bun run test:live:matrix $providers
+          else
+            bun run test:live:matrix
+          fi
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          # Always succeed the step so the artifact uploads; matrix volatility is evidence, not a gate.
+          exit 0
+
+      - name: Summarize matrix classifications
+        if: always()
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = process.env.KUNAI_MATRIX_ARTIFACT || "artifacts/provider-matrix.json";
+          if (!fs.existsSync(path)) {
+            console.log("No matrix artifact written.");
+            process.exit(0);
+          }
+          const report = JSON.parse(fs.readFileSync(path, "utf8"));
+          const lines = [
+            `### Provider matrix`,
+            ``,
+            `Generated: \`${report.generatedAt}\``,
+            `Passed: ${report.summary?.passed ?? "?"}/${report.summary?.total ?? "?"}`,
+            ``,
+            `| Provider | Lane | Fixture | Class | OK |`,
+            `| --- | --- | --- | --- | --- |`,
+            ...(report.results ?? []).map((row) =>
+              `| ${row.provider} | ${row.media} | ${row.fixture} | ${row.healthClass} | ${row.ok} |`,
+            ),
+            ``,
+            `byClass: \`${JSON.stringify(report.summary?.byClass ?? {})}\``,
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          NODE
+        env:
+          KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/provider-matrix.json
+
+      - name: Upload redacted matrix artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-matrix-${{ github.run_id }}
+          path: artifacts/provider-matrix.json
+          if-no-files-found: warn
+          retention-days: 14
