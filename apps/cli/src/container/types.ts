@@ -103,6 +103,7 @@ export interface Container {
   readonly playbackEventRepository: PlaybackEventRepository;
   readonly configStore: ConfigStore;
   readonly cacheStore: CacheStore;
+  readonly dataDb: KunaiDatabase;
   readonly cacheDb: KunaiDatabase;
   readonly diagnosticsStore: DiagnosticsStore;
   readonly diagnosticsService: DiagnosticsService;

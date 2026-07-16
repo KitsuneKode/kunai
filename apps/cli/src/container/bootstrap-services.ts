@@ -405,6 +405,7 @@ export function bootstrapServices(input: {
     playbackEventRepository,
     configStore,
     cacheStore,
+    dataDb: persistence.dataDb,
     cacheDb: persistence.cacheDb,
     diagnosticsStore,
     diagnosticsService,

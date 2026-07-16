@@ -28,8 +28,10 @@ import {
   RecommendationCacheRepository,
   ReleaseProgressCacheRepository,
   runMigrations,
+  isDataMigrationApplied,
   isHistoryIdentityConsolidatorApplied,
   isWatchLedgerBackfillApplied,
+  markDataMigrationApplied,
   markHistoryIdentityConsolidatorApplied,
   markWatchLedgerBackfillApplied,
   ScheduleCacheRepository,
@@ -168,13 +170,20 @@ export async function bootstrapPersistence(
   runMigrations(dataDb, "data");
   runMigrations(cacheDb, "cache");
 
-  if (!isHistoryIdentityConsolidatorApplied(dataDb)) {
+  // v2 adds anime content-class units (series rows with AniList/MAL ids move to
+  // their AniList unit) and maintains the history_title_aliases index.
+  const HISTORY_IDENTITY_CONSOLIDATOR_V2_ID = "history_identity_consolidator_v2";
+  if (
+    !isHistoryIdentityConsolidatorApplied(dataDb) ||
+    !isDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID)
+  ) {
     runHistoryIdentityConsolidator(dataDb, {
       dryRun: process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN === "1",
       log: debug ? (message) => logger.info(message) : undefined,
     });
     if (process.env.KUNAI_HISTORY_IDENTITY_DRY_RUN !== "1") {
       markHistoryIdentityConsolidatorApplied(dataDb);
+      markDataMigrationApplied(dataDb, HISTORY_IDENTITY_CONSOLIDATOR_V2_ID);
     }
   }
 

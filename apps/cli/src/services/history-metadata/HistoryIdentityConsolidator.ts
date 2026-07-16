@@ -1,5 +1,10 @@
 import { mergeBackfillExternalIds, resolveCanonicalCatalogTitleId } from "@kunai/core";
-import { createHistoryKey, HistoryRepository } from "@kunai/storage";
+import {
+  createHistoryKey,
+  externalIdsToAliases,
+  HistoryRepository,
+  HistoryTitleAliasRepository,
+} from "@kunai/storage";
 import type { KunaiDatabase } from "@kunai/storage";
 import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
@@ -23,8 +28,17 @@ function hasCatalogProof(
 ): boolean {
   if (!externalIds) return false;
   if (mediaKind === "anime") return Boolean(externalIds.anilistId);
-  if (mediaKind === "movie" || mediaKind === "series") return Boolean(externalIds.tmdbId);
+  if (mediaKind === "movie" || mediaKind === "series") {
+    // AniList/MAL only catalog anime, so their ids are proof of an anime-class
+    // work even on rows persisted through the TMDB lane.
+    return Boolean(externalIds.tmdbId || externalIds.anilistId || externalIds.malId);
+  }
   return Boolean(externalIds.anilistId || externalIds.tmdbId);
+}
+
+/** Anime-class when any anime-catalog id exists (they only catalog anime). */
+function contentClassOf(externalIds: ProviderExternalIds | undefined): "anime" | "general" {
+  return externalIds?.anilistId || externalIds?.malId ? "anime" : "general";
 }
 
 function catalogIdsConflict(
@@ -41,6 +55,7 @@ export function runHistoryIdentityConsolidator(
   options: HistoryIdentityConsolidatorOptions = {},
 ): HistoryIdentityConsolidatorStats {
   const repo = new HistoryRepository(db);
+  const aliases = new HistoryTitleAliasRepository(db);
   const log = options.log ?? (() => undefined);
   const stats = {
     scanned: 0,
@@ -60,12 +75,18 @@ export function runHistoryIdentityConsolidator(
       continue;
     }
 
-    const canonicalId = resolveCanonicalCatalogTitleId({
-      id: row.titleId,
-      kind: row.mediaKind,
-      externalIds,
-    });
+    const canonicalId = resolveCanonicalCatalogTitleId(
+      {
+        id: row.titleId,
+        kind: row.mediaKind,
+        externalIds,
+      },
+      { contentClass: contentClassOf(externalIds) },
+    );
     if (row.titleId === canonicalId) {
+      if (!options.dryRun) {
+        aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
+      }
       stats.skippedAlreadyCanonical += 1;
       continue;
     }
@@ -87,6 +108,8 @@ export function runHistoryIdentityConsolidator(
       log(`retitle ${row.key} → title_id=${canonicalId} key=${newKey}`);
       if (!options.dryRun) {
         repo.rekeyProgressRow(row.key, canonicalId, newKey);
+        aliases.reassignTitleId(row.titleId, canonicalId);
+        aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
       }
       stats.retitled += 1;
       continue;
@@ -111,6 +134,11 @@ export function runHistoryIdentityConsolidator(
       if (keepNewer.key !== newKey) {
         repo.rekeyProgressRow(keepNewer.key, canonicalId, newKey);
       }
+      aliases.reassignTitleId(row.titleId, canonicalId);
+      aliases.upsertAliases(
+        canonicalId,
+        externalIdsToAliases(mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds)),
+      );
     }
     stats.merged += 1;
   }

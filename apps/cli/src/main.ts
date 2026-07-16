@@ -765,6 +765,25 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     run: () => container.storageMaintenance.runStartupMaintenance(),
   });
 
+  runBackgroundTask({
+    task: "history.identity.enrich-backfill",
+    category: "cache",
+    diagnostics: container.diagnosticsService,
+    logger,
+    run: async () => {
+      const { runHistoryIdentityEnrichBackfill } =
+        await import("./services/history-metadata/HistoryIdentityEnrichBackfill");
+      const stats = await runHistoryIdentityEnrichBackfill({
+        db: container.dataDb,
+        identity: container.catalogIdentityService,
+        log: args.debug ? (message) => logger.info(message) : undefined,
+      });
+      if (stats.enriched > 0) {
+        logger.info("History identity backfill", { ...stats });
+      }
+    },
+  });
+
   if (args.debug) {
     logger.info("Kunai started", {
       version: KUNAI_VERSION,
