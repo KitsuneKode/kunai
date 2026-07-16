@@ -10,6 +10,6 @@ describe("release notes artifacts", () => {
     expect(releases.length).toBeGreaterThan(0);
     expect(latest?.packageName).toBe("@kitsunekode/kunai");
     expect(latest?.install.bunx).toContain("@kitsunekode/kunai@");
-    expect(latest?.sections.length).toBeGreaterThan(0);
+    expect(latest?.summary.trim().length).toBeGreaterThan(0);
   });
 });

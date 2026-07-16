@@ -2,6 +2,7 @@
 // Verify the published npm tarball stays small and never includes compiled binaries.
 
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -87,6 +88,12 @@ function main(): void {
   const result = spawnSync("npm", ["pack", "--dry-run", "--ignore-scripts"], {
     cwd: ROOT,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      // Keep verification hermetic: npm otherwise writes to the user's cache,
+      // which is unavailable in sandboxes and unnecessary for a dry pack.
+      npm_config_cache: join(tmpdir(), "kunai-npm-pack-cache"),
+    },
   });
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
   if (result.status !== 0) {
