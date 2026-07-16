@@ -1,29 +1,31 @@
 {
-  "syncedAt": "2026-06-25T13:05:37.472Z",
-  "version": "0.2.5",
-  "cliVersion": "0.2.5",
-  "cliSourceRevision": "d37c694d",
-  "cliSourceFingerprint": "2689fd9e7b0aeae4f91c5238dfe89da558624202fd9cc08d4aa0fcc42f731bdb",
-  "docsContentFingerprint": "5b572c95ae8de7f3987c85862891529ec93993ff95efa401e69778ccdfe39123",
+  "syncedAt": "2026-07-16T00:56:49.277Z",
+  "version": "0.2.6",
+  "cliVersion": "0.2.6",
+  "cliSourceRevision": "b5c4a23e",
+  "cliSourceFingerprint": "cb04d7bdd72e96d4b497834b9491774a5485de3e82577cbac92b400b70ea5dd3",
+  "docsContentFingerprint": "6cc8dc8357a1f4ded6ca576fd5b4c5627ee104d91b31dcc058ff5e5a30ab29d3",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 78,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
-      "displayName": "Videasy",
-      "description": "Direct Videasy API resolver for Cineplay, Cineby, and legacy embed frontends",
+      "displayName": "Videasy Direct",
+      "description": "Fast direct streams with source selection and subtitles",
       "domain": "videasy.to",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "status": "active",
       "notes": [
-        "Current CLI implementation uses the direct api.videasy.to payload/decryption path only.",
-        "Cineplay (bc-frontend) is the default Videasy client profile; vidking.net remains an override.",
-        "If the direct payload is unavailable",
-        "the CLI fails fast instead of leasing a browser.",
-        "Do not mark browser-safe because the implementation depends on local WASM assets and Node runtime behavior."
+        "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at); api.wingsdatabase.com is a mirror.",
+        "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
+        "2026-07-16: Inventory UI order matches cineby Servers (Yoru first). Resolve probes Neon → Cypher → Yoru for speed/stability.",
+        "2026-07-16: Skip stream preflight on balanced/fast (cineby-like); quality-first still validates.",
+        "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
+        "Cineplay (bc-frontend) is the default Videasy client profile; origin/referer follow cineplay.to.",
+        "Do not mark browser-safe because local decrypt/runtime behavior is required."
       ]
     },
     {
@@ -73,14 +75,18 @@
       "id": "miruro",
       "displayName": "Miruro",
       "description": "Miruro anime direct resolver (pipe API + XOR decrypt)",
-      "domain": "miruro.tv",
-      "recommended": true,
+      "domain": "www.miruro.bz",
+      "recommended": false,
       "mediaKinds": ["anime"],
       "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
       "status": "candidate",
       "notes": [
-        "Uses miruro.tv pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-        "Sources from vault-10.uwucdn.top CDN with referer from stream payload.",
+        "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
+        "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
+        "Primary hosts: www.miruro.bz",
+        "www.miruro.ru. TLS-dead miruro.tv hosts stay off the resolve list.",
+        "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
+        "Still not the default anime auto-fallback (AllAnime remains primary); Miruro is available for manual pick when curl/http2 path works.",
         "May hit Cloudflare rate limits if called too frequently."
       ]
     },

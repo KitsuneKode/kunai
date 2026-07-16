@@ -6,6 +6,8 @@ Read this before changing title identity, `externalIds`, anime provider mapping,
 
 Related: [.plans/search-service.md](search-service.md) (catalog/mapping ownership), [.docs/providers.md](../.docs/providers.md) (`catalogIdentity`), [.docs/architecture.md](../.docs/architecture.md).
 
+**Follow-on (planned):** [.plans/catalog-identity-parity.md](catalog-identity-parity.md) — AniList/MAL ↔ TMDB/IMDB crosswalk, shared history units across anime vs series search, dual-lane provider resolve.
+
 ## 1. Problem (Root Cause)
 
 `TitleInfo.id` is an **overloaded** field. Depending on where a title came from it holds an AniList id, a TMDB id, or a provider-native opaque id. Nothing normalizes that id to what the **active provider** expects before we resolve a stream. Providers also cannot bridge between catalog ids (AniList/TMDB) and their own opaque ids, so a perfectly valid cross-catalog id silently fails.
