@@ -132,7 +132,8 @@
     "@types/node": "catalog:",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
-    "lucide-react": "catalog:web"
+    "lucide-react": "catalog:web",
+    "ws": "^8.21.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx}": [
