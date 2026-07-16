@@ -371,10 +371,13 @@ async function launchMpvInner(
   if (shouldAbortLaunchForDefinitivePreflight(preflightResult, ipcSession !== null)) {
     // Stream is definitively dead and mpv hasn't found it either — abort.
     watchdog.stop();
-    await closeIpcSession(ipcSession);
-    const socketPathCleanedUp = shouldUnlinkUnixSocket(ipcEndpoint)
-      ? await cleanupUnixSocketFile(ipcEndpoint.path)
-      : true;
+    const socketPathCleanedUp = await cleanupAbortedMpvLaunch({
+      ipcBootstrap,
+      getIpcSession: () => ipcSession,
+      closeIpcSession,
+      cleanupSocket: async () =>
+        shouldUnlinkUnixSocket(ipcEndpoint) ? await cleanupUnixSocketFile(ipcEndpoint.path) : true,
+    });
     opts.onControlReady?.(null);
     return {
       watchedSeconds: 0,
@@ -414,6 +417,40 @@ export function shouldAbortLaunchForDefinitivePreflight(
   ipcConnected: boolean,
 ): result is Extract<StreamPreflightResult, { status: "unreachable" }> {
   return shouldAbortPlaybackForPreflight(result, ipcConnected);
+}
+
+export async function cleanupAbortedMpvLaunch(options: {
+  ipcBootstrap: Promise<void>;
+  getIpcSession: () => MpvIpcSession | null;
+  closeIpcSession: (session: MpvIpcSession | null) => Promise<void>;
+  cleanupSocket: () => Promise<boolean>;
+  bootstrapWaitMs?: number;
+  sleep?: (milliseconds: number) => Promise<unknown>;
+}): Promise<boolean> {
+  const bootstrapCompleted = options.ipcBootstrap.then(
+    () => true,
+    () => true,
+  );
+  const completedBeforeDeadline = await Promise.race([
+    bootstrapCompleted,
+    (options.sleep ?? Bun.sleep)(options.bootstrapWaitMs ?? 2_000).then(() => false),
+  ]);
+
+  await options.closeIpcSession(options.getIpcSession());
+  const socketPathCleanedUp = await options.cleanupSocket();
+
+  if (!completedBeforeDeadline) {
+    // Cleanup-only continuation: reconcile a session that opens after the bounded wait.
+    void options.ipcBootstrap
+      .then(async () => {
+        await options.closeIpcSession(options.getIpcSession());
+        await options.cleanupSocket();
+        return undefined;
+      })
+      .catch(() => {});
+  }
+
+  return socketPathCleanedUp;
 }
 
 export function buildMpvArgs(

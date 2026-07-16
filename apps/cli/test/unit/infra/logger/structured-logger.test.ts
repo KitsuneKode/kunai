@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { StructuredLogger } from "@/infra/logger/StructuredLogger";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
@@ -84,5 +87,32 @@ describe("StructuredLogger", () => {
     expect(lines[0]).not.toContain(home);
     expect(lines[0]).not.toContain("secret");
     expect(lines[0]).not.toContain("credential");
+  });
+
+  test("writes redacted entries to the file sink while console output is disabled", () => {
+    const directory = mkdtempSync(join(tmpdir(), "kunai-structured-log-"));
+    const file = join(directory, "logs.txt");
+    try {
+      const logger = new StructuredLogger({
+        debug: true,
+        console: false,
+        file,
+        sanitize: (value) => redactDiagnosticValue(value),
+      });
+
+      logger.child({ module: "player" }).info("Resolved stream", {
+        token: "super-secret",
+        streamUrl: "https://cdn.example/video.m3u8?signature=also-secret",
+      });
+
+      const contents = readFileSync(file, "utf8");
+      expect(contents).toContain("Resolved stream");
+      expect(contents).toContain('"module":"player"');
+      expect(contents).toContain("[redacted]");
+      expect(contents).not.toContain("super-secret");
+      expect(contents).not.toContain("also-secret");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

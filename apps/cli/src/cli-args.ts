@@ -78,7 +78,7 @@ PATHS & INTEGRATION
       --dry-run              Print what would happen, change nothing
 
 DIAGNOSTICS
-      --debug                Verbose logging to ./logs.txt
+      --debug                Verbose redacted logging to ./logs.txt
       --debug-json           Debug + JSON event stream
       --debug-session        Debug + full session trace
   -h, --help                 Show this help

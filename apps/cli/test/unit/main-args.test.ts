@@ -10,6 +10,7 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
   expect(help).toContain("-y, --youtube");
+  expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
 });
 
 test("parseArgs supports --youtube launch mode", () => {

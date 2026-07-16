@@ -137,6 +137,7 @@ export function bootstrapCoreInfra(options?: ContainerOptions): CoreInfra {
   const logger = new StructuredLogger({
     debug,
     console: () => !isInteractiveShellMounted(),
+    file: debug ? join(process.cwd(), "logs.txt") : undefined,
     sanitize: (value) => redactDiagnosticValue(value, { homeDir: process.env.HOME }),
   });
   initLogger(debug || process.env.KITSUNE_DEBUG === "1", logger);

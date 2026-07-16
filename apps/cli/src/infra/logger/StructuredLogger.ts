@@ -4,6 +4,9 @@
 // Structured logging to console and file.
 // =============================================================================
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
 import type { Logger, LogEntry } from "./Logger";
 
 export interface StructuredLoggerOptions {
@@ -14,6 +17,10 @@ export interface StructuredLoggerOptions {
   sanitize?: (value: unknown) => unknown;
 }
 
+type StructuredLoggerSinkState = {
+  fileDirectoryReady: boolean;
+};
+
 export class StructuredLogger implements Logger {
   private traceId: string | undefined;
   private isDebugMode: boolean;
@@ -21,12 +28,17 @@ export class StructuredLogger implements Logger {
   constructor(
     private options: StructuredLoggerOptions = {},
     private readonly boundContext: Record<string, unknown> = {},
+    private readonly sinkState: StructuredLoggerSinkState = { fileDirectoryReady: false },
   ) {
     this.isDebugMode = options.debug ?? false;
   }
 
   child(context: Record<string, unknown>): Logger {
-    const child = new StructuredLogger(this.options, { ...this.boundContext, ...context });
+    const child = new StructuredLogger(
+      this.options,
+      { ...this.boundContext, ...context },
+      this.sinkState,
+    );
     return child;
   }
 
@@ -73,13 +85,24 @@ export class StructuredLogger implements Logger {
       traceId: this.traceId,
     };
 
+    const ctx = entry.context ? ` ${JSON.stringify(entry.context)}` : "";
+    const line = `[${entry.timestamp}] ${level.toUpperCase()}: ${entry.message}${ctx}\n`;
+
     if (this.isConsoleEnabled()) {
-      const ctx = entry.context ? ` ${JSON.stringify(entry.context)}` : "";
-      const line = `[${entry.timestamp}] ${level.toUpperCase()}: ${entry.message}${ctx}\n`;
       (this.options.write ?? ((output) => process.stderr.write(output)))(line);
     }
 
-    // File logging would go here
+    if (this.options.file) {
+      try {
+        if (!this.sinkState.fileDirectoryReady) {
+          mkdirSync(dirname(this.options.file), { recursive: true });
+          this.sinkState.fileDirectoryReady = true;
+        }
+        appendFileSync(this.options.file, line, "utf8");
+      } catch {
+        // Preserve playback and shell startup if the debug sink becomes unwritable.
+      }
+    }
   }
 
   private isConsoleEnabled(): boolean {
