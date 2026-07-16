@@ -35,6 +35,18 @@ test("findPlaybackSegmentAtPosition ignores user toggles", () => {
   expect(playbackSkipKindLabel("intro")).toBe("SKIP INTRO");
 });
 
+test("findPlaybackSegmentAtPosition accepts partial timing metadata", () => {
+  // Late metadata can arrive before every segment family has been populated.
+  const partialTiming = {
+    intro: [{ startMs: 10_000, endMs: 20_000 }],
+  } as unknown as PlaybackTimingMetadata;
+  expect(findPlaybackSegmentAtPosition(partialTiming, 12)).toMatchObject({
+    kind: "intro",
+    startSeconds: 10,
+    endSeconds: 20,
+  });
+});
+
 test("findActivePlaybackSkip prefers recap intro and credits windows only when enabled", () => {
   expect(findActivePlaybackSkip(timing, 10, BASE_CONFIG)).toMatchObject({
     kind: "recap",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { StreamInfo } from "@/domain/types";
+import type { PlaybackTimingMetadata, StreamInfo } from "@/domain/types";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
@@ -82,6 +82,47 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("PersistentMpvSession fake IPC lifecycle harness", () => {
+  test("updates autoskip policy during an active intro without leaving a stale automatic skip", async () => {
+    const harness = createHarness();
+    const partialTiming = {
+      intro: [{ startMs: 10_000, endMs: 20_000 }],
+    } as unknown as PlaybackTimingMetadata;
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        autoSkipEnabled: true,
+        timing: partialTiming,
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        mpvInProcessStreamReconnectMaxAttempts: 0,
+        mpvKunaiScriptOpts: { prompt_seconds: "1" },
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 12, observedAt: 2 });
+    await flushAsyncWork();
+    expect(harness.commands).toContainEqual(["set_property", "user-data/kunai-skip-auto", "1"]);
+
+    harness.commands.length = 0;
+    session.getControl().updateAutoSkipEnabled?.(false);
+    await flushAsyncWork();
+    expect(harness.commands).toContainEqual(["set_property", "user-data/kunai-skip-auto", "0"]);
+    expect(harness.commands.some((command) => command[0] === "seek")).toBe(false);
+
+    harness.commands.length = 0;
+    session.getControl().updateAutoSkipEnabled?.(true);
+    await flushAsyncWork();
+    expect(harness.commands).toContainEqual(["set_property", "user-data/kunai-skip-auto", "1"]);
+
+    await session.close();
+  });
+
   test("drives first-play readiness, progress, end-file result, and cleanup through fake mpv IPC", async () => {
     const harness = createHarness();
     const events: string[] = [];

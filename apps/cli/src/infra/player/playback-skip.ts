@@ -32,10 +32,10 @@ function normalizeEndSeconds(value: number | null): number | null {
 function segmentGroups(timing: PlaybackTimingMetadata | null | undefined): readonly SegmentGroup[] {
   if (!timing) return [];
   return [
-    ["recap", timing.recap],
-    ["intro", timing.intro],
-    ["preview", timing.preview],
-    ["credits", timing.credits],
+    ["recap", timing.recap ?? []],
+    ["intro", timing.intro ?? []],
+    ["preview", timing.preview ?? []],
+    ["credits", timing.credits ?? []],
   ] as const;
 }
 
