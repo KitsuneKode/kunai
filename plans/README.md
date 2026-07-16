@@ -43,15 +43,15 @@ unless "Depends on" says otherwise.
 
 ### Wave 3 — Architecture (test net FIRST, then splits)
 
-| Plan | Title                                                 | Priority | Effort | Depends on             | Status |
-| ---- | ----------------------------------------------------- | -------- | ------ | ---------------------- | ------ |
-| 010  | Characterization tests for the high-churn giants      | P2       | L      | —                      | TODO   |
-| 011  | Split `shell-workflows.ts` into feature families      | P2       | L      | 010                    | TODO   |
-| 012  | Extract pure transition core from `PlaybackPhase.ts`  | P2       | L      | 010                    | TODO   |
-| 013  | Split `ink-shell` host from surface + overlay winner  | P3       | L      | 010, 008 (soft)        | TODO   |
-| 014  | Enforce documented layer order with a boundary test   | P2       | L      | —                      | TODO   |
-| 015  | Retire legacy flat modules at `apps/cli/src` root     | P3       | M      | 011, 012               | TODO   |
-| 016  | Kill ui-cli husk, drop crypto-js (vidrock), dedup HLS | P3       | M      | 014 (shared test file) | TODO   |
+| Plan | Title                                                 | Priority | Effort | Depends on             | Status                                                   |
+| ---- | ----------------------------------------------------- | -------- | ------ | ---------------------- | -------------------------------------------------------- |
+| 010  | Characterization tests for the high-churn giants      | P2       | L      | —                      | BLOCKED (private AppRoot needs a full-container harness) |
+| 011  | Split `shell-workflows.ts` into feature families      | P2       | L      | 010                    | BLOCKED (010 prerequisite)                               |
+| 012  | Extract pure transition core from `PlaybackPhase.ts`  | P2       | L      | 010                    | BLOCKED (010 prerequisite)                               |
+| 013  | Split `ink-shell` host from surface + overlay winner  | P3       | L      | 010, 008 (soft)        | BLOCKED (010 prerequisite)                               |
+| 014  | Enforce documented layer order with a boundary test   | P2       | L      | —                      | TODO                                                     |
+| 015  | Retire legacy flat modules at `apps/cli/src` root     | P3       | M      | 011, 012               | BLOCKED (011 and 012 prerequisites)                      |
+| 016  | Kill ui-cli husk, drop crypto-js (vidrock), dedup HLS | P3       | M      | 014 (shared test file) | TODO                                                     |
 
 ### Wave 4 — Docs & platform
 
