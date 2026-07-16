@@ -390,7 +390,8 @@ export function useLineEditor({
 }) {
   const [cursor, setCursor] = useState(value.length);
   const [killRing, setKillRing] = useState("");
-  const stateRef = useRef(createLineEditorState(value));
+  const [initialState] = useState(() => createLineEditorState(value));
+  const stateRef = useRef(initialState);
 
   useEffect(() => {
     const nextCursor = clampCursor(value, stateRef.current.cursor);

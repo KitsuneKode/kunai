@@ -299,7 +299,7 @@ export function BrowseShell<T>({
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
-  const idleContextRequestGateRef = useRef(createLatestRequestGate());
+  const [idleContextRequestGate] = useState(() => createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -311,7 +311,7 @@ export function BrowseShell<T>({
 
   useEffect(() => {
     if (!loadIdleContext) return;
-    const requestGate = idleContextRequestGateRef.current;
+    const requestGate = idleContextRequestGate;
     const request = requestGate.begin();
     let active = true;
     setIdleContextStatus("loading");
@@ -323,6 +323,7 @@ export function BrowseShell<T>({
       try {
         const next = await loadIdleContext();
         if (!active || !requestGate.isCurrent(request)) return;
+        setIdleSelectedIndex(0);
         setActiveIdleContext(next);
         setIdleContextStatus("ready");
       } catch {
@@ -339,7 +340,7 @@ export function BrowseShell<T>({
       clearTimeout(timer);
       requestGate.invalidate();
     };
-  }, [loadIdleContext]);
+  }, [idleContextRequestGate, loadIdleContext]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -757,10 +758,6 @@ export function BrowseShell<T>({
   const dispatchFocusZone = useCallback((event: BrowseFocusZoneEvent) => {
     setFocusZone((current) => browseFocusZoneReducer(current, event, focusZoneContextRef.current));
   }, []);
-
-  useEffect(() => {
-    setIdleSelectedIndex(0);
-  }, [activeIdleContext]);
 
   const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
