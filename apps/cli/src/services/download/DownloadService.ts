@@ -58,6 +58,20 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
+const KUNAI_DOWNLOAD_TEMP_SUFFIX =
+  /\.tmp\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function cleanupOrphanedDownloadTempFiles(dir: string): void {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !KUNAI_DOWNLOAD_TEMP_SUFFIX.test(entry.name)) continue;
+      rmSync(join(dir, entry.name), { force: true });
+    }
+  } catch {
+    // Best effort: an unreadable download directory must not block startup recovery.
+  }
+}
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 
@@ -1287,7 +1301,7 @@ export class DownloadService {
         const dir = dirname(runningJob.tempPath);
         if (!cleanedDirs.has(dir)) {
           cleanedDirs.add(dir);
-          this.cleanupOrphanedTempFiles(dir);
+          cleanupOrphanedDownloadTempFiles(dir);
         }
         rm(runningJob.tempPath, { force: true }).catch(() => {});
       }
@@ -1307,22 +1321,6 @@ export class DownloadService {
           "interrupted",
         );
       }
-    }
-  }
-
-  /** Scan a directory for orphaned .tmp.* files and remove them. */
-  private cleanupOrphanedTempFiles(dir: string): void {
-    try {
-      const entries = readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isFile()) continue;
-        if (entry.name.includes(".tmp.")) {
-          const fullPath = join(dir, entry.name);
-          rmSync(fullPath, { force: true });
-        }
-      }
-    } catch {
-      // ignore directory read errors
     }
   }
 
@@ -1472,7 +1470,10 @@ async function waitForExit(exited: Promise<number>, timeoutMs: number): Promise<
   return result !== marker;
 }
 
-function analyzeDownloadFailure(message: string): { failureKind: string; retryable: boolean } {
+export function analyzeDownloadFailure(message: string): {
+  failureKind: string;
+  retryable: boolean;
+} {
   const normalized = message.toLowerCase();
   if (normalized.includes("artifact-invalid")) {
     return { failureKind: "artifact-invalid", retryable: false };
@@ -1501,6 +1502,13 @@ function analyzeDownloadFailure(message: string): { failureKind: string; retryab
     normalized.includes("unauthorized")
   ) {
     return { failureKind: "http-auth", retryable: false };
+  }
+  if (
+    normalized.includes("http error 429") ||
+    normalized.includes("http error 408") ||
+    normalized.includes("too many requests")
+  ) {
+    return { failureKind: "http-client", retryable: true };
   }
   if (normalized.includes("http error 4")) {
     return { failureKind: "http-client", retryable: false };

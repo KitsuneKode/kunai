@@ -51,6 +51,14 @@ import { resolveAllMangaShowId } from "./resolve-show-id";
 
 export { ALLANIME_PROVIDER_ID };
 
+export function safeAllMangaHostname(url: string): string | null {
+  try {
+    return new URL(url).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
 const ALLANIME_API_URL = "https://api.allanime.day/api";
@@ -310,6 +318,8 @@ export const allmangaProviderModule: CoreProviderModule = {
       const mapLinks = (sourceLinks: typeof links) => {
         for (const link of sourceLinks) {
           if (!link.url) continue;
+          const host = link.deferredLocator ? "allanime.day" : safeAllMangaHostname(link.url);
+          if (!host) continue;
 
           const qualityStr = link.quality || "auto";
           const { qualityLabel, qualityRank } = animeQualityFields(qualityStr);
@@ -408,7 +418,7 @@ export const allmangaProviderModule: CoreProviderModule = {
               {
                 sourceId,
                 nativeLabel: sourceLabel,
-                host: link.deferredLocator ? "allanime.day" : new URL(link.url).hostname,
+                host,
                 confidence: protocol === "hls" ? 0.95 : 0.85,
                 metadata: { translationType: mode, audioCategory: mode },
               },

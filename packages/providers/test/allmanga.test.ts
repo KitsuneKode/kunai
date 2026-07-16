@@ -7,6 +7,7 @@ import type {
   ProviderTitleBridgePort,
 } from "@kunai/types";
 
+import { safeAllMangaHostname } from "../src/allmanga/direct";
 import {
   clearAllMangaAnilistBridgeCacheForTest,
   isCatalogIdPassedAsShowId,
@@ -33,6 +34,12 @@ const TEST_CONTEXT: ProviderRuntimeContext = {
   providerId: "allanime",
   now: () => new Date().toISOString(),
 };
+
+test("AllManga source evidence rejects malformed hosts without losing valid hosts", () => {
+  expect(safeAllMangaHostname("https://")).toBeNull();
+  expect(safeAllMangaHostname("not a URL")).toBeNull();
+  expect(safeAllMangaHostname("https://cdn.example/video.m3u8")).toBe("cdn.example");
+});
 
 describe("resolveAllMangaShowId", () => {
   test("returns stored providerNativeIds without bridging", async () => {
