@@ -367,7 +367,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
           "user-agent": "kunai-test",
         },
       }),
-      { displayTitle: "Episode 2", primarySubtitle: null },
+      { displayTitle: "Episode 2", primarySubtitle: null, urlKind: "local" },
     );
     await waitFor(() =>
       harness.commands.some((command) => command[0] === "loadfile" && command[1] === localPlaylist),

@@ -1,3 +1,15 @@
+export type MpvUrlKind = "remote" | "local";
+
+/** Restricts provider-controlled media targets to HTTP(S); trusted local surfaces may use files. */
+export function isAllowedMpvUrl(url: string, kind: MpvUrlKind): boolean {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith("-")) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  if (kind !== "local") return false;
+  if (/^file:\/\//i.test(trimmed)) return true;
+  return !trimmed.includes("://");
+}
+
 /** Remote HTTP(S) HLS manifest URL. */
 export function isRemoteHlsManifestPlaybackUrl(url: string): boolean {
   const trimmed = url.trim();

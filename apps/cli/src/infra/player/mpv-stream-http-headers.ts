@@ -1,7 +1,9 @@
 import {
+  isAllowedMpvUrl,
   isLocalHlsManifestPlaybackUrl,
   isRemoteHlsManifestPlaybackUrl,
   isYoutubeWatchUrl,
+  type MpvUrlKind,
 } from "./mpv-playback-url";
 import { shouldApplyStartAtSeek } from "./mpv-start-seek";
 
@@ -22,11 +24,15 @@ export function normalizeStreamHttpHeaders(
   const referer = source.referer ?? source.Referer;
   const userAgent = source["user-agent"] ?? source["User-Agent"];
   const origin = source.origin ?? source.Origin;
+  const sanitize = (value: unknown, pattern: RegExp): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const sanitized = value.trim().replace(pattern, "");
+    return sanitized.length > 0 ? sanitized : undefined;
+  };
   return {
-    referer: typeof referer === "string" && referer.trim().length > 0 ? referer.trim() : undefined,
-    userAgent:
-      typeof userAgent === "string" && userAgent.trim().length > 0 ? userAgent.trim() : undefined,
-    origin: typeof origin === "string" && origin.trim().length > 0 ? origin.trim() : undefined,
+    referer: sanitize(referer, /[\r\n]/g),
+    userAgent: sanitize(userAgent, /[\r\n]/g),
+    origin: sanitize(origin, /[\r\n,]/g),
   };
 }
 
@@ -50,6 +56,7 @@ export function buildPersistentLoadfileOptions(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly urlKind?: MpvUrlKind;
   },
 ): PersistentLoadfileOptions {
   const { referer, userAgent, origin } = normalizeStreamHttpHeaders(headers);
@@ -94,8 +101,12 @@ export function buildPersistentLoadfileCommand(
     readonly requiresYtdl?: boolean;
     readonly ytdlFormat?: string;
     readonly ytdlRawOptions?: string;
+    readonly urlKind?: MpvUrlKind;
   },
 ): ["loadfile", string, "replace", -1, PersistentLoadfileOptions] {
+  if (!isAllowedMpvUrl(url, ytdlOptions?.urlKind ?? "remote")) {
+    throw new Error("Refusing to load unsafe stream URL scheme in mpv");
+  }
   return [
     "loadfile",
     url,

@@ -115,10 +115,11 @@ export class PlayerServiceImpl implements PlayerService {
     );
 
     try {
+      const urlKind = materialized.kind === "none" ? "remote" : "local";
       const result =
         options.playbackMode === "autoplay-chain"
-          ? await this.playAutoplayChainStream(playbackStream, options)
-          : await this.playOneShotStream(playbackStream, options);
+          ? await this.playAutoplayChainStream(playbackStream, options, urlKind)
+          : await this.playOneShotStream(playbackStream, options, urlKind);
 
       this.deps.logger.info("MPV playback complete", {
         watchedSeconds: result.watchedSeconds,
@@ -267,8 +268,10 @@ export class PlayerServiceImpl implements PlayerService {
     const policy = resolveLocalPlaybackPolicy(options.policy ?? {});
     const result = await launchMpv({
       url: options.source.filePath,
+      urlKind: "local",
       headers: {},
       subtitle: subtitlePath,
+      subtitleUrlKind: "local",
       displayTitle,
       attach: options.attach,
       startAt: options.startAt,
@@ -306,12 +309,15 @@ export class PlayerServiceImpl implements PlayerService {
   private async playOneShotStream(
     stream: StreamInfo,
     options: PlayerOptions,
+    urlKind: "remote" | "local",
   ): Promise<PlaybackResult> {
     await this.releasePersistentSession();
     return await launchMpv({
       url: stream.url,
+      urlKind,
       headers: stream.headers ?? {},
       subtitle: stream.subtitle ?? null,
+      subtitleUrlKind: "remote",
       audioPreference: options.audioPreference,
       subtitlePreference: options.subtitlePreference,
       subtitleTracks: stream.subtitleList,
@@ -337,6 +343,7 @@ export class PlayerServiceImpl implements PlayerService {
   private async playAutoplayChainStream(
     stream: StreamInfo,
     options: PlayerOptions,
+    urlKind: "remote" | "local",
   ): Promise<PlaybackResult> {
     if (this.persistentSession && !this.persistentSession.isReusable()) {
       await this.releasePersistentSession();
@@ -348,6 +355,8 @@ export class PlayerServiceImpl implements PlayerService {
 
     const sharedOptions = {
       displayTitle: options.displayTitle,
+      urlKind,
+      subtitleUrlKind: "remote" as const,
       audioPreference: options.audioPreference,
       subtitlePreference: options.subtitlePreference,
       primarySubtitle: stream.subtitle ?? null,

@@ -140,4 +140,17 @@ describe("buildPersistentLoadfileCommand", () => {
       },
     ]);
   });
+
+  test("rejects unsafe remote loadfile targets", () => {
+    expect(() => buildPersistentLoadfileCommand("--script=evil.lua")).toThrow("unsafe stream URL");
+    expect(() => buildPersistentLoadfileCommand("file:///etc/passwd")).toThrow("unsafe stream URL");
+  });
+
+  test("allows an explicitly trusted local loadfile target", () => {
+    expect(
+      buildPersistentLoadfileCommand("/tmp/kunai-hls/playlist.m3u8", 0, undefined, {
+        urlKind: "local",
+      })[1],
+    ).toBe("/tmp/kunai-hls/playlist.m3u8");
+  });
 });

@@ -27,7 +27,7 @@ unless "Depends on" says otherwise.
 | Plan | Title                                                  | Priority | Effort | Depends on | Status |
 | ---- | ------------------------------------------------------ | -------- | ------ | ---------- | ------ |
 | 001  | Guard crash handlers against re-entrant shutdown       | P1       | S      | —          | DONE   |
-| 002  | Harden untrusted-provider → mpv argv/IPC boundary      | P1       | S      | —          | TODO   |
+| 002  | Harden untrusted-provider → mpv argv/IPC boundary      | P1       | S      | —          | DONE   |
 | 003  | Fix AllManga URL / temp-file deletion / 429 retry bugs | P1       | S      | —          | TODO   |
 | 004  | Close mpv IPC orphan on abort + real `--debug` log     | P2       | M      | —          | TODO   |
 | 005  | Bump transitive `ws` past the high-severity advisory   | P1       | S      | —          | TODO   |

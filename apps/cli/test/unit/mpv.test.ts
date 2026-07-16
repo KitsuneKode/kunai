@@ -19,6 +19,7 @@ test("buildMpvArgs whitelists HTTPS for local materialized HLS playlists", () =>
   const args = buildMpvArgs(
     {
       url: "/tmp/kunai-hls/playlist.m3u8",
+      urlKind: "local",
       headers: { referer: "https://www.cineplay.to/" },
       subtitle: null,
       displayTitle: "Study Group",

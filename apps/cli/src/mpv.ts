@@ -17,6 +17,7 @@ import {
   shouldEmitPlaybackProgress,
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
+import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
@@ -31,6 +32,7 @@ import {
 
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
+export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -55,8 +57,10 @@ import { normalizeSubtitleUrl } from "@/subtitle";
 
 export async function launchMpv(opts: {
   url: string;
+  urlKind?: MpvUrlKind;
   headers: Record<string, string>;
   subtitle: string | null;
+  subtitleUrlKind?: MpvUrlKind;
   audioPreference?: string;
   subtitlePreference?: string;
   subtitleTracks?: readonly SubtitleTrack[];
@@ -415,8 +419,10 @@ export function shouldAbortLaunchForDefinitivePreflight(
 export function buildMpvArgs(
   opts: {
     url: string;
+    urlKind?: MpvUrlKind;
     headers: Record<string, string>;
     subtitle: string | null;
+    subtitleUrlKind?: MpvUrlKind;
     audioPreference?: string;
     subtitlePreference?: string;
     subtitleTracks?: readonly SubtitleTrack[];
@@ -436,7 +442,11 @@ export function buildMpvArgs(
     scriptOpts?: string;
   },
 ): string[] {
-  const args: string[] = [opts.url];
+  if (!isAllowedMpvUrl(opts.url, opts.urlKind ?? "remote")) {
+    throw new Error("Refusing to launch mpv with unsafe stream URL scheme");
+  }
+
+  const args: string[] = [];
 
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
     args.push(`--ytdl-format=${opts.ytdlFormat ?? "bv*+ba/b"}`);
@@ -452,8 +462,10 @@ export function buildMpvArgs(
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
 
-  if (opts.subtitle) {
+  if (opts.subtitle && isAllowedMpvUrl(opts.subtitle, opts.subtitleUrlKind ?? "remote")) {
     args.push(`--sub-file=${opts.subtitle}`);
+  } else if (opts.subtitle) {
+    dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
   }
 
   const alang = toMpvLanguageToken(opts.audioPreference, {
@@ -535,6 +547,8 @@ export function buildMpvArgs(
     );
     if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
   }
+
+  args.push("--", opts.url);
 
   return args;
 }
@@ -621,21 +635,25 @@ async function closeIpcSession(ipcSession: MpvIpcSession | null): Promise<void> 
   await ipcSession.close().catch(() => {});
 }
 
-async function attachLateSubtitles(
+export async function attachLateSubtitles(
   ipcSession: MpvIpcSession | null,
   attachment: LateSubtitleAttachment,
   onAttached?: (trackCount: number) => void,
 ): Promise<number> {
   if (!ipcSession) return 0;
   let attached = 0;
-  if (attachment.primarySubtitle) {
-    const primary = describeSubtitleTrackForMpv(
-      attachment.primarySubtitle,
-      attachment.subtitleTracks,
-    );
+  const primarySubtitle =
+    attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
+      ? attachment.primarySubtitle
+      : null;
+  if (attachment.primarySubtitle && !primarySubtitle) {
+    dbg("mpv", "subtitle-target-rejected", { delivery: "late-primary" });
+  }
+  if (primarySubtitle) {
+    const primary = describeSubtitleTrackForMpv(primarySubtitle, attachment.subtitleTracks);
     const result = await ipcSession.send([
       "sub-add",
-      attachment.primarySubtitle,
+      primarySubtitle,
       "select",
       primary.title,
       primary.language,
@@ -643,10 +661,11 @@ async function attachLateSubtitles(
     if (result.ok) attached += 1;
   }
 
-  for (const track of collectAdditionalSubtitleTracks(
-    attachment.primarySubtitle ?? null,
-    attachment.subtitleTracks,
-  )) {
+  for (const track of collectAdditionalSubtitleTracks(primarySubtitle, attachment.subtitleTracks)) {
+    if (!isAllowedMpvUrl(track.url, "remote")) {
+      dbg("mpv", "subtitle-target-rejected", { delivery: "late-additional" });
+      continue;
+    }
     const result = await ipcSession.send([
       "sub-add",
       track.url,

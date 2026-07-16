@@ -1,4 +1,5 @@
 import type { SubtitleTrack } from "@/domain/types";
+import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
@@ -57,16 +58,20 @@ export class PersistentSubtitleManager {
 
     await this.removeExternalSubtitles(ipcSession);
 
-    if (primarySubtitle) {
-      const primary = describeSubtitleTrackForMpv(primarySubtitle, subtitleTracks);
+    const safePrimary =
+      primarySubtitle && isAllowedMpvUrl(primarySubtitle, "remote") ? primarySubtitle : null;
+    if (safePrimary) {
+      const primary = describeSubtitleTrackForMpv(safePrimary, subtitleTracks);
       const result = await ipcSession.send(
-        ["sub-add", primarySubtitle, "select", primary.title, primary.language],
+        ["sub-add", safePrimary, "select", primary.title, primary.language],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
       if (!result.ok) return;
     }
 
-    const additionalTracks = collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks);
+    const additionalTracks = collectAdditionalSubtitleTracks(safePrimary, subtitleTracks).filter(
+      (track) => isAllowedMpvUrl(track.url, "remote"),
+    );
     for (const track of additionalTracks) {
       const result = await ipcSession.send(
         ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
@@ -75,7 +80,7 @@ export class PersistentSubtitleManager {
       if (!result.ok) return;
     }
 
-    const attachedCount = (primarySubtitle ? 1 : 0) + additionalTracks.length;
+    const attachedCount = (safePrimary ? 1 : 0) + additionalTracks.length;
     if (attachedCount > 0) {
       onAttached?.(attachedCount);
     }
@@ -87,21 +92,22 @@ export class PersistentSubtitleManager {
   ): Promise<SubtitleAttachmentResult> {
     if (!ipcSession) return { status: "no-ipc", attachedCount: 0 };
     let attached = 0;
+    const safePrimary =
+      attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
+        ? attachment.primarySubtitle
+        : null;
     const additionalTracks = collectAdditionalSubtitleTracks(
-      attachment.primarySubtitle ?? null,
+      safePrimary,
       attachment.subtitleTracks,
-    );
-    if (!attachment.primarySubtitle && additionalTracks.length === 0) {
+    ).filter((track) => isAllowedMpvUrl(track.url, "remote"));
+    if (!safePrimary && additionalTracks.length === 0) {
       return { status: "none-requested", attachedCount: 0 };
     }
 
-    if (attachment.primarySubtitle) {
-      const primary = describeSubtitleTrackForMpv(
-        attachment.primarySubtitle,
-        attachment.subtitleTracks,
-      );
+    if (safePrimary) {
+      const primary = describeSubtitleTrackForMpv(safePrimary, attachment.subtitleTracks);
       const result = await ipcSession.send(
-        ["sub-add", attachment.primarySubtitle, "select", primary.title, primary.language],
+        ["sub-add", safePrimary, "select", primary.title, primary.language],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
       if (result.ok) attached += 1;

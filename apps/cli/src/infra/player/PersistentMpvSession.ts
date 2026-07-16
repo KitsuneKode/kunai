@@ -35,6 +35,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
+import type { MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import {
@@ -93,6 +94,8 @@ const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
 
 type PlayerCycleOptions = {
   displayTitle: string;
+  urlKind?: MpvUrlKind;
+  subtitleUrlKind?: MpvUrlKind;
   audioPreference?: string;
   subtitlePreference?: string;
   primarySubtitle: string | null;
@@ -385,6 +388,7 @@ export class PersistentMpvSession {
         requiresYtdl: stream.requiresYtdl,
         ytdlFormat: stream.ytdlFormat,
         ytdlRawOptions: stream.ytdlRawOptions,
+        urlKind: options.urlKind,
       }),
       3_000,
     );
@@ -516,10 +520,12 @@ export class PersistentMpvSession {
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
+        urlKind: this.initialOptions.urlKind,
         headers: this.initialStream.headers ?? {},
         audioPreference: this.initialOptions.audioPreference,
         subtitlePreference: this.initialOptions.subtitlePreference,
         subtitle: this.initialOptions.primarySubtitle,
+        subtitleUrlKind: this.initialOptions.subtitleUrlKind,
         subtitleTracks: this.initialOptions.subtitleTracks,
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialOptions.startAt,
@@ -1414,6 +1420,7 @@ export class PersistentMpvSession {
             requiresYtdl: this.playbackStream.requiresYtdl,
             ytdlFormat: this.playbackStream.ytdlFormat,
             ytdlRawOptions: this.playbackStream.ytdlRawOptions,
+            urlKind: opts.urlKind,
           },
         ),
         12_000,

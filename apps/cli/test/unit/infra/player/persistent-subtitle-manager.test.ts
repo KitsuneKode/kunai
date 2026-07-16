@@ -38,6 +38,21 @@ function createFakeIpc(failCommand?: string): {
 }
 
 describe("PersistentSubtitleManager", () => {
+  test("skips local subtitle targets on remote persistent playback", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+    const result = await manager.attachSubtitles(ipc, {
+      primarySubtitle: "file:///etc/passwd",
+      subtitleTracks: [
+        { url: "file:///etc/shadow", language: "bad" },
+        { url: "https://sub.example/en.vtt", language: "en" },
+      ],
+    });
+
+    expect(result).toEqual({ status: "attached", attachedCount: 1 });
+    expect(commands).toEqual([["sub-add", "https://sub.example/en.vtt", "auto", "", "en"]]);
+  });
+
   test("removes only cached external subtitle ids", async () => {
     const { ipc, commands } = createFakeIpc();
     const manager = new PersistentSubtitleManager();
