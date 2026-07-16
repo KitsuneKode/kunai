@@ -51,6 +51,7 @@ import {
   recordContinuationSourceResolution,
 } from "@/services/continuation/continuation-diagnostics";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
+import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-milestone";
 import {
   parseOfflineTitleCleanupPreference,
   selectDownloadCleanupCandidates,
@@ -823,12 +824,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const { launchSessionApp } = await import("./app-shell/ink-shell");
+  recordCliStartupMilestone(container.diagnosticsService, "shell-module-loaded");
   if (args.debug) {
     logger.info("Ink shell loaded", {
       lazyImportMs: Math.round(performance.now() - shellLoadStartedAt),
     });
   }
   launchSessionApp(container);
+  recordCliStartupMilestone(container.diagnosticsService, "shell-mounted");
   for (const adapter of container.syncService.adapters) {
     const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
     if (!ensureConnectedUsername) continue;

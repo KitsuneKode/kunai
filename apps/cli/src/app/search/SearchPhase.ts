@@ -5,13 +5,16 @@
 // Returns the selected title or cancellation/quit signals.
 // =============================================================================
 
-import { buildBrowseIdleContext } from "@/app-shell/browse-idle-context";
+import {
+  buildBrowseIdleContext,
+  type ContinueWatchingSelection,
+} from "@/app-shell/browse-idle-context";
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
-import type { BrowseShellOption } from "@/app-shell/types";
+import type { BrowseIdleContext, BrowseShellOption } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
@@ -34,6 +37,10 @@ import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calend
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
 import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
+import {
+  shouldDeferBrowseIdleContext,
+  type SearchStartupRoute,
+} from "@/app/search/search-startup-policy";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -50,6 +57,7 @@ import {
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
+import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-milestone";
 import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
@@ -63,7 +71,7 @@ import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 export type SearchPhaseInput = {
   initialQuery?: string;
-  initialRoute?: "trending" | "recommendation" | "calendar" | "random" | "surprise" | "history";
+  initialRoute?: SearchStartupRoute;
   preserveExistingSearch?: boolean;
   /** 1-based index into search results; skips the browse shell when in range (use with bootstrap search). */
   autoPickSearchResultIndex?: number;
@@ -95,6 +103,63 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
   private hasQueuedStartupReleaseReconciliation = false;
   private hasHealedHistoryMetadata = false;
+
+  private readLocalBrowseHistory(context: PhaseContext): Record<string, HistoryProgress> {
+    const { container } = context;
+    let allHistory: Record<string, HistoryProgress> = {};
+    try {
+      allHistory = readLatestHistoryByTitle(container.historyRepository);
+      enqueueReleaseReconciliation(
+        container,
+        collectReleaseReconciliationRows(container),
+        this.hasQueuedStartupReleaseReconciliation ? "browse-idle" : "startup",
+        context.signal,
+      );
+      this.hasQueuedStartupReleaseReconciliation = true;
+
+      if (!this.hasHealedHistoryMetadata) {
+        this.hasHealedHistoryMetadata = true;
+        const historyForHeal = Object.values(allHistory);
+        void (async () => {
+          try {
+            const healed = await container.historyMetadataHealer.heal(
+              historyForHeal,
+              context.signal,
+            );
+            if (healed.length === 0) return;
+            const latestByTitle = new Map(historyForHeal.map((row) => [row.titleId, row] as const));
+            const now = new Date().toISOString();
+            for (const outcome of healed) {
+              if (outcome.episodeCount) {
+                container.historyCatalogEpisodeCounts.set(outcome.titleId, outcome.episodeCount);
+                const entry = latestByTitle.get(outcome.titleId);
+                if (entry) {
+                  seedCaughtUpReleaseProgressFromCatalogCount(
+                    container.releaseProgressWriter,
+                    entry,
+                    outcome.episodeCount,
+                    now,
+                  );
+                }
+              }
+            }
+            const healedIds = new Set(healed.map((outcome) => outcome.titleId));
+            enqueueReleaseReconciliation(
+              container,
+              historyForHeal.filter((row) => healedIds.has(row.titleId)),
+              "history",
+              context.signal,
+            );
+          } catch {
+            // best-effort; healing retries next session
+          }
+        })();
+      }
+    } catch {
+      // best-effort local reads only
+    }
+    return allHistory;
+  }
 
   async execute(
     input: SearchPhaseInput | void,
@@ -273,79 +338,50 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
         }
 
-        let allHistory: Record<string, HistoryProgress> = {};
-        try {
-          allHistory = readLatestHistoryByTitle(container.historyRepository);
-          enqueueReleaseReconciliation(
-            container,
-            collectReleaseReconciliationRows(container),
-            this.hasQueuedStartupReleaseReconciliation ? "browse-idle" : "startup",
-            context.signal,
-          );
-          this.hasQueuedStartupReleaseReconciliation = true;
-
-          // Self-heal missing posters / external ids for history titles, once per
-          // session, in the background. Healed titles (now carrying external ids) are
-          // re-reconciled so finished series learn their episode total and stop being
-          // mis-bucketed as "continue".
-          if (!this.hasHealedHistoryMetadata) {
-            this.hasHealedHistoryMetadata = true;
-            const historyForHeal = Object.values(allHistory);
-            void (async () => {
-              try {
-                const healed = await container.historyMetadataHealer.heal(
-                  historyForHeal,
-                  context.signal,
-                );
-                if (healed.length === 0) return;
-                const latestByTitle = new Map(
-                  historyForHeal.map((row) => [row.titleId, row] as const),
-                );
-                const now = new Date().toISOString();
-                for (const outcome of healed) {
-                  if (outcome.episodeCount) {
-                    container.historyCatalogEpisodeCounts.set(
-                      outcome.titleId,
-                      outcome.episodeCount,
-                    );
-                    const entry = latestByTitle.get(outcome.titleId);
-                    if (entry) {
-                      seedCaughtUpReleaseProgressFromCatalogCount(
-                        container.releaseProgressWriter,
-                        entry,
-                        outcome.episodeCount,
-                        now,
-                      );
-                    }
-                  }
-                }
-                const healedIds = new Set(healed.map((outcome) => outcome.titleId));
-                enqueueReleaseReconciliation(
-                  container,
-                  historyForHeal.filter((row) => healedIds.has(row.titleId)),
-                  "history",
-                  context.signal,
-                );
-              } catch {
-                // best-effort; healing retries next session
-              }
-            })();
-          }
-        } catch {
-          // best-effort
-        }
-
-        const browseContext = await loadBrowseDisplayContext(
-          container,
-          currentState.searchResults,
-          {
-            preloadedHistory: allHistory,
-          },
-        );
-
-        const { idleContext, continueWatchingSelection } = await buildBrowseIdleContext(container, {
-          preloadedHistory: allHistory,
+        const deferIdleContext = shouldDeferBrowseIdleContext({
+          query: currentState.searchQuery,
+          resultCount: currentState.searchResults.length,
+          initialRoute: pendingInitialRoute,
         });
+        const allHistory = deferIdleContext ? {} : this.readLocalBrowseHistory(context);
+        const browseContext =
+          currentState.searchResults.length === 0
+            ? {
+                historyMap: allHistory,
+                enrichments: new Map<string, ResultEnrichment>(),
+                queueTitleIds: new Set<string>(),
+                followPreferenceByTitleId: new Map<string, FollowedTitlePreference>(),
+              }
+            : await loadBrowseDisplayContext(container, currentState.searchResults, {
+                preloadedHistory: allHistory,
+              });
+
+        let latestIdleContext: BrowseIdleContext | undefined;
+        let continueWatchingSelection: ContinueWatchingSelection | null = null;
+        if (!deferIdleContext) {
+          const bundle = await buildBrowseIdleContext(container, {
+            preloadedHistory: allHistory,
+          });
+          latestIdleContext = bundle.idleContext;
+          continueWatchingSelection = bundle.continueWatchingSelection;
+        }
+        const loadIdleContext = deferIdleContext
+          ? async () => {
+              try {
+                const deferredHistory = this.readLocalBrowseHistory(context);
+                const bundle = await buildBrowseIdleContext(container, {
+                  preloadedHistory: deferredHistory,
+                });
+                latestIdleContext = bundle.idleContext;
+                continueWatchingSelection = bundle.continueWatchingSelection;
+                recordCliStartupMilestone(diagnosticsService, "idle-context-ready");
+                return bundle.idleContext;
+              } catch (error) {
+                recordCliStartupMilestone(diagnosticsService, "idle-context-failed");
+                throw error;
+              }
+            }
+          : undefined;
 
         const initialCalendarTypeTab = pendingCalendarType;
         pendingCalendarType = undefined;
@@ -353,7 +389,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         ensureSessionProviderMatchesLane(stateManager, providerRegistry);
         const syncedState = stateManager.getState();
 
-        const outcome = await openBrowseShell({
+        const outcomePromise = openBrowseShell({
           mode: syncedState.mode,
           provider: syncedState.provider,
           settings: container.config.getRaw(),
@@ -379,7 +415,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           commands: resolveCommands(syncedState, SEARCH_BROWSE_COMMAND_IDS, {
             excludeGroups: ["Experimental"],
           }),
-          idleContext,
+          idleContext: latestIdleContext,
+          loadIdleContext,
           onQueueSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({
@@ -575,6 +612,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             };
           },
         });
+        recordCliStartupMilestone(diagnosticsService, "browse-mounted");
+        const outcome = await outcomePromise;
 
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event
@@ -656,7 +695,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "play-offline-ready") {
-            const jobId = idleContext?.offlineReadyNext?.offlineJobId;
+            const jobId = latestIdleContext?.offlineReadyNext?.offlineJobId;
             if (!jobId) {
               logger.info("Offline-ready idle row requested without a local job");
               continue;
