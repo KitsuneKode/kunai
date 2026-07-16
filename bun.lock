@@ -204,22 +204,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/ui-cli": {
-      "name": "@kunai/ui-cli",
-      "version": "0.1.0",
-      "dependencies": {
-        "@kunai/design": "workspace:*",
-        "ink": "catalog:cli",
-        "react": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "@types/react": "catalog:",
-      },
-      "peerDependencies": {
-        "typescript": "catalog:",
-      },
-    },
   },
   "overrides": {
     "@types/node": "catalog:",
@@ -472,8 +456,6 @@
     "@kunai/storage": ["@kunai/storage@workspace:packages/storage"],
 
     "@kunai/types": ["@kunai/types@workspace:packages/types"],
-
-    "@kunai/ui-cli": ["@kunai/ui-cli@workspace:packages/ui-cli"],
 
     "@manypkg/find-root": ["@manypkg/find-root@1.1.0", "", { "dependencies": { "@babel/runtime": "^7.5.5", "@types/node": "^12.7.1", "find-up": "^4.1.0", "fs-extra": "^8.1.0" } }, "sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA=="],
 

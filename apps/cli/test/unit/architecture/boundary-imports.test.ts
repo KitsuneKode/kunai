@@ -141,7 +141,6 @@ const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([
   ["@kunai/relay", ["@kunai/core", "@kunai/types"]],
   ["@kunai/storage", ["@kunai/core", "@kunai/schemas", "@kunai/types"]],
   ["@kunai/design", []],
-  ["@kunai/ui-cli", ["@kunai/design"]],
 ]);
 
 function collectImports(file: string): string[] {
@@ -308,7 +307,6 @@ describe("runtime boundary imports", () => {
       "packages/relay/package.json",
       "packages/storage/package.json",
       "packages/design/package.json",
-      "packages/ui-cli/package.json",
     ];
     const offenders = packageJsonFiles.flatMap((file) => {
       const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, file), "utf8")) as {
