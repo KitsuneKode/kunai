@@ -28,6 +28,15 @@ export {
   HistoryRepository,
 } from "./repositories/history";
 export type { HistoryProgress, HistoryProgressInput } from "./repositories/history";
+export {
+  externalIdsToAliases,
+  HistoryTitleAliasRepository,
+} from "./repositories/history-title-aliases";
+export type {
+  HistoryTitleAlias,
+  HistoryTitleAliasInput,
+  HistoryTitleAliasNs,
+} from "./repositories/history-title-aliases";
 export { PlaybackEventRepository } from "./repositories/playback-events";
 export type {
   PlaybackEventInput,

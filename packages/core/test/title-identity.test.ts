@@ -129,6 +129,71 @@ test("mergeProviderNativeId is idempotent", () => {
   expect(second).toEqual(first);
 });
 
+test("resolveCanonicalCatalogTitleId prefers AniList for anime-class series", () => {
+  expect(
+    resolveCanonicalCatalogTitleId(
+      {
+        id: "tmdb:13916",
+        kind: "series",
+        externalIds: { tmdbId: "13916", anilistId: "1535", malId: "1535" },
+      },
+      { contentClass: "anime" },
+    ),
+  ).toBe("1535");
+});
+
+test("resolveCanonicalCatalogTitleId anime-class series falls back to MAL", () => {
+  expect(
+    resolveCanonicalCatalogTitleId(
+      {
+        id: "tmdb:13916",
+        kind: "series",
+        externalIds: { tmdbId: "13916", malId: "1535" },
+      },
+      { contentClass: "anime" },
+    ),
+  ).toBe("1535");
+});
+
+test("resolveCanonicalCatalogTitleId anime-class series without anime ids keeps tmdb unit", () => {
+  expect(
+    resolveCanonicalCatalogTitleId(
+      {
+        id: "tmdb:13916",
+        kind: "series",
+        externalIds: { tmdbId: "13916" },
+      },
+      { contentClass: "anime" },
+    ),
+  ).toBe("tmdb:13916");
+});
+
+test("resolveCanonicalCatalogTitleId general content class never adopts anime ids for series", () => {
+  expect(
+    resolveCanonicalCatalogTitleId(
+      {
+        id: "tmdb:1",
+        kind: "series",
+        externalIds: { tmdbId: "1", anilistId: "987" },
+      },
+      { contentClass: "general" },
+    ),
+  ).toBe("tmdb:1");
+});
+
+test("resolveCanonicalCatalogTitleId anime-class movie prefers AniList", () => {
+  expect(
+    resolveCanonicalCatalogTitleId(
+      {
+        id: "tmdb:129",
+        kind: "movie",
+        externalIds: { tmdbId: "129", anilistId: "199" },
+      },
+      { contentClass: "anime" },
+    ),
+  ).toBe("199");
+});
+
 test("mergeBackfillExternalIds preserves existing catalog ids", () => {
   const merged = mergeBackfillExternalIds(
     { anilistId: "20431", providerNativeIds: { miruro: "20431" } },

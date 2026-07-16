@@ -504,6 +504,23 @@ export const dataMigrations: readonly Migration[] = [
         ON history_progress(last_watched_at DESC);
     `,
   },
+  {
+    id: "025_data_history_title_aliases",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS history_title_aliases (
+        alias_ns TEXT NOT NULL,
+        alias_id TEXT NOT NULL,
+        title_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (alias_ns, alias_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_history_title_aliases_title
+        ON history_title_aliases(title_id);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

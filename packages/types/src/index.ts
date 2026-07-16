@@ -93,6 +93,24 @@ export interface CachePolicy {
   readonly allowStale?: boolean;
 }
 
+/**
+ * Cross-catalog id crosswalk for one work (AniList/MAL ↔ TMDB/IMDB), plus the
+ * episode-coordinate hints ARM exposes. Confidence gates what consumers may do:
+ * only "high" (exact id map) may rewrite history units or enable series-lane
+ * fallback for anime. See .plans/catalog-identity-parity.md.
+ */
+export interface CatalogIdGraph {
+  readonly anilistId?: string;
+  readonly malId?: string;
+  readonly tmdbId?: string;
+  readonly imdbId?: string;
+  readonly tmdbMedia?: "tv" | "movie";
+  /** TMDB season the mapped AniList/MAL entry corresponds to (from ARM). */
+  readonly tmdbSeason?: number;
+  readonly confidence: "high" | "medium" | "low";
+  readonly source: "passthrough" | "arm" | "fribb" | "provider" | "manual";
+}
+
 export interface ProviderExternalIds {
   readonly anilistId?: string;
   readonly tmdbId?: string;

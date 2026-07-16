@@ -10,9 +10,21 @@ export type TitleIdentityInput = {
   readonly externalIds?: ProviderExternalIds;
 };
 
+export type CanonicalTitleIdOptions = {
+  /**
+   * Content classification from the caller's richer signals (AniList/MAL id,
+   * deterministic anime tag, anime-only provider). "anime" lets an anime work
+   * that arrived through the TMDB/series lane keep its AniList/MAL history unit;
+   * pure western series (no anime ids) are never forced. Defaults to "general",
+   * which preserves the kind-driven rules exactly.
+   */
+  readonly contentClass?: "anime" | "general";
+};
+
 /** Stable catalog key for history, continue-watching, and cross-provider merge. */
 export function resolveCanonicalCatalogTitleId(
   title: Pick<TitleIdentityInput, "id" | "kind" | "externalIds">,
+  options?: CanonicalTitleIdOptions,
 ): string {
   const { id, kind, externalIds } = title;
   const anilistId = externalIds?.anilistId;
@@ -20,6 +32,10 @@ export function resolveCanonicalCatalogTitleId(
   const malId = externalIds?.malId;
 
   if (kind === "anime") {
+    return anilistId ?? malId ?? id;
+  }
+
+  if (options?.contentClass === "anime" && kind !== "video" && (anilistId || malId)) {
     return anilistId ?? malId ?? id;
   }
 
