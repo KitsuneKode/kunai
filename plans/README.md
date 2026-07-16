@@ -51,7 +51,7 @@ unless "Depends on" says otherwise.
 | 013  | Split `ink-shell` host from surface + overlay winner  | P3       | L      | 010, 008 (soft)        | BLOCKED (010 prerequisite)                                |
 | 014  | Enforce documented layer order with a boundary test   | P2       | L      | —                      | BLOCKED (5 inversions cleaned; 14 legacy edges baselined) |
 | 015  | Retire legacy flat modules at `apps/cli/src` root     | P3       | M      | 011, 012               | BLOCKED (011 and 012 prerequisites)                       |
-| 016  | Kill ui-cli husk, drop crypto-js (vidrock), dedup HLS | P3       | M      | 014 (shared test file) | TODO                                                      |
+| 016  | Kill ui-cli husk, drop crypto-js (vidrock), dedup HLS | P3       | M      | 014 (shared test file) | BLOCKED (ui-cli and VidRock done; HLS premise is stale)   |
 
 ### Wave 4 — Docs & platform
 

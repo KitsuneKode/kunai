@@ -1,10 +1,11 @@
+import { createCipheriv } from "node:crypto";
+
 import type { CoreProviderModule } from "@kunai/core";
 import type {
   ProviderResolveInput,
   ProviderResolveResult,
   ProviderRuntimeContext,
 } from "@kunai/types";
-import CryptoJS from "crypto-js";
 
 import {
   directStreamFetchSignal,
@@ -48,7 +49,7 @@ export function resolveVidrockDirect(
       const apiType = resolveInput.mediaKind === "movie" ? "movie" : "show";
       const itemId =
         resolveInput.mediaKind === "movie" ? String(tmdbId) : `${tmdbId}_${season}_${episode}`;
-      const encoded = encodeURIComponent(encryptItemId(itemId));
+      const encoded = encodeURIComponent(encryptVidrockItemId(itemId));
       const headers = { Origin: ORIGIN, Referer: REFERER, "User-Agent": USER_AGENT };
 
       const response = await fetch(`${BASE_URL}/${apiType}/${encoded}`, {
@@ -94,19 +95,13 @@ export function resolveVidrockDirect(
 }
 
 /** AES-CBC encrypt the item id, then base64url-encode (VidRock's addressing scheme). */
-function encryptItemId(itemId: string): string {
-  const key = CryptoJS.enc.Utf8.parse(PASSPHRASE);
-  const iv = CryptoJS.enc.Utf8.parse(PASSPHRASE.substring(0, 16));
-  const encrypted = CryptoJS.AES.encrypt(itemId, key, {
-    iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7,
-  });
-  return encrypted.ciphertext
-    .toString(CryptoJS.enc.Base64)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+export function encryptVidrockItemId(itemId: string): string {
+  const cipher = createCipheriv(
+    "aes-256-cbc",
+    Buffer.from(PASSPHRASE, "utf8"),
+    Buffer.from(PASSPHRASE.slice(0, 16), "utf8"),
+  );
+  return Buffer.concat([cipher.update(itemId, "utf8"), cipher.final()]).toString("base64url");
 }
 
 async function fetchPlaylist(
