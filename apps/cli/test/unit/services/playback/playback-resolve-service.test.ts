@@ -701,7 +701,6 @@ test("PlaybackResolveService force-validates fresh cached stream after suspected
     "recovery-decision",
     "provider-resolve-started",
     "attempt",
-    "cache-health-check",
   ]);
   expect(result.cacheStatus).toBe("miss");
   expect(result.cacheProvenance).toBe("refetched");
@@ -1220,7 +1219,7 @@ test("PlaybackResolveService sends refresh intent and ignores provider health on
   expect(result.providerId).toBe("fallback-down");
 });
 
-test("PlaybackResolveService skips a freshly resolved stream that fails preflight and tries fallback provider", async () => {
+test("PlaybackResolveService hands a freshly resolved stream to mpv without a preflight round-trip", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];
   const resolvedByProvider = new Map<ProviderId, ProviderResolveResult>([
@@ -1334,26 +1333,18 @@ test("PlaybackResolveService skips a freshly resolved stream that fails prefligh
     signal: new AbortController().signal,
   });
 
-  expect(observedCandidates).toEqual([["primary", "fallback"], ["fallback"]]);
-  expect(healthChecks).toEqual([
-    "https://primary.example/dead.m3u8",
-    "https://fallback.example/live.m3u8",
-  ]);
-  expect(result.providerId).toBe("fallback");
-  expect(result.stream?.url).toBe("https://fallback.example/live.m3u8");
+  expect(observedCandidates).toEqual([["primary", "fallback"]]);
+  expect(healthChecks).toEqual([]);
+  expect(result.providerId).toBe("primary");
+  expect(result.stream?.url).toBe("https://primary.example/dead.m3u8");
   expect(result.attempts).toEqual([
     expect.objectContaining({
       providerId: "primary",
-      stream: null,
-      failure: expect.objectContaining({ code: "expired" }),
-    }),
-    expect.objectContaining({
-      providerId: "fallback",
-      stream: expect.objectContaining({ url: "https://fallback.example/live.m3u8" }),
+      stream: expect.objectContaining({ url: "https://primary.example/dead.m3u8" }),
       failure: undefined,
     }),
   ]);
-  expect(result.providerTimeline?.status).toBe("recovered");
+  expect(result.providerTimeline?.status).toBe("resolved");
   expect(cache.setKeys).toHaveLength(1);
 });
 

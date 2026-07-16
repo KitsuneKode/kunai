@@ -22,7 +22,7 @@ import {
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
-import { isVideasyFamilyProvider, ProviderResolveAbortError } from "@kunai/core";
+import { isVideasyFamilyProvider } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
   type ProviderEngine,
@@ -37,7 +37,6 @@ import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";
 import type { ProviderHealthRepository } from "@kunai/storage";
 import type {
-  ProviderFailure,
   ProviderHealthDelta,
   ProviderId,
   ProviderResolveInput,
@@ -45,7 +44,6 @@ import type {
   ProviderSelectionDecision,
   StartupPriority,
 } from "@kunai/types";
-import { isProviderResolveResultResolved } from "@kunai/types";
 
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy";
@@ -521,10 +519,8 @@ export class PlaybackResolveService {
       });
     };
     emitAttempts(engineResult.attempts);
-    let combinedAttempts = [...engineResult.attempts];
     let resolvedStream: StreamInfo | null = null;
-    const refreshedProviders = new Set<ProviderId>();
-    while (engineResult.result) {
+    if (engineResult.result) {
       const resolvedProviderId = engineResult.providerId ?? input.providerId;
       const selection = providerScopedSelection(input, resolvedProviderId);
       const candidateStream = providerResolveResultToStreamInfo({
@@ -536,118 +532,13 @@ export class PlaybackResolveService {
         blockedStreamUrls: input.blockedStreamUrls,
       });
 
-      if (!candidateStream) break;
-
-      if (
-        candidateStream.deferredLocator ||
-        (!this.deps.streamHealth && !this.deps.streamHealthService)
-      ) {
+      if (candidateStream) {
+        // Fresh provider results go straight to mpv. Immediate playback failure is
+        // already classified as a dead stream by PlaybackPhase, which records the
+        // URL in the episode/provider ledger, invalidates caches, and re-enters
+        // resolution with blockedStreamUrls so this candidate cannot loop.
         resolvedStream = candidateStream;
-        break;
       }
-      const health = await this.checkCachedStreamHealth(candidateStream, {
-        force: true,
-        signal: resolveSignal,
-        phase: "resolve-gate",
-      });
-      if (health.checked) {
-        input.onEvent?.({
-          type: "cache-health-check",
-          providerId: resolvedProviderId,
-          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
-          healthy: health.healthy,
-          ageMs: health.ageMs,
-        });
-      }
-      if (health.healthy) {
-        resolvedStream = candidateStream;
-        break;
-      }
-
-      const failure = createResolvedStreamPreflightFailure(resolvedProviderId);
-      const markedAttempt = markAttemptFailedByPreflight(
-        combinedAttempts,
-        resolvedProviderId,
-        failure,
-      );
-      combinedAttempts = markedAttempt.attempts;
-      input.onEvent?.({
-        type: "failure",
-        providerId: resolvedProviderId,
-        providerName:
-          this.deps.engine.getManifest(resolvedProviderId)?.displayName ?? resolvedProviderId,
-        attempt: markedAttempt.index + 1,
-        maxAttempts: compatibleIds.length,
-        issue: "dead-stream",
-        retryable: true,
-      });
-      await this.deps.cacheStore.delete(this.buildCacheKey(input, resolvedProviderId));
-      await this.deps.sourceInventory?.delete({
-        ...inventoryInput,
-        providerId: resolvedProviderId,
-      });
-      this.deps.titleProviderHealth?.recordFailure(
-        input.title.id,
-        resolvedProviderId,
-        undefined,
-        "dead-stream",
-      );
-
-      if (!refreshedProviders.has(resolvedProviderId as ProviderId)) {
-        refreshedProviders.add(resolvedProviderId as ProviderId);
-        input.onFeedback?.({
-          detail: `Refreshing ${this.deps.engine.getManifest(resolvedProviderId)?.displayName ?? resolvedProviderId}`,
-          note: "Resolved stream was not reachable — requesting a fresh manifest before switching providers.",
-        });
-        try {
-          const refreshResult = await this.deps.engine.resolve(
-            { ...resolveInput, intent: "refresh" },
-            resolvedProviderId as ProviderId,
-            resolveSignal,
-            (event) => input.onEvent?.({ type: "provider-engine-event", event }),
-          );
-          if (isProviderResolveResultResolved(refreshResult)) {
-            engineResult = {
-              result: refreshResult,
-              providerId: resolvedProviderId,
-              attempts: combinedAttempts,
-            };
-            continue;
-          }
-        } catch (error) {
-          if (!(error instanceof ProviderResolveAbortError && resolveSignal.aborted)) throw error;
-          engineResult = { result: null, providerId: null, attempts: combinedAttempts };
-          break;
-        }
-      }
-
-      const triedProviders = new Set([
-        input.providerId as ProviderId,
-        resolvedProviderId as ProviderId,
-        ...combinedAttempts.map((attempt) => attempt.providerId),
-      ]);
-      const remainingCandidateIds = compatibleIds.filter(
-        (candidateId) => !triedProviders.has(candidateId),
-      );
-      if (!remainingCandidateIds.length || resolveSignal.aborted) {
-        engineResult = { result: null, providerId: null, attempts: combinedAttempts };
-        break;
-      }
-
-      const nextProviderId = remainingCandidateIds[0] as ProviderId;
-      input.onFeedback?.({
-        detail: `Trying ${this.deps.engine.getManifest(nextProviderId)?.displayName ?? nextProviderId} after a dead stream`,
-        note: "The resolved HLS manifest was not reachable before playback.",
-      });
-      const retryResult = await this.deps.engine.resolveWithFallback(
-        resolveInput,
-        remainingCandidateIds,
-        resolveSignal,
-        (event) => input.onEvent?.({ type: "provider-engine-event", event }),
-      );
-      emitAttempts(retryResult.attempts, combinedAttempts.length);
-      combinedAttempts = [...combinedAttempts, ...retryResult.attempts];
-      engineResult = { ...retryResult, attempts: combinedAttempts };
     }
     const providerTimeline = buildProviderTimeline(
       engineResult,
@@ -964,41 +855,6 @@ function isBlockedStreamUrl(
   blockedStreamUrls?: readonly string[],
 ): boolean {
   return Boolean(url && blockedStreamUrls?.includes(url));
-}
-
-function createResolvedStreamPreflightFailure(providerId: string): ProviderFailure {
-  return {
-    providerId: providerId as ProviderId,
-    code: "expired",
-    message: "Resolved stream manifest was not reachable before playback",
-    retryable: true,
-    at: new Date().toISOString(),
-  };
-}
-
-function markAttemptFailedByPreflight(
-  attempts: readonly ProviderEngineResolveAttempt[],
-  providerId: string,
-  failure: ProviderFailure,
-): { readonly attempts: ProviderEngineResolveAttempt[]; readonly index: number } {
-  const index = attempts.findLastIndex((attempt) => attempt.providerId === providerId);
-  if (index === -1) {
-    return {
-      attempts: [...attempts, { providerId: providerId as ProviderId, failure }],
-      index: attempts.length,
-    };
-  }
-  return {
-    attempts: attempts.map((attempt, attemptIndex) =>
-      attemptIndex === index
-        ? {
-            providerId: attempt.providerId,
-            failure,
-          }
-        : attempt,
-    ),
-    index,
-  };
 }
 
 function emitSelectionDecision(
