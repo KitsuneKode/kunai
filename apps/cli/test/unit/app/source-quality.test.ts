@@ -165,12 +165,7 @@ const streamWithSubtitles: StreamInfo = {
 test("buildSourcePickerOptions includes current source label", () => {
   const options = buildSourcePickerOptions(streamWithCandidates);
   expect(options.find((option) => option.value === "source-a")?.label).toContain("current");
-  expect(options.map((option) => option.value)).toEqual(
-    expect.arrayContaining(["source-a", "source-b", "source:videasy:videasy-hindi"]),
-  );
-  expect(
-    options.find((option) => option.value === "source:videasy:videasy-hindi")?.detail,
-  ).toContain("Fresh resolve required");
+  expect(options.map((option) => option.value)).toEqual(["source-a", "source-b"]);
 });
 
 test("buildSourcePickerOptions summarizes quality and language inventory", () => {

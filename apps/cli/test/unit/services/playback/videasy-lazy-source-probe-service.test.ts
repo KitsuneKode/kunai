@@ -24,7 +24,7 @@ describe("VideasyLazySourceProbeService", () => {
       sourceInventory: {
         get: async () => ({
           ...baseResult(),
-          sources: [failedSource(flavorSourceId("videasy-mirror-c"), "Sanji", "videasy-mirror-c")],
+          sources: [failedSource(flavorSourceId("cineby-sage"), "Sage", "cineby-sage")],
         }),
         set: async () => {},
       },
@@ -49,8 +49,8 @@ describe("VideasyLazySourceProbeService", () => {
       preferredAudioLanguage: "de",
     });
 
-    expect(resolvedFlavorIds).not.toContain("videasy-mirror-c");
-    expect(resolvedFlavorIds).toContain("videasy-german");
+    expect(resolvedFlavorIds).not.toContain("cineby-sage");
+    expect(resolvedFlavorIds).toContain("cineby-killjoy");
   });
 
   test("does not start probes when the caller signal is already aborted", async () => {

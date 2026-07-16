@@ -264,6 +264,7 @@ export class PersistentMpvSession {
       attachSubtitles: async (attachment) => await this.attachSubtitles(attachment),
       skipCurrentSegment: async () => this.skipCurrentSegment(),
       updateTiming: (timing) => this.updateTiming(timing),
+      updateAutoSkipEnabled: (enabled) => this.updateAutoSkipEnabled(enabled),
       getTelemetrySnapshot: () =>
         this.activeCycle ? buildPlaybackTelemetrySnapshot(this.activeCycle.telemetry) : null,
       showOsdMessage: async (text, durationMs) => {
@@ -442,6 +443,13 @@ export class PersistentMpvSession {
   updateTiming(timing: PlaybackTimingMetadata | null): void {
     if (!this.activeCycle) return;
     this.currentOptions = { ...this.currentOptions, timing };
+    void this.handleSegmentSkipProgress(this.currentOptions);
+  }
+
+  updateAutoSkipEnabled(enabled: boolean): void {
+    if (!this.activeCycle) return;
+    this.currentOptions = { ...this.currentOptions, autoSkipEnabled: enabled };
+    this.clearSkipPromptState();
     void this.handleSegmentSkipProgress(this.currentOptions);
   }
 

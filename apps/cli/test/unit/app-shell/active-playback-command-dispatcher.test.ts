@@ -118,6 +118,30 @@ describe("dispatchActivePlaybackCommand", () => {
       "stop:playback-loading-command-stop",
     ]);
   });
+
+  test("autoskip toggle updates the active player policy as well as session state", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      playerControl: {
+        ...createDeps(calls).playerControl,
+        updateCurrentPlaybackAutoSkipEnabled: (enabled, reason) => {
+          calls.push(`autoskip:${enabled}:${reason}`);
+        },
+      },
+    });
+
+    await dispatchActivePlaybackCommand("toggle-autoskip", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual([
+      "dispatch:SET_SESSION_AUTOSKIP_PAUSED",
+      "autoskip:false:playback-loading-command-autoskip",
+    ]);
+  });
 });
 
 function createDeps(

@@ -146,13 +146,15 @@ async function launchMpvInner(
   let mutableTiming = opts.timing ?? null;
   const watchdog = createPlaybackWatchdog(emitPlaybackEvent);
   const skippedSegments = new Set<string>();
-  const skipConfig: PlaybackSkipConfig = {
-    skipRecap: opts.autoSkipEnabled !== false && (opts.skipRecap ?? true),
-    skipIntro: opts.autoSkipEnabled !== false && (opts.skipIntro ?? true),
+  const buildSkipConfig = (enabled: boolean): PlaybackSkipConfig => ({
+    skipRecap: enabled && (opts.skipRecap ?? true),
+    skipIntro: enabled && (opts.skipIntro ?? true),
     skipPreview: false,
-    skipCredits: opts.autoSkipEnabled !== false && (opts.skipCredits ?? true),
+    skipCredits: enabled && (opts.skipCredits ?? true),
     autoNextEnabled: false, // launchMpv is only used for one-shot/manual playback
-  };
+  });
+  let autoSkipEnabled = opts.autoSkipEnabled !== false;
+  let skipConfig = buildSkipConfig(autoSkipEnabled);
   const notifyPlayerReady = () => {
     if (playerReadyNotified) return;
     playerReadyNotified = true;
@@ -250,6 +252,11 @@ async function launchMpvInner(
     },
     updateTiming(timing) {
       mutableTiming = timing;
+      trySkipSegment(true);
+    },
+    updateAutoSkipEnabled(enabled) {
+      autoSkipEnabled = enabled;
+      skipConfig = buildSkipConfig(autoSkipEnabled);
       trySkipSegment(true);
     },
     getTimingSnapshot() {

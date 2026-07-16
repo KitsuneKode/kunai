@@ -125,8 +125,7 @@ test("projects anime sub dub and hardsub evidence without merging native labels 
     label: "Dub server",
     state: "available",
   });
-  expect(view.sourceGroups.length).toBeGreaterThan(2);
-  expect(view.sourceGroups.some((group) => group.label === "Bocchi")).toBe(true);
+  expect(view.sourceGroups).toHaveLength(2);
   const subServer = view.sourceGroups.find((group) => group.id === "source-sub");
   expect(subServer?.nativeLabels).toContain("Sak");
   expect(subServer?.artwork?.seekBarVttUrl).toContain("seek.vtt");
@@ -207,20 +206,20 @@ test("adds known VidKing flavor sources to the source picker model", () => {
   const view = projectPlaybackSourceInventory({
     status: "resolved",
     providerId: "vidking",
-    selectedStreamId: "luffy-1080",
+    selectedStreamId: "neon-1080",
     streams: [
       stream({
-        id: "luffy-1080",
+        id: "neon-1080",
         providerId: "vidking",
-        sourceId: flavorSourceId("videasy-primary"),
+        sourceId: flavorSourceId("cineby-neon"),
         qualityLabel: "1080p",
       }),
     ],
     sources: [
       source({
-        id: flavorSourceId("videasy-primary"),
+        id: flavorSourceId("cineby-neon"),
         providerId: "vidking",
-        label: "Luffy",
+        label: "Neon",
         status: "selected",
       }),
     ],
@@ -237,13 +236,13 @@ test("adds known VidKing flavor sources to the source picker model", () => {
   expect(sourceIds).toEqual(expect.arrayContaining(expectedSeriesFlavorIds));
   expect(sourceIds).not.toContain(flavorSourceId("videasy-french"));
   expect(
-    view.sourceGroups.find((group) => group.id === flavorSourceId("videasy-hindi")),
+    view.sourceGroups.find((group) => group.id === flavorSourceId("cineby-sage")),
   ).toMatchObject({
-    label: "Chopper",
+    label: "Sage",
     state: "skipped",
-    audioLanguages: ["hi"],
+    audioLanguages: ["en"],
     disabledReason: "Fresh resolve required to try this source.",
-    hints: expect.arrayContaining(["Hindi · dub"]),
+    hints: expect.arrayContaining(["Original audio"]),
   });
 });
 
@@ -337,7 +336,7 @@ test("falls back to stream source ids when provider source inventory is missing"
     ["source-a", "available"],
     ["source-b", "selected"],
   ]);
-  expect(view.sourceGroups.length).toBeGreaterThan(2);
+  expect(view.sourceGroups).toHaveLength(2);
   expect(view.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toMatchObject({
     delivery: "external",
     sourceIds: ["source-b"],
@@ -542,7 +541,7 @@ test("builds a diagnostics-safe source inventory summary without stream or subti
     subtitleLanguageCount: 1,
     candidateCount: 1,
   });
-  expect(summary.sourceGroups.length).toBeGreaterThan(1);
+  expect(summary.sourceGroups).toHaveLength(1);
   expect(summary.subtitleOptions.find((option) => option.id === "subtitle:sub-en")).toEqual({
     id: "subtitle:sub-en",
     label: "English",

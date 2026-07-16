@@ -55,6 +55,7 @@ export interface ActivePlayerControl {
   attachSubtitles?(attachment: LateSubtitleAttachment): Promise<number | SubtitleAttachmentResult>;
   skipCurrentSegment?(): Promise<boolean>;
   updateTiming?(timing: PlaybackTimingMetadata | null): void;
+  updateAutoSkipEnabled?(enabled: boolean): void;
   getTimingSnapshot?(): PlaybackTimingMetadata | null;
   getTelemetrySnapshot?(): PlaybackTelemetrySnapshot | null;
   showOsdMessage?(text: string, durationMs: number): Promise<void>;
@@ -103,5 +104,6 @@ export interface PlayerControlService {
   previousCurrentPlayback(reason?: string): Promise<boolean>;
   returnToSearchFromPlayback(reason?: string): Promise<boolean>;
   updateCurrentPlaybackTiming(timing: PlaybackTimingMetadata | null, reason?: string): void;
+  updateCurrentPlaybackAutoSkipEnabled(enabled: boolean, reason?: string): void;
   getTelemetrySnapshot(): PlaybackTelemetrySnapshot | null;
 }

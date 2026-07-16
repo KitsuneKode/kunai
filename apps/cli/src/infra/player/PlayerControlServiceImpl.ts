@@ -476,6 +476,17 @@ export class PlayerControlServiceImpl implements PlayerControlService {
     active.updateTiming(timing);
   }
 
+  updateCurrentPlaybackAutoSkipEnabled(enabled: boolean, reason = "user-requested"): void {
+    const active = this.active;
+    if (!active?.updateAutoSkipEnabled) return;
+    this.deps.diagnostics.record({
+      category: "playback",
+      message: "Updating autoskip policy in active player",
+      context: { id: active.id, reason, enabled },
+    });
+    active.updateAutoSkipEnabled(enabled);
+  }
+
   getTelemetrySnapshot(): PlaybackTelemetrySnapshot | null {
     return this.active?.getTelemetrySnapshot?.() ?? null;
   }

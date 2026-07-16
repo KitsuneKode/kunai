@@ -31,6 +31,7 @@ export type ActivePlaybackCommandDispatchDeps = {
       reason: string,
     ) => Promise<unknown> | unknown;
     readonly stopCurrentPlayback: (reason: string) => Promise<unknown> | unknown;
+    readonly updateCurrentPlaybackAutoSkipEnabled?: (enabled: boolean, reason: string) => void;
   };
   readonly workControl: {
     readonly cancelActive: (reason: string) => boolean;
@@ -101,10 +102,15 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "toggle-autoskip") {
+    const paused = !deps.stateManager.getState().autoskipSessionPaused;
     deps.stateManager.dispatch({
       type: "SET_SESSION_AUTOSKIP_PAUSED",
-      paused: !deps.stateManager.getState().autoskipSessionPaused,
+      paused,
     });
+    deps.playerControl.updateCurrentPlaybackAutoSkipEnabled?.(
+      !paused,
+      "playback-loading-command-autoskip",
+    );
     return "handled";
   }
   if (action === "stop-after-current") {

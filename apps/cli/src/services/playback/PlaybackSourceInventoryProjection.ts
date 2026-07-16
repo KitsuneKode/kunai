@@ -340,7 +340,12 @@ function buildSourceCandidates(result: ProviderResolveResult): readonly Provider
     audioMode: resolveAudioModeFromResult(result),
     rivestreamServices: rivestreamServicesFromResult(result),
   });
-  if (catalog.length === 0) {
+  const hasDiscoveredCatalogSource = catalog.some(
+    (entry) =>
+      result.sources?.some((source) => source.id === entry.sourceId) ||
+      result.streams.some((stream) => stream.sourceId === entry.sourceId),
+  );
+  if (catalog.length === 0 || !hasDiscoveredCatalogSource) {
     return result.sources && result.sources.length > 0
       ? result.sources
       : buildFallbackSourceCandidatesFromStreams(result);
