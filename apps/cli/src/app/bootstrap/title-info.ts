@@ -2,6 +2,8 @@ import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import { resolveHistoryLookupTitleId } from "@kunai/core";
 
+export { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
+
 // Re-export the canonical domain helper so existing bootstrap/search call sites
 // keep importing it from here, while the reducer and any other layer share the
 // single implementation in domain/media/video-meta.ts.
@@ -44,31 +46,6 @@ export function titleInfoFromSearchResult(
     languageEvidence: result.languageEvidence,
     isAnime: result.isAnime,
   };
-}
-
-/** Map TitleInfo + shell mode to the canonical history lookup id. */
-export function resolveTitleHistoryLookupId(
-  title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
-  mode?: import("@/domain/types").ShellMode,
-): string {
-  if (mode === "youtube") {
-    return resolveHistoryLookupTitleId({
-      id: title.id,
-      kind: "video",
-      externalIds: title.externalIds,
-    });
-  }
-  const kind =
-    mode === "anime" || title.isAnime
-      ? ("anime" as const)
-      : title.type === "movie"
-        ? ("movie" as const)
-        : ("series" as const);
-  return resolveHistoryLookupTitleId({
-    id: title.id,
-    kind,
-    externalIds: title.externalIds,
-  });
 }
 
 /** Map a history row to a TitleIdentity-shaped lookup key. */

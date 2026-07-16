@@ -2,7 +2,7 @@ import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
-import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
+import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import type {
   EpisodeInfo,
   PlaybackTimingMetadata,

@@ -1,9 +1,9 @@
-import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import {
   encodePlaybackTargetRef,
   type PlaybackTargetRef,
 } from "@/domain/share/playback-target-ref";
+import { buildShareRefFromTitleContext } from "@/domain/share/share-ref-from-title-context";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
 import type { PresencePlaybackActivity } from "./PresenceService";

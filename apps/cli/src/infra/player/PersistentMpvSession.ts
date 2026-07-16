@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
-import { copyShareLinkForContext } from "@/app/bootstrap/copy-share-link";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
@@ -11,6 +10,7 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";

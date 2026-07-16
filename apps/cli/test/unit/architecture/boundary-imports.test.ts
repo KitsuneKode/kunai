@@ -40,6 +40,23 @@ const PROVIDER_PACKAGE_IMPORT = /^@kunai\/providers(?:\/|$)|packages\/providers/
 const HISTORY_STORE_ADAPTER_IMPORT =
   /^@\/services\/persistence\/(?:HistoryStore|SqliteHistoryStoreImpl)$/;
 const APP_SHELL_STORAGE_IMPORT = /^@kunai\/storage(?:\/|$)/;
+const EXISTING_LOWER_LAYER_UPWARD_IMPORTS = new Set([
+  "apps/cli/src/domain/continuation/history-reconciliation.ts -> @/services/catalog/CatalogScheduleService",
+  "apps/cli/src/domain/continuation/history-reconciliation.ts -> @/services/continuation/history-progress",
+  "apps/cli/src/domain/continuation/history-bucket.ts -> @/services/continuation/history-progress",
+  "apps/cli/src/domain/lists/WatchGenreStats.ts -> @/services/catalog/tmdb-proxy",
+  "apps/cli/src/domain/media/content-kind.ts -> @/services/persistence/ConfigService",
+  "apps/cli/src/domain/media/media-item-adapters.ts -> @/services/continuation/history-progress",
+  "apps/cli/src/domain/offline/OfflineLibraryEngine.ts -> @/services/offline/offline-library",
+  "apps/cli/src/domain/playback/playback-policy.ts -> @/services/catalog/tmdb-release",
+  "apps/cli/src/domain/playback/playback-problem.ts -> @/services/network/NetworkStatus",
+  "apps/cli/src/domain/playback/track-capabilities.ts -> @/services/playback/PlaybackSourceInventoryView",
+  "apps/cli/src/domain/provider-relay-settings.ts -> @/services/persistence/ConfigService",
+  "apps/cli/src/services/diagnostics/diagnostics-insight.ts -> @/app/playback/subtitle-status",
+  "apps/cli/src/services/media-actions/create-container-media-action-router.ts -> @/app-shell/workflows/playlist-add-workflow",
+  "apps/cli/src/services/offline/offline-library-action-router.ts -> @/app-shell/pickers",
+  "apps/cli/src/services/offline/offline-library-action-router.ts -> @/app-shell/workflows",
+]);
 
 const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   [
@@ -205,6 +222,33 @@ describe("runtime boundary imports", () => {
       collectImports(file)
         .filter((specifier) => INK_IMPORT.test(specifier))
         .map((specifier) => `${file} -> ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("lower runtime layers add no new upward imports", () => {
+    const layerRules = [
+      {
+        root: "apps/cli/src/domain",
+        forbidden: /^@\/(?:app|app-shell|services)(?:\/|$)/,
+      },
+      {
+        root: "apps/cli/src/infra",
+        forbidden: /^@\/(?:app|app-shell)(?:\/|$)/,
+      },
+      {
+        root: "apps/cli/src/services",
+        forbidden: /^@\/(?:app|app-shell)(?:\/|$)/,
+      },
+    ];
+    const offenders = layerRules.flatMap(({ root, forbidden }) =>
+      collectSourceFiles(root).flatMap((file) =>
+        collectImports(file)
+          .filter((specifier) => forbidden.test(specifier))
+          .map((specifier) => `${file} -> ${specifier}`)
+          .filter((edge) => !EXISTING_LOWER_LAYER_UPWARD_IMPORTS.has(edge)),
+      ),
     );
 
     expect(offenders).toEqual([]);

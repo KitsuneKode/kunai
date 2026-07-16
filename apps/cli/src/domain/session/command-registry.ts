@@ -1,5 +1,5 @@
-import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
-import { getModeSwitchTarget } from "@/app/session/mode-switch";
+import { isLocalPlaybackStream } from "@/domain/playback/local-playback-stream";
+import { getModeSwitchTarget } from "@/domain/session/mode-target";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
 import type { SessionState } from "./SessionState";
