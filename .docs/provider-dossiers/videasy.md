@@ -1,14 +1,35 @@
 # Provider: Videasy
 
-## Production status (2026-07-11)
+## Production status (2026-07-16)
 
-- **Module:** `packages/providers/src/videasy/direct.ts` + `packages/providers/src/videasy/flavors.ts`
-- **Live matrix:** **fail** — Bloodhounds S01E02 via `container.engine.resolve(..., "videasy")` (isolated profile). No playable stream; Phase A never yields candidates once stream routes are treated as route-dead.
-- **Upstream classification:** **provider drift / route-dead.** `GET api.videasy.to/{server}/sources-with-title` returns **HTTP 404** for `mb-flix` (and the stream-server shape generally). The same host still serves a working **TMDB-format proxy** under `api.videasy.to/3/*`. Former `db.videasy.to` returns 404.
-- **Recommended disposition:** **demote from default + quarantine stream endpoints.** Series default must not be Videasy while Rivestream is healthy. Seed **all** Videasy flavor endpoints as curated `route-dead` so resolve skips them instead of burning the attempt budget on 404s. Keep the module registered for rediscovery and manual picker use.
-- **Do not claim repair** until a new stream API contract is dossier-proven (not the TMDB proxy path).
-- **Fixtures:** Bloodhounds TMDB `127529` S01E02 (live smoke); Study Group TMDB `233347` S01E02 (historical mb-flix 200 in 2026-06 player capture — useful drift detector only).
+- **Module:** `packages/providers/src/videasy/direct.ts` + `flavors.ts` + `crypto.ts`
+- **Active stream API:** `api.speedracelight.com` (primary; used by player.videasy.to / cineby.at / cineplay.to). Mirror: `api.wingsdatabase.com`.
+- **Decrypt:** seed + `enc=2` + mvm1 PRNG XOR. **Must use sparse `Array(61)`** for PRNG state (`n in state` mask). Dense arrays break every payload.
+- **Cineby UI catalog** (https://www.cineby.at/tv/299167 “Dutton Ranch” example):
+  | UI | API route | Live note (S1E1) |
+  |----|-----------|------------------|
+  | Yoru | `/cdn` | often empty on TV |
+  | Neon | `/neon2` | **works** (HLS+DASH) |
+  | Sage | `/ym` | title-dependent |
+  | Jett | `/jett` | title-dependent |
+  | Breach | `/m4uhd` | often 403 |
+  | Vyse | `/hdmovie` quality=English | title-dependent |
+  | Killjoy | `/meine` language=german | **works** with imdbId |
+  | Fade | `/hdmovie` quality=Hindi | title-dependent |
+  | Omen | `/lamovie` | **works** |
+  | Raze | `/superflix` | needs full params |
+  | Cypher (Kunai) | `/downloader2` | **works** quality ladder |
+- **Inventory order:** matches Cineby Servers UI — Yoru → Neon → Sage → Jett → Breach → Vyse → Killjoy → Fade → Omen → Raze; **Cypher** is Kunai-only after the catalog (not shown on the website).
+- **Resolve order:** stable-first Phase A is Neon → Cypher → Yoru; the remaining active catalog rows are background/manual candidates.
+- **Legacy:** `api.videasy.to/{server}/sources-with-title` still **404**.
+- **Fixtures:** Study Group `233347` S1E2; Dutton Ranch `299167` S1E1; crypto golden under `packages/providers/test/fixtures/videasy/wings-enc2-neon2.json`.
 - **Redaction:** do not store signed HLS URLs, cookies, or session tokens in this dossier.
+
+## Production status (2026-07-11) — historical
+
+- **Live matrix:** **fail** at the time — `api.videasy.to` stream routes 404; wings/speedracelight path not yet wired with working decrypt.
+- **Disposition then:** demote from series default + quarantine dead `api.videasy.to` endpoints.
+- **Superseded by 2026-07-16** repair of crypto + host + Cineby catalog mapping.
 
 ## Production status (2026-05-27) — historical
 
