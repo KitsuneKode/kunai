@@ -15,14 +15,17 @@ import {
   resolveContentKind,
   showsEpisodeLabel,
 } from "@/domain/media/content-kind";
-import type { PlaybackTelemetrySnapshot } from "@/domain/playback/playback-telemetry-snapshot";
+import {
+  describePlaybackTelemetrySnapshot,
+  type PlaybackTelemetrySnapshot,
+} from "@/domain/playback/playback-telemetry-snapshot";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import type { SessionState } from "@/domain/session/SessionState";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
 import type { ProviderId } from "@kunai/types";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
@@ -84,7 +87,7 @@ export type PlaybackRootContentInput = {
   readonly activeProvider: { metadata: { name: string } } | undefined;
   readonly hasStreamCandidates: boolean;
   readonly isSeriesPlayback: boolean;
-  readonly activePlaybackTelemetrySnapshot: PlaybackTelemetrySnapshot | null;
+  readonly activePlaybackTelemetrySnapshot?: PlaybackTelemetrySnapshot | null;
   readonly canGoNext: boolean;
   readonly canGoPrevious: boolean;
   readonly canToggleAutoplay: boolean;
@@ -260,7 +263,43 @@ export function buildPlaybackRootLoadingShellState(
 export function PlaybackRootContent(input: PlaybackRootContentInput) {
   const { state, handlers, canGoNext, canGoPrevious, canToggleAutoplay, canStopAfterCurrent } =
     input;
-  const loadingState = useMemo(() => buildPlaybackRootLoadingShellState(input), [input]);
+  const playbackIsActive =
+    state.playbackStatus === "ready" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled" ||
+    state.playbackStatus === "playing";
+  const [telemetrySnapshot, setTelemetrySnapshot] = useState<PlaybackTelemetrySnapshot | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!playbackIsActive) return undefined;
+    const refreshSnapshot = () => {
+      setTelemetrySnapshot(input.container.playerControl.getTelemetrySnapshot());
+    };
+    refreshSnapshot();
+    const timer = setInterval(refreshSnapshot, 1_000);
+    return () => clearInterval(timer);
+  }, [input.container.playerControl, playbackIsActive]);
+
+  const activePlaybackTelemetrySnapshot = playbackIsActive ? telemetrySnapshot : null;
+  const telemetryInput = useMemo(
+    () => ({
+      ...input,
+      activePlaybackTelemetrySnapshot,
+      playbackTrace:
+        state.playbackNote ??
+        (activePlaybackTelemetrySnapshot
+          ? describePlaybackTelemetrySnapshot(activePlaybackTelemetrySnapshot)
+          : input.playbackTrace),
+    }),
+    [activePlaybackTelemetrySnapshot, input, state.playbackNote],
+  );
+  const loadingState = useMemo(
+    () => buildPlaybackRootLoadingShellState(telemetryInput),
+    [telemetryInput],
+  );
 
   return (
     <LoadingShell

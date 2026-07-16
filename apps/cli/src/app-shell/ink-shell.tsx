@@ -18,10 +18,6 @@ import {
 } from "@/app/playback/source-quality";
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
-import {
-  describePlaybackTelemetrySnapshot,
-  type PlaybackTelemetrySnapshot,
-} from "@/domain/playback/playback-telemetry-snapshot";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
@@ -31,6 +27,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
+import { startDownloadStatusMonitor } from "./download-status-monitor";
 import { ExitShell } from "./exit-shell";
 import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { useSettledValue } from "./hooks/use-settled-value";
@@ -493,8 +490,6 @@ function AppRoot({ container }: { container: Container }) {
   // buffer cleanly otherwise). A manual `\x1b[2J\x1b[H` here double-clears and
   // forces a blank intermediate frame, so it is intentionally omitted — see the
   // clearShellScreen doctrine above.
-  const [playbackTelemetrySnapshot, setPlaybackTelemetrySnapshot] =
-    useState<PlaybackTelemetrySnapshot | null>(null);
   const presenceBootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPresenceProviderRef = useRef(container.config.presenceProvider);
   latestPresenceProviderRef.current = container.config.presenceProvider;
@@ -633,9 +628,10 @@ function AppRoot({ container }: { container: Container }) {
       setDownloadStatus(line ?? container.downloadService.describeQueueSummary());
     };
 
-    resolveStatus();
-    const timer = setInterval(resolveStatus, 2000);
-    return () => clearInterval(timer);
+    return startDownloadStatusMonitor({
+      source: container.downloadService,
+      refresh: resolveStatus,
+    });
   }, [
     container.downloadService,
     stateManager,
@@ -648,21 +644,6 @@ function AppRoot({ container }: { container: Container }) {
   const playbackIsActive = ACTIVE_PLAYBACK_STATUSES.some(
     (status) => status === state.playbackStatus,
   );
-  useEffect(() => {
-    if (!playbackIsActive) {
-      return;
-    }
-
-    const refreshSnapshot = () => {
-      setPlaybackTelemetrySnapshot(container.playerControl.getTelemetrySnapshot());
-    };
-
-    refreshSnapshot();
-    const timer = setInterval(refreshSnapshot, 1_000);
-    return () => clearInterval(timer);
-  }, [container.playerControl, playbackIsActive]);
-  const activePlaybackTelemetrySnapshot = playbackIsActive ? playbackTelemetrySnapshot : null;
-
   const rootStatus = playbackIsActive
     ? state.playbackStatus
     : state.playbackStatus === "loading"
@@ -797,9 +778,6 @@ function AppRoot({ container }: { container: Container }) {
     state.currentEpisode !== null;
   const playbackTrace =
     state.playbackNote ??
-    (activePlaybackTelemetrySnapshot
-      ? describePlaybackTelemetrySnapshot(activePlaybackTelemetrySnapshot)
-      : undefined) ??
     (state.playbackStatus === "playing"
       ? "Auto-skip and live playback controls stay available while mpv is active"
       : undefined);
@@ -1033,7 +1011,6 @@ function AppRoot({ container }: { container: Container }) {
       activeProvider,
       hasStreamCandidates,
       isSeriesPlayback,
-      activePlaybackTelemetrySnapshot,
       canGoNext,
       canGoPrevious,
       canToggleAutoplay,
@@ -1055,7 +1032,6 @@ function AppRoot({ container }: { container: Container }) {
       activeProvider,
       hasStreamCandidates,
       isSeriesPlayback,
-      activePlaybackTelemetrySnapshot,
       canGoNext,
       canGoPrevious,
       canToggleAutoplay,

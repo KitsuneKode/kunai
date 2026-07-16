@@ -23,8 +23,12 @@ export function deleteAllKittyImages(): void {
   clearPosterSourceCache();
 }
 
-export function clearRenderedPosterImages(): void {
+export function undisplayRenderedPosterImages(): void {
   deleteAllTerminalImages();
+}
+
+export function clearRenderedPosterImages(): void {
+  undisplayRenderedPosterImages();
   posterCache.clear();
   posterInflight.clear();
 }

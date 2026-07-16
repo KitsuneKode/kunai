@@ -6,6 +6,7 @@ import {
   fetchPoster,
   playbackPosterSurfacePhase,
   resolvePosterUrl,
+  undisplayRenderedPosterImages,
 } from "@/app-shell/image-pane";
 import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer";
 import { isKittyCompatible } from "@/image";
@@ -68,6 +69,26 @@ afterEach(() => {
 });
 
 describe("app-shell image pane cache", () => {
+  test("undisplaying a poster keeps its rendered cache resident for back navigation", async () => {
+    let fetchCalls = 0;
+    setFetchMock(async () => {
+      fetchCalls += 1;
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      return new Response(png, { status: 200 });
+    });
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    paneTesting.runtime.detectImageCapability = () => cap("kitty-native");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("kitty-native");
+
+    const first = await fetchPoster("/cached.jpg", { rows: 4, cols: 8 });
+    undisplayRenderedPosterImages();
+    const revisited = await fetchPoster("/cached.jpg", { rows: 4, cols: 8 });
+
+    expect(first.kind).toBe("kitty");
+    expect(revisited).toEqual(first);
+    expect(fetchCalls).toBe(1);
+  });
+
   test("cache key is segregated by renderer capability", async () => {
     setFetchMock(async () => {
       const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);

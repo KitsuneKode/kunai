@@ -65,12 +65,28 @@ const runtime = {
   which: (command: string): string | null => Bun.which(command),
 };
 
-/** True when `chafa` resolves on PATH. Uses the same injectable `runtime.which` as `detectImageCapability` (see `__testing`). */
-export function isChafaAvailable(): boolean {
-  return Boolean(runtime.which("chafa"));
+let chafaAvailableMemo: boolean | undefined;
+const capabilityMemo = new Map<string, ImageCapability>();
+
+function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
+  return JSON.stringify([
+    runtime.isStdoutTty(),
+    env.KUNAI_POSTER ?? "",
+    env.KUNAI_IMAGE_PROTOCOL ?? "",
+    env.KITTY_WINDOW_ID ?? "",
+    env.TERM_PROGRAM ?? "",
+    env.WT_SESSION ?? "",
+    env.WEZTERM_EXECUTABLE ?? "",
+  ]);
 }
 
-export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): ImageCapability {
+/** True when `chafa` resolves on PATH. Uses the same injectable `runtime.which` as `detectImageCapability` (see `__testing`). */
+export function isChafaAvailable(): boolean {
+  chafaAvailableMemo ??= Boolean(runtime.which("chafa"));
+  return chafaAvailableMemo;
+}
+
+function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   if (!runtime.isStdoutTty()) {
     return noneCapability("unknown", "stdout is not a TTY");
   }
@@ -186,6 +202,22 @@ export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): Ima
   return noneCapability(terminal, "no supported image protocol detected");
 }
 
+export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): ImageCapability {
+  const key = capabilityMemoKey(env);
+  const cached = capabilityMemo.get(key);
+  if (cached) return cached;
+
+  const capability = computeImageCapability(env);
+  capabilityMemo.set(key, capability);
+  return capability;
+}
+
+function resetMemo(): void {
+  chafaAvailableMemo = undefined;
+  capabilityMemo.clear();
+}
+
 export const __testing = {
   runtime,
+  resetMemo,
 };

@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useReducer, useRef } from "react";
 
-import { clearRenderedPosterImages, fetchPoster } from "./image-pane";
+import { fetchPoster, undisplayRenderedPosterImages } from "./image-pane";
 import type { PosterResult, PosterState } from "./poster-types";
 
 type PosterPreviewState = {
@@ -74,14 +74,14 @@ export function usePosterPreview(
     previousGeometry.current = { rows, cols };
 
     if (!url || !enabled) {
-      if (!preserveTerminalImages) clearRenderedPosterImages();
+      if (!preserveTerminalImages) undisplayRenderedPosterImages();
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
 
     // A Kitty placement is anchored to terminal cells. Keep the previous image while
     // changing titles, but clear it immediately when its geometry becomes invalid.
-    if (geometryChanged && !preserveTerminalImages) clearRenderedPosterImages();
+    if (geometryChanged && !preserveTerminalImages) undisplayRenderedPosterImages();
 
     let cancelled = false;
     // Defer both the "loading" commit and the fetch until the debounce fires.
@@ -90,7 +90,7 @@ export function usePosterPreview(
     // fetch was about to be cancelled by the next keystroke.
     const timer = setTimeout(() => {
       if (cancelled) return;
-      if (!preserveTerminalImages) clearRenderedPosterImages();
+      if (!preserveTerminalImages) undisplayRenderedPosterImages();
       dispatch({ type: "loading" });
       fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
         .then((result) => {

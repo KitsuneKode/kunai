@@ -130,6 +130,7 @@ async function withTempFile(
 }
 
 afterEach(() => {
+  capabilityTesting.resetMemo();
   globalThis.fetch = originalFetch;
   Object.defineProperty(process.stdout, "isTTY", {
     value: originalStdoutIsTTY,
@@ -176,6 +177,25 @@ describe("detectTerminal", () => {
 });
 
 describe("detectImageCapability", () => {
+  test("memoizes chafa detection across repeated capability checks", () => {
+    const restoreTty = mockStdoutIsTty(true);
+    let whichCalls = 0;
+    capabilityTesting.runtime.which = () => {
+      whichCalls += 1;
+      return "/usr/bin/chafa";
+    };
+    capabilityTesting.resetMemo();
+    try {
+      const env = { TERM_PROGRAM: "WezTerm" } as NodeJS.ProcessEnv;
+      detectImageCapability(env);
+      detectImageCapability(env);
+      detectImageCapability(env);
+      expect(whichCalls).toBe(1);
+    } finally {
+      restoreTty();
+    }
+  });
+
   test("returns none when stdout is not a TTY", () => {
     const restoreTty = mockStdoutIsTty(false);
     const restoreWhich = mockBunWhich("/usr/bin/chafa");
@@ -384,6 +404,7 @@ describe("isChafaAvailable", () => {
     } finally {
       restoreNone();
     }
+    capabilityTesting.resetMemo();
     const restorePath = mockBunWhich("/usr/bin/chafa");
     try {
       expect(isChafaAvailable()).toBe(true);
