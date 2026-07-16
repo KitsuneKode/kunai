@@ -6,6 +6,7 @@ import type { SyncAdapter, SyncResult } from "./SyncAdapter";
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 const OAUTH_BASE = "https://anilist.co/api/v2/oauth";
 const OAUTH_TIMEOUT_MS = 90_000;
+type AniListFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 interface ViewerResponse {
   data: { Viewer: { id: number; name: string } };
@@ -24,15 +25,22 @@ export class AniListAdapter implements SyncAdapter {
   private userId: number | undefined;
   private accessToken: string | undefined;
 
-  constructor(private readonly tokenStore: SyncTokenStore) {}
+  constructor(
+    private readonly tokenStore: SyncTokenStore,
+    private readonly fetchImpl: AniListFetch = (input, init) => fetch(input, init),
+  ) {}
 
   async init(): Promise<void> {
     const tokens = await this.tokenStore.load();
     if (tokens.anilist) {
       this.accessToken = tokens.anilist.accessToken;
       this.userId = tokens.anilist.userId;
-      await this.refreshUsername();
     }
+  }
+
+  async ensureConnectedUsername(): Promise<void> {
+    if (!this.accessToken || this.username) return;
+    await this.refreshUsername();
   }
 
   private async refreshUsername(): Promise<void> {
@@ -153,7 +161,7 @@ export class AniListAdapter implements SyncAdapter {
   }
 
   private async gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-    const res = await fetch(ANILIST_GRAPHQL, {
+    const res = await this.fetchImpl(ANILIST_GRAPHQL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

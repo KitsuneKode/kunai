@@ -809,6 +809,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
   launchSessionApp(container);
+  for (const adapter of container.syncService.adapters) {
+    const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
+    if (!ensureConnectedUsername) continue;
+    runBackgroundTask({
+      task: `sync.${adapter.id}.identity`,
+      category: "runtime",
+      diagnostics: container.diagnosticsService,
+      logger,
+      run: ensureConnectedUsername,
+    });
+  }
   if (protocolHandoff && !pendingShareLaunch?.trusted) {
     const { confirmProtocolHandoff } = await import("./app-shell/workflows");
     const confirmed = await confirmProtocolHandoff(protocolHandoff);
