@@ -291,6 +291,8 @@ export type BrowseIdleContext = {
   };
 };
 
+export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefined>;
+
 export type BrowseShellOption<T> = {
   value: T;
   label: string;

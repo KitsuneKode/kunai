@@ -123,6 +123,7 @@ import { SkeletonRows } from "./skeleton";
 import {
   toShellAction,
   type FooterAction,
+  type BrowseIdleContextLoader,
   type BrowseShellOption,
   type BrowseShellResult,
   type BrowseShellSearchResponse,
@@ -188,6 +189,7 @@ export function BrowseShell<T>({
   onSubmit,
   onCancel,
   idleContext,
+  loadIdleContext,
 }: {
   mode: ShellMode;
   provider: string;
@@ -211,6 +213,7 @@ export function BrowseShell<T>({
   onSubmit: (value: T) => void;
   onCancel: () => void;
   idleContext?: import("./types").BrowseIdleContext;
+  loadIdleContext?: BrowseIdleContextLoader;
 }) {
   recordRender("browse");
   const viewport = useDebouncedViewportPolicy("browse", {
@@ -257,6 +260,11 @@ export function BrowseShell<T>({
   const [draftQuery, setDraftQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [emptyMessage, setEmptyMessage] = useState(() => browseIdleHint(mode));
+  const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
+  const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
+    loadIdleContext ? "loading" : "ready",
+  );
+  const [showIdleLoadingHint, setShowIdleLoadingHint] = useState(false);
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
   const [resultFilter, setResultFilter] = useState("");
   const [filterModeOpen, setFilterModeOpen] = useState(false);
@@ -291,6 +299,7 @@ export function BrowseShell<T>({
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
+  const idleContextRequestGateRef = useRef(createLatestRequestGate());
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -299,6 +308,38 @@ export function BrowseShell<T>({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!loadIdleContext) return;
+    const requestGate = idleContextRequestGateRef.current;
+    const request = requestGate.begin();
+    let active = true;
+    setIdleContextStatus("loading");
+    const timer = setTimeout(() => {
+      if (active) setShowIdleLoadingHint(true);
+    }, 150);
+
+    void (async () => {
+      try {
+        const next = await loadIdleContext();
+        if (!active || !requestGate.isCurrent(request)) return;
+        setActiveIdleContext(next);
+        setIdleContextStatus("ready");
+      } catch {
+        if (!active || !requestGate.isCurrent(request)) return;
+        setIdleContextStatus("error");
+      } finally {
+        clearTimeout(timer);
+        if (active) setShowIdleLoadingHint(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      requestGate.invalidate();
+    };
+  }, [loadIdleContext]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
@@ -719,9 +760,9 @@ export function BrowseShell<T>({
 
   useEffect(() => {
     setIdleSelectedIndex(0);
-  }, [idleContext]);
+  }, [activeIdleContext]);
 
-  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(idleContext, {
+  const idleReturnLoopModel = buildBrowseIdleReturnLoopModel(activeIdleContext, {
     idleFocused,
     selectedIndex: idleSelectedIndex,
   });
@@ -1216,7 +1257,7 @@ export function BrowseShell<T>({
     const resolveFocusedIdleAction = (): ShellAction | null => {
       const row = idleReturnLoopModel?.rows[idleSelectedIndex];
       if (!row?.actionable) return null;
-      return resolveIdleRowAction(row.id, idleContext);
+      return resolveIdleRowAction(row.id, activeIdleContext);
     };
 
     // Calendar: Tab / Shift+Tab cycle the type tabs (All · Anime · TV · Movies ·
@@ -1460,7 +1501,7 @@ export function BrowseShell<T>({
               commandMode
                 ? undefined
                 : displayOptions.length === 0
-                  ? "/filters for guided chips · power tokens: type:series year:2022 rating:8"
+                  ? "Type a title · / commands · /filters for guided search"
                   : undefined
             }
             maxWidth={innerWidth}
@@ -1693,6 +1734,15 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
+            {idleContextStatus === "loading" && showIdleLoadingHint ? (
+              <Text color={palette.dim} dimColor>
+                Loading your local shortcuts…
+              </Text>
+            ) : idleContextStatus === "error" ? (
+              <Text color={palette.dim} dimColor>
+                Local shortcuts unavailable · search is ready
+              </Text>
+            ) : null}
             {!commandMode &&
             idleReturnLoopModel &&
             (!viewport.ultraCompact || idleReturnLoopModel.rows.length > 0) ? (
@@ -1836,6 +1886,7 @@ export function openBrowseShell<T>({
   onPlayTrailer,
   onOpenLink,
   idleContext,
+  loadIdleContext,
 }: {
   mode: ShellMode;
   provider: string;
@@ -1856,6 +1907,7 @@ export function openBrowseShell<T>({
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
   idleContext?: import("./types").BrowseIdleContext;
+  loadIdleContext?: BrowseIdleContextLoader;
 }): Promise<BrowseShellResult<T>> {
   const session = mountRootContent<BrowseShellResult<T>>({
     kind: "browse",
@@ -1880,6 +1932,7 @@ export function openBrowseShell<T>({
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
         idleContext={idleContext}
+        loadIdleContext={loadIdleContext}
         onResolve={(action) => finish({ type: "action", action })}
         onSubmit={(value) => finish({ type: "selected", value })}
         onCancel={() => finish({ type: "cancelled" })}

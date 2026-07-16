@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type LineEditorKey = {
   backspace?: boolean;
@@ -390,19 +390,28 @@ export function useLineEditor({
 }) {
   const [cursor, setCursor] = useState(value.length);
   const [killRing, setKillRing] = useState("");
+  const stateRef = useRef(createLineEditorState(value));
 
   useEffect(() => {
-    setCursor((current) => clampCursor(value, current));
+    const nextCursor = clampCursor(value, stateRef.current.cursor);
+    stateRef.current = {
+      value,
+      cursor: nextCursor,
+      killRing: stateRef.current.killRing,
+    };
+    setCursor(nextCursor);
   }, [value]);
 
   const handleInput = useCallback(
     (input: string, key: LineEditorKey): boolean => {
-      const result = applyLineEditorInput({ value, cursor, killRing }, input, key);
+      const current = stateRef.current;
+      const result = applyLineEditorInput(current, input, key);
       if (!result.handled) return false;
 
+      stateRef.current = result.state;
       setCursor(result.state.cursor);
       setKillRing(result.state.killRing);
-      if (result.state.value !== value) {
+      if (result.state.value !== current.value) {
         onChange(result.state.value);
       }
       if (result.submitted) {
@@ -414,13 +423,18 @@ export function useLineEditor({
 
       return true;
     },
-    [cursor, killRing, onChange, onRedraw, onSubmit, value],
+    [onChange, onRedraw, onSubmit],
   );
 
   const setValue = useCallback(
     (nextValue: string, nextCursor = nextValue.length) => {
+      stateRef.current = {
+        value: nextValue,
+        cursor: clampCursor(nextValue, nextCursor),
+        killRing: stateRef.current.killRing,
+      };
       onChange(nextValue);
-      setCursor(clampCursor(nextValue, nextCursor));
+      setCursor(stateRef.current.cursor);
     },
     [onChange],
   );
