@@ -60,9 +60,9 @@ not be exposed.
 Start with:
 
 - `packages/storage/src/`
-- `apps/cli/src/services/source-inventory/SourceInventoryServiceImpl.ts`
-- `apps/cli/src/services/history/`
-- `apps/cli/src/config.ts`
+- `apps/cli/src/services/playback/SourceInventoryService.ts`
+- `packages/storage/src/repositories/history.ts`
+- `apps/cli/src/services/persistence/ConfigService.ts`
 
 SQLite stores are the active persistence path for app data and caches. JSON
 config/provider files remain user configuration paths; legacy JSON history/cache

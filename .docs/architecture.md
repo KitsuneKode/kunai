@@ -56,18 +56,18 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                                                                            | Responsibility                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper                        | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
-| DI + provider engine  | `apps/cli/src/container.ts`                                                                      | Wires SQLite repos, `createProviderEngine`, resolve/download/presence services         |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                                       | Ink shell, commands, settings, history, and structured pickers                         |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search-routing.ts` | Search backends, metadata fetches, and routing policy                                  |
-| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                        | TMDB/Videasy season data and title enrichment (migration target: catalog services)     |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                             | `mpv` launch, IPC, and Lua-assisted progress tracking                                  |
-| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                                        | Config JSON, SQLite history/cache, tuning                                              |
-| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`                | Direct HTTP provider modules + CLI registry adapter                                    |
-| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                                        | ANSI helpers, design tokens, posters                                                   |
-| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                                  | Structured debug logs and diagnostics events                                           |
+| Area                  | Files                                                                                   | Responsibility                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper               | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
+| DI + provider engine  | `apps/cli/src/container.ts`                                                             | Wires SQLite repos, `createProviderEngine`, resolve/download/presence services         |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                         |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                  |
+| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)     |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                  |
+| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                              |
+| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                    |
+| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                   |
+| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                           |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -131,15 +131,15 @@ This parity policy only applies to the concrete AllAnime / AllManga-style API cl
 
 ## Playback and Recovery
 
-### Scraper flow
+### Provider resolve flow
 
-`apps/cli/src/scraper.ts`:
+Production resolution is browserless by default:
 
-1. launches Chromium
-2. listens for stream and subtitle requests
-3. loads the provider page
-4. performs an optional click for providers that need activation
-5. waits for stream capture, then subtitles
+1. `apps/cli/src/container.ts` selects the registered provider modules.
+2. `apps/cli/src/services/playback/PlaybackResolveService.ts` coordinates cache, inventory, health, and fallback policy.
+3. `packages/core` runs the bounded provider engine.
+4. `packages/providers/src/*/direct.ts` returns stream, subtitle, source, and trace facts.
+5. Legacy Playwright interception remains quarantined under `archive/legacy/` and is not imported by the active runtime.
 
 ### `mpv` flow
 
@@ -158,8 +158,8 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 | Data               | Path                                | Owner                                |
 | ------------------ | ----------------------------------- | ------------------------------------ |
-| Config             | `~/.config/kunai/config.json`       | `apps/cli/src/config.ts`             |
-| Provider overrides | `~/.config/kunai/providers.json`    | `apps/cli/src/config.ts`             |
+| Config             | `~/.config/kunai/config.json`       | `ConfigService` + `ConfigStoreImpl`  |
+| Provider overrides | `~/.config/kunai/providers.json`    | reserved path in `@kunai/storage`    |
 | Watch history      | OS app data dir `kunai-data.sqlite` | `@kunai/storage` + CLI history store |
 | Stream cache       | OS cache dir `kunai-cache.sqlite`   | `@kunai/storage` + CLI cache store   |
 | Debug logs         | `./logs.txt`                        | `apps/cli/src/logger.ts`             |

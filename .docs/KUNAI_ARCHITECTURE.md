@@ -52,20 +52,25 @@ To guarantee that the CLI and local daemon run flawlessly on low-spec laptops wi
 ---
 
 ## 4. The Intelligent Cache: Local SWR & Geo-Aware Health
+
 To avoid provider spam while making playback feel instant, Kunai uses an aggressive, self-healing local cache layer and a conservative public metadata layer.
 
 ### A. The SWR Strategy
-We do not make users wait to verify if a cached link is alive. 
-*   **The Fast Route:** When a user clicks "Play", Kunai can optimistically try a short-lived local cached candidate if the provider policy allows it.
-*   **The Silent Verification:** While the player is loading, the daemon validates the manifest with the cheapest safe probe for that provider. It does not assume every host supports useful `HEAD` behavior.
-*   **Auto-Heal:** If the candidate is expired, blocked, or region-wrong, the daemon refreshes the same provider or switches to a ranked fallback and uses player IPC to resume without dumping the user back to search.
+
+We do not make users wait to verify if a cached link is alive.
+
+- **The Fast Route:** When a user clicks "Play", Kunai can optimistically try a short-lived local cached candidate if the provider policy allows it.
+- **The Silent Verification:** While the player is loading, the daemon validates the manifest with the cheapest safe probe for that provider. It does not assume every host supports useful `HEAD` behavior.
+- **Auto-Heal:** If the candidate is expired, blocked, or region-wrong, the daemon refreshes the same provider or switches to a ranked fallback and uses player IPC to resume without dumping the user back to search.
 
 ### B. Geo-Aware Cache Partitioning
+
 CDN links are geo-routed. A link generated for a user in London might buffer terribly for a user in Sydney.
-*   Local caches partition stream candidates by region hint, provider version, runtime, auth mode, subtitle/audio preference, and TTL class.
-*   Public edge storage can hold non-sensitive provider health and metadata by region, such as "Anikai APAC degraded" or "Rivestream EU fast."
-*   Kunai does **not** centrally accept raw playable links from random clients. That invites cache poisoning, user tracking, provider blocks, and hard-to-debug regional failures.
-*   The magic is not a global pile of links. The magic is local SWR, provider health, source confidence, and deterministic fallback.
+
+- Local caches partition stream candidates by region hint, provider version, runtime, auth mode, subtitle/audio preference, and TTL class.
+- Public edge storage can hold non-sensitive provider health and metadata by region, such as "Anikai APAC degraded" or "Rivestream EU fast."
+- Kunai does **not** centrally accept raw playable links from random clients. That invites cache poisoning, user tracking, provider blocks, and hard-to-debug regional failures.
+- The magic is not a global pile of links. The magic is local SWR, provider health, source confidence, and deterministic fallback.
 
 ---
 
@@ -110,7 +115,7 @@ kunai/
 ├── packages/
 │   ├── core/              # The unified provider and resolution engine
 │   ├── types/             # Shared TypeScript models
-│   └── ui-cli/            # Shared Ink components
+│   └── ui-cli/            # Future real package after the CLI shell split (not currently materialized)
 ```
 
 _Tests are co-located_ with their scrapers (`miruro.ts` next to `miruro.test.ts`).
