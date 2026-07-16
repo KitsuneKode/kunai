@@ -58,7 +58,7 @@ unless "Depends on" says otherwise.
 | Plan | Title                                               | Priority | Effort | Depends on | Status                                                             |
 | ---- | --------------------------------------------------- | -------- | ------ | ---------- | ------------------------------------------------------------------ |
 | 017  | Cut the doc/plan surface to a trustworthy core      | P2       | M      | —          | BLOCKED (dead paths fixed; docs and matched plans remain distinct) |
-| 018  | Windows CI leg for the untested mpv named-pipe path | P3       | M      | —          | TODO                                                               |
+| 018  | Windows CI leg for the untested mpv named-pipe path | P3       | M      | —          | DONE                                                               |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 

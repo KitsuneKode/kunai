@@ -76,6 +76,7 @@ Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 | `lint`           | `turbo run lint --affected`                                 | full         |
 | `typecheck`      | `turbo run typecheck --affected`                            | full         |
 | `test`           | `turbo run test --affected`                                 | full         |
+| `windows-cli`    | root typecheck + CLI tests when CLI paths change            | same on main |
 | `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change | same on main |
 | `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change   | same         |
 | `checks-docs`    | docs gate when docs paths change                            | same         |
@@ -91,6 +92,23 @@ Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` cov
 
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size budget.
+
+### Windows parity
+
+`windows-cli` is an intentionally non-blocking `windows-latest` signal. It runs the
+workspace typecheck and the CLI unit/integration suite, including a Windows-only
+assertion for the mpv named-pipe endpoint. It becomes a required check only when:
+
+- a native mpv named-pipe smoke test exercises connect, command, and close;
+- the first Windows runs have no remaining platform-specific failures; and
+- the backlog below is empty.
+
+Open Windows parity backlog:
+
+- Add a native mpv named-pipe smoke; the current test locks endpoint construction,
+  but does not launch mpv or prove `Bun.connect` interoperability.
+- Add Windows compiled-binary build and smoke coverage; the parity leg currently
+  validates source execution only.
 
 **Local pipeline verification**
 

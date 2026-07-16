@@ -135,6 +135,27 @@ jobs:
         if: github.event_name == 'push'
         run: bunx turbo run test --summarize
 
+  windows-cli:
+    name: Windows CLI parity (non-blocking)
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 25
+
+    # Promote this job to blocking only after the native mpv named-pipe smoke
+    # exists and the Windows parity backlog in repo-infrastructure.md is empty.
+    steps:
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: windows-cli
+
+      - name: Typecheck workspaces
+        run: bun run typecheck
+
+      - name: Test CLI
+        run: bun run --cwd apps/cli test
+
   installer-lint:
     name: Installer script lint
     needs: changes
