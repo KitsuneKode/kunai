@@ -67,7 +67,13 @@ const fixtureResults: Array<{
 }> = [];
 
 for (const fixture of fixtures) {
-  fixtureResults.push(await runVideasyFixtureSmoke({ fixture, container, startupPriority }));
+  fixtureResults.push(
+    await runVideasyFixtureSmoke({
+      fixture,
+      appContainer: container,
+      requestedStartupPriority: startupPriority,
+    }),
+  );
 }
 
 const suite = summarizeVideasySuite(
@@ -98,12 +104,12 @@ process.exit(suite.ok ? 0 : 1);
 
 async function runVideasyFixtureSmoke({
   fixture,
-  container,
-  startupPriority,
+  appContainer,
+  requestedStartupPriority,
 }: {
   readonly fixture: VideasyLiveFixture;
-  readonly container: Awaited<ReturnType<typeof createContainer>>;
-  readonly startupPriority: StartupPriority;
+  readonly appContainer: Awaited<ReturnType<typeof createContainer>>;
+  readonly requestedStartupPriority: StartupPriority;
 }): Promise<{
   readonly fixtureId: string;
   readonly payload: Record<string, unknown>;
@@ -131,7 +137,7 @@ async function runVideasyFixtureSmoke({
   let diagnosticStages: readonly string[] = [];
 
   const { stream, resolveDurationMs, result } = await resolveProviderSmokeStream({
-    container,
+    container: appContainer,
     providerId: "videasy",
     // Movie titles still use series shell mode; mediaKind comes from title.type.
     mode: "series",
@@ -142,13 +148,13 @@ async function runVideasyFixtureSmoke({
         : {}),
       audioPreference:
         fixture.mediaKind === "movie"
-          ? container.config.movieLanguageProfile.audio
-          : container.config.seriesLanguageProfile.audio,
+          ? appContainer.config.movieLanguageProfile.audio
+          : appContainer.config.seriesLanguageProfile.audio,
       subtitlePreference:
         fixture.mediaKind === "movie"
-          ? container.config.movieLanguageProfile.subtitle
-          : container.config.seriesLanguageProfile.subtitle,
-      startupPriority,
+          ? appContainer.config.movieLanguageProfile.subtitle
+          : appContainer.config.seriesLanguageProfile.subtitle,
+      startupPriority: requestedStartupPriority,
     },
   })
     .then((resolved) => {
@@ -327,13 +333,13 @@ function parseVideasySmokeArgs(argv: string[]): {
   readonly season: number | null;
   readonly episode: number | null;
 } {
-  let suite = false;
+  let runSuite = false;
   let fixtureId: string | null = null;
   const positionals: number[] = [];
 
   for (const arg of argv) {
     if (arg === "--suite" || arg === "-s") {
-      suite = true;
+      runSuite = true;
       continue;
     }
     if (arg.startsWith("--fixture=")) {
@@ -360,7 +366,7 @@ function parseVideasySmokeArgs(argv: string[]): {
   }
 
   return {
-    suite,
+    suite: runSuite,
     fixtureId,
     season: positionals[0] ?? null,
     episode: positionals[1] ?? null,

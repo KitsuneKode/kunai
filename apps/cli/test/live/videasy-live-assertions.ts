@@ -140,7 +140,9 @@ export function resolveVideasyLiveFixtures(options: {
     if (match) return [match];
   }
   // Default primary: cineby catalog proof title.
-  return [VIDEASY_LIVE_FIXTURES[0]!];
+  const [primaryFixture] = VIDEASY_LIVE_FIXTURES;
+  if (!primaryFixture) throw new Error("Videasy live fixtures are unexpectedly empty");
+  return [primaryFixture];
 }
 
 /**

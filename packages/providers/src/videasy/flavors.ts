@@ -453,7 +453,9 @@ function pickFromMatches(
     const byQuality = matches.find((flavor) => flavor.filterQuality === hints.filterQuality);
     if (byQuality) return byQuality;
   }
-  return matches[0]!;
+  const [firstMatch] = matches;
+  if (!firstMatch) throw new Error("Expected at least one Videasy flavor match");
+  return firstMatch;
 }
 
 /** Map endpoint (+ optional engine hints) to themed labels used in UI and inventory. */

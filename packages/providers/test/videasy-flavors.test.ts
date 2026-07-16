@@ -4,7 +4,6 @@ import { finalizeVidkingSourceInventory } from "../src/videasy/direct";
 import {
   flavorSourceId,
   getPhaseAVidkingFlavorIds,
-  getVidkingFlavor,
   getVidkingFlavorForEndpoint,
   listEligibleVidkingFlavorIds,
   listPhaseBLazyProbeFlavorIds,
