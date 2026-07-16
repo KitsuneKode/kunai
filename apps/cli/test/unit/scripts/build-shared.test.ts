@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   assertNoForbiddenReleaseInputs,
@@ -71,6 +73,11 @@ describe("release build shared guards", () => {
 
 describe("release build shared options", () => {
   const root = "/repo/apps/cli";
+
+  test("ships the local React DevTools stub used by release builds", () => {
+    const cliRoot = join(import.meta.dir, "../../..");
+    expect(existsSync(join(cliRoot, "src/infra/build/react-devtools-core-stub.ts"))).toBe(true);
+  });
 
   test("keeps runtime env resolution disabled for published artifacts", () => {
     expect(releaseBuildBaseOptions(root).env).toBe("disable");
