@@ -2,12 +2,13 @@ import { dirname, join } from "node:path";
 
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 
 import { runSetupFlow } from "../setup-shell";
 
-export type SetupWizardResult = "completed" | "cancelled" | "skipped";
+export type { SetupWizardResult } from "@/app/bootstrap/startup-setup";
 
 export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promise<boolean> {
   const choice = await chooseFromListShell({
@@ -38,8 +39,15 @@ export async function runSetupWizard({
   force?: boolean;
 }): Promise<SetupWizardResult> {
   const current = container.config.getRaw();
-  const needsOnboarding = current.onboardingVersion < 2 || !current.downloadOnboardingDismissed;
-  if (!force && !needsOnboarding) {
+  if (
+    !shouldRunSetupWizard({
+      force,
+      config: {
+        onboardingVersion: current.onboardingVersion,
+        downloadOnboardingDismissed: current.downloadOnboardingDismissed,
+      },
+    })
+  ) {
     return "skipped";
   }
 

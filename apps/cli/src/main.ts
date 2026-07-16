@@ -35,6 +35,7 @@ import {
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
+import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
@@ -144,17 +145,6 @@ export const __testing = {
     shutdownInProgress = false;
   },
 };
-
-async function maybeRunSetupWizard(
-  args: { setup: boolean },
-  container: Awaited<ReturnType<typeof createContainer>>,
-) {
-  const { runSetupWizard } = await import("./app-shell/workflows");
-  await runSetupWizard({
-    container,
-    force: args.setup,
-  });
-}
 
 async function maybeRunOfflineMode(
   args: { offline: boolean },
@@ -607,13 +597,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     try {
       return (await Bun.file(getKunaiPaths().configPath).json()) as {
         onboardingVersion?: number;
+        downloadOnboardingDismissed?: boolean;
         defaultMode?: string;
       };
     } catch {
-      return {} as { onboardingVersion?: number; defaultMode?: string };
+      return {} as {
+        onboardingVersion?: number;
+        downloadOnboardingDismissed?: boolean;
+        defaultMode?: string;
+      };
     }
   })();
-  const onboardingWillRun = (configJson.onboardingVersion ?? 0) < 2;
+  const onboardingWillRun = shouldRunSetupWizard({
+    force: args.setup,
+    config: {
+      onboardingVersion: configJson.onboardingVersion ?? 0,
+      downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
+    },
+  });
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireYtDlp: args.youtube || configJson.defaultMode === "youtube",
@@ -857,7 +858,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       return;
     }
   }
-  await maybeRunSetupWizard(args, container);
+  await maybeRunStartupSetup({
+    force: args.setup,
+    config: {
+      onboardingVersion: config.onboardingVersion,
+      downloadOnboardingDismissed: config.downloadOnboardingDismissed,
+    },
+    container,
+  });
   if (await maybeRunOfflineMode(args, container)) {
     await shutdownShell();
     await disposeContainer(container);
