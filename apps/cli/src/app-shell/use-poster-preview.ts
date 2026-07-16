@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useReducer } from "react";
+import { startTransition, useEffect, useReducer, useRef } from "react";
 
 import { clearRenderedPosterImages, fetchPoster } from "./image-pane";
 import type { PosterResult, PosterState } from "./poster-types";
@@ -65,19 +65,33 @@ export function usePosterPreview(
   },
 ): { poster: PosterResult; posterState: PosterState } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
+  const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
 
   useEffect(() => {
+    const geometryChanged =
+      previousGeometry.current !== null &&
+      (previousGeometry.current.rows !== rows || previousGeometry.current.cols !== cols);
+    previousGeometry.current = { rows, cols };
+
     if (!url || !enabled) {
       if (!preserveTerminalImages) clearRenderedPosterImages();
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
 
-    let cancelled = false;
-    if (!preserveTerminalImages) clearRenderedPosterImages();
-    dispatch({ type: "loading" });
+    // A Kitty placement is anchored to terminal cells. Keep the previous image while
+    // changing titles, but clear it immediately when its geometry becomes invalid.
+    if (geometryChanged && !preserveTerminalImages) clearRenderedPosterImages();
 
+    let cancelled = false;
+    // Defer both the "loading" commit and the fetch until the debounce fires.
+    // Dispatching "loading" immediately on enable forced an extra Ink frame on
+    // every selection change (calendar mini-posters, rail previews) even when the
+    // fetch was about to be cancelled by the next keystroke.
     const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (!preserveTerminalImages) clearRenderedPosterImages();
+      dispatch({ type: "loading" });
       fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
         .then((result) => {
           if (cancelled) return undefined;
