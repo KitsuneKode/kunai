@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { resolveTitleProviderLane, titleMatchesShellMode } from "@/domain/provider-lane-contract";
+import {
+  resolveTitleLaneEligibility,
+  resolveTitleProviderLane,
+  titleMatchesShellMode,
+} from "@/domain/provider-lane-contract";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 
 test("classifies YouTube identities as the YouTube provider lane", () => {
@@ -34,6 +38,48 @@ test("allows unclassified provider-native titles through anime mode", () => {
       "anime",
     ),
   ).toBe(true);
+});
+
+test("allows anime titles with a TMDB id through series mode (dual-lane)", () => {
+  const linkedAnime = {
+    id: "1535",
+    isAnime: true,
+    externalIds: { anilistId: "1535", tmdbId: "13916" },
+  };
+  expect(titleMatchesShellMode(linkedAnime, "series")).toBe(true);
+  expect(titleMatchesShellMode(linkedAnime, "anime")).toBe(true);
+});
+
+test("still rejects anime titles without a TMDB id in series mode", () => {
+  const animeOnly = {
+    id: "1535",
+    isAnime: true,
+    externalIds: { anilistId: "1535" },
+  };
+  expect(titleMatchesShellMode(animeOnly, "series")).toBe(false);
+});
+
+test("resolveTitleLaneEligibility reports both lanes for a linked anime", () => {
+  expect(
+    resolveTitleLaneEligibility({
+      id: "1535",
+      isAnime: true,
+      externalIds: { anilistId: "1535", tmdbId: "13916" },
+    }),
+  ).toEqual({ anime: true, series: true, youtube: false });
+
+  expect(
+    resolveTitleLaneEligibility({
+      id: "tmdb:1396",
+      externalIds: { tmdbId: "1396" },
+    }),
+  ).toEqual({ anime: false, series: true, youtube: false });
+
+  expect(
+    resolveTitleLaneEligibility({
+      id: "youtube:abc",
+    }),
+  ).toEqual({ anime: false, series: false, youtube: true });
 });
 
 test("refuses to construct a series resolve request for a YouTube title", () => {

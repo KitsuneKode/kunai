@@ -35,7 +35,7 @@ import {
 } from "@kunai/core";
 import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";
-import type { ProviderHealthRepository } from "@kunai/storage";
+import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 import type {
   ProviderHealthDelta,
   ProviderId,
@@ -211,8 +211,18 @@ export class PlaybackResolveService {
       readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
       readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
       readonly resolveTotalDeadlineMs?: (priority: StartupPriority) => number;
+      /** Crosswalk lookup for cross-lane episode maps (ARM tmdb-season). */
+      readonly catalogCrosswalk?: Pick<CatalogCrosswalkRepository, "get">;
     },
   ) {}
+
+  /** High-confidence ARM season map for the title's AniList entry, if cached. */
+  private tmdbSeasonHintFor(title: PlaybackResolveInput["title"]): number | undefined {
+    const anilistId = title.externalIds?.anilistId;
+    if (!anilistId || !this.deps.catalogCrosswalk) return undefined;
+    const graph = this.deps.catalogCrosswalk.get("anilist", anilistId);
+    return graph?.confidence === "high" ? graph.tmdbSeason : undefined;
+  }
 
   async resolve(input: PlaybackResolveInput): Promise<PlaybackResolveOutput> {
     const manifest = this.deps.engine.getManifest(input.providerId);
@@ -314,6 +324,7 @@ export class PlaybackResolveService {
       input.resolveIntent ?? "play",
       catalogIdentity,
       input.providerId,
+      { tmdbSeasonHint: this.tmdbSeasonHintFor(input.title) },
     );
 
     const inventoryInput = {

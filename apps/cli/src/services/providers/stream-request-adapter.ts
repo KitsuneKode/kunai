@@ -1,9 +1,15 @@
 import { assertTitleMatchesShellMode } from "@/domain/provider-lane-contract";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import { resolveProviderTitleIdentity, type ProviderCatalogIdentity } from "@kunai/core";
+import {
+  mapAnimeEpisodeToTmdbCoordinates,
+  mapTmdbEpisodeToAnimeCoordinates,
+  resolveProviderTitleIdentity,
+  type ProviderCatalogIdentity,
+} from "@kunai/core";
 import { normalizeLegacyVideasySourceId, resolveAnimeAudioIntent } from "@kunai/providers";
 import type {
   EpisodeIdentity,
+  MediaKind,
   ProviderResolveInput,
   StartupPriority,
   TitleIdentity,
@@ -21,20 +27,36 @@ export interface StreamRequestLike {
   readonly favoriteSourceNames?: readonly string[];
 }
 
+export type StreamRequestAdapterOptions = {
+  /** ARM `themoviedb-season` for the title's AniList entry — enables cross-lane episode maps. */
+  readonly tmdbSeasonHint?: number;
+};
+
 export function streamRequestToResolveInput(
   request: StreamRequestLike,
   mode: ShellMode,
   intent: ProviderResolveInput["intent"] = "play",
   catalogIdentity?: ProviderCatalogIdentity,
   providerId?: string,
+  options?: StreamRequestAdapterOptions,
 ): ProviderResolveInput {
   assertTitleMatchesShellMode(request.title, mode);
-  const animeAudioIntent =
-    mode === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
-  return {
-    title: titleToCoreIdentity(request.title, mode, catalogIdentity, providerId),
+  const naturalKind: MediaKind =
+    mode === "youtube" ? "video" : mode === "anime" ? "anime" : request.title.type;
+  const adapted = adaptResolveLane({
+    title: request.title,
+    naturalKind,
     episode: episodeToCoreIdentity(request.episode),
-    mediaKind: mode === "youtube" ? "video" : mode === "anime" ? "anime" : request.title.type,
+    catalogIdentity,
+    providerId,
+    tmdbSeasonHint: options?.tmdbSeasonHint,
+  });
+  const animeAudioIntent =
+    adapted.mediaKind === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
+  return {
+    title: titleToCoreIdentity(request.title, mode, catalogIdentity, providerId, adapted.mediaKind),
+    episode: adapted.episode,
+    mediaKind: adapted.mediaKind,
     preferredSourceId: normalizeOptionalId(request.selectedSourceId),
     preferredStreamId: normalizeOptionalId(request.selectedStreamId),
     favoriteSourceNames:
@@ -44,12 +66,59 @@ export function streamRequestToResolveInput(
     preferredAudioLanguage: animeAudioIntent?.preferredAudioLanguage,
     preferredSubtitleLanguage: request.subtitlePreference,
     preferredPresentation: animeAudioIntent?.presentation ?? "raw",
-    preferredSubtitleDelivery: mode === "anime" ? "hardcoded" : "external",
+    preferredSubtitleDelivery: adapted.mediaKind === "anime" ? "hardcoded" : "external",
     qualityPreference: normalizeQualityPreference(request.qualityPreference),
     startupPriority: request.startupPriority ?? "balanced",
     intent,
     allowedRuntimes: ["direct-http"],
   };
+}
+
+/**
+ * Dual-lane adaptation (catalog-identity-parity Phase 3): when the title's id
+ * bag proves it exists in the target provider's catalog, adapt mediaKind and
+ * episode coordinates instead of letting the engine reject the request. Fails
+ * closed: without a confident episode map the natural kind is kept, so the
+ * engine skips the provider rather than resolving the wrong episode.
+ */
+function adaptResolveLane(args: {
+  readonly title: TitleInfo;
+  readonly naturalKind: MediaKind;
+  readonly episode: EpisodeIdentity | undefined;
+  readonly catalogIdentity?: ProviderCatalogIdentity;
+  readonly providerId?: string;
+  readonly tmdbSeasonHint?: number;
+}): { readonly mediaKind: MediaKind; readonly episode?: EpisodeIdentity } {
+  const { title, naturalKind, episode, catalogIdentity, providerId, tmdbSeasonHint } = args;
+  const hint = tmdbSeasonHint !== undefined ? { tmdbSeason: tmdbSeasonHint } : undefined;
+
+  if (naturalKind === "anime" && catalogIdentity === "tmdb") {
+    if (!title.externalIds?.tmdbId) return { mediaKind: naturalKind, episode };
+    if (title.type === "movie") return { mediaKind: "movie", episode: undefined };
+    if (!episode) return { mediaKind: "series", episode };
+    const mapped = mapAnimeEpisodeToTmdbCoordinates(episode, hint);
+    return mapped ? { mediaKind: "series", episode: mapped } : { mediaKind: naturalKind, episode };
+  }
+
+  if (
+    (naturalKind === "series" || naturalKind === "movie") &&
+    (catalogIdentity === "anilist" || catalogIdentity === "provider-native")
+  ) {
+    const hasAnimeCatalogId =
+      Boolean(title.externalIds?.anilistId) ||
+      Boolean(
+        providerId &&
+        title.externalIds?.providerNativeIds?.[
+          providerId as keyof NonNullable<typeof title.externalIds.providerNativeIds>
+        ],
+      );
+    if (!hasAnimeCatalogId) return { mediaKind: naturalKind, episode };
+    if (naturalKind === "movie" || !episode) return { mediaKind: "anime", episode };
+    const mapped = mapTmdbEpisodeToAnimeCoordinates(episode, hint);
+    return mapped ? { mediaKind: "anime", episode: mapped } : { mediaKind: naturalKind, episode };
+  }
+
+  return { mediaKind: naturalKind, episode };
 }
 
 function normalizeOptionalId(value: string | undefined): string | undefined {
@@ -69,8 +138,10 @@ export function titleToCoreIdentity(
   mode: ShellMode,
   catalogIdentity?: ProviderCatalogIdentity,
   providerId?: string,
+  kindOverride?: MediaKind,
 ): TitleIdentity {
-  const kind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
+  const kind =
+    kindOverride ?? (mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type);
   const year = title.year ? Number.parseInt(title.year, 10) || undefined : undefined;
 
   if (catalogIdentity) {

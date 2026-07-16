@@ -5,6 +5,7 @@ export * from "./provider-id-aliases";
 export * from "./provider-engine";
 export * from "./provider-cycle-engine";
 export * from "./provider-manifest";
+export * from "./episode-map";
 export * from "./title-identity";
 export * from "./provider-priority";
 export * from "./provider-sdk";

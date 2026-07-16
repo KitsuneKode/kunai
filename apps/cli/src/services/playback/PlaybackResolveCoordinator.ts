@@ -15,7 +15,7 @@ import {
   type ProviderEngineEvent,
   type ProviderPriorityInput,
 } from "@kunai/core";
-import type { ProviderHealthRepository } from "@kunai/storage";
+import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 
 import {
   PlaybackResolveService,
@@ -57,6 +57,7 @@ export type PlaybackResolveCoordinatorDeps = {
   >;
   readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
   readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
+  readonly catalogCrosswalk?: Pick<CatalogCrosswalkRepository, "get">;
 };
 
 export class PlaybackResolveCoordinator {
@@ -101,6 +102,7 @@ export class PlaybackResolveCoordinator {
       endpointHealth: this.deps.endpointHealth,
       titlePlaybackSource: this.deps.titlePlaybackSource,
       getProviderPriority: this.deps.getProviderPriority,
+      catalogCrosswalk: this.deps.catalogCrosswalk,
     });
   }
 

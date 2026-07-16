@@ -120,6 +120,7 @@ export async function bootstrapProviders(
       titlePlaybackSource: titlePlaybackSource,
       diagnostics: diagnosticsService,
       getProviderPriority: () => createProviderPrioritySnapshot(config),
+      catalogCrosswalk: persistence.catalogCrosswalk,
     }),
     {
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
