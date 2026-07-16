@@ -868,6 +868,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: config.downloadOnboardingDismissed,
     },
     container,
+    loadSetupWorkflow: () => import("./app-shell/workflows/setup-workflows"),
   });
   if (await maybeRunOfflineMode(args, container)) {
     await shutdownShell();

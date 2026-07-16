@@ -21,19 +21,16 @@ export function shouldRunSetupWizard({
   return force || config.onboardingVersion < 2 || !config.downloadOnboardingDismissed;
 }
 
-const loadDefaultSetupWorkflow: SetupWorkflowLoader = () =>
-  import("@/app-shell/workflows/setup-workflows");
-
 export async function maybeRunStartupSetup({
   force,
   config,
   container,
-  loadSetupWorkflow = loadDefaultSetupWorkflow,
+  loadSetupWorkflow,
 }: {
   readonly force: boolean;
   readonly config: StartupSetupState;
   readonly container: Container;
-  readonly loadSetupWorkflow?: SetupWorkflowLoader;
+  readonly loadSetupWorkflow: SetupWorkflowLoader;
 }): Promise<SetupWizardResult> {
   if (!shouldRunSetupWizard({ force, config })) return "skipped";
   const { runSetupWizard } = await loadSetupWorkflow();

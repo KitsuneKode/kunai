@@ -45,6 +45,7 @@ describe("command registry contexts", () => {
       "library",
       "notifications",
       "history",
+      "stats",
       "diagnostics",
       "export-diagnostics",
       "report-issue",
@@ -115,6 +116,7 @@ describe("command registry contexts", () => {
       "watchlist",
       "playlists",
       "up-next",
+      "stats",
       "recommendation",
       "calendar",
       "anime-calendar",
@@ -194,11 +196,11 @@ describe("command registry contexts", () => {
       "watchlist",
       "playlists",
       "up-next",
+      "stats",
       "library",
       "downloads",
       "notifications",
       "history",
-      "setup",
     ] satisfies readonly AppCommandId[]);
   });
 

@@ -14,12 +14,12 @@ test("search browse command palette exposes stable watch and library surfaces fi
     "watchlist",
     "playlists",
     "up-next",
+    "stats",
     "provider",
     "library",
     "downloads",
     "notifications",
     "history",
-    "download",
   ]);
 });
 
