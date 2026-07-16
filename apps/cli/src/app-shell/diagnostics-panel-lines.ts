@@ -40,6 +40,7 @@ export function buildDiagnosticsPanelLinesFromInsight({
     ...insight.healthRows.map((row) => healthRowToPanelLine(row)),
     { label: "─── Current Playback Evidence", detail: "", tone: "info" },
     ...buildCurrentPlaybackLines(insight),
+    ...buildDecisionTimelineLines(insight, developerMode),
     { label: "─── Developer Evidence", detail: "", tone: "info" },
     ...buildDeveloperEvidenceLines(insight, developerMode),
     { label: "─── Export And Report", detail: "", tone: "info" },
@@ -152,6 +153,40 @@ function buildDeveloperEvidenceLines(
   lines.push(...formatDiagnosticTimelineLines(dev.recentEvents, developerMode ? 20 : 8));
 
   return lines;
+}
+
+/**
+ * Decision-family operations: rows that explain WHY the runtime chose a path
+ * (continue local vs stream, provider pick, recovery, fallback), separated
+ * from raw event noise so users can audit behavior without developer mode.
+ */
+function isDecisionEvent(event: DiagnosticEvent): boolean {
+  const operation = event.operation ?? "";
+  return (
+    operation.startsWith("continuation.") ||
+    operation.includes("decision") ||
+    operation === "provider.resolve.fallback"
+  );
+}
+
+function buildDecisionTimelineLines(
+  insight: DiagnosticsInsight,
+  developerMode: boolean,
+): ShellPanelLine[] {
+  const decisions = insight.developerEvidence.recentEvents.filter(isDecisionEvent);
+  if (decisions.length === 0) return [];
+  return [
+    { label: "─── Recent Decisions", detail: "", tone: "info" },
+    ...decisions.slice(0, developerMode ? 12 : 6).map((event) => ({
+      label: `${event.category}.${event.operation}`,
+      detail: [event.message, formatTimelineCorrelation(event)].filter(Boolean).join("  ·  "),
+      tone: (event.level === "error"
+        ? "error"
+        : event.level === "warn"
+          ? "warning"
+          : "neutral") as ShellPanelLine["tone"],
+    })),
+  ];
 }
 
 function formatDiagnosticTimelineLines(

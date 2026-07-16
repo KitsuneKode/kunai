@@ -134,3 +134,67 @@ describe("diagnostics-panel-lines", () => {
     expect(devSection.some((line) => line.label === "Recent events")).toBe(true);
   });
 });
+
+describe("decision timeline", () => {
+  test("surfaces decision-family events in their own section", () => {
+    const lines = buildLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "en" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [
+        {
+          timestamp: 3,
+          level: "info",
+          category: "session",
+          operation: "continuation.source",
+          message: "Continue resolved to local artifact",
+          context: {},
+        },
+        {
+          timestamp: 2,
+          level: "info",
+          category: "provider",
+          operation: "provider.selection.decision",
+          message: "Picked vidking over miruro",
+          providerId: "vidking",
+          context: {},
+        },
+        {
+          timestamp: 1,
+          level: "info",
+          category: "runtime",
+          operation: "runtime.memory.sample",
+          message: "Runtime memory sample",
+          context: {},
+        },
+      ],
+    });
+
+    const sectionHeaders = lines.filter((line) => line.detail === "").map((line) => line.label);
+    expect(sectionHeaders).toContain("─── Recent Decisions");
+
+    const decisionsStart = lines.findIndex((line) => line.label === "─── Recent Decisions");
+    const nextSection = lines.findIndex(
+      (line, index) => index > decisionsStart && line.detail === "",
+    );
+    const decisionLines = lines.slice(decisionsStart + 1, nextSection);
+    expect(decisionLines.some((line) => line.detail?.includes("local artifact"))).toBe(true);
+    expect(decisionLines.some((line) => line.detail?.includes("Picked vidking"))).toBe(true);
+    expect(decisionLines.some((line) => line.detail?.includes("memory sample"))).toBe(false);
+  });
+
+  test("omits the decisions section when no decision events exist", () => {
+    const lines = buildLines({
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "en" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+      recentEvents: [],
+    });
+
+    expect(lines.some((line) => line.label === "─── Recent Decisions")).toBe(false);
+  });
+});
