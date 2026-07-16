@@ -9,6 +9,7 @@ export type ProviderTraceEventSummary = {
   readonly attempt?: number;
   readonly failureClass?: string | number | boolean | null;
   readonly serverId?: string | number | boolean | null;
+  readonly stage?: string;
   readonly at: string;
 };
 
@@ -55,6 +56,7 @@ export function summarizeProviderTraceEvent(
     attempt: event.attempt,
     failureClass: event.attributes?.failureClass,
     serverId: event.attributes?.serverId,
+    stage: typeof event.attributes?.stage === "string" ? event.attributes.stage : undefined,
     at: event.at,
   };
 }
@@ -71,6 +73,7 @@ function dedupeSourceAttemptSummaries(
       event.attempt ?? "",
       event.failureClass ?? "",
       event.serverId ?? "",
+      event.stage ?? "",
     ].join("|");
     if (seen.has(key)) continue;
     seen.add(key);

@@ -277,6 +277,7 @@ describe("panel-data", () => {
                 message: "Trying Luffy",
                 sourceId: "source:videasy:mb-flix",
                 serverId: "mb-flix",
+                stage: "source",
                 at: "2026-06-21T00:00:01.000Z",
               },
               {
@@ -285,6 +286,7 @@ describe("panel-data", () => {
                 sourceId: "source:videasy:mb-flix",
                 failureClass: "candidate-empty",
                 serverId: "mb-flix",
+                stage: "decrypt",
                 at: "2026-06-21T00:00:02.000Z",
               },
             ],
@@ -294,7 +296,7 @@ describe("panel-data", () => {
     });
 
     const sourceAttempts = lines.find((line) => line.label === "Source attempts");
-    expect(sourceAttempts?.detail).toContain("mb-flix failed");
+    expect(sourceAttempts?.detail).toContain("mb-flix · decrypt failed");
     expect(sourceAttempts?.detail).toContain("candidate-empty");
     expect(sourceAttempts?.tone).toBe("warning");
   });

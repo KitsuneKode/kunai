@@ -894,7 +894,8 @@ function formatProviderSourceAttempt(attempt: unknown): string | null {
     typeof record.failureClass === "string" || typeof record.failureClass === "number"
       ? String(record.failureClass)
       : null;
-  const label = serverId ?? "source";
+  const stage = typeof record.stage === "string" ? record.stage : null;
+  const label = [serverId ?? "source", stage].filter(Boolean).join(" · ");
   if (type === "source:failed") {
     return [label, "failed", failureClass].filter(Boolean).join(" ");
   }

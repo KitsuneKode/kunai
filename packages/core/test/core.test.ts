@@ -1156,7 +1156,7 @@ test("summarizeProviderTraceEvents exports source attempt breadcrumbs", () => {
       at: "2026-06-21T00:00:02.000Z",
       attempt: 1,
       message: "Neon failed",
-      attributes: { failureClass: "candidate-timeout", serverId: "luffy" },
+      attributes: { failureClass: "candidate-timeout", serverId: "luffy", stage: "decrypt" },
     },
   ]);
 
@@ -1165,6 +1165,7 @@ test("summarizeProviderTraceEvents exports source attempt breadcrumbs", () => {
     type: "source:failed",
     failureClass: "candidate-timeout",
     serverId: "luffy",
+    stage: "decrypt",
   });
   expect(summary.sourceAttempts.map((event) => event.type)).toEqual([
     "source:start",

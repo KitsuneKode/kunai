@@ -79,12 +79,14 @@ function sourceRowFromAttempt(attempt: unknown): PlaybackFailureWaterfallRow | n
   }
   const label = sourceLabel(record);
   const failureClass = stringify(record.failureClass);
+  const stage = stringify(record.stage);
   const message = stringify(record.message);
   if (type === "source:failed") {
     return {
       label,
       status: "failed",
-      detail: failureClass ?? trimProviderMessage(message),
+      detail:
+        [stage, failureClass ?? trimProviderMessage(message)].filter(Boolean).join(" · ") || null,
     };
   }
   if (type === "source:success") {
@@ -97,7 +99,7 @@ function sourceRowFromAttempt(attempt: unknown): PlaybackFailureWaterfallRow | n
   return {
     label,
     status: "running",
-    detail: "tried",
+    detail: stage ? `${stage} · tried` : "tried",
   };
 }
 
@@ -116,19 +118,23 @@ function mergeSourceRow(
 function sourceAttemptKey(attempt: unknown): string {
   if (!attempt || typeof attempt !== "object") return "source:unknown";
   const record = attempt as Record<string, unknown>;
-  return (
+  return [
     stringify(record.serverId) ??
-    stringify(record.sourceId) ??
-    stringify(record.message) ??
-    "source"
-  );
+      stringify(record.sourceId) ??
+      stringify(record.message) ??
+      "source",
+    stringify(record.stage),
+  ]
+    .filter(Boolean)
+    .join("|");
 }
 
 function sourceLabel(record: Record<string, unknown>): string {
   const serverId = stringify(record.serverId);
-  if (serverId) return serverId;
+  const stage = stringify(record.stage);
+  if (serverId) return [serverId, stage].filter(Boolean).join(" · ");
   const sourceId = stringify(record.sourceId);
-  if (sourceId) return sourceId.split(":").at(-1) ?? sourceId;
+  if (sourceId) return [sourceId.split(":").at(-1) ?? sourceId, stage].filter(Boolean).join(" · ");
   return trimProviderMessage(stringify(record.message)) ?? "source";
 }
 
