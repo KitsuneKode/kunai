@@ -21,6 +21,12 @@ import type {
 
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
+  allmangaSubtitleMode,
+  animeQualityFields,
+  formatAnimeSourceArchetype,
+  formatAnimeSourceLabel,
+} from "../shared/anime-source-presentation";
+import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
@@ -306,6 +312,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           if (!link.url) continue;
 
           const qualityStr = link.quality || "auto";
+          const { qualityLabel, qualityRank } = animeQualityFields(qualityStr);
           const protocol = link.protocol ?? (link.url.includes(".m3u8") ? "hls" : "mp4");
           const apiSourceName =
             link.sourceName ??
@@ -317,11 +324,22 @@ export const allmangaProviderModule: CoreProviderModule = {
           const sourceKey = apiSourceName.toLowerCase();
           const sourceLabel = normalizeProviderDisplayLabel(apiSourceName) ?? apiSourceName;
           const sourceId = `source:${ALLANIME_PROVIDER_ID}:${sourceKey}`;
-          const sourceSubtitle =
-            mode === "sub" ? "Japanese · hardsub" : mode === "dub" ? "English · dub" : "AllManga";
           const hasExternalSubs =
             Boolean(link.subtitle) ||
             (link.subtitles?.some((subtitle) => Boolean(subtitle.src)) ?? false);
+          const subtitleMode = allmangaSubtitleMode({
+            audio: mode === "dub" ? "dub" : "sub",
+            hasExternalSubtitles: hasExternalSubs,
+          });
+          const displayLabel = formatAnimeSourceLabel({
+            audio: mode === "dub" ? "dub" : "sub",
+            serverLabel: sourceLabel,
+            subtitleMode,
+          });
+          const sourceArchetype = formatAnimeSourceArchetype({
+            audio: mode === "dub" ? "dub" : "sub",
+            detail: sourceLabel,
+          });
           const subtitleLanguages = hasExternalSubs
             ? [
                 ...new Set(
@@ -342,7 +360,7 @@ export const allmangaProviderModule: CoreProviderModule = {
           const hardSubLanguage = mode === "sub" && !hasExternalSubs ? "en" : undefined;
 
           const streamId = `stream:${ALLANIME_PROVIDER_ID}:${Bun.hash(link.url).toString(36)}`;
-          const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityStr}`;
+          const variantId = `variant:${ALLANIME_PROVIDER_ID}:${sourceId}:${qualityLabel}`;
 
           const headers = buildStreamHeaders(link.referer, ALLANIME_REFERER, DEFAULT_UA);
 
@@ -362,8 +380,8 @@ export const allmangaProviderModule: CoreProviderModule = {
             hardSubLanguage,
             subtitleDelivery,
             subtitleLanguages,
-            qualityLabel: qualityStr,
-            qualityRank: parseInt(qualityStr) || 0,
+            qualityLabel,
+            qualityRank,
             languageEvidence: [
               {
                 role: "audio",
@@ -371,7 +389,7 @@ export const allmangaProviderModule: CoreProviderModule = {
                 nativeLabel: mode,
                 sourceId,
                 confidence: 0.85,
-                metadata: { translationType: mode },
+                metadata: { translationType: mode, audioCategory: mode },
               },
               ...(mode === "sub" && hardSubLanguage
                 ? [
@@ -392,23 +410,23 @@ export const allmangaProviderModule: CoreProviderModule = {
                 nativeLabel: sourceLabel,
                 host: link.deferredLocator ? "allanime.day" : new URL(link.url).hostname,
                 confidence: protocol === "hls" ? 0.95 : 0.85,
-                metadata: { translationType: mode },
+                metadata: { translationType: mode, audioCategory: mode },
               },
             ],
             headers,
             confidence: protocol === "hls" ? 0.95 : 0.85,
             cachePolicy,
-            flavorLabel: sourceLabel,
+            flavorLabel: displayLabel,
             serverName: sourceLabel,
-            flavorArchetype: sourceSubtitle,
+            flavorArchetype: sourceArchetype,
           });
 
           variants.push({
             id: variantId,
             providerId: ALLANIME_PROVIDER_ID,
             sourceId,
-            qualityLabel: qualityStr,
-            qualityRank: parseInt(qualityStr) || 0,
+            qualityLabel,
+            qualityRank,
             protocol,
             container:
               link.container ?? (protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4"),
@@ -416,6 +434,9 @@ export const allmangaProviderModule: CoreProviderModule = {
             presentation: mode,
             hardSubLanguage,
             subtitleDelivery,
+            subtitleLanguages,
+            flavorLabel: displayLabel,
+            flavorArchetype: sourceArchetype,
             streamIds: [streamId],
             confidence: protocol === "hls" ? 0.95 : 0.85,
             languageEvidence: [
@@ -702,12 +723,21 @@ export function buildAllmangaCycleCandidates(
   } = {},
 ): ProviderCycleCandidate[] {
   return streams.map((stream, index) => {
-    const qualityRank = stream.qualityRank ?? (parseInt(stream.qualityLabel ?? "") || 0);
+    const qualityRank = stream.qualityRank ?? animeQualityFields(stream.qualityLabel).qualityRank;
     const qualityBoost =
       qualityPreference && stream.qualityLabel?.includes(qualityPreference) ? -10_000 : 0;
     const hlsBoost = stream.protocol === "hls" ? -1_000 : 0;
     const selectedStreamBoost = stream.id === selection.preferredStreamId ? -20_000 : 0;
     const selectedSourceBoost = stream.sourceId === selection.preferredSourceId ? -10_000 : 0;
+    const sourceLabel =
+      stream.serverName ??
+      stream.sourceEvidence?.[0]?.nativeLabel ??
+      stream.flavorLabel ??
+      stream.qualityLabel;
+    const cycleLabel =
+      stream.flavorLabel && stream.qualityLabel
+        ? `${stream.flavorLabel} · ${stream.qualityLabel}`
+        : (stream.flavorLabel ?? stream.qualityLabel ?? stream.presentation ?? stream.id);
     return {
       id: `candidate:${stream.id}`,
       providerId: ALLANIME_PROVIDER_ID,
@@ -715,8 +745,8 @@ export function buildAllmangaCycleCandidates(
       variantId: stream.variantId,
       streamId: stream.id,
       groupId: stream.presentation,
-      label: stream.qualityLabel ?? stream.presentation ?? stream.id,
-      nativeLabel: stream.sourceEvidence?.[0]?.nativeLabel ?? stream.qualityLabel,
+      label: cycleLabel,
+      nativeLabel: sourceLabel,
       normalizedAudioLanguage: stream.audioLanguages?.[0],
       normalizedSubtitleLanguage: stream.hardSubLanguage ?? stream.subtitleLanguages?.[0],
       presentation: stream.presentation,
@@ -748,8 +778,27 @@ export function buildAllmangaSourceInventorySeeds(
 
   return [...streamsBySource.entries()].map(([sourceId, sourceStreams]) => {
     const representative = sourceStreams[0];
+    const serverLabel =
+      representative?.serverName ??
+      representative?.sourceEvidence?.[0]?.nativeLabel ??
+      formatAllmangaSourceLabel(sourceId);
+    const presentation =
+      representative?.presentation === "dub" || representative?.presentation === "sub"
+        ? representative.presentation
+        : "sub";
     const label =
-      representative?.sourceEvidence?.[0]?.nativeLabel ?? formatAllmangaSourceLabel(sourceId);
+      representative?.flavorLabel ??
+      formatAnimeSourceLabel({
+        audio: presentation,
+        serverLabel,
+        subtitleMode: allmangaSubtitleMode({
+          audio: presentation,
+          hasExternalSubtitles: Boolean(
+            representative?.subtitleDelivery === "external" ||
+            (representative?.subtitleLanguages?.length ?? 0) > 0,
+          ),
+        }),
+      });
     return {
       id: sourceId,
       providerId: ALLANIME_PROVIDER_ID,
@@ -765,13 +814,17 @@ export function buildAllmangaSourceInventorySeeds(
       artwork: representative?.artwork,
       metadata: {
         sourceFamily: sourceId.split(":").at(-1) ?? sourceId,
+        audioCategory: presentation,
         streamIds: sourceStreams.map((stream) => stream.id).join(","),
         qualityLabels: sourceStreams
           .map((stream) => stream.qualityLabel)
           .filter((quality): quality is string => Boolean(quality))
           .join(","),
         flavorLabel: label,
-        flavorArchetype: firstDefined(sourceStreams.map((stream) => stream.flavorArchetype)),
+        flavorArchetype:
+          firstDefined(sourceStreams.map((stream) => stream.flavorArchetype)) ??
+          formatAnimeSourceArchetype({ audio: presentation, detail: serverLabel }),
+        server: serverLabel,
       },
     };
   });

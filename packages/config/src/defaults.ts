@@ -6,12 +6,12 @@ export const DEFAULT_OFFLINE_RUNWAY_TARGET = 2;
 
 export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
-  // Rivestream is the healthy series default (2026-07-11). Videasy stream API is route-dead.
-  provider: "rivestream",
+  // Series automatic lane (2026-07-16): Videasy first (fast seed+neon path), then Rivestream, VidLink.
+  provider: "videasy",
   animeProvider: "allanime",
   youtubeProvider: "youtube",
-  providerPriority: ["vidlink", "videasy"],
-  // Miruro demoted from automatic anime fallback while pipe hosts return WAF 403.
+  providerPriority: ["rivestream", "vidlink"],
+  // Miruro remains manually selectable until its pipe mirrors pass the live release gate.
   animeProviderPriority: ["allanime"],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },

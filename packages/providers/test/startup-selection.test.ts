@@ -14,18 +14,28 @@ describe("selectReadyStream", () => {
     expect(selectReadyStream(candidates, { startupPriority: "balanced" }).selected.id).toBe("1080");
   });
 
-  test("fast selects the first ready candidate", () => {
+  test("fast selects the first ready candidate (provider ready-order)", () => {
     const result = selectReadyStream(candidates, { startupPriority: "fast" });
-
     expect(result.decision.reason).toBe("fast-start");
     expect(result.selected.id).toBe("720");
   });
 
-  test("quality preference selects a matching ready quality", () => {
+  test("quality preference selects a matching ready quality (best match, not first hit)", () => {
     expect(
       selectReadyStream(candidates, { startupPriority: "balanced", qualityPreference: "720" })
         .selected.id,
     ).toBe("720");
+    expect(
+      selectReadyStream(candidates, { startupPriority: "balanced", qualityPreference: "1080p" })
+        .selected.id,
+    ).toBe("1080");
+  });
+
+  test("best/auto quality preference falls through to highest rank", () => {
+    expect(
+      selectReadyStream(candidates, { startupPriority: "balanced", qualityPreference: "best" })
+        .selected.id,
+    ).toBe("1080");
   });
 
   test("quality-first records the foreground wait budget", () => {
@@ -51,6 +61,31 @@ describe("selectReadyStream", () => {
         preferredSourceId: "source:test:720",
       }).decision.reason,
     ).toBe("explicit-source");
+  });
+
+  test("preferProviderReadyOrder keeps provider ranking over pure max quality", () => {
+    const result = selectReadyStream(candidates, {
+      startupPriority: "balanced",
+      preferProviderReadyOrder: true,
+    });
+    expect(result.selected.id).toBe("720");
+    expect(result.decision.reason).toBe("balanced-ready");
+  });
+
+  test("preferProviderReadyOrder yields to quality preference and quality-first", () => {
+    expect(
+      selectReadyStream(candidates, {
+        startupPriority: "balanced",
+        preferProviderReadyOrder: true,
+        qualityPreference: "1080",
+      }).selected.id,
+    ).toBe("1080");
+    expect(
+      selectReadyStream(candidates, {
+        startupPriority: "quality-first",
+        preferProviderReadyOrder: true,
+      }).selected.id,
+    ).toBe("1080");
   });
 });
 

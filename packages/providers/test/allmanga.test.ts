@@ -407,10 +407,13 @@ describe("AllManga provider evidence fixtures", () => {
     });
     expect(sub.sources?.[0]?.metadata?.sourceFamily).toBe("default");
     expect(sub.sources?.[0]).toMatchObject({
-      label: "Default",
+      // Shared anime presentation: Sub/Dub · Server · subtitle mode
+      label: expect.stringMatching(/^Sub · Default · (hard sub|soft sub)$/),
       host: expect.any(String),
       metadata: expect.objectContaining({
         qualityLabels: expect.any(String),
+        flavorLabel: expect.stringMatching(/^Sub · Default · /),
+        audioCategory: "sub",
       }),
     });
     expect(sub.sources?.[0]?.languageEvidence?.[0]).toMatchObject({
@@ -419,6 +422,7 @@ describe("AllManga provider evidence fixtures", () => {
     expect(sub.sources?.[0]?.sourceEvidence?.[0]).toMatchObject({
       nativeLabel: "Default",
     });
+    expect(dub.sources?.[0]?.label).toMatch(/^Dub · Default · /);
     expect(dub.streams[0]?.url).toContain("/dub/");
     expect(sub.externalIds).toEqual(expected.search.externalIds);
     expect(dub.externalIds).toEqual(expected.search.externalIds);

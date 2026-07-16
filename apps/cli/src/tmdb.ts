@@ -1,7 +1,7 @@
 // =============================================================================
 // TMDB episode data — seasons, episode lists, names, air dates
 //
-// Uses db.videasy.to (same TMDB-format proxy as search, no key needed).
+// Uses api.videasy.to/3 (same TMDB-format proxy as search, no key needed).
 // Falls back to the direct TMDB API with the public project key.
 // Results are memory-cached (per-session, never stale during a session).
 // =============================================================================

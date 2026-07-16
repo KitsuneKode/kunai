@@ -9,6 +9,23 @@ function normalizeSourceName(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function normalizeQualityPreferenceToken(value: string | undefined): string | undefined {
+  const token = value?.trim().toLowerCase();
+  if (!token || token === "auto" || token === "best" || token === "max") return undefined;
+  return token.replace(/\s+/g, "");
+}
+
+function streamMatchesQualityPreference(stream: StreamCandidate, preference: string): boolean {
+  const label = stream.qualityLabel?.toLowerCase() ?? "";
+  const rank = stream.qualityRank;
+  if (label.includes(preference)) return true;
+  if (preference.endsWith("p") && label.includes(preference.slice(0, -1))) return true;
+  const prefRank = Number.parseInt(preference.replace(/p$/i, ""), 10);
+  if (Number.isFinite(prefRank) && rank === prefRank) return true;
+  if (String(rank ?? "").includes(preference.replace(/p$/i, ""))) return true;
+  return false;
+}
+
 export function selectReadyStream(
   streams: readonly StreamCandidate[],
   input: {
@@ -18,6 +35,12 @@ export function selectReadyStream(
     readonly preferredSourceId?: string;
     readonly favoriteSourceNames?: readonly string[];
     readonly requiredFallback?: boolean;
+    /**
+     * Prefer provider-ranked ready order (streams[0]) over pure max quality.
+     * Used by Miruro so active CDN hosts win over brittle direct rows.
+     * Ignored when the user pinned stream/source/quality or uses quality-first.
+     */
+    readonly preferProviderReadyOrder?: boolean;
   },
 ): { readonly selected: StreamCandidate; readonly decision: ProviderSelectionDecision } {
   const startupPriority = input.startupPriority ?? "balanced";
@@ -52,22 +75,29 @@ export function selectReadyStream(
             return (right.qualityRank ?? 0) - (left.qualityRank ?? 0);
           })[0]
       : undefined;
-  const normalizedQualityPreference = input.qualityPreference?.toLowerCase();
-  const preferredQuality = normalizedQualityPreference
-    ? streams.find(
-        (stream) =>
-          stream.qualityLabel?.toLowerCase().includes(normalizedQualityPreference) ||
-          String(stream.qualityRank ?? "").includes(normalizedQualityPreference),
-      )
-    : undefined;
+  const normalizedQualityPreference = normalizeQualityPreferenceToken(input.qualityPreference);
   const ordered = [...streams].sort(
     (left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0),
   );
+  // Prefer the *best* matching quality (not the first includes hit), so "1080"
+  // still wins when labels are "1080p" / "1080P" / "ORG 1080".
+  const preferredQuality =
+    normalizedQualityPreference && normalizedQualityPreference !== "best"
+      ? ordered.find((stream) =>
+          streamMatchesQualityPreference(stream, normalizedQualityPreference),
+        )
+      : undefined;
+  const useProviderReadyOrder =
+    input.preferProviderReadyOrder === true &&
+    startupPriority !== "quality-first" &&
+    !normalizedQualityPreference;
   const selected =
     explicit ??
     favorite ??
     preferredQuality ??
-    (startupPriority === "fast" ? streams[0] : ordered[0]);
+    // "fast" and provider-ready order keep streams[0] ranking.
+    // balanced/quality-first pick max rank unless preferProviderReadyOrder is set.
+    (startupPriority === "fast" || useProviderReadyOrder ? streams[0] : ordered[0]);
 
   if (!selected) throw new Error("No ready stream candidates");
 

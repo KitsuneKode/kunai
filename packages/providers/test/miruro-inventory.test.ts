@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import { miruroInventorySourceId } from "../src/catalogs/miruro";
-import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
+import { getAllmangaKnownCatalog } from "../src/catalogs/allmanga";
+import { miruroInventorySourceId, getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import { mergeKnownCatalogSources } from "../src/shared/known-catalog";
 
 test("miruroInventorySourceId keeps sub and dub as distinct source ids", () => {
@@ -17,6 +17,26 @@ test("getMiruroKnownCatalog exposes separate sub and dub rows per server", () =>
   expect(kiwiSub).toBeDefined();
   expect(kiwiDub).toBeDefined();
   expect(kiwiSub?.sourceId).not.toBe(kiwiDub?.sourceId);
+  expect(kiwiSub?.label).toBe("Sub · Kiwi · subtitles unknown");
+  expect(kiwiDub?.label).toBe("Dub · Kiwi · subtitles unknown");
+  expect(kiwiSub?.subtitle).toBe("Gintoki · sub");
+  expect(kiwiDub?.subtitle).toBe("Kagura · dub");
+  expect(kiwiSub?.host).toBe("www.miruro.bz");
+});
+
+test("allmanga and miruro catalogs share Sub/Dub · Server · mode labels", () => {
+  const allmangaSub = getAllmangaKnownCatalog("sub");
+  const allmangaDub = getAllmangaKnownCatalog("dub");
+  const defaultSub = allmangaSub.find((entry) => entry.sourceId.endsWith(":default"));
+  const defaultDub = allmangaDub.find((entry) => entry.sourceId.endsWith(":default"));
+  expect(defaultSub?.label).toBe("Sub · Default · hard sub");
+  expect(defaultDub?.label).toBe("Dub · Default · subtitles unknown");
+  expect(defaultSub?.subtitle).toBe("Bocchi · sub");
+  expect(defaultDub?.subtitle).toBe("Nijika · dub");
+
+  const miruro = getMiruroKnownCatalog(["sub"]);
+  expect(miruro.every((entry) => entry.label.startsWith("Sub · "))).toBe(true);
+  expect(allmangaSub.every((entry) => entry.label.startsWith("Sub · "))).toBe(true);
 });
 
 test("mergeKnownCatalogSources does not collapse miruro sub and dub inventory rows", () => {

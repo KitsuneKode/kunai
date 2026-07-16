@@ -1,8 +1,14 @@
 import type { MiruroAudioCategory } from "../miruro/direct";
 import { MIRURO_PROVIDER_ID } from "../miruro/manifest";
+import {
+  formatAnimeSourceArchetype,
+  formatAnimeSourceLabel,
+} from "../shared/anime-source-presentation";
 import type { KnownCatalogEntry } from "../shared/known-catalog";
+import { normalizeProviderDisplayLabel } from "../shared/source-inventory";
 
-const MIRURO_GINTAMA_LABELS: Record<string, { readonly sub: string; readonly dub: string }> = {
+/** Optional character themes (Gintama) used as flavorArchetype detail only. */
+const MIRURO_THEME_DETAIL: Record<string, { readonly sub: string; readonly dub: string }> = {
   kiwi: { sub: "Gintoki", dub: "Kagura" },
   bee: { sub: "Shinpachi", dub: "Okita" },
   hop: { sub: "Hijikata", dub: "Hijikata" },
@@ -27,24 +33,38 @@ export function getMiruroKnownCatalog(
 ): readonly KnownCatalogEntry[] {
   const entries: KnownCatalogEntry[] = [];
   for (const serverId of DEFAULT_SERVERS) {
-    const labels = MIRURO_GINTAMA_LABELS[serverId] ?? {
-      sub: serverId,
-      dub: serverId,
-    };
+    const serverLabel =
+      normalizeProviderDisplayLabel(serverId) ??
+      serverId.charAt(0).toUpperCase() + serverId.slice(1).toLowerCase();
+    const themes = MIRURO_THEME_DETAIL[serverId];
     for (const audioCategory of audioCategories) {
-      const themeLabel = audioCategory === "dub" ? labels.dub : labels.sub;
-      const serverLabel = serverId.charAt(0).toUpperCase() + serverId.slice(1).toLowerCase();
+      const themeDetail = audioCategory === "dub" ? themes?.dub : themes?.sub;
+      // Subtitle mode is unknown until the sources pipe returns soft/hard evidence.
+      const subtitleMode = "unknown" as const;
+      const flavorArchetype = formatAnimeSourceArchetype({
+        audio: audioCategory,
+        detail: themeDetail ?? serverLabel,
+      });
       entries.push({
         sourceId: miruroInventorySourceId(serverId, audioCategory),
-        label: `${audioCategory === "dub" ? "Dub" : "Sub"} · ${serverLabel} · subtitles unknown`,
-        subtitle: themeLabel,
+        // Match resolve-time labels (subtitle mode unknown until sources pipe returns).
+        label: formatAnimeSourceLabel({
+          audio: audioCategory,
+          serverLabel,
+          subtitleMode,
+        }),
+        subtitle: flavorArchetype,
         audioLanguage: audioCategory === "dub" ? "en" : "ja",
-        host: "www.miruro.tv",
+        host: "www.miruro.bz",
         metadata: {
           server: serverId,
           audioCategory,
-          flavorLabel: themeLabel,
-          flavorArchetype: `${audioCategory === "dub" ? "Dub" : "Sub"} · Miruro`,
+          flavorLabel: formatAnimeSourceLabel({
+            audio: audioCategory,
+            serverLabel,
+            subtitleMode,
+          }),
+          flavorArchetype,
         },
       });
     }

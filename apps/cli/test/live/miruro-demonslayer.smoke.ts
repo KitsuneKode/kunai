@@ -9,7 +9,8 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("miruro");
-const args = process.argv.slice(1);
+// bun path/to/smoke.ts [episode] [anilistId] [title...]
+const args = process.argv.slice(2);
 
 const episode = Number(args[0] ?? "1159");
 const titleId = args[1] ?? "21";
@@ -30,10 +31,11 @@ if (clearCache) {
 }
 
 const title: TitleInfo = {
-  id: titleId,
+  id: titleId.startsWith("anilist:") ? titleId : `anilist:${titleId}`,
   type: "series",
   name: titleName,
   isAnime: true,
+  externalIds: { anilistId: titleId.replace(/^anilist:/, "") },
 };
 
 let resolveError: unknown = null;

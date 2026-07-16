@@ -23,7 +23,6 @@ import type {
 } from "@kunai/types";
 
 import { miruroInventorySourceId } from "../catalogs/miruro";
-import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
@@ -32,6 +31,12 @@ import {
   mergeMiruroPipeEpisodeMetadata,
   shouldSkipExternalEpisodeMetadataEnrichment,
 } from "../shared/anime-metadata";
+import {
+  animeQualityFields,
+  formatAnimeSourceArchetype,
+  formatAnimeSourceLabel,
+  miruroSubtitleDeliveryToMode,
+} from "../shared/anime-source-presentation";
 import { TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -45,10 +50,19 @@ import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
 export { MIRURO_PROVIDER_ID };
-export const MIRURO_REFERER = "https://miruro.bz/";
-/** Active pipe mirrors only. TLS-dead `.tv` hosts were dropped so resolve fails fast
- *  with actionable HTTP errors instead of burning the engine attempt timeout. */
-export const MIRURO_PIPE_BASE_URLS = ["https://miruro.bz", "https://miruro.ru"] as const;
+/** Canonical site origin (browser uses www; bare host redirects). */
+export const MIRURO_REFERER = "https://www.miruro.bz/";
+/**
+ * Pipe hosts that work in-browser (see user network capture on miruro.bz watch pages).
+ * Prefer `www.` first — that is what Chrome hits for `/api/secure/pipe`.
+ * Bun/fetch often gets Cloudflare 403 HTML; curl --http2 succeeds on the same URL.
+ */
+export const MIRURO_PIPE_BASE_URLS = [
+  "https://www.miruro.bz",
+  "https://www.miruro.ru",
+  "https://miruro.bz",
+  "https://miruro.ru",
+] as const;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -221,7 +235,10 @@ export function createMiruroResultFromPayload({
   const displaySourceLabel = displayMiruroSourceLabel(resolvedServerProfile, audioCategory);
   const subtitleDelivery = subtitlePresentation.subtitleDelivery;
   const playbackHost = resolveMiruroPlaybackHost(rawStreams[0]?.url);
-  const flavorArchetype = `${resolvedServerProfile.label} · Miruro`;
+  const flavorArchetype = formatAnimeSourceArchetype({
+    audio: audioCategory,
+    detail: resolvedServerProfile.label,
+  });
 
   const seekBarVttUrl = firstMiruroThumbnailUrl(sourceData.thumbnails);
   const artwork = seekBarVttUrl ? { seekBarVttUrl } : undefined;
@@ -269,10 +286,9 @@ export function createMiruroResultFromPayload({
 
   for (const raw of rawStreams) {
     if (!raw.url) continue;
-    const qualityStr = miruroQualityLabel(raw);
-    const qualityRank = qualityRankFromMiruroStream(raw);
+    const { qualityLabel, qualityRank } = animeQualityFields(raw.quality, raw.resolution?.height);
     const streamId = `stream:${MIRURO_PROVIDER_ID}:${Bun.hash(raw.url).toString(36)}`;
-    const variantId = `variant:${MIRURO_PROVIDER_ID}:${sourceId}:${qualityStr}`;
+    const variantId = `variant:${MIRURO_PROVIDER_ID}:${sourceId}:${qualityLabel}`;
     const streamReferer = raw.referer || MIRURO_REFERER;
     const streamSubtitleDelivery =
       subtitleDelivery === "unknown"
@@ -295,14 +311,14 @@ export function createMiruroResultFromPayload({
       serverName: resolvedServerProfile.label,
       flavorArchetype,
       flavorLabel: displaySourceLabel,
-      qualityLabel: qualityStr,
+      qualityLabel,
       qualityRank,
       languageEvidence,
       sourceEvidence,
       artwork,
       headers: {
-        referer: streamReferer,
-        "user-agent": USER_AGENT,
+        Referer: streamReferer,
+        "User-Agent": USER_AGENT,
       },
       confidence: 0.95,
       cachePolicy: policy,
@@ -313,7 +329,7 @@ export function createMiruroResultFromPayload({
       id: variantId,
       providerId: MIRURO_PROVIDER_ID,
       sourceId,
-      qualityLabel: qualityStr,
+      qualityLabel,
       qualityRank,
       protocol: "hls",
       container: "m3u8",
@@ -333,16 +349,20 @@ export function createMiruroResultFromPayload({
     });
   }
 
-  variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
-  const selectableStreams = streams.slice(0, 1);
-  const selection = selectReadyStream(selectableStreams, {
+  // Keep Miruro rank order (active → CDN → quality) for selection, then present
+  // the inventory sorted by quality. preferProviderReadyOrder keeps CDN hosts
+  // ahead of brittle direct rows when the user has not pinned quality.
+  const selection = selectReadyStream(streams, {
     startupPriority: input.startupPriority,
     qualityPreference: input.qualityPreference,
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
     favoriteSourceNames: input.favoriteSourceNames,
+    preferProviderReadyOrder: true,
   });
   const selectedStream = selection.selected;
+  streams.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
+  variants.sort((a, b) => (b.qualityRank || 0) - (a.qualityRank || 0));
 
   const endedAt = context?.now() ?? new Date().toISOString();
   return {
@@ -356,7 +376,7 @@ export function createMiruroResultFromPayload({
         providerId: MIRURO_PROVIDER_ID,
         kind: "provider-api",
         label: displaySourceLabel,
-        host: "www.miruro.tv",
+        host: miruroInventoryHost(),
         status: "selected",
         confidence: 0.9,
         requiresRuntime: "direct-http",
@@ -369,7 +389,7 @@ export function createMiruroResultFromPayload({
           server: serverProfile.id,
           nativeLabel: serverProfile.label,
           flavorLabel: displaySourceLabel,
-          flavorArchetype: `${serverProfile.label} · Miruro`,
+          flavorArchetype,
         },
       },
     ],
@@ -540,6 +560,8 @@ function buildMiruroSourceInventoryCandidates(
         ? metadata.subtitleDelivery
         : "unknown";
     const label = candidate.label ?? candidate.nativeLabel ?? sourceId;
+    const serverLabel = candidate.nativeLabel ?? serverId;
+    const host = miruroInventoryHost();
 
     return [
       {
@@ -547,7 +569,7 @@ function buildMiruroSourceInventoryCandidates(
         providerId: MIRURO_PROVIDER_ID,
         kind: "provider-api",
         label,
-        host: "www.miruro.tv",
+        host,
         status: "probing",
         confidence: 0.75,
         requiresRuntime: "direct-http",
@@ -566,8 +588,8 @@ function buildMiruroSourceInventoryCandidates(
           {
             sourceId,
             serverId,
-            nativeLabel: candidate.nativeLabel ?? serverId,
-            host: "www.miruro.tv",
+            nativeLabel: serverLabel,
+            host,
             confidence: 0.75,
             metadata: { audioCategory, subtitleDelivery },
           },
@@ -577,13 +599,25 @@ function buildMiruroSourceInventoryCandidates(
           episodeId: metadata.episodeId,
           subtitleDelivery,
           server: serverId,
-          nativeLabel: candidate.nativeLabel,
+          nativeLabel: serverLabel,
           flavorLabel: label,
-          flavorArchetype: `${candidate.nativeLabel ?? serverId} · Miruro`,
+          flavorArchetype: formatAnimeSourceArchetype({
+            audio: audioCategory,
+            detail: serverLabel,
+          }),
         },
       },
     ];
   });
+}
+
+/** Canonical inventory host — matches MIRURO_REFERER / browser origin. */
+function miruroInventoryHost(): string {
+  try {
+    return new URL(MIRURO_REFERER).hostname;
+  } catch {
+    return "www.miruro.bz";
+  }
 }
 
 function findMiruroEpisodeEntry(
@@ -631,14 +665,11 @@ function displayMiruroSourceLabel(
   serverProfile: MiruroServerProfile,
   audioCategory: MiruroAudioCategory,
 ): string {
-  const audioLabel = audioCategory === "dub" ? "Dub" : "Sub";
-  const subLabel =
-    serverProfile.subtitleDelivery === "embedded"
-      ? "soft sub"
-      : serverProfile.subtitleDelivery === "hardcoded"
-        ? "hard sub"
-        : "subtitles unknown";
-  return `${audioLabel} · ${serverProfile.label} · ${subLabel}`;
+  return formatAnimeSourceLabel({
+    audio: audioCategory,
+    serverLabel: serverProfile.label,
+    subtitleMode: miruroSubtitleDeliveryToMode(serverProfile.subtitleDelivery),
+  });
 }
 
 function createMiruroServerProfile(providerKey: string): MiruroServerProfile {
@@ -701,20 +732,12 @@ function resolveMiruroSubtitlePresentation(
   };
 }
 
-function miruroQualityLabel(stream: MiruroPipeStream): string {
-  const quality = stream.quality?.trim();
-  if (quality && quality !== "auto") return quality;
-  const height = stream.resolution?.height;
-  if (typeof height === "number" && height > 0) return `${height}p`;
-  return "unknown";
-}
-
 function resolveMiruroPlaybackHost(streamUrl: string | undefined): string {
-  if (!streamUrl) return "www.miruro.tv";
+  if (!streamUrl) return miruroInventoryHost();
   try {
     return new URL(streamUrl).hostname;
   } catch {
-    return "www.miruro.tv";
+    return miruroInventoryHost();
   }
 }
 
@@ -745,7 +768,7 @@ function isMiruroCdnStream(stream: MiruroPipeStream): boolean {
 }
 
 function qualityRankFromMiruroStream(stream: MiruroPipeStream): number {
-  return parseInt(stream.quality ?? "") || stream.resolution?.height || 0;
+  return animeQualityFields(stream.quality, stream.resolution?.height).qualityRank;
 }
 
 function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
@@ -868,6 +891,155 @@ export async function fetchMiruroEpisodeCatalog(
   });
 }
 
+function isMiruroObfuscatedPipeBody(body: string, xObfuscated: string | null): boolean {
+  return body.startsWith("bh4YNPj7") || xObfuscated === "2";
+}
+
+function isCloudflareHtmlBody(body: string): boolean {
+  const head = body.slice(0, 200).toLowerCase();
+  return (
+    head.includes("<!doctype html") || head.includes("<html") || head.includes("just a moment")
+  );
+}
+
+function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<string, string> {
+  const origin = baseUrl.replace(/\/$/, "");
+  return {
+    "User-Agent": USER_AGENT,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: referer?.trim() || `${origin}/`,
+    Origin: origin,
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+  };
+}
+
+/**
+ * Bun/Node fetch often gets CF 403 HTML on /api/secure/pipe while the same URL works
+ * with curl --http2 (browser network capture on www.miruro.bz). Prefer native fetch,
+ * then fall back to curl HTTP/2 when available.
+ */
+async function fetchMiruroPipeBody(
+  url: string,
+  headers: Record<string, string>,
+  signal?: AbortSignal,
+  fetchPort?: ProviderRuntimeContext["fetch"],
+): Promise<{
+  readonly status: number;
+  readonly text: string;
+  readonly xObfuscated: string | null;
+}> {
+  const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
+  try {
+    const response = await requester(url, {
+      signal: signal ?? AbortSignal.timeout(8_000),
+      headers,
+    });
+    const text = await response.text();
+    if (response.ok && isMiruroObfuscatedPipeBody(text, response.headers.get("x-obfuscated"))) {
+      return {
+        status: response.status,
+        text,
+        xObfuscated: response.headers.get("x-obfuscated"),
+      };
+    }
+    // Fall through to curl on WAF HTML / empty / non-obfuscated bodies.
+    if (
+      response.ok &&
+      !isCloudflareHtmlBody(text) &&
+      !isMiruroObfuscatedPipeBody(text, response.headers.get("x-obfuscated"))
+    ) {
+      return {
+        status: response.status,
+        text,
+        xObfuscated: response.headers.get("x-obfuscated"),
+      };
+    }
+  } catch {
+    // try curl path
+  }
+
+  const curlPath = Bun.which("curl");
+  if (!curlPath) {
+    throw new Error("HTTP 403");
+  }
+
+  const args = [
+    curlPath,
+    "-sS",
+    "--http2",
+    "-L",
+    "--max-redirs",
+    "3",
+    "-A",
+    headers["User-Agent"] ?? USER_AGENT,
+    "-H",
+    `Accept: ${headers.Accept ?? "*/*"}`,
+    "-H",
+    `Accept-Language: ${headers["Accept-Language"] ?? "en-US,en;q=0.9"}`,
+    "-H",
+    `Referer: ${headers.Referer ?? MIRURO_REFERER}`,
+    "-H",
+    `Origin: ${headers.Origin ?? "https://www.miruro.bz"}`,
+    "-H",
+    "sec-fetch-dest: empty",
+    "-H",
+    "sec-fetch-mode: cors",
+    "-H",
+    "sec-fetch-site: same-origin",
+    "-w",
+    "\n__KUNAI_CURL_STATUS__:%{http_code}",
+    "--max-time",
+    "20",
+    url,
+  ];
+
+  const proc = Bun.spawn(args, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let aborted = false;
+  const onAbort = () => {
+    aborted = true;
+    try {
+      proc.kill();
+    } catch {
+      // ignore
+    }
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const raw = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const exit = await proc.exited;
+    if (aborted || signal?.aborted) {
+      throw new Error("aborted");
+    }
+    if (exit !== 0 && !raw.includes("__KUNAI_CURL_STATUS__:")) {
+      throw new Error(stderr.trim() || `curl exit ${exit}`);
+    }
+    const marker = "\n__KUNAI_CURL_STATUS__:";
+    const idx = raw.lastIndexOf(marker);
+    const text = idx >= 0 ? raw.slice(0, idx) : raw;
+    const status = idx >= 0 ? Number.parseInt(raw.slice(idx + marker.length).trim(), 10) : 0;
+    if (!Number.isFinite(status) || status <= 0) {
+      throw new Error(stderr.trim() || `curl exit ${exit || "without an HTTP response"}`);
+    }
+    return {
+      status,
+      text,
+      xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
+    };
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
 async function pipeCall(
   context: ProviderRuntimeContext,
   path: string,
@@ -880,52 +1052,50 @@ async function pipeCall(
   const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
   const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
   let lastError: unknown;
-  let res: Response | null = null;
+
+  const anilistId =
+    typeof query.anilistId === "number" || typeof query.anilistId === "string"
+      ? String(query.anilistId)
+      : null;
 
   for (const url of createMiruroPipeRequestUrls(encoded)) {
     const baseUrl = new URL(url).origin;
+    // Match browser watch-page referer when we have an AniList id (user capture pattern).
+    const referer = anilistId ? `${baseUrl}/watch/${anilistId}` : `${baseUrl}/`;
+    const headers = buildMiruroPipeHeaders(baseUrl, referer);
     try {
-      const candidate = await providerFetch(context, url, {
-        signal: signal ?? AbortSignal.timeout(20_000),
-        headers: {
-          "User-Agent": USER_AGENT,
-          Referer: `${baseUrl}/`,
-          Origin: baseUrl,
-          Accept: "application/json, text/plain, */*",
-          "sec-fetch-dest": "empty",
-          "sec-fetch-mode": "cors",
-          "sec-fetch-site": "same-origin",
-        },
-      });
-      if (candidate.ok) {
-        res = candidate;
-        break;
+      const candidate = await fetchMiruroPipeBody(
+        url,
+        headers,
+        signal ?? context.signal,
+        context.fetch,
+      );
+      if (
+        candidate.status >= 200 &&
+        candidate.status < 300 &&
+        isMiruroObfuscatedPipeBody(candidate.text, candidate.xObfuscated)
+      ) {
+        const raw = base64urlToBytes(candidate.text);
+        const decrypted = xorDecrypt(raw, PIPE_KEY);
+        let json: string;
+        if (decrypted[0] === 31 && decrypted[1] === 139) {
+          json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
+        } else {
+          json = new TextDecoder().decode(decrypted);
+        }
+        return JSON.parse(json);
       }
-      lastError = new Error(`HTTP ${candidate.status}`);
+      lastError = new Error(
+        `HTTP ${candidate.status}${isCloudflareHtmlBody(candidate.text) ? " (cloudflare html)" : ""}`,
+      );
+      // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       lastError = error;
     }
   }
 
-  if (!res) {
-    const message = lastError instanceof Error ? lastError.message : "request failed";
-    throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
-  }
-
-  if (!res.ok) return null;
-
-  const body = await res.text();
-  if (!body.startsWith("bh4YNPj7") && res.headers.get("x-obfuscated") !== "2") return null;
-
-  const raw = base64urlToBytes(body);
-  const decrypted = xorDecrypt(raw, PIPE_KEY);
-  let json: string;
-  if (decrypted[0] === 31 && decrypted[1] === 139) {
-    json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
-  } else {
-    json = new TextDecoder().decode(decrypted);
-  }
-  return JSON.parse(json);
+  const message = lastError instanceof Error ? lastError.message : "request failed";
+  throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
 }
 
 export const miruroProviderModule: CoreProviderModule = {

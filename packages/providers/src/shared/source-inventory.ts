@@ -159,8 +159,23 @@ export function normalizeProviderDisplayLabel(value: string | undefined): string
     flowcast: "FlowCast",
     primevids: "PrimeVids",
     hindicast: "HindiCast",
+    // AllManga / AllAnime source families
     "fm-hls": "FM HLS",
+    "fm-mp4": "FM MP4",
     "vid-mp4": "VID MP4",
+    "yt-mp4": "YT MP4",
+    "s-mp4": "S MP4",
+    ak: "Ak",
+    default: "Default",
+    // Miruro pipe servers (title-case is fine; keep explicit for consistency)
+    kiwi: "Kiwi",
+    bee: "Bee",
+    hop: "Hop",
+    ally: "Ally",
+    pewe: "Pewe",
+    moo: "Moo",
+    bonk: "Bonk",
+    zoro: "Zoro",
   };
   const knownLabel = known[lower];
   if (knownLabel) return knownLabel;
@@ -174,9 +189,15 @@ export function normalizeProviderDisplayLabel(value: string | undefined): string
 export function qualityRankFromLabel(value: string | number | undefined): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
   const label = normalizeQualityLabel(value);
-  if (!label || label === "auto") return undefined;
-  const match = label.match(/(\d{3,4})p/i);
-  return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
+  if (!label) return undefined;
+  // Adaptive/auto HLS ladders typically top out at 1080p+; treat as high-rank so
+  // they are not sorted below explicit 360p/480p rows from other sources.
+  if (label === "auto" || label === "default" || label === "org") return 1080;
+  if (label === "4k" || label === "uhd" || label.includes("2160")) return 2160;
+  const match = label.match(/(\d{3,4})\s*p?/i);
+  if (!match?.[1]) return undefined;
+  const rank = Number.parseInt(match[1], 10);
+  return Number.isFinite(rank) ? rank : undefined;
 }
 
 export function createProviderLanguageEvidence(input: {

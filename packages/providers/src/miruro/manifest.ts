@@ -6,7 +6,7 @@ export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
   displayName: "Miruro",
   description: "Miruro anime direct resolver (pipe API + XOR decrypt)",
-  domain: "miruro.bz",
+  domain: "www.miruro.bz",
   recommended: false,
   mediaKinds: ["anime"],
   catalogIdentity: "anilist",
@@ -40,13 +40,15 @@ export const miruroManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: true,
   relayProfile: {
-    upstreamHosts: ["miruro.bz", "miruro.ru"],
+    upstreamHosts: ["www.miruro.bz", "www.miruro.ru", "miruro.bz", "miruro.ru"],
   },
   status: "candidate",
   notes: [
-    "Demoted from default anime fallback (2026-07-11): pipe endpoint returns WAF 403 HTML from this environment.",
-    "Active mirrors: miruro.bz, miruro.ru. TLS-dead miruro.tv hosts removed from the resolve list.",
+    "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
+    "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
+    "Primary hosts: www.miruro.bz, www.miruro.ru. TLS-dead miruro.tv hosts stay off the resolve list.",
     "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
+    "Still not the default anime auto-fallback (AllAnime remains primary); Miruro is available for manual pick when curl/http2 path works.",
     "May hit Cloudflare rate limits if called too frequently.",
   ],
 });
