@@ -91,6 +91,60 @@ async function shutdownShell(): Promise<void> {
   await shutdownSessionApp();
 }
 
+export interface GuardedShutdownRuntime {
+  pauseDownloads(reason: string): Promise<void>;
+  shutdownController(): Promise<void>;
+  shutdownShell(): Promise<void>;
+  disposeContainer(): Promise<void>;
+  exit(code: number): void;
+}
+
+function createGuardedShutdownRuntime(): GuardedShutdownRuntime {
+  return {
+    pauseDownloads: async (reason) => {
+      await globalContainer?.downloadService.pauseActiveJobsForShutdown(reason);
+    },
+    shutdownController: async () => {
+      await globalController?.shutdown().catch(() => {});
+    },
+    shutdownShell,
+    disposeContainer: async () => {
+      await disposeContainer(globalContainer);
+    },
+    exit: (code) => process.exit(code),
+  };
+}
+
+export async function runGuardedShutdown(
+  options: { reason: string; exitCode: number },
+  runtime: GuardedShutdownRuntime = createGuardedShutdownRuntime(),
+): Promise<void> {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
+
+  const forceExit = setTimeout(() => {
+    runtime.exit(options.exitCode);
+  }, 4000);
+  if (forceExit.unref) forceExit.unref();
+
+  try {
+    await runtime.pauseDownloads(`download paused by ${options.reason}`);
+    await runtime.shutdownController();
+    await runtime.shutdownShell();
+    await runtime.disposeContainer();
+  } finally {
+    clearTimeout(forceExit);
+    if (process.stdin.isTTY) process.stdin.unref();
+    runtime.exit(options.exitCode);
+  }
+}
+
+export const __testing = {
+  resetShutdownGuard(): void {
+    shutdownInProgress = false;
+  },
+};
+
 async function maybeRunSetupWizard(
   args: { setup: boolean },
   container: Awaited<ReturnType<typeof createContainer>>,
@@ -836,28 +890,8 @@ function setupSignalHandlers(): void {
   processHandlersInitialized = true;
 
   const shutdown = async (signal: string) => {
-    if (shutdownInProgress) return;
-    shutdownInProgress = true;
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
-    // Force exit after 4 s so stuck cleanup never stalls Ctrl+C.
-    const forceExit = setTimeout(() => {
-      process.exit(0);
-    }, 4000);
-    if (forceExit.unref) forceExit.unref();
-    try {
-      await globalContainer?.downloadService.pauseActiveJobsForShutdown(
-        `download paused by ${signal}`,
-      );
-      if (globalController) {
-        await globalController.shutdown();
-      }
-      await shutdownShell();
-      await disposeContainer(globalContainer);
-    } finally {
-      clearTimeout(forceExit);
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(0);
-    }
+    await runGuardedShutdown({ reason: signal, exitCode: 0 });
   };
 
   process.on("SIGINT", () => shutdown("SIGINT"));
@@ -878,28 +912,12 @@ function setupSignalHandlers(): void {
 
   process.on("uncaughtException", (e) => {
     console.error("Uncaught exception:", e);
-    void (async () => {
-      await globalContainer?.downloadService.pauseActiveJobsForShutdown("uncaught exception");
-      await globalController?.shutdown().catch(() => {});
-      await shutdownShell();
-      await disposeContainer(globalContainer);
-    })().finally(() => {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(1);
-    });
+    void runGuardedShutdown({ reason: "uncaught exception", exitCode: 1 });
   });
 
   process.on("unhandledRejection", (e) => {
     console.error("Unhandled rejection:", e);
-    void (async () => {
-      await globalContainer?.downloadService.pauseActiveJobsForShutdown("unhandled rejection");
-      await globalController?.shutdown().catch(() => {});
-      await shutdownShell();
-      await disposeContainer(globalContainer);
-    })().finally(() => {
-      if (process.stdin.isTTY) process.stdin.unref();
-      process.exit(1);
-    });
+    void runGuardedShutdown({ reason: "unhandled rejection", exitCode: 1 });
   });
 }
 
