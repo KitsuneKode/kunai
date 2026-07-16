@@ -13,6 +13,7 @@ import {
   type RecoveryPolicyDecision,
 } from "@/domain/recovery/RecoveryPolicy";
 import type { EpisodeInfo, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import {
   createCorrelationId,
@@ -21,7 +22,7 @@ import {
 import type { CacheStore } from "@/services/persistence/CacheStore";
 import { providerResolveResultToStreamInfo } from "@/services/providers/provider-result-adapter";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
-import { isVideasyFamilyProvider } from "@kunai/core";
+import { isVideasyFamilyProvider, ProviderResolveAbortError } from "@kunai/core";
 import {
   resolveProviderCatalogIdentity,
   type ProviderEngine,
@@ -47,6 +48,7 @@ import type {
 import { isProviderResolveResultResolved } from "@kunai/types";
 
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
+import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy";
 import { planProviderCandidates } from "./ProviderCandidatePlanner";
 import type { ProviderEndpointHealthService } from "./ProviderEndpointHealthService";
 import {
@@ -210,6 +212,7 @@ export class PlaybackResolveService {
         Partial<Pick<TitleProviderHealthService, "getSwitchSuggestion">>;
       readonly endpointHealth?: Pick<ProviderEndpointHealthService, "isQuarantined">;
       readonly titlePlaybackSource?: Pick<TitlePlaybackSourceService, "delete">;
+      readonly resolveTotalDeadlineMs?: (priority: StartupPriority) => number;
     },
   ) {}
 
@@ -475,10 +478,17 @@ export class PlaybackResolveService {
       candidateCount: compatibleIds.length,
     });
 
+    const startupPriority = input.startupPriority ?? "balanced";
+    const resolveSignal = withTimeoutSignal(
+      input.signal,
+      this.deps.resolveTotalDeadlineMs?.(startupPriority) ??
+        resolveProviderTotalDeadlineMs(startupPriority),
+    );
+
     let engineResult = await this.deps.engine.resolveWithFallback(
       resolveInput,
       compatibleIds,
-      input.signal,
+      resolveSignal,
       (event) => input.onEvent?.({ type: "provider-engine-event", event }),
     );
     const emitAttempts = (
@@ -537,7 +547,7 @@ export class PlaybackResolveService {
       }
       const health = await this.checkCachedStreamHealth(candidateStream, {
         force: true,
-        signal: input.signal,
+        signal: resolveSignal,
         phase: "resolve-gate",
       });
       if (health.checked) {
@@ -589,19 +599,25 @@ export class PlaybackResolveService {
           detail: `Refreshing ${this.deps.engine.getManifest(resolvedProviderId)?.displayName ?? resolvedProviderId}`,
           note: "Resolved stream was not reachable — requesting a fresh manifest before switching providers.",
         });
-        const refreshResult = await this.deps.engine.resolve(
-          { ...resolveInput, intent: "refresh" },
-          resolvedProviderId as ProviderId,
-          input.signal,
-          (event) => input.onEvent?.({ type: "provider-engine-event", event }),
-        );
-        if (isProviderResolveResultResolved(refreshResult)) {
-          engineResult = {
-            result: refreshResult,
-            providerId: resolvedProviderId,
-            attempts: combinedAttempts,
-          };
-          continue;
+        try {
+          const refreshResult = await this.deps.engine.resolve(
+            { ...resolveInput, intent: "refresh" },
+            resolvedProviderId as ProviderId,
+            resolveSignal,
+            (event) => input.onEvent?.({ type: "provider-engine-event", event }),
+          );
+          if (isProviderResolveResultResolved(refreshResult)) {
+            engineResult = {
+              result: refreshResult,
+              providerId: resolvedProviderId,
+              attempts: combinedAttempts,
+            };
+            continue;
+          }
+        } catch (error) {
+          if (!(error instanceof ProviderResolveAbortError && resolveSignal.aborted)) throw error;
+          engineResult = { result: null, providerId: null, attempts: combinedAttempts };
+          break;
         }
       }
 
@@ -613,7 +629,7 @@ export class PlaybackResolveService {
       const remainingCandidateIds = compatibleIds.filter(
         (candidateId) => !triedProviders.has(candidateId),
       );
-      if (!remainingCandidateIds.length || input.signal.aborted) {
+      if (!remainingCandidateIds.length || resolveSignal.aborted) {
         engineResult = { result: null, providerId: null, attempts: combinedAttempts };
         break;
       }
@@ -626,7 +642,7 @@ export class PlaybackResolveService {
       const retryResult = await this.deps.engine.resolveWithFallback(
         resolveInput,
         remainingCandidateIds,
-        input.signal,
+        resolveSignal,
         (event) => input.onEvent?.({ type: "provider-engine-event", event }),
       );
       emitAttempts(retryResult.attempts, combinedAttempts.length);
@@ -676,7 +692,7 @@ export class PlaybackResolveService {
         }
         const commitDecision = decideResolveResultCommit({
           hasResolvedStream: true,
-          signalAborted: input.signal.aborted,
+          signalAborted: resolveSignal.aborted,
           cancellationReason: input.cancellationReason,
         });
 

@@ -8,7 +8,10 @@ import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
-import { resolveProviderAttemptTimeoutMs } from "../services/playback/provider-resolve-budget-policy";
+import {
+  resolveProviderAttemptTimeoutMs,
+  resolveProviderMaxAttempts,
+} from "../services/playback/provider-resolve-budget-policy";
 import { StreamHealthService } from "../services/playback/StreamHealthService";
 import { createProviderPrioritySnapshot } from "../services/providers/provider-priority";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
@@ -81,6 +84,7 @@ export async function bootstrapProviders(
   const engine = createProviderEngine({
     modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
+    maxAttempts: resolveProviderMaxAttempts(config.startupPriority),
     fetch: createProviderFetchPort,
     endpointHealth,
     titleBridge: titleBridgePort,

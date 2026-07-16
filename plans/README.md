@@ -37,7 +37,7 @@ unless "Depends on" says otherwise.
 | Plan | Title                                                  | Priority | Effort | Depends on | Status                                           |
 | ---- | ------------------------------------------------------ | -------- | ------ | ---------- | ------------------------------------------------ |
 | 006  | Defer AniList sync + lazy-load providers at startup    | P1       | M      | —          | BLOCKED (AniList done; engine registry is fixed) |
-| 007  | Bound provider fan-out with a global resolve deadline  | P2       | M      | —          | TODO                                             |
+| 007  | Bound provider fan-out with a global resolve deadline  | P2       | M      | —          | DONE                                             |
 | 008  | Stop timer whole-tree re-renders + poster-cache thrash | P2       | M      | —          | TODO                                             |
 | 009  | Cut pre-playback health round-trip on fresh streams    | P3       | M      | 007 (soft) | TODO                                             |
 

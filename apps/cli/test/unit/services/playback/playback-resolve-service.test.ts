@@ -1683,3 +1683,55 @@ test("PlaybackResolveService passes abort signal into stale cache health checks"
 
   expect(observedSignal).toBe(controller.signal);
 });
+
+test("PlaybackResolveService stops a stalling provider fan-out at its total deadline", async () => {
+  const controller = new AbortController();
+  let observedSignal: AbortSignal | undefined;
+  const engine = {
+    modules: [
+      {
+        providerId: "primary" as ProviderId,
+        manifest: createManifest("primary" as ProviderId, ["movie"]),
+      },
+    ],
+    get: () => undefined,
+    getProviderIds: () => ["primary" as ProviderId],
+    getManifest: () => createManifest("primary" as ProviderId, ["movie"]),
+    resolve: async () => createEmptyProviderResult("primary" as ProviderId),
+    resolveWithFallback: async (
+      _input: ProviderResolveInput,
+      _candidateIds: readonly ProviderId[],
+      signal?: AbortSignal,
+    ): Promise<ProviderEngineResolveOutput> => {
+      observedSignal = signal;
+      if (!signal?.aborted) {
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+      }
+      return { result: null, providerId: null, attempts: [] };
+    },
+  } as unknown as ProviderEngine;
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    resolveTotalDeadlineMs: () => 5,
+  });
+
+  const pending = service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: controller.signal,
+  });
+  const outcome = await Promise.race([pending, Bun.sleep(100).then(() => "hung" as const)]);
+  if (outcome === "hung") {
+    controller.abort();
+    await pending;
+  }
+
+  expect(outcome).not.toBe("hung");
+  expect(observedSignal).not.toBe(controller.signal);
+  if (outcome !== "hung") expect(outcome.stream).toBeNull();
+});
