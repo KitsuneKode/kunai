@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 const MATRIX = [
   {
     provider: "videasy",
-    command: ["bun", "-e", "await import('./test/live/videasy-bloodhounds.smoke.ts')"],
+    command: ["bun", "test/live/videasy-bloodhounds.smoke.ts"],
     media: "series",
-    fixture: "Bloodhounds S01E02",
+    fixture: "Dutton Ranch S01E01 (Neon Phase A)",
   },
   {
     provider: "rivestream",
@@ -137,6 +137,11 @@ async function runMatrixEntry(entry) {
     cacheHit: booleanOrNull(parsed.cacheHit),
     isolatedProfile: booleanOrNull(parsed.isolatedProfile),
     failureCodes: stringArray(parsed.failureCodes),
+    resolveDurationMs: numberOrNull(parsed.resolveDurationMs),
+    streamReachable: booleanOrNull(parsed.streamReachable),
+    selectedSourceLabel: stringOrNull(parsed.selectedSourceLabel),
+    probeOrderLabels: stringArray(parsed.probeOrderLabels),
+    score: parseScore(parsed.score),
     ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
   };
   return {
@@ -266,4 +271,13 @@ function stringOrNull(value) {
 
 function stringArray(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+}
+
+function parseScore(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    functional: booleanOrNull(value.functional),
+    performative: booleanOrNull(value.performative),
+    ordered: booleanOrNull(value.ordered),
+  };
 }

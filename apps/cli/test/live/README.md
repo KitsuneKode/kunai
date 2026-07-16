@@ -7,7 +7,9 @@ Each smoke script creates an isolated temporary XDG profile for config, data, an
 Run them only when network access is intentional. Prefer one focused provider while debugging, then the full set once at the end of a release-candidate pass:
 
 ```sh
-bun run test:live:videasy 1 2
+bun run test:live:videasy
+bun run test:live:videasy -- --fixture=bloodhounds
+bun run test:live:videasy -- --suite
 bun run test:live:rivestream
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro 1159 21 "One Piece"
@@ -17,6 +19,39 @@ bun run test:live:matrix anime
 bun run test:live:matrix videasy
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
+
+### Videasy live smoke (functional + order + performance)
+
+Default fixture is **Dutton Ranch** (TMDB `299167`, Cineby catalog proof). The smoke asserts:
+
+| Check                       | Severity | Meaning                                           |
+| --------------------------- | -------- | ------------------------------------------------- |
+| stream resolved + reachable | hard     | Real URL + HEAD/range probe                       |
+| stream candidates > 0       | hard     | Decrypt/route produced playable rows              |
+| first probe Yoru/Neon/Sage  | hard     | Matches Cineby Servers UI catalog lead            |
+| Phase A probe order         | soft     | No inverted probes vs website order (Yoru→Neon→…) |
+| soft resolve budget (25s)   | soft     | Feels performative                                |
+| hard resolve budget (90s)   | hard     | Must not hang                                     |
+
+```sh
+# single (matrix default)
+bun run test:live:videasy
+
+# named fixture
+bun run test:live:videasy -- --fixture=study-group
+bun run test:live:videasy -- --fixture=bloodhounds
+bun run test:live:videasy -- --fixture=dune
+
+# multi-title suite
+bun run test:live:videasy:suite
+# or
+bun run test:live:videasy -- --suite
+
+# cold cache + relax hard budget on slow links
+KITSUNE_CLEAR_CACHE=1 KUNAI_VIDEASY_LIVE_RELAX=1 bun run test:live:videasy:suite
+```
+
+JSON includes `score: { functional, performative, ordered }`, `probeOrderLabels`, `selectedSourceLabel`, and per-check results. Unit tests for the assertion helpers live under `apps/cli/test/unit/live/videasy-live-assertions.test.ts` (no network).
 
 Use `KITSUNE_CLEAR_CACHE=1` only when the point of the run is to prove a cold-cache provider path. Do not loop live smokes while iterating; add or update unit/integration coverage around the deterministic seam instead.
 
