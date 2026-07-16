@@ -801,6 +801,24 @@ export const cacheMigrations: readonly Migration[] = [
         ON youtube_metadata_cache(expires_at ASC);
     `,
   },
+  {
+    id: "015_cache_catalog_crosswalk",
+    database: "cache",
+    sql: `
+      CREATE TABLE IF NOT EXISTS catalog_id_crosswalk (
+        source_ns TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        graph_json TEXT NOT NULL,
+        confidence TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (source_ns, source_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_catalog_id_crosswalk_expires_at
+        ON catalog_id_crosswalk(expires_at);
+    `,
+  },
 ];
 
 export function runMigrations(

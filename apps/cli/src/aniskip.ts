@@ -1,9 +1,8 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
-const ARM_IDS_API = "https://arm.haglund.dev/api/v2/ids";
-const ARM_TMDB_API = "https://arm.haglund.dev/api/v2/themoviedb";
 /** Same catalog endpoint ani-skip / ani-cli use for `show { malId }` (opaque `_id` → MAL). */
 const ALLANIME_MAL_LOOKUP_API = "https://api.allanime.day/api";
 const ALLANIME_MAL_LOOKUP_UA =
@@ -29,12 +28,6 @@ type AniSkipResultJson = {
 type AniSkipResponse = {
   found: boolean;
   results: AniSkipResultJson[];
-};
-
-type ArmResponse = {
-  myanimelist?: number | null;
-  anilist?: number | null;
-  [key: string]: unknown;
 };
 
 const malIdCache = new Map<string, number | null>();
@@ -203,23 +196,10 @@ async function resolveMALFromAniListId(
   const cacheKey = `anilist:${anilistId}`;
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
-  try {
-    const res = await fetch(`${ARM_IDS_API}?source=anilist&id=${encodeURIComponent(anilistId)}`, {
-      signal: signal ?? AbortSignal.timeout(4_000),
-      headers: { accept: "application/json" },
-    });
-    if (!res.ok) {
-      malIdCache.set(cacheKey, null);
-      return null;
-    }
-    const data = (await res.json()) as ArmResponse;
-    const malId = typeof data.myanimelist === "number" ? data.myanimelist : null;
-    malIdCache.set(cacheKey, malId);
-    return malId;
-  } catch {
-    malIdCache.set(cacheKey, null);
-    return null;
-  }
+  const graph = await fetchArmIdGraph("anilist", anilistId, signal);
+  const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
+  malIdCache.set(cacheKey, malId);
+  return malId;
 }
 
 /** TMDB TV id → MAL (first mapping; split cours may list multiple MAL entries). */
@@ -230,31 +210,10 @@ async function resolveMALFromTheMovieDbId(
   const cacheKey = `tmdb:${tmdbId}`;
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
-  try {
-    const res = await fetch(
-      `${ARM_TMDB_API}?id=${encodeURIComponent(tmdbId)}&include=myanimelist`,
-      {
-        signal: signal ?? AbortSignal.timeout(4_000),
-        headers: { accept: "application/json" },
-      },
-    );
-    if (!res.ok) {
-      malIdCache.set(cacheKey, null);
-      return null;
-    }
-    const rows = (await res.json()) as unknown;
-    if (!Array.isArray(rows) || rows.length === 0) {
-      malIdCache.set(cacheKey, null);
-      return null;
-    }
-    const first = rows[0] as { myanimelist?: number | null };
-    const malId = typeof first.myanimelist === "number" ? first.myanimelist : null;
-    malIdCache.set(cacheKey, malId);
-    return malId;
-  } catch {
-    malIdCache.set(cacheKey, null);
-    return null;
-  }
+  const graph = await fetchArmIdGraph("themoviedb", tmdbId, signal);
+  const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
+  malIdCache.set(cacheKey, malId);
+  return malId;
 }
 
 /**

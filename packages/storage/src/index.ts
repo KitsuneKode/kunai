@@ -37,6 +37,8 @@ export type {
   HistoryTitleAliasInput,
   HistoryTitleAliasNs,
 } from "./repositories/history-title-aliases";
+export { CatalogCrosswalkRepository } from "./repositories/catalog-crosswalk";
+export type { CatalogCrosswalkSourceNs } from "./repositories/catalog-crosswalk";
 export { PlaybackEventRepository } from "./repositories/playback-events";
 export type {
   PlaybackEventInput,
