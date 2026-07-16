@@ -80,22 +80,31 @@ export function calendarPriorityBand<T>(option: BrowseShellOption<T>): CalendarP
 export function buildCalendarDaysFromOptions<T>(
   options: readonly BrowseShellOption<T>[],
   _narrow?: boolean,
+  nowMs: number = Date.now(),
 ): readonly CalendarDay[] {
   const seen = new Set<string>();
   const days: CalendarDay[] = [];
+  const todayKey = calendarLocalDayKey(nowMs);
   for (const option of options) {
-    const group = option.calendar?.display.groupLabel ?? option.previewGroup;
     const key =
       option.calendar?.dayKey ??
       option.previewDayKey ??
-      (group ? calendarDayKeyFromGroup(group) : null);
+      ((option.calendar?.display.groupLabel ?? option.previewGroup)
+        ? calendarDayKeyFromGroup(option.calendar?.display.groupLabel ?? option.previewGroup ?? "")
+        : null);
     if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(key) || seen.has(key)) continue;
     seen.add(key);
-    const isToday = group?.includes("Today") ?? false;
-    days.push({ key, label: calendarDayLabelFromIsoKey(key), isToday });
+    days.push({ key, label: calendarDayLabelFromIsoKey(key), isToday: key === todayKey });
   }
   days.sort((a, b) => a.key.localeCompare(b.key));
   return days;
+}
+
+function calendarLocalDayKey(nowMs: number): string {
+  const now = new Date(nowMs);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate(),
+  ).padStart(2, "0")}`;
 }
 
 /**

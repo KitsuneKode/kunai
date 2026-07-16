@@ -139,6 +139,10 @@ function CalendarScheduleRowInner<T>({
   isNew,
   tracked,
   posterUrl,
+  // Default matches `selected` for callers that do not gate on navigation.
+  // Browse calendar passes `selected && !navigating` so rapid ↑/↓ never kicks
+  // the mini-poster pipeline (loading dispatch + chafa) on intermediate rows.
+  posterEnabled = selected,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -157,6 +161,8 @@ function CalendarScheduleRowInner<T>({
   isNew?: boolean;
   tracked?: boolean;
   posterUrl?: string;
+  /** When false, keep initials only — used to suppress fetches mid-navigation. */
+  posterEnabled?: boolean;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -198,7 +204,7 @@ function CalendarScheduleRowInner<T>({
       ) : null}
       <Box flexDirection="row">
         <Box width={5}>
-          <MiniPosterTile url={posterUrl} title={option.label} enabled={selected} />
+          <MiniPosterTile url={posterUrl} title={option.label} enabled={posterEnabled} />
         </Box>
         <Text color={isNew ? palette.accent : palette.ok}>
           {isNew ? "● " : tracked ? "● " : "  "}

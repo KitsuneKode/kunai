@@ -318,24 +318,39 @@ export function BrowseShell<T>({
     isCalendarView,
     options: options as readonly BrowseShellOption<import("@/domain/types").SearchResult>[],
     initialTypeTab: initialCalendarTypeTab,
+    nowMs: calendarNow,
   });
   const calendarTypeTab = calendar.typeTab;
   const calendarDayFilter = calendar.dayFilter;
   const calendarDays = calendar.days;
   // Stable action refs (each is useCallback-memoized in the hook) so consuming
   // callbacks/effects can depend on them without re-creating every render.
-  const { reset: resetCalendar, cycleType: cycleCalendarType, stepDay: stepCalendarDay } = calendar;
+  const {
+    reset: resetCalendar,
+    cycleType: cycleCalendarType,
+    setDayFilter: setCalendarDayFilter,
+  } = calendar;
 
+  const narrowedOptions = useMemo(
+    () => filterBrowseOptionsByResultFilter(options, resultFilter),
+    [options, resultFilter],
+  );
+  const calendarOptionsForDay = useCallback(
+    (dayKey: string | null): readonly BrowseShellOption<T>[] => {
+      const scheduleOptions = narrowedOptions as readonly BrowseShellOption<
+        import("@/domain/types").SearchResult
+      >[];
+      const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
+      return sortCalendarOptions(
+        filterCalendarOptionsByDay(typed, dayKey),
+      ) as readonly BrowseShellOption<T>[];
+    },
+    [calendarTypeTab, narrowedOptions],
+  );
   const displayOptions = useMemo(() => {
-    const narrowed = filterBrowseOptionsByResultFilter(options, resultFilter);
-    if (!isCalendarView) return narrowed;
-    const scheduleOptions = narrowed as readonly BrowseShellOption<
-      import("@/domain/types").SearchResult
-    >[];
-    const typed = filterCalendarOptionsByType(scheduleOptions, calendarTypeTab);
-    const byDay = filterCalendarOptionsByDay(typed, calendarDayFilter);
-    return sortCalendarOptions(byDay) as typeof options;
-  }, [calendarDayFilter, calendarTypeTab, isCalendarView, options, resultFilter]);
+    if (!isCalendarView) return narrowedOptions;
+    return calendarOptionsForDay(calendarDayFilter);
+  }, [calendarDayFilter, calendarOptionsForDay, isCalendarView, narrowedOptions]);
 
   const clearResults = useCallback(() => {
     setOptions([]);
@@ -535,6 +550,26 @@ export function BrowseShell<T>({
   const boundedSelectedIndex =
     displayOptions.length === 0 ? 0 : Math.min(selectedIndex, displayOptions.length - 1);
   const selectedOption = displayOptions[boundedSelectedIndex];
+  // Ink drains every available raw stdin chunk before React paints. Keep the
+  // calendar's intended row in a ref so a burst like → ↓ ← ↓ ↵ never resolves
+  // the row that was selected before the burst began.
+  const calendarKeyboardCursorRef = useRef<{
+    dayKey: string | null;
+    optionIndex: number;
+    option: BrowseShellOption<T> | null;
+  }>({
+    dayKey: null,
+    optionIndex: 0,
+    option: null,
+  });
+
+  useEffect(() => {
+    calendarKeyboardCursorRef.current = {
+      dayKey: isCalendarView ? calendarDayFilter : null,
+      optionIndex: boundedSelectedIndex,
+      option: isCalendarView ? (selectedOption ?? null) : null,
+    };
+  }, [boundedSelectedIndex, calendarDayFilter, isCalendarView, selectedOption]);
 
   // Preview-side work — network poster fetch + chafa/kitty render and secondary
   // detail resolution — is deferred until the selection settles. During rapid
@@ -712,8 +747,13 @@ export function BrowseShell<T>({
   };
 
   // Never strand focus on a list that has emptied — hand focus back to query.
+  // Calendar is the exception: it has no search box, and an empty day (←/→ onto
+  // a date with no releases) must NOT dump focus into the invisible `query`
+  // zone. If it does, the next ↑/↓ after landing on a populated day is burned
+  // on focus-only and feels like a dropped keypress during fast navigation.
   useEffect(() => {
     if (displayOptions.length === 0 && isBrowseListFocused(focusZone)) {
+      if (isCalendarView) return;
       setFocusZone((current) =>
         browseFocusZoneReducer(
           current,
@@ -722,7 +762,7 @@ export function BrowseShell<T>({
         ),
       );
     }
-  }, [displayOptions.length, focusZone]);
+  }, [displayOptions.length, focusZone, isCalendarView]);
 
   // Calendar owns the keyboard: there is no search box to focus, so `query` is a
   // dead zone where the first arrow key only flips an invisible focus state and
@@ -734,6 +774,45 @@ export function BrowseShell<T>({
       setFocusZone("list");
     }
   }, [isCalendarView, displayOptions.length, focusZone]);
+
+  const moveCalendarDayFromInput = useCallback(
+    (direction: 1 | -1) => {
+      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
+      const currentIndex = calendarDays.findIndex((day) => day.key === currentDay);
+      const targetDay = calendarDays[currentIndex + direction]?.key;
+      if (!targetDay) return;
+      const targetOptions = calendarOptionsForDay(targetDay);
+      const targetOption = targetOptions[0] ?? null;
+      calendarKeyboardCursorRef.current = {
+        dayKey: targetDay,
+        optionIndex: 0,
+        option: targetOption,
+      };
+      setCalendarDayFilter(targetDay);
+      setSelectedIndex(0);
+    },
+    [calendarDayFilter, calendarDays, calendarOptionsForDay, setCalendarDayFilter],
+  );
+
+  const moveCalendarRowFromInput = useCallback(
+    (direction: 1 | -1) => {
+      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
+      const dayOptions = calendarOptionsForDay(currentDay);
+      if (dayOptions.length === 0) return;
+      const cursor = calendarKeyboardCursorRef.current;
+      const currentIndex = Math.min(Math.max(0, cursor.optionIndex), dayOptions.length - 1);
+      const targetIndex = (currentIndex + direction + dayOptions.length) % dayOptions.length;
+      const targetOption = dayOptions[targetIndex] ?? null;
+      calendarKeyboardCursorRef.current = {
+        dayKey: currentDay,
+        optionIndex: targetIndex,
+        option: targetOption,
+      };
+      setFocusZone("list");
+      setSelectedIndex(targetIndex);
+    },
+    [calendarDayFilter, calendarOptionsForDay],
+  );
 
   useEffect(() => {
     const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
@@ -1080,8 +1159,11 @@ export function BrowseShell<T>({
     // ── Results-zone bindings (list focused = non-text state) ──
     // Plain Enter plays the highlighted row; these never fire while the query
     // field is focused, so typing in search is never hijacked.
-    if (listFocused && key.return && !key.shift && selectedOption && searchState === "ready") {
-      onSubmit(selectedOption.value);
+    const inputSelectedOption = isCalendarView
+      ? (calendarKeyboardCursorRef.current.option ?? selectedOption)
+      : selectedOption;
+    if (listFocused && key.return && !key.shift && inputSelectedOption && searchState === "ready") {
+      onSubmit(inputSelectedOption.value);
       return;
     }
 
@@ -1154,13 +1236,11 @@ export function BrowseShell<T>({
 
     // Calendar remains date-scoped: arrows move only between available dates.
     if (isCalendarView && calendarDays.length > 0 && key.leftArrow) {
-      stepCalendarDay(-1);
-      setSelectedIndex(0);
+      moveCalendarDayFromInput(-1);
       return;
     }
     if (isCalendarView && calendarDays.length > 0 && key.rightArrow) {
-      stepCalendarDay(1);
-      setSelectedIndex(0);
+      moveCalendarDayFromInput(1);
       return;
     }
     if (key.escape) {
@@ -1224,6 +1304,10 @@ export function BrowseShell<T>({
     }
 
     if (key.downArrow && displayOptions.length > 0) {
+      if (isCalendarView) {
+        moveCalendarRowFromInput(1);
+        return;
+      }
       if (!listFocused) {
         dispatchFocusZone({ type: "arrow-down" });
         return;
@@ -1233,20 +1317,16 @@ export function BrowseShell<T>({
     }
 
     if (key.upArrow && displayOptions.length > 0) {
+      if (isCalendarView) {
+        moveCalendarRowFromInput(-1);
+        return;
+      }
       if (!listFocused) {
         dispatchFocusZone({ type: "arrow-up" });
         setSelectedIndex(displayOptions.length - 1);
         return;
       }
       if (boundedSelectedIndex === 0) {
-        if (isCalendarView) {
-          // The calendar has no search box above the list to escape up into, so
-          // dispatching focus away just flips the footer to an invisible zone (the
-          // "moving to an invisible row" bug). Wrap to the last row instead — this
-          // mirrors the downArrow wrap and keeps focus on the schedule.
-          setSelectedIndex(displayOptions.length - 1);
-          return;
-        }
         dispatchFocusZone({ type: "arrow-up" });
         return;
       }
@@ -1443,28 +1523,38 @@ export function BrowseShell<T>({
                 <Text color={palette.dim}> ▲ ...</Text>
               ) : null}
               {isCalendarView
-                ? visibleCalendarRows.map((row) => (
-                    <CalendarScheduleRow
-                      key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
-                      option={row.option}
-                      selected={row.optionIndex === boundedSelectedIndex}
-                      rowWidth={rowWidth}
-                      timeLabel={row.timeLabel}
-                      episodeCode={row.episodeCode}
-                      statusLabel={row.statusLabel}
-                      statusColor={row.statusColor}
-                      statusDim={row.statusDim}
-                      statusGlyph={row.statusGlyph}
-                      showDayHeader={row.showDayHeader}
-                      dayHeaderLabel={row.dayHeaderLabel}
-                      weekTag={row.weekTag}
-                      showForYouHeader={false}
-                      showForYouHeaderOnce={row.showForYouHeaderOnce}
-                      isNew={row.isNew}
-                      tracked={row.tracked}
-                      posterUrl={row.posterUrl}
-                    />
-                  ))
+                ? visibleCalendarRows.map((row) => {
+                    const selected = row.optionIndex === boundedSelectedIndex;
+                    return (
+                      <CalendarScheduleRow
+                        key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
+                        option={row.option}
+                        selected={selected}
+                        // Gate the row mini-poster on settled navigation the same
+                        // way the companion poster is gated. `enabled={selected}`
+                        // alone dispatched "loading" on every ↑/↓ and, after a
+                        // brief pause mid-burst, spawned chafa — competing with
+                        // stdin and making mixed-direction calendar nav feel
+                        // blocked / late to register.
+                        posterEnabled={selected && !navigating}
+                        rowWidth={rowWidth}
+                        timeLabel={row.timeLabel}
+                        episodeCode={row.episodeCode}
+                        statusLabel={row.statusLabel}
+                        statusColor={row.statusColor}
+                        statusDim={row.statusDim}
+                        statusGlyph={row.statusGlyph}
+                        showDayHeader={row.showDayHeader}
+                        dayHeaderLabel={row.dayHeaderLabel}
+                        weekTag={row.weekTag}
+                        showForYouHeader={false}
+                        showForYouHeaderOnce={row.showForYouHeaderOnce}
+                        isNew={row.isNew}
+                        tracked={row.tracked}
+                        posterUrl={row.posterUrl}
+                      />
+                    );
+                  })
                 : visibleOptions.map((option, index) => {
                     const optionIndex = windowStart + index;
                     const selected = optionIndex === boundedSelectedIndex;

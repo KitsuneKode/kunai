@@ -84,6 +84,8 @@ describe("browseFocusZoneReducer", () => {
   });
 
   test("empty results pull focus out of list/filter/idle", () => {
+    // BrowseShell skips applying this event while `isCalendarView` — an empty
+    // calendar day must keep list focus so the next ↑/↓ is not a dead key.
     expect(browseFocusZoneReducer("list", { type: "results-became-empty" }, withResults)).toBe(
       "query",
     );

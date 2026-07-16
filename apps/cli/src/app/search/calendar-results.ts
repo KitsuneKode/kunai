@@ -51,9 +51,13 @@ export async function loadCalendarResults(
   container: CalendarContainer,
   signal?: AbortSignal,
 ): Promise<CalendarResultBundle> {
+  // Keep every calendar fact in this load on one local-day boundary. A series of
+  // independent Date.now() calls can straddle midnight and make row labels, the
+  // selected day, and subtitle counts disagree for the same response.
+  const nowMs = Date.now();
   const days = 7;
   const forwardItems = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
-  const items = mergeArchivedPastWindow(container, forwardItems);
+  const items = mergeArchivedPastWindow(container, forwardItems, nowMs);
   // Collapse duplicate schedule entries for the same (titleId, releaseAt) slot so a
   // title cannot appear twice for one airing (sources occasionally emit dupes, and
   // the archive merge only dedupes when an archive is present).
@@ -103,7 +107,6 @@ export async function loadCalendarResults(
       if (existing && existing.latestAiredEpisode && existing.latestAiredEpisode >= item.episode) {
         continue;
       }
-      const nowMs = Date.now();
       const now = new Date(nowMs).toISOString();
       const projection: ReleaseProgressProjection = {
         titleId: match.titleId,
@@ -136,7 +139,7 @@ export async function loadCalendarResults(
     return {
       item,
       calendar: buildCalendarItem(item, {
-        nowMs: Date.now(),
+        nowMs,
         inWatchlist: isInWatchlist(item.titleId),
         inHistory: historyMatches.has(item.titleId),
         newEpisodeCount: activeNewEpisodeCount(progress),
@@ -153,7 +156,7 @@ export async function loadCalendarResults(
   const results = calendarPairs.map(({ item, calendar }) => toCalendarSearchResult(item, calendar));
   const releasedCount = sorted.filter((item) => item.status === "released").length;
   const airingTodayCount = sorted.filter(
-    (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, Date.now()),
+    (item) => item.status !== "released" && isSameLocalDay(item.releaseAt, nowMs),
   ).length;
   const newEpisodeCount = [...releaseProgress.values()].reduce(
     (total, projection) => total + activeNewEpisodeCount(projection),

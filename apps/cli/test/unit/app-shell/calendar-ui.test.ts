@@ -139,6 +139,21 @@ test("buildCalendarDaysFromOptions keeps ISO-dated days, deduped + chronological
   expect(days.map((day) => day.key)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
 });
 
+test("buildCalendarDaysFromOptions derives today from the ISO day key, not display copy", () => {
+  const nowMs = Date.parse("2026-06-02T12:00:00.000Z");
+  const days = buildCalendarDaysFromOptions(
+    [
+      dayStripOption({ label: "Yesterday", previewGroup: "MON 1", previewDayKey: "2026-06-01" }),
+      // The persisted display label can be stale after midnight; the date key is authoritative.
+      dayStripOption({ label: "Today", previewGroup: "TUE 2", previewDayKey: "2026-06-02" }),
+    ],
+    false,
+    nowMs,
+  );
+
+  expect(days.find((day) => day.isToday)?.key).toBe("2026-06-02");
+});
+
 test("resolveCalendarSelectedDayKey keeps the requested date or defaults to today", () => {
   const days = [
     { key: "2026-06-01", label: "MON 1", isToday: false },

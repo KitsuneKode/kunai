@@ -17,9 +17,11 @@ function initialsOf(title: string): string {
 
 /**
  * Compact text-mode poster tile for list rows and cards. Renders a chafa preview
- * inside Ink (`inkEmbedded`) only when `enabled` — typically the selected/focused
+ * inside Ink (`inkEmbedded`) only when `enabled` — typically the settled/focused
  * row — so scrolling a list never spawns one chafa fetch per visible row;
- * unfocused rows fall back to cheap title initials. `preserveTerminalImages`
+ * unfocused rows fall back to cheap title initials. Callers that navigate rapidly
+ * (calendar) should keep `enabled` false while `navigating` so intermediate
+ * selection changes never arm the debounce. `preserveTerminalImages`
  * keeps a tile render from wiping a coexisting Kitty hero placement.
  *
  * This consolidates the per-shell mini-poster components (queue, notifications,

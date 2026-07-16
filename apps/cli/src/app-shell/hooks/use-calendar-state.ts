@@ -39,8 +39,10 @@ export function useCalendarState(input: {
   readonly isCalendarView: boolean;
   readonly options: readonly BrowseShellOption<SearchResult>[];
   readonly initialTypeTab?: CalendarTypeTab;
+  /** Clock snapshot from the calendar shell; refreshes the default day at midnight. */
+  readonly nowMs?: number;
 }): CalendarState {
-  const { isCalendarView, options } = input;
+  const { isCalendarView, options, nowMs } = input;
   const [requestedDayKey, setDayFilter] = useState<string | null>(null);
   const [typeTab, setTypeTab] = useState<CalendarTypeTab>(input.initialTypeTab ?? "All");
 
@@ -48,8 +50,12 @@ export function useCalendarState(input: {
   // under the active tab (otherwise selecting a chip shows "Nothing on schedule").
   const days = useMemo(() => {
     if (!isCalendarView) return [];
-    return buildCalendarDaysFromOptions(filterCalendarOptionsByType(options, typeTab));
-  }, [isCalendarView, options, typeTab]);
+    return buildCalendarDaysFromOptions(
+      filterCalendarOptionsByType(options, typeTab),
+      false,
+      nowMs,
+    );
+  }, [isCalendarView, nowMs, options, typeTab]);
 
   const dayFilter = useMemo(
     () => resolveCalendarSelectedDayKey(days, requestedDayKey),
