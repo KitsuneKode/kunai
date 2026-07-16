@@ -102,7 +102,6 @@ describe("command registry — full surface coverage", () => {
       "sync-connect-anilist",
       "sync-connect-tmdb",
       "sync-disconnect",
-      "stats",
       "sync",
     ]);
     const realMissing = missing.filter((id) => !KNOWN_HANDLER_ONLY.has(id));

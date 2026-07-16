@@ -10,6 +10,7 @@ export const SEARCH_BROWSE_COMMAND_IDS = [
   "watchlist",
   "playlists",
   "up-next",
+  "stats",
   "provider",
   "library",
   "downloads",

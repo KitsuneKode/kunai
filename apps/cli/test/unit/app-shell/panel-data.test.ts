@@ -43,6 +43,7 @@ describe("panel-data", () => {
     }
     expect(lines.find((line) => line.label === "/history")?.detail).toContain("watch history");
     expect(lines.find((line) => line.label === "/watchlist")?.detail).toContain("Watchlist");
+    expect(lines.find((line) => line.label === "/stats")?.detail).toContain("Watch stats");
   });
 
   test("buildAboutPanelLines includes default mode summary", () => {

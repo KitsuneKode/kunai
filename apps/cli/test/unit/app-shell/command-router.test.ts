@@ -18,6 +18,7 @@ describe("resolveCommandsForPaletteSurface", () => {
 
     expect(commands).toContain("watchlist");
     expect(commands).toContain("up-next");
+    expect(commands).toContain("stats");
     expect(commands).not.toContain("sync");
     expect(commands).not.toContain("random");
     expect(commands).not.toContain("surprise");
@@ -31,7 +32,7 @@ describe("resolveCommandsForPaletteSurface", () => {
 
     expect(commands).toContain("next");
     expect(commands).toContain("recommendation");
-    expect(commands).not.toContain("stats");
+    expect(commands).toContain("stats");
     expect(commands).not.toContain("random");
     expect(commands).not.toContain("surprise");
     expect(commands).not.toContain("sync");
@@ -116,6 +117,7 @@ describe("resolveCommandContext scoped surfaces", () => {
       "mark-up-to-episode",
       "playlists",
       "up-next",
+      "stats",
       "search",
       "recommendation",
       "calendar",
@@ -127,6 +129,15 @@ describe("resolveCommandContext scoped surfaces", () => {
     expect(commands).not.toContain("quit");
     expect(commands).not.toContain("settings");
     expect(commands).not.toContain("clear-history");
+  });
+
+  test("normal root overlays and active playback expose stats", () => {
+    expect(
+      resolveCommandContext(baseState(), "rootOverlay").map((command) => command.id),
+    ).toContain("stats");
+    expect(
+      resolveCommandContext(baseState(), "activePlayback").map((command) => command.id),
+    ).toContain("stats");
   });
 
   test("media picker overlays keep command palette local and non-destructive", () => {
