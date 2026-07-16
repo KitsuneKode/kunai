@@ -7,10 +7,12 @@ import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/Histo
 import {
   CalendarArchiveRepository,
   DiagnosticEventsRepository,
+  CatalogCrosswalkRepository,
   DownloadJobsRepository,
   FollowedTitleRepository,
   getKunaiPaths,
   HistoryRepository,
+  HistoryTitleAliasRepository,
   ListRepository,
   NotificationRepository,
   OfflineAssetsRepository,
@@ -94,6 +96,8 @@ export type PersistenceBootstrap = {
   readonly config: ConfigService;
   readonly configStore: ConfigStoreImpl;
   readonly historyRepository: HistoryRepository;
+  readonly historyTitleAliases: HistoryTitleAliasRepository;
+  readonly catalogCrosswalk: CatalogCrosswalkRepository;
   readonly playbackEventRepository: PlaybackEventRepository;
   readonly cacheStore: SqliteCacheStoreImpl;
   readonly mediaTrackService: MediaTrackService;
@@ -184,6 +188,8 @@ export async function bootstrapPersistence(
 
   const configStore = new ConfigStoreImpl(storage);
   const historyRepository = new HistoryRepository(dataDb);
+  const historyTitleAliases = new HistoryTitleAliasRepository(dataDb);
+  const catalogCrosswalk = new CatalogCrosswalkRepository(cacheDb);
   const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const mediaTrackService = new MediaTrackService();
@@ -298,6 +304,8 @@ export async function bootstrapPersistence(
     config,
     configStore,
     historyRepository,
+    historyTitleAliases,
+    catalogCrosswalk,
     playbackEventRepository,
     cacheStore,
     mediaTrackService,

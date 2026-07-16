@@ -10,6 +10,8 @@ import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
 import { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import { createProviderAvailabilityRefresh } from "../services/attention/provider-availability-refresh";
 import { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
+import { fetchArmIdGraph } from "../services/catalog/arm-client";
+import { CatalogIdentityService } from "../services/catalog/CatalogIdentityService";
 import { createCatalogScheduleService } from "../services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "../services/catalog/ResultEnrichmentService";
 import { TimelineService } from "../services/catalog/TimelineService";
@@ -334,6 +336,10 @@ export function bootstrapServices(input: {
         : null,
     ttlMs: 5 * 60 * 1000,
   });
+  const catalogIdentityService = new CatalogIdentityService({
+    arm: { fetchIds: fetchArmIdGraph },
+    cache: persistence.catalogCrosswalk,
+  });
   const historyCatalogEpisodeCounts = new Map<string, number>();
   const historyMetadataHealer = new HistoryMetadataHealer({
     repo: historyRepository,
@@ -431,6 +437,7 @@ export function bootstrapServices(input: {
     releaseReconciliationService,
     timelineService,
     resultEnrichmentService,
+    catalogIdentityService,
     historyMetadataHealer,
     historyCatalogEpisodeCounts,
     updateService,

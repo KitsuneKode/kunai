@@ -91,6 +91,31 @@ test("externalIdsToAliases maps the full external id bag including provider nati
   expect(externalIdsToAliases(undefined)).toEqual([]);
 });
 
+test("HistoryRepository.upsertProgress writes alias rows for every known external id", async () => {
+  const { HistoryRepository } = await import("../src/index");
+  const db = migratedDataDb();
+  const history = new HistoryRepository(db);
+  const aliases = new HistoryTitleAliasRepository(db);
+
+  history.upsertProgress({
+    title: {
+      id: "1535",
+      kind: "anime",
+      title: "Death Note",
+      externalIds: { anilistId: "1535", malId: "1535", tmdbId: "13916" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 60,
+    durationSeconds: 1420,
+  });
+
+  expect(aliases.lookupTitleId("tmdb", "13916")).toBe("1535");
+  expect(aliases.lookupTitleId("mal", "1535")).toBe("1535");
+  expect(aliases.lookupTitleId("anilist", "1535")).toBe("1535");
+
+  db.close();
+});
+
 function migratedDataDb(): KunaiDatabase {
   const dir = mkdtempSync(join(tmpdir(), "kunai-title-aliases-"));
   tempDirs.push(dir);

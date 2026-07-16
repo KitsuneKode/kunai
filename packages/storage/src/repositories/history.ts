@@ -12,6 +12,7 @@ import type {
 } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
+import { externalIdsToAliases, HistoryTitleAliasRepository } from "./history-title-aliases";
 
 export interface HistoryProgressInput {
   readonly title: TitleIdentity;
@@ -70,7 +71,11 @@ interface HistoryProgressRow {
 }
 
 export class HistoryRepository {
-  constructor(private readonly db: KunaiDatabase) {}
+  private readonly titleAliases: HistoryTitleAliasRepository;
+
+  constructor(private readonly db: KunaiDatabase) {
+    this.titleAliases = new HistoryTitleAliasRepository(db);
+  }
 
   upsertProgress(input: HistoryProgressInput): void {
     const persistedTitle = input.providerId
@@ -161,6 +166,13 @@ export class HistoryRepository {
         now,
         now,
       );
+
+    // Keep the alias index current so any external id resolves to this unit.
+    this.titleAliases.upsertAliases(
+      persistedTitle.id,
+      externalIdsToAliases(persistedTitle.externalIds),
+      now,
+    );
   }
 
   /**
@@ -352,6 +364,8 @@ export class HistoryRepository {
           .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
           .run(nextJson, row.key);
       }
+
+      this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
     }
   }
 

@@ -31,6 +31,7 @@ import type { Tracer } from "../infra/tracer/Tracer";
 import type { WorkControlService } from "../infra/work/WorkControlService";
 import type { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import type { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
+import type { CatalogIdentityService } from "../services/catalog/CatalogIdentityService";
 import type { CatalogScheduleService } from "../services/catalog/CatalogScheduleService";
 import type { ResultEnrichmentService } from "../services/catalog/ResultEnrichmentService";
 import type { TimelineService } from "../services/catalog/TimelineService";
@@ -141,6 +142,7 @@ export interface Container {
   readonly releaseReconciliationService: ReleaseReconciliationService;
   readonly timelineService: TimelineService;
   readonly resultEnrichmentService: ResultEnrichmentService;
+  readonly catalogIdentityService: CatalogIdentityService;
   readonly historyMetadataHealer: HistoryMetadataHealer;
   /** Session-scoped catalog episode totals learned from metadata heal (titleId → count). */
   readonly historyCatalogEpisodeCounts: Map<string, number>;

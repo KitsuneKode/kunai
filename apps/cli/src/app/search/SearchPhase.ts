@@ -32,6 +32,7 @@ import {
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
+import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
 import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
@@ -253,9 +254,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 providerRegistry,
                 signal: context.signal,
               });
-              const title = titleInfoFromSearchResult(
-                mapped,
-                chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+              const title = await enrichSelectedTitleIdentity(
+                container.catalogIdentityService,
+                titleInfoFromSearchResult(
+                  mapped,
+                  chooseSearchResultTitle(mapped, container.config.animeTitlePreference),
+                ),
+                selectionMode,
+                context.signal,
               );
               stateManager.dispatch({
                 type: "SELECT_TITLE",
@@ -754,9 +760,14 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }
 
         // Convert SearchResult to TitleInfo
-        const title = titleInfoFromSearchResult(
-          selected,
-          chooseSearchResultTitle(selected, container.config.animeTitlePreference),
+        const title = await enrichSelectedTitleIdentity(
+          container.catalogIdentityService,
+          titleInfoFromSearchResult(
+            selected,
+            chooseSearchResultTitle(selected, container.config.animeTitlePreference),
+          ),
+          selectionMode,
+          context.signal,
         );
 
         stateManager.dispatch({
