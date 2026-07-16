@@ -50,6 +50,7 @@ import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitl
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See docs/superpowers/plans/2026-06-13-*.
 import videasyWasm from "./assets/module1_patched.wasm" with { type: "file" };
+import { decodeWingsdatabasePayload } from "./crypto";
 import {
   getPhaseAVidkingServers,
   getVidkingFlavor,
@@ -77,8 +78,45 @@ export const CINEPLAY_ORIGIN = "https://www.cineplay.to";
 export const CINEPLAY_NEON_ENDPOINT = "e3b0c442";
 /** Videasy moved the stream API from api.videasy.net (404) to api.videasy.to. */
 export const VIDKING_API_BASE = "https://api.videasy.to";
-/** TMDB mirror used by player.videasy.to before sources-with-title. */
-export const VIDEASY_DB_BASE = "https://db.videasy.to/3";
+/**
+ * Active stream API (player.videasy.to / cineby.at / cineplay.to, 2026-07).
+ * Hosts are interchangeable; seed must be fetched from the same host used for sources.
+ */
+export const WINGS_API_BASE = "https://api.speedracelight.com";
+/** Mirror host still serving the same seed + enc=2 contract. */
+export const WINGS_API_FALLBACK_BASE = "https://api.wingsdatabase.com";
+/** TMDB proxy on the old domain (redirects to api.videasy.to/3). */
+export const VIDEASY_DB_BASE = "https://api.videasy.to/3";
+/** TMDB proxy on wingsdatabase (open, no auth). */
+export const WINGS_DB_BASE = "https://db.wingsdatabase.com/3";
+/** TMDB proxy sibling of the speedracelight stream API. */
+export const SPEEDRACE_DB_BASE = "https://db.speedracelight.com/3";
+
+/* ── Wings / SpeedRace endpoint mapping ──
+ * Endpoints in the `wings-*` namespace are routed to the active stream API.
+ * The prefix is stripped to get the actual API path segment (cdn, neon2, …). */
+const WINGS_ENDPOINT_PREFIX = "wings-";
+
+function isWingsdatabaseEndpoint(endpoint: string): boolean {
+  return endpoint.startsWith(WINGS_ENDPOINT_PREFIX);
+}
+
+/** Strip the `wings-` prefix to get the real API path segment. */
+function wingsEndpointToServer(endpoint: string): string {
+  return endpoint.startsWith(WINGS_ENDPOINT_PREFIX)
+    ? endpoint.slice(WINGS_ENDPOINT_PREFIX.length)
+    : endpoint;
+}
+
+/** Resolve the correct API base URL for a server endpoint. */
+export function apiBaseForEndpoint(endpoint: string): string {
+  return isWingsdatabaseEndpoint(endpoint) ? WINGS_API_BASE : VIDKING_API_BASE;
+}
+
+/** Resolve the display host label for a server endpoint (used in source metadata). */
+export function displayHostForEndpoint(endpoint: string): string {
+  return isWingsdatabaseEndpoint(endpoint) ? "api.speedracelight.com" : "api.videasy.to";
+}
 
 export type VideasyClientProfile = {
   readonly appId: string;
@@ -92,13 +130,19 @@ const USER_AGENT =
 /** Default Videasy client id — Cineplay/Bitcine (bc-frontend). Override to vidking for vidking.net embeds. */
 const VIDEASY_APP_ID = "bc-frontend";
 
-const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
-
-/** Phase A blocking resolve: Luffy → Zoro → Nami (no embed-referer fanout). */
+/** Phase A server endpoints — dynamically computed from flavor definitions. Also used as
+ *  the default server list for embed-referer retry fallback (previously used a hardcoded
+ *  legacy list that is now all route-dead). */
 export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
+
+/** @deprecated Legacy Videasy server list (all route-dead). Kept for fallback type narrowing;
+ *  runtime fallback now always uses VIDKING_PHASE_A_SERVERS. */
+const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 
 export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 90_000;
 const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 95_000;
+const WINGS_SEED_FETCH_TIMEOUT_MS = 8_000;
+const WINGS_SOURCE_FETCH_TIMEOUT_MS = 15_000;
 /** Normalize audio language codes to ISO 639-1. Delegates to the shared language
  *  normalizer which handles both subtitle and audio language code formats. */
 function normalizeLanguageCode(value: string | undefined): string | undefined {
@@ -140,8 +184,11 @@ function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
 }
 
 function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
+  // Only permanent route removal is route-dead. Many speedracelight servers
+  // return HTTP 500 "No streams available" for a single title while staying
+  // healthy for others — do not quarantine the whole endpoint on 500.
   if (statusCode === 404 || statusCode === 410) return "route-dead";
-  if (statusCode >= 500) return "server-error";
+  if (statusCode >= 500) return "transient";
   return "transient";
 }
 
@@ -304,7 +351,7 @@ export async function resolveVideasyDirect(
     !resolvedOptions?.serverEndpoint &&
     !resolvedOptions?.customReferer;
   let activeServers: VidkingServerEndpoint[] = (
-    phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_SERVERS]
+    phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_PHASE_A_SERVERS]
   ).filter((s) => createVideasyEndpointHealth(context).shouldTry(s));
   const exhaustiveFlavorIds =
     exhaustiveRefresh && !resolvedOptions?.serverEndpoint
@@ -374,7 +421,7 @@ export async function resolveVideasyDirect(
       providerId: VIDEOSY_PROVIDER_ID,
       kind: "provider-api",
       label: presentation.themeLabel,
-      host: "api.videasy.to",
+      host: displayHostForEndpoint(server),
       status: deprecated ? "failed" : phase === "A" ? "probing" : "pending",
       confidence: deprecated ? 0 : phase === "A" ? 0.8 : 0.5,
       cachePolicy,
@@ -402,9 +449,21 @@ export async function resolveVideasyDirect(
     videasyAppId,
   );
 
+  // Prefer flavor-id candidates so multi-route backends (hdmovie EN/HI, meine DE, …)
+  // keep their language/quality filters. Endpoint-only lists lose that metadata.
+  const phaseAFlavorIdsOrdered = phaseAOnly
+    ? getPhaseAVidkingFlavorIds().filter((flavorId) => {
+        const endpoint = getVidkingFlavor(flavorId)?.endpoint;
+        return endpoint ? createVideasyEndpointHealth(context).shouldTry(endpoint) : false;
+      })
+    : [];
   const cycleCandidates = buildVidkingCycleCandidates({
     directServers:
-      exhaustiveFlavorIds.length > 0 || preferredFlavorIds.length > 0 ? [] : activeServers,
+      exhaustiveFlavorIds.length > 0 ||
+      preferredFlavorIds.length > 0 ||
+      phaseAFlavorIdsOrdered.length > 0
+        ? []
+        : activeServers,
     embedServers:
       preferredFlavorIds.length > 0 || (phaseAOnly && !resolvedOptions.customReferer)
         ? []
@@ -413,9 +472,14 @@ export async function resolveVideasyDirect(
             ? [resolvedOptions.serverEndpoint]
             : exhaustiveFlavorIds.length > 0
               ? []
-              : [...VIDKING_SERVERS]
+              : [...VIDKING_PHASE_A_SERVERS]
           : [],
-    flavorIds: exhaustiveFlavorIds.length > 0 ? exhaustiveFlavorIds : preferredFlavorIds,
+    flavorIds:
+      exhaustiveFlavorIds.length > 0
+        ? exhaustiveFlavorIds
+        : preferredFlavorIds.length > 0
+          ? preferredFlavorIds
+          : phaseAFlavorIdsOrdered,
     embedReferer: resolvedOptions.customReferer ?? embedReferer ?? undefined,
     engineOptions: resolvedOptions,
     preferredSourceId: input.preferredSourceId,
@@ -554,7 +618,7 @@ export async function resolveVideasyDirect(
     );
     const embedCandidates = buildVidkingCycleCandidates({
       directServers: [],
-      embedServers: embedServers.length > 0 ? embedServers : [...VIDKING_SERVERS],
+      embedServers: embedServers.length > 0 ? embedServers : [...VIDKING_PHASE_A_SERVERS],
       flavorIds: [],
       embedReferer,
       engineOptions: resolvedOptions,
@@ -848,7 +912,7 @@ export function createVidkingResultFromPayload({
   readonly engineOptions?: VidKingEngineOptions;
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
-  const resolvedServer = (server as VidkingServer | undefined) ?? "mb-flix";
+  const resolvedServer = (server as VidkingServer | undefined) ?? "wings-cdn";
   const videasyAppId = context ? resolveVideasyAppId(engineOptions ?? {}, context) : undefined;
   const policy = createProviderCachePolicy({
     providerId: VIDEOSY_PROVIDER_ID,
@@ -887,7 +951,7 @@ export function createVidkingResultFromPayload({
       sourceId: resolvedSourceId,
       serverId: server,
       nativeLabel: nativeServerLabel,
-      host: "api.videasy.to",
+      host: displayHostForEndpoint(resolvedServer),
       confidence: 0.9,
       metadata: {
         flavorFilter: sourceQualityFilter,
@@ -991,7 +1055,7 @@ export function createVidkingResultFromPayload({
         providerId: VIDEOSY_PROVIDER_ID,
         kind: "provider-api",
         label: themedLabel,
-        host: "api.videasy.to",
+        host: displayHostForEndpoint(resolvedServer),
         status: "selected",
         confidence: 0.9,
         requiresRuntime: "direct-http",
@@ -1072,6 +1136,8 @@ async function fetchVideasyPayload({
   sessionToken,
   appId,
   origin = VIDKING_ORIGIN,
+  apiBase,
+  timeoutMs,
 }: {
   readonly server: VidkingServerEndpoint;
   readonly query: URLSearchParams;
@@ -1081,6 +1147,9 @@ async function fetchVideasyPayload({
   readonly sessionToken?: string;
   readonly appId?: string;
   readonly origin?: string;
+  /** Preserve the selected Wings host so its seed and ciphertext stay paired. */
+  readonly apiBase?: string;
+  readonly timeoutMs?: number;
 }): Promise<Response> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
   const headers = new Headers({
@@ -1101,8 +1170,10 @@ async function fetchVideasyPayload({
     headers.set("x-session-token", sessionToken);
   }
 
-  return requester(`${VIDKING_API_BASE}/${server}/sources-with-title?${query.toString()}`, {
-    signal: createVideasyFetchSignal(signal),
+  const resolvedApiBase = apiBase ?? apiBaseForEndpoint(server);
+  const pathServer = wingsEndpointToServer(server);
+  return requester(`${resolvedApiBase}/${pathServer}/sources-with-title?${query.toString()}`, {
+    signal: createVideasyFetchSignal(signal, timeoutMs),
     headers,
   });
 }
@@ -1193,6 +1264,14 @@ async function probeSelectedVidkingPayloadStream({
     return false;
   }
 
+  // Cineby/cineplay start playback immediately after decrypt — they do not HEAD the
+  // HLS master before returning. A resolve-gate preflight adds 0.5–2.5s and is the
+  // main reason Kunai feels slower than the website. Trust decrypt + URL shape;
+  // dead streams recover via playback recovery / source switch.
+  if (shouldSkipVideasyResolveGatePreflight(streamUrl, input.startupPriority)) {
+    return true;
+  }
+
   const probeStartedAt = Date.now();
   const health = await runStreamHealthCheck({
     phase: "resolve-gate",
@@ -1231,6 +1310,102 @@ async function probeSelectedVidkingPayloadStream({
     },
   });
   return false;
+}
+
+/** Skip HTTP preflight for normal play; keep it for quality-first validation opt-in. */
+function shouldSkipVideasyResolveGatePreflight(
+  streamUrl: string,
+  startupPriority: ProviderResolveInput["startupPriority"],
+): boolean {
+  if (startupPriority === "quality-first") return false;
+  const lower = streamUrl.toLowerCase();
+  return (
+    lower.includes(".m3u8") ||
+    lower.includes(".mpd") ||
+    lower.startsWith("https://") ||
+    lower.startsWith("http://")
+  );
+}
+
+/* ── Wings seed transport cache ──
+ * A seed is only valid for the host that issued it. Keep the host and seed paired,
+ * and retain the last working host per media item for the seed's short lifetime. */
+type WingsSeedTransport = {
+  readonly apiBase: string;
+  readonly seed: string;
+};
+
+const wingsSeedCache = new Map<string, { seed: string; expiresAt: number }>();
+const wingsPreferredHostCache = new Map<number, { apiBase: string; expiresAt: number }>();
+
+function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
+  return `${apiBase}\u001f${mediaId}`;
+}
+
+async function fetchWingsdatabaseSeed(
+  mediaId: number,
+  context: ProviderRuntimeContext,
+): Promise<WingsSeedTransport | undefined> {
+  const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const seedHeaders = {
+    accept: "*/*",
+    "user-agent": USER_AGENT,
+    origin: "https://www.cineby.at",
+    referer: "https://www.cineby.at/",
+  } as const;
+
+  const preferred = wingsPreferredHostCache.get(mediaId);
+  const preferredBase =
+    preferred && Date.now() < preferred.expiresAt ? preferred.apiBase : undefined;
+  const bases = preferredBase
+    ? [
+        preferredBase,
+        ...[WINGS_API_BASE, WINGS_API_FALLBACK_BASE].filter((base) => base !== preferredBase),
+      ]
+    : [WINGS_API_BASE, WINGS_API_FALLBACK_BASE];
+
+  // Prefer the live player host, but make every fallback an indivisible host+seed pair.
+  for (const apiBase of bases) {
+    const cacheKey = wingsSeedCacheKey(apiBase, mediaId);
+    const cached = wingsSeedCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return { apiBase, seed: cached.seed };
+    }
+    try {
+      const response = await requester(`${apiBase}/seed?mediaId=${mediaId}`, {
+        signal: createVideasyFetchSignal(context.signal, WINGS_SEED_FETCH_TIMEOUT_MS),
+        headers: seedHeaders,
+      });
+      if (!response.ok) continue;
+
+      const body = (await response.json()) as { seed?: string; ttlMs?: number };
+      if (!body.seed) continue;
+
+      const ttlMs = body.ttlMs ?? 30_000;
+      const expiresAt = Date.now() + ttlMs;
+      wingsSeedCache.set(cacheKey, { seed: body.seed, expiresAt });
+      wingsPreferredHostCache.set(mediaId, { apiBase, expiresAt });
+      return { apiBase, seed: body.seed };
+    } catch {
+      // try next host
+    }
+  }
+  return undefined;
+}
+
+/** Decrypt a wingsdatabase "sources-with-title" response (enc=2) into a VidkingPayload. */
+async function decodeWingsdatabaseSourcesPayload(
+  ciphertext: string,
+  seed: string,
+  tmdbId: number,
+  endpoint: string,
+): Promise<VidkingPayload> {
+  /* Titanium (tejo) uses AES-GCM — not yet implemented. For now, skip it. */
+  if (endpoint === "wings-tejo") {
+    throw new Error("AES-GCM path not implemented");
+  }
+  const decrypted = decodeWingsdatabasePayload(ciphertext, seed, tmdbId);
+  return JSON.parse(decrypted) as VidkingPayload;
 }
 
 /**
@@ -1281,9 +1456,31 @@ async function tryVidkingServer(opts: {
     message: customReferer
       ? `Retrying ${presentation.themeLabel} with embed referer`
       : `Trying Videasy source ${presentation.themeLabel}`,
+    attributes: {
+      serverId: server,
+      stage: isWingsdatabaseEndpoint(server) ? "seed" : "source",
+    },
   });
 
-  const queries = buildQueryVariants({
+  const isWings = isWingsdatabaseEndpoint(server);
+
+  /* For wingsdatabase, fetch a seed before proceeding. Skip server if seed fails. */
+  let wingsTransport: WingsSeedTransport | undefined;
+  if (isWings) {
+    wingsTransport = await fetchWingsdatabaseSeed(tmdbId, context);
+    if (!wingsTransport) {
+      emitTraceEvent(events, context, {
+        type: "source:failed",
+        providerId: VIDEOSY_PROVIDER_ID,
+        sourceId,
+        message: `${presentation.themeLabel} failed to fetch wingsdatabase seed`,
+        attributes: { serverId: server, stage: "seed", failureClass: "seed-unavailable" },
+      });
+      return null;
+    }
+  }
+
+  const baseQueries = buildQueryVariants({
     title: input.title,
     mediaKind: input.mediaKind as "movie" | "series",
     tmdbId,
@@ -1291,6 +1488,18 @@ async function tryVidkingServer(opts: {
     language: engineOptions.language,
     singleVariant: !customReferer,
   });
+
+  /* For wingsdatabase, add enc=2 & seed to every query. */
+  const wingsSeedValue = isWings ? wingsTransport?.seed : undefined;
+  const queries = wingsSeedValue
+    ? baseQueries.map((q) => {
+        const augmented = new URLSearchParams(q);
+        augmented.set("enc", "2");
+        augmented.set("seed", wingsSeedValue);
+        return augmented;
+      })
+    : baseQueries;
+
   const maxAttempts = customReferer ? Math.max(1, context.retryPolicy?.maxAttempts ?? 2) : 1;
 
   const endpointHealth = createVideasyEndpointHealth(context);
@@ -1299,6 +1508,7 @@ async function tryVidkingServer(opts: {
   for (const requestServer of requestServers) {
     for (const query of queries) {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        let failureStage = "source";
         try {
           const response = await fetchVideasyPayload({
             server: requestServer,
@@ -1309,6 +1519,8 @@ async function tryVidkingServer(opts: {
             sessionToken,
             appId,
             origin: clientProfile.origin,
+            apiBase: wingsTransport?.apiBase,
+            timeoutMs: isWings ? WINGS_SOURCE_FETCH_TIMEOUT_MS : undefined,
           });
 
           if (!response.ok) {
@@ -1370,8 +1582,20 @@ async function tryVidkingServer(opts: {
             return null;
           }
 
-          const decodedPayload = await decodeVideasyGuardedPayload(payload, sessionToken);
-          const decoded = await decodeVidkingPayload(decodedPayload, tmdbId);
+          let decoded: VidkingPayload;
+          if (isWings && wingsTransport !== undefined) {
+            failureStage = "decrypt";
+            decoded = await decodeWingsdatabaseSourcesPayload(
+              payload,
+              wingsTransport.seed,
+              tmdbId,
+              server,
+            );
+          } else {
+            failureStage = "decrypt";
+            const guarded = await decodeVideasyGuardedPayload(payload, sessionToken);
+            decoded = await decodeVidkingPayload(guarded, tmdbId);
+          }
           const streamVerified = await probeSelectedVidkingPayloadStream({
             decoded,
             input,
@@ -1418,6 +1642,18 @@ async function tryVidkingServer(opts: {
             at: context.now(),
           };
           failures.push(f);
+          emitTraceEvent(events, context, {
+            type: "source:failed",
+            providerId: VIDEOSY_PROVIDER_ID,
+            sourceId,
+            attempt,
+            message: `${presentation.themeLabel} ${failureStage} failed`,
+            attributes: {
+              serverId: server,
+              stage: failureStage,
+              failureClass: f.code,
+            },
+          });
           emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
         } catch (error) {
           endpointHealth.recordFailure(server, {
@@ -1734,7 +1970,7 @@ function normalizeStreamCandidates({
         sourceId,
         serverId: server,
         nativeLabel: server ?? "Videasy",
-        host: "api.videasy.to",
+        host: displayHostForEndpoint(server ?? "wings-cdn"),
         confidence: 0.9,
         metadata: { quality: source.quality, flavorFilter: sourceQualityFilter },
       }),

@@ -8,7 +8,25 @@ export type VidkingFlavorPresentation = {
   readonly endpoint: string;
 };
 
+/**
+ * Flavor ids. Active cineby.at catalog names are first-class.
+ * Legacy One Piece / Hydrogen names remain as deprecated ids for pin migration.
+ */
 export type VidkingFlavorId =
+  /* Active Cineby UI catalog (player.videasy.to C[] order, 2026-07) */
+  | "cineby-yoru"
+  | "cineby-neon"
+  | "cineby-sage"
+  | "cineby-jett"
+  | "cineby-breach"
+  | "cineby-vyse"
+  | "cineby-killjoy"
+  | "cineby-fade"
+  | "cineby-omen"
+  | "cineby-raze"
+  /* Kunai reliability extra — works on speedracelight, not listed in Cineby UI */
+  | "cineby-cypher"
+  /* Legacy Videasy flavors (api.videasy.to — route-dead) */
   | "videasy-primary"
   | "videasy-mirror-a"
   | "videasy-mirror-b"
@@ -20,7 +38,17 @@ export type VidkingFlavorId =
   | "videasy-french"
   | "videasy-hindi"
   | "videasy-spanish"
-  | "videasy-portuguese";
+  | "videasy-portuguese"
+  /* Previous wings-* internal names (deprecated; normalizeLegacy maps pins) */
+  | "wingsdb-hydrogen"
+  | "wingsdb-titanium"
+  | "wingsdb-oxygen"
+  | "wingsdb-lithium"
+  | "wingsdb-helium"
+  | "wingsdb-brook"
+  | "wingsdb-shanks"
+  | "wingsdb-law"
+  | "wingsdb-ace";
 
 export type VidkingFlavorDefinition = {
   readonly id: VidkingFlavorId;
@@ -32,43 +60,166 @@ export type VidkingFlavorDefinition = {
   readonly filterQuality?: string;
   readonly audioLanguage: string;
   readonly moviesOnly?: boolean;
+  /**
+   * Resolve probe order (speed/stability). Neon/Cypher first so we do not burn
+   * time on empty Yoru like a naive UI walk.
+   */
   readonly phaseAOrder?: number;
-  /** API route removed from api.videasy.to — skip probes and preferred-source resolve. */
+  /**
+   * Inventory / picker display order — matches cineby.at Servers UI.
+   * When omitted, falls back to phaseAOrder.
+   */
+  readonly catalogOrder?: number;
+  /** Skip probes / preferred-source resolve. */
   readonly deprecated?: boolean;
 };
 
+/**
+ * Cineby catalog:
+ *   UI (catalogOrder): Yoru → Neon → Sage → Jett → Breach → Vyse → Killjoy → Fade → Omen → Raze
+ *   Resolve (phaseAOrder): Neon → Cypher → Yoru → …  (stable/fast first, like a good first click)
+ * Cypher is Kunai-only (explicit quality ladder; not on the website).
+ */
 const FLAVORS: readonly VidkingFlavorDefinition[] = [
+  /* ── Active Cineby catalog (api.speedracelight.com / api.wingsdatabase.com) ── */
+  {
+    id: "cineby-yoru",
+    themeLabel: "Yoru",
+    subtitle: "Original audio · may have 4K",
+    cinebyAlias: "Yoru",
+    endpoint: "wings-cdn",
+    audioLanguage: "en",
+    catalogOrder: 0,
+    phaseAOrder: 2,
+  },
+  {
+    id: "cineby-neon",
+    themeLabel: "Neon",
+    subtitle: "Original audio · HLS/DASH",
+    cinebyAlias: "Neon",
+    endpoint: "wings-neon2",
+    audioLanguage: "en",
+    catalogOrder: 1,
+    phaseAOrder: 0,
+  },
+  {
+    id: "cineby-sage",
+    themeLabel: "Sage",
+    subtitle: "Original audio",
+    cinebyAlias: "Sage",
+    endpoint: "wings-ym",
+    audioLanguage: "en",
+    catalogOrder: 2,
+  },
+  {
+    id: "cineby-jett",
+    themeLabel: "Jett",
+    subtitle: "Original audio",
+    cinebyAlias: "Jett",
+    endpoint: "wings-jett",
+    audioLanguage: "en",
+    catalogOrder: 3,
+  },
+  {
+    id: "cineby-breach",
+    themeLabel: "Breach",
+    subtitle: "Original audio",
+    cinebyAlias: "Breach",
+    endpoint: "wings-m4uhd",
+    audioLanguage: "en",
+    catalogOrder: 4,
+  },
+  {
+    id: "cineby-vyse",
+    themeLabel: "Vyse",
+    subtitle: "Original audio",
+    cinebyAlias: "Vyse",
+    endpoint: "wings-hdmovie",
+    filterQuality: "English",
+    audioLanguage: "en",
+    catalogOrder: 5,
+  },
+  {
+    id: "cineby-killjoy",
+    themeLabel: "Killjoy",
+    subtitle: "German audio",
+    cinebyAlias: "Killjoy",
+    endpoint: "wings-meine",
+    languageQuery: "german",
+    audioLanguage: "de",
+    catalogOrder: 6,
+  },
+  {
+    id: "cineby-fade",
+    themeLabel: "Fade",
+    subtitle: "Hindi audio",
+    cinebyAlias: "Fade",
+    endpoint: "wings-hdmovie",
+    filterQuality: "Hindi",
+    audioLanguage: "hi",
+    catalogOrder: 7,
+  },
+  {
+    id: "cineby-omen",
+    themeLabel: "Omen",
+    subtitle: "Spanish audio",
+    cinebyAlias: "Omen",
+    endpoint: "wings-lamovie",
+    audioLanguage: "es",
+    catalogOrder: 8,
+  },
+  {
+    id: "cineby-raze",
+    themeLabel: "Raze",
+    subtitle: "Portuguese audio",
+    cinebyAlias: "Raze",
+    endpoint: "wings-superflix",
+    audioLanguage: "pt",
+    catalogOrder: 9,
+  },
+  {
+    id: "cineby-cypher",
+    themeLabel: "Cypher",
+    subtitle: "Quality ladder · Kunai-only (not on cineby UI)",
+    cinebyAlias: "Cypher",
+    endpoint: "wings-downloader2",
+    audioLanguage: "en",
+    catalogOrder: 10,
+    phaseAOrder: 1,
+  },
+
+  /* ── Legacy api.videasy.to flavors (route-dead 404) ── */
   {
     id: "videasy-primary",
     themeLabel: "Luffy",
-    subtitle: "Original · primary",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Neon",
     endpoint: "mb-flix",
     audioLanguage: "en",
-    phaseAOrder: 0,
+    deprecated: true,
   },
   {
     id: "videasy-mirror-a",
     themeLabel: "Zoro",
-    subtitle: "Original · may have 4K",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Yoru",
     endpoint: "cdn",
     audioLanguage: "en",
-    phaseAOrder: 1,
+    deprecated: true,
   },
   {
     id: "videasy-mirror-b",
     themeLabel: "Nami",
-    subtitle: "Original · mirror",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Cypher",
     endpoint: "downloader2",
     audioLanguage: "en",
-    phaseAOrder: 2,
+    deprecated: true,
   },
   {
     id: "videasy-mirror-c",
     themeLabel: "Sanji",
-    subtitle: "Original · mirror",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Sage",
     endpoint: "1movies",
     audioLanguage: "en",
@@ -77,76 +228,170 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
   {
     id: "videasy-breach",
     themeLabel: "Blackbeard",
-    subtitle: "Original · mirror",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Breach",
     endpoint: "m4uhd",
     audioLanguage: "en",
+    deprecated: true,
   },
   {
     id: "videasy-english-alt",
     themeLabel: "Robin",
-    subtitle: "Original · alt track",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Vyse",
     endpoint: "hdmovie",
     filterQuality: "English",
     audioLanguage: "en",
+    deprecated: true,
   },
   {
     id: "videasy-german",
-    themeLabel: "Brook",
-    subtitle: "German · dub",
+    themeLabel: "Brook (Legacy)",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Killjoy",
     endpoint: "meine",
     languageQuery: "german",
     audioLanguage: "de",
+    deprecated: true,
   },
   {
     id: "videasy-hindi",
     themeLabel: "Chopper",
-    subtitle: "Hindi · dub",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Fade",
     endpoint: "hdmovie",
     filterQuality: "Hindi",
     audioLanguage: "hi",
+    deprecated: true,
   },
   {
     id: "videasy-spanish",
-    themeLabel: "Ace",
-    subtitle: "Spanish · dub",
+    themeLabel: "Ace (Legacy)",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Omen",
     endpoint: "lamovie",
     audioLanguage: "es",
+    deprecated: true,
   },
   {
     id: "videasy-portuguese",
     themeLabel: "Sabo",
-    subtitle: "Portuguese · dub",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Raze",
     endpoint: "superflix",
     audioLanguage: "pt",
+    deprecated: true,
   },
   {
     id: "videasy-italian",
-    themeLabel: "Shanks",
-    subtitle: "Italian · dub",
+    themeLabel: "Shanks (Legacy)",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Harbor",
     endpoint: "meine",
     languageQuery: "italian",
     audioLanguage: "it",
+    deprecated: true,
   },
   {
     id: "videasy-french",
-    themeLabel: "Law",
-    subtitle: "French · dub · movies",
+    themeLabel: "Law (Legacy)",
+    subtitle: "Legacy · route-dead",
     cinebyAlias: "Chamber",
     endpoint: "meine",
     languageQuery: "french",
     audioLanguage: "fr",
     moviesOnly: true,
+    deprecated: true,
+  },
+
+  /* ── Previous internal wings labels (deprecated aliases for pin migration) ── */
+  {
+    id: "wingsdb-hydrogen",
+    themeLabel: "Yoru",
+    subtitle: "Alias → Yoru",
+    endpoint: "wings-cdn",
+    audioLanguage: "en",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-oxygen",
+    themeLabel: "Neon",
+    subtitle: "Alias → Neon",
+    endpoint: "wings-neon2",
+    audioLanguage: "en",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-lithium",
+    themeLabel: "Cypher",
+    subtitle: "Alias → Cypher",
+    endpoint: "wings-downloader2",
+    audioLanguage: "en",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-titanium",
+    themeLabel: "Titanium",
+    subtitle: "AES-GCM tejo · not in Cineby UI",
+    endpoint: "wings-tejo",
+    audioLanguage: "en",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-helium",
+    themeLabel: "Helium",
+    subtitle: "Removed",
+    endpoint: "wings-1movies",
+    audioLanguage: "en",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-brook",
+    themeLabel: "Killjoy",
+    subtitle: "Alias → Killjoy",
+    endpoint: "wings-meine",
+    languageQuery: "german",
+    audioLanguage: "de",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-shanks",
+    themeLabel: "Shanks",
+    subtitle: "Italian · not in current Cineby list",
+    endpoint: "wings-meine",
+    languageQuery: "italian",
+    audioLanguage: "it",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-ace",
+    themeLabel: "Omen",
+    subtitle: "Alias → Omen",
+    endpoint: "wings-lamovie",
+    languageQuery: "spanish",
+    audioLanguage: "es",
+    deprecated: true,
+  },
+  {
+    id: "wingsdb-law",
+    themeLabel: "Law",
+    subtitle: "French · movies",
+    endpoint: "wings-meine",
+    languageQuery: "french",
+    audioLanguage: "fr",
+    moviesOnly: true,
+    deprecated: true,
   },
 ] as const;
 
 const FLAVOR_BY_ID = new Map(FLAVORS.map((flavor) => [flavor.id, flavor]));
+const ACTIVE_FLAVORS = FLAVORS.filter((flavor) => flavor.deprecated !== true)
+  .slice()
+  .sort(
+    (left, right) =>
+      (left.catalogOrder ?? left.phaseAOrder ?? Number.MAX_SAFE_INTEGER) -
+      (right.catalogOrder ?? right.phaseAOrder ?? Number.MAX_SAFE_INTEGER),
+  );
 
 /** Stable inventory id for a Videasy endpoint — same on every episode. */
 export function videasySourceIdForEndpoint(endpoint: string): string {
@@ -157,7 +402,10 @@ export function videasySourceIdForEndpoint(endpoint: string): string {
 export const vidkingSourceIdForEndpoint = videasySourceIdForEndpoint;
 
 function endpointHasMultipleFlavors(endpoint: string): boolean {
-  return FLAVORS.filter((flavor) => flavor.endpoint === endpoint).length > 1;
+  return (
+    FLAVORS.filter((flavor) => flavor.endpoint === endpoint && flavor.deprecated !== true).length >
+    1
+  );
 }
 
 /** Stable inventory id for a named flavor. Shared backends keep separate user-visible rows. */
@@ -176,9 +424,27 @@ export function getVidkingFlavorForEndpoint(
     readonly filterQuality?: string;
   } = {},
 ): VidkingFlavorDefinition | undefined {
-  const matches = FLAVORS.filter((flavor) => flavor.endpoint === endpoint);
-  if (matches.length === 0) return undefined;
+  const matches = FLAVORS.filter(
+    (flavor) => flavor.endpoint === endpoint && flavor.deprecated !== true,
+  );
+  if (matches.length === 0) {
+    // Fall back to deprecated rows so old inventory still labels.
+    const deprecated = FLAVORS.filter((flavor) => flavor.endpoint === endpoint);
+    if (deprecated.length === 1) return deprecated[0];
+    if (deprecated.length === 0) return undefined;
+    return pickFromMatches(deprecated, hints);
+  }
   if (matches.length === 1) return matches[0];
+  return pickFromMatches(matches, hints);
+}
+
+function pickFromMatches(
+  matches: readonly VidkingFlavorDefinition[],
+  hints: {
+    readonly languageQuery?: string;
+    readonly filterQuality?: string;
+  },
+): VidkingFlavorDefinition {
   if (hints.languageQuery) {
     const byLanguage = matches.find((flavor) => flavor.languageQuery === hints.languageQuery);
     if (byLanguage) return byLanguage;
@@ -187,7 +453,7 @@ export function getVidkingFlavorForEndpoint(
     const byQuality = matches.find((flavor) => flavor.filterQuality === hints.filterQuality);
     if (byQuality) return byQuality;
   }
-  return matches[0];
+  return matches[0]!;
 }
 
 /** Map endpoint (+ optional engine hints) to themed labels used in UI and inventory. */
@@ -261,7 +527,7 @@ export function vidkingEngineOptionsForEndpoint(
 }
 
 export function listVidkingFlavors(): readonly VidkingFlavorDefinition[] {
-  return FLAVORS;
+  return ACTIVE_FLAVORS;
 }
 
 export function isVidkingFlavorDeprecated(flavorId: string): boolean {
@@ -275,12 +541,13 @@ export function listDeprecatedVidkingEndpoints(): readonly string[] {
       endpoints.add(flavor.endpoint);
     }
   }
-  return [...endpoints];
+  // Active flavors may share an endpoint with a deprecated alias — only
+  // treat as deprecated when NO active flavor uses it.
+  const active = new Set(FLAVORS.filter((f) => f.deprecated !== true).map((f) => f.endpoint));
+  return [...endpoints].filter((endpoint) => !active.has(endpoint));
 }
 
-/** All Videasy flavor endpoints — the entire api.videasy.to/{server}/sources-with-title
- *  API is dead (domain repurposed as a TMDB proxy). Seeded as curated-dead so the
- *  provider engine skips them without wasting time on 404s. */
+/** All Videasy flavor endpoints known to the registry. */
 export function listVidkingEndpoints(): readonly string[] {
   const endpoints = new Set<string>();
   for (const flavor of FLAVORS) {
@@ -294,6 +561,10 @@ export function isVidkingSourceDeprecated(sourceId: string): boolean {
   if (!normalized) return false;
   for (const flavor of FLAVORS) {
     if (flavor.deprecated !== true) continue;
+    // Skip aliases whose endpoint is still active under a new id.
+    if (FLAVORS.some((f) => f.deprecated !== true && f.endpoint === flavor.endpoint)) {
+      continue;
+    }
     if (
       flavorSourceId(flavor.id) === normalized ||
       vidkingSourceIdForEndpoint(flavor.endpoint) === normalized
@@ -307,9 +578,9 @@ export function isVidkingSourceDeprecated(sourceId: string): boolean {
 export function listEligibleVidkingFlavorIds(
   mediaKind?: "movie" | "series",
 ): readonly VidkingFlavorId[] {
-  return FLAVORS.filter((flavor) => mediaKind !== "series" || flavor.moviesOnly !== true).map(
-    (flavor) => flavor.id,
-  );
+  return ACTIVE_FLAVORS.filter(
+    (flavor) => mediaKind !== "series" || flavor.moviesOnly !== true,
+  ).map((flavor) => flavor.id);
 }
 
 export function getVidkingFlavor(flavorId: string): VidkingFlavorDefinition | undefined {
@@ -317,7 +588,7 @@ export function getVidkingFlavor(flavorId: string): VidkingFlavorDefinition | un
 }
 
 export function getPhaseAVidkingFlavorIds(): readonly VidkingFlavorId[] {
-  return FLAVORS.filter((flavor) => flavor.phaseAOrder !== undefined)
+  return ACTIVE_FLAVORS.filter((flavor) => flavor.phaseAOrder !== undefined)
     .sort((a, b) => (a.phaseAOrder ?? 0) - (b.phaseAOrder ?? 0))
     .map((flavor) => flavor.id);
 }
@@ -342,9 +613,8 @@ export function resolveFlavorEngineOptions(flavorId: string): VidKingEngineOptio
 }
 
 export function listPhaseBLazyProbeFlavorIds(mediaKind?: "movie" | "series"): VidkingFlavorId[] {
-  return FLAVORS.filter((flavor) => {
+  return ACTIVE_FLAVORS.filter((flavor) => {
     if (flavor.phaseAOrder !== undefined) return false;
-    if (flavor.deprecated === true) return false;
     if (mediaKind === "series" && flavor.moviesOnly) return false;
     return true;
   }).map((flavor) => flavor.id);
@@ -354,7 +624,37 @@ export function flavorSourceId(flavorId: string): string {
   return vidkingSourceIdForFlavor(flavorId);
 }
 
+/** Map old internal flavor / endpoint suffixes to the active cineby catalog id. */
+const LEGACY_FLAVOR_ID_ALIASES: Readonly<Record<string, VidkingFlavorId>> = {
+  "wingsdb-hydrogen": "cineby-yoru",
+  "wingsdb-oxygen": "cineby-neon",
+  "wingsdb-lithium": "cineby-cypher",
+  "wingsdb-brook": "cineby-killjoy",
+  "wingsdb-ace": "cineby-omen",
+  "videasy-mirror-a": "cineby-yoru",
+  "videasy-primary": "cineby-neon",
+  "videasy-mirror-b": "cineby-cypher",
+  "videasy-breach": "cineby-breach",
+  "videasy-english-alt": "cineby-vyse",
+  "videasy-german": "cineby-killjoy",
+  "videasy-hindi": "cineby-fade",
+  "videasy-spanish": "cineby-omen",
+  "videasy-portuguese": "cineby-raze",
+  // Bare endpoint suffixes from older inventory rows
+  "mb-flix": "cineby-neon",
+  cdn: "cineby-yoru",
+  downloader2: "cineby-cypher",
+  m4uhd: "cineby-breach",
+  meine: "cineby-killjoy",
+  lamovie: "cineby-omen",
+  superflix: "cineby-raze",
+};
+
 function mapLegacyVideasySourceSuffix(suffix: string): string {
+  const aliased = LEGACY_FLAVOR_ID_ALIASES[suffix];
+  if (aliased) {
+    return vidkingSourceIdForFlavor(aliased);
+  }
   const flavor = getVidkingFlavor(suffix);
   if (flavor && endpointHasMultipleFlavors(flavor.endpoint)) {
     return `source:${VIDEOSY_PROVIDER_ID}:${flavor.id}`;
@@ -362,13 +662,18 @@ function mapLegacyVideasySourceSuffix(suffix: string): string {
   return `source:${VIDEOSY_PROVIDER_ID}:${suffix}`;
 }
 
-/** Map pre-rename inventory ids (`source:vidking:…`) to current Videasy ids. */
+/** Map pre-rename inventory ids (`source:vidking:…`, wingsdb-*) to current Videasy ids. */
 export function normalizeLegacyVideasySourceId(sourceId: string): string {
   if (sourceId.startsWith("source:vidking:videasy:")) {
     return mapLegacyVideasySourceSuffix(sourceId.slice("source:vidking:videasy:".length));
   }
   if (sourceId.startsWith("source:vidking:")) {
     return mapLegacyVideasySourceSuffix(sourceId.slice("source:vidking:".length));
+  }
+  if (sourceId.startsWith("source:videasy:")) {
+    const suffix = sourceId.slice("source:videasy:".length);
+    const aliased = LEGACY_FLAVOR_ID_ALIASES[suffix];
+    if (aliased) return vidkingSourceIdForFlavor(aliased);
   }
   return sourceId;
 }

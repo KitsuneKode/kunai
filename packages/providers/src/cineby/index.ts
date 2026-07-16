@@ -24,9 +24,9 @@ export interface CinebyFlavor {
 }
 
 const DEFAULT_CINEBY_FLAVOR: CinebyFlavor = {
-  flavorId: "videasy-primary",
+  flavorId: "cineby-neon",
   label: "Neon",
-  server: "mb-flix",
+  server: "wings-neon2",
   audioLanguage: "en",
 };
 
