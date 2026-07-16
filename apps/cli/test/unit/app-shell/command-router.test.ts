@@ -88,6 +88,25 @@ describe("routePlaybackShellAction", () => {
       },
     ]);
   });
+
+  test("routes browse stats through the real palette route", async () => {
+    const actions: string[] = [];
+    const result = await routeSearchShellAction({
+      action: "stats",
+      container: {} as never,
+      workflows: {
+        resolveQuit: async () => "quit",
+        runSetup: async () => "handled",
+        runAction: async (action) => {
+          actions.push(action);
+          return "handled";
+        },
+      },
+    });
+
+    expect(result).toBe("handled");
+    expect(actions).toEqual(["stats"]);
+  });
 });
 
 describe("resolveCommandContext scoped surfaces", () => {

@@ -11,6 +11,7 @@ import {
 } from "./app-command-dispatcher";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { dispatchPaletteCommand } from "./dispatch-palette-command";
+import type { PaletteWorkflowPort } from "./palette-workflow-port";
 import type { ShellAction } from "./types";
 
 export {
@@ -107,9 +108,11 @@ function playbackPassthrough(action: ShellAction): RoutedActionResult | null {
 export async function routeSearchShellAction({
   action,
   container,
+  workflows,
 }: {
   action: ShellAction;
   container: Container;
+  workflows?: PaletteWorkflowPort;
 }): Promise<RoutedActionResult> {
   if (action === "trending") return "handled";
   if (action === "recommendation") return "handled";
@@ -119,7 +122,13 @@ export async function routeSearchShellAction({
   if (action === "random") return "handled";
   if (action === "surprise") return "handled";
 
-  return dispatchPaletteCommand("browse", action, container) as Promise<RoutedActionResult>;
+  return dispatchPaletteCommand(
+    "browse",
+    action,
+    container,
+    undefined,
+    workflows,
+  ) as Promise<RoutedActionResult>;
 }
 
 export async function routePlaybackShellAction({

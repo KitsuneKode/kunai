@@ -8,12 +8,11 @@ import type { Container } from "@/container";
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { historyContentType } from "@/services/continuation/history-progress";
 
+import { defaultPaletteWorkflowPort, type PaletteWorkflowPort } from "./palette-workflow-port";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import { openNotificationsOverlay, openRootOwnedOverlay } from "./root-overlay-bridge";
 import { waitForRootQueueSelection } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
-import { handleShellAction, resolveQuitWithDownloadQueue } from "./workflows";
-import { openSetupWizardFromShell } from "./workflows/setup-workflows";
 
 export type PaletteCommandSurface = "browse" | "playback" | "overlay";
 
@@ -105,11 +104,6 @@ async function routeNotificationsInbox(container: Container): Promise<PaletteCom
   return "handled";
 }
 
-async function routeSetupWizard(container: Container): Promise<PaletteCommandResult> {
-  await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
-  return "handled";
-}
-
 async function openRootHistorySelection(
   container: Container,
   reason: "continue" | "history",
@@ -188,11 +182,12 @@ export async function dispatchPaletteCommand(
   action: ShellAction,
   container: Container,
   playbackPassthrough?: (action: ShellAction) => PaletteCommandResult | null,
+  workflows: PaletteWorkflowPort = defaultPaletteWorkflowPort,
 ): Promise<PaletteCommandResult> {
   const { stateManager } = container;
 
   if (action === "quit") {
-    return (await resolveQuitWithDownloadQueue(container)) === "quit" ? "quit" : "handled";
+    return workflows.resolveQuit(container);
   }
   if (action === "toggle-mode") {
     switchSessionMode(stateManager, container.providerRegistry);
@@ -228,7 +223,7 @@ export async function dispatchPaletteCommand(
   if (action === "provider") return "provider";
   if (action === "up-next") return openRootQueueSelection(container);
   if (action === "playlists" || action === "playlist") {
-    return handleShellAction({ action: "playlists", container });
+    return workflows.runAction("playlists", container);
   }
   if (action === "continue") return openRootHistorySelection(container, "continue");
   if (action === "history") return openRootHistorySelection(container, "history");
@@ -237,7 +232,7 @@ export async function dispatchPaletteCommand(
     return "handled";
   }
   if (action === "setup") {
-    return routeSetupWizard(container);
+    return workflows.runSetup(container);
   }
 
   const passthrough = playbackPassthrough?.(action);
@@ -246,10 +241,10 @@ export async function dispatchPaletteCommand(
   }
 
   if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
-    const result = await handleShellAction({ action, container });
+    const result = await workflows.runAction(action, container);
     return result === "quit" ? "quit" : result;
   }
 
-  const result = await handleShellAction({ action, container });
+  const result = await workflows.runAction(action, container);
   return result === "quit" ? "quit" : result;
 }

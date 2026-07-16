@@ -17,7 +17,7 @@ mock.module("@/app-shell/root-queue-bridge", () => ({
   waitForRootQueueSelection: async () => null,
 }));
 
-mock.module("@/app-shell/workflows", () => ({
+mock.module("@/app-shell/workflows/shell-workflows", () => ({
   handleShellAction,
   resolveQuitWithDownloadQueue: async () => "handled" as const,
 }));
