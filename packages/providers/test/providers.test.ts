@@ -1382,9 +1382,11 @@ test("miruro pipe requests use only TLS-reachable official mirrors", () => {
 
 test("miruro episode lookup preserves network failures as provider evidence", async () => {
   const originalFetch = globalThis.fetch;
+  const originalPath = Bun.env.PATH;
   globalThis.fetch = (async () => {
     throw new TypeError("ConnectionRefused");
   }) as unknown as typeof fetch;
+  Bun.env.PATH = "";
 
   try {
     await expect(
@@ -1395,6 +1397,11 @@ test("miruro episode lookup preserves network failures as provider evidence", as
     ).rejects.toThrow("Miruro pipe network request failed");
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalPath === undefined) {
+      delete Bun.env.PATH;
+    } else {
+      Bun.env.PATH = originalPath;
+    }
   }
 });
 
