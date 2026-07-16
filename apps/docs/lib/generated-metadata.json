@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-16T00:56:49.277Z",
+  "syncedAt": "2026-07-16T10:47:03.373Z",
   "version": "0.2.6",
   "cliVersion": "0.2.6",
-  "cliSourceRevision": "b5c4a23e",
-  "cliSourceFingerprint": "cb04d7bdd72e96d4b497834b9491774a5485de3e82577cbac92b400b70ea5dd3",
-  "docsContentFingerprint": "6cc8dc8357a1f4ded6ca576fd5b4c5627ee104d91b31dcc058ff5e5a30ab29d3",
+  "cliSourceRevision": "7129b5d9",
+  "cliSourceFingerprint": "e155ca706ff8f3822f86fb18d6d266e9dc204526475b57d26c315bd7c04d4a54",
+  "docsContentFingerprint": "2ffa14d32b3d05663ef7ccc348c28579dfbec1917acaeb083d90cf015d477e7d",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 78,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -715,7 +715,7 @@
     {
       "short": "",
       "long": "--debug",
-      "description": "Verbose logging to ./logs.txt"
+      "description": "Verbose redacted logging to ./logs.txt"
     },
     {
       "short": "",

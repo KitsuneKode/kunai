@@ -1,6 +1,21 @@
 # Catalog Identity Parity (Anime ↔ Series / TMDB)
 
-Status: planned
+Status: core implemented (2026-07-16) — Phases 0–3 and 5 landed; Phase 4 UX badges and Phase 6 Fribb remain optional follow-ups.
+
+## Implementation status (2026-07-16)
+
+| Phase                            | State               | Where                                                                                                                                                                                                                         |
+| -------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — contracts, alias table       | **Landed**          | `resolveCanonicalCatalogTitleId(…, { contentClass })`, `CatalogIdGraph` (`@kunai/types`), `history_title_aliases` (data migration 025) + `HistoryTitleAliasRepository`; aliases auto-written on every history upsert/backfill |
+| 1 — CatalogIdentityService + ARM | **Landed**          | `apps/cli/src/services/catalog/arm-client.ts` (shared, AniSkip now uses it), `CatalogIdentityService.enrich`, `catalog_id_crosswalk` (cache migration 015, catalog-static TTL, misses cached)                                 |
+| 1b — seams                       | **Landed**          | Both SearchPhase selection paths enrich the picked title; ARM-proven AniList hits mark `isAnime`; AniSkip/IntroDB read the enriched bag                                                                                       |
+| 2 — history unify + backfill     | **Landed**          | Consolidator v2 (contentClass + aliases, one-shot `history_identity_consolidator_v2` marker at bootstrap); budgeted background `runHistoryIdentityEnrichBackfill` (main.ts, 10 titles/run, high-confidence only)              |
+| 3 — dual-lane resolve            | **Landed**          | `adaptResolveLane` in `stream-request-adapter.ts`; lane contract admits linked anime through series mode; `resolveTitleLaneEligibility`; crosswalk season hints wired via `PlaybackResolveService`                            |
+| 5 — episode coordinates          | **Landed**          | `packages/core/src/episode-map.ts` — fail-closed `mapAnimeEpisodeToTmdbCoordinates` / `mapTmdbEpisodeToAnimeCoordinates`                                                                                                      |
+| 4 — dual search badges           | Optional, not built | —                                                                                                                                                                                                                             |
+| 6 — Fribb offline pack           | Optional, not built | —                                                                                                                                                                                                                             |
+
+Remaining follow-ups: surface lane eligibility in the provider picker UI (uses `resolveTitleLaneEligibility`), optional dual-catalog badges, live manual smoke of the Death Note scenario (§9).
 
 Read this before unifying anime and series history units, enriching AniList/MAL ↔ TMDB/IMDB crosswalks, dual-lane provider resolve (anime content on series providers and the reverse), or promoting ARM beyond AniSkip.
 
