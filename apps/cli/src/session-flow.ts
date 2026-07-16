@@ -295,6 +295,10 @@ async function pickEpisodeSelection(
       opts.container,
       opts.currentId,
     );
+    if (episode === "switch-season") {
+      // `s` from the episode picker: reopen the season picker explicitly.
+      continue;
+    }
     if (!episode) {
       // A single-season series has no season picker to fall back to: looping
       // would re-auto-select the lone season and re-open this picker forever.

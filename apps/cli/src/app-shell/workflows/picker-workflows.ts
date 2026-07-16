@@ -164,8 +164,24 @@ export async function openEpisodePicker(
   actionContext?: ListShellActionContext,
   container?: Container,
 ): Promise<EpisodeInfo | null> {
-  const episodes = await fetchEpisodes(tmdbId, season);
-  return chooseEpisodeFromOptions(episodes ?? [], season, currentEpisode, actionContext, container);
+  let activeSeason = season;
+  let activeEpisode = currentEpisode;
+  while (true) {
+    const episodes = await fetchEpisodes(tmdbId, activeSeason);
+    const picked = await chooseEpisodeFromOptions(
+      episodes ?? [],
+      activeSeason,
+      activeEpisode,
+      actionContext,
+      container,
+      tmdbId,
+    );
+    if (picked !== "switch-season") return picked;
+    const nextSeason = await openSeasonPicker(tmdbId, activeSeason, actionContext, container);
+    if (nextSeason === null) return null;
+    activeEpisode = nextSeason === season ? currentEpisode : 1;
+    activeSeason = nextSeason;
+  }
 }
 
 export async function openAnimeEpisodePicker(

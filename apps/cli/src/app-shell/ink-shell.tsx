@@ -67,7 +67,7 @@ import {
   type RootOwnedOverlay,
 } from "./root-shell-state";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
-import { openSessionPicker } from "./session-picker";
+import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picker";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -281,30 +281,59 @@ async function openActivePlaybackEpisodePicker(
   if (!title || title.type !== "series" || !currentEpisode) return;
 
   const watchedEntries = container.historyRepository.listByTitle(title.id);
-  const picker = await buildPlaybackEpisodePickerOptions({
-    title,
-    currentEpisode,
-    isAnime: state.mode === "anime",
-    animeEpisodeCount: title.episodeCount,
-    watchedEntries,
-  });
-  if (picker.options.length === 0) return;
+  const isAnime = state.mode === "anime";
+  let pickerEpisode = currentEpisode;
 
-  const picked = await openSessionPicker(container.stateManager, {
-    type: "episode_picker",
-    season: currentEpisode.season,
-    initialIndex: picker.initialIndex,
-    options: picker.options,
-  });
-  if (!picked) return;
+  while (true) {
+    const picker = await buildPlaybackEpisodePickerOptions({
+      title,
+      currentEpisode: pickerEpisode,
+      isAnime,
+      animeEpisodeCount: title.episodeCount,
+      watchedEntries,
+    });
+    if (picker.options.length === 0) return;
 
-  const selection = decodeEpisodeSelectionValue(picked);
-  if (!selection) return;
-  if (selection.season === currentEpisode.season && selection.episode === currentEpisode.episode) {
+    const picked = await openSessionPicker(container.stateManager, {
+      type: "episode_picker",
+      season: pickerEpisode.season,
+      initialIndex: picker.initialIndex,
+      options: picker.options,
+    });
+    if (!picked) return;
+
+    if (picked === EPISODE_PICKER_SWITCH_SEASON) {
+      // `s` mid-playback: hop seasons without leaving the episode picker flow.
+      if (isAnime) continue;
+      const { fetchSeasonSummaries } = await import("@/tmdb");
+      const { chooseSeasonFromOptions } = await import("./pickers");
+      const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
+      const nextSeason = await chooseSeasonFromOptions(
+        seasons,
+        pickerEpisode.season,
+        undefined,
+        container,
+      );
+      if (nextSeason === null) return;
+      pickerEpisode =
+        nextSeason === currentEpisode.season
+          ? currentEpisode
+          : { ...pickerEpisode, season: nextSeason, episode: 1 };
+      continue;
+    }
+
+    const selection = decodeEpisodeSelectionValue(picked);
+    if (!selection) return;
+    if (
+      selection.season === currentEpisode.season &&
+      selection.episode === currentEpisode.episode
+    ) {
+      return;
+    }
+
+    await container.playerControl.selectCurrentPlaybackEpisode(selection, reason);
     return;
   }
-
-  await container.playerControl.selectCurrentPlaybackEpisode(selection, reason);
 }
 
 // =============================================================================

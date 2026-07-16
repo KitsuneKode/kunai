@@ -49,6 +49,8 @@ describe("root overlay picker model", () => {
         config: {} as KitsuneConfig,
         settingsError: null,
       }),
-    ).toBe("Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete");
+    ).toBe(
+      "Frieren: Beyond Journey's End  ·  S02  ·  2 eps  ·  50% complete  ·  s season  ·  m watched",
+    );
   });
 });

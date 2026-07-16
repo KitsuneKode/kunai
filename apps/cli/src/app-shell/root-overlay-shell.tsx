@@ -11,9 +11,11 @@ import { sortByFavorites, toggleFavoriteSource } from "@/domain/playback/source-
 import { encodeTrackSelection } from "@/domain/playback/track-capabilities";
 import {
   providerMetadataMatchesLane,
+  providerPickerLanesForTitle,
   providerPriorityForLane,
   shellModeToProviderLane,
 } from "@/domain/provider-lane";
+import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import type { SessionState } from "@/domain/session/SessionState";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
@@ -106,6 +108,7 @@ import {
 import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
+import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
 import { SettingsShell } from "./settings/SettingsShell";
 import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
@@ -430,30 +433,36 @@ export function RootOverlayShell({
   const { cols, rows } = useShellDimensions();
   const overlayInitialIndex = getRootOverlayInitialIndex(overlay);
   const rawConfig = container.config.getRaw();
-  const providerOptions = useMemo(
-    () =>
-      overlay.type === "provider_picker"
-        ? buildProviderPickerOptions({
-            providers: sortProvidersByConfigPriority({
-              providers: container.providerRegistry
-                .getAll()
-                .map((p) => p.metadata)
-                .filter((metadata) => providerMetadataMatchesLane(metadata, overlay.lane)),
-              priority: providerPriorityForLane(rawConfig, overlay.lane),
-            }),
-            currentProvider: overlay.currentProvider,
-            previewImageUrl: state.currentTitle?.posterUrl,
-            getProviderHealth: (providerId) => container.providerHealth.get(providerId),
-          })
-        : [],
-    [
-      overlay,
-      container.providerRegistry,
-      container.providerHealth,
-      rawConfig,
-      state.currentTitle?.posterUrl,
-    ],
-  );
+  const providerOptions = useMemo(() => {
+    if (overlay.type !== "provider_picker") return [];
+    // Dual-lane: a linked title (e.g. anime with a TMDB id) can also use the
+    // other lane's providers; the resolve adapter maps kind/episode.
+    const pickerLanes = providerPickerLanesForTitle(
+      overlay.lane,
+      state.currentTitle ? resolveTitleLaneEligibility(state.currentTitle) : null,
+    );
+    return buildProviderPickerOptions({
+      providers: sortProvidersByConfigPriority({
+        providers: container.providerRegistry
+          .getAll()
+          .map((p) => p.metadata)
+          .filter((metadata) =>
+            pickerLanes.some((lane) => providerMetadataMatchesLane(metadata, lane)),
+          ),
+        priority: providerPriorityForLane(rawConfig, overlay.lane),
+      }),
+      currentProvider: overlay.currentProvider,
+      previewImageUrl: state.currentTitle?.posterUrl,
+      getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+      isCrossLane: (metadata) => !providerMetadataMatchesLane(metadata, overlay.lane),
+    });
+  }, [
+    overlay,
+    container.providerRegistry,
+    container.providerHealth,
+    rawConfig,
+    state.currentTitle,
+  ]);
   const providerInitialIndex =
     overlay.type === "provider_picker"
       ? Math.max(
@@ -1466,6 +1475,24 @@ export function RootOverlayShell({
             );
           }
         }
+        return;
+      }
+      // Episode picker: `s` jumps to the season picker without hunting for Esc.
+      // Resolves the picker with a reserved value the opener maps to "switch
+      // season"; interception happens before the filter editor so it acts as a
+      // shortcut, not a typed filter character.
+      if (
+        overlay.type === "episode_picker" &&
+        input.toLowerCase() === "s" &&
+        !key.ctrl &&
+        !key.meta &&
+        overlay.id
+      ) {
+        container.stateManager.dispatch({
+          type: "RESOLVE_PICKER",
+          id: overlay.id,
+          value: EPISODE_PICKER_SWITCH_SEASON,
+        });
         return;
       }
       if (filterEditor.handleInput(input, key)) {

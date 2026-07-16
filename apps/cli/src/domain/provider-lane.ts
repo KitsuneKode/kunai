@@ -49,6 +49,27 @@ export function providerMetadataMatchesLane(
   return !metadata.isAnimeProvider && !metadata.isYoutubeProvider;
 }
 
+/**
+ * Lanes the provider picker should offer: the mode's own lane plus any
+ * cross-lane the active title's id bag unlocks (dual-lane resolve). A linked
+ * anime (AniList unit with a TMDB id) can pick series providers and the
+ * reverse; the resolve adapter maps kind/episode at request time.
+ */
+export function providerPickerLanesForTitle(
+  lane: ProviderLane,
+  eligibility: {
+    readonly anime: boolean;
+    readonly series: boolean;
+    readonly youtube: boolean;
+  } | null,
+): readonly ProviderLane[] {
+  if (lane === "youtube" || !eligibility || eligibility.youtube) return [lane];
+  const lanes: ProviderLane[] = [lane];
+  if (lane === "anime" && eligibility.series) lanes.push("series");
+  if (lane === "series" && eligibility.anime) lanes.push("anime");
+  return lanes;
+}
+
 export function providerPriorityForLane(
   config: {
     readonly provider: string;

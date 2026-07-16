@@ -1,6 +1,6 @@
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
-import { openSessionPicker } from "@/app-shell/session-picker";
+import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "@/app-shell/session-picker";
 import { describeEpisodeWatchPresentation } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import type { OverlayPickerOption } from "@/domain/session/SessionState";
@@ -162,6 +162,9 @@ export async function buildEpisodePickerOptions({
   });
 }
 
+/** Reserved result: the user pressed `s` in the episode picker to change season. */
+export type EpisodePickerResult = EpisodeInfo | "switch-season" | null;
+
 export async function chooseEpisodeFromOptions(
   episodes: readonly EpisodeInfo[],
   season: number,
@@ -169,7 +172,7 @@ export async function chooseEpisodeFromOptions(
   actionContext?: ListShellActionContext,
   container?: Container,
   titleId?: string,
-): Promise<EpisodeInfo | null> {
+): Promise<EpisodePickerResult> {
   if (episodes.length === 0) return null;
 
   const options = await buildEpisodePickerOptions({
@@ -199,6 +202,7 @@ export async function chooseEpisodeFromOptions(
       options,
     });
     if (!picked) return null;
+    if (picked === EPISODE_PICKER_SWITCH_SEASON) return "switch-season";
     return episodes.find((episode) => String(episode.number) === picked) ?? null;
   }
 

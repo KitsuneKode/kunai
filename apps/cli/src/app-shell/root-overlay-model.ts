@@ -130,6 +130,7 @@ export function getRootOverlaySubtitle({
     const progress = total > 0 ? Math.round((watched / total) * 100) : 0;
     const parts = [seriesName, `S${String(overlay.season).padStart(2, "0")}`, `${total} eps`];
     if (progress > 0) parts.push(`${progress}% complete`);
+    parts.push("s season", "m watched");
     return parts.join("  ·  ");
   }
   if (overlay.type === "subtitle_picker") return `${overlay.options.length} tracks available`;

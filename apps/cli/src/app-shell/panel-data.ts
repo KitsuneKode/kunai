@@ -696,11 +696,14 @@ export function buildProviderPickerOptions({
   currentProvider,
   previewImageUrl,
   getProviderHealth,
+  isCrossLane,
 }: {
   providers: readonly ProviderMetadata[];
   currentProvider: string;
   previewImageUrl?: string;
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  /** Provider comes from the other lane, unlocked by the title's linked catalog ids. */
+  isCrossLane?: (metadata: ProviderMetadata) => boolean;
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => {
     const effective = getProviderHealth
@@ -709,6 +712,7 @@ export function buildProviderPickerOptions({
     const healthBadge = formatProviderHealthBadge(effective ?? undefined);
     const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined);
     const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
+    const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
     const baseDetail = formatProviderDetail(provider);
     const baseLabel =
       provider.id === currentProvider
@@ -717,7 +721,7 @@ export function buildProviderPickerOptions({
     return {
       value: provider.id,
       label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
-      detail: [baseDetail, healthDetail].filter(Boolean).join("  ·  "),
+      detail: [baseDetail, healthDetail, crossLaneDetail].filter(Boolean).join("  ·  "),
       previewImageUrl,
     };
   });

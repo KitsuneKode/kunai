@@ -20,6 +20,14 @@ type PickerOverlayInput =
 
 export type SessionPickerOverlay = PickerModalOverlayState;
 
+/**
+ * Reserved episode-picker resolution: the user pressed `s` to switch seasons.
+ * Callers that open an episode picker should treat this value as "open the
+ * season picker and re-open episodes", never as an episode number. Callers
+ * that don't know it fail safe: it decodes as no valid episode → cancel.
+ */
+export const EPISODE_PICKER_SWITCH_SEASON = "__kunai:switch-season__";
+
 let pickerSequence = 0;
 
 export function createSessionPickerId(prefix: string): string {
