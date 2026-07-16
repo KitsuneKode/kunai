@@ -338,6 +338,7 @@ function buildSourceCandidates(result: ProviderResolveResult): readonly Provider
   const catalog = getKnownCatalogForProvider(result.providerId, {
     mediaKind: result.trace.title.kind,
     audioMode: resolveAudioModeFromResult(result),
+    availableAudioModes: availableAudioModesFromTrace(result),
     rivestreamServices: rivestreamServicesFromResult(result),
   });
   const hasDiscoveredCatalogSource = catalog.some(

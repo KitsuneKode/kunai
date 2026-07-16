@@ -20,6 +20,8 @@ export * from "./vidlink";
 export type KnownCatalogContext = {
   readonly mediaKind?: string;
   readonly audioMode?: "sub" | "dub";
+  /** Audio categories actually available for this title (gates phantom rows). */
+  readonly availableAudioModes?: readonly ("sub" | "dub")[];
   readonly rivestreamServices?: readonly string[];
 };
 
@@ -31,7 +33,11 @@ export function getKnownCatalogForProvider(
     case VIDEOSY_PROVIDER_ID:
       return getVideasyKnownCatalog(context.mediaKind);
     case MIRURO_PROVIDER_ID:
-      return getMiruroKnownCatalog();
+      return getMiruroKnownCatalog(
+        context.availableAudioModes && context.availableAudioModes.length > 0
+          ? context.availableAudioModes
+          : [context.audioMode ?? "sub"],
+      );
     case ALLANIME_PROVIDER_ID:
       return getAllmangaKnownCatalog(context.audioMode ?? "sub");
     case RIVESTREAM_PROVIDER_ID:

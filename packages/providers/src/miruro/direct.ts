@@ -935,33 +935,33 @@ async function fetchMiruroPipeBody(
   readonly xObfuscated: string | null;
 }> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
-  try {
-    const response = await requester(url, {
-      signal: signal ?? AbortSignal.timeout(8_000),
-      headers,
-    });
-    const text = await response.text();
-    if (response.ok && isMiruroObfuscatedPipeBody(text, response.headers.get("x-obfuscated"))) {
-      return {
-        status: response.status,
-        text,
-        xObfuscated: response.headers.get("x-obfuscated"),
-      };
-    }
-    // Fall through to curl on WAF HTML / empty / non-obfuscated bodies.
-    if (
-      response.ok &&
-      !isCloudflareHtmlBody(text) &&
-      !isMiruroObfuscatedPipeBody(text, response.headers.get("x-obfuscated"))
-    ) {
-      return {
-        status: response.status,
-        text,
-        xObfuscated: response.headers.get("x-obfuscated"),
-      };
-    }
-  } catch {
-    // try curl path
+  const response = await requester(url, {
+    signal: signal ?? AbortSignal.timeout(8_000),
+    headers,
+  });
+  const responseText = await response.text();
+  if (
+    response.ok &&
+    isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
+  ) {
+    return {
+      status: response.status,
+      text: responseText,
+      xObfuscated: response.headers.get("x-obfuscated"),
+    };
+  }
+  // Curl is a response-level Cloudflare fallback, not a retry for transport
+  // failures. Request exceptions propagate to pipeCall's next-mirror loop.
+  if (
+    response.ok &&
+    !isCloudflareHtmlBody(responseText) &&
+    !isMiruroObfuscatedPipeBody(responseText, response.headers.get("x-obfuscated"))
+  ) {
+    return {
+      status: response.status,
+      text: responseText,
+      xObfuscated: response.headers.get("x-obfuscated"),
+    };
   }
 
   const curlPath = Bun.which("curl");

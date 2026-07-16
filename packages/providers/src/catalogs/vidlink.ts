@@ -6,7 +6,6 @@ export function getVidlinkKnownCatalog(): readonly KnownCatalogEntry[] {
     {
       sourceId: `source:${VIDLINK_PROVIDER_ID}:${VIDLINK_PROVIDER_ID}`,
       label: "VidLink",
-      subtitle: "English · direct-http",
       audioLanguage: "en",
       host: "vidlink.pro",
       metadata: {

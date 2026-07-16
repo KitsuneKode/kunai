@@ -33,18 +33,31 @@ export function mergeKnownCatalogSources({
   catalog,
   cachePolicy,
 }: MergeKnownCatalogSourcesInput): readonly ProviderSourceCandidate[] {
-  const byId = new Map(sources.map((source) => [source.id, source]));
+  const discoveredById = new Map(sources.map((source) => [source.id, source]));
+  const ordered: ProviderSourceCandidate[] = [];
+  const seen = new Set<string>();
 
+  // Emit discovered real sources in discovery order first so the picker reflects
+  // what the provider actually returned — with their real labels, hosts and
+  // statuses — rather than collapsing everything onto static catalog rows.
+  for (const source of discoveredById.values()) {
+    ordered.push(source);
+    seen.add(source.id);
+  }
+
+  // Then append known-but-undiscovered catalog entries as "skipped" placeholders
+  // (Fresh resolve required) so the user can still manually try a known mirror
+  // that the live response didn't surface.
   for (const entry of catalog) {
     if (mediaKind === "series" && entry.moviesOnly) continue;
-    if (byId.has(entry.sourceId)) continue;
-    byId.set(entry.sourceId, {
+    if (seen.has(entry.sourceId)) continue;
+    const placeholder: ProviderSourceCandidate = {
       id: entry.sourceId,
       providerId,
       kind: entry.kind ?? "provider-api",
       label: entry.label,
       host: entry.host,
-      status: "skipped",
+      status: "skipped" as const,
       confidence: entry.confidence ?? 0.4,
       cachePolicy,
       metadata: {
@@ -57,7 +70,7 @@ export function mergeKnownCatalogSources({
       languageEvidence: entry.audioLanguage
         ? [
             {
-              role: "audio",
+              role: "audio" as const,
               normalizedLanguage: entry.audioLanguage,
               nativeLabel: entry.subtitle ?? entry.label,
               sourceId: entry.sourceId,
@@ -65,24 +78,9 @@ export function mergeKnownCatalogSources({
             },
           ]
         : undefined,
-    });
-  }
-
-  const ordered: ProviderSourceCandidate[] = [];
-  const seen = new Set<string>();
-
-  for (const entry of catalog) {
-    if (mediaKind === "series" && entry.moviesOnly) continue;
-    const source = byId.get(entry.sourceId);
-    if (!source) continue;
-    ordered.push(source);
+    };
+    ordered.push(placeholder);
     seen.add(entry.sourceId);
-  }
-
-  for (const source of byId.values()) {
-    if (!seen.has(source.id)) {
-      ordered.push(source);
-    }
   }
 
   return ordered;

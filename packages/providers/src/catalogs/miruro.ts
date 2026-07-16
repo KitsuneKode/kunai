@@ -28,26 +28,34 @@ export function miruroInventorySourceId(
   return `source:${MIRURO_PROVIDER_ID}:pipe:${serverId}:${audioCategory}`;
 }
 
+/**
+ * Catalog rows only enumerate audio categories the title actually exposes, so the
+ * picker never shows phantom sub/dub rows for a category the source can't serve.
+ * `subtitleMode` mirrors the resolve-time default (sub → hard sub; dub → unknown
+ * until the sources pipe returns soft/hard evidence) so placeholder wording matches
+ * what a real resolve would surface.
+ */
 export function getMiruroKnownCatalog(
   audioCategories: readonly MiruroAudioCategory[] = ["sub", "dub"],
 ): readonly KnownCatalogEntry[] {
+  const enabled = new Set(audioCategories);
+  const allCategories: readonly MiruroAudioCategory[] = ["sub", "dub"];
+  const categories = allCategories.filter((category) => enabled.has(category));
   const entries: KnownCatalogEntry[] = [];
   for (const serverId of DEFAULT_SERVERS) {
     const serverLabel =
       normalizeProviderDisplayLabel(serverId) ??
       serverId.charAt(0).toUpperCase() + serverId.slice(1).toLowerCase();
     const themes = MIRURO_THEME_DETAIL[serverId];
-    for (const audioCategory of audioCategories) {
+    for (const audioCategory of categories) {
       const themeDetail = audioCategory === "dub" ? themes?.dub : themes?.sub;
-      // Subtitle mode is unknown until the sources pipe returns soft/hard evidence.
-      const subtitleMode = "unknown" as const;
+      const subtitleMode: "hard" | "unknown" = audioCategory === "sub" ? "hard" : "unknown";
       const flavorArchetype = formatAnimeSourceArchetype({
         audio: audioCategory,
         detail: themeDetail ?? serverLabel,
       });
       entries.push({
         sourceId: miruroInventorySourceId(serverId, audioCategory),
-        // Match resolve-time labels (subtitle mode unknown until sources pipe returns).
         label: formatAnimeSourceLabel({
           audio: audioCategory,
           serverLabel,

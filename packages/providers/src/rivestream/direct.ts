@@ -469,7 +469,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
           kind: "provider-api",
           selected: true,
           cachePolicy,
-          label: displayRivestreamProviderLabel(serverUsed),
+          label: displayRivestreamSourceLabel(serverUsed),
           confidence: 0.95,
         }),
         requiresRuntime: "direct-http" as const,
@@ -557,7 +557,7 @@ function buildRivestreamCycleCandidates(
   preferredSourceId?: string,
 ): readonly ProviderCycleCandidate[] {
   return providers.map((provider, index) => {
-    const displayLabel = displayRivestreamProviderLabel(provider);
+    const displayLabel = displayRivestreamSourceLabel(provider);
     const audioSubtitle = inferRivestreamAudioSubtitle(provider);
     const sourceId = providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
     return {
@@ -586,7 +586,7 @@ function buildRivestreamSourceInventoryCandidates(
     const sourceId = candidate.sourceId;
     const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
     if (!sourceId || !provider) return [];
-    const displayLabel = displayRivestreamProviderLabel(provider);
+    const displayLabel = displayRivestreamSourceLabel(provider);
     const audioSubtitle = inferRivestreamAudioSubtitle(provider);
     return [
       {
@@ -692,7 +692,7 @@ async function resolveRivestreamProviderCandidate({
   readonly episode: number;
   readonly secretKey: string;
 }): Promise<RivestreamResolvedCandidate> {
-  const displayLabel = displayRivestreamProviderLabel(provider);
+  const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
   const sourceId =
     candidate.sourceId ?? providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
@@ -840,6 +840,19 @@ function rivestreamFailureClassFromProviderError(
 
 function displayRivestreamProviderLabel(provider: string): string {
   return normalizeProviderDisplayLabel(provider) ?? provider;
+}
+
+/** Short uppercase tag for the inferred audio language, e.g. "EN", "HI". */
+function rivestreamAudioLanguageTag(provider: string): string | undefined {
+  const language = inferRivestreamAudioLanguage(provider, undefined);
+  return language ? language.toUpperCase() : undefined;
+}
+
+/** Human source label that also carries the inferred audio language at a glance. */
+function displayRivestreamSourceLabel(provider: string): string {
+  const label = displayRivestreamProviderLabel(provider);
+  const tag = rivestreamAudioLanguageTag(provider);
+  return tag ? `${label} · ${tag}` : label;
 }
 
 function inferRivestreamAudioSubtitle(provider: string): string {

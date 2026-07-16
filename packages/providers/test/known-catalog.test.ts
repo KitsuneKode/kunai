@@ -54,9 +54,15 @@ test("mergeKnownCatalogSources preserves resolved sources and fills missing cata
   expect(merged.find((source) => source.id === "source:videasy:flavor:beta")?.label).toBe(
     "Beta resolved",
   );
-  expect(merged.some((source) => source.id === "source:videasy:flavor:alpha")).toBe(true);
+  expect(merged.find((source) => source.id === "source:videasy:flavor:alpha")).toMatchObject({
+    label: "Alpha",
+    status: "skipped",
+    metadata: {
+      pickerHint: "Fresh resolve required to try this source.",
+    },
+  });
   expect(merged.map((source) => source.id)).toEqual([
-    "source:videasy:flavor:alpha",
     "source:videasy:flavor:beta",
+    "source:videasy:flavor:alpha",
   ]);
 });

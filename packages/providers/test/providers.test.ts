@@ -919,7 +919,7 @@ test("rivestream evidence fixture preserves provider server label and normalized
     expect.arrayContaining(["source:start", "source:success", "provider:success"]),
   );
   expect(result.sources?.[0]).toMatchObject({
-    label: expected.serverLabel,
+    label: `${expected.serverLabel} · ${expected.normalizedLanguage.toUpperCase()}`,
     sourceEvidence: [
       expect.objectContaining({
         nativeLabel: expected.serverLabel,
@@ -1381,28 +1381,21 @@ test("miruro pipe requests use only TLS-reachable official mirrors", () => {
 });
 
 test("miruro episode lookup preserves network failures as provider evidence", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalPath = Bun.env.PATH;
-  globalThis.fetch = (async () => {
-    throw new TypeError("ConnectionRefused");
-  }) as unknown as typeof fetch;
-  Bun.env.PATH = "";
-
-  try {
-    await expect(
-      getMiruroEpisodesResponse(
-        { providerId: "miruro", now: () => new Date().toISOString() },
-        "999001",
-      ),
-    ).rejects.toThrow("Miruro pipe network request failed");
-  } finally {
-    globalThis.fetch = originalFetch;
-    if (originalPath === undefined) {
-      delete Bun.env.PATH;
-    } else {
-      Bun.env.PATH = originalPath;
-    }
-  }
+  await expect(
+    getMiruroEpisodesResponse(
+      {
+        providerId: "miruro",
+        now: () => new Date().toISOString(),
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => {
+            throw new TypeError("ConnectionRefused");
+          },
+        },
+      },
+      "999001",
+    ),
+  ).rejects.toThrow("Miruro pipe network request failed: ConnectionRefused");
 });
 
 test("negative fixture maps blocked vidking host to structured failure", async () => {

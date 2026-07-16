@@ -17,11 +17,19 @@ test("getMiruroKnownCatalog exposes separate sub and dub rows per server", () =>
   expect(kiwiSub).toBeDefined();
   expect(kiwiDub).toBeDefined();
   expect(kiwiSub?.sourceId).not.toBe(kiwiDub?.sourceId);
-  expect(kiwiSub?.label).toBe("Sub · Kiwi · subtitles unknown");
+  expect(kiwiSub?.label).toBe("Sub · Kiwi · hard sub");
   expect(kiwiDub?.label).toBe("Dub · Kiwi · subtitles unknown");
   expect(kiwiSub?.subtitle).toBe("Gintoki · sub");
   expect(kiwiDub?.subtitle).toBe("Kagura · dub");
   expect(kiwiSub?.host).toBe("www.miruro.bz");
+});
+
+test("getMiruroKnownCatalog only exposes audio categories confirmed for the title", () => {
+  const catalog = getMiruroKnownCatalog(["sub"]);
+
+  expect(catalog.length).toBeGreaterThan(0);
+  expect(catalog.every((entry) => entry.sourceId.endsWith(":sub"))).toBe(true);
+  expect(catalog.some((entry) => entry.sourceId.endsWith(":dub"))).toBe(false);
 });
 
 test("allmanga and miruro catalogs share Sub/Dub · Server · mode labels", () => {
