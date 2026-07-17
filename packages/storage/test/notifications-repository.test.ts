@@ -56,6 +56,26 @@ test("NotificationRepository: paginates active notifications", () => {
   expect(r.listActive(2, 4)).toHaveLength(1);
 });
 
+test("NotificationRepository: complete lists return every row beyond the limited page", () => {
+  const r = repo();
+  r.upsert(base("active-1", "2026-07-16T01:00:00.000Z"));
+  r.upsert(base("active-2", "2026-07-16T02:00:00.000Z"));
+  r.upsert(base("active-3", "2026-07-16T03:00:00.000Z"));
+  r.upsert(base("archived-1", "2026-07-16T04:00:00.000Z"));
+  r.upsert(base("archived-2", "2026-07-16T05:00:00.000Z"));
+  // archive() replaces updated_at with the archive timestamp.
+  r.archive("archived-1", "2026-07-16T06:00:00.000Z");
+  r.archive("archived-2", "2026-07-16T07:00:00.000Z");
+
+  expect(r.listActive(2, 0)).toHaveLength(2);
+  expect(r.listAllActive().map((row) => row.dedupKey)).toEqual([
+    "active-3",
+    "active-2",
+    "active-1",
+  ]);
+  expect(r.listAllArchived().map((row) => row.dedupKey)).toEqual(["archived-2", "archived-1"]);
+});
+
 test("NotificationRepository: delete removes a single notification permanently", () => {
   const r = repo();
   r.upsert(base("a", "2026-06-14T01:00:00.000Z"));

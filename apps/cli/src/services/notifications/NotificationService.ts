@@ -77,6 +77,14 @@ export class NotificationService {
     return this.deps.repo.listArchived(limit, offset);
   }
 
+  listAllActive(): NotificationRecord[] {
+    return this.deps.repo.listAllActive();
+  }
+
+  listAllArchived(): NotificationRecord[] {
+    return this.deps.repo.listAllArchived();
+  }
+
   countUnread(): number {
     return this.deps.repo.countUnread();
   }

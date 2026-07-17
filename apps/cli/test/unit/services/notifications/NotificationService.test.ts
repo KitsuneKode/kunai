@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 
 import { NotificationService } from "@/services/notifications/NotificationService";
-import { NotificationRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
+import {
+  NotificationRepository,
+  openKunaiDatabase,
+  runMigrations,
+  type NotificationRecord,
+} from "@kunai/storage";
 
 test("NotificationService stores derived notices and lists active inbox rows", () => {
   const db = openKunaiDatabase(":memory:");
@@ -102,6 +107,46 @@ test("delete is sticky: a re-emitted signal does not resurrect a deleted notific
   expect(service.listActive().map((n) => n.dedupKey)).toEqual(["queue-recoverable:q2"]);
 
   db.close();
+});
+
+test("NotificationService passes complete inbox lists through and keeps limited paging", () => {
+  const record = (dedupKey: string): NotificationRecord => ({
+    id: dedupKey,
+    dedupKey,
+    kind: "new-episode",
+    title: `T ${dedupKey}`,
+    body: "b",
+    createdAt: "2026-07-16T00:00:00.000Z",
+    updatedAt: "2026-07-16T00:00:00.000Z",
+  });
+
+  const listActiveCalls: Array<readonly [number, number]> = [];
+  const repoDouble = {
+    listActive: (limit: number, offset: number) => {
+      listActiveCalls.push([limit, offset] as const);
+      return [record("active-3"), record("active-2")].slice(0, limit);
+    },
+    listAllActive: () => [record("active-3"), record("active-2"), record("active-1")],
+    listAllArchived: () => [record("archived-2"), record("archived-1")],
+  } as unknown as NotificationRepository;
+
+  const service = new NotificationService({
+    repo: repoDouble,
+    getMutedTitleIds: () => new Set(),
+  });
+
+  expect(service.listAllActive().map((row) => row.dedupKey)).toEqual([
+    "active-3",
+    "active-2",
+    "active-1",
+  ]);
+  expect(service.listAllArchived().map((row) => row.dedupKey)).toEqual([
+    "archived-2",
+    "archived-1",
+  ]);
+
+  expect(service.listActive(2)).toHaveLength(2);
+  expect(listActiveCalls).toEqual([[2, 0]]);
 });
 
 test("NotificationService lifecycle: records, counts unread, archives", () => {

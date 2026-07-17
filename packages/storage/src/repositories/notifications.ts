@@ -124,6 +124,28 @@ export class NotificationRepository {
       .map(mapNotificationRow);
   }
 
+  listAllActive(): NotificationRecord[] {
+    return this.db
+      .query<NotificationRow, []>(
+        `SELECT * FROM notifications
+         WHERE archived_at IS NULL
+         ORDER BY updated_at DESC`,
+      )
+      .all()
+      .map(mapNotificationRow);
+  }
+
+  listAllArchived(): NotificationRecord[] {
+    return this.db
+      .query<NotificationRow, []>(
+        `SELECT * FROM notifications
+         WHERE archived_at IS NOT NULL
+         ORDER BY updated_at DESC`,
+      )
+      .all()
+      .map(mapNotificationRow);
+  }
+
   countActive(): number {
     return (
       this.db
