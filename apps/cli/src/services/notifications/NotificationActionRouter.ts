@@ -37,13 +37,39 @@ export interface RunNotificationActionInput {
   readonly confirmedContextSwitch?: boolean;
 }
 
+export type NotificationActionRunResult =
+  | { readonly status: "handled"; readonly actionId: NotificationActionId }
+  | {
+      readonly status: "unsupported";
+      readonly actionId: NotificationActionId;
+      readonly reason: string;
+    };
+
+function handled(actionId: NotificationActionId): NotificationActionRunResult {
+  return { status: "handled", actionId };
+}
+
+function unsupported(actionId: NotificationActionId): NotificationActionRunResult {
+  return {
+    status: "unsupported",
+    actionId,
+    reason: `No executor registered for ${actionId}`,
+  };
+}
+
 export class NotificationActionRouter {
   constructor(private readonly deps: NotificationActionRouterDeps) {}
 
-  async run(input: RunNotificationActionInput): Promise<void> {
+  /**
+   * Executes the stored notification action and reports whether an executor
+   * actually handled it. Only the stored `dismiss` action mutates notification
+   * lifecycle state here; every other outcome (mark-read on success) is the
+   * caller's policy.
+   */
+  async run(input: RunNotificationActionInput): Promise<NotificationActionRunResult> {
     if (input.actionId === "dismiss") {
       await this.deps.notifications.dismiss(input.notification.dedupKey);
-      return;
+      return handled(input.actionId);
     }
 
     if (input.actionId === "restore-queue") {
@@ -51,20 +77,17 @@ export class NotificationActionRouter {
       if (!queueSessionId) {
         throw new Error("restore-queue requires a queue session id");
       }
-      await this.deps.playlist?.restoreRecoverableSession(queueSessionId);
-      await this.deps.notifications.dismiss(input.notification.dedupKey);
-      return;
+      const restore = this.deps.playlist?.restoreRecoverableSession;
+      if (!restore) return unsupported(input.actionId);
+      await restore(queueSessionId);
+      return handled(input.actionId);
     }
 
-    // App-update opens the release page for the advertised version, then clears
-    // the notification. With no appUpdate handler wired it stays a no-op so the
-    // notice persists until archived.
     if (input.actionId === "update-app") {
-      if (this.deps.appUpdate) {
-        await this.deps.appUpdate.openReleasePage(parseAppUpdateVersion(input.notification));
-        await this.deps.notifications.dismiss(input.notification.dedupKey);
-      }
-      return;
+      const openReleasePage = this.deps.appUpdate?.openReleasePage;
+      if (!openReleasePage) return unsupported(input.actionId);
+      await openReleasePage(parseAppUpdateVersion(input.notification));
+      return handled(input.actionId);
     }
 
     const item = parseMediaItem(input.notification);
@@ -76,13 +99,22 @@ export class NotificationActionRouter {
     const mediaActionId: MediaActionId =
       input.actionId === "retry-download" ? "download" : input.actionId;
 
-    await this.deps.mediaActions?.run({
+    const runMediaAction = this.deps.mediaActions?.run;
+    if (!runMediaAction) return unsupported(input.actionId);
+    const result = await runMediaAction({
       actionId: mediaActionId,
       item,
       source: "notification",
       playbackActive: input.playbackActive,
       confirmedContextSwitch: input.confirmedContextSwitch,
     });
+    return result.status === "handled"
+      ? handled(input.actionId)
+      : {
+          status: "unsupported",
+          actionId: input.actionId,
+          reason: result.reason,
+        };
   }
 }
 

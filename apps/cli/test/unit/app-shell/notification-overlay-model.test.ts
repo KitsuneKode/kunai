@@ -3,7 +3,10 @@ import { expect, test } from "bun:test";
 import {
   buildNotificationActionOptions,
   buildNotificationPickerOptions,
+  getExecutableNotificationActions,
+  getNotificationActionPresentation,
   getNotificationPrimaryAction,
+  getNotificationTone,
 } from "@/app-shell/notification-overlay-model";
 import type { NotificationRecord } from "@kunai/storage";
 
@@ -59,6 +62,59 @@ test("notification action menu exposes explicit safe row actions", () => {
       tone: "neutral",
     },
   ]);
+});
+
+test("retry-download and update-app are executable primary actions with copy", () => {
+  const downloadFailed = {
+    ...base,
+    kind: "download-failed",
+    actionJson: JSON.stringify(["retry-download", "dismiss"]),
+  };
+  const appUpdate = {
+    ...base,
+    kind: "app-update",
+    dedupKey: "app-update:1.4.0",
+    actionJson: JSON.stringify(["update-app", "dismiss"]),
+  };
+
+  expect(getNotificationPrimaryAction(downloadFailed)).toBe("retry-download");
+  expect(getNotificationPrimaryAction(appUpdate)).toBe("update-app");
+  expect(getNotificationActionPresentation("retry-download").label).toBe("Retry download");
+  expect(getNotificationActionPresentation("update-app").label).toBe("Open release page");
+  expect(getNotificationActionPresentation("retry-download").tone).toBe("warning");
+  expect(getNotificationActionPresentation("retry-download").detail).toBe(
+    "Retry this item through the standard download action",
+  );
+  expect(getNotificationActionPresentation("update-app").detail).toBe(
+    "Open the release page for the advertised Kunai version",
+  );
+});
+
+test("malformed stored actions collapse to a dismiss-only notice", () => {
+  const malformedActions = { ...base, actionJson: "{not json" };
+
+  expect(getExecutableNotificationActions(malformedActions)).toEqual([]);
+  expect(getNotificationPrimaryAction(malformedActions)).toBe("dismiss");
+});
+
+test("unknown kinds keep valid stored actions and neutral presentation", () => {
+  const futureKind = {
+    ...base,
+    kind: "future-kind",
+    actionJson: JSON.stringify(["queue-end", "dismiss", "not-a-real-action"]),
+  };
+
+  expect(getExecutableNotificationActions(futureKind)).toEqual(["queue-end", "dismiss"]);
+  expect(getNotificationTone("future-kind")).toBe("neutral");
+  expect(getNotificationActionPresentation("queue-end").tone).toBe("neutral");
+});
+
+test("kind tones map attention semantics to shell status tones", () => {
+  expect(getNotificationTone("queue-recovery")).toBe("warning");
+  expect(getNotificationTone("download-failed")).toBe("error");
+  expect(getNotificationTone("new-episode")).toBe("success");
+  expect(getNotificationTone("download-complete")).toBe("success");
+  expect(getNotificationTone("app-update")).toBe("info");
 });
 
 test("notification action menu exposes actions the root overlay can execute", () => {

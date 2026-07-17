@@ -7,6 +7,8 @@ import type { NotificationRecord } from "@/services/storage/storage-read-models"
 
 const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
   "restore-queue",
+  "retry-download",
+  "update-app",
   "queue-next",
   "queue-after-current-chain",
   "queue-end",
@@ -50,25 +52,19 @@ export function getNotificationPrimaryAction(
   notification: NotificationRecord,
 ): NotificationActionId {
   return (
-    parseExecutableNotificationActions(notification).find((action) => action !== "dismiss") ??
+    getExecutableNotificationActions(notification).find((action) => action !== "dismiss") ??
     "dismiss"
   );
 }
 
-export function buildNotificationActionOptions(
-  notification: NotificationRecord,
-): readonly ShellPickerOption<NotificationActionId>[] {
-  const actions = parseExecutableNotificationActions(notification);
-  const normalized = actions.length > 0 ? actions : (["dismiss"] as const);
-  return normalized.map((action) => ({
-    value: action,
-    label: getNotificationActionLabel(action),
-    detail: getNotificationActionDetail(action),
-    tone: action === "restore-queue" ? "warning" : action === "download" ? "success" : "neutral",
-  }));
-}
+export type NotificationActionPresentation = {
+  readonly id: NotificationActionId;
+  readonly label: string;
+  readonly detail: string;
+  readonly tone: ShellStatusTone;
+};
 
-function parseExecutableNotificationActions(
+export function getExecutableNotificationActions(
   notification: NotificationRecord,
 ): readonly NotificationActionId[] {
   return parseNotificationActionIds(notification).filter((action) =>
@@ -76,10 +72,44 @@ function parseExecutableNotificationActions(
   );
 }
 
-function getNotificationTone(kind: string): ShellStatusTone {
+export function getNotificationActionPresentation(
+  action: NotificationActionId,
+): NotificationActionPresentation {
+  return {
+    id: action,
+    label: getNotificationActionLabel(action),
+    detail: getNotificationActionDetail(action),
+    tone:
+      action === "restore-queue" || action === "retry-download"
+        ? "warning"
+        : action === "download"
+          ? "success"
+          : "neutral",
+  };
+}
+
+export function buildNotificationActionOptions(
+  notification: NotificationRecord,
+): readonly ShellPickerOption<NotificationActionId>[] {
+  const actions = getExecutableNotificationActions(notification);
+  const normalized = actions.length > 0 ? actions : (["dismiss"] as const);
+  return normalized.map((action) => {
+    const presentation = getNotificationActionPresentation(action);
+    return {
+      value: presentation.id,
+      label: presentation.label,
+      detail: presentation.detail,
+      tone: presentation.tone,
+    };
+  });
+}
+
+export function getNotificationTone(kind: string): ShellStatusTone {
   if (kind === "queue-recovery") return "warning";
-  if (kind === "new-episode") return "success";
-  return "info";
+  if (kind === "download-failed") return "error";
+  if (kind === "new-episode" || kind === "download-complete") return "success";
+  if (kind === "app-update") return "info";
+  return "neutral";
 }
 
 function getNotificationActionBadge(action: NotificationActionId): string {
@@ -93,6 +123,8 @@ function getNotificationActionBadge(action: NotificationActionId): string {
 
 function getNotificationActionLabel(action: NotificationActionId): string {
   if (action === "restore-queue") return "Restore queue";
+  if (action === "retry-download") return "Retry download";
+  if (action === "update-app") return "Open release page";
   if (action === "queue-next") return "Queue next";
   if (action === "queue-after-current-chain") return "Queue after current series";
   if (action === "queue-end") return "Queue at end";
@@ -112,6 +144,8 @@ function getNotificationActionLabel(action: NotificationActionId): string {
 function getNotificationActionDetail(action: NotificationActionId): string {
   if (action === "restore-queue")
     return "Restore pending items into the current queue without autoplay";
+  if (action === "retry-download") return "Retry this item through the standard download action";
+  if (action === "update-app") return "Open the release page for the advertised Kunai version";
   if (action === "queue-next") return "Place this item next without replacing playback";
   if (action === "queue-after-current-chain")
     return "Place this item after the current series chain";
