@@ -9,8 +9,8 @@ import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
 import type { ResolvedRootContent, RootContentSession } from "./root-content-state";
+import { RootOverlayLoader } from "./root-overlay-loader";
 import { getRootOverlayResetKey } from "./root-overlay-model";
-import { RootOverlayShell } from "./root-overlay-shell";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
 
@@ -36,7 +36,7 @@ export function renderRootOverlayContent(
   ctx: Pick<RootContentRendererContext, "container" | "state" | "clearShellScreen">,
 ): React.ReactElement {
   return (
-    <RootOverlayShell
+    <RootOverlayLoader
       key={getRootOverlayResetKey(overlay)}
       overlay={overlay}
       state={ctx.state}

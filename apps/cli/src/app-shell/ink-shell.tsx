@@ -59,13 +59,7 @@ import {
   resolveRootContentFromSession,
   useRootContentSession,
 } from "./root-content-state";
-import { getRootOverlayResetKey } from "./root-overlay-model";
-import { RootOverlayShell } from "./root-overlay-shell";
-import {
-  getRootOwnedOverlay,
-  resolveRootShellSurface,
-  type RootOwnedOverlay,
-} from "./root-shell-state";
+import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picker";
 import {
@@ -339,11 +333,6 @@ async function openActivePlaybackEpisodePicker(
 // =============================================================================
 // STATE-DRIVEN APP HOST
 // =============================================================================
-
-/** Library/queue overlays own their chrome; stacking them under pickers duplicates footers. */
-function shouldStackOverlayUnderRootContent(overlay: RootOwnedOverlay): boolean {
-  return overlay.type !== "library" && overlay.type !== "downloads";
-}
 
 /**
  * Hook to subscribe to the global session state.
@@ -1141,20 +1130,6 @@ function AppRoot({ container }: { container: Container }) {
             }}
           />
         </Box>
-
-        {rootSurface === "root-content" &&
-        rootOverlay &&
-        shouldStackOverlayUnderRootContent(rootOverlay) ? (
-          <Box marginTop={1}>
-            <RootOverlayShell
-              key={getRootOverlayResetKey(rootOverlay)}
-              overlay={rootOverlay}
-              state={state}
-              container={container}
-              onRedraw={clearShellScreen}
-            />
-          </Box>
-        ) : null}
       </Box>
     </Box>
   );
