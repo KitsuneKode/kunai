@@ -27,14 +27,32 @@ describe("overlay footer actions", () => {
     ]);
   });
 
-  test("notifications footer carries inbox controls from live bindings", () => {
-    expect(notificationsFooterActions().map((action) => `${action.key}:${action.label}`)).toEqual([
-      "enter:action",
-      "A:read all",
-      "x:archive",
-      "C:clear",
+  test("notifications footer on Active with pagination carries the inbox grammar", () => {
+    const actionPairs = notificationsFooterActions({ tab: "active", paginated: true }).map(
+      (action) => `${action.key}:${action.label}`,
+    );
+
+    expect(actionPairs).toEqual([
+      "enter:act",
+      "a:actions",
+      "s:sort",
+      "tab:archive",
       "[ / ]:page",
-      "tab:switch",
+      "/:commands",
+      "esc:close",
+    ]);
+  });
+
+  test("notifications footer on Archive without pagination flips the tab label and drops paging", () => {
+    const actionPairs = notificationsFooterActions({ tab: "archive", paginated: false }).map(
+      (action) => `${action.key}:${action.label}`,
+    );
+
+    expect(actionPairs).toEqual([
+      "enter:act",
+      "a:actions",
+      "s:sort",
+      "tab:active",
       "/:commands",
       "esc:close",
     ]);

@@ -122,7 +122,11 @@ import {
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
 import { handleHistoryOverlayInput } from "./use-history-overlay-input";
-import { handleNotificationsOverlayInput } from "./use-notifications-overlay-input";
+import {
+  createNotificationsOverlayState,
+  handleNotificationsOverlayInput,
+  type NotificationsOverlayState,
+} from "./use-notifications-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
@@ -530,8 +534,9 @@ export function RootOverlayShell({
     readonly actionId: NotificationActionId;
   } | null>(null);
   const [historySourceChoiceTitleId, setHistorySourceChoiceTitleId] = useState<string | null>(null);
-  const [notifTab, setNotifTab] = useState<"active" | "archive">("active");
-  const [notifPage, setNotifPage] = useState(0);
+  const [notificationsState, setNotificationsState] = useState<NotificationsOverlayState>(
+    createNotificationsOverlayState,
+  );
   const [notifTick, setNotifTick] = useState(0);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyNextReleases, setHistoryNextReleases] = useState<
@@ -822,23 +827,28 @@ export function RootOverlayShell({
   void notifTick;
   const notificationRecordsAll =
     overlay.type === "notifications"
-      ? notifTab === "active"
-        ? container.notificationService.listActive(200, 0)
-        : container.notificationService.listArchived(200, 0)
+      ? notificationsState.tab === "active"
+        ? container.notificationService.listAllActive()
+        : container.notificationService.listAllArchived()
       : [];
   const notificationsView = buildNotificationsView({
     records: notificationRecordsAll,
-    tab: notifTab,
-    page: notifPage,
+    tab: notificationsState.tab,
+    sortMode: notificationsState.sortByTab[notificationsState.tab],
+    page: notificationsState.page,
     pageSize: notifPageSize,
+    selectedDedupKey: notificationsState.selectedDedupKey,
     now: new Date().toISOString(),
   });
   const notificationUnreadCount =
     overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
-  const notificationRecords = notificationRecordsAll.slice(
-    notificationsView.page * notifPageSize,
-    notificationsView.page * notifPageSize + notifPageSize,
+  const notificationRecordsByKey = new Map(
+    notificationRecordsAll.map((record) => [record.dedupKey, record] as const),
   );
+  const notificationRecords = notificationsView.rows.flatMap((row) => {
+    const record = notificationRecordsByKey.get(row.dedupKey);
+    return record ? [record] : [];
+  });
   const filteredNotificationOptions =
     overlay.type === "notifications"
       ? buildNotificationPickerOptions(notificationRecords, {
@@ -847,7 +857,7 @@ export function RootOverlayShell({
       : [];
   const selectedNotificationForActions =
     overlay.type === "notifications" && notificationActionDedupKey
-      ? (notificationRecords.find((record) => record.dedupKey === notificationActionDedupKey) ??
+      ? (notificationRecordsAll.find((record) => record.dedupKey === notificationActionDedupKey) ??
         null)
       : null;
   const filteredNotificationActionOptions = selectedNotificationForActions
@@ -1318,21 +1328,18 @@ export function RootOverlayShell({
       !notificationActionDedupKey &&
       !notificationPlayConfirm
     ) {
-      const notifRows = notificationsView.rows;
-      const notifRow = notifRows[Math.min(selectedIndex, Math.max(notifRows.length - 1, 0))];
       if (
         handleNotificationsOverlayInput(input, key, {
           container,
-          notifRow,
-          totalPages: notificationsView.totalPages,
+          state: notificationsState,
+          view: notificationsView,
+          setState: setNotificationsState,
           onRedraw,
-          setNotifTab,
-          setNotifPage,
-          setSelectedIndex,
           setNotifTick,
           setOverlayStatus,
           setNotificationActionDedupKey,
           setFilterQuery,
+          setSelectedIndex,
         }) === "handled"
       ) {
         return;
@@ -1371,8 +1378,7 @@ export function RootOverlayShell({
           setFilterQuery("");
           setSelectedIndex(0);
         } else {
-          const picked = filteredNotificationOptions[selectedIndex]?.value ?? null;
-          runNotificationAction(picked);
+          runNotificationAction(notificationsView.selectedRow?.dedupKey ?? null);
         }
         return;
       } else if (
@@ -1674,10 +1680,6 @@ export function RootOverlayShell({
   }
 
   if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
-    const notifSelected =
-      notificationsView.rows.length === 0
-        ? 0
-        : Math.min(selectedIndex, notificationsView.rows.length - 1);
     return wrapOverlayLayout(
       overlayLayout,
       <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
@@ -1685,7 +1687,7 @@ export function RootOverlayShell({
           <NotificationsShell
             view={notificationsView}
             columns={overlayLayout.contentColumns}
-            selectedIndex={notifSelected}
+            selectedIndex={notificationsView.selectedIndex}
             unreadCount={notificationUnreadCount}
           />
         </Box>
@@ -1700,7 +1702,10 @@ export function RootOverlayShell({
           ) : null}
           <ShellFooter
             taskLabel="Notifications"
-            actions={notificationsFooterActions()}
+            actions={notificationsFooterActions({
+              tab: notificationsState.tab,
+              paginated: notificationsView.totalPages > 1,
+            })}
             mode="detailed"
             commandMode={commandMode}
             terminalWidth={cols}

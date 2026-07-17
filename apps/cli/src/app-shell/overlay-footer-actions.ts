@@ -1,4 +1,5 @@
 import { buildFooterActionsFromBindings } from "./keybindings";
+import type { NotificationsTab } from "./notifications-view";
 import type { FooterAction } from "./types";
 
 /**
@@ -31,18 +32,24 @@ export function historyFooterActions(): readonly FooterAction[] {
   });
 }
 
-export function notificationsFooterActions(): readonly FooterAction[] {
+export function notificationsFooterActions(input: {
+  readonly tab: NotificationsTab;
+  readonly paginated: boolean;
+}): readonly FooterAction[] {
+  // Lifecycle keys (r/x/d/A/C) stay in command help only; the persistent footer
+  // carries the navigation grammar: act, actions, sort, tab, optional paging.
+  const ids = [
+    "notifications-action",
+    "notifications-all-actions",
+    "notifications-sort",
+    "notifications-tab",
+    ...(input.paginated ? ["notifications-page"] : []),
+  ];
   return buildFooterActionsFromBindings("notifications", {
-    ids: [
-      "notifications-action",
-      "notifications-mark-all",
-      "notifications-archive",
-      "notifications-clear",
-      "notifications-page",
-      "notifications-tab",
-    ],
+    ids,
     overrides: {
-      "notifications-action": { primary: true },
+      "notifications-action": { label: "act", primary: true },
+      "notifications-tab": { label: input.tab === "active" ? "archive" : "active" },
     },
   });
 }
