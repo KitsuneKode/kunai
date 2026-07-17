@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { mapPosterPreviewState } from "./browse-preview-rail";
 import { useRailPoster } from "./hooks/use-rail-poster";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
@@ -78,11 +79,17 @@ export function NotificationsShell({
     .filter(Boolean)
     .join(" · ");
 
+  const previewPosterState = mapPosterPreviewState({
+    hasPosterPath: Boolean(view.rail?.preview.posterUrl),
+    poster,
+    posterState,
+  });
+
   const rail =
     showRail && view.rail ? (
       <Box flexDirection="column" width={RAIL_WIDTH}>
         <PreviewRail
-          model={{ ...view.rail.preview, posterState }}
+          model={{ ...view.rail.preview, posterState: previewPosterState }}
           width={RAIL_WIDTH}
           poster={poster}
         />

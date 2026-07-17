@@ -59,13 +59,14 @@ import {
   resolveOverlayPanelKind,
 } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
+import { executeNotificationOverlayAction } from "./notification-action-flow";
 import {
   buildNotificationActionOptions,
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
-import { buildNotificationsView } from "./notifications-view";
+import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
 import { resolveOverlayBackStack } from "./overlay-back-stack";
 import {
   historyFooterActions,
@@ -941,7 +942,8 @@ export function RootOverlayShell({
     options?: { readonly confirmedContextSwitch?: boolean },
   ): void => {
     if (!dedupKey) return;
-    const notification = notificationRecords.find((record) => record.dedupKey === dedupKey);
+    // Resolve against the complete dataset — the target may live off the visible page.
+    const notification = notificationRecordsAll.find((record) => record.dedupKey === dedupKey);
     if (!notification) return;
     const resolvedAction = actionId ?? getNotificationPrimaryAction(notification);
     const playbackActive =
@@ -952,15 +954,9 @@ export function RootOverlayShell({
       state.playbackStatus === "stalled" ||
       state.playbackStatus === "playing";
 
-    if (
-      resolvedAction === "play-now" &&
-      playbackActive &&
-      options?.confirmedContextSwitch !== true
-    ) {
-      setNotificationPlayConfirm({ dedupKey, actionId: resolvedAction });
-      setNotificationActionDedupKey(null);
-      return;
-    }
+    // Pin identity before execution so the refreshed view stays on this notice
+    // even when a mark-read re-sorts it under the Attention ordering.
+    setNotificationsState((current) => ({ ...current, selectedDedupKey: dedupKey }));
 
     const router = new NotificationActionRouter({
       playlist: container.queueService,
@@ -972,7 +968,6 @@ export function RootOverlayShell({
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
             stageNotificationPlaybackIntent(playbackIntentFromMediaItem(item));
-            await container.notificationService.archive(notification.dedupKey);
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
           },
         },
@@ -996,18 +991,33 @@ export function RootOverlayShell({
     void (async () => {
       try {
         setNotificationPlayConfirm(null);
-        await router.run({
+        const result = await executeNotificationOverlayAction({
+          router,
           notification,
           actionId: resolvedAction,
           playbackActive,
           confirmedContextSwitch: options?.confirmedContextSwitch,
+          markRead: (key) => container.notificationService.markRead(key),
         });
+        if (result.status === "confirmation-required") {
+          setNotificationPlayConfirm({ dedupKey, actionId: resolvedAction });
+          setNotificationActionDedupKey(null);
+          return;
+        }
+        if (result.status === "unsupported") {
+          setOverlayStatus(`Action unavailable: ${result.reason}`);
+          return;
+        }
+        if (resolvedAction === "dismiss" && notificationsState.tab === "active") {
+          const nearest = nearestNotificationDedupKey(notificationsView.orderedDedupKeys, dedupKey);
+          setNotificationsState((current) => ({ ...current, selectedDedupKey: nearest }));
+        }
         setOverlayStatus(
           resolvedAction === "dismiss"
             ? "Notification dismissed"
             : resolvedAction === "restore-queue"
               ? "Queue restored"
-              : resolvedAction === "download"
+              : resolvedAction === "download" || resolvedAction === "retry-download"
                 ? "Download queued"
                 : resolvedAction === "follow"
                   ? "Following releases"
