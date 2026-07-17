@@ -3,7 +3,7 @@ import type {
   NotificationActionRouter,
   NotificationActionRunResult,
 } from "@/services/notifications/NotificationActionRouter";
-import type { NotificationRecord } from "@kunai/storage";
+import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
 export type NotificationOverlayActionResult =
   | { readonly status: "confirmation-required"; readonly actionId: "play-now" }

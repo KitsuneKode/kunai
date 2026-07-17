@@ -19,11 +19,11 @@ test("canonical root-content renderer demand-loads the root overlay implementati
     resolve(import.meta.dir, "../../../src/app-shell/root-content-shell.tsx"),
   ).text();
   const rootOverlayLoaderSource = await Bun.file(
-    resolve(import.meta.dir, "../../../src/app-shell/root-overlay-loader.tsx"),
+    resolve(import.meta.dir, "../../../src/app-shell/RootOverlayLoader.tsx"),
   ).text();
 
   expect(inkShellSource).not.toContain("root-overlay-shell");
   expect(rootContentSource).not.toMatch(/from ["']\.\/root-overlay-shell["']/);
-  expect(rootContentSource).toContain('from "./root-overlay-loader"');
+  expect(rootContentSource).toContain('from "./RootOverlayLoader"');
   expect(rootOverlayLoaderSource).toContain('import("./root-overlay-shell")');
 });

@@ -9,10 +9,10 @@ import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
 import type { ResolvedRootContent, RootContentSession } from "./root-content-state";
-import { RootOverlayLoader } from "./root-overlay-loader";
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import { RootOverlayLoader } from "./RootOverlayLoader";
 
 export type RootContentRendererContext = {
   readonly container: Container;

@@ -3,7 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import {
   RootOverlayLoader,
   setRootOverlayModuleImportForTests,
-} from "@/app-shell/root-overlay-loader";
+} from "@/app-shell/RootOverlayLoader";
 import React, { act } from "react";
 
 import { render } from "../../harness/render-capture";
