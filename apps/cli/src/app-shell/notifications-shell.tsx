@@ -1,43 +1,49 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { useRailPoster } from "./hooks/use-rail-poster";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
-import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import { ListRow } from "./primitives/ListRow";
+import {
+  listRowStatusColumn,
+  listRowTimeColumn,
+  listRowTitleColumn,
+  type ListRowColumn,
+} from "./primitives/ListRow.model";
+import { MediaListShell } from "./primitives/MediaListShell";
+import { PreviewRail } from "./primitives/PreviewRail";
+import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
-import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import type { ShellStatusTone } from "./types";
 
-function Row({
-  row,
-  selected,
-  width,
-}: {
-  readonly row: NotificationRow;
-  readonly selected: boolean;
-  readonly width: number;
-}) {
-  const titleWidth = Math.max(8, width - 14);
-  return (
-    <Box flexDirection="row" flexWrap="nowrap">
-      <Text color={selected ? palette.accent : palette.ok}>{selected ? "▌" : " "}</Text>
-      <Text color={palette.accent}>{row.unread ? "● " : "  "}</Text>
-      {row.usePoster ? (
-        <Box width={5}>
-          <MiniPosterTile url={row.posterUrl} title={row.title} enabled={selected} />
-        </Box>
-      ) : (
-        <Text color={palette.muted}>{row.glyph} </Text>
-      )}
-      <Box flexDirection="column" flexGrow={1}>
-        <Text color={row.unread ? palette.text : palette.textDim} bold={row.unread}>
-          {truncateLine(row.title, titleWidth)}
-        </Text>
-        <Text color={palette.muted}>{truncateLine(row.body, titleWidth)}</Text>
-      </Box>
-      <Text color={palette.dim}>{row.relativeTime}</Text>
-    </Box>
-  );
+const RAIL_WIDTH = 32;
+
+function toneColor(tone: ShellStatusTone): string {
+  if (tone === "error") return palette.danger;
+  if (tone === "warning") return palette.warn;
+  if (tone === "success") return palette.ok;
+  if (tone === "info") return palette.info;
+  return palette.muted;
+}
+
+function rowColumns(row: NotificationRow): readonly ListRowColumn[] {
+  return [
+    {
+      text: row.unread ? `● ${row.glyph}` : `  ${row.glyph}`,
+      width: 4,
+      color: row.unread ? toneColor(row.tone) : palette.dim,
+      dim: !row.unread,
+    },
+    listRowTitleColumn(row.title, 12),
+    listRowStatusColumn(
+      row.primaryAction.label,
+      16,
+      row.actionable ? palette.accent : palette.muted,
+    ),
+    listRowTimeColumn(row.relativeTime, 5),
+  ];
 }
 
 export function NotificationsShell({
@@ -51,30 +57,78 @@ export function NotificationsShell({
   readonly selectedIndex: number;
   readonly unreadCount: number;
 }) {
-  const rowWidth = Math.max(30, Math.min(columns - 4, 110));
-  const tabs = `${view.tab === "active" ? "[Active]" : "Active"}  ${view.tab === "archive" ? "[Archive]" : "Archive"}`;
-  return (
-    <Box flexDirection="column" flexGrow={1} marginTop={1} paddingX={1}>
-      <SectionGroup
-        label="Notifications"
-        tag={unreadCount > 0 ? `${unreadCount} unread · ${tabs}` : tabs}
-        marginTop={0}
-      />
-      {view.isEmpty ? (
-        <StateBlock
-          model={{ kind: "empty", title: "No notifications", detail: "You're all caught up." }}
-          width={rowWidth}
+  const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
+  const { poster, posterState } = useRailPoster(view.rail?.preview.posterUrl, {
+    rows: 10,
+    cols: 28,
+    enabled: showRail,
+    variant: "detail",
+  });
+
+  const innerWidth = Math.max(30, columns - 4);
+  const listWidth = showRail
+    ? Math.max(40, innerWidth - RAIL_WIDTH - 2)
+    : Math.min(innerWidth, 110);
+
+  const context = [
+    view.tabLabel,
+    view.sortLabel,
+    unreadCount > 0 && view.tab === "active" ? `${unreadCount} unread` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const rail =
+    showRail && view.rail ? (
+      <Box flexDirection="column" width={RAIL_WIDTH}>
+        <PreviewRail
+          model={{ ...view.rail.preview, posterState }}
+          width={RAIL_WIDTH}
+          poster={poster}
         />
-      ) : (
-        <Box flexDirection="column">
-          {view.rows.map((row, index) => (
-            <Row key={row.dedupKey} row={row} selected={index === selectedIndex} width={rowWidth} />
+        <Box marginTop={1} flexDirection="column">
+          <Text color={palette.accent} bold>{`↵ ${view.rail.primaryAction.label}`}</Text>
+          {view.rail.secondaryActions.slice(0, 3).map((action) => (
+            <Text key={action.id} color={palette.muted}>{`· ${action.label}`}</Text>
           ))}
         </Box>
-      )}
+        <Box marginTop={1} flexDirection="column">
+          {view.rail.lifecycleHints.map((hint) => (
+            <Text key={hint.key} color={palette.dim}>{`${hint.key} ${hint.label}`}</Text>
+          ))}
+        </Box>
+      </Box>
+    ) : undefined;
+
+  const list = view.isEmpty ? (
+    <StateBlock model={{ kind: "empty", title: view.emptyTitle }} width={listWidth} />
+  ) : (
+    <Box flexDirection="column">
+      {view.rows.map((row, index) => (
+        <ListRow
+          key={row.dedupKey}
+          selected={index === selectedIndex}
+          columns={rowColumns(row)}
+          rowWidth={listWidth}
+          flexColumnIndex={1}
+        />
+      ))}
+    </Box>
+  );
+
+  return (
+    <Box flexDirection="column" flexGrow={1} marginTop={1} paddingX={1}>
+      <SectionGroup label="Notifications" tag={context} marginTop={0} />
+      <MediaListShell
+        columns={columns}
+        listWidth={listWidth}
+        railWidth={RAIL_WIDTH}
+        list={list}
+        rail={rail}
+      />
       {view.totalPages > 1 ? (
         <Box marginTop={1}>
-          <Text color={palette.dim}>{`page ${view.page + 1}/${view.totalPages} · [ ]`}</Text>
+          <Text color={palette.dim}>{`page ${view.page + 1}/${view.totalPages}`}</Text>
         </Box>
       ) : null}
     </Box>
