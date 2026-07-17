@@ -18,9 +18,21 @@ type RootOverlayLoaderProps = {
 let loadedModule: RootOverlayModule | null = null;
 let loadingPromise: Promise<RootOverlayModule> | null = null;
 
+type RootOverlayModuleImport = () => Promise<RootOverlayModule>;
+const defaultRootOverlayModuleImport: RootOverlayModuleImport = () =>
+  import("./root-overlay-shell");
+let importRootOverlayModule: RootOverlayModuleImport = defaultRootOverlayModuleImport;
+
+/** Test seam: swap the dynamic import and reset the module cache. Pass null to restore. */
+export function setRootOverlayModuleImportForTests(next: RootOverlayModuleImport | null): void {
+  importRootOverlayModule = next ?? defaultRootOverlayModuleImport;
+  loadedModule = null;
+  loadingPromise = null;
+}
+
 function loadRootOverlayModule(): Promise<RootOverlayModule> {
   if (loadedModule) return Promise.resolve(loadedModule);
-  loadingPromise ??= import("./root-overlay-shell").then(
+  loadingPromise ??= importRootOverlayModule().then(
     (module) => {
       loadedModule = module;
       return module;
