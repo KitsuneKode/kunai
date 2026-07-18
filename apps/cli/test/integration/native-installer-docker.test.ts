@@ -7,6 +7,7 @@ const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const CLI_ROOT = join(REPO_ROOT, "apps/cli");
 const RUN_LOCAL = join(CLI_ROOT, "test/docker/native-installer/run-local.sh");
 const GLIBC_BIN = join(CLI_ROOT, "dist/bin/kunai-linux-x64");
+const MUSL_BIN = join(CLI_ROOT, "dist/bin/kunai-linux-x64-musl");
 
 function dockerAvailable(): boolean {
   const result = spawnSync("docker", ["info"], { encoding: "utf8" });
@@ -18,7 +19,10 @@ const describeDocker = RUN_INSTALLER_DOCKER && dockerAvailable() ? describe : de
 
 describeDocker("native installer docker smoke", () => {
   test("install.sh, upgrade, and uninstall work in isolated containers", () => {
-    const skipBuild = existsSync(GLIBC_BIN) ? ["--skip-build", "--skip-image-build"] : [];
+    // The smoke covers glibc AND musl containers — only skip the build when
+    // both binaries are already present, or run-local errors out immediately.
+    const skipBuild =
+      existsSync(GLIBC_BIN) && existsSync(MUSL_BIN) ? ["--skip-build", "--skip-image-build"] : [];
     const result = spawnSync("bash", [RUN_LOCAL, ...skipBuild], {
       cwd: REPO_ROOT,
       encoding: "utf8",

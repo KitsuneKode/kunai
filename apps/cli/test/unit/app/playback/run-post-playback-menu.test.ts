@@ -194,7 +194,7 @@ describe("runPostPlaybackMenu", () => {
     expect(countdownOffered).toBe(false);
   });
 
-  test("near-end cancel sets nearEndAutoNextDeclined and pauses autoplay (B3)", async () => {
+  test("near-end cancel declines the advance without pausing autoplay (B3)", async () => {
     const run = createRun();
     const iteration = createBaseIteration({
       result: {
@@ -219,8 +219,10 @@ describe("runPostPlaybackMenu", () => {
     await runPostPlaybackMenu(run, iteration, deps);
     expect(countdownCalls).toBe(1);
     expect(iteration.nearEndAutoNextDeclined).toBe(true);
-    expect(run.playbackSession.autoplayPaused).toBe(true);
-    expect(deps.dispatchCalls.some((c) => c.type === "autoplay" && c.value === true)).toBe(true);
+    // Quitting/declining the advance must not flip the session autoplay
+    // preference — only an explicit `a` toggle does.
+    expect(run.playbackSession.autoplayPaused).toBe(false);
+    expect(deps.dispatchCalls.some((c) => c.type === "autoplay" && c.value === true)).toBe(false);
   });
 
   test("degraded recovery without streams sets recompute flag (B6)", async () => {

@@ -785,7 +785,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                         [
                           state.hasNextEpisode && onNext ? "n next" : null,
                           state.hasPreviousEpisode && onPrevious ? "p prev" : null,
-                          onSkipSegment ? "b skip" : null,
+                          // `b skip` is deliberately not advertised here: skip only
+                          // acts while a segment window is offered, which this
+                          // static fallback cannot know.
                           canOpenSourcePicker ? "o source" : null,
                           onPickQuality ? "k quality" : null,
                           onPickEpisode ? "e episodes" : null,

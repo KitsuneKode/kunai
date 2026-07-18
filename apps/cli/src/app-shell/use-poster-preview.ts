@@ -66,6 +66,12 @@ export function usePosterPreview(
 ): { poster: PosterResult; posterState: PosterState } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
   const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
+  // One delayed retry per URL: a transient fetch failure (busy machine right
+  // after mpv teardown, slow TMDB edge) otherwise leaves the initials fallback
+  // on screen forever because nothing re-arms the effect. Failed fetches are
+  // never cached, so the retry genuinely refetches.
+  const retryAttempted = useRef<string | null>(null);
+  const [retryToken, bumpRetryToken] = useReducer((token: number) => token + 1, 0);
 
   useEffect(() => {
     const geometryChanged =
@@ -84,6 +90,14 @@ export function usePosterPreview(
     if (geometryChanged && !preserveTerminalImages) undisplayRenderedPosterImages();
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRetryIfFirstFailure = () => {
+      if (retryAttempted.current === url) return;
+      retryAttempted.current = url;
+      retryTimer = setTimeout(() => {
+        if (!cancelled) bumpRetryToken();
+      }, 1_500);
+    };
     // Defer both the "loading" commit and the fetch until the debounce fires.
     // Dispatching "loading" immediately on enable forced an extra Ink frame on
     // every selection change (calendar mini-posters, rail previews) even when the
@@ -95,11 +109,13 @@ export function usePosterPreview(
       fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
         .then((result) => {
           if (cancelled) return undefined;
+          if (result.kind === "none") scheduleRetryIfFirstFailure();
           startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
           if (cancelled) return;
+          scheduleRetryIfFirstFailure();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
     }, debounceMs);
@@ -107,6 +123,7 @@ export function usePosterPreview(
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
       // Do not call clearRenderedPosterImages here — the incoming effect's fetch
       // clears just before rendering its result, preserving the old image during load.
     };
@@ -117,6 +134,7 @@ export function usePosterPreview(
     enabled,
     inkEmbedded,
     preserveTerminalImages,
+    retryToken,
     rows,
     url,
     variant,

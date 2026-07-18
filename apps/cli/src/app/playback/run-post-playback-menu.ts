@@ -239,12 +239,15 @@ export async function runPostPlaybackMenu(
         break postPlayback;
       }
       if (countdownResult === "cancelled") {
+        // Declining this advance skips the prompt for the episode but must not
+        // flip the session autoplay preference — quitting is not "pause
+        // autoplay". Mirror whatever the user actually set (a toggles it).
         iteration.nearEndAutoNextDeclined = true;
-        deps.dispatchAutoplayPaused(true);
+        const autoplayPaused = deps.getAutoplaySessionPaused();
         run.playbackSession = {
           ...run.playbackSession,
-          autoplayPaused: true,
-          autoplayPauseReason: "user",
+          autoplayPaused,
+          autoplayPauseReason: autoplayPaused ? "user" : null,
         };
       }
     }
@@ -358,11 +361,12 @@ export async function runPostPlaybackMenu(
           },
         };
       }
-      deps.dispatchAutoplayPaused(true);
+      // Cancelled only when the user already paused autoplay — mirror, don't force.
+      const autoplayPaused = deps.getAutoplaySessionPaused();
       run.playbackSession = {
         ...run.playbackSession,
-        autoplayPaused: true,
-        autoplayPauseReason: "user",
+        autoplayPaused,
+        autoplayPauseReason: autoplayPaused ? "user" : null,
       };
       deps.updatePlaybackFeedback({ detail: null, note: null });
     }
