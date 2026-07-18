@@ -79,7 +79,7 @@ describe("buildPostPlayFooterActionsFromTitleControl", () => {
 
     expect(actions.map((action) => `${action.key}:${action.action}`)).toEqual([
       "r:replay",
-      "f:fallback",
+      "shift+f:fallback",
       "z:source",
       "d:diagnostics",
       "s:search",

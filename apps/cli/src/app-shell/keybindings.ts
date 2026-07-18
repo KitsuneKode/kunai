@@ -306,8 +306,11 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   },
   {
     id: "player-fallback",
-    chord: { input: "f" },
-    label: "Fallback to another provider",
+    // Deliberate chord: switching providers mid-session is disruptive, so it
+    // must not fire from a stray keypress the way a bare `f` could.
+    chord: { input: "F", shift: true },
+    display: "Shift+F",
+    label: "Switch to another provider (fallback)",
     hintLabel: "fallback",
     scope: "player",
     group: "In the player",
@@ -481,8 +484,9 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   },
   {
     id: "post-fallback",
-    chord: { input: "f" },
-    label: "Fallback to another provider",
+    chord: { input: "F", shift: true },
+    display: "Shift+F",
+    label: "Switch to another provider (fallback)",
     hintLabel: "fallback",
     scope: "postPlayback",
     group: "After playback",

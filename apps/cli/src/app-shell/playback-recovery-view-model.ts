@@ -52,7 +52,7 @@ export function buildPlaybackRecoveryViewModel(
       detail: state.fallbackProviderName
         ? `Try ${state.fallbackProviderName}`
         : "Try another compatible provider",
-      shortcut: "f",
+      shortcut: "Shift+F",
       tone: "warning",
     });
   }

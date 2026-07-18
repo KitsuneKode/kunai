@@ -74,6 +74,12 @@ const SPEED = 1; // cells advanced per tick
 const STAGGER = 4; // per-row offset so the wave cascades down the list
 const TAIL = 6; // off-screen rest between sweeps
 
+// Deterministic per-row width jitter (0..5 cells) so the placeholder reads as
+// a list of real, differently-sized titles instead of a uniform grid.
+function rowJitter(row: number): number {
+  return (row * 7 + 3) % 6;
+}
+
 export const SkeletonRows = React.memo(function SkeletonRows({
   rows = 4,
   titleWidth = 26,
@@ -81,6 +87,7 @@ export const SkeletonRows = React.memo(function SkeletonRows({
   active = true,
   intervalMs = 90,
   label,
+  hint,
 }: {
   rows?: number;
   titleWidth?: number;
@@ -88,6 +95,7 @@ export const SkeletonRows = React.memo(function SkeletonRows({
   active?: boolean;
   intervalMs?: number;
   label?: string;
+  hint?: string;
 }) {
   const tick = usePulse(active, intervalMs);
   const span = titleWidth + TAIL;
@@ -104,17 +112,25 @@ export const SkeletonRows = React.memo(function SkeletonRows({
       {Array.from({ length: rows }, (_, row) => {
         // Each row's band is offset so the shimmer cascades down the list.
         const highlight = active ? (tick * SPEED + row * STAGGER) % span : -TAIL;
+        const width = Math.max(8, titleWidth - rowJitter(row));
         return (
           <Box key={`skeleton-row-${row}`} marginBottom={row === rows - 1 ? 0 : 1}>
             <Text color={palette.dim} dimColor>
               {"▓▓ "}
             </Text>
-            <SkeletonBar width={titleWidth} highlight={highlight} />
+            <SkeletonBar width={width} highlight={highlight} />
             <Text>{"  "}</Text>
-            <SkeletonBar width={metaWidth} highlight={highlight - titleWidth * 0.5} />
+            <SkeletonBar width={metaWidth} highlight={highlight - width * 0.5} />
           </Box>
         );
       })}
+      {hint ? (
+        <Box marginTop={1}>
+          <Text color={palette.dim} dimColor>
+            {hint}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 });

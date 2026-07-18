@@ -108,7 +108,6 @@ import {
   subscribeNotificationDetails,
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
-import { InlineSakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -449,7 +448,7 @@ export function BrowseShell<T>({
     setSearchState("loading");
     setFocusZone("query");
     setErrorMessage(null);
-    setEmptyMessage("Searching…");
+    setEmptyMessage(`Searching for “${rawQuery}”…`);
     resetCalendar();
 
     try {
@@ -1419,15 +1418,9 @@ export function BrowseShell<T>({
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexDirection="column" flexGrow={1}>
-        {/* Brand · destination · provider · mode · size now live in the single
-            AppHeader above; keep only the browse-specific search indicator. */}
-        <Box justifyContent="flex-end">
-          {searchState === "loading" ? (
-            <InlineSakuraLoader label="searching" active />
-          ) : searchState === "error" ? (
-            <Text color={palette.danger}>search failed</Text>
-          ) : null}
-        </Box>
+        {/* Brand · destination · provider · mode · size live in the single
+            AppHeader above — it also owns the global "searching" activity
+            indicator, so no duplicate spinner is rendered here. */}
         {!ultraCompact && (resultStatus.primary || resultStatus.secondary) ? (
           <Box justifyContent="space-between">
             {resultStatus.primary ? (
@@ -1701,9 +1694,10 @@ export function BrowseShell<T>({
           // reads as "results are coming" rather than a frozen empty surface.
           <Box marginTop={1} flexGrow={1}>
             <SkeletonRows
-              rows={4}
-              titleWidth={Math.max(16, Math.min(30, innerWidth - 14))}
+              rows={6}
+              titleWidth={Math.max(16, Math.min(34, innerWidth - 14))}
               label={emptyMessage}
+              hint="Matching titles across the catalog · results usually land in a few seconds"
             />
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
@@ -1737,7 +1731,10 @@ export function BrowseShell<T>({
             <StateBlock
               model={{
                 kind: "empty",
-                title: emptyMessage,
+                // Guard against a transiently empty message so the body never
+                // renders as a blank surface between state transitions.
+                title:
+                  emptyMessage || "Search for a title — or try /trending to see what's popular",
                 detail: browseEmptyDetail(mode, emptyMessage),
               }}
               width={Math.min(innerWidth, 72)}

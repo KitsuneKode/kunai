@@ -765,7 +765,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   {activeTracksLine ? (
                     <Text
                       color={palette.text}
-                    >{`${truncateLine(activeTracksLine, infoWidth - 32)} · `}</Text>
+                    >{`${truncateLine(activeTracksLine, Math.max(12, infoWidth - 32))} · `}</Text>
                   ) : null}
                   <Text color={state.autoskipPaused ? palette.muted : palette.ok}>
                     {state.autoskipPaused ? "autoskip off" : "autoskip"}
@@ -804,7 +804,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
                 <Box marginTop={1}>
                   <Text color={palette.dim} dimColor>
-                    Terminal or mpv — n/p/e/o/v/u shortcuts stay live · / for full commands
+                    Terminal or mpv — n/p/e/o/k/u shortcuts stay live · / for full commands
                   </Text>
                 </Box>
 
@@ -815,7 +815,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
-                      {"r recover  ·  f fallback  ·  o source  ·  d diagnostics"}
+                      {"r recover  ·  Shift+F fallback  ·  o source  ·  d diagnostics"}
                     </Text>
                   </Box>
                 ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (

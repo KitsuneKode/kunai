@@ -26,7 +26,7 @@ function emptyKey() {
 }
 
 describe("resolvePlaybackShellInput", () => {
-  test("playing trouble routes r/f/o/d without onCommandAction gate", () => {
+  test("playing trouble routes r/Shift+F/o/d without onCommandAction gate", () => {
     const ctx = {
       operation: "playing" as const,
       cancellable: false,
@@ -37,7 +37,9 @@ describe("resolvePlaybackShellInput", () => {
       handlers: handlers({ onCommandAction: undefined }),
     };
     expect(resolvePlaybackShellInput("r", emptyKey(), ctx)?.kind).toBe("recover");
-    expect(resolvePlaybackShellInput("f", emptyKey(), ctx)?.kind).toBe("fallback");
+    expect(resolvePlaybackShellInput("F", { shift: true }, ctx)?.kind).toBe("fallback");
+    // A bare lowercase f must never switch providers — mispress protection.
+    expect(resolvePlaybackShellInput("f", emptyKey(), ctx)).toBeNull();
     expect(resolvePlaybackShellInput("o", emptyKey(), ctx)?.kind).toBe("pick-source");
     expect(resolvePlaybackShellInput("d", emptyKey(), ctx)).toBeNull();
   });
@@ -95,6 +97,34 @@ describe("resolvePlaybackShellInput", () => {
       action: "help",
     });
     expect(resolvePlaybackShellInput("q", emptyKey(), ctx)?.kind).toBe("cancel");
+    expect(resolvePlaybackShellInput("F", { shift: true }, ctx)?.kind).toBe("fallback");
+    expect(resolvePlaybackShellInput("f", emptyKey(), ctx)).toBeNull();
+  });
+
+  test("bootstrap q is a no-op cancel when surface is not cancellable", () => {
+    const ctx = {
+      operation: "loading" as const,
+      cancellable: false,
+      fallbackAvailable: false,
+      canOpenSourcePicker: false,
+      recoveryViewActive: false,
+      playbackTroubleActive: false,
+      handlers: handlers({ onCancel: () => {} }),
+    };
+    expect(resolvePlaybackShellInput("q", emptyKey(), ctx)).toBeNull();
+  });
+
+  test("applyPlaybackShellInputEffect cancel invokes onCancel", () => {
+    let cancelled = false;
+    applyPlaybackShellInputEffect(
+      { kind: "cancel" },
+      handlers({
+        onCancel: () => {
+          cancelled = true;
+        },
+      }),
+    );
+    expect(cancelled).toBe(true);
   });
 
   test("applyPlaybackShellInputEffect dispatches shell actions", () => {

@@ -58,12 +58,17 @@ function normalizedKey(input: string): string {
 }
 
 function resolveRecoveryOrTroubleKeys(
+  rawInput: string,
   key: string,
   ctx: PlaybackShellInputContext,
 ): PlaybackShellInputEffect | null {
   const { handlers } = ctx;
   if (key === "r" && handlers.onRecover) return { kind: "recover" };
-  if (key === "f" && ctx.fallbackAvailable && handlers.onFallback) return { kind: "fallback" };
+  // Fallback is Shift+F on purpose — a provider switch must never fire from a
+  // stray lowercase keypress, so only the raw uppercase input qualifies.
+  if (rawInput === "F" && ctx.fallbackAvailable && handlers.onFallback) {
+    return { kind: "fallback" };
+  }
   if (key === "o" && ctx.canOpenSourcePicker && handlers.onPickSource)
     return { kind: "pick-source" };
   if (key === "d" && handlers.onCommandAction) {
@@ -120,7 +125,7 @@ export function resolvePlaybackShellInput(
           canOpenSourcePicker: ctx.canOpenSourcePicker,
           handlers: ctx.handlers,
         })
-      : resolveRecoveryOrTroubleKeys(normalized, ctx);
+      : resolveRecoveryOrTroubleKeys(input, normalized, ctx);
     if (recoveryEffect) return recoveryEffect;
   }
 
