@@ -41,6 +41,8 @@ type LaneDrainStats = {
 export class BackgroundWorkScheduler {
   private readonly queue = new Map<string, BackgroundWorkItem>();
   private drainInFlight?: Promise<BackgroundWorkDrainResult>;
+  private readonly activeControllers = new Set<AbortController>();
+  private shuttingDown = false;
 
   constructor(
     private readonly options: {
@@ -49,8 +51,24 @@ export class BackgroundWorkScheduler {
     } = {},
   ) {}
 
-  enqueue(item: BackgroundWorkItem): void {
+  /** Returns false (and drops the item) once shutdown has begun. */
+  enqueue(item: BackgroundWorkItem): boolean {
+    if (this.shuttingDown) return false;
     this.queue.set(item.id, item);
+    return true;
+  }
+
+  /**
+   * Close work admission and abort active items. Queued-but-unstarted items
+   * drain as skipped. Idempotent; never throws so teardown callers stay safe.
+   */
+  beginShutdown(reason: "container-dispose" | "app-exit" = "container-dispose"): void {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    this.recordShutdown(reason);
+    for (const controller of this.activeControllers) {
+      controller.abort(new Error(`background work aborted: ${reason}`));
+    }
   }
 
   pendingCount(): number {
@@ -105,13 +123,14 @@ export class BackgroundWorkScheduler {
       }
       await Promise.all(
         batch.map(async (item) => {
-          if (item.signal?.aborted) {
+          if (item.signal?.aborted || this.shuttingDown) {
             skipped.push({ id: item.id, reason: "aborted" });
             noteLane(item.lane, "skipped");
             return;
           }
 
           const controller = new AbortController();
+          this.activeControllers.add(controller);
           const relayAbort = () => controller.abort(item.signal?.reason);
           item.signal?.addEventListener("abort", relayAbort, { once: true });
           try {
@@ -135,6 +154,7 @@ export class BackgroundWorkScheduler {
             });
             noteLane(item.lane, "failed");
           } finally {
+            this.activeControllers.delete(controller);
             item.signal?.removeEventListener("abort", relayAbort);
           }
         }),

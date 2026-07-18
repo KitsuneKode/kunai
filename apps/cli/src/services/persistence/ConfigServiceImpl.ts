@@ -658,33 +658,56 @@ export class ConfigServiceImpl implements ConfigService {
 
   private savePending: Promise<void> | null = null;
   private savePendingResolve: (() => void) | null = null;
+  private savePendingReject: ((reason: unknown) => void) | null = null;
 
   // Trailing debounce: every call re-arms the timer so the latest config wins,
-  // and all callers in a burst share one promise that resolves once the write
-  // actually lands. (A previous version cleared the timer but early-returned
-  // without rescheduling, which dropped the write and left the promise hung.)
+  // and all callers in a burst share one promise that settles once the write
+  // actually lands (or rejects, so shutdown can record the failure).
   async save(): Promise<void> {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
     if (!this.savePending) {
-      this.savePending = new Promise<void>((resolve) => {
+      this.savePending = new Promise<void>((resolve, reject) => {
         this.savePendingResolve = resolve;
+        this.savePendingReject = reject;
       });
     }
-    this.saveTimer = setTimeout(async () => {
-      this.saveTimer = null;
-      const resolve = this.savePendingResolve;
-      this.savePending = null;
-      this.savePendingResolve = null;
-      try {
-        await this.store.save(this.config);
-      } finally {
-        resolve?.();
-      }
+    this.saveTimer = setTimeout(() => {
+      // The pending promise carries success/failure to every save() caller.
+      this.persistPendingSave().catch(() => {});
     }, this.saveTimeoutMs);
     return this.savePending;
+  }
+
+  /** Persist any pending debounced save immediately (shutdown path). */
+  async flushPending(): Promise<void> {
+    if (!this.savePending) return;
+    await this.persistPendingSave();
+  }
+
+  private persistPendingSave(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    const pending = this.savePending;
+    if (!pending) return Promise.resolve();
+    const resolve = this.savePendingResolve;
+    const reject = this.savePendingReject;
+    this.savePending = null;
+    this.savePendingResolve = null;
+    this.savePendingReject = null;
+    void (async () => {
+      try {
+        await this.store.save(this.config);
+        resolve?.();
+      } catch (error) {
+        reject?.(error);
+      }
+    })();
+    return pending;
   }
 
   async reset(): Promise<void> {

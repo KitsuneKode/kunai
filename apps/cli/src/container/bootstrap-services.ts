@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 
+import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
+
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
@@ -325,6 +327,7 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
     isPowerSaver: () => config.powerSaverMode,
   });
+  const activePlaybackCheckpoint = new ActivePlaybackCheckpoint();
   const timelineService = new TimelineService(catalogScheduleService);
   const resultEnrichmentService = new ResultEnrichmentService({
     historyRepository,
@@ -459,6 +462,7 @@ export function bootstrapServices(input: {
     continueWatchingService,
     attentionRefreshWorker,
     backgroundWorkScheduler,
+    activePlaybackCheckpoint,
     searchRegistry,
     shellChrome,
     capabilitySnapshot,

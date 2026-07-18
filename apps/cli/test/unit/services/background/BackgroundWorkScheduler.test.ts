@@ -178,4 +178,41 @@ describe("BackgroundWorkScheduler", () => {
       ),
     ).toBe(true);
   });
+  test("beginShutdown rejects new enqueues and aborts active work", async () => {
+    const seen: string[] = [];
+    const scheduler = new BackgroundWorkScheduler({ maxConcurrent: 1 });
+    let releaseActive!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseActive = resolve;
+    });
+
+    expect(
+      scheduler.enqueue({
+        id: "long-running",
+        lane: "attention-refresh" as BackgroundWorkLane,
+        run: async (signal) => {
+          seen.push("started");
+          await gate;
+          seen.push(signal.aborted ? "aborted" : "completed");
+        },
+      }),
+    ).toBe(true);
+
+    const drain = scheduler.drain();
+    await Bun.sleep(0);
+    scheduler.beginShutdown("app-exit");
+    releaseActive();
+    const result = await drain;
+
+    expect(seen).toEqual(["started", "aborted"]);
+    expect(result.skipped.map((entry) => entry.id)).toEqual(["long-running"]);
+    expect(
+      scheduler.enqueue({
+        id: "late",
+        lane: "maintenance-cleanup" as BackgroundWorkLane,
+        run: () => {},
+      }),
+    ).toBe(false);
+    expect(scheduler.pendingCount()).toBe(0);
+  });
 });

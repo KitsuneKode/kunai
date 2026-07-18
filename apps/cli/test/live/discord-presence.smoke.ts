@@ -31,6 +31,7 @@ function createConfig(): ConfigService {
     getRaw: () => ({ ...raw }),
     update: async () => undefined,
     save: async () => undefined,
+    flushPending: async () => undefined,
     reset: async () => undefined,
   };
 }

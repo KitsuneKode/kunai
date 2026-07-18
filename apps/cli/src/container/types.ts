@@ -1,3 +1,4 @@
+import type { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 import type { ProviderEngine } from "@kunai/core";
 import type {
   CalendarArchiveRepository,
@@ -167,6 +168,8 @@ export interface Container {
   readonly continueWatchingService: ContinueWatchingService;
   readonly attentionRefreshWorker: AttentionRefreshWorker;
   readonly backgroundWorkScheduler: BackgroundWorkScheduler;
+  /** Exactly one active playback checkpoint; flushed by shutdown before mpv release. */
+  readonly activePlaybackCheckpoint: ActivePlaybackCheckpoint;
 
   /** CLI-driven shell density; minimal forces a minimal footer regardless of saved config. */
   readonly shellChrome: ShellChrome;

@@ -996,6 +996,74 @@ describe("DownloadService", () => {
     expect(reloaded?.failureKind).toBe("ytdlp-config");
     expect(reloaded?.retryCount).toBe(1);
   });
+
+  test("beginShutdown closes work admission before any queue snapshot", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+
+    service.beginShutdown("download paused by shutdown");
+    await service.processQueue();
+
+    // The queued job must not be claimed after shutdown began.
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(repo.get(job.id)?.status).toBe("queued");
+  });
+
+  test("pauseActiveJobsForShutdown honors explicit shutdown wait budgets", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      abortGraceMs: 20,
+    });
+    let exitProcess!: (code: number) => void;
+    const exited = new Promise<number>((resolve) => {
+      exitProcess = resolve;
+    });
+    spawnSpy.mockImplementation(
+      () =>
+        ({
+          stdout: streamOf(""),
+          stderr: streamOf(""),
+          exited,
+          kill: () => exitProcess(0),
+        }) as never,
+    );
+
+    const job = await service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+    });
+    const running = service.processQueue();
+    await waitUntil(() => repo.get(job.id)?.status === "running");
+
+    const startedAt = Date.now();
+    await service.pauseActiveJobsForShutdown("download paused by shutdown", {
+      gracefulWaitMs: 50,
+      forceWaitMs: 50,
+      inactiveWaitMs: 50,
+    });
+    await running;
+
+    // Budgeted waits keep the whole pause far below the legacy multi-second path.
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    const reloaded = repo.get(job.id);
+    expect(reloaded?.status).toBe("queued");
+    expect(reloaded?.nextRetryAt).toBeDefined();
+  });
 });
 
 function buildService({

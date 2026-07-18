@@ -43,6 +43,8 @@ export interface ConfigService extends KitsuneConfig {
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
+  /** Persist any debounced pending save immediately (shutdown path). */
+  flushPending(): Promise<void>;
   reset(): Promise<void>;
 }
 

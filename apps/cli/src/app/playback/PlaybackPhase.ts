@@ -200,6 +200,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
   private static readonly lateSubtitleInflight = new Set<string>();
   private playbackLedger: PlaybackHistoryLedger | null = null;
+  private unregisterActiveCheckpoint: (() => void) | null = null;
 
   private updatePlaybackFeedback(
     context: PhaseContext,
@@ -1984,6 +1985,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 posterUrl: title.posterUrl,
               });
               this.playbackLedger = null;
+              this.unregisterActiveCheckpoint?.();
+              this.unregisterActiveCheckpoint = null;
             } else {
               container.historyRepository.upsertProgress({
                 title: {
@@ -3158,6 +3161,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       providerId: stateManager.getState().provider,
     });
     this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
+    // Shutdown flushes this before releasing mpv, so the latest resume
+    // position survives a Ctrl+C mid-playback. Null-safe once finalized.
+    this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
+      this.playbackLedger?.checkpoint();
+    });
     this.playbackLedger.start(
       {
         title: {

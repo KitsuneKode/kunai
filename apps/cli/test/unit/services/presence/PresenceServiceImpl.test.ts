@@ -22,6 +22,7 @@ function createConfig(partial: Partial<KitsuneConfig>): ConfigService {
     getRaw: () => ({ ...raw }),
     update: async () => undefined,
     save: async () => undefined,
+    flushPending: async () => undefined,
     reset: async () => undefined,
   };
 }

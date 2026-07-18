@@ -179,6 +179,7 @@ type DownloadSidecarResult = {
 export class DownloadService {
   private queueWorkerRunning = false;
   private reconciledStartupJobs = false;
+  private shutdownRequested = false;
   private readonly cancellationRequests = new Map<
     string,
     { readonly mode: "abort" | "pause"; readonly reason: string }
@@ -573,8 +574,24 @@ export class DownloadService {
     }
   }
 
+  /**
+   * Close download work admission: no queue worker starts and no worker claims
+   * another job after this. Records pause requests for currently running jobs
+   * so their workers stop retrying. Idempotent and synchronous, so the
+   * shutdown snapshot in pauseActiveJobsForShutdown cannot race a late claim.
+   */
+  beginShutdown(reason = "download paused by shutdown"): void {
+    if (this.shutdownRequested) return;
+    this.shutdownRequested = true;
+    for (const job of this.deps.repo.listRunning(200)) {
+      if (!this.cancellationRequests.has(job.id)) {
+        this.cancellationRequests.set(job.id, { mode: "pause", reason });
+      }
+    }
+  }
+
   async processQueue(): Promise<void> {
-    if (this.queueWorkerRunning) {
+    if (this.queueWorkerRunning || this.shutdownRequested) {
       return;
     }
     this.queueWorkerRunning = true;
@@ -593,7 +610,7 @@ export class DownloadService {
         Math.min(5, Math.trunc(this.deps.config.maxConcurrentDownloads) || 1),
       );
       const worker = async (): Promise<void> => {
-        while (await this.processNextQueued()) {
+        while (!this.shutdownRequested && (await this.processNextQueued())) {
           // keep pulling jobs
         }
       };
@@ -651,7 +668,17 @@ export class DownloadService {
     }
   }
 
-  async pauseActiveJobsForShutdown(reason = "download paused by shutdown"): Promise<void> {
+  async pauseActiveJobsForShutdown(
+    reason = "download paused by shutdown",
+    options: {
+      readonly gracefulWaitMs?: number;
+      readonly forceWaitMs?: number;
+      readonly inactiveWaitMs?: number;
+    } = {},
+  ): Promise<void> {
+    // Close admission before snapshotting so a worker cannot claim a queued
+    // job between the snapshot and the pause writes below.
+    this.beginShutdown(reason);
     const runningJobIds = this.deps.repo.listRunning(200).map((job) => job.id);
     for (const jobId of runningJobIds) {
       this.cancellationRequests.set(jobId, { mode: "pause", reason });
@@ -664,11 +691,13 @@ export class DownloadService {
       active.cancelReason = reason;
     }
     await Promise.all(
-      activeEntries.map(([, active]) => this.terminateProcess(active.process, active.cancel)),
+      activeEntries.map(([, active]) =>
+        this.terminateProcess(active.process, active.cancel, options),
+      ),
     );
     await this.waitForInactive(
       activeEntries.map(([jobId]) => jobId),
-      DEFAULT_INACTIVE_WAIT_MS,
+      options.inactiveWaitMs ?? DEFAULT_INACTIVE_WAIT_MS,
     );
     const pausedAt = new Date().toISOString();
     for (const [jobId] of activeEntries) {
@@ -966,11 +995,14 @@ export class DownloadService {
   private async terminateProcess(
     proc: YtDlpProcess,
     cancel?: (reason?: string) => void,
+    waits: { readonly gracefulWaitMs?: number; readonly forceWaitMs?: number } = {},
   ): Promise<void> {
     const graceMs = this.deps.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
+    const gracefulWaitMs = waits.gracefulWaitMs ?? graceMs;
+    const forceWaitMs = waits.forceWaitMs ?? graceMs;
     if (cancel) {
       cancel("download terminated");
-      await waitForExit(proc.exited, graceMs + 2_500).catch(() => {});
+      await waitForExit(proc.exited, waits.gracefulWaitMs ?? graceMs + 2_500).catch(() => {});
       return;
     }
     try {
@@ -979,7 +1011,7 @@ export class DownloadService {
       return;
     }
 
-    const exitedAfterTerm = await waitForExit(proc.exited, graceMs);
+    const exitedAfterTerm = await waitForExit(proc.exited, gracefulWaitMs);
     if (exitedAfterTerm) {
       return;
     }
@@ -989,7 +1021,7 @@ export class DownloadService {
     } catch {
       return;
     }
-    await waitForExit(proc.exited, graceMs).catch(() => {});
+    await waitForExit(proc.exited, forceWaitMs).catch(() => {});
   }
 
   private async waitForInactive(jobIds: readonly string[], timeoutMs: number): Promise<void> {

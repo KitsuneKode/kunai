@@ -41,6 +41,53 @@ test("QueueService restores a recoverable queue into the current session explici
   db.close();
 });
 
+test("prepareForShutdown marks a session with pending items recoverable", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "current",
+    status: "active",
+    createdAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+  });
+  repo.enqueue({
+    title: "Example",
+    mediaKind: "series",
+    titleId: "tmdb:1",
+    season: 1,
+    episode: 2,
+    source: "browse",
+    sessionId: "current",
+  });
+  const service = new QueueService(repo, "current");
+
+  expect(service.prepareForShutdown("2026-07-18T00:00:00.000Z")).toBe("recoverable");
+  expect(repo.getQueueSession("current")?.status).toBe("recoverable");
+
+  db.close();
+});
+
+test("prepareForShutdown closes an empty session", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "current",
+    status: "active",
+    createdAt: "2026-07-18T00:00:00.000Z",
+    updatedAt: "2026-07-18T00:00:00.000Z",
+  });
+  const service = new QueueService(repo, "current");
+
+  expect(service.prepareForShutdown("2026-07-18T00:05:00.000Z")).toBe("closed");
+  const session = repo.getQueueSession("current");
+  expect(session?.status).toBe("closed");
+  expect(session?.closedAt).toBe("2026-07-18T00:05:00.000Z");
+
+  db.close();
+});
+
 test("moveUpInQueue / moveDownInQueue reorder the full persisted queue list", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

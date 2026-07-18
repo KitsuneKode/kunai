@@ -27,14 +27,26 @@ export interface SessionBootstrap {
 
 export class SessionController {
   private abortController = new AbortController();
+  private shutdownStarted = false;
 
   constructor(private container: Container) {}
 
-  public async shutdown(): Promise<void> {
+  /**
+   * Synchronous quiescence only: stop new session/player/download work without
+   * touching external resources, so the shutdown coordinator can restore the
+   * terminal and preserve state before mpv/Discord teardown. Idempotent.
+   */
+  public beginShutdown(): void {
+    if (this.shutdownStarted) return;
+    this.shutdownStarted = true;
     this.container.player.beginShutdown();
     this.container.workControl.cancelActive("shutdown");
     abortOrphanDownloadResolve(this.container);
-    this.abortController.abort();
+    this.abortController.abort("shutdown");
+  }
+
+  /** Bounded external cleanup (mpv session, Discord presence), failure-isolated. */
+  public async releaseExternalResources(): Promise<void> {
     const cleanupResults = await Promise.allSettled([
       this.container.player.releasePersistentSession(),
       this.container.presence.shutdown(),
@@ -53,6 +65,12 @@ export class SessionController {
         }),
       );
     }
+  }
+
+  /** Compatibility wrapper until every caller uses the split lifecycle. */
+  public async shutdown(): Promise<void> {
+    this.beginShutdown();
+    await this.releaseExternalResources();
   }
 
   async run(bootstrap: SessionBootstrap = {}): Promise<void> {

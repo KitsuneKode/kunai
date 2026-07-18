@@ -185,6 +185,20 @@ export class QueueService {
     return this.repo.listRecoverableQueueSessions();
   }
 
+  /**
+   * Shutdown persistence policy: a session with unplayed items becomes
+   * explicitly recoverable (startup recovery offers it back); an empty one is
+   * closed. Never emits notifications — startup recovery owns signals.
+   */
+  prepareForShutdown(at = new Date().toISOString()): "recoverable" | "closed" {
+    if (this.repo.countUnplayed(this.sessionId) > 0) {
+      this.repo.markQueueSessionRecoverable(this.sessionId, at);
+      return "recoverable";
+    }
+    this.repo.closeQueueSession(this.sessionId, at);
+    return "closed";
+  }
+
   restoreRecoverableSession(sourceSessionId: string): number {
     return this.repo.restoreQueueSession(sourceSessionId, this.sessionId, new Date().toISOString());
   }

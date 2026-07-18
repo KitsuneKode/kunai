@@ -41,4 +41,53 @@ describe("ConfigService.save debounce", () => {
 
     expect(store.saves).toBe(2);
   });
+
+  test("flushPending persists a pending save immediately without the debounce wait", async () => {
+    const store = createCountingStore();
+    const service = await ConfigServiceImpl.load(store);
+
+    const startedAt = Date.now();
+    const pending = service.save();
+    await service.flushPending();
+    await pending;
+
+    expect(store.saves).toBe(1);
+    // Well below the 300ms debounce window.
+    expect(Date.now() - startedAt).toBeLessThan(200);
+  });
+
+  test("flushPending with nothing pending is a no-op", async () => {
+    const store = createCountingStore();
+    const service = await ConfigServiceImpl.load(store);
+
+    await service.flushPending();
+
+    expect(store.saves).toBe(0);
+  });
+
+  test("store rejection rejects both save() and flushPending()", async () => {
+    let rejectSave!: (reason: unknown) => void;
+    const store = {
+      load: async () => ({ ...DEFAULT_CONFIG }),
+      save: () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+      reset: async () => {},
+    };
+    const service = await ConfigServiceImpl.load(store);
+
+    const saved = service.save().then(
+      () => null,
+      (error: unknown) => error as Error,
+    );
+    const flushed = service.flushPending().then(
+      () => null,
+      (error: unknown) => error as Error,
+    );
+    rejectSave(new Error("disk full"));
+
+    expect((await saved)?.message).toBe("disk full");
+    expect((await flushed)?.message).toBe("disk full");
+  });
 });

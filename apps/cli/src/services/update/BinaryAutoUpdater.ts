@@ -98,6 +98,13 @@ export class BinaryAutoUpdater {
     intervalHandle.unref?.();
   }
 
+  /** Stop future background update checks. Idempotent; used during shutdown. */
+  stopBackground(): void {
+    if (!intervalHandle) return;
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
+
   async setAutoApply(enabled: boolean): Promise<void> {
     await this.deps.config.update({ autoApplyBinaryUpdates: enabled });
     await this.deps.config.save();
