@@ -6,8 +6,7 @@ export const vidlinkManifest = defineProviderManifest({
   id: VIDLINK_PROVIDER_ID,
   displayName: "VidLink",
   aliases: ["P-Stream"],
-  description:
-    "Browserless VidLink resolver for movies and series — direct HLS with multi-language subtitles, no captcha or session token",
+  description: "Movies and series with multi-language subtitles",
   domain: "vidlink.pro",
   recommended: true,
   mediaKinds: ["movie", "series"],

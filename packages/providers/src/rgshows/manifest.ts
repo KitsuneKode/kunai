@@ -6,7 +6,7 @@ export const rgshowsManifest = defineProviderManifest({
   id: RGSHOWS_PROVIDER_ID,
   displayName: "RGShows",
   aliases: ["P-Stream"],
-  description: "Browserless RGShows fallback resolver (direct HLS) for movies and series",
+  description: "Reliable backup source for movies and series",
   domain: "rgshows.ru",
   recommended: false,
   mediaKinds: ["movie", "series"],

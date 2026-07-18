@@ -5,7 +5,7 @@ export const MIRURO_PROVIDER_ID = "miruro" as const;
 export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
   displayName: "Miruro",
-  description: "Miruro anime direct resolver (pipe API + XOR decrypt)",
+  description: "Alternate anime source — useful when a title is missing elsewhere",
   domain: "www.miruro.bz",
   recommended: false,
   mediaKinds: ["anime"],

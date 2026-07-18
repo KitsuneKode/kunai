@@ -6,8 +6,7 @@ export const vidrockManifest = defineProviderManifest({
   id: VIDROCK_PROVIDER_ID,
   displayName: "VidRock",
   aliases: ["Granite", "P-Stream"],
-  description:
-    "Browserless VidRock fallback resolver (AES-addressed direct HLS/MP4) for movies and series",
+  description: "Backup source for movies and series with direct video files",
   domain: "vidrock.net",
   recommended: false,
   mediaKinds: ["movie", "series"],
