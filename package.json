@@ -59,7 +59,7 @@
     }
   },
   "scripts": {
-    "dev": "bun run --cwd apps/cli dev",
+    "dev": "bun apps/cli/src/main.ts",
     "dev:relay": "bun run --cwd apps/relay-server dev",
     "relay:verify": "bun run --cwd apps/relay-server verify:deploy",
     "dev:docs": "bun run --cwd apps/docs dev",

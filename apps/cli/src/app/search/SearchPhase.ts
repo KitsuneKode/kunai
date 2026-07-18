@@ -185,6 +185,16 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
       }
 
+      // Browse owns the live draft locally, but root overlays temporarily end and
+      // recreate its mounted shell. Keep one controller-owned draft for this phase.
+      const browseQueryDraft = {
+        value: stateManager.getState().searchQuery,
+        mode: stateManager.getState().mode,
+      };
+      const syncBrowseQueryDraft = () => {
+        browseQueryDraft.value = stateManager.getState().searchQuery;
+      };
+
       // Carries a one-shot calendar type tab from /anime-calendar · /series-calendar
       // into the next BrowseShell open (which seeds the useCalendarState hook). Reset
       // after each open so a plain /calendar afterwards is not stuck on a filter.
@@ -229,6 +239,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             continue;
           }
           routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
+          syncBrowseQueryDraft();
           pendingInitialRoute = undefined;
           continue;
         }
@@ -395,6 +406,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           settings: container.config.getRaw(),
           initialCalendarTypeTab,
           initialQuery: browseState.searchQuery,
+          queryDraft: browseQueryDraft,
           initialResults: browseState.searchResults.map((r) =>
             mapBrowseResultOption(container, browseContext, r),
           ),
@@ -651,6 +663,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 note: `Filter added: ${chip}`,
               });
             }
+            syncBrowseQueryDraft();
             diagnosticsService.record(
               buildSearchDiagnosticEvent({
                 operation: chip ? "search.filter.applied" : "search.filter.help",
@@ -724,6 +737,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
           if (outcome.action === "recommendation") {
             routeSubtitle = await loadSearchRoute("recommendation", context);
+            syncBrowseQueryDraft();
             continue;
           }
 
@@ -734,6 +748,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             outcome.action === "surprise"
           ) {
             routeSubtitle = await loadSearchRoute(outcome.action, context);
+            syncBrowseQueryDraft();
             continue;
           }
 
@@ -742,6 +757,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           if (outcome.action === "anime-calendar" || outcome.action === "series-calendar") {
             pendingCalendarType = outcome.action === "anime-calendar" ? "Anime" : "TV";
             routeSubtitle = await loadSearchRoute("calendar", context);
+            syncBrowseQueryDraft();
             continue;
           }
 

@@ -3,6 +3,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
+import { cancelRootOverlay } from "./cancel-root-overlay";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { palette } from "./shell-theme";
 
@@ -52,7 +53,7 @@ export function RootOverlayLoader(props: RootOverlayLoaderProps): React.ReactEle
   useInput(
     (_input, key) => {
       if (key.escape) {
-        props.container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        cancelRootOverlay(props.overlay, props.container.stateManager);
       }
     },
     { isActive: module === null },
@@ -64,9 +65,11 @@ export function RootOverlayLoader(props: RootOverlayLoaderProps): React.ReactEle
     void loadRootOverlayModule().then(
       (loaded) => {
         if (active) setModule(loaded);
+        return undefined;
       },
       () => {
         if (active) setLoadError(true);
+        return undefined;
       },
     );
     return () => {

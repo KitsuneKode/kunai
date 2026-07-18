@@ -166,10 +166,13 @@ function browseFilterPlaceholder(mode: ShellMode): string {
   return "type title, year, movie, series, downloaded…";
 }
 
+type BrowseQueryDraft = { value: string; mode: ShellMode };
+
 export function BrowseShell<T>({
   mode,
   provider,
   initialQuery,
+  queryDraft,
   initialResults,
   initialResultSubtitle,
   initialSelectedIndex,
@@ -194,6 +197,7 @@ export function BrowseShell<T>({
   mode: ShellMode;
   provider: string;
   initialQuery?: string;
+  queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialSelectedIndex?: number;
@@ -219,7 +223,14 @@ export function BrowseShell<T>({
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
   });
-  const [query, setQuery] = useState(initialQuery ?? "");
+  const [query, setQueryState] = useState(() => queryDraft?.value ?? initialQuery ?? "");
+  const setQuery = useCallback(
+    (nextQuery: string) => {
+      if (queryDraft) queryDraft.value = nextQuery;
+      setQueryState(nextQuery);
+    },
+    [queryDraft],
+  );
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
@@ -423,7 +434,7 @@ export function BrowseShell<T>({
         clearResults();
       }
     },
-    [clearResults],
+    [clearResults, setQuery],
   );
 
   const runSearch = useCallback(async () => {
@@ -1867,6 +1878,7 @@ export function openBrowseShell<T>({
   mode,
   provider,
   initialQuery,
+  queryDraft: sharedQueryDraft,
   initialResults,
   initialResultSubtitle,
   initialSelectedIndex,
@@ -1888,6 +1900,7 @@ export function openBrowseShell<T>({
   mode: ShellMode;
   provider: string;
   initialQuery?: string;
+  queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
   initialSelectedIndex?: number;
@@ -1906,6 +1919,11 @@ export function openBrowseShell<T>({
   idleContext?: import("./types").BrowseIdleContext;
   loadIdleContext?: BrowseIdleContextLoader;
 }): Promise<BrowseShellResult<T>> {
+  const queryDraft = sharedQueryDraft ?? { value: initialQuery ?? "", mode };
+  if (queryDraft.mode !== mode) {
+    queryDraft.value = initialQuery ?? "";
+    queryDraft.mode = mode;
+  }
   const session = mountRootContent<BrowseShellResult<T>>({
     kind: "browse",
     renderContent: (finish) => (
@@ -1913,6 +1931,7 @@ export function openBrowseShell<T>({
         mode={mode}
         provider={provider}
         initialQuery={initialQuery}
+        queryDraft={queryDraft}
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
         initialSelectedIndex={initialSelectedIndex}
