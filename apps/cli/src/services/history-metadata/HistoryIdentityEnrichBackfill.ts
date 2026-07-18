@@ -18,6 +18,8 @@ export type HistoryIdentityEnrichBackfillStats = {
   readonly enriched: number;
   readonly skippedComplete: number;
   readonly skippedLowConfidence: number;
+  /** High-confidence enrichments that added no new ids (crosswalk has nothing more). */
+  readonly skippedNoNewIds: number;
   readonly aborted: boolean;
 };
 
@@ -62,6 +64,7 @@ export async function runHistoryIdentityEnrichBackfill(
     enriched: 0,
     skippedComplete: 0,
     skippedLowConfidence: 0,
+    skippedNoNewIds: 0,
     aborted: false,
   };
 
@@ -103,8 +106,17 @@ export async function runHistoryIdentityEnrichBackfill(
       continue;
     }
 
-    repo.backfillTitleMetadata(row.titleId, { externalIds: result.externalIds });
-    log(`identity backfill: ${row.titleId} gained ${Object.keys(result.externalIds).join(",")}`);
+    // Only a real row change counts: re-confirming ids the rows already carry
+    // must not re-trigger the whole-history consolidator on every startup.
+    const changed = repo.backfillTitleMetadata(row.titleId, { externalIds: result.externalIds });
+    if (!changed) {
+      stats.skippedNoNewIds += 1;
+      continue;
+    }
+    const gainedIds = Object.entries(result.externalIds)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key);
+    log(`identity backfill: ${row.titleId} now carries ${gainedIds.join(",")}`);
     stats.enriched += 1;
     mutated = true;
   }

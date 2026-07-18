@@ -332,17 +332,22 @@ export class HistoryRepository {
    * fills columns that are currently empty (NULL poster / empty external ids) so a
    * later, better resolution can heal a row that playback never had art for, while
    * never clobbering metadata that already exists.
+   *
+   * Returns true when at least one row actually changed, so callers can skip
+   * follow-up work (consolidation, logging) on no-op backfills.
    */
   backfillTitleMetadata(
     titleId: string,
     metadata: { readonly posterUrl?: string; readonly externalIds?: ProviderExternalIds },
-  ): void {
+  ): boolean {
+    let changed = false;
     if (metadata.posterUrl) {
-      this.db
+      const result = this.db
         .query(
           "UPDATE history_progress SET poster_url = ? WHERE title_id = ? AND (poster_url IS NULL OR poster_url = '')",
         )
         .run(metadata.posterUrl, titleId);
+      changed ||= result.changes > 0;
     }
     const externalIdsJson = serializeExternalIds(metadata.externalIds);
     if (externalIdsJson) {
@@ -363,10 +368,12 @@ export class HistoryRepository {
         this.db
           .query("UPDATE history_progress SET external_ids_json = ? WHERE key = ?")
           .run(nextJson, row.key);
+        changed = true;
       }
 
       this.titleAliases.upsertAliases(titleId, externalIdsToAliases(metadata.externalIds));
     }
+    return changed;
   }
 
   listRecent(limit = 20): readonly HistoryProgress[] {

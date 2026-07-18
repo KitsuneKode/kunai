@@ -55,6 +55,30 @@ test("backfillTitleMetadata fills missing external ids", () => {
   expect(r.getLatestForTitle("opaque-1")?.externalIds).toEqual({ anilistId: "103223" });
 });
 
+test("backfillTitleMetadata reports whether any row actually changed", () => {
+  const r = repo();
+  seedTwoEpisodes(r);
+
+  // First write adds new ids → changed.
+  expect(r.backfillTitleMetadata("opaque-1", { externalIds: { anilistId: "103223" } })).toBe(true);
+
+  // Same bag again adds nothing → unchanged.
+  expect(r.backfillTitleMetadata("opaque-1", { externalIds: { anilistId: "103223" } })).toBe(false);
+
+  // A bag that only repeats existing ids (with undefined lane ids present) is
+  // still a no-op — undefined values must not count as new information.
+  expect(
+    r.backfillTitleMetadata("opaque-1", {
+      externalIds: { anilistId: "103223", tmdbId: undefined, imdbId: undefined },
+    }),
+  ).toBe(false);
+
+  // A genuinely new lane id → changed again.
+  expect(
+    r.backfillTitleMetadata("opaque-1", { externalIds: { anilistId: "103223", tmdbId: "61054" } }),
+  ).toBe(true);
+});
+
 test("backfillTitleMetadata does NOT clobber an existing poster", () => {
   const r = repo();
   r.upsertProgress({

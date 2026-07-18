@@ -108,6 +108,44 @@ test("backfill respects the budget and never rewrites on low confidence", async 
   db.close();
 });
 
+test("backfill treats a no-op enrichment as not enriched so repeat startups stay cheap", async () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new HistoryRepository(db);
+
+  // Barakamon-shape: anime ids present, TMDB lane missing — and the crosswalk
+  // legitimately has no TMDB mapping, so enrichment can never add anything.
+  repo.upsertProgress({
+    title: {
+      id: "20782",
+      kind: "anime",
+      title: "Barakamon",
+      externalIds: { anilistId: "20782", malId: "25045" },
+    },
+    episode: { season: 1, episode: 12 },
+    positionSeconds: 600,
+  });
+
+  const sameBag = { anilistId: "20782", malId: "25045" };
+  const identity = fakeIdentity({
+    "20782": {
+      externalIds: sameBag,
+      graph: { ...sameBag, confidence: "high", source: "arm" },
+    },
+  });
+
+  const before = repo.listAllProgress();
+  const stats = await runHistoryIdentityEnrichBackfill({ db, identity });
+
+  // High confidence but nothing new: must not count as enriched (and must not
+  // trigger the whole-history consolidator on every startup).
+  expect(stats.enriched).toBe(0);
+  expect(stats.skippedNoNewIds).toBe(1);
+  expect(repo.listAllProgress()).toEqual(before);
+
+  db.close();
+});
+
 test("backfill skips titles that already carry both lane ids", async () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");

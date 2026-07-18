@@ -767,25 +767,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     run: () => container.storageMaintenance.runStartupMaintenance(),
   });
 
-  runBackgroundTask({
-    task: "history.identity.enrich-backfill",
-    category: "cache",
-    diagnostics: container.diagnosticsService,
-    logger,
-    run: async () => {
-      const { runHistoryIdentityEnrichBackfill } =
-        await import("./services/history-metadata/HistoryIdentityEnrichBackfill");
-      const stats = await runHistoryIdentityEnrichBackfill({
-        db: container.dataDb,
-        identity: container.catalogIdentityService,
-        log: args.debug ? (message) => logger.info(message) : undefined,
-      });
-      if (stats.enriched > 0) {
-        logger.info("History identity backfill", { ...stats });
-      }
-    },
-  });
-
   if (args.debug) {
     logger.info("Kunai started", {
       version: KUNAI_VERSION,
@@ -832,6 +813,27 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   launchSessionApp(container);
   recordCliStartupMilestone(container.diagnosticsService, "shell-mounted");
+  // Must stay after first paint: the enrich loop and the consolidator it can
+  // trigger run synchronous SQLite work that would starve the awaited shell
+  // import and delay the first render.
+  runBackgroundTask({
+    task: "history.identity.enrich-backfill",
+    category: "cache",
+    diagnostics: container.diagnosticsService,
+    logger,
+    run: async () => {
+      const { runHistoryIdentityEnrichBackfill } =
+        await import("./services/history-metadata/HistoryIdentityEnrichBackfill");
+      const stats = await runHistoryIdentityEnrichBackfill({
+        db: container.dataDb,
+        identity: container.catalogIdentityService,
+        log: args.debug ? (message) => logger.info(message) : undefined,
+      });
+      if (stats.enriched > 0) {
+        logger.info("History identity backfill", { ...stats });
+      }
+    },
+  });
   for (const adapter of container.syncService.adapters) {
     const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
     if (!ensureConnectedUsername) continue;

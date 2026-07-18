@@ -67,81 +67,88 @@ export function runHistoryIdentityConsolidator(
   } satisfies HistoryIdentityConsolidatorStats;
 
   const rows = repo.listAllProgress();
-  for (const row of rows) {
-    stats.scanned += 1;
-    const externalIds = row.externalIds;
-    if (!hasCatalogProof(row.mediaKind, externalIds)) {
-      stats.skippedNoProof += 1;
-      continue;
-    }
-
-    const canonicalId = resolveCanonicalCatalogTitleId(
-      {
-        id: row.titleId,
-        kind: row.mediaKind,
-        externalIds,
-      },
-      { contentClass: contentClassOf(externalIds) },
-    );
-    if (row.titleId === canonicalId) {
-      if (!options.dryRun) {
-        aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
+  // One transaction for the whole pass: the per-row alias upserts and rekeys
+  // otherwise each pay their own commit fsync, which turns a full-history scan
+  // into seconds of synchronous SQLite work on the startup path.
+  const consolidate = db.transaction(() => {
+    for (const row of rows) {
+      stats.scanned += 1;
+      const externalIds = row.externalIds;
+      if (!hasCatalogProof(row.mediaKind, externalIds)) {
+        stats.skippedNoProof += 1;
+        continue;
       }
-      stats.skippedAlreadyCanonical += 1;
-      continue;
-    }
 
-    const canonicalTitle = {
-      id: canonicalId,
-      kind: row.mediaKind,
-      title: row.title,
-      externalIds,
-    };
-    const newKey = createHistoryKey(canonicalTitle, {
-      season: row.season,
-      episode: row.episode,
-      absoluteEpisode: row.absoluteEpisode,
-    });
-    const existing = repo.getProgressByKey(newKey);
-
-    if (!existing) {
-      log(`retitle ${row.key} → title_id=${canonicalId} key=${newKey}`);
-      if (!options.dryRun) {
-        repo.rekeyProgressRow(row.key, canonicalId, newKey);
-        aliases.reassignTitleId(row.titleId, canonicalId);
-        aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
-      }
-      stats.retitled += 1;
-      continue;
-    }
-
-    if (catalogIdsConflict(existing.externalIds, externalIds)) {
-      log(`skip ambiguous merge for ${row.key} vs ${existing.key}`);
-      stats.skippedAmbiguous += 1;
-      continue;
-    }
-
-    const keepNewer = Date.parse(row.updatedAt) >= Date.parse(existing.updatedAt) ? row : existing;
-    const drop = keepNewer.key === row.key ? existing : row;
-
-    log(`merge ${drop.key} into ${keepNewer.key} (keep newer updated_at)`);
-    if (!options.dryRun) {
-      const mergedExternalIds = mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds);
-      if (mergedExternalIds) {
-        repo.updateProgressExternalIdsByKey(keepNewer.key, mergedExternalIds);
-      }
-      repo.deleteProgressByKey(drop.key);
-      if (keepNewer.key !== newKey) {
-        repo.rekeyProgressRow(keepNewer.key, canonicalId, newKey);
-      }
-      aliases.reassignTitleId(row.titleId, canonicalId);
-      aliases.upsertAliases(
-        canonicalId,
-        externalIdsToAliases(mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds)),
+      const canonicalId = resolveCanonicalCatalogTitleId(
+        {
+          id: row.titleId,
+          kind: row.mediaKind,
+          externalIds,
+        },
+        { contentClass: contentClassOf(externalIds) },
       );
+      if (row.titleId === canonicalId) {
+        if (!options.dryRun) {
+          aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
+        }
+        stats.skippedAlreadyCanonical += 1;
+        continue;
+      }
+
+      const canonicalTitle = {
+        id: canonicalId,
+        kind: row.mediaKind,
+        title: row.title,
+        externalIds,
+      };
+      const newKey = createHistoryKey(canonicalTitle, {
+        season: row.season,
+        episode: row.episode,
+        absoluteEpisode: row.absoluteEpisode,
+      });
+      const existing = repo.getProgressByKey(newKey);
+
+      if (!existing) {
+        log(`retitle ${row.key} → title_id=${canonicalId} key=${newKey}`);
+        if (!options.dryRun) {
+          repo.rekeyProgressRow(row.key, canonicalId, newKey);
+          aliases.reassignTitleId(row.titleId, canonicalId);
+          aliases.upsertAliases(canonicalId, externalIdsToAliases(externalIds));
+        }
+        stats.retitled += 1;
+        continue;
+      }
+
+      if (catalogIdsConflict(existing.externalIds, externalIds)) {
+        log(`skip ambiguous merge for ${row.key} vs ${existing.key}`);
+        stats.skippedAmbiguous += 1;
+        continue;
+      }
+
+      const keepNewer =
+        Date.parse(row.updatedAt) >= Date.parse(existing.updatedAt) ? row : existing;
+      const drop = keepNewer.key === row.key ? existing : row;
+
+      log(`merge ${drop.key} into ${keepNewer.key} (keep newer updated_at)`);
+      if (!options.dryRun) {
+        const mergedExternalIds = mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds);
+        if (mergedExternalIds) {
+          repo.updateProgressExternalIdsByKey(keepNewer.key, mergedExternalIds);
+        }
+        repo.deleteProgressByKey(drop.key);
+        if (keepNewer.key !== newKey) {
+          repo.rekeyProgressRow(keepNewer.key, canonicalId, newKey);
+        }
+        aliases.reassignTitleId(row.titleId, canonicalId);
+        aliases.upsertAliases(
+          canonicalId,
+          externalIdsToAliases(mergeBackfillExternalIds(keepNewer.externalIds, drop.externalIds)),
+        );
+      }
+      stats.merged += 1;
     }
-    stats.merged += 1;
-  }
+  });
+  consolidate();
 
   return stats;
 }
