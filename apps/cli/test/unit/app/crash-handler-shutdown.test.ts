@@ -1,91 +1,118 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
-import { __testing, runGuardedShutdown, type GuardedShutdownRuntime } from "@/main";
+import { createShutdownCoordinator } from "@/app/session/shutdown-coordinator";
+import { createMainShutdownRuntime, type MainShutdownDeps } from "@/main";
 
-function createDeferred(): {
-  promise: Promise<void>;
-  resolve: () => void;
-} {
-  let resolve!: () => void;
-  const promise = new Promise<void>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
-function createRuntime(overrides: Partial<GuardedShutdownRuntime> = {}): {
-  runtime: GuardedShutdownRuntime;
-  calls: string[];
-  exitCodes: number[];
-} {
-  const calls: string[] = [];
-  const exitCodes: number[] = [];
-  const runtime: GuardedShutdownRuntime = {
-    pauseDownloads: async (reason) => {
-      calls.push(`pause:${reason}`);
+function createDeps(calls: string[], exitCodes: number[]): MainShutdownDeps {
+  const container = {
+    downloadService: {
+      beginShutdown: () => calls.push("downloads:begin"),
+      pauseActiveJobsForShutdown: async () => void calls.push("downloads:pause"),
     },
-    shutdownController: async () => {
-      calls.push("controller");
+    backgroundWorkScheduler: {
+      beginShutdown: () => calls.push("scheduler:begin"),
     },
-    shutdownShell: async () => {
-      calls.push("shell");
+    binaryAutoUpdater: {
+      stopBackground: () => calls.push("updater:stop"),
     },
-    disposeContainer: async () => {
-      calls.push("container");
+    activePlaybackCheckpoint: {
+      flush: () => calls.push("playback:checkpoint"),
     },
-    exit: (code) => {
-      exitCodes.push(code);
+    config: {
+      flushPending: async () => void calls.push("config:flush"),
     },
-    ...overrides,
+    queueService: {
+      prepareForShutdown: () => {
+        calls.push("queue:prepare");
+        return "closed" as const;
+      },
+    },
+    diagnosticsService: {
+      flush: () => calls.push("diagnostics:flush"),
+      record: () => {},
+    },
   };
-
-  return { runtime, calls, exitCodes };
+  return {
+    getController: () =>
+      ({
+        beginShutdown: () => calls.push("controller:begin"),
+        releaseExternalResources: async () => void calls.push("controller:release"),
+      }) as never,
+    getContainer: () => container as never,
+    shutdownShell: async () => void calls.push("shell:restore"),
+    awaitLifetimeLock: async () => void calls.push("lock:awaited"),
+    releaseVersionLock: async () => void calls.push("lock:release"),
+    disposeContainer: async () => void calls.push("dispose"),
+    exit: (code) => void exitCodes.push(code),
+  };
 }
 
-describe("guarded process shutdown", () => {
-  beforeEach(() => {
-    __testing.resetShutdownGuard();
-  });
+describe("main shutdown runtime", () => {
+  test("runs quiescence, terminal restore, preservation, release, disposal in order", async () => {
+    const calls: string[] = [];
+    const exitCodes: number[] = [];
+    const coordinator = createShutdownCoordinator(
+      createMainShutdownRuntime(createDeps(calls, exitCodes)),
+    );
 
-  afterEach(() => {
-    __testing.resetShutdownGuard();
-  });
+    await coordinator.request({ reason: "SIGTERM", exitCode: 143 });
 
-  test("runs the teardown body only once across repeated calls", async () => {
-    const { runtime, calls, exitCodes } = createRuntime();
-
-    await runGuardedShutdown({ reason: "uncaught exception", exitCode: 1 }, runtime);
-    await runGuardedShutdown({ reason: "unhandled rejection", exitCode: 1 }, runtime);
-
+    // Quiescence closes admission before the terminal is restored, critical
+    // state is preserved before any external resource is released, and
+    // disposal (SQLite close) is last.
     expect(calls).toEqual([
-      "pause:download paused by uncaught exception",
-      "controller",
-      "shell",
-      "container",
+      "controller:begin",
+      "downloads:begin",
+      "scheduler:begin",
+      "updater:stop",
+      "shell:restore",
+      // The preservation batch runs concurrently; its internal order follows
+      // microtask scheduling, but every entry lands before any release below.
+      "config:flush",
+      "downloads:pause",
+      "playback:checkpoint",
+      "queue:prepare",
+      "diagnostics:flush",
+      "controller:release",
+      "lock:awaited",
+      "lock:release",
+      "dispose",
     ]);
+    expect(exitCodes).toEqual([143]);
+  });
+
+  test("repeated requests share one cleanup and a fatal request upgrades the exit code", async () => {
+    const calls: string[] = [];
+    const exitCodes: number[] = [];
+    const coordinator = createShutdownCoordinator(
+      createMainShutdownRuntime(createDeps(calls, exitCodes)),
+    );
+
+    const first = coordinator.request({ reason: "normal exit", exitCode: 0 });
+    const second = coordinator.request({ reason: "unhandled rejection", exitCode: 1, fatal: true });
+    await Promise.all([first, second]);
+
+    expect(calls.filter((call) => call === "dispose")).toHaveLength(1);
     expect(exitCodes).toEqual([1]);
   });
 
-  test("returns a concurrent second call while the first teardown is awaiting", async () => {
-    const pause = createDeferred();
-    const { runtime, calls, exitCodes } = createRuntime({
-      pauseDownloads: async (reason) => {
-        calls.push(`pause:${reason}`);
-        await pause.promise;
+  test("a failing preservation phase still releases resources and disposes", async () => {
+    const calls: string[] = [];
+    const exitCodes: number[] = [];
+    const deps = createDeps(calls, exitCodes);
+    const failingDeps: MainShutdownDeps = {
+      ...deps,
+      shutdownShell: async () => {
+        throw new Error("ink already unmounted");
       },
-    });
+    };
+    const coordinator = createShutdownCoordinator(createMainShutdownRuntime(failingDeps));
 
-    const firstShutdown = runGuardedShutdown({ reason: "SIGINT", exitCode: 0 }, runtime);
-    await Promise.resolve();
+    await coordinator.request({ reason: "SIGINT", exitCode: 130 });
 
-    await runGuardedShutdown({ reason: "unhandled rejection", exitCode: 1 }, runtime);
-    expect(calls).toEqual(["pause:download paused by SIGINT"]);
-    expect(exitCodes).toEqual([]);
-
-    pause.resolve();
-    await firstShutdown;
-
-    expect(calls).toEqual(["pause:download paused by SIGINT", "controller", "shell", "container"]);
-    expect(exitCodes).toEqual([0]);
+    expect(calls).toContain("downloads:pause");
+    expect(calls).toContain("controller:release");
+    expect(calls).toContain("dispose");
+    expect(exitCodes).toEqual([130]);
   });
 });

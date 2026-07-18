@@ -20,6 +20,7 @@ export {
   withVersionLock,
   tryAcquireVersionLock,
   lockCurrentVersion,
+  releaseCurrentVersionLock,
   cleanupStaleLocks,
 } from "./version-lock";
 export { cleanupOldVersions } from "./cleanup-versions";

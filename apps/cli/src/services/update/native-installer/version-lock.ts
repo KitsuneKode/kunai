@@ -120,8 +120,15 @@ export async function withVersionLock<T>(
 }
 
 let lifetimeLockPath: string | null = null;
+let lifetimeLockRelease: (() => Promise<void>) | null = null;
 
-/** Hold a process-lifetime lock when running from the versioned store. */
+/**
+ * Hold a process-lifetime lock when running from the versioned store.
+ *
+ * Registers no signal or exit handlers: the shutdown coordinator releases the
+ * lock through releaseCurrentVersionLock(), and a crashed process leaves a
+ * stale lock that the liveness check reclaims on the next run.
+ */
 export async function lockCurrentVersion(
   layout: InstallLayoutPaths = getInstallLayoutPaths(),
   execPath: string = process.execPath,
@@ -138,19 +145,16 @@ export async function lockCurrentVersion(
   if (!lock.acquired) return;
 
   lifetimeLockPath = path;
-  const release = lock.release;
-  const cleanup = (): void => {
-    void release();
-  };
-  process.once("exit", cleanup);
-  process.once("SIGINT", () => {
-    cleanup();
-    process.exit(130);
-  });
-  process.once("SIGTERM", () => {
-    cleanup();
-    process.exit(143);
-  });
+  lifetimeLockRelease = lock.release;
+}
+
+/** Release the process-lifetime lock; concurrent calls release exactly once. */
+export async function releaseCurrentVersionLock(): Promise<void> {
+  const release = lifetimeLockRelease;
+  lifetimeLockRelease = null;
+  lifetimeLockPath = null;
+  if (!release) return;
+  await release();
 }
 
 export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<void> {

@@ -38,6 +38,11 @@ import {
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
+import {
+  createShutdownCoordinator,
+  type ShutdownCoordinator,
+  type ShutdownRuntime,
+} from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
@@ -87,66 +92,109 @@ type PendingShareLaunch = {
 let globalController: SessionController | null = null;
 let globalContainer: Awaited<ReturnType<typeof createContainer>> | null = null;
 let processHandlersInitialized = false;
-let shutdownInProgress = false;
+/** Resolves once startup lifetime-lock acquisition settled (versioned binary). */
+let lifetimeLockReady: Promise<void> = Promise.resolve();
 
 async function shutdownShell(): Promise<void> {
   const { shutdownSessionApp } = await import("./app-shell/ink-shell");
   await shutdownSessionApp();
 }
 
-export interface GuardedShutdownRuntime {
-  pauseDownloads(reason: string): Promise<void>;
-  shutdownController(): Promise<void>;
+/**
+ * Everything the shutdown coordinator needs from the live process, injectable
+ * so the phase ordering is testable without booting a real container.
+ */
+export type MainShutdownDeps = {
+  getController(): Pick<SessionController, "beginShutdown" | "releaseExternalResources"> | null;
+  getContainer(): Awaited<ReturnType<typeof createContainer>> | null;
   shutdownShell(): Promise<void>;
+  awaitLifetimeLock(): Promise<void>;
+  releaseVersionLock(): Promise<void>;
   disposeContainer(): Promise<void>;
   exit(code: number): void;
-}
+};
 
-function createGuardedShutdownRuntime(): GuardedShutdownRuntime {
+function liveMainShutdownDeps(): MainShutdownDeps {
   return {
-    pauseDownloads: async (reason) => {
-      await globalContainer?.downloadService.pauseActiveJobsForShutdown(reason);
-    },
-    shutdownController: async () => {
-      await globalController?.shutdown().catch(() => {});
-    },
+    getController: () => globalController,
+    getContainer: () => globalContainer,
     shutdownShell,
-    disposeContainer: async () => {
-      await disposeContainer(globalContainer);
+    awaitLifetimeLock: () => lifetimeLockReady,
+    releaseVersionLock: async () => {
+      const { releaseCurrentVersionLock } =
+        await import("./services/update/native-installer/version-lock");
+      await releaseCurrentVersionLock();
     },
+    disposeContainer: () => disposeContainer(globalContainer),
     exit: (code) => process.exit(code),
   };
 }
 
-export async function runGuardedShutdown(
-  options: { reason: string; exitCode: number },
-  runtime: GuardedShutdownRuntime = createGuardedShutdownRuntime(),
-): Promise<void> {
-  if (shutdownInProgress) return;
-  shutdownInProgress = true;
-
-  const forceExit = setTimeout(() => {
-    runtime.exit(options.exitCode);
-  }, 4000);
-  if (forceExit.unref) forceExit.unref();
-
-  try {
-    await runtime.pauseDownloads(`download paused by ${options.reason}`);
-    await runtime.shutdownController();
-    await runtime.shutdownShell();
-    await runtime.disposeContainer();
-  } finally {
-    clearTimeout(forceExit);
-    if (process.stdin.isTTY) process.stdin.unref();
-    runtime.exit(options.exitCode);
-  }
+export function createMainShutdownRuntime(deps: MainShutdownDeps): ShutdownRuntime {
+  const shutdownWaitBudgetMs = 500;
+  return {
+    quiesce: async () => {
+      deps.getController()?.beginShutdown();
+      const container = deps.getContainer();
+      container?.downloadService.beginShutdown("download paused by shutdown");
+      container?.backgroundWorkScheduler.beginShutdown("app-exit");
+      container?.binaryAutoUpdater.stopBackground();
+    },
+    restoreTerminal: async () => {
+      await deps.shutdownShell();
+    },
+    preserveCriticalState: async () => {
+      const container = deps.getContainer();
+      if (!container) return;
+      await Promise.allSettled([
+        Promise.resolve().then(() => container.activePlaybackCheckpoint.flush()),
+        container.config.flushPending(),
+        container.downloadService.pauseActiveJobsForShutdown("download paused by shutdown", {
+          gracefulWaitMs: shutdownWaitBudgetMs,
+          forceWaitMs: shutdownWaitBudgetMs,
+          inactiveWaitMs: shutdownWaitBudgetMs,
+        }),
+        Promise.resolve().then(() => container.queueService.prepareForShutdown()),
+        Promise.resolve().then(() => container.diagnosticsService.flush()),
+      ]);
+    },
+    releaseExternalResources: async (_intent, signal) => {
+      await Promise.allSettled([
+        deps.getController()?.releaseExternalResources(),
+        deps.awaitLifetimeLock().then(() => deps.releaseVersionLock()),
+      ]);
+      signal.throwIfAborted();
+    },
+    dispose: async () => {
+      await deps.disposeContainer();
+    },
+    recordFailure: (phase, error) => {
+      try {
+        deps.getContainer()?.diagnosticsService.record({
+          category: "session",
+          operation: `session.shutdown.phase.${phase}`,
+          message: "Shutdown phase failed",
+          context: { error: String(error) },
+        });
+      } catch {
+        console.error(`Shutdown phase ${phase} failed:`, error);
+      }
+    },
+    unrefStdin: () => {
+      if (process.stdin.isTTY) process.stdin.unref();
+    },
+    exit: deps.exit,
+  };
 }
 
-export const __testing = {
-  resetShutdownGuard(): void {
-    shutdownInProgress = false;
-  },
-};
+let shutdownCoordinator: ShutdownCoordinator | null = null;
+
+function getShutdownCoordinator(): ShutdownCoordinator {
+  shutdownCoordinator ??= createShutdownCoordinator(
+    createMainShutdownRuntime(liveMainShutdownDeps()),
+  );
+  return shutdownCoordinator;
+}
 
 async function maybeRunOfflineMode(
   args: { offline: boolean },
@@ -532,7 +580,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   );
 
   // Versioned binary: hold lifetime lock and prune old versions (binary channel).
-  void (async () => {
+  // The acquisition promise is tracked so coordinated shutdown can await it
+  // before releasing — a late lock must never survive the process.
+  lifetimeLockReady = (async () => {
     const { lockCurrentVersion, cleanupOldVersions } =
       await import("./services/update/native-installer");
     const { readInstallManifest } = await import("./services/update/install-manifest");
@@ -541,7 +591,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       await lockCurrentVersion().catch(() => {});
       void cleanupOldVersions().catch(() => {});
     }
-  })();
+  })().catch(() => {});
 
   // Parse CLI arguments
   const args = parseArgs(argv);
@@ -910,20 +960,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
 
     logger.info("Kunai exited normally");
-    await globalContainer?.presence.shutdown().catch(() => {});
-    await globalContainer?.downloadService.pauseActiveJobsForShutdown("normal exit");
-    await globalController.shutdown();
-    await shutdownShell();
-    await disposeContainer(globalContainer);
-    if (process.stdin.isTTY) process.stdin.unref();
-    process.exit(0);
+    await getShutdownCoordinator().request({ reason: "normal exit", exitCode: 0 });
   } catch (e) {
     logger.error("Kunai crashed", { error: String(e) });
-    await globalController?.shutdown().catch(() => {});
-    await shutdownShell();
-    await disposeContainer(globalContainer);
     console.error("Fatal error:", e);
-    process.exit(1);
+    await getShutdownCoordinator().request({ reason: "fatal error", exitCode: 1, fatal: true });
   }
 }
 
@@ -936,18 +977,16 @@ function setupSignalHandlers(): void {
 
   // Shell surfaces (Ctrl+C, /quit) request shutdown through the bridge; they
   // never call process.exit() themselves.
-  bindShutdownRequestHandler((intent) =>
-    runGuardedShutdown({ reason: intent.reason, exitCode: intent.exitCode }),
-  );
+  bindShutdownRequestHandler((intent) => getShutdownCoordinator().request(intent));
 
-  const shutdown = async (signal: string) => {
+  const requestSignalShutdown = (signal: string, exitCode: number): void => {
     console.log(`\nReceived ${signal}, shutting down cleanly...`);
-    await runGuardedShutdown({ reason: signal, exitCode: 0 });
+    void getShutdownCoordinator().request({ reason: signal, exitCode });
   };
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGHUP", () => shutdown("SIGHUP"));
+  process.on("SIGINT", () => requestSignalShutdown("SIGINT", 130));
+  process.on("SIGTERM", () => requestSignalShutdown("SIGTERM", 143));
+  process.on("SIGHUP", () => requestSignalShutdown("SIGHUP", 129));
 
   // Hard backstop: the async shutdown can lose its race with the 4s force-exit,
   // orphaning yt-dlp/ffmpeg children that then keep buffering GBs of RAM after
@@ -963,12 +1002,20 @@ function setupSignalHandlers(): void {
 
   process.on("uncaughtException", (e) => {
     console.error("Uncaught exception:", e);
-    void runGuardedShutdown({ reason: "uncaught exception", exitCode: 1 });
+    void getShutdownCoordinator().request({
+      reason: "uncaught exception",
+      exitCode: 1,
+      fatal: true,
+    });
   });
 
   process.on("unhandledRejection", (e) => {
     console.error("Unhandled rejection:", e);
-    void runGuardedShutdown({ reason: "unhandled rejection", exitCode: 1 });
+    void getShutdownCoordinator().request({
+      reason: "unhandled rejection",
+      exitCode: 1,
+      fatal: true,
+    });
   });
 }
 
