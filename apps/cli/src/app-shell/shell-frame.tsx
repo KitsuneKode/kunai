@@ -1,9 +1,9 @@
 import { useLineEditor } from "@/app-shell/line-editor";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
-import { requestHardExit } from "./graceful-exit";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { useShellInput } from "./shell-command-input";
 import { ShellCommandModeProvider } from "./shell-command-mode";
@@ -60,7 +60,7 @@ export function ShellFrame({
 }) {
   useInput((input, key) => {
     if (isHardGlobalQuit(input, key)) {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
   });
 
@@ -177,7 +177,7 @@ export function InputField({
     if (!focus) return;
     const route = routeShellInput(input, key, { textInputFocused: focus });
     if (route.owner === "hard-global") {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
     if (
       route.command === "open-command-palette" ||

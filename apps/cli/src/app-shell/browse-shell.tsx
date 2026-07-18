@@ -5,6 +5,7 @@ import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -80,7 +81,6 @@ import {
   type DetailsPanelData,
 } from "./details-panel";
 import { buildDetailsSheet } from "./details-sheet.model";
-import { requestHardExit } from "./graceful-exit";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
@@ -1005,7 +1005,7 @@ export function BrowseShell<T>({
   useInput((input, key) => {
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
 
     if (activeOverlay) {

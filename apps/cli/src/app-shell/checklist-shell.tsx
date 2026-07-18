@@ -1,4 +1,3 @@
-import { requestHardExit } from "@/app-shell/graceful-exit";
 import {
   getPickerChromeRows,
   getPickerLayout,
@@ -11,6 +10,7 @@ import { ShellFooter, ResizeBlocker } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -82,7 +82,7 @@ function ChecklistShell<T>({
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
     if (key.escape) {
       if (filterQuery.length > 0) {

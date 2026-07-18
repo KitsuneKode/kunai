@@ -38,6 +38,7 @@ import {
 import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import { SessionController } from "@/app/session/SessionController";
+import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import { buildCliHelpText, parseCliArgs, type CliArgs } from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import {
@@ -932,6 +933,12 @@ function setupSignalHandlers(): void {
     return;
   }
   processHandlersInitialized = true;
+
+  // Shell surfaces (Ctrl+C, /quit) request shutdown through the bridge; they
+  // never call process.exit() themselves.
+  bindShutdownRequestHandler((intent) =>
+    runGuardedShutdown({ reason: intent.reason, exitCode: intent.exitCode }),
+  );
 
   const shutdown = async (signal: string) => {
     console.log(`\nReceived ${signal}, shutting down cleanly...`);

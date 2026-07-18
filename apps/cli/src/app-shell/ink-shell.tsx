@@ -17,6 +17,7 @@ import {
   streamSelectionFromTrackPick,
 } from "@/app/playback/source-quality";
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
@@ -29,7 +30,6 @@ import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
 import { ExitShell } from "./exit-shell";
-import { registerExitHandler, requestHardExit } from "./graceful-exit";
 import { useSettledValue } from "./hooks/use-settled-value";
 import { deleteAllKittyImages } from "./image-pane";
 import {
@@ -518,43 +518,15 @@ function AppRoot({ container }: { container: Container }) {
 
   // Global Ctrl+C handler. Ink normalizes control characters to their
   // letter name with key.ctrl=true, so we check both forms for safety.
-  // Instead of calling requestHardExit (which skips presence/mpv cleanup),
-  // emit SIGINT to self so the signal handler in main.ts runs the full
-  // cleanup sequence (pause downloads, disconnect Discord, kill mpv,
-  // clean socket files, unmount Ink).
+  // Route through the shared shutdown request bridge so the coordinator in
+  // main.ts owns the full cleanup sequence (pause downloads, disconnect
+  // Discord, checkpoint playback, kill mpv, unmount Ink).
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       stdinManager.cleanup();
-      process.kill(process.pid, "SIGINT");
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
   });
-
-  // Register cleanup as pre-exit handlers for the /quit path.
-  // The OS signal handler (SIGINT/SIGTERM) pauses downloads separately,
-  // so this handler covers only requestHardExit callers (e.g. /quit).
-  useEffect(
-    () =>
-      registerExitHandler(async () => {
-        await container.presence.shutdown();
-      }),
-    [container],
-  );
-
-  useEffect(
-    () =>
-      registerExitHandler(async () => {
-        await container.player.releasePersistentSession();
-      }),
-    [container],
-  );
-
-  useEffect(
-    () =>
-      registerExitHandler(async () => {
-        await container.downloadService.pauseActiveJobsForShutdown("download paused by exit");
-      }),
-    [container],
-  );
 
   useEffect(() => {
     stateManager.dispatch({
@@ -971,7 +943,10 @@ function AppRoot({ container }: { container: Container }) {
     onCommandAction("search");
   }, [onCommandAction]);
 
-  const onExitDone = useCallback(() => requestHardExit(0), []);
+  const onExitDone = useCallback(
+    () => requestAppShutdown({ reason: "shell-quit", exitCode: 0 }),
+    [],
+  );
 
   const playbackHandlers = useMemo<PlaybackRootContentHandlers>(
     () => ({
@@ -1337,7 +1312,7 @@ function ListShell<T>({
 
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
 
     if (commandMode) {
@@ -1617,7 +1592,7 @@ function StatsShell({
 
   useInput((input, key) => {
     if (key.ctrl && (input === "c" || input === "\x03")) {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
     if (key.escape || input === "q") {
@@ -2071,7 +2046,7 @@ export function openListShell<T>({
         actionContext?.onAction(result.action) ?? "unhandled",
       );
       if (actionResult === "quit") {
-        requestHardExit(0);
+        requestAppShutdown({ reason: "shell-quit", exitCode: 0 });
       }
       filterQuery = result.filterQuery;
       selectedIndex = result.selectedIndex;

@@ -1,8 +1,8 @@
+import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
-import { requestHardExit } from "./graceful-exit";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { buildLoadingFooterActions } from "./loading-shell-model";
 import {
@@ -406,7 +406,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   useInput((input, key) => {
     if (commandModeOpen) return;
     if ((input === "c" && key.ctrl) || input === "\x03") {
-      requestHardExit(0);
+      requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
     if (key.escape && state.cancellable && onCancel) {
