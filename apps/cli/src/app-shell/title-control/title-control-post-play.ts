@@ -1,4 +1,3 @@
-import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import { formatChord, KEYBINDINGS, type KeyBinding } from "../keybindings";

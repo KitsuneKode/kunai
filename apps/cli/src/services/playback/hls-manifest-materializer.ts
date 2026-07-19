@@ -53,12 +53,15 @@ export async function materializeHlsManifestForPlayback(
       },
       signal: controller.signal,
     });
+  } catch {
+    clearTimeout(timeout);
+    return null;
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
-    throw new Error(`HLS manifest fetch failed with HTTP ${response.status}`);
+    return null;
   }
 
   const manifestText = await response.text();

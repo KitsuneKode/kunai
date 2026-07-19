@@ -3,16 +3,6 @@ import { describe, expect, test } from "bun:test";
 import { KEYBINDINGS } from "@/app-shell/keybindings";
 import { buildPostPlayFooterActions } from "@/app-shell/post-play-footer-actions";
 import { buildPostPlayFooterActionsFromTitleControl } from "@/app-shell/title-control/title-control-post-play";
-import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
-
-const endAvailability: EpisodeAvailability = {
-  nextEpisode: null,
-  previousEpisode: { season: 1, episode: 4 },
-  nextSeasonEpisode: null,
-  upcomingNext: null,
-  animeNextReleaseUnknown: false,
-  tmdbUnavailable: false,
-};
 
 describe("buildPostPlayFooterActionsFromTitleControl", () => {
   test("matches legacy wrapper for did-not-start footers", () => {

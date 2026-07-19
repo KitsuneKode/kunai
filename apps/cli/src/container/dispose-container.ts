@@ -53,7 +53,9 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
   try {
     await bestEffort(() => handles.downloadResolveAbort?.abort());
     await bestEffort(() => container.backgroundWorkScheduler.beginShutdown("container-dispose"));
-    await bestEffort(() => container.backgroundWorkScheduler.drain().then(() => {}));
+    await bestEffort(async () => {
+      await container.backgroundWorkScheduler.drain();
+    });
     await bestEffort(() => container.diagnosticsService.flush());
     await bestEffort(() => handles.dataDb.close());
     await bestEffort(() => handles.cacheDb.close());

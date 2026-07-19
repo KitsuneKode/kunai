@@ -68,7 +68,6 @@ import { toHistoryTimestamp } from "@/domain/playback/playback-history";
 import { didPlaybackEndNearNaturalEnd } from "@/domain/playback/playback-policy";
 import type { QuitNearEndThresholdMode } from "@/domain/playback/playback-policy";
 import { resolvePostPlayState } from "@/domain/playback/post-play-state";
-import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { aggregateWatchTime, formatWatchTimeSummary } from "@/domain/playback/watch-time-stats";
 import type { EpisodeInfo, EpisodePickerOption, ShellMode, TitleInfo } from "@/domain/types";
