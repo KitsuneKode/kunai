@@ -382,7 +382,7 @@
 .kunai-final h2 {
   margin: 0.6rem 0 0;
   max-width: 16ch;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
   font-weight: 300;
@@ -467,7 +467,7 @@
 /* Playback Path Flow */
 .kunai-flow {
   display: grid;
-  grid-template-columns: repeat(5, minmax(13rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.85rem;
   overflow-x: auto;
   padding-bottom: 0.6rem;
@@ -996,7 +996,7 @@ pre:hover {
 .kunai-home table th {
   background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
   color: #fff;
-  font-family: var(--font-serif);
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;
@@ -1130,4 +1130,41 @@ pre:hover {
 .hero-install-box:hover {
   border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
   box-shadow: var(--kunai-shadow-diffuse);
+}
+
+.kunai-highlight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--kunai-line);
+  border-radius: var(--kunai-radius-outer);
+  overflow: hidden;
+  background: color-mix(in oklab, var(--kunai-surface) 70%, transparent);
+}
+
+.kunai-highlight-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--kunai-line);
+}
+
+.kunai-highlight-row:last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 767.98px) {
+  .kunai-highlight-row {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .kunai-flow {
+    grid-template-columns: 1fr;
+  }
 }

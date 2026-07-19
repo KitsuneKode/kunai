@@ -224,6 +224,13 @@ export const docNavEntries: readonly DocNavEntry[] = [
     group: "reference",
     surfaces: ["hub", "sidebar"],
   },
+  {
+    title: "Feedback",
+    href: "/feedback",
+    description: "File bugs, provider issues, and feature requests via GitHub issue templates.",
+    group: "reference",
+    surfaces: ["hub", "sidebar"],
+  },
 ] as const;
 
 export type HomeSectionConfig = {

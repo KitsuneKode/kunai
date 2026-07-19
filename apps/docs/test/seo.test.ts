@@ -114,7 +114,9 @@ describe("docs SEO drift", () => {
       "utf-8",
     );
     expect(shell).toContain("<h1");
-    expect(shell).toContain("bun install -g @kitsunekode/kunai");
+    expect(shell).toContain("CANONICAL_INSTALL");
+    const install = fs.readFileSync(path.join(DOCS_APP_ROOT, "lib/install-commands.ts"), "utf-8");
+    expect(install).toContain("bun install -g @kitsunekode/kunai");
   });
 
   test("glossary is registered in users meta.json", () => {

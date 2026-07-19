@@ -2,7 +2,8 @@
 
 import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { Check } from "lucide-react";
+import { CANONICAL_INSTALL, CANONICAL_SETUP } from "@/lib/install-commands";
+import { IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
 
 export default function HomePageInteractive() {
@@ -52,7 +53,7 @@ export default function HomePageInteractive() {
                 <div className="mb-4 flex items-center justify-between">
                   <span className="kunai-step-label">Step 01</span>
                   <span className="prereq-badge installed flex items-center gap-1.5">
-                    <Check className="kunai-text-ok h-3 w-3 stroke-[3]" />
+                    <IconCheck className="kunai-text-ok size-3" stroke={2} />
                     <span>Prerequisites</span>
                   </span>
                 </div>
@@ -63,7 +64,7 @@ export default function HomePageInteractive() {
                   runtime.
                 </p>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2">
                 {prereqCommand ? (
                   <code className="kunai-code-row">
                     <span>{prereqCommand}</span>
@@ -83,8 +84,8 @@ export default function HomePageInteractive() {
                 <h3 className="kunai-type-title mt-2 mb-3 text-lg">Install Kunai shell</h3>
               </div>
               <code className="kunai-code-row">
-                <span>bun install -g @kitsunekode/kunai</span>
-                <CopyButton text="bun install -g @kitsunekode/kunai" label="global-install" />
+                <span>{CANONICAL_INSTALL}</span>
+                <CopyButton text={CANONICAL_INSTALL} label="global-install" />
               </code>
             </div>
 
@@ -94,8 +95,8 @@ export default function HomePageInteractive() {
                 <h3 className="kunai-type-title mt-2 mb-3 text-lg">Initialize configuration</h3>
               </div>
               <code className="kunai-code-row">
-                <span>kunai --setup</span>
-                <CopyButton text="kunai --setup" label="setup-cli" />
+                <span>{CANONICAL_SETUP}</span>
+                <CopyButton text={CANONICAL_SETUP} label="setup-cli" />
               </code>
             </div>
           </div>

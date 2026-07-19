@@ -8,7 +8,9 @@ import type { Metadata } from "next";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: "Kunai Docs",
+  title: {
+    absolute: "Kunai Docs",
+  },
   description:
     "A terminal-first Kunai guide for playable streams, mpv playback, recovery, offline use, and diagnostics.",
   alternates: {

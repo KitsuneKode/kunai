@@ -6,11 +6,11 @@
   "pages": [
     "index",
     "getting-started",
+    "install-and-update",
     "platforms",
-    "commands-and-shortcuts",
-    "cli-reference",
-    "feature-tour",
     "what-you-can-do",
+    "commands-and-shortcuts",
+    "feature-tour",
     "share-links",
     "playback-and-recovery",
     "media-selection",
@@ -19,11 +19,11 @@
     "downloads-and-offline",
     "customization",
     "runtime-feedback",
+    "cli-reference",
+    "glossary",
     "diagnostics-and-reporting",
     "troubleshooting",
     "supported-and-unsupported",
-    "glossary",
-    "reliability-and-privacy",
-    "install-and-update"
+    "reliability-and-privacy"
   ]
 }

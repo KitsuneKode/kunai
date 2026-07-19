@@ -1,8 +1,15 @@
 import { DocsSidebarBanner } from "@/components/layout/docs-sidebar-banner";
 import { NavTitle } from "@/components/layout/nav-title";
+import {
+  IconBook,
+  IconClockHour4,
+  IconFileText,
+  IconMessageReport,
+  IconTerminal2,
+  IconTool,
+} from "@tabler/icons-react";
 import type { DocsLayoutProps } from "fumadocs-ui/layouts/docs";
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { BookOpen, FileClock, FileText, Terminal, Wrench } from "lucide-react";
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -20,41 +27,39 @@ export function baseOptions(): BaseLayoutProps {
     githubUrl: "https://github.com/KitsuneKode/kunai",
     links: [
       {
-        type: "icon",
-        label: "Documentation home",
         text: "Docs",
-        icon: <FileText className="size-4" />,
         url: "/docs",
+        icon: <IconFileText className="size-4" stroke={1.5} />,
         active: "nested-url",
       },
       {
-        type: "icon",
-        label: "User guides",
         text: "Guides",
-        icon: <BookOpen className="size-4" />,
         url: "/docs/users",
+        icon: <IconBook className="size-4" stroke={1.5} />,
         active: "nested-url",
       },
       {
-        type: "icon",
-        label: "Developer debugging",
         text: "Debug",
-        icon: <Wrench className="size-4" />,
         url: "/docs/developer",
+        icon: <IconTool className="size-4" stroke={1.5} />,
         active: "nested-url",
       },
       {
-        type: "icon",
-        label: "Release notes",
         text: "Releases",
-        icon: <FileClock className="size-4" />,
         url: "/releases",
+        icon: <IconClockHour4 className="size-4" stroke={1.5} />,
         active: "nested-url",
+      },
+      {
+        text: "Feedback",
+        url: "/feedback",
+        icon: <IconMessageReport className="size-4" stroke={1.5} />,
+        active: "url",
       },
       {
         text: "Install",
         url: "/#install",
-        icon: <Terminal className="size-4" />,
+        icon: <IconTerminal2 className="size-4" stroke={1.5} />,
       },
     ],
   };

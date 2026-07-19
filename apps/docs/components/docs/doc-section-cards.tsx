@@ -15,7 +15,7 @@ export function DocSectionCards({ group }: DocSectionCardsProps) {
     <section className="not-prose my-8">
       <header className="mb-4 max-w-3xl">
         <p className="kunai-type-caption mb-1.5">{section.eyebrow}</p>
-        <h3 className="text-fd-foreground m-0 font-serif text-xl font-normal tracking-tight">
+        <h3 className="text-fd-foreground m-0 text-xl font-normal tracking-tight">
           {section.title}
         </h3>
         <p className="text-fd-muted-foreground mt-2 mb-0 text-sm leading-relaxed">

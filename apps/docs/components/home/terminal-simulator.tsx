@@ -6,7 +6,6 @@ import {
   AnimatePresence,
   useMotionValue,
   useMotionTemplate,
-  useReducedMotion,
   useSpring,
 } from "motion/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -47,7 +46,6 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const paletteInputRef = useRef<HTMLInputElement>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
 
-  const prefersReducedMotion = useReducedMotion();
   const rotateXValue = useMotionValue(0);
   const rotateYValue = useMotionValue(0);
   const glareX = useMotionValue(50);
@@ -61,19 +59,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
     [allCommands, paletteCommands, searchQuery],
   );
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (prefersReducedMotion) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / rect.width - 0.5;
-      const y = (e.clientY - rect.top) / rect.height - 0.5;
-      rotateYValue.set(x * 6);
-      rotateXValue.set(-y * 6);
-      glareX.set((x + 0.5) * 100);
-      glareY.set((y + 0.5) * 100);
-    },
-    [glareX, glareY, prefersReducedMotion, rotateXValue, rotateYValue],
-  );
+  const handleMouseMove = useCallback((_e: React.MouseEvent<HTMLDivElement>) => {
+    // Keep the terminal calm — no 3D tilt on the docs home.
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
     rotateXValue.set(0);
@@ -401,7 +389,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
                     aria-label="CLI commands query filter"
                   />
                 </span>
-                <span className="palette-list block max-h-[180px] space-y-0.5 overflow-y-auto p-1.5">
+                <span className="palette-list flex max-h-[180px] flex-col gap-0.5 overflow-y-auto p-1.5">
                   {filteredCommands.map((cmd, index) => (
                     <button
                       type="button"

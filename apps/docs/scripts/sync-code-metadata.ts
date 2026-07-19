@@ -178,7 +178,7 @@ function syncCommands(): CommandMetadata[] {
   const block = content.slice(startIndex);
   const items: CommandMetadata[] = [];
   const itemRegex =
-    /\{\s*id:\s*["']([^"']+)["'],\s*label:\s*["']([^"']+)["'],\s*aliases:\s*\[([^\]]*)\](?:,\s*description:\s*"([^"]*)")?[^}]*\}/g;
+    /\{\s*(?:\/\/[^\n]*\n\s*)*id:\s*["']([^"']+)["'],\s*label:\s*["']([^"']+)["'],\s*aliases:\s*\[([^\]]*)\](?:,\s*description:\s*"([^"]*)")?[^}]*\}/g;
 
   let match;
   while ((match = itemRegex.exec(block)) !== null) {

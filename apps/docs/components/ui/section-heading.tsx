@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 
 type SectionHeadingProps = {
-  readonly eyebrow: string;
+  readonly eyebrow?: string;
   readonly title: string;
   readonly description?: string;
   readonly className?: string;
@@ -26,7 +26,7 @@ export function SectionHeading({
       transition={{ duration: 0.45, ease: [0.23, 1, 0.32, 1] }}
       className={className}
     >
-      <p className="kunai-eyebrow">{eyebrow}</p>
+      {eyebrow ? <p className="kunai-eyebrow">{eyebrow}</p> : null}
       <h2 className="kunai-display-title text-fd-foreground">{title}</h2>
       {description ? (
         <p className="text-fd-muted-foreground mt-4 max-w-3xl text-sm leading-relaxed text-pretty md:text-base">

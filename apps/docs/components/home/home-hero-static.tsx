@@ -1,10 +1,11 @@
 import { CopyButton } from "@/components/ui/copy-button";
 import { homeHero } from "@/lib/home-content";
-import { ArrowRight } from "lucide-react";
+import { CANONICAL_INSTALL } from "@/lib/install-commands";
+import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 
 export function HomeHeroStatic() {
-  const installCommand = homeHero.installCommands[0] ?? "bun install -g @kitsunekode/kunai";
+  const installCommand = homeHero.installCommands[0] ?? CANONICAL_INSTALL;
 
   return (
     <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
@@ -20,7 +21,7 @@ export function HomeHeroStatic() {
         </code>
         <Link className="kunai-button kunai-button-primary" href={homeHero.primaryCta.href}>
           <span>{homeHero.primaryCta.label}</span>
-          <ArrowRight className="ml-1.5 h-4 w-4" />
+          <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
         </Link>
         <Link className="kunai-button border-fd-border" href={homeHero.secondaryCta.href}>
           {homeHero.secondaryCta.label}

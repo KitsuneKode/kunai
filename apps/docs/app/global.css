@@ -14,6 +14,10 @@
 @import "./styles/surfaces.css";
 @import "./styles/docs-chrome.css";
 @import "./styles/home.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 html {
   -webkit-font-smoothing: antialiased;
@@ -38,7 +42,7 @@ h4,
 h5,
 h6,
 .font-serif {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
 }
 
 code,
@@ -119,5 +123,38 @@ pre,
     transition-property: opacity, color, background-color, border-color !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --radius-sm: calc(var(--kunai-radius-inner) * 0.6);
+  --radius-md: calc(var(--kunai-radius-inner) * 0.8);
+  --radius-lg: var(--kunai-radius-inner);
+  --radius-xl: var(--kunai-radius-outer);
+  --radius-2xl: var(--kunai-radius-shell);
+  --color-ring: var(--ring);
+  --color-input: var(--border);
+  --color-border: var(--border);
+  --color-destructive: var(--kunai-danger);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
 }

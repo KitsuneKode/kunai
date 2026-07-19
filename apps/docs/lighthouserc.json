@@ -1,8 +1,6 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "bun run --cwd apps/docs start -- -p 3456",
-      "startServerReadyPattern": "Ready",
       "url": [
         "http://127.0.0.1:3456/",
         "http://127.0.0.1:3456/docs",

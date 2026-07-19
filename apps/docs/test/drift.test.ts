@@ -136,9 +136,14 @@ describe("docs codegen drift", () => {
   test("doc-navigation hrefs resolve to sitemap pages", () => {
     const pageUrls = new Set(source.getPages().map((page) => page.url));
     pageUrls.add("/releases");
+    pageUrls.add("/feedback");
 
     for (const entry of docNavEntries) {
-      if (entry.href.startsWith("/docs") || entry.href === "/releases") {
+      if (
+        entry.href.startsWith("/docs") ||
+        entry.href === "/releases" ||
+        entry.href === "/feedback"
+      ) {
         expect(pageUrls.has(entry.href)).toBe(true);
       }
     }

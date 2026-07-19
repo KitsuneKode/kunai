@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Check, Copy } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useState, type ReactNode } from "react";
 
@@ -11,9 +11,9 @@ type CopyButtonProps = {
   readonly label?: string;
   readonly className?: string;
   readonly children?: ReactNode;
-  /** @deprecated Use local state — kept for gradual migration */
+  /** @deprecated Use local state - kept for gradual migration */
   readonly copiedText?: string | null;
-  /** @deprecated Use local state — kept for gradual migration */
+  /** @deprecated Use local state - kept for gradual migration */
   readonly onCopy?: (text: string, label: string) => void;
 };
 
@@ -39,15 +39,19 @@ export function CopyButton({
   }, [externalOnCopy, label, text]);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleCopy}
-          className={className}
-          aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              className={className}
+              aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+            />
+          }
         >
           {children ?? (
             <span className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums">
@@ -61,7 +65,7 @@ export function CopyButton({
                     transition={{ duration: 0.15, ease: "easeOut" }}
                     className="inline-flex items-center gap-1 text-[var(--kunai-ok)]"
                   >
-                    <Check className="h-3 w-3" />
+                    <IconCheck className="size-3" stroke={1.5} data-icon="inline-start" />
                     <span className="text-[10px]">Copied</span>
                   </motion.span>
                 ) : (
@@ -73,16 +77,16 @@ export function CopyButton({
                     transition={{ duration: 0.15, ease: "easeOut" }}
                     className="inline-flex items-center gap-1"
                   >
-                    <Copy className="h-3 w-3" />
+                    <IconCopy className="size-3" stroke={1.5} data-icon="inline-start" />
                     <span className="text-[10px]">Copy</span>
                   </motion.span>
                 )}
               </AnimatePresence>
             </span>
           )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top">Copy command</TooltipContent>
-    </Tooltip>
+        </TooltipTrigger>
+        <TooltipContent side="top">Copy command</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

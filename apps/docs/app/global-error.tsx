@@ -1,6 +1,7 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 export default function GlobalError({
@@ -24,9 +25,9 @@ export default function GlobalError({
           <Button type="button" onClick={() => reset()}>
             Reload
           </Button>
-          <Button type="button" variant="outline" asChild>
-            <Link href="/">Go home</Link>
-          </Button>
+          <Link href="/" className={cn(buttonVariants({ variant: "outline" }))}>
+            Go home
+          </Link>
         </div>
       </body>
     </html>

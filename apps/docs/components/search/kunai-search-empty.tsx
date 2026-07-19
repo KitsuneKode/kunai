@@ -10,7 +10,7 @@ export const SEARCH_FALLBACK_LINKS = [
 
 export function KunaiSearchEmpty({ query }: { readonly query: string }) {
   return (
-    <div className="text-fd-muted-foreground space-y-4 p-4 text-sm">
+    <div className="text-fd-muted-foreground flex flex-col gap-4 p-4 text-sm">
       <p>
         {query.trim().length > 0
           ? `No docs matched "${query}". Try a shorter term or browse:`

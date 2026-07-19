@@ -16,6 +16,7 @@ export type ReleaseNotesArtifact = {
   readonly date: string | null;
   readonly summary: string;
   readonly sections: readonly ReleaseNotesSection[];
+  readonly changelogBody?: string;
   readonly install: {
     readonly npm: string;
     readonly bunx: string;
@@ -25,7 +26,8 @@ export type ReleaseNotesArtifact = {
 };
 
 function repoRoot(): string {
-  return resolve(process.cwd(), "../..");
+  // apps/docs/lib → monorepo root (stable regardless of process.cwd)
+  return resolve(import.meta.dir, "../../..");
 }
 
 function releaseDir(): string {
@@ -47,4 +49,106 @@ export function readReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
 
 export function latestReleaseNotesArtifact(): ReleaseNotesArtifact | null {
   return readReleaseNotesArtifacts()[0] ?? null;
+}
+
+/** Normalize tags like `v0.2.6` or `0.2.6` for lookup. */
+export function normalizeReleaseTag(tag: string): string {
+  const trimmed = tag.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
+export function releasePath(tag: string): string {
+  return `/releases/${normalizeReleaseTag(tag)}`;
+}
+
+export function getReleaseByTag(tag: string): ReleaseNotesArtifact | null {
+  const normalized = normalizeReleaseTag(tag);
+  return (
+    readReleaseNotesArtifacts().find(
+      (release) => normalizeReleaseTag(release.tag) === normalized,
+    ) ?? null
+  );
+}
+
+export function githubReleaseTagUrl(tag: string): string {
+  return `https://github.com/KitsuneKode/kunai/releases/tag/${normalizeReleaseTag(tag)}`;
+}
+
+function sectionItemsFromMarkdownBody(body: string): string[] {
+  return body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2).trim())
+    .filter(Boolean);
+}
+
+/**
+ * Prefer explicit `sections`. When empty (e.g. 0.2.6), derive display sections
+ * from `changelogBody` markdown headings or fall back to summary paragraphs.
+ */
+export function displaySectionsForRelease(
+  release: ReleaseNotesArtifact,
+): readonly ReleaseNotesSection[] {
+  if (release.sections.length > 0) {
+    return release.sections;
+  }
+
+  const source = (release.changelogBody ?? release.summary).trim();
+  if (!source) return [];
+
+  const headingSplit = source.split(/\n(?=###\s+)/);
+  if (headingSplit.length > 1 || source.startsWith("### ")) {
+    const sections: ReleaseNotesSection[] = [];
+    for (const chunk of headingSplit) {
+      const trimmed = chunk.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/^###\s+(.+?)\n([\s\S]*)$/);
+      if (match?.[1] && match[2] !== undefined) {
+        const title = match[1].trim();
+        const body = match[2].trim();
+        sections.push({
+          title,
+          body,
+          items: sectionItemsFromMarkdownBody(body),
+        });
+      } else if (!trimmed.startsWith("### ")) {
+        // Leading prose before first ### — treat as Overview
+        const items = sectionItemsFromMarkdownBody(trimmed);
+        sections.push({
+          title: "Overview",
+          body: trimmed,
+          items: items.length > 0 ? items : [trimmed.split(/\n{2,}/)[0]?.trim() ?? trimmed],
+        });
+      }
+    }
+    if (sections.length > 0) return sections;
+  }
+
+  const paragraphs = source
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length === 0) return [];
+
+  return [
+    {
+      title: "Overview",
+      body: source,
+      items: paragraphs,
+    },
+  ];
+}
+
+export function releaseOneLineSummary(release: ReleaseNotesArtifact): string {
+  const first = release.summary
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .find(Boolean);
+  if (!first) return release.title;
+  const compact = first.replace(/\s+/g, " ").trim();
+  if (compact.length <= 180) return compact;
+  return `${compact.slice(0, 177).trimEnd()}…`;
 }

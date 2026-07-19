@@ -27,9 +27,9 @@ export function CommandReference({ limit }: { readonly limit?: number }) {
                   <td className="py-2 pr-4 font-mono text-xs">/{cmd.id}</td>
                   <td className="py-2 pr-4 text-xs">{cmd.label}</td>
                   <td className="text-fd-muted-foreground py-2 pr-4 font-mono text-xs">
-                    {cmd.aliases.length > 0 ? cmd.aliases.join(", ") : "—"}
+                    {cmd.aliases.length > 0 ? cmd.aliases.join(", ") : "-"}
                   </td>
-                  <td className="py-2 text-xs leading-relaxed">{cmd.description || "—"}</td>
+                  <td className="py-2 text-xs leading-relaxed">{cmd.description || "-"}</td>
                 </tr>
               ))}
             </tbody>

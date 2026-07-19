@@ -1,8 +1,6 @@
 /* Fumadocs chrome — Clerk-tier docs polish with Kunai editorial tone */
 
 #nd-docs-layout {
-  --fd-sidebar-width: 18rem;
-  --fd-toc-width: 17rem;
   background:
     radial-gradient(ellipse 80% 50% at 12% -8%, var(--kunai-mesh-a), transparent 58%),
     radial-gradient(ellipse 60% 40% at 88% 4%, var(--kunai-mesh-b), transparent 55%),
@@ -10,22 +8,51 @@
     var(--kunai-bg);
 }
 
-#nd-nav {
-  position: sticky;
-  top: 0.75rem;
-  z-index: 40;
-  margin-inline: auto;
-  max-width: min(96rem, calc(100vw - 1.5rem));
-  border-radius: var(--kunai-radius-pill);
-  border: 1px solid color-mix(in oklab, white 8%, transparent);
-  background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
-  box-shadow: var(--kunai-shadow-sm);
+/* Desktop: restore Fumadocs column widths only above md */
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 18rem;
+    --fd-toc-width: 17rem;
+  }
+
+  #nd-nav {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 40;
+    margin-inline: auto;
+    max-width: min(96rem, calc(100vw - 1.5rem));
+    border-radius: var(--kunai-radius-pill);
+    border: 1px solid color-mix(in oklab, white 8%, transparent);
+    background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
+    box-shadow: var(--kunai-shadow-sm);
+  }
+
+  #nd-nav,
+  #nd-sidebar,
+  #nd-toc {
+    backdrop-filter: blur(16px);
+  }
 }
 
-#nd-nav,
-#nd-sidebar,
-#nd-toc {
-  backdrop-filter: blur(16px);
+/* Mobile: never force desktop sidebar/TOC column math */
+@media (max-width: 767.98px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 0px;
+    --fd-toc-width: 0px;
+  }
+
+  #nd-docs-layout #nd-page,
+  #nd-docs-layout main,
+  #nd-docs-layout article {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #nd-docs-layout .prose,
+  #nd-docs-layout [data-toc-popover] {
+    max-width: 100%;
+  }
 }
 
 #nd-nav a[href="/"]:hover .kunai-nav-wordmark {
@@ -66,11 +93,11 @@
   font-weight: 600;
 }
 
-/* Page title hierarchy */
+/* Page title hierarchy — Geist display, not serif */
 #nd-docs-layout h1 {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-size: var(--kunai-text-display);
-  font-weight: 300;
+  font-weight: 500;
   line-height: var(--kunai-leading-tight);
   letter-spacing: -0.03em;
   text-wrap: balance;
@@ -131,16 +158,17 @@
 }
 
 #nd-docs-layout .prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   font-size: var(--kunai-text-title);
-  font-weight: 400;
+  font-weight: 550;
   letter-spacing: -0.02em;
   margin-top: 2.5rem;
   text-wrap: balance;
 }
 
 #nd-docs-layout .prose :where(h3, h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 550;
   letter-spacing: -0.015em;
   text-wrap: balance;
 }
@@ -174,6 +202,7 @@
 }
 
 /* Tables */
+#nd-docs-layout .prose :where(table),
 #nd-docs-layout table {
   width: 100%;
   border-collapse: separate;
@@ -181,7 +210,6 @@
   margin-block: 1.75rem;
   border: 1px solid var(--kunai-line);
   border-radius: var(--kunai-radius-inner);
-  overflow: hidden;
   background: color-mix(in oklab, var(--kunai-surface) 50%, transparent);
   box-shadow: var(--kunai-shadow-sm);
 }
@@ -217,4 +245,23 @@
   }
 }
 
-/* Docs page header bar — legacy; prefer ViewOptionsPopover inline */
+/* Mobile table scroll — keep wide reference tables usable */
+@media (max-width: 767.98px) {
+  #nd-docs-layout .prose :where(.table-wrapper),
+  #nd-docs-layout .kunai-table-scroll {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #nd-docs-layout .prose :where(table),
+  #nd-docs-layout table {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    overflow-x: auto;
+  }
+}

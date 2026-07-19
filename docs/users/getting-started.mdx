@@ -17,8 +17,21 @@ Kunai is a terminal-first media shell. You search for a title, pick what to watc
 
 ## Install Kunai
 
-<Tabs items={["Binary (recommended)", "Bun global", "npm global", "Source checkout"]}>
-<Tab value="Binary (recommended)">
+Canonical path (Bun + setup). Binary installers remain available as a secondary option.
+
+<Tabs items={["Bun global (recommended)", "Binary", "npm global", "Source checkout"]}>
+<Tab value="Bun global (recommended)">
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+kunai -S "Dune"
+```
+
+During beta, Bun is the supported install and dev runtime. You still need `mpv` for playback.
+
+</Tab>
+<Tab value="Binary">
 
 Linux / macOS:
 
@@ -36,17 +49,6 @@ kunai --setup
 ```
 
 Release binaries embed Bun. You still need `mpv` for playback. Details: [Install and update](/docs/users/install-and-update).
-
-</Tab>
-<Tab value="Bun global">
-
-```sh
-bun install -g @kitsunekode/kunai
-kunai --setup
-kunai -S "Dune"
-```
-
-During beta, Bun is the supported install and dev runtime.
 
 </Tab>
 <Tab value="npm global">

@@ -1,4 +1,5 @@
 import { codeMetadata } from "@/lib/code-metadata";
+import { readReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
 import { docsSiteUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 
@@ -6,6 +7,7 @@ export const dynamic = "force-static";
 
 export async function GET() {
   const pages = source.getPages();
+  const releases = readReleaseNotesArtifacts();
   const lines = [
     "# Kunai Docs",
     "",
@@ -24,6 +26,11 @@ export async function GET() {
     ),
     "",
     `- [Release notes](${docsSiteUrl}/releases): Changelog generated from release artifacts`,
+    ...releases.map(
+      (release) =>
+        `- [${release.title}](${docsSiteUrl}${releasePath(release.tag)}): ${release.tag}`,
+    ),
+    `- [Feedback](${docsSiteUrl}/feedback): File bugs, provider issues, and feature requests on GitHub`,
     "",
   ];
 

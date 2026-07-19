@@ -1,17 +1,17 @@
 {
-  "syncedAt": "2026-07-19T20:03:23.726Z",
+  "syncedAt": "2026-07-19T20:11:20.417Z",
   "version": "0.2.6",
   "cliVersion": "0.2.6",
-  "cliSourceRevision": "a50f1903",
-  "cliSourceFingerprint": "c1e99464a0e0b0c42e7fba4390812416fb9bec05cd260c784e3409a36ca387a2",
-  "docsContentFingerprint": "ed43d628500ac4656433a32eb39dd8be0c7f2ef2fedd37a179a1c8346b53ad04",
+  "cliSourceRevision": "8926da1a",
+  "cliSourceFingerprint": "8948c03ce61eb89f5120702d1deb566118c976c569b16f2a4779519209f4e379",
+  "docsContentFingerprint": "fc5f00edf13e5f2d2154fc7800092f9c8af8b05decb53661b656aaca2d4e1a44",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
-      "displayName": "Videasy Direct",
+      "displayName": "Videasy",
       "description": "Fast direct streams with source selection and subtitles",
       "domain": "videasy.to",
       "recommended": true,
@@ -191,7 +191,7 @@
       "id": "providers",
       "label": "Providers",
       "aliases": ["providers", "provider-settings", "default-provider"],
-      "description": "Open provider defaults and fallback priority in settings"
+      "description": "Switch the session provider or set defaults and priority"
     },
     {
       "id": "presence",
@@ -249,9 +249,9 @@
     },
     {
       "id": "provider",
-      "label": "Switch Provider",
+      "label": "Providers",
       "aliases": ["provider", "switch-provider"],
-      "description": "Switch the active session provider for this mode"
+      "description": "Open the providers hub (or tracks provider section while playing)"
     },
     {
       "id": "continue",

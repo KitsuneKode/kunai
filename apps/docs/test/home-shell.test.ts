@@ -28,7 +28,8 @@ describe("docs home shell", () => {
     const hero = readSource("components/home/home-hero-static.tsx");
     const h1Count = (hero.match(/<h1/g) ?? []).length;
     expect(h1Count).toBe(1);
-    expect(hero).toContain("bun install -g @kitsunekode/kunai");
+    expect(hero).toContain("CANONICAL_INSTALL");
+    expect(readSource("lib/install-commands.ts")).toContain("bun install -g @kitsunekode/kunai");
   });
 
   test("terminal simulator does not duplicate hero markup", () => {
@@ -74,5 +75,13 @@ describe("docs home shell", () => {
     expect(homeStartCards).toHaveLength(4);
     expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
     expect(homeHero.secondaryCta.href).toBe("/docs");
+  });
+
+  test("ascii brand mark ships non-empty art", () => {
+    const ascii = readSource("lib/brand/ascii-kunai.ts");
+    expect(ascii).toContain("ASCII_KUNAI");
+    expect(ascii).toContain("/\\\\");
+    const shell = readSource("app/(home)/home-page-shell.tsx");
+    expect(shell).toContain("AsciiBrandMark");
   });
 });

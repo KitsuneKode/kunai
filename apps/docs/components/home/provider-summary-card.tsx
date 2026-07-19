@@ -1,5 +1,5 @@
 import type { ProviderSummary } from "@/lib/home-presenters";
-import { ArrowRight } from "lucide-react";
+import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 
 type ProviderSummaryCardProps = {
@@ -25,7 +25,7 @@ export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
         <div className="flex flex-wrap gap-3">
           <Link className="kunai-button kunai-button-primary" href="/docs/users/providers">
             <span>Provider guide</span>
-            <ArrowRight className="ml-1.5 h-4 w-4" />
+            <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
           </Link>
           <Link className="kunai-button border-fd-border" href="/docs/users/cli-reference">
             Full provider table

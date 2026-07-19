@@ -3,17 +3,7 @@ title: Documentation
 description: Install Kunai, learn the terminal shell, recover playback, and contribute with evidence-first debugging.
 ---
 
-<DocsHubIntro
-  pill="Operator manual"
-  lead="Kunai is a terminal-first media shell — search, resolve direct-provider streams locally, supervise mpv, and recover when catalogs drift."
-  sublead="This documentation states what works today, what is beta-only, what Kunai does not do, and how to debug with evidence instead of guesswork."
-/>
-
-<ScopeCallout variant="beta" />
-
-## Start here
-
-<DocsRootCards />
+Kunai is a terminal-first media shell: search, resolve direct-provider streams locally, supervise mpv, and recover when catalogs drift. This documentation states what works today, what is beta-only, and how to debug with evidence.
 
 ## I want to…
 
@@ -30,41 +20,16 @@ description: Install Kunai, learn the terminal shell, recover playback, and cont
 | Contribute code or docs | [Contribute](/docs/developer/contribute) |
 | Debug as a developer | [Debugging workflow](/docs/developer/debugging-workflow) |
 
-## What you can do
+## Start here
 
-Kunai is built around a single persistent shell session:
-
-- **Search** TMDB-backed catalogs and anime providers, then inspect results before playing
-- **Play** through `mpv` with source, quality, and subtitle pickers when inventory allows
-- **Recover** stalled streams (`r`) or **fallback** to the next provider (`f`) when catalogs drift
-- **Continue** from local watch history (`--continue`, `/history`)
-- **Discover** recommendations, release calendar, and random picks without auto-play
-- **Download** for offline viewing (opt-in beta) and play from a local library (`--offline`)
-- **Diagnose** with `/diagnostics`, redacted `/export-diagnostics`, and structured `--debug-session` traces
-
-Full capability narrative: [What you can do](/docs/users/what-you-can-do).
-
-## What Kunai is
-
-- A terminal app (Bun runtime) with an Ink shell for search, pickers, history, and playback supervision.
-- A local resolver for direct HTTP provider adapters registered in `packages/providers`.
-- An `mpv` handoff — Kunai does not replace the player or host video files.
-- A diagnostics surface with redacted export paths for support.
-
-## What Kunai is not
-
-<ScopeCallout variant="providers" />
-
-Kunai does not store video on a Kunai server, mirror or redistribute content, guarantee third-party catalog stability, or require accounts for core playback. Browser/Playwright scraping is archive-only — not part of the active beta runtime. Copyright notices belong to the hosting provider, not Kunai.
-
-Details: [Supported and unsupported](/docs/users/supported-and-unsupported).
+<DocsRootCards />
 
 ## Recommended reading order
 
 <Steps>
 <Step>
 ### Install and verify
-Read [Getting started](/docs/users/getting-started), then [Platforms](/docs/users/platforms) for OS-specific tools. Binary installs via `install.sh` / `install.ps1` are beta supported — see [Install and update](/docs/users/install-and-update).
+Read [Getting started](/docs/users/getting-started), then [Platforms](/docs/users/platforms) for OS-specific tools. Binary installs via `install.sh` / `install.ps1` are beta supported - see [Install and update](/docs/users/install-and-update).
 </Step>
 <Step>
 ### Learn the shell
@@ -80,16 +45,8 @@ Use [What you can do](/docs/users/what-you-can-do) for the capability map, the [
 </Step>
 </Steps>
 
-## User guides
+## Browse by section
 
-<DocSectionCards group="setup" />
-
-<DocSectionCards group="daily" />
-
-<DocSectionCards group="offline" />
-
-<DocSectionCards group="trust" />
-
-## Developer
-
-<DocSectionCards group="develop" />
+- [User guides](/docs/users) - install, shell, recovery, offline, privacy
+- [Developer](/docs/developer) - contribute, debug, docs maintenance
+- [Supported and unsupported](/docs/users/supported-and-unsupported) - product boundaries and scope

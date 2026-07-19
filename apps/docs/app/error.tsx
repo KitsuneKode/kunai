@@ -1,6 +1,7 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useEffect } from "react";
 
@@ -30,9 +31,9 @@ export default function Error({
         <Button type="button" onClick={() => reset()}>
           Try again
         </Button>
-        <Button type="button" variant="outline" asChild>
-          <Link href="/docs">Open docs home</Link>
-        </Button>
+        <Link href="/docs" className={cn(buttonVariants({ variant: "outline" }))}>
+          Open docs home
+        </Link>
       </div>
     </main>
   );

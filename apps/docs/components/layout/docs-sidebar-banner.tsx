@@ -11,10 +11,10 @@ export function DocsSidebarBanner() {
       : null;
 
   return (
-    <div className="mb-3 space-y-3">
+    <div className="mb-3 flex flex-col gap-3">
       <Card className="border-fd-border bg-fd-card/90">
         <CardHeader className="p-3 pb-2">
-          <CardTitle className="font-serif text-base font-medium">Kunai</CardTitle>
+          <CardTitle className="text-base font-medium">Kunai</CardTitle>
           <CardDescription className="kunai-type-caption tabular-nums">
             v{codeMetadata.version}
             {revision ? ` · ${revision}` : ""}

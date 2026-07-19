@@ -1,4 +1,5 @@
 import { codeMetadata } from "./code-metadata";
+import { CANONICAL_INSTALL, CANONICAL_SETUP } from "./install-commands";
 
 export type HomeLink = {
   readonly title: string;
@@ -24,7 +25,7 @@ export const homeHero = {
   title: "A calm command shell for playable streams.",
   description:
     "Search your catalog, resolve a direct stream locally, hand playback to mpv, and pick up where you left off when something breaks.",
-  installCommands: ["bun install -g @kitsunekode/kunai", "kunai --setup"],
+  installCommands: [CANONICAL_INSTALL, CANONICAL_SETUP],
   primaryCta: {
     label: "Get started",
     href: "/docs/users/getting-started",
@@ -50,7 +51,7 @@ export const homeHighlights = [
   {
     label: "Recovery built in",
     detail:
-      "Recover, recompute, and fallback each handle a different stall — with diagnostics that stay redacted by default.",
+      "Recover, recompute, and fallback each handle a different stall, with diagnostics that stay redacted by default.",
   },
 ] as const;
 

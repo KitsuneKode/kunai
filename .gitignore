@@ -21,6 +21,7 @@ kunai-demo.tape
 .turbo
 .next
 apps/docs/.source/
+apps/docs/.lighthouseci/
 target/
 
 # databases
