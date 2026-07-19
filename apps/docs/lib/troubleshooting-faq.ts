@@ -1,16 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { repoRoot } from "./repo-root";
+
 export type TroubleshootingSymptom = {
   readonly id: string;
   readonly question: string;
   readonly anchor: string;
 };
 
-const DOCS_ROOT = path.join(path.resolve(process.cwd(), "../.."), "docs");
+// Resolved per call rather than at module load: a module-level constant froze
+// the wrong path when cwd was not apps/docs.
+function docsRoot(): string {
+  return path.join(repoRoot("docs"), "docs");
+}
 
 export function readTroubleshootingSymptoms(
-  yamlPath = path.join(DOCS_ROOT, "troubleshooting-symptoms.yaml"),
+  yamlPath = path.join(docsRoot(), "troubleshooting-symptoms.yaml"),
 ): TroubleshootingSymptom[] {
   const content = fs.readFileSync(yamlPath, "utf-8");
   const symptoms: TroubleshootingSymptom[] = [];
@@ -85,7 +91,7 @@ export function extractFaqAnswer(section: string): string {
 }
 
 export function buildTroubleshootingFaqEntries(
-  mdxPath = path.join(DOCS_ROOT, "users/troubleshooting.mdx"),
+  mdxPath = path.join(docsRoot(), "users/troubleshooting.mdx"),
 ): { question: string; answer: string }[] {
   const mdx = fs.readFileSync(mdxPath, "utf-8");
   const symptoms = readTroubleshootingSymptoms();
