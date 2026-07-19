@@ -1,6 +1,7 @@
 import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import { formatCatalogAirDateLabel } from "@/domain/playback/playback-policy";
 import type { PostPlayInput } from "@/domain/playback/post-play-state";
+import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { QueueEntry } from "@kunai/storage";
 
@@ -100,17 +101,9 @@ export function buildPostPlayNextEpisodeLabel(
 /**
  * Display label for the cross-title queue head, used as the post-play "Up Next"
  * when the current title has no episode-chain next (series finished / movie).
- * Appends a SxxExx tag only for series entries that carry one.
  */
 export function buildPostPlayQueueNextLabel(
   queueHead: QueueEntry | null | undefined,
 ): string | undefined {
-  if (!queueHead) return undefined;
-  const title = queueHead.title.trim();
-  if (!title) return undefined;
-  if (queueHead.mediaKind !== "movie" && queueHead.episode !== undefined) {
-    const tag = `S${String(queueHead.season ?? 1).padStart(2, "0")}E${String(queueHead.episode).padStart(2, "0")}`;
-    return `${title} · ${tag}`;
-  }
-  return title;
+  return formatQueueEntryLabel(queueHead);
 }

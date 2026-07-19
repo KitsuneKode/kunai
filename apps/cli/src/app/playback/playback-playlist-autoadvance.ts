@@ -19,13 +19,18 @@ export function planPlaylistAutoAdvance(input: {
   readonly autoplayRecommendations: boolean;
   readonly topRecommendation: MediaItemIdentity | null;
 }): NextUp | null {
-  if (input.catalogNextEpisode) return null;
-  return evaluateAutoAdvanceNextUp({
+  const nextUp = evaluateAutoAdvanceNextUp({
     guards: input.guards,
-    nextEpisode: null,
+    // Pass the real catalog episode so an explicitly "play next" queue entry can
+    // be ranked against it; previously this planner bailed whenever a catalog
+    // episode existed, so the queue was only ever consulted at series end.
+    nextEpisode: input.catalogNextEpisode,
     queueHead: input.queueHead,
     topRecommendation: input.topRecommendation,
     seriesDone: !input.seriesHasNextEpisode,
     autoplayRecommendations: input.autoplayRecommendations,
   });
+  // The episode chain is the caller's own catalog-advance path; this planner
+  // only reports the cross-title outcomes it is responsible for.
+  return nextUp?.kind === "episode" ? null : nextUp;
 }

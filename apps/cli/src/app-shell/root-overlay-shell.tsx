@@ -1,4 +1,5 @@
 import { useLineEditor } from "@/app-shell/line-editor";
+import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
@@ -16,6 +17,7 @@ import {
   shellModeToProviderLane,
 } from "@/domain/provider-lane";
 import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
+import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
@@ -1060,7 +1062,12 @@ export function RootOverlayShell({
     setNotificationsState((current) => ({ ...current, selectedDedupKey: dedupKey }));
 
     const router = new NotificationActionRouter({
-      playlist: container.queueService,
+      playlist: {
+        // Restore through the shared path so a notification-driven restore gets
+        // the same resume head as the overlay's `r` key.
+        restoreRecoverableSession: (sessionId) =>
+          restoreQueueSessionWithResume(buildQueueRestoreDeps(container), sessionId).restoredCount,
+      },
       mediaActions: createContainerMediaActionRouter(container, {
         onDownloadQueued: (item) => {
           setOverlayStatus(`Queued download for ${item.title}`);
@@ -1421,11 +1428,20 @@ export function RootOverlayShell({
         return;
       }
       if (input.toLowerCase() === "r") {
-        const session = container.queueService.listRecoverableSessions()[0];
-        if (session) {
-          container.queueService.restoreRecoverableSession(session.id);
-          refresh();
+        const sessions = container.queueService.listRecoverableSessions();
+        // Sessions come back most-recent-first; naming the target in the status
+        // line is what makes this restore explicit rather than a silent guess.
+        const session = sessions[0];
+        if (!session) {
+          setOverlayStatus("No recoverable queue to restore");
+          return;
         }
+        const restored = restoreQueueSessionWithResume(
+          buildQueueRestoreDeps(container),
+          session.id,
+        );
+        setOverlayStatus(buildQueueRestoreStatus(restored, sessions.length));
+        refresh();
         return;
       }
       // No early return — arrows + filtering fall through.

@@ -20,6 +20,7 @@ import {
   type PlaybackTelemetrySnapshot,
 } from "@/domain/playback/playback-telemetry-snapshot";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { SessionState } from "@/domain/session/SessionState";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
@@ -127,15 +128,7 @@ export function buildPlaybackRootLoadingShellState(
     state.playbackStatus === "seeking" ||
     state.playbackStatus === "stalled";
 
-  const queueNextLabel = (() => {
-    const queued = container.queueService.peekNext();
-    if (!queued) return undefined;
-    const code =
-      queued.season && queued.episode
-        ? ` · S${String(queued.season).padStart(2, "0")}E${String(queued.episode).padStart(2, "0")}`
-        : "";
-    return `${queued.title}${code}`;
-  })();
+  const queueNextLabel = formatQueueEntryLabel(container.queueService.peekNext());
 
   return {
     title: state.currentTitle?.name || "Resolving...",

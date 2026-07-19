@@ -50,12 +50,6 @@ export class QueueService {
     });
   }
 
-  enqueueBatch(items: Omit<QueueEntryInput, "sessionId">[]): void {
-    for (const item of items) {
-      this.repo.enqueue({ ...item, sessionId: this.sessionId });
-    }
-  }
-
   peekNext(): QueueEntry | undefined {
     return this.repo.peekNext(this.sessionId);
   }
@@ -185,6 +179,10 @@ export class QueueService {
     return this.repo.listRecoverableQueueSessions();
   }
 
+  getSession(id: string): QueueSessionRecord | undefined {
+    return this.repo.getQueueSession(id);
+  }
+
   /**
    * Shutdown persistence policy: a session with unplayed items becomes
    * explicitly recoverable (startup recovery offers it back); an empty one is
@@ -201,13 +199,6 @@ export class QueueService {
 
   restoreRecoverableSession(sourceSessionId: string): number {
     return this.repo.restoreQueueSession(sourceSessionId, this.sessionId, new Date().toISOString());
-  }
-
-  markCurrentPlayed(): void {
-    const current = this.repo.peekNext(this.sessionId);
-    if (current) {
-      this.repo.markPlayed(current.id);
-    }
   }
 
   refillFromWatchlist(listService: ListService): number {

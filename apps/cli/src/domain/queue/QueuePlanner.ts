@@ -24,11 +24,20 @@ export type EpisodeQueuePlan = {
 
 export type MediaQueuePlacement = "next" | "after-current-chain" | "end";
 
+/**
+ * Priority at or above which a queued item outranks the current series' own
+ * next episode. Only "next" placement ("play this next") reaches it — that is
+ * the one placement where the user asked for an interruption. Items that
+ * arrive via `refillFromWatchlist` sit at 0 and must never yank the user out
+ * of a series they are part-way through.
+ */
+export const INTERRUPTING_QUEUE_PRIORITY = 100;
+
 export function planMediaQueuePlacement(placement: MediaQueuePlacement): {
   readonly priority: number;
   readonly bucket: MediaQueuePlacement;
 } {
-  if (placement === "next") return { priority: 100, bucket: placement };
+  if (placement === "next") return { priority: INTERRUPTING_QUEUE_PRIORITY, bucket: placement };
   if (placement === "after-current-chain") return { priority: 50, bucket: placement };
   return { priority: 0, bucket: placement };
 }

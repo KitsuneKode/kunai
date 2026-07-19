@@ -150,6 +150,7 @@ import {
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type {
   TitleInfo,
   EpisodeInfo,
@@ -2834,10 +2835,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
-            const episodeLabel =
-              nextPlaylistItem.episode !== undefined
-                ? ` S${String(nextPlaylistItem.season ?? 1).padStart(2, "0")}E${String(nextPlaylistItem.episode).padStart(2, "0")}`
-                : "";
+            const nextPlaylistLabel =
+              formatQueueEntryLabel(nextPlaylistItem) ?? nextPlaylistItem.title;
             const playlistCountdown = await runAutoplayAdvanceCountdown({
               seconds: 3,
               signal: context.signal,
@@ -2845,7 +2844,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               onTick: (remaining) => {
                 this.updatePlaybackFeedback(context, {
                   detail: "Playlist next ready",
-                  note: `Next: ${nextPlaylistItem.title}${episodeLabel} in ${remaining}s  ·  a to pause`,
+                  note: `Next: ${nextPlaylistLabel} in ${remaining}s  ·  a to pause`,
                 });
               },
               isCancelled: () => stateManager.getState().autoplaySessionPaused,
