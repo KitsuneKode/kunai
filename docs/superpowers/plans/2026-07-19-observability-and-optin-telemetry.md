@@ -124,9 +124,45 @@ Answers "can we reproduce this on a small machine".
 **Acceptance:** take a bundle produced on the host, run the container, and reach
 the same startup state.
 
+## Slice 3b — Diagnostics trust (adopted from the retained-PR plan)
+
+Moved here 2026-07-19: it edits the same services as Slices 1–2, and splitting
+one subject across two agents is not worth the coordination cost. Do it after
+Slice 2 so the bundle builder is already redacted before it gains new inputs.
+
+### Files
+
+- Modify `packages/storage/test/diagnostics-repository.test.ts`: prove
+  current-session reads.
+- Modify `apps/cli/src/services/diagnostics/DurableDiagnosticsSink.ts`: expose
+  session reads and failure state.
+- Modify `DiagnosticsService.ts` / `DiagnosticsServiceImpl.ts`: extend the
+  support-bundle input contract; merge memory + current-session durable evidence.
+- Modify `apps/cli/src/container/bootstrap-persistence.ts`: pass session id and a
+  bounded sink warning callback.
+- Create `apps/cli/src/app-shell/diagnostics-bundle-input.ts`: container→service
+  adapter.
+- Modify `root-overlay-bridge.ts`, `root-overlay-shell.tsx`,
+  `dispatch-palette-command.ts`, `workflows/shell-workflows.ts`: one async
+  diagnostics preparation/open path.
+- Add focused read-policy, bundle-input, preparation, and routing tests.
+
+### Steps
+
+- [ ] **Step 1 (test first):** the panel and the exported bundle are built from
+      the same evidence for the current session — assert they agree rather than
+      asserting each separately.
+- [ ] **Step 2:** unify the diagnostics open path so palette, workflow, and
+      overlay entry points all prepare evidence the same way.
+- [ ] **Step 3:** keep app-shell/container types out of the diagnostics services
+      (existing boundary rule; there is an architecture test for it).
+
+**Acceptance:** open the panel and export a bundle from the same session; the
+evidence matches.
+
 ## Slice 4 — Opt-in telemetry
 
-Do this slice last. It must not begin until Slices 1–3 are merged, so no
+Do this slice last. It must not begin until Slices 1–3b are merged, so no
 half-built consent path can ever send anything.
 
 ### Files
@@ -154,7 +190,7 @@ half-built consent path can ever send anything.
       to change it. Default on decline/timeout/non-TTY/CI is **disabled**.
       Honour `DO_NOT_TRACK=1` and `CI=true` as automatic declines.
 - [ ] **Step 6:** `/telemetry` shows current status and toggles it. `/telemetry
-    show` prints the exact JSON that would be sent.
+  show` prints the exact JSON that would be sent.
 - [ ] **Step 7:** receiving endpoint — a minimal Vercel function owned by the
       user. It must: accept POST only, validate the payload shape, rate-limit per
       IP, **store no IP address**, and keep only an aggregate daily count of

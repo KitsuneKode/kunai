@@ -68,7 +68,17 @@ A green contract test is not evidence the pipeline works. Start at Slice 2.
 - Modify `apps/cli/src/app-shell/shell-frame.tsx`: suppress fallback delivery for enabled footer-owned letters.
 - Modify `apps/cli/test/unit/app-shell/shell-frame-input-bridge.test.tsx`: exact no-double-delivery and post-play regression proof.
 
-### Slice 4 — Diagnostics trust
+### Slice 4 — Diagnostics trust — ➡️ MOVED to Track C (do not implement here)
+
+Reassigned 2026-07-19 to
+`docs/superpowers/plans/2026-07-19-observability-and-optin-telemetry.md`.
+It edits the same diagnostics services as that track (`DiagnosticsBundleBuilder`,
+the diagnostics overlay, `root-overlay-shell`), and two agents editing one
+subject area is what forced an awkward staggered schedule. One owner per
+subject. Skip this slice entirely and go from Slice 3 to Slice 5.
+
+<details>
+<summary>Original Slice 4 scope (now owned by Track C)</summary>
 
 - Modify `packages/storage/test/diagnostics-repository.test.ts`: prove current-session reads.
 - Modify `apps/cli/src/services/diagnostics/DurableDiagnosticsSink.ts`: expose session reads and failure state.
@@ -82,6 +92,8 @@ A green contract test is not evidence the pipeline works. Start at Slice 2.
 - Modify `apps/cli/src/app-shell/dispatch-palette-command.ts`: use the unified opener.
 - Modify `apps/cli/src/app-shell/workflows/shell-workflows.ts`: use unified diagnostics and shared bundle input.
 - Add focused diagnostics read-policy, bundle-input, preparation, and routing tests under `apps/cli/test/unit/`.
+
+</details>
 
 ### Slice 5 — Source-inventory quality partition
 
