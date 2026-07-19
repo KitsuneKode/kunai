@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ResolvedAppCommand } from "@/app-shell/commands";
+import { buildPostPlayFooterActions } from "@/app-shell/post-play-footer-actions";
 import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import { ShellFrame } from "@/app-shell/shell-frame";
 import type { FooterAction, ShellAction } from "@/app-shell/types";
@@ -19,6 +20,7 @@ import { render } from "../../harness/render-capture";
  *     action does NOT resolve) while the key is still delivered to onUnhandledInput.
  *   • Opening the palette with `/` and closing it with Esc leaves no stale command
  *     mode, so the very next footer letter resolves on first press.
+ *   • Enabled footer-owned letters resolve once and do not also reach onUnhandledInput.
  */
 
 const COMMANDS: readonly ResolvedAppCommand[] = [
@@ -32,6 +34,7 @@ const FOOTER_ACTIONS: readonly FooterAction[] = [
 function Frame(props: {
   inputLocked?: boolean;
   letterKeysHandledExternally?: boolean;
+  footerActions?: readonly FooterAction[];
   onResolve: (action: ShellAction) => void;
   onUnhandledInput?: (input: string) => void;
 }) {
@@ -41,7 +44,7 @@ function Frame(props: {
       title="Test"
       subtitle="bridge"
       footerTask="Test"
-      footerActions={FOOTER_ACTIONS}
+      footerActions={props.footerActions ?? FOOTER_ACTIONS}
       commands={COMMANDS}
       inputLocked={props.inputLocked}
       letterKeysHandledExternally={props.letterKeysHandledExternally}
@@ -87,7 +90,47 @@ describe("ShellFrame input ownership (bridge)", () => {
     handle.stdin.enqueue("g"); // bound footer action → resolves
     handle.stdin.enqueue("x"); // unbound → fallback
     expect(resolved).toEqual(["help"]);
-    expect(unhandled).toContain("x");
+    expect(unhandled).toEqual(["x"]);
+    handle.unmount();
+  });
+
+  test("post-play mid-series letters resolve once each without unhandled fallback", () => {
+    const footerActions = buildPostPlayFooterActions(
+      { kind: "mid-series" },
+      { canResume: false, hasNextEpisode: true },
+    );
+    const resolved: ShellAction[] = [];
+    const unhandled: string[] = [];
+    const handle = render(
+      <Frame
+        footerActions={footerActions}
+        onResolve={(action) => resolved.push(action)}
+        onUnhandledInput={(input) => unhandled.push(input)}
+      />,
+      { columns: 100 },
+    );
+    for (const key of ["o", "r", "n", "m"] as const) {
+      handle.stdin.enqueue(key);
+    }
+    expect(resolved).toEqual(["source", "replay", "next", "menu"]);
+    expect(unhandled).toEqual([]);
+    handle.unmount();
+  });
+
+  test("disabled footer letters still reach onUnhandledInput", () => {
+    const resolved: ShellAction[] = [];
+    const unhandled: string[] = [];
+    const handle = render(
+      <Frame
+        footerActions={[{ key: "g", label: "Go", action: "help", disabled: true }]}
+        onResolve={(action) => resolved.push(action)}
+        onUnhandledInput={(input) => unhandled.push(input)}
+      />,
+      { columns: 100 },
+    );
+    handle.stdin.enqueue("g");
+    expect(resolved).toEqual([]);
+    expect(unhandled).toEqual(["g"]);
     handle.unmount();
   });
 

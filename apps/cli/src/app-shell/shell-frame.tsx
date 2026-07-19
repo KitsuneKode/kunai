@@ -21,6 +21,18 @@ import { useShellDimensions } from "./use-viewport-policy";
 
 type ShellFrameInputKey = Parameters<Parameters<typeof useInput>[0]>[1];
 
+function isEnabledFooterOwnedLetter(
+  input: string,
+  footerActions: readonly FooterAction[],
+): boolean {
+  if (!/^[a-z]$/iu.test(input)) return false;
+  const normalized = input.toLowerCase();
+  return footerActions.some(
+    (action) =>
+      action.key === normalized && action.disabled !== true && action.action !== undefined,
+  );
+}
+
 export function ShellFrame({
   eyebrow: _eyebrow,
   title,
@@ -82,6 +94,9 @@ export function ShellFrame({
     if (inputDisabled || commandMode) return;
     if (input === "?") {
       onResolve("help");
+      return;
+    }
+    if (!letterKeysHandledExternally && isEnabledFooterOwnedLetter(input, footerActions)) {
       return;
     }
     onUnhandledInput?.(input, key);
