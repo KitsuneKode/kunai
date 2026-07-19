@@ -25,7 +25,9 @@ export async function pipedSearch(
   query: string,
   options: PipedClientOptions,
 ): Promise<PipedSearchResponse> {
-  const base = options.apiBaseUrl.replace(/\/+$/, "");
+  let baseEnd = options.apiBaseUrl.length;
+  while (baseEnd > 0 && options.apiBaseUrl.charCodeAt(baseEnd - 1) === 47) baseEnd -= 1;
+  const base = options.apiBaseUrl.slice(0, baseEnd);
   const params = new URLSearchParams({ q: query, filter: "videos" });
   const response = await fetch(`${base}/search?${params.toString()}`, {
     signal: options.signal,
