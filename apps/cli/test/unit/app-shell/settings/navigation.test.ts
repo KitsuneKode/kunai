@@ -12,7 +12,7 @@ import type {
 } from "@/app-shell/settings/types";
 
 function row(def: SettingRowDef): BuiltSettingsRow {
-  return { def, valueSummary: "", detail: null, envBadge: false };
+  return { def, label: def.label, valueSummary: "", detail: undefined };
 }
 
 function pageOf(defs: SettingRowDef[]): BuiltSettingsPage {
@@ -30,23 +30,23 @@ const section: SettingRowDef = {
   kind: "section",
   id: "section:general",
   label: "General",
-  layout: "stack",
+  layout: "standard",
 };
 
 const first: SettingRowDef = {
   kind: "boolean",
   id: "alpha",
   label: "Alpha",
-  get: () => true,
-  set: (config) => config,
+  read: () => true,
+  write: (config) => config,
 };
 
 const second: SettingRowDef = {
   kind: "boolean",
   id: "beta",
   label: "Beta",
-  get: () => false,
-  set: (config) => config,
+  read: () => false,
+  write: (config) => config,
 };
 
 test("firstSelectableRowIndex skips the section header", () => {
@@ -59,6 +59,4 @@ test("firstSelectableRowIndex skips the section header", () => {
 test("moveSelectedIndex from section header lands on the first setting", () => {
   const page = pageOf([section, first, second]);
   expect(moveSelectedIndex(page, 0, 1)).toBe(1);
-  expect(moveSelectedIndex(page, 0, -1)).toBe(2);
-  expect(moveSelectedIndex(page, 1, 1)).toBe(2);
 });

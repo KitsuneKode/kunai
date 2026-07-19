@@ -64,6 +64,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   width,
   maxRows,
   error,
+  hideChromeTitle = false,
 }: {
   readonly page: BuiltSettingsPage;
   readonly state: SettingsUiState;
@@ -71,6 +72,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly width: number;
   readonly maxRows: number;
   readonly error: string | null;
+  readonly hideChromeTitle?: boolean;
 }) {
   const rowWidth = Math.max(24, width - 4);
   const sectionLabels = listSettingsSectionLabels(registryCtx);
@@ -142,9 +144,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   if (state.searchQuery.trim() && selectableRows.length === 0) {
     return (
       <Box flexDirection="column" paddingX={1}>
-        <Text color={palette.text} bold>
-          {page.title}
-        </Text>
+        {hideChromeTitle ? null : (
+          <Text color={palette.text} bold>
+            {page.title}
+          </Text>
+        )}
         <Text color={palette.dim}>{page.subtitle}</Text>
         <SettingsSearchBar query={state.searchQuery} />
         <Box marginTop={1}>
@@ -167,9 +171,11 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text color={palette.text} bold>
-        {page.title}
-      </Text>
+      {hideChromeTitle ? null : (
+        <Text color={palette.text} bold>
+          {page.title}
+        </Text>
+      )}
       <Text color={palette.dim}>{page.subtitle}</Text>
       {showSectionTabs ? (
         <ClaudeTabRow

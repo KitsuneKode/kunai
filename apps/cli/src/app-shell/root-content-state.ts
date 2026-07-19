@@ -11,6 +11,8 @@ export type RootContentSession = {
   id: number;
   kind: RootContentKind;
   element: ReactElement;
+  /** Optional AppHeader pill when kind alone is too vague (e.g. picker → Stats). */
+  headerLabel?: string;
 };
 
 type MountedRootContent<TResult> = {
@@ -145,10 +147,12 @@ export function mountRootContent<TResult>({
   kind,
   renderContent,
   fallbackValue,
+  headerLabel,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
   fallbackValue: TResult;
+  headerLabel?: string;
 }): MountedRootContent<TResult> {
   const sessionId = rootContentNextId++;
   let settled = false;
@@ -187,6 +191,7 @@ export function mountRootContent<TResult>({
     id: sessionId,
     kind,
     element: renderContent(settle),
+    ...(headerLabel ? { headerLabel } : {}),
   });
 
   return {

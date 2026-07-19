@@ -81,7 +81,9 @@ export function getRootOverlayTitle(overlay: RootOwnedOverlay, _state: SessionSt
   if (overlay.type === "about") return "About";
   if (overlay.type === "diagnostics") return "Diagnostics";
   if (overlay.type === "downloads") return "Downloads";
-  if (overlay.type === "library") return "Library";
+  if (overlay.type === "library") {
+    return overlay.view === "queue" ? "Downloads" : "Library";
+  }
   if (overlay.type === "history") return "History";
   if (overlay.type === "queue") return "Up Next";
   if (overlay.type === "notifications") return "Notifications";

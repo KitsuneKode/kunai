@@ -11,6 +11,7 @@ import type {
   TypeBreakdown,
   WatchStats,
 } from "@/domain/lists/StatsService";
+import { ALL_TIME_STATS_WINDOW_DAYS } from "@/domain/lists/StatsService";
 
 import { heatBucket } from "./format/heatmap";
 import { padColumnsEnd, truncateLine } from "./shell-text";
@@ -30,7 +31,7 @@ export const STATS_RANGE_LABELS = ["All time", "Last 7d", "Last 30d"] as const;
 export const STATS_KIND_LABELS = ["All", "Anime", "Series", "Movies", "YouTube"] as const;
 
 export const STATS_RANGE_DAYS: Record<StatsRange, number> = {
-  all: 99_999,
+  all: ALL_TIME_STATS_WINDOW_DAYS,
   "7d": 7,
   "30d": 30,
 };
@@ -279,7 +280,7 @@ function buildMetrics(input: {
   readonly rangeDays: number;
 }): StatsMetric[] {
   const topTitle = input.stats.topShows[0]?.title ?? "—";
-  const activeSuffix = input.rangeDays >= 99_999 ? "" : `/${input.rangeDays}`;
+  const activeSuffix = input.rangeDays >= ALL_TIME_STATS_WINDOW_DAYS ? "" : `/${input.rangeDays}`;
   return [
     { label: "Episodes watched", value: String(input.stats.totalEpisodes) },
     { label: "Total watch time", value: formatDuration(input.stats.totalSeconds) },
@@ -295,10 +296,16 @@ function buildMetrics(input: {
     },
     { label: "Longest streak", value: `${input.stats.longestStreak} days` },
     {
-      label: "Avg episodes / day",
-      value: String(input.stats.avgEpisodesPerDay),
+      label:
+        input.rangeDays >= ALL_TIME_STATS_WINDOW_DAYS ? "Avg / active day" : "Avg episodes / day",
+      value: formatAvgEpisodes(input.stats.avgEpisodesPerDay),
     },
   ];
+}
+
+function formatAvgEpisodes(value: number): string {
+  if (value <= 0) return "0";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function buildTitleRows(

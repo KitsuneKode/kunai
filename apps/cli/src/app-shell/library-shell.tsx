@@ -2,7 +2,10 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
-import { libraryFooterActions, queueFooterActions } from "@/app-shell/overlay-footer-actions";
+import {
+  libraryFooterActions,
+  downloadQueueFooterActions,
+} from "@/app-shell/overlay-footer-actions";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import {
   buildMediaListRowColumns,
@@ -72,8 +75,22 @@ export function LibraryShell({
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
   const [downloadsEnabledOverride, setDownloadsEnabledOverride] = useState<boolean | null>(null);
+  const [downloadJobCount, setDownloadJobCount] = useState(0);
   const downloadsEnabled = downloadsEnabledOverride ?? container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
+
+  useEffect(() => {
+    const refreshCount = () => {
+      const active = container.downloadService.listActive(50).length;
+      const completed = container.downloadService.listCompleted(5).length;
+      const failed = container.downloadService.listFailed(10).length;
+      setDownloadJobCount(active + completed + failed);
+    };
+    refreshCount();
+    return container.downloadService.onEvent(() => {
+      refreshCount();
+    });
+  }, [container]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -123,7 +140,7 @@ export function LibraryShell({
         {downloadsEnabled ? "downloads on" : "downloads off"} · runway: title opt-in
       </Text>
 
-      <Box marginTop={1} flexDirection="column" flexGrow={1}>
+      <Box marginTop={1} flexDirection="column">
         {tab === "queue" ? (
           <DownloadManagerContent
             container={container}
@@ -137,10 +154,12 @@ export function LibraryShell({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <ShellFooter
-          taskLabel={tab === "library" ? "Library" : "Downloads"}
+          taskLabel={tab === "library" ? "Library" : downloadJobCount > 0 ? "Downloads" : "Queue"}
           mode="minimal"
           actions={selectFooterActions(
-            tab === "library" ? libraryFooterActions() : queueFooterActions(),
+            tab === "library"
+              ? libraryFooterActions()
+              : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
             "minimal",
             viewport.columns,
           )}
@@ -150,6 +169,11 @@ export function LibraryShell({
           <Text color={palette.dim} dimColor>
             Missing or broken artifacts: press <Text color={palette.accent}>x</Text> to remove, then
             re-add via <Text color={palette.accent}>/download</Text>.
+          </Text>
+        ) : downloadJobCount === 0 ? (
+          <Text color={palette.dim} dimColor>
+            Queue empty · use <Text color={palette.accent}>/download</Text> from a title · Esc
+            closes
           </Text>
         ) : null}
       </Box>

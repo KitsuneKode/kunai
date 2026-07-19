@@ -55,6 +55,7 @@ import {
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SegmentedControl } from "./primitives/SegmentedControl";
+import { resolveHeaderDestination } from "./resolve-header-destination";
 import { RootContentBody } from "./root-content-shell";
 import {
   clearRootContentSession,
@@ -81,6 +82,7 @@ import { palette, statusColor } from "./shell-theme";
 import {
   buildStatsView,
   STATS_KINDS,
+  STATS_RANGE_DAYS,
   STATS_RANGES,
   STATS_TABS,
   statsKindFromIndex,
@@ -664,14 +666,13 @@ function AppRoot({ container }: { container: Container }) {
           ? rootContent.kind
           : state.view;
   const browseDestinationLabel = useBrowseDestinationLabel();
-  const headerDestination =
-    currentViewLabel === "playback"
-      ? "Now Playing"
-      : currentViewLabel === "post-playback"
-        ? "Up Next"
-        : currentViewLabel === "browse"
-          ? browseDestinationLabel
-          : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
+  const headerDestination = resolveHeaderDestination({
+    state,
+    rootOverlay,
+    rootContent,
+    browseDestinationLabel,
+    playbackActive: playbackIsActive,
+  });
   // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
   // renders the bell when notificationCount > 0).
   const activeNotifications = container.notificationService.listActive(200, 0);
@@ -1129,20 +1130,18 @@ function AppRoot({ container }: { container: Container }) {
           );
         })()}
       </TransientRowSlot>
-      <Box marginTop={1} flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <RootContentBody
-            resolved={resolvedRootContent}
-            ctx={{
-              container,
-              state,
-              stateManager,
-              rootOverlay,
-              playbackRootInput,
-              clearShellScreen,
-            }}
-          />
-        </Box>
+      <Box marginTop={1} flexDirection="column" flexGrow={1}>
+        <RootContentBody
+          resolved={resolvedRootContent}
+          ctx={{
+            container,
+            state,
+            stateManager,
+            rootOverlay,
+            playbackRootInput,
+            clearShellScreen,
+          }}
+        />
       </Box>
     </Box>
   );
@@ -1592,7 +1591,7 @@ function StatsShell({
   const activeTab = statsTabFromIndex(tabIdx);
   const activeRange = statsRangeFromIndex(rangeIdx);
   const activeKind = statsKindFromIndex(kindIdx);
-  const windowDays = activeRange === "all" ? 99_999 : activeRange === "7d" ? 7 : 30;
+  const windowDays = STATS_RANGE_DAYS[activeRange];
   const mediaKindFilter = activeKind === "all" ? undefined : activeKind;
 
   const stats = useMemo(
@@ -2025,6 +2024,7 @@ export function openTextInputShell({
 export function openStatsShell(container: Container): Promise<void> {
   const session = mountRootContent<undefined>({
     kind: "picker",
+    headerLabel: "Stats",
     renderContent: (finish) => (
       <StatsShell
         statsService={container.statsService}
@@ -2060,6 +2060,7 @@ export function openListShell<T>({
     while (true) {
       const session = mountRootContent<ListShellSubmitResult<T>>({
         kind: "picker",
+        headerLabel: title,
         renderContent: (finish) => (
           <ListShell
             title={title}

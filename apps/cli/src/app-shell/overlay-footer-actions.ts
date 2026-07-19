@@ -54,6 +54,22 @@ export function notificationsFooterActions(input: {
   });
 }
 
+export function downloadQueueFooterActions(input: {
+  readonly hasJobs: boolean;
+}): readonly FooterAction[] {
+  if (!input.hasJobs) {
+    // Empty queue: don't advertise play/remove from the Up Next binding set.
+    return [];
+  }
+  // Display-only — DownloadManagerContent owns the real key loop.
+  return [
+    { key: "↵", label: "play done", primary: true },
+    { key: "r", label: "retry" },
+    { key: "x", label: "remove" },
+    { key: "a", label: "repair" },
+  ];
+}
+
 export function libraryFooterActions(): readonly FooterAction[] {
   return buildFooterActionsFromBindings("library", {
     ids: ["library-open", "library-delete", "library-protect", "library-tab"],

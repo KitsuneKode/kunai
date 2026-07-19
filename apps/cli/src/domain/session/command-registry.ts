@@ -122,7 +122,6 @@ export const COMMAND_CONTEXTS = {
     "report-issue",
     "docs",
     "help",
-    "menu",
     "about",
     "update",
   ],
@@ -1016,11 +1015,9 @@ function resolveCommandState(
     case "telemetry-show":
     case "notifications":
     case "history":
-    case "details":
     case "diagnostics":
     case "docs":
     case "help":
-    case "menu":
     case "about":
     case "update":
     case "clear-cache":
@@ -1028,6 +1025,24 @@ function resolveCommandState(
     case "clear-history":
     case "export-diagnostics":
     case "report-issue":
+      return { enabled: true };
+
+    case "details":
+      if (state.searchResults.length === 0 && !state.currentTitle) {
+        return {
+          enabled: false,
+          reason: "Select a browse result first.",
+        };
+      }
+      return { enabled: true };
+
+    case "menu":
+      if (!state.currentTitle && state.searchResults.length === 0) {
+        return {
+          enabled: false,
+          reason: "Select a title first (browse list or continue watching).",
+        };
+      }
       return { enabled: true };
 
     case "toggle-mode":

@@ -195,10 +195,14 @@ export function OverlayPanel({
 
   return (
     <Box marginTop={insideOverlay ? 0 : 1} flexDirection="column" paddingX={insideOverlay ? 0 : 1}>
-      <Text color={palette.text} bold>
-        {overlay.title}
-      </Text>
-      <Text color={palette.dim}>{overlay.subtitle}</Text>
+      {insideOverlay ? null : (
+        <>
+          <Text color={palette.text} bold>
+            {overlay.title}
+          </Text>
+          <Text color={palette.dim}>{overlay.subtitle}</Text>
+        </>
+      )}
       {isPickerOverlay ? (
         <>
           <Box marginTop={1}>

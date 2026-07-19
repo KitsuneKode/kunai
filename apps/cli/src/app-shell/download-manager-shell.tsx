@@ -430,7 +430,7 @@ export function DownloadManagerContent({
   const visibleJobs = allJobs.slice(windowStart, windowEnd);
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column">
       {allJobs.length === 0 ? (
         <StateBlock
           model={{

@@ -3,6 +3,9 @@ import { WatchStatsRepository } from "@kunai/storage";
 
 import { buildWatchGenreBreakdown, type WatchGenreBreakdown } from "./WatchGenreStats";
 
+/** Sentinel window length used by Stats UI for "All time". */
+export const ALL_TIME_STATS_WINDOW_DAYS = 99_999;
+
 export interface DailyActivity {
   readonly date: string;
   readonly watchedCount: number;
@@ -159,8 +162,13 @@ export class StatsService {
     const completedEpisodes = totals.completedEpisodes;
     const completionRate =
       totals.rowCount > 0 ? Math.round((completedEpisodes / totals.rowCount) * 1000) / 1000 : 0;
+    // Finite windows: pace over the calendar window (7d/30d).
+    // All-time uses a sentinel window (~99999 days) — divide by active days
+    // or the metric collapses to ~0 for any real library.
+    const avgDivisor =
+      windowDays >= ALL_TIME_STATS_WINDOW_DAYS ? Math.max(activeDays, 1) : Math.max(windowDays, 1);
     const avgEpisodesPerDay =
-      windowDays > 0 ? Math.round((completedEpisodes / windowDays) * 10) / 10 : 0;
+      completedEpisodes > 0 ? Math.round((completedEpisodes / avgDivisor) * 10) / 10 : 0;
 
     const mostActiveDay =
       dayRows.length > 0

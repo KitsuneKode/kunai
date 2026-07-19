@@ -219,6 +219,34 @@ test("avgEpisodesPerDay divides completed episodes by window length", () => {
   expect(stats.avgEpisodesPerDay).toBe(0.2);
 });
 
+test("all-time avgEpisodesPerDay uses active days, not the sentinel window", () => {
+  const { service, history } = makeStatsService();
+  const now = Date.now();
+
+  history.upsertProgress({
+    title: { id: "show", kind: "series", title: "Show" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 1_000,
+    durationSeconds: 1_000,
+    completed: true,
+    watchedSeconds: 1_000,
+    updatedAt: new Date(now - 2 * 86400000).toISOString(),
+  });
+  history.upsertProgress({
+    title: { id: "show", kind: "series", title: "Show" },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 1_000,
+    durationSeconds: 1_000,
+    completed: true,
+    watchedSeconds: 1_000,
+    updatedAt: new Date(now - 86400000).toISOString(),
+  });
+
+  const stats = service.getStats(99_999);
+  expect(stats.activeDays).toBe(2);
+  expect(stats.avgEpisodesPerDay).toBe(1);
+});
+
 test("getStats includes video kind in type breakdown", () => {
   const { service, history } = makeStatsService();
 

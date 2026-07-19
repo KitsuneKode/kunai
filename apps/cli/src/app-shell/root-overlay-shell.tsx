@@ -302,8 +302,8 @@ function HelpShell({
   );
 
   return (
-    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-      <Box flexDirection="column" flexGrow={1} paddingX={1} marginTop={1}>
+    <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
             {"❀ Help"}
@@ -328,22 +328,20 @@ function HelpShell({
           {rightRows.length > 0 ? renderColumn(rightRows, "right") : null}
         </Box>
       </Box>
-      <Box flexDirection="column">
-        {commandMode ? (
-          <CommandPalette
-            input={commandInput}
-            cursor={commandCursor}
-            commands={commands}
-            highlightedIndex={highlightedIndex}
-          />
-        ) : null}
-        <ShellFooter
-          taskLabel={"Help  ·  Tab/Shift+Tab cycles sections, Esc or ? closes"}
-          actions={footerActions}
-          mode="detailed"
-          commandMode={commandMode}
+      {commandMode ? (
+        <CommandPalette
+          input={commandInput}
+          cursor={commandCursor}
+          commands={commands}
+          highlightedIndex={highlightedIndex}
         />
-      </Box>
+      ) : null}
+      <ShellFooter
+        taskLabel="Tab/Shift+Tab sections · Esc or ? closes"
+        actions={footerActions}
+        mode="detailed"
+        commandMode={commandMode}
+      />
     </Box>
   );
 }
@@ -1722,31 +1720,25 @@ export function RootOverlayShell({
   if (overlay.type === "downloads") {
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip items={[{ label: "panel downloads", tone: "info" }]} />
-          <DownloadManagerContent
-            container={container}
-            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+      <Box flexDirection="column" flexGrow={1}>
+        <DownloadManagerContent
+          container={container}
+          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel="Download queue  ·  x cancel/remove, r retry, Esc closes"
-            actions={footerActions}
-            mode="detailed"
-            commandMode={commandMode}
-          />
-        </Box>
+        ) : null}
+        <ShellFooter
+          taskLabel="x cancel/remove · r retry · Esc closes"
+          actions={footerActions}
+          mode="detailed"
+          commandMode={commandMode}
+        />
       </Box>,
     );
   }
@@ -1775,39 +1767,26 @@ export function RootOverlayShell({
   if (overlay.type === "settings") {
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip
-            items={[
-              { label: "Settings", tone: "info" },
-              {
-                label: overlayStatus ?? "Configure providers, relay, playback, and shell behavior",
-                tone: "neutral",
-              },
-            ]}
+      <Box flexDirection="column" flexGrow={1}>
+        <SettingsShell
+          container={container}
+          width={overlayLayout.contentColumns}
+          maxRows={maxLines}
+          commandMode={commandMode}
+          initialSectionId={overlay.initialSectionId}
+          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+          onStatus={setOverlayStatus}
+          onRedraw={onRedraw}
+          hideChromeTitle
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-          <SettingsShell
-            container={container}
-            width={overlayLayout.contentColumns}
-            maxRows={maxLines}
-            commandMode={commandMode}
-            initialSectionId={overlay.initialSectionId}
-            onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
-            onStatus={setOverlayStatus}
-            onRedraw={onRedraw}
-          />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-        </Box>
+        ) : null}
       </Box>,
     );
   }
@@ -1815,35 +1794,31 @@ export function RootOverlayShell({
   if (overlay.type === "notifications" && !notificationActionDedupKey && !notificationPlayConfirm) {
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <NotificationsShell
-            view={notificationsView}
-            columns={overlayLayout.contentColumns}
-            selectedIndex={notificationsView.selectedIndex}
-            unreadCount={notificationUnreadCount}
+      <Box flexDirection="column" flexGrow={1}>
+        <NotificationsShell
+          view={notificationsView}
+          columns={overlayLayout.contentColumns}
+          selectedIndex={notificationsView.selectedIndex}
+          unreadCount={notificationUnreadCount}
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-        </Box>
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel="Notifications"
-            actions={notificationsFooterActions({
-              tab: notificationsState.tab,
-              paginated: notificationsView.totalPages > 1,
-            })}
-            mode="detailed"
-            commandMode={commandMode}
-            terminalWidth={cols}
-          />
-        </Box>
+        ) : null}
+        <ShellFooter
+          taskLabel="Notifications"
+          actions={notificationsFooterActions({
+            tab: notificationsState.tab,
+            paginated: notificationsView.totalPages > 1,
+          })}
+          mode="detailed"
+          commandMode={commandMode}
+          terminalWidth={cols}
+        />
       </Box>,
     );
   }
@@ -1873,42 +1848,36 @@ export function RootOverlayShell({
 
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip
-            items={[
-              { label: title, tone: "info" },
-              {
-                label: `${queueView.counts.unplayed} up next · ${queueView.counts.total} total`,
-                tone: "neutral",
-              },
-            ]}
+      <Box flexDirection="column" flexGrow={1}>
+        <ContextStrip
+          items={[
+            {
+              label: `${queueView.counts.unplayed} up next · ${queueView.counts.total} total`,
+              tone: "info",
+            },
+          ]}
+        />
+        <QueueShell
+          view={queueViewForRender}
+          columns={overlayLayout.contentColumns}
+          listWidth={listWidth}
+          rowWidth={rowWidth}
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-          <QueueShell
-            view={queueViewForRender}
-            columns={overlayLayout.contentColumns}
-            listWidth={listWidth}
-            rowWidth={rowWidth}
-          />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel="Up Next"
-            actions={queueFooterActions()}
-            mode="detailed"
-            commandMode={commandMode}
-            terminalWidth={cols}
-          />
-        </Box>
+        ) : null}
+        <ShellFooter
+          taskLabel="Up Next"
+          actions={queueFooterActions()}
+          mode="detailed"
+          commandMode={commandMode}
+          terminalWidth={cols}
+        />
       </Box>,
     );
   }
@@ -1923,46 +1892,40 @@ export function RootOverlayShell({
 
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip
-            items={[
-              { label: title, tone: "info" },
-              {
-                label: loadingAsyncLines
-                  ? "loading history"
-                  : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
-                tone: "neutral",
-              },
-            ]}
+      <Box flexDirection="column" flexGrow={1}>
+        <ContextStrip
+          items={[
+            {
+              label: loadingAsyncLines
+                ? "loading history"
+                : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
+              tone: "info",
+            },
+          ]}
+        />
+        <HistoryShell
+          view={historyView}
+          columns={overlayLayout.contentColumns}
+          listWidth={listWidth}
+          rowWidth={rowWidth}
+        />
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
           />
-          <HistoryShell
-            view={historyView}
-            columns={overlayLayout.contentColumns}
-            listWidth={listWidth}
-            rowWidth={rowWidth}
-          />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel={
-              historySourceChoiceTitleId ? "History · l local, s stream, Esc cancel" : "History"
-            }
-            actions={historyFooterActions()}
-            mode="detailed"
-            commandMode={commandMode}
-            terminalWidth={cols}
-          />
-        </Box>
+        ) : null}
+        <ShellFooter
+          taskLabel={
+            historySourceChoiceTitleId ? "History · l local, s stream, Esc cancel" : "History"
+          }
+          actions={historyFooterActions()}
+          mode="detailed"
+          commandMode={commandMode}
+          terminalWidth={cols}
+        />
       </Box>,
     );
   }
@@ -2002,84 +1965,18 @@ export function RootOverlayShell({
     const tracksHasSwitchable = trackGroups.some((group) => group.rows.some((row) => row.enabled));
     return wrapOverlayLayout(
       overlayLayout,
-      <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
-        <Box flexDirection="column" flexGrow={1}>
-          <ContextStrip
-            items={[
-              { label: title, tone: "info" },
-              { label: effectiveSubtitle, tone: "neutral" },
-            ]}
-          />
-          <TracksPanelShell
-            groups={trackGroups}
-            nav={tracksNav}
-            favorites={tracksFavorites}
-            providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
-            width={overlayLayout.contentColumns}
-            height={overlayLayout.contentRows}
-          />
-        </Box>
-
-        <Box flexDirection="column">
-          {commandMode ? (
-            <CommandPalette
-              input={commandInput}
-              cursor={commandCursor}
-              commands={commands}
-              highlightedIndex={highlightedIndex}
-            />
-          ) : null}
-          <ShellFooter
-            taskLabel="Tracks"
-            actions={[
-              { key: "↑↓", label: "choose", action: "details" as const },
-              { key: "→", label: "enter", action: "details" as const },
-              ...(tracksHasSwitchable
-                ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
-                : []),
-              { key: "f", label: "favorite", action: "details" as const },
-              { key: "esc", label: "close", action: "quit" as const },
-            ]}
-            mode="detailed"
-            commandMode={commandMode}
-          />
-        </Box>
-      </Box>,
-    );
-  }
-
-  return wrapOverlayLayout(
-    overlayLayout,
-    <Box flexDirection="column" flexGrow={1} justifyContent="space-between">
       <Box flexDirection="column" flexGrow={1}>
-        <ContextStrip
-          items={[
-            {
-              label: title,
-              tone: "info",
-            },
-            {
-              label:
-                overlay.type === "provider_picker"
-                  ? `${filteredProviderOptions.length} options`
-                  : overlay.type === "notifications"
-                    ? notificationActionDedupKey
-                      ? `${filteredNotificationActionOptions.length} actions`
-                      : `${filteredNotificationOptions.length} options`
-                    : isRootMediaPickerOverlay(overlay)
-                      ? `${filteredGenericPickerOptions.length} options`
-                      : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
-            },
-          ]}
-        />
-        <OverlayPanel
-          overlay={overlayPanel}
+        {effectiveSubtitle.trim() ? (
+          <ContextStrip items={[{ label: effectiveSubtitle, tone: "neutral" }]} />
+        ) : null}
+        <TracksPanelShell
+          groups={trackGroups}
+          nav={tracksNav}
+          favorites={tracksFavorites}
+          providerLabel={overlay.type === "tracks_panel" ? overlay.providerLabel : undefined}
           width={overlayLayout.contentColumns}
-          maxLinesOverride={maxLines}
+          height={overlayLayout.contentRows}
         />
-      </Box>
-
-      <Box flexDirection="column">
         {commandMode ? (
           <CommandPalette
             input={commandInput}
@@ -2089,24 +1986,86 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel={
-            overlay.type === "provider_picker"
-              ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
-              : overlay.type === "diagnostics"
-                ? "Diagnostics  ·  ↑/↓ scroll, Space toggles span, e exports bundle, Esc closes"
-                : overlay.type === "notifications"
-                  ? notificationActionDedupKey
-                    ? "Notification actions  ·  Enter runs, Esc returns"
-                    : "Notifications  ·  Enter acts, a actions, x dismisses"
-                  : isRootMediaPickerOverlay(overlay)
-                    ? title
-                    : `${title}  ·  Esc closes and returns to the previous shell state`
-          }
-          actions={footerActions}
+          taskLabel="Tracks"
+          actions={[
+            { key: "↑↓", label: "choose", action: "details" as const },
+            { key: "→", label: "enter", action: "details" as const },
+            ...(tracksHasSwitchable
+              ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
+              : []),
+            { key: "f", label: "favorite", action: "details" as const },
+            { key: "esc", label: "close", action: "quit" as const },
+          ]}
           mode="detailed"
           commandMode={commandMode}
         />
-      </Box>
+      </Box>,
+    );
+  }
+
+  return wrapOverlayLayout(
+    overlayLayout,
+    <Box flexDirection="column" flexGrow={1}>
+      <ContextStrip
+        items={
+          // Header pill already owns the overlay name (Settings/Diagnostics/…).
+          // Strip only the secondary progress / count so we don't re-title.
+          overlay.type === "diagnostics"
+            ? [
+                {
+                  label: `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
+                  tone: "info" as const,
+                },
+              ]
+            : [
+                {
+                  label:
+                    overlay.type === "provider_picker"
+                      ? `${filteredProviderOptions.length} options`
+                      : overlay.type === "notifications"
+                        ? notificationActionDedupKey
+                          ? `${filteredNotificationActionOptions.length} actions`
+                          : `${filteredNotificationOptions.length} options`
+                        : isRootMediaPickerOverlay(overlay)
+                          ? `${filteredGenericPickerOptions.length} options`
+                          : `${Math.min(scrollIndex + maxLines, lines.length)}/${lines.length} lines`,
+                  tone: "info" as const,
+                },
+              ]
+        }
+      />
+      <OverlayPanel
+        overlay={overlayPanel}
+        width={overlayLayout.contentColumns}
+        maxLinesOverride={maxLines}
+      />
+
+      {commandMode ? (
+        <CommandPalette
+          input={commandInput}
+          cursor={commandCursor}
+          commands={commands}
+          highlightedIndex={highlightedIndex}
+        />
+      ) : null}
+      <ShellFooter
+        taskLabel={
+          overlay.type === "provider_picker"
+            ? "Type to filter · Enter switch · Esc closes"
+            : overlay.type === "diagnostics"
+              ? "↑/↓ scroll · Space toggle span · e export · Esc closes"
+              : overlay.type === "notifications"
+                ? notificationActionDedupKey
+                  ? "Enter runs · Esc returns"
+                  : "Enter acts · a actions · x dismisses"
+                : isRootMediaPickerOverlay(overlay)
+                  ? title
+                  : "Esc closes"
+        }
+        actions={footerActions}
+        mode="detailed"
+        commandMode={commandMode}
+      />
     </Box>,
   );
 }

@@ -21,6 +21,7 @@ export function SettingsShell({
   maxRows,
   commandMode,
   initialSectionId,
+  hideChromeTitle = false,
   onClose,
   onStatus,
   onRedraw,
@@ -30,6 +31,8 @@ export function SettingsShell({
   readonly maxRows: number;
   readonly commandMode: boolean;
   readonly initialSectionId?: string;
+  /** When framed by AppHeader, skip the in-body "Settings" title band. */
+  readonly hideChromeTitle?: boolean;
   readonly onClose: () => void;
   readonly onStatus: (message: string | null) => void;
   readonly onRedraw: () => void;
@@ -145,6 +148,7 @@ export function SettingsShell({
         width={width}
         maxRows={maxRows}
         error={state.error}
+        hideChromeTitle={hideChromeTitle}
       />
       <SettingsFooter state={state} mode={footerMode} />
     </>
