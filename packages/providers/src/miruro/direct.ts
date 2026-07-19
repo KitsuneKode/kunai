@@ -797,7 +797,10 @@ async function expandMiruroPipeStreams(
 
   for (const stream of streams) {
     if (!stream.url || stream.type === "embed") continue;
-    if (stream.type === "mp4" || (typeof stream.quality === "string" && isNumericQualityLabel(stream.quality))) {
+    if (
+      stream.type === "mp4" ||
+      (typeof stream.quality === "string" && isNumericQualityLabel(stream.quality))
+    ) {
       push(stream);
       continue;
     }
