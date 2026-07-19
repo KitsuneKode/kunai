@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 export type ReleaseNotesSection = {
   readonly title: string;
@@ -27,12 +26,9 @@ export type ReleaseNotesArtifact = {
 };
 
 function thisDir(): string {
-  // Bun exposes import.meta.dir; Next/Turbopack does not — use import.meta.url there.
+  // Bun exposes import.meta.dir; Next/Turbopack falls back to process.cwd().
   if (typeof import.meta.dir === "string" && import.meta.dir.length > 0) {
     return import.meta.dir;
-  }
-  if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
-    return fileURLToPath(new URL(".", import.meta.url));
   }
   return process.cwd();
 }
