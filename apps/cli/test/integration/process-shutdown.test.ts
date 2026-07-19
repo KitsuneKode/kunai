@@ -62,7 +62,12 @@ async function spawnAndSignal(
     `XDG_CACHE_HOME=${shadow.cache}`,
     "bun apps/cli/src/main.ts",
   ].join(" ");
-  const child = Bun.spawn(["script", "-qec", cliCommand, "/dev/null"], {
+  // Capture the transcript instead of discarding it. When the CLI fails to boot
+  // (which is environment-specific — it happens on CI runners but not locally)
+  // the only symptom used to be `kill(): ESRCH` from the signal below, which
+  // says nothing about why. The log is what turns that into a real report.
+  const transcript = join(shadow.root, "cli.log");
+  const child = Bun.spawn(["script", "-qec", cliCommand, transcript], {
     cwd: repoRoot,
     stdin: "ignore",
     stdout: "ignore",
@@ -70,18 +75,52 @@ async function spawnAndSignal(
   });
   spawnedPids.push(child.pid);
 
+  const readTranscript = (): string =>
+    existsSync(transcript) ? readFileSync(transcript, "utf8").trim() : "<no transcript captured>";
+
   const dataDbPath = join(shadow.data, "kunai", "kunai-data.sqlite");
   const startupDeadline = Date.now() + 15_000;
   while (Date.now() < startupDeadline && !(existsSync(pidFile) && existsSync(dataDbPath))) {
     await Bun.sleep(100);
   }
-  // Give the runtime a beat to finish mounting and register signal handlers.
-  await Bun.sleep(1_500);
+  if (!existsSync(pidFile) || !existsSync(dataDbPath)) {
+    throw new Error(
+      `CLI did not reach a booted state within 15s ` +
+        `(pidFile=${existsSync(pidFile)}, dataDb=${existsSync(dataDbPath)}).\n` +
+        `--- transcript ---\n${readTranscript()}`,
+    );
+  }
 
   const cliPid = Number.parseInt(readFileSync(pidFile, "utf8").trim(), 10);
   expect(Number.isInteger(cliPid)).toBe(true);
   spawnedPids.push(cliPid);
-  process.kill(cliPid, signal);
+
+  // Poll for liveness rather than sleeping a fixed 1.5s: a loaded CI runner can
+  // take longer to mount, and a fixed wait either flakes or wastes time. If the
+  // process is gone, report the transcript instead of an opaque ESRCH.
+  const readyDeadline = Date.now() + 10_000;
+  while (Date.now() < readyDeadline) {
+    try {
+      process.kill(cliPid, 0);
+      break;
+    } catch {
+      throw new Error(
+        `CLI process ${cliPid} exited before it could be signalled.\n` +
+          `--- transcript ---\n${readTranscript()}`,
+      );
+    }
+  }
+  // Signal handlers are registered during mount; give that a brief beat once we
+  // know the process is actually alive.
+  await Bun.sleep(1_500);
+  try {
+    process.kill(cliPid, signal);
+  } catch (error) {
+    throw new Error(
+      `failed to deliver ${signal} to CLI process ${cliPid}: ${(error as Error).message}\n` +
+        `--- transcript ---\n${readTranscript()}`,
+    );
+  }
 
   const exitCode = await Promise.race([child.exited, Bun.sleep(10_000).then(() => -1)]);
   return { exitCode: exitCode as number, dataDbPath };

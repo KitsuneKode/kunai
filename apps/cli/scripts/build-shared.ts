@@ -184,8 +184,16 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
   return Object.values(metafile.inputs).reduce((sum, input) => sum + input.bytes, 0);
 }
 
-/** Soft guard for the published npm JS bundle (excludes dist/assets). */
-export const NPM_BUNDLE_BUDGET_KB = 2_560;
+/**
+ * Soft guard for the published npm JS bundle (excludes dist/assets).
+ *
+ * Raised from 2_560 when the half-block poster renderer landed: decoding JPEG
+ * in process costs ~55 KiB but is what makes posters work on Windows, where
+ * `chafa` is effectively never installed. Headroom is deliberate — this is a
+ * guard against accidental bloat, so it should only move for a decision like
+ * that one, with the reason recorded here.
+ */
+export const NPM_BUNDLE_BUDGET_KB = 2_688;
 
 /** Packed tarball size budget for `npm pack` (excludes gzip; npm reports packed size). */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;

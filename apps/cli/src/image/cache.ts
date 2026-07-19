@@ -1,21 +1,24 @@
 import { createHash } from "node:crypto";
 import { mkdir, rename, stat, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, extname, join } from "node:path";
 
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
+import { getKunaiPaths } from "@kunai/storage";
 
 import { debugImage } from "./debug";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p/w342";
-const CACHE_SUBDIR = join("kunai", "posters");
+const POSTER_SUBDIR = "posters";
 
 const fsOps = { mkdir, rename, stat, unlink };
 
+/**
+ * Posters live under the same OS cache root as every other Kunai cache.
+ * This used to hand-roll `$HOME/.cache`, which is not a location Windows has —
+ * posters were cached to a stray dot-directory in the user profile there.
+ */
 function resolveCacheDir(): string {
-  if (process.env.XDG_CACHE_HOME) return join(process.env.XDG_CACHE_HOME, CACHE_SUBDIR);
-  const home = process.env.HOME ?? homedir();
-  return join(home, ".cache", CACHE_SUBDIR);
+  return join(getKunaiPaths().cacheDir, POSTER_SUBDIR);
 }
 
 function resolveExtension(posterPath: string): string {

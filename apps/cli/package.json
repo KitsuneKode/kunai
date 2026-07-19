@@ -96,6 +96,7 @@
   "dependencies": {
     "commander": "catalog:cli",
     "ink": "catalog:cli",
+    "jpeg-js": "^0.4.4",
     "react": "catalog:"
   },
   "devDependencies": {

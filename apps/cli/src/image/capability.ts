@@ -2,9 +2,16 @@ import { debugImage } from "./debug";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
-const PROTOCOL_VALUES = new Set(["auto", "none", "kitty", "sixel", "symbols"] as const);
+const PROTOCOL_VALUES = new Set([
+  "auto",
+  "none",
+  "kitty",
+  "sixel",
+  "symbols",
+  "half-block",
+] as const);
 
-type ProtocolOverride = "auto" | "none" | "kitty" | "sixel" | "symbols";
+type ProtocolOverride = "auto" | "none" | "kitty" | "sixel" | "symbols" | "half-block";
 
 type CapabilityInput = {
   readonly terminal: TerminalId;
@@ -24,6 +31,22 @@ function buildCapability(input: CapabilityInput): ImageCapability {
     dependency: input.dependency,
     reason: input.reason,
   };
+}
+
+/**
+ * The universal fallback: two pixels per cell using truecolour SGR, decoded in
+ * process. Needs no external binary, which is what makes posters work on
+ * Windows at all — `chafa` is effectively never installed there.
+ */
+function halfBlockCapability(terminal: TerminalId, reason: string): ImageCapability {
+  return buildCapability({
+    terminal,
+    protocol: "half-block",
+    renderer: "half-block",
+    available: true,
+    dependency: "none",
+    reason,
+  });
 }
 
 function noneCapability(terminal: TerminalId, reason: string): ImageCapability {
@@ -152,6 +175,10 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     });
   }
 
+  if (override === "half-block") {
+    return halfBlockCapability(terminal, "forced half-block output");
+  }
+
   if (terminal === "kitty" || terminal === "ghostty") {
     return buildCapability({
       terminal,
@@ -163,20 +190,19 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     });
   }
 
+  // Windows Terminal only gained sixel in 1.22, and nothing in the environment
+  // reports its version. Emitting sixel to an older build dumps raw escape
+  // bytes across the UI, so we take the always-correct path and leave sixel
+  // available through KUNAI_IMAGE_PROTOCOL=sixel for users who know they have it.
   if (terminal === "windows-terminal") {
-    if (hasChafa) {
-      return buildCapability({
-        terminal,
-        protocol: "sixel",
-        renderer: "chafa-sixel",
-        available: true,
-        dependency: "chafa",
-        reason: "Windows Terminal detected with chafa",
-      });
-    }
-    return noneCapability(terminal, "Windows Terminal detected but chafa is missing");
+    return halfBlockCapability(
+      terminal,
+      "Windows Terminal detected; sixel support is unverifiable",
+    );
   }
 
+  // WezTerm's sixel support is long-standing and version-independent, so it is
+  // safe to prefer the higher-fidelity path when chafa is present.
   if (terminal === "wezterm" && hasChafa) {
     return buildCapability({
       terminal,
@@ -188,18 +214,7 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     });
   }
 
-  if (hasChafa) {
-    return buildCapability({
-      terminal,
-      protocol: "symbols",
-      renderer: "chafa-symbols",
-      available: true,
-      dependency: "chafa",
-      reason: "chafa available for symbol fallback",
-    });
-  }
-
-  return noneCapability(terminal, "no supported image protocol detected");
+  return halfBlockCapability(terminal, "half-block fallback for truecolour terminals");
 }
 
 export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): ImageCapability {

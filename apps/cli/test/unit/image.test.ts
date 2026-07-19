@@ -275,25 +275,32 @@ describe("detectImageCapability", () => {
     }
   });
 
-  test("selects chafa-sixel for Windows Terminal when chafa is available", () => {
+  // Windows Terminal only gained sixel in 1.22 and reports no version through
+  // the environment, so auto-detection must not gamble on it — an older build
+  // renders the escape bytes as literal text across the UI.
+  test("selects half-block for Windows Terminal even when chafa is available", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich("/usr/bin/chafa");
     try {
       const capability = detectImageCapability({ WT_SESSION: "abc" } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("chafa-sixel");
+      expect(capability.renderer).toBe("half-block");
+      expect(capability.available).toBe(true);
     } finally {
       restoreWhich();
       restoreTty();
     }
   });
 
-  test("selects none for Windows Terminal when chafa is missing", () => {
+  // The original Windows bug: no chafa meant no posters at all. chafa is
+  // effectively never installed on Windows, so this was every Windows user.
+  test("still shows posters on Windows Terminal when chafa is missing", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich(null);
     try {
       const capability = detectImageCapability({ WT_SESSION: "abc" } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("none");
-      expect(capability.reason).toBe("Windows Terminal detected but chafa is missing");
+      expect(capability.renderer).toBe("half-block");
+      expect(capability.available).toBe(true);
+      expect(capability.dependency).toBe("none");
     } finally {
       restoreWhich();
       restoreTty();
@@ -312,16 +319,22 @@ describe("detectImageCapability", () => {
     }
   });
 
-  test("selects chafa-symbols for unknown terminals when chafa is available", () => {
+  // half-block is the universal last resort: one code path, no dependency, and
+  // it looks better than chafa's symbol mode on photographic posters.
+  // chafa-symbols stays reachable through KUNAI_IMAGE_PROTOCOL=symbols.
+  test("selects half-block for unknown terminals regardless of chafa", () => {
     const restoreTty = mockStdoutIsTty(true);
-    const restoreWhich = mockBunWhich("/usr/bin/chafa");
-    try {
-      const capability = detectImageCapability({} as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("chafa-symbols");
-    } finally {
-      restoreWhich();
-      restoreTty();
+    for (const chafaPath of ["/usr/bin/chafa", null]) {
+      const restoreWhich = mockBunWhich(chafaPath);
+      try {
+        const capability = detectImageCapability({} as NodeJS.ProcessEnv);
+        expect(capability.renderer).toBe("half-block");
+        expect(capability.available).toBe(true);
+      } finally {
+        restoreWhich();
+      }
     }
+    restoreTty();
   });
 
   test("forces chafa-sixel when KUNAI_IMAGE_PROTOCOL=sixel", () => {
@@ -388,7 +401,10 @@ describe("detectImageCapability", () => {
         KUNAI_IMAGE_PROTOCOL: "bad",
         WT_SESSION: "abc",
       } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("chafa-sixel");
+      // Auto for Windows Terminal is half-block; the point of this test is that
+      // an unparseable override is ignored rather than disabling posters.
+      expect(capability.renderer).toBe("half-block");
+      expect(capability.available).toBe(true);
     } finally {
       restoreWhich();
       restoreTty();
