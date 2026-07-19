@@ -11,6 +11,8 @@ import {
   latestPlaybackStartupStage,
 } from "@/app/playback/playback-bootstrap-presenter";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
+import { pickCompatibleFallbackProvider } from "@/app/playback/playback-provider-fallback";
+import { resolveStreamProviderId } from "@/app/playback/playback-provider-switch";
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
   isCurrentStreamSelection,
@@ -789,11 +791,18 @@ function AppRoot({ container }: { container: Container }) {
   const playbackCanCancel = !PLAYING_PLAYBACK_STATUSES.some(
     (status) => status === state.playbackStatus,
   );
+  // Exclude the provider that actually resolved the current stream, not the
+  // configured one. After a soft provider hop (header shows "Miruro→AllManga")
+  // those differ, and excluding only the configured id made the footer offer a
+  // fallback to the provider already playing while the engine — which excludes
+  // the resolved id — switched to a different one. Same helper as the engine so
+  // the advertised target and the actual target cannot drift again.
   const fallbackProvider =
     state.currentTitle && state.currentEpisode
-      ? container.providerRegistry
-          .getCompatible(state.currentTitle, state.mode)
-          .find((candidate) => candidate.metadata.id !== state.provider)
+      ? pickCompatibleFallbackProvider(
+          container.providerRegistry.getCompatible(state.currentTitle, state.mode),
+          resolveStreamProviderId(state.stream) ?? state.provider,
+        )
       : undefined;
   const activeProvider = container.providerRegistry.get(state.provider);
   const hasStreamCandidates = Boolean(state.stream?.providerResolveResult);

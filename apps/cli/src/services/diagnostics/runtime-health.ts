@@ -371,7 +371,7 @@ export function buildRuntimeHealthSnapshot(input: {
     persistedBadge && telemetryProvider.tone === "neutral"
       ? {
           label: telemetryProvider.label,
-          detail: `${telemetryProvider.detail}  ·  memory: ${persistedBadge}`,
+          detail: `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
           tone:
             effective?.effectiveStatus === "down"
               ? ("error" as const)
@@ -382,7 +382,7 @@ export function buildRuntimeHealthSnapshot(input: {
       : persistedBadge
         ? {
             ...telemetryProvider,
-            detail: `${telemetryProvider.detail}  ·  memory: ${persistedBadge}`,
+            detail: `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
             tone:
               effective?.effectiveStatus === "down"
                 ? ("error" as const)

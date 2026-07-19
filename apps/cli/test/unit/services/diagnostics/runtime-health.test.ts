@@ -185,7 +185,7 @@ describe("runtime health diagnostics", () => {
       },
     });
 
-    expect(health.provider.detail).toContain("memory:");
+    expect(health.provider.detail).toContain("health:");
     expect(health.provider.detail).toContain("down");
     expect(health.provider.tone).toBe("error");
   });
