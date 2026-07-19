@@ -154,4 +154,31 @@ describe("handleHistoryOverlayInput", () => {
     expect(handleHistoryOverlayInput("s", {}, ctx)).toBe("handled");
     expect(confirmations[0]?.localJobId).toBeUndefined();
   });
+
+  test("Tab cycles history tabs forward and Shift+Tab reverses", () => {
+    const tabs: string[] = [];
+    const { ctx } = baseCtx({
+      setHistoryTab: (update) => {
+        tabs.push(update("continue"));
+      },
+    });
+
+    expect(handleHistoryOverlayInput("", { tab: true }, ctx)).toBe("handled");
+    expect(handleHistoryOverlayInput("", { tab: true, shift: true }, ctx)).toBe("handled");
+    expect(tabs).toEqual(["completed", "all"]);
+  });
+
+  test("→ cycles type filter forward and ← reverses", () => {
+    const filters: string[] = [];
+    const { ctx } = baseCtx({
+      setHistoryTypeFilter: (update) => {
+        filters.push(update("all"));
+      },
+      setSelectedIndex: () => {},
+    });
+
+    expect(handleHistoryOverlayInput("", { rightArrow: true }, ctx)).toBe("handled");
+    expect(handleHistoryOverlayInput("", { leftArrow: true }, ctx)).toBe("handled");
+    expect(filters).toEqual(["anime", "movie"]);
+  });
 });

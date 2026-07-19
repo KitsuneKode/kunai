@@ -46,6 +46,28 @@ test("restore-queue restores the persisted queue session without dismissing the 
   expect(calls).toEqual(["restore:old-session"]);
 });
 
+test("restore-queue reports stale sessions instead of claiming success", async () => {
+  const router = new NotificationActionRouter({
+    playlist: {
+      restoreRecoverableSession: () => 0,
+    },
+    notifications: { dismiss: () => {} },
+  });
+
+  const result = await router.run({
+    actionId: "restore-queue",
+    notification: notification({
+      itemJson: JSON.stringify({ queueSessionId: "old-session" }),
+    }),
+  });
+
+  expect(result).toEqual({
+    status: "unsupported",
+    actionId: "restore-queue",
+    reason: "Queue session is no longer recoverable",
+  });
+});
+
 test("restore-queue without a playlist executor reports unsupported", async () => {
   const calls: string[] = [];
   const router = new NotificationActionRouter({
@@ -230,6 +252,7 @@ test("update-app opens the release page without dismissing the notice", async ()
     appUpdate: {
       openReleasePage: (latestVersion) => {
         calls.push(`open:${latestVersion}`);
+        return true;
       },
     },
     notifications: {
@@ -250,6 +273,29 @@ test("update-app opens the release page without dismissing the notice", async ()
 
   expect(result).toEqual({ status: "handled", actionId: "update-app" });
   expect(calls).toEqual(["open:1.4.0"]);
+});
+
+test("update-app reports unsupported when no browser opens", async () => {
+  const router = new NotificationActionRouter({
+    appUpdate: {
+      openReleasePage: () => false,
+    },
+    notifications: { dismiss: () => {} },
+  });
+
+  const result = await router.run({
+    actionId: "update-app",
+    notification: notification({
+      kind: "app-update",
+      dedupKey: "app-update:1.4.0",
+    }),
+  });
+
+  expect(result).toEqual({
+    status: "unsupported",
+    actionId: "update-app",
+    reason: "Release page could not be opened",
+  });
 });
 
 test("update-app without an appUpdate handler reports unsupported", async () => {

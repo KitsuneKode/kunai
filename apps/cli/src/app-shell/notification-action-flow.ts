@@ -7,7 +7,10 @@ import type { NotificationRecord } from "@/services/storage/storage-read-models"
 
 export type NotificationOverlayActionResult =
   | { readonly status: "confirmation-required"; readonly actionId: "play-now" }
-  | NotificationActionRunResult;
+  | Extract<NotificationActionRunResult, { readonly status: "unsupported" }>
+  | (Extract<NotificationActionRunResult, { readonly status: "handled" }> & {
+      readonly markReadError?: unknown;
+    });
 
 export type ExecuteNotificationOverlayActionInput = {
   readonly router: Pick<NotificationActionRouter, "run">;
@@ -43,7 +46,11 @@ export async function executeNotificationOverlayAction(
   });
 
   if (result.status === "handled" && input.actionId !== "dismiss") {
-    await input.markRead(input.notification.dedupKey);
+    try {
+      await input.markRead(input.notification.dedupKey);
+    } catch (markReadError) {
+      return { ...result, markReadError };
+    }
   }
 
   return result;

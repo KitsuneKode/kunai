@@ -104,6 +104,25 @@ export function buildNotificationActionOptions(
   });
 }
 
+export function getSelectedNotificationActionId(
+  options: readonly ShellPickerOption<NotificationActionId>[],
+  selectedIndex: number,
+): NotificationActionId | null {
+  return options[selectedIndex]?.value ?? null;
+}
+
+export function selectNotificationPickerOptions<TInbox, TAction, TConfirmation>(input: {
+  readonly confirmationActive: boolean;
+  readonly actionPickerActive: boolean;
+  readonly inbox: readonly TInbox[];
+  readonly actions: readonly TAction[];
+  readonly confirmation: readonly TConfirmation[];
+}): readonly TInbox[] | readonly TAction[] | readonly TConfirmation[] {
+  if (input.confirmationActive) return input.confirmation;
+  if (input.actionPickerActive) return input.actions;
+  return input.inbox;
+}
+
 export function getNotificationTone(kind: string): ShellStatusTone {
   if (kind === "queue-recovery") return "warning";
   if (kind === "download-failed") return "error";

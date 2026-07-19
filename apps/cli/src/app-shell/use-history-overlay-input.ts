@@ -87,13 +87,15 @@ export function handleHistoryOverlayInput(
     }
   }
 
-  if (key.tab && key.shift) {
-    ctx.setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev));
-    ctx.setSelectedIndex(() => 0);
+  if (key.tab) {
+    // Tab forward, Shift+Tab reverse — same pattern as help/calendar tab cycling.
+    ctx.setHistoryTab((prev) => cycleHistoryTab(prev, key.shift ? -1 : 1));
     return "handled";
   }
-  if (key.tab) {
-    ctx.setHistoryTab((prev) => cycleHistoryTab(prev));
+  if (key.leftArrow || key.rightArrow) {
+    // ← reverse, → forward through the type filter axis.
+    ctx.setHistoryTypeFilter((prev) => cycleHistoryTypeFilter(prev, key.leftArrow ? -1 : 1));
+    ctx.setSelectedIndex(() => 0);
     return "handled";
   }
   if (input.toLowerCase() === "m" && selected) {

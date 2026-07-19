@@ -76,6 +76,29 @@ test("NotificationRepository: complete lists return every row beyond the limited
   expect(r.listAllArchived().map((row) => row.dedupKey)).toEqual(["archived-2", "archived-1"]);
 });
 
+test("NotificationRepository: complete lists are not capped at legacy page sizes", () => {
+  const r = repo();
+  for (let index = 0; index < 205; index += 1) {
+    r.upsert(base(`active-${index}`, new Date(Date.UTC(2026, 6, 1, 0, 0, index)).toISOString()));
+  }
+  for (let index = 0; index < 55; index += 1) {
+    const key = `archived-${index}`;
+    r.upsert(base(key, new Date(Date.UTC(2026, 6, 2, 0, 0, index)).toISOString()));
+    r.archive(key, new Date(Date.UTC(2026, 6, 3, 0, 0, index)).toISOString());
+  }
+
+  expect(r.listActive()).toHaveLength(50);
+  expect(r.listArchived()).toHaveLength(50);
+  const active = r.listAllActive();
+  const archived = r.listAllArchived();
+  expect(active).toHaveLength(205);
+  expect(active[0]?.dedupKey).toBe("active-204");
+  expect(active.at(-1)?.dedupKey).toBe("active-0");
+  expect(archived).toHaveLength(55);
+  expect(archived[0]?.dedupKey).toBe("archived-54");
+  expect(archived.at(-1)?.dedupKey).toBe("archived-0");
+});
+
 test("NotificationRepository: delete removes a single notification permanently", () => {
   const r = repo();
   r.upsert(base("a", "2026-06-14T01:00:00.000Z"));

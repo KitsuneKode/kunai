@@ -45,7 +45,6 @@ export type NotificationsOverlayInputContext = {
     update: (state: NotificationsOverlayState) => NotificationsOverlayState,
   ) => void;
   readonly onRedraw: () => void;
-  readonly setNotifTick: (update: (tick: number) => number) => void;
   readonly setOverlayStatus: (status: string) => void;
   readonly setNotificationActionDedupKey: (key: string) => void;
   readonly setFilterQuery: (query: string) => void;
@@ -101,47 +100,42 @@ export function handleNotificationsOverlayInput(
     return "handled";
   }
   if (key.upArrow || key.downArrow) {
-    const ordered = ctx.view.orderedDedupKeys;
-    if (ordered.length === 0) return "handled";
-    const currentIndex = selectedKey ? ordered.indexOf(selectedKey) : -1;
+    const visibleRows = ctx.view.rows;
+    if (visibleRows.length === 0) return "handled";
+    const currentIndex = Math.max(0, ctx.view.selectedIndex);
     const nextIndex = key.downArrow
-      ? Math.min(ordered.length - 1, currentIndex + 1)
+      ? Math.min(visibleRows.length - 1, currentIndex + 1)
       : Math.max(0, currentIndex - 1);
-    const nextKey = ordered[nextIndex] ?? null;
+    const nextKey = visibleRows[nextIndex]?.dedupKey ?? null;
     ctx.setState((state) => ({ ...state, selectedDedupKey: nextKey }));
     return "handled";
   }
   if (input === "A") {
     ctx.setState((state) => ({ ...state, selectedDedupKey: selectedKey }));
     ctx.container.notificationService.markAllRead();
-    ctx.setNotifTick((tick) => tick + 1);
     return "handled";
   }
   if (input === "r" && selectedKey) {
     ctx.setState((state) => ({ ...state, selectedDedupKey: selectedKey }));
     ctx.container.notificationService.markRead(selectedKey);
-    ctx.setNotifTick((tick) => tick + 1);
     return "handled";
   }
   if (input.toLowerCase() === "x" && selectedKey) {
     const nearest = nearestNotificationDedupKey(ctx.view.orderedDedupKeys, selectedKey);
     ctx.setState((state) => ({ ...state, selectedDedupKey: nearest }));
     ctx.container.notificationService.archive(selectedKey);
-    ctx.setNotifTick((tick) => tick + 1);
     return "handled";
   }
   if (input === "d" && selectedKey) {
     const nearest = nearestNotificationDedupKey(ctx.view.orderedDedupKeys, selectedKey);
     ctx.setState((state) => ({ ...state, selectedDedupKey: nearest }));
     ctx.container.notificationService.delete(selectedKey);
-    ctx.setNotifTick((tick) => tick + 1);
     ctx.setOverlayStatus("Notification deleted");
     return "handled";
   }
   if (input === "C") {
     const removed = ctx.container.notificationService.clearArchived();
     ctx.setState((state) => ({ ...state, page: 0, selectedDedupKey: null }));
-    ctx.setNotifTick((tick) => tick + 1);
     ctx.setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
     return "handled";
   }

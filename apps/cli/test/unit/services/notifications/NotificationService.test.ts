@@ -109,6 +109,40 @@ test("delete is sticky: a re-emitted signal does not resurrect a deleted notific
   db.close();
 });
 
+test("NotificationService exposes a revision for render-safe snapshots", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+  const revisions: number[] = [];
+  const unsubscribe = service.subscribe(() => revisions.push(service.getRevision()));
+
+  expect(service.getRevision()).toBe(0);
+  service.recordSignals(
+    [
+      {
+        type: "queue-recoverable",
+        queueSessionId: "q1",
+        itemCount: 1,
+        updatedAt: "2026-07-16T00:00:00.000Z",
+      },
+    ],
+    "2026-07-16T00:00:00.000Z",
+  );
+  service.markAllRead("2026-07-16T00:01:00.000Z");
+
+  expect(revisions).toEqual([1, 2]);
+  expect(service.getRevision()).toBe(2);
+
+  unsubscribe();
+  service.clearArchived();
+  expect(revisions).toEqual([1, 2]);
+  expect(service.getRevision()).toBe(3);
+  db.close();
+});
+
 test("NotificationService passes complete inbox lists through and keeps limited paging", () => {
   const record = (dedupKey: string): NotificationRecord => ({
     id: dedupKey,

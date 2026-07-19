@@ -23,7 +23,7 @@ export interface NotificationActionRouterDeps {
   };
   readonly appUpdate?: {
     /** Open the release page for the advertised version (null when unknown). */
-    readonly openReleasePage: (latestVersion: string | null) => Promise<void> | void;
+    readonly openReleasePage: (latestVersion: string | null) => Promise<boolean> | boolean;
   };
   readonly notifications: {
     readonly dismiss: (dedupKey: string) => Promise<void> | void;
@@ -79,15 +79,28 @@ export class NotificationActionRouter {
       }
       const restore = this.deps.playlist?.restoreRecoverableSession;
       if (!restore) return unsupported(input.actionId);
-      await restore(queueSessionId);
+      const restoredCount = await restore(queueSessionId);
+      if (restoredCount <= 0) {
+        return {
+          status: "unsupported",
+          actionId: input.actionId,
+          reason: "Queue session is no longer recoverable",
+        };
+      }
       return handled(input.actionId);
     }
 
     if (input.actionId === "update-app") {
       const openReleasePage = this.deps.appUpdate?.openReleasePage;
       if (!openReleasePage) return unsupported(input.actionId);
-      await openReleasePage(parseAppUpdateVersion(input.notification));
-      return handled(input.actionId);
+      const opened = await openReleasePage(parseAppUpdateVersion(input.notification));
+      return opened
+        ? handled(input.actionId)
+        : {
+            status: "unsupported",
+            actionId: input.actionId,
+            reason: "Release page could not be opened",
+          };
     }
 
     const item = parseMediaItem(input.notification);

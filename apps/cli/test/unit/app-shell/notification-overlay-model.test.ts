@@ -7,6 +7,8 @@ import {
   getNotificationActionPresentation,
   getNotificationPrimaryAction,
   getNotificationTone,
+  getSelectedNotificationActionId,
+  selectNotificationPickerOptions,
 } from "@/app-shell/notification-overlay-model";
 import type { NotificationRecord } from "@kunai/storage";
 
@@ -62,6 +64,48 @@ test("notification action menu exposes explicit safe row actions", () => {
       tone: "neutral",
     },
   ]);
+});
+
+test("notification action selection requires a visible explicit option", () => {
+  const options = buildNotificationActionOptions(base);
+
+  expect(getSelectedNotificationActionId(options, 0)).toBe("restore-queue");
+  expect(getSelectedNotificationActionId([], 0)).toBeNull();
+  expect(getSelectedNotificationActionId(options, options.length)).toBeNull();
+});
+
+test("notification picker mode exposes one option collection to render and navigation", () => {
+  const inbox = ["notice"];
+  const actions = ["queue-next"];
+  const confirmation = ["confirm", "cancel"];
+
+  expect(
+    selectNotificationPickerOptions({
+      confirmationActive: true,
+      actionPickerActive: false,
+      inbox,
+      actions,
+      confirmation,
+    }),
+  ).toBe(confirmation);
+  expect(
+    selectNotificationPickerOptions({
+      confirmationActive: false,
+      actionPickerActive: true,
+      inbox,
+      actions,
+      confirmation,
+    }),
+  ).toBe(actions);
+  expect(
+    selectNotificationPickerOptions({
+      confirmationActive: false,
+      actionPickerActive: false,
+      inbox,
+      actions,
+      confirmation,
+    }),
+  ).toBe(inbox);
 });
 
 test("retry-download and update-app are executable primary actions with copy", () => {

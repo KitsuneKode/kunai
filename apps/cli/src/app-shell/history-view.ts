@@ -47,9 +47,13 @@ export function historyTypeFilterIndex(filter: HistoryTypeFilter): number {
   return Math.max(0, HISTORY_TYPE_FILTERS.indexOf(filter));
 }
 
-export function cycleHistoryTypeFilter(filter: HistoryTypeFilter): HistoryTypeFilter {
+export function cycleHistoryTypeFilter(
+  filter: HistoryTypeFilter,
+  direction: 1 | -1 = 1,
+): HistoryTypeFilter {
+  const length = HISTORY_TYPE_FILTERS.length;
   return HISTORY_TYPE_FILTERS[
-    (historyTypeFilterIndex(filter) + 1) % HISTORY_TYPE_FILTERS.length
+    (historyTypeFilterIndex(filter) + direction + length) % length
   ] as HistoryTypeFilter;
 }
 
@@ -129,9 +133,10 @@ export function historyTabFromLegacy(mode: "all" | "watching" | "completed"): Hi
   return "all";
 }
 
-export function cycleHistoryTab(tab: HistoryTab): HistoryTab {
+export function cycleHistoryTab(tab: HistoryTab, direction: 1 | -1 = 1): HistoryTab {
   const index = HISTORY_TABS.indexOf(tab);
-  return HISTORY_TABS[(index + 1) % HISTORY_TABS.length] ?? "continue";
+  const length = HISTORY_TABS.length;
+  return HISTORY_TABS[(index + direction + length) % length] ?? "continue";
 }
 
 function matchesHistoryTab(

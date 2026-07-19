@@ -97,31 +97,43 @@ const TYPE_GROUP: Readonly<Record<string, number>> = {
   "download-complete": 3,
 };
 
-function compareNewest(a: NotificationRecord, b: NotificationRecord): number {
-  const byTime = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
-  return byTime !== 0 ? byTime : a.dedupKey.localeCompare(b.dedupKey);
-}
+type NotificationSortEntry = {
+  readonly record: NotificationRecord;
+  readonly updatedAtMs: number;
+  readonly attentionTier: number;
+  readonly typeGroup: number;
+};
 
-function attentionTier(record: NotificationRecord): number {
-  if (record.readAt) return 2;
-  return getNotificationPrimaryAction(record) === "dismiss" ? 1 : 0;
+function compareNewest(a: NotificationSortEntry, b: NotificationSortEntry): number {
+  const byTime = b.updatedAtMs - a.updatedAtMs;
+  return byTime !== 0 ? byTime : a.record.dedupKey.localeCompare(b.record.dedupKey);
 }
 
 function sortRecords(
   records: readonly NotificationRecord[],
   mode: NotificationsSortMode,
 ): NotificationRecord[] {
-  return [...records].sort((a, b) => {
+  const entries = records.map(
+    (record): NotificationSortEntry => ({
+      record,
+      updatedAtMs: Date.parse(record.updatedAt),
+      attentionTier: record.readAt ? 2 : getNotificationPrimaryAction(record) === "dismiss" ? 1 : 0,
+      typeGroup: TYPE_GROUP[record.kind] ?? 4,
+    }),
+  );
+
+  entries.sort((a, b) => {
     if (mode === "attention") {
-      const byTier = attentionTier(a) - attentionTier(b);
+      const byTier = a.attentionTier - b.attentionTier;
       return byTier !== 0 ? byTier : compareNewest(a, b);
     }
     if (mode === "type") {
-      const byGroup = (TYPE_GROUP[a.kind] ?? 4) - (TYPE_GROUP[b.kind] ?? 4);
+      const byGroup = a.typeGroup - b.typeGroup;
       return byGroup !== 0 ? byGroup : compareNewest(a, b);
     }
     return compareNewest(a, b);
   });
+  return entries.map((entry) => entry.record);
 }
 
 function posterUrlOf(record: NotificationRecord): string | undefined {

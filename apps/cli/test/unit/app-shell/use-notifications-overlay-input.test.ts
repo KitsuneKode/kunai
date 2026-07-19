@@ -80,7 +80,6 @@ function harness(options?: {
           h.state = update(h.state);
         },
         onRedraw: () => {},
-        setNotifTick: () => {},
         setOverlayStatus: (status) => calls.push(`status:${status}`),
         setNotificationActionDedupKey: (key2) => calls.push(`openActions:${key2}`),
         setFilterQuery: () => {},
@@ -199,7 +198,7 @@ describe("handleNotificationsOverlayInput", () => {
     expect(h.state.page).toBe(0);
   });
 
-  test("up/down stores the visible row's dedupKey and crosses pages", () => {
+  test("up/down stores a visible row identity without changing pages", () => {
     const h = harness({
       state: {
         tab: "active",
@@ -212,12 +211,14 @@ describe("handleNotificationsOverlayInput", () => {
     h.press("", { downArrow: true });
     expect(h.state.selectedDedupKey).toBe("k1");
     h.press("", { downArrow: true });
-    expect(h.state.selectedDedupKey).toBe("k2");
-    h.press("", { upArrow: true });
     expect(h.state.selectedDedupKey).toBe("k1");
-    h.press("", { upArrow: true });
+    expect(h.state.page).toBe(0);
+
     h.press("", { upArrow: true });
     expect(h.state.selectedDedupKey).toBe("k0");
+    h.press("", { upArrow: true });
+    expect(h.state.selectedDedupKey).toBe("k0");
+    expect(h.state.page).toBe(0);
   });
 
   test("r preserves the selected identity before marking read", () => {

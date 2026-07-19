@@ -21,6 +21,11 @@ export class NotificationService {
   constructor(private readonly deps: NotificationServiceDeps) {}
 
   private readonly listeners = new Set<() => void>();
+  private revision = 0;
+
+  getRevision(): number {
+    return this.revision;
+  }
 
   /** Subscribe to "the notification set changed" — fires after any mutation. */
   subscribe(listener: () => void): () => void {
@@ -31,6 +36,7 @@ export class NotificationService {
   }
 
   private emitChange(): void {
+    this.revision += 1;
     this.deps.sinks?.deliverActive?.(this.listActive());
     for (const listener of this.listeners) listener();
   }

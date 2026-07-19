@@ -66,14 +66,14 @@ export function HistoryShell({
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
-            hint={effectiveListWidth >= 100 ? "⇥ Tab cycles filter" : undefined}
+            hint={effectiveListWidth >= 100 ? "⇥ Tab · ⇧⇥ cycles tabs" : undefined}
             maxWidth={effectiveListWidth}
             dense
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
             activeIndex={view.typeFilterIndex}
-            hint={effectiveListWidth >= 100 ? "⇧⇥ type" : undefined}
+            hint={effectiveListWidth >= 100 ? "←→ type" : undefined}
             maxWidth={effectiveListWidth}
             dense
           />

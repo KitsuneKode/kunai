@@ -135,6 +135,29 @@ describe("executeNotificationOverlayAction", () => {
     expect(calls).toEqual(["router:start"]);
   });
 
+  test("mark-read failure preserves the handled action result", async () => {
+    const error = new Error("database locked");
+    const { router, calls } = makeDeps({ status: "handled", actionId: "queue-next" });
+
+    const result = await executeNotificationOverlayAction({
+      router,
+      notification: notice,
+      actionId: "queue-next",
+      playbackActive: false,
+      markRead: () => {
+        calls.push("mark-read:start");
+        throw error;
+      },
+    });
+
+    expect(result).toEqual({
+      status: "handled",
+      actionId: "queue-next",
+      markReadError: error,
+    });
+    expect(calls).toEqual(["router:start", "router:done", "mark-read:start"]);
+  });
+
   test("play-now during active playback requires confirmation before touching the router", async () => {
     const { router, markRead, calls } = makeDeps({ status: "handled", actionId: "play-now" });
 
