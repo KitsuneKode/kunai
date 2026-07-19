@@ -4,6 +4,7 @@ import { createInitialState } from "@/domain/session/SessionState";
 import {
   buildDiagnosticsInsight,
   formatHealthRowDetail,
+  type DiagnosticsHealthRow,
   formatRecommendedActionLabel,
   formatSessionVerdictLabel,
   type RecommendedAction,
@@ -219,5 +220,38 @@ describe("buildDiagnosticsInsight", () => {
     expect(insight.exportSummary.verdict).toBeDefined();
     expect(insight.exportSummary.correlationSummary).toMatch(/cycle|provider|session/i);
     expect(insight.developerEvidence.correlation.playbackCycleId).toBe("cycle-xyz");
+  });
+});
+
+describe("formatHealthRowDetail noise reduction", () => {
+  // The panel showed "No action needed" on every healthy row and rendered rows
+  // whose reason restated their status as "unavailable · unavailable", which
+  // buried the lines that actually needed attention.
+  const row = (
+    label: string,
+    reason: string,
+    recommendedActionLabel: string,
+  ): DiagnosticsHealthRow => ({ label, reason, recommendedActionLabel }) as DiagnosticsHealthRow;
+
+  test("drops the no-action label so a healthy row stays quiet", () => {
+    expect(formatHealthRowDetail(row("OK", "Queue idle", "No action needed"))).toBe(
+      "OK  ·  Queue idle",
+    );
+  });
+
+  test("collapses a reason that only restates the label", () => {
+    expect(formatHealthRowDetail(row("unavailable", "unavailable", "Open settings"))).toBe(
+      "unavailable  ·  Open settings",
+    );
+  });
+
+  test("keeps a genuine action and a distinct reason", () => {
+    expect(formatHealthRowDetail(row("Needs attention", "1 failure", "Retry"))).toBe(
+      "Needs attention  ·  1 failure  ·  Retry",
+    );
+  });
+
+  test("skips empty segments rather than emitting bare separators", () => {
+    expect(formatHealthRowDetail(row("OK", "", "No action needed"))).toBe("OK");
   });
 });

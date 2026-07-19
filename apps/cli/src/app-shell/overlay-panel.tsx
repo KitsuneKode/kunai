@@ -415,14 +415,12 @@ export function OverlayPanel({
                 </Box>
               );
             })}
-          <Text color={palette.dim}>
-            {overlay.lines.length > maxLines
-              ? `Showing ${(overlay.scrollIndex ?? 0) + 1}-${Math.min(
-                  (overlay.scrollIndex ?? 0) + maxLines,
-                  overlay.lines.length,
-                )} of ${overlay.lines.length}  ·  ↑↓ scroll  ·  Esc closes`
-              : "Esc closes this panel"}
-          </Text>
+          {/*
+            No hint line here. The context strip above already reports position
+            ("18/57 lines") and the shell footer below already lists the keys, so
+            this rendered a third near-identical line — the diagnostics overlay
+            ended up stacking three of them.
+          */}
         </Box>
       ) : null}
     </Box>

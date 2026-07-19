@@ -41,7 +41,14 @@ export function buildDiagnosticsPanelLinesFromInsight({
     { label: "─── Verdict", detail: "", tone: "info" },
     {
       label: "Verdict",
-      detail: `${insight.sessionVerdict.label}  ·  ${insight.likelyCause}  ·  ${insight.sessionVerdict.primaryActionLabel}`,
+      // Same de-duplication as the health rows: the verdict frequently restates
+      // its own cause ("unavailable · unavailable"), which buries the one line
+      // the user opened this panel to read.
+      detail: formatHealthRowDetail({
+        label: insight.sessionVerdict.label,
+        reason: insight.likelyCause,
+        recommendedActionLabel: insight.sessionVerdict.primaryActionLabel,
+      } as DiagnosticsHealthRow),
       tone: verdictTone,
     },
     { label: "─── Health", detail: "", tone: "info" },

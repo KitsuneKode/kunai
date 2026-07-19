@@ -150,10 +150,13 @@ export function formatHealthStatusLabel(severity: DiagnosticSeverity): string {
   }
 }
 
+/** Rendered rows drop this label rather than repeating it; see formatHealthRowDetail. */
+export const NO_ACTION_LABEL = "No action needed";
+
 export function formatRecommendedActionLabel(action: RecommendedAction): string {
   switch (action) {
     case "none":
-      return "No action needed";
+      return NO_ACTION_LABEL;
     case "wait":
       return "Wait for background work";
     case "recover":
@@ -179,8 +182,26 @@ export function formatRecommendedActionLabel(action: RecommendedAction): string 
   }
 }
 
+/**
+ * Join the parts a row actually has something to say with.
+ *
+ * Every segment used to be appended unconditionally, which made the panel harder
+ * to scan than it needed to be: "No action needed" repeated on every healthy row
+ * (silence already means that), and rows whose reason restates their status read
+ * as "unavailable · unavailable". A quiet row is the point — noise here competes
+ * with the one line that matters.
+ */
 export function formatHealthRowDetail(row: DiagnosticsHealthRow): string {
-  return `${row.label}  ·  ${row.reason}  ·  ${row.recommendedActionLabel}`;
+  const segments = [row.label, row.reason, row.recommendedActionLabel];
+  const meaningful: string[] = [];
+  for (const segment of segments) {
+    const trimmed = segment?.trim();
+    if (!trimmed) continue;
+    if (trimmed === NO_ACTION_LABEL) continue;
+    if (meaningful.some((seen) => seen.toLowerCase() === trimmed.toLowerCase())) continue;
+    meaningful.push(trimmed);
+  }
+  return meaningful.join("  ·  ");
 }
 
 // ---------------------------------------------------------------------------
