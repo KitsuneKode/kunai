@@ -250,7 +250,7 @@ install_binary() {
 
 	write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "versioned"
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
-	resolve_conflicting_installs
+	warn_conflicting_installs
 	path_hint "$BIN_DIR"
 }
 
@@ -266,10 +266,15 @@ list_path_kunai() {
 
 # A native install leaves any older npm/bun global install in place, and those
 # usually sit earlier in PATH — so `kunai` would keep running the old build
-# while the installer claims success. The in-app installer already cleans these
-# up (services/update/run-install.ts); this mirrors it for the shell path.
-resolve_conflicting_installs() {
-	local launcher="$BIN_DIR/kunai" found others=() entry
+# while the installer claims success.
+#
+# We report this rather than removing it. Another package manager's global tree
+# is that package manager's to own: uninstalling behind its back desyncs its
+# bookkeeping, and silently deleting software a user installed deliberately is
+# a surprise no installer should spring. Naming the conflict and the exact
+# remediation leaves them in control.
+warn_conflicting_installs() {
+	local launcher="$BIN_DIR/kunai" found others=() entry winner
 	[[ "$DRY" == 1 ]] && return 0
 
 	while IFS= read -r found; do
@@ -279,36 +284,26 @@ resolve_conflicting_installs() {
 
 	[[ "${#others[@]}" -eq 0 ]] && return 0
 
-	warn "Another kunai is already on PATH and would shadow this install:"
+	winner="$(command -v kunai 2>/dev/null || true)"
+	[[ "$winner" == "$launcher" ]] && return 0
+
+	printf '\n'
+	warn "Another kunai comes earlier on your PATH and will keep running instead:"
 	for entry in "${others[@]}"; do
 		printf '    %s\n' "$entry"
 	done
-
-	if ! ask "Remove the conflicting global install(s)?" y; then
-		warn "Left in place. 'kunai' will keep running ${others[0]} until you remove it."
-		return 0
+	printf '\n'
+	warn "This install is at $launcher, but 'kunai' currently resolves to $winner."
+	printf '  Fix it either way:\n'
+	if [[ "$winner" == *node_modules* || "$winner" == *npm* ]]; then
+		printf '    npm uninstall -g %s      # remove the old npm install\n' "$KUNAI_PACKAGE"
 	fi
-
-	if have npm; then
-		run npm uninstall -g "$KUNAI_PACKAGE" >/dev/null 2>&1 || true
+	if [[ "$winner" == *".bun"* ]]; then
+		printf '    bun remove --global %s   # remove the old bun install\n' "$KUNAI_PACKAGE"
 	fi
-	if have bun; then
-		run bun remove --global "$KUNAI_PACKAGE" >/dev/null 2>&1 || true
-	fi
-
-	# Report against reality rather than assuming the uninstall worked.
-	local remaining=()
-	while IFS= read -r found; do
-		[[ "$found" == "$launcher" ]] && continue
-		remaining+=("$found")
-	done < <(list_path_kunai)
-
-	if [[ "${#remaining[@]}" -eq 0 ]]; then
-		info "Removed conflicting install(s); kunai now resolves to $launcher."
-	else
-		warn "Could not remove: ${remaining[*]}"
-		warn "Remove it manually, or 'kunai' will keep running that build."
-	fi
+	printf '    # …or put %s earlier in your PATH\n' "$BIN_DIR"
+	printf '\n'
+	printf '  Then open a new shell and confirm with: command -v kunai\n'
 }
 
 ensure_bun() {

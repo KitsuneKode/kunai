@@ -6,12 +6,13 @@
 # decided by PATH order, not by which is newer — so the stale npm shim can
 # silently shadow the new native build.
 #
-# Asserts the "only one binary" invariants from
-# .plans/plan-0.3.0-release-readiness.md#A2.
+# Policy under test: the installer reports a conflict rather than removing
+# another package manager's global install. So two binaries may legitimately
+# remain — what must never happen is the installer printing "Done" while the
+# user is silently left on the old build.
 set -uo pipefail
 
 FAKE_VERSION="0.3.0"
-NPM_VERSION="0.1.0"
 FAKE_RELEASE="/opt/fake-release"
 
 failures=0
@@ -52,14 +53,16 @@ export KUNAI_BIN_DIR="$HOME/.local/bin"
 export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
 export KUNAI_CONFIG_DIR="$HOME/.config/kunai"
 
-if ! /harness/install.sh --method binary --yes --skip-deps; then
+install_log="$(/harness/install.sh --method binary --yes --skip-deps 2>&1)" || {
+	printf '%s\n' "$install_log"
 	fail "install.sh --method binary exited non-zero" "see output above"
-fi
+}
+printf '%s\n' "$install_log"
 
 hash -r 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-section "assert: only one binary owns PATH"
+section "assert: install is correct, and any shadowing is reported"
 
 # Walk PATH entries directly: `command -v` reports only the winner, and its
 # `-a` form does not exist in bash. Enumerating every hit is the whole point —
@@ -71,40 +74,44 @@ list_kunai_on_path() {
 	done <<<"$PATH:"
 }
 
+# Policy: the installer reports a conflict, it does not remove another package
+# manager's global install. So both binaries legitimately remain here. What is
+# non-negotiable is that the user is *told* — silently leaving them on an old
+# build while printing "Done" is the defect this scenario exists to prevent.
 mapfile -t on_path < <(list_kunai_on_path)
-if [[ "${#on_path[@]}" -eq 1 ]]; then
-	pass "exactly one kunai on PATH"
-else
-	fail "expected exactly 1 kunai on PATH, found ${#on_path[@]}" "$(printf '%s ' "${on_path[@]}")"
-fi
-
-resolved="${on_path[0]:-}"
-reported="$(kunai --version 2>/dev/null || echo 'unknown')"
-if [[ "$reported" == "$FAKE_VERSION" ]]; then
-	pass "PATH resolves to the native build ($reported)"
-else
-	fail "PATH resolves to the wrong build" \
-		"expected $FAKE_VERSION, got '$reported' from $resolved"
-fi
+printf '  kunai on PATH: %s\n' "$(printf '%s ' "${on_path[@]}")"
 
 launcher="$KUNAI_BIN_DIR/kunai"
+winner="$(command -v kunai || true)"
+
+if [[ "$winner" == "$launcher" ]]; then
+	pass "native install owns PATH"
+elif grep -q "will keep running instead" <<<"$install_log" &&
+	grep -qF "$winner" <<<"$install_log"; then
+	pass "shadowed install is reported, naming the binary that actually runs"
+else
+	fail "native install is shadowed and the installer did not say so" \
+		"resolves to $winner; installer output never named it"
+fi
+
+if [[ "$winner" == "$launcher" ]] || grep -qE 'npm uninstall -g|earlier in your PATH' <<<"$install_log"; then
+	pass "remediation is offered"
+else
+	fail "no remediation offered for the shadowed install" "installer output had no fix instructions"
+fi
+
+if grep -q "$FAKE_VERSION" <<<"$("$launcher" --version 2>/dev/null || echo '')"; then
+	pass "the installed launcher is the new build ($FAKE_VERSION)"
+else
+	fail "launcher does not report the installed version" \
+		"expected $FAKE_VERSION from $launcher"
+fi
+
 if [[ -L "$launcher" ]] && [[ "$(readlink -f "$launcher")" == "$KUNAI_DATA_DIR/versions/"* ]]; then
 	pass "launcher points into the versioned layout"
 else
 	fail "launcher is not a symlink into versions/" \
 		"$launcher -> $(readlink -f "$launcher" 2>/dev/null || echo 'missing')"
-fi
-
-# Assert on functional artifacts, not directory names: `npm uninstall -g`
-# legitimately leaves an empty `@kitsunekode/` scope directory behind, which
-# owns no executable and shadows nothing. What must be gone is any kunai
-# package or binary that could win a PATH lookup.
-npm_leftovers="$(find "$HOME/.npm-global" "/usr/local/lib/node_modules" \
-	\( -name 'kunai' -o -name 'kunai.js' \) -print 2>/dev/null || true)"
-if [[ -z "$npm_leftovers" ]]; then
-	pass "no npm kunai package or binary remains"
-else
-	fail "npm kunai artifacts still present" "$(printf '%s' "$npm_leftovers" | head -3)"
 fi
 
 manifest="$KUNAI_CONFIG_DIR/install.json"
