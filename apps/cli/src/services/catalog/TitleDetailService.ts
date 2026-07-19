@@ -67,6 +67,24 @@ interface CacheEntry {
 
 // TTL: 5 minutes within a session (enough to survive repeated renders without
 // re-fetching on every frame).
+/**
+ * Optional AniList/MAL -> TMDB lookup, bound once at container bootstrap.
+ *
+ * Anime titles carry bare-numeric AniList ids, so their real TMDB id cannot be
+ * derived from the id string — it has to be looked up. The catalog crosswalk
+ * (ARM-backed, cached in `catalog_id_crosswalk`) already holds that mapping, so
+ * this reuses it instead of guessing or issuing a fresh network lookup. Only
+ * high-confidence rows are trusted: a wrong TMDB id renders a completely
+ * unrelated title.
+ */
+export type CatalogCrosswalkLookup = (anilistId: string) => { tmdbId?: string } | undefined;
+
+let boundCrosswalkLookup: CatalogCrosswalkLookup | undefined;
+
+export function bindTitleDetailCrosswalk(lookup: CatalogCrosswalkLookup | undefined): void {
+  boundCrosswalkLookup = lookup;
+}
+
 const CACHE_TTL_MS = 5 * 60 * 1_000;
 const detailCache = new Map<string, CacheEntry>();
 
@@ -161,11 +179,18 @@ async function resolveTitleDetail(
     hints?.externalIds?.anilistId ??
     (hints?.isAnime === true ? bareNumericId : null);
   const hintedTmdbId = hints?.externalIds?.tmdbId ?? null;
-  let tmdbId = extractTmdbId(id) ?? hintedTmdbId;
+  // For anime, recover the real TMDB id from the crosswalk rather than losing
+  // TMDB data entirely. Without this an AniList-lane title falls back to
+  // AniList-only detail even when the TMDB mapping is already cached.
+  const crosswalkTmdbId =
+    !hintedTmdbId && anilistId ? (boundCrosswalkLookup?.(anilistId)?.tmdbId ?? null) : null;
+  let tmdbId = extractTmdbId(id) ?? hintedTmdbId ?? crosswalkTmdbId;
   // Bare-numeric anime id that is really the AniList id must not drive a TMDB
   // fetch (it would resolve a wrong unrelated title).
   if (tmdbId && anilistId && tmdbId === anilistId && !hintedTmdbId) {
-    tmdbId = null;
+    // The bare id was the AniList id wearing a TMDB id's shape. Prefer the
+    // crosswalk mapping if we have one; otherwise resolve AniList-only.
+    tmdbId = crosswalkTmdbId;
   }
 
   // Determine what to fetch in parallel

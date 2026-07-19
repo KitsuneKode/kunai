@@ -17,6 +17,7 @@ import { CatalogIdentityService } from "../services/catalog/CatalogIdentityServi
 import { createCatalogScheduleService } from "../services/catalog/CatalogScheduleService";
 import { ResultEnrichmentService } from "../services/catalog/ResultEnrichmentService";
 import { TimelineService } from "../services/catalog/TimelineService";
+import { bindTitleDetailCrosswalk } from "../services/catalog/TitleDetailService";
 import { ContinuationProjectionService } from "../services/continuation/ContinuationProjectionService";
 import { ContinueWatchingService } from "../services/continuation/ContinueWatchingService";
 import { DownloadService } from "../services/download/DownloadService";
@@ -342,6 +343,14 @@ export function bootstrapServices(input: {
   const catalogIdentityService = new CatalogIdentityService({
     arm: { fetchIds: fetchArmIdGraph },
     cache: persistence.catalogCrosswalk,
+  });
+  // Let title-detail resolution reuse the cached AniList->TMDB mapping instead
+  // of inferring a catalog from the id's shape. High confidence only: a wrong
+  // TMDB id renders an unrelated title, which is strictly worse than resolving
+  // AniList-only detail.
+  bindTitleDetailCrosswalk((anilistId) => {
+    const graph = persistence.catalogCrosswalk.get("anilist", anilistId);
+    return graph?.confidence === "high" && graph.tmdbId ? { tmdbId: graph.tmdbId } : undefined;
   });
   const historyCatalogEpisodeCounts = new Map<string, number>();
   const historyMetadataHealer = new HistoryMetadataHealer({
