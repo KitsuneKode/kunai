@@ -82,6 +82,57 @@ installs accumulate versions indefinitely. Same split that caused A1's npm
 shadowing bug: the in-app installer cleans up, the shell installer does not.
 Quantify with the upgrade scenario before deciding whether it needs fixing.
 
+### A7. The distribution model — channel ownership
+
+The rule that resolves npm-vs-native: **exactly one channel owns an install, the
+tool knows which, and nothing silently crosses that boundary.** Kunai already
+has the mechanism (`install.json` `channel`, `detectInstallMethod`); what is
+missing is consistently acting on it.
+
+**Never remove another package manager's artifacts as a side effect.** npm's
+global tree is npm's to own — uninstalling behind its back desyncs its
+bookkeeping, and deleting software someone installed deliberately is a surprise,
+especially from a `curl | bash` invocation they expected to _add_ something.
+Detect, name the winner, give the exact command, let them decide.
+
+Consent at install time and consent inside an explicit migration are different
+things. Which gives the shape:
+
+1. **`kunai migrate-installer`** — an explicit, user-invoked move from an npm or
+   bun global install to the native one. Because the user asked for a migration,
+   removing the old install _with a prompt at that moment_ is expected rather
+   than surprising. This is the established pattern for exactly this problem.
+2. **`kunai doctor`** — installation health in one place: which channel the
+   manifest claims, which binary actually resolves, PATH-order conflicts,
+   version mismatch, missing `mpv`/`ffmpeg`, versions-dir growth.
+   `getInstallDiagnostics` already exists (`native-installer/install-diagnostic.ts`)
+   and is only wired into `run-upgrade` — surface it as a command.
+3. **A once-per-version startup self-check.** If `process.execPath` does not
+   match the manifest's `versionPath`, warn once. This is what catches shadowing
+   for the majority who will never run `doctor`. Must be cheap and once — not a
+   check on every launch.
+4. **Channel-aware upgrade.** `updateGuidanceForInstallMethod` already says the
+   right thing per channel; verify `kunai upgrade` never attempts a native swap
+   on an npm/bun/Homebrew install. A package-manager install must be updated by
+   its package manager or its bookkeeping breaks.
+5. **Retention exists for rollback, so expose rollback.** `VERSION_RETENTION_COUNT`
+   keeps old versions; without a `kunai use <version>` / `upgrade --rollback`
+   they are just garbage. Rollback is also the answer to "a release broke my
+   install and I cannot use the tool to fix it".
+6. **Uninstall must separate binary from data.** Remove launcher, versions and
+   locks by default; ask separately before touching config, watch history or
+   downloads. Watch history is irreplaceable and must never go silently.
+   `--purge` for everything.
+
+Distribution surfaces stay: GitHub Releases + `install.sh`/`install.ps1` as
+primary, npm as a convenience entry, and Homebrew/AUR/scoop worth adding for
+discoverability — each recorded as its own channel so upgrade respects it.
+
+**Supply chain, the next rung:** `SHA256SUMS` covers integrity but not
+provenance. For anything distributed by `curl | bash`, signing (cosign/sigstore)
+plus GitHub Actions build provenance is the credible step up, and is worth more
+to a security-minded audience than any feature on the roadmap.
+
 ### A4. Auto-update paths without execution coverage
 
 `BinaryAutoUpdater.runOnce` (`services/update/BinaryAutoUpdater.ts:31`) branches
