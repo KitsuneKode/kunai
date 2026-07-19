@@ -129,6 +129,12 @@ export async function fetchTitleDetail(
  */
 export interface TitleDetailHints {
   readonly externalIds?: ProviderExternalIds;
+  /**
+   * The calling title is anime. Anime lanes (AniList, Miruro, AllManga remaps)
+   * carry bare-numeric AniList ids, which are indistinguishable from TMDB ids
+   * by shape alone — so this decides which catalog a bare number belongs to.
+   */
+  readonly isAnime?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +150,16 @@ async function resolveTitleDetail(
   // An explicit AniList id (from id prefix or the calling title's externalIds)
   // is authoritative for anime — including when the id is a bare number that
   // would otherwise be mistaken for a TMDB id.
-  const anilistId = extractAnilistId(id) ?? hints?.externalIds?.anilistId ?? null;
+  // A bare-numeric id on an anime title is an AniList id, not a TMDB id.
+  // Without this, `extractTmdbId` happily returned it and we fetched an
+  // unrelated TMDB entry under the same number — the "My Roommate is a Cat
+  // shows a 1994 CCTV documentary" corruption, which appeared exactly when a
+  // provider hop moved the title onto the AniList-id lane (Miruro).
+  const bareNumericId = /^\d+$/.test(id) ? id : null;
+  const anilistId =
+    extractAnilistId(id) ??
+    hints?.externalIds?.anilistId ??
+    (hints?.isAnime === true ? bareNumericId : null);
   const hintedTmdbId = hints?.externalIds?.tmdbId ?? null;
   let tmdbId = extractTmdbId(id) ?? hintedTmdbId;
   // Bare-numeric anime id that is really the AniList id must not drive a TMDB

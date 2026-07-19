@@ -983,6 +983,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // panels fall back to honest placeholders if it never resolves.
           void fetchTitleDetail(title.id, title.type, undefined, {
             externalIds: title.externalIds,
+            isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
           })
             .then((detail) => {
               stateManager.dispatch({

@@ -629,4 +629,48 @@ describe("TitleDetailService — id format compat", () => {
 
     restore();
   });
+
+  test("a bare numeric id on an anime title is AniList, never TMDB", async () => {
+    // Miruro/AniList lanes carry bare-numeric AniList ids. Treating one as a
+    // TMDB id fetched an unrelated entry under the same number, which is how
+    // "My Roommate is a Cat" rendered a 1994 CCTV documentary after a provider
+    // hop moved it onto the AniList-id lane.
+    clearTitleDetailCache();
+    const requested: string[] = [];
+    const restore = mockFetch((url) => {
+      requested.push(url);
+      if (url.includes("graphql") || url.includes("anilist")) {
+        return jsonResponse({ data: { Media: anilistMediaPayload() } });
+      }
+      return null;
+    });
+
+    await fetchTitleDetail("101922", "series", undefined, { isAnime: true });
+
+    expect(requested.some((url) => url.includes("/tv/101922"))).toBe(false);
+    expect(requested.some((url) => url.includes("/movie/101922"))).toBe(false);
+
+    restore();
+    clearTitleDetailCache();
+  });
+
+  test("a bare numeric id on a non-anime title still resolves via TMDB", async () => {
+    clearTitleDetailCache();
+    const restore = mockFetch((url) => {
+      if (url.includes("/movie/550"))
+        return jsonResponse({
+          ...tmdbMoviePayload(),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
+      return null;
+    });
+
+    const detail = await fetchTitleDetail("550", "movie", undefined, { isAnime: false });
+    expect(detail.title).toBe("Fight Club");
+
+    restore();
+    clearTitleDetailCache();
+  });
 });

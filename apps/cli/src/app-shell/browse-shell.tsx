@@ -670,7 +670,10 @@ export function BrowseShell<T>({
       if (titleId && !cached) {
         void (async () => {
           try {
-            const detail = await fetchTitleDetail(titleId, seed.type);
+            const detail = await fetchTitleDetail(titleId, seed.type, undefined, {
+              externalIds: value?.externalIds,
+              isAnime: mode === "anime" || value?.isAnime === true,
+            });
             setActiveOverlay((current) =>
               detailRequestGateRef.current.isCurrent(detailRequestId) &&
               current &&
@@ -693,7 +696,7 @@ export function BrowseShell<T>({
         })();
       }
     },
-    [selectedOption],
+    [selectedOption, mode],
   );
 
   const runMutationWithFeedback = useCallback(
