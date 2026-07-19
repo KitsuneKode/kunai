@@ -809,6 +809,34 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       // checkForUpdate records its own failures; keep startup fire-and-forget.
     }
   })();
+  void (async () => {
+    try {
+      const raw = container.config.getRaw();
+      if (raw.telemetry === "unset") {
+        const { resolveTelemetryConsent } = await import("./services/telemetry/consent");
+        const decision = resolveTelemetryConsent({
+          env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
+          isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+          choice: "timeout",
+        });
+        // Interactive `unset` stays unset (zero network) until setup or `/telemetry`.
+        // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
+        if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+          await container.telemetryService.setStatus("disabled");
+        } else if (decision === "disabled") {
+          // DNT or CI with a TTY still auto-decline.
+          const dntOrCi =
+            Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
+          if (dntOrCi) {
+            await container.telemetryService.setStatus("disabled");
+          }
+        }
+      }
+      container.telemetryService.pingInBackground();
+    } catch {
+      // Telemetry must never affect startup.
+    }
+  })();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",

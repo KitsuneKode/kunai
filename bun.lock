@@ -96,6 +96,16 @@
         "typescript": "catalog:",
       },
     },
+    "apps/telemetry-ingest": {
+      "name": "@kunai/telemetry-ingest",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/node": "catalog:",
+      },
+      "peerDependencies": {
+        "typescript": "catalog:",
+      },
+    },
     "packages/config": {
       "name": "@kunai/config",
       "version": "0.1.0",
@@ -450,6 +460,7 @@
     "@kunai/relay": ["@kunai/relay@workspace:packages/relay"],
 
     "@kunai/relay-server": ["@kunai/relay-server@workspace:apps/relay-server"],
+    "@kunai/telemetry-ingest": ["@kunai/telemetry-ingest@workspace:apps/telemetry-ingest"],
 
     "@kunai/schemas": ["@kunai/schemas@workspace:packages/schemas"],
 

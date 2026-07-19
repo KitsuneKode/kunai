@@ -5,6 +5,8 @@ import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/boots
 import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
+import { resolveTelemetryConsent } from "@/services/telemetry/consent";
+import { ensureInstallId } from "@/services/telemetry/install-id";
 
 import { runSetupFlow } from "../setup-shell";
 
@@ -29,6 +31,20 @@ export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promi
   });
 
   return choice === "continue";
+}
+
+function resolveSetupTelemetry(
+  prefsChoice: "enabled" | "disabled",
+  outcome: "completed" | "skipped",
+): "enabled" | "disabled" {
+  return resolveTelemetryConsent({
+    env: {
+      DO_NOT_TRACK: process.env.DO_NOT_TRACK,
+      CI: process.env.CI,
+    },
+    isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    choice: outcome === "skipped" ? "timeout" : prefsChoice,
+  });
 }
 
 export async function runSetupWizard({
@@ -68,11 +84,15 @@ export async function runSetupWizard({
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot);
   const { outcome, prefs } = await result;
+  const telemetry = resolveSetupTelemetry(prefs.telemetryChoice, outcome);
+  const installId = ensureInstallId(current);
 
   if (outcome === "skipped") {
     await container.config.update({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
+      telemetry,
+      installId,
     });
     await container.config.save();
   } else {
@@ -86,6 +106,8 @@ export async function runSetupWizard({
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
+      telemetry,
+      installId,
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
         audio: prefs.audio,
@@ -106,7 +128,7 @@ export async function runSetupWizard({
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force },
+    context: { outcome, force, telemetry },
   });
 
   return outcome === "completed" ? "completed" : "skipped";

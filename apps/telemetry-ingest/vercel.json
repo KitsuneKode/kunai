@@ -1,0 +1,9 @@
+{
+  "regions": ["iad1"],
+  "rewrites": [{ "source": "/api/ping", "destination": "/api/ping" }],
+  "functions": {
+    "api/ping.ts": {
+      "maxDuration": 5
+    }
+  }
+}

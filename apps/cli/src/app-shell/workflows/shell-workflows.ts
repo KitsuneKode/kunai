@@ -794,9 +794,12 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   },
   about: (c) => handleStaticOverlay(c, "about"),
   diagnostics: (c) => handleDiagnostics(c),
-  provider: (c) => handleProviderPicker(c),
   settings: (c) => handleSettings(c),
+  providers: (c) => handleSettings(c, { initialSectionId: "section:providers" }),
+  provider: (c) => handleProviderPicker(c),
   presence: (c) => handleSettings(c),
+  telemetry: (c) => handleTelemetry(c),
+  "telemetry-show": (c) => handleTelemetryShow(c),
   setup: async (container) => {
     await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
     return "handled";
@@ -1020,8 +1023,14 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-async function handleSettings(container: Container): Promise<"handled"> {
-  await openRootOwnedOverlay(container, { type: "settings" });
+async function handleSettings(
+  container: Container,
+  options: { readonly initialSectionId?: string } = {},
+): Promise<"handled"> {
+  await openRootOwnedOverlay(container, {
+    type: "settings",
+    ...(options.initialSectionId ? { initialSectionId: options.initialSectionId } : {}),
+  });
   return "handled";
 }
 
@@ -1252,6 +1261,79 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
 
 async function handleUpdate(container: Container): Promise<"handled"> {
   await openUpdateShell(container);
+  return "handled";
+}
+
+async function handleTelemetryShow(container: Container): Promise<"handled"> {
+  const payload = container.telemetryService.previewPayload();
+  const json = JSON.stringify(payload, null, 2);
+  await chooseFromListShell({
+    title: "Telemetry payload",
+    subtitle:
+      "Exact JSON that would be sent when enabled. Never includes titles, queries, providers, URLs, or paths.",
+    options: [
+      {
+        value: "ok" as const,
+        label: json,
+        detail: "Press Enter to close · change consent with /telemetry",
+      },
+    ],
+  });
+  return "handled";
+}
+
+async function handleTelemetry(container: Container): Promise<"handled"> {
+  const status = container.telemetryService.getStatus();
+  const payload = container.telemetryService.previewPayload();
+  const subtitle = [
+    `Status: ${status}`,
+    "Sends at most once per day when enabled.",
+    "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
+    `Change anytime with /telemetry · preview with /telemetry show`,
+  ].join("  ·  ");
+
+  const choice = await chooseFromListShell({
+    title: "Telemetry",
+    subtitle,
+    options: [
+      {
+        value: "show" as const,
+        label: "Show payload JSON",
+        detail: JSON.stringify(payload),
+      },
+      {
+        value: "enable" as const,
+        label: status === "enabled" ? "Keep enabled" : "Enable anonymous usage ping",
+        detail: "Optional · one ping / 24h · installId + version + os + arch + ts only",
+      },
+      {
+        value: "disable" as const,
+        label: status === "disabled" ? "Keep disabled" : "Disable telemetry",
+        detail: "No network calls from the usage ping",
+      },
+    ],
+  });
+
+  if (choice === "show") {
+    return handleTelemetryShow(container);
+  }
+  if (choice === "enable") {
+    await container.telemetryService.setStatus("enabled");
+    container.telemetryService.pingInBackground();
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Telemetry enabled. Change anytime with /telemetry.",
+    });
+    return "handled";
+  }
+  if (choice === "disable") {
+    await container.telemetryService.setStatus("disabled");
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Telemetry disabled.",
+    });
+    return "handled";
+  }
   return "handled";
 }
 

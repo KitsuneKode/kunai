@@ -66,6 +66,8 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "clear-history",
   "export-diagnostics",
   "docs",
+  "telemetry",
+  "telemetry-show",
   "sync",
   "sync-connect-anilist",
   "sync-connect-tmdb",
@@ -233,6 +235,13 @@ export async function dispatchPaletteCommand(
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
     await openRootOwnedOverlay(container, { type: "settings" });
+    return "handled";
+  }
+  if (action === "providers") {
+    await openRootOwnedOverlay(container, {
+      type: "settings",
+      initialSectionId: "section:providers",
+    });
     return "handled";
   }
   if (action === "setup") {

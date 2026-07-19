@@ -111,6 +111,30 @@ The app should:
 
 History and stats should remain local unless future sync/export features are explicitly enabled by the user.
 
+### Opt-in telemetry
+
+Telemetry is **opt-in**. A fresh install (`telemetry: "unset"`) performs **zero**
+network calls for the usage ping.
+
+When enabled (setup wizard or `/telemetry`), Kunai may send at most one ping per
+24 hours. The payload is exactly:
+
+```json
+{ "installId": "<uuid>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
+```
+
+- `installId` is a random UUID stored in config — never hostname, MAC, IP, or username
+- No title, query, provider result, URL, or file path is ever transmitted
+- Decline, timeout, non-TTY, `CI=true`, and `DO_NOT_TRACK=1` resolve to **disabled**
+- Failures are silent and never block startup or playback
+- `/telemetry` shows status and toggles consent; `/telemetry show` prints the exact JSON
+
+The receiving endpoint is a minimal user-owned Vercel function
+(`apps/telemetry-ingest`). It accepts POST only, validates the payload shape,
+rate-limits per IP in memory (no durable IP storage), and keeps only an aggregate
+daily distinct install-id count. Abuse can inflate that counter; it cannot expose
+a user.
+
 ## Personal Media Vocabulary
 
 Kunai keeps one meaning per user-facing noun:

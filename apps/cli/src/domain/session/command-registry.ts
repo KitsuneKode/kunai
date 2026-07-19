@@ -16,7 +16,10 @@ export type AppCommandId =
   | "random"
   | "surprise"
   | "settings"
+  | "providers"
   | "presence"
+  | "telemetry"
+  | "telemetry-show"
   | "notifications"
   | "toggle-mode"
   | "series-mode"
@@ -110,8 +113,11 @@ export const COMMAND_CONTEXTS = {
     "history",
     "setup",
     "settings",
+    "providers",
     "provider",
     "presence",
+    "telemetry",
+    "telemetry-show",
     "diagnostics",
     "export-diagnostics",
     "report-issue",
@@ -162,7 +168,10 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "providers",
     "presence",
+    "telemetry",
+    "telemetry-show",
     "setup",
     "help",
     "menu",
@@ -225,7 +234,10 @@ export const COMMAND_CONTEXTS = {
     "reset-provider-health",
     "docs",
     "settings",
+    "providers",
     "presence",
+    "telemetry",
+    "telemetry-show",
     "setup",
     "help",
     "menu",
@@ -322,13 +334,31 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "settings",
     label: "Settings",
     aliases: ["settings", "config", "prefs"],
-    description: "Open settings",
+    description: "Open settings (relay, playback, shell, and more)",
+  },
+  {
+    id: "providers",
+    label: "Providers",
+    aliases: ["providers", "provider-settings", "default-provider"],
+    description: "Open provider defaults and fallback priority in settings",
   },
   {
     id: "presence",
     label: "Discord Presence",
     aliases: ["presence", "discord", "rpc", "rich-presence"],
     description: "Open settings for Discord Rich Presence setup and status",
+  },
+  {
+    id: "telemetry",
+    label: "Telemetry",
+    aliases: ["telemetry"],
+    description: "Show or change the opt-in anonymous usage ping",
+  },
+  {
+    id: "telemetry-show",
+    label: "Telemetry payload",
+    aliases: ["telemetry show", "telemetry-show"],
+    description: "Print the exact JSON that would be sent if telemetry is enabled",
   },
   {
     id: "notifications",
@@ -368,9 +398,9 @@ export const COMMANDS: readonly AppCommand[] = [
   },
   {
     id: "provider",
-    label: "Provider Picker",
+    label: "Switch Provider",
     aliases: ["provider", "switch-provider"],
-    description: "Open the tracks panel at the provider section",
+    description: "Switch the active session provider for this mode",
   },
   {
     id: "continue",
@@ -734,6 +764,7 @@ export const HELP_PANEL_COMMAND_IDS = [
   "settings",
   "setup",
   "presence",
+  "telemetry",
   "follow",
   "unfollow",
   "mute",
@@ -767,6 +798,7 @@ export function commandGroupFor(id: AppCommandId): AppCommandGroup {
     case "library":
     case "share":
     case "settings":
+    case "providers":
     case "help":
       return "Core";
     case "next":
@@ -979,7 +1011,10 @@ function resolveCommandState(
     case "random":
     case "surprise":
     case "settings":
+    case "providers":
     case "presence":
+    case "telemetry":
+    case "telemetry-show":
     case "notifications":
     case "history":
     case "details":

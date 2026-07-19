@@ -20,7 +20,10 @@ export type ShellAction =
   | "surprise"
   | "back-to-results"
   | "settings"
+  | "providers"
   | "presence"
+  | "telemetry"
+  | "telemetry-show"
   | "notifications"
   | "toggle-mode"
   | "series-mode"
@@ -347,7 +350,7 @@ export type ShellPickerOption<T> = {
 
 export type BrowseShellResult<T> =
   | { type: "selected"; value: T }
-  | { type: "action"; action: ShellAction }
+  | { type: "action"; action: ShellAction; value?: T }
   | {
       type: "offline-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
@@ -386,7 +389,10 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "random":
     case "surprise":
     case "settings":
+    case "providers":
     case "presence":
+    case "telemetry":
+    case "telemetry-show":
     case "notifications":
     case "toggle-mode":
     case "series-mode":

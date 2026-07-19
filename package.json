@@ -7,6 +7,7 @@
       "apps/cli",
       "apps/docs",
       "apps/relay-server",
+      "apps/telemetry-ingest",
       "packages/*"
     ],
     "catalog": {

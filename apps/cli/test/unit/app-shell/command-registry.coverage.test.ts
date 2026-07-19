@@ -112,8 +112,10 @@ describe("command registry — full surface coverage", () => {
     for (const entry of COMMANDS) {
       for (const alias of entry.aliases) {
         expect(alias.length).toBeGreaterThan(0);
-        // Sanity: each alias is a short string the user could type in /<alias>.
-        expect(alias).not.toContain(" ");
+        // Prefer single-token aliases. Multi-word aliases are allowed when the
+        // product surface is an intentional phrase (e.g. `/telemetry show`).
+        expect(alias.trim()).toBe(alias);
+        expect(alias.includes("  ")).toBe(false);
       }
     }
   });

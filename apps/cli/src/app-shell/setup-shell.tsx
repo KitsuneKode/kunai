@@ -11,7 +11,14 @@ import { useShellDimensions } from "./use-viewport-policy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Slide = "welcome" | "system" | "prefs-audio" | "prefs-subtitle" | "downloads" | "tips";
+type Slide =
+  | "welcome"
+  | "system"
+  | "prefs-audio"
+  | "prefs-subtitle"
+  | "downloads"
+  | "telemetry"
+  | "tips";
 
 const SLIDE_ORDER: Slide[] = [
   "welcome",
@@ -19,6 +26,7 @@ const SLIDE_ORDER: Slide[] = [
   "prefs-audio",
   "prefs-subtitle",
   "downloads",
+  "telemetry",
   "tips",
 ];
 
@@ -28,6 +36,8 @@ export interface SetupPrefs {
   audio: string;
   subtitle: string;
   downloadsEnabled: boolean;
+  /** Setup-time telemetry choice before DO_NOT_TRACK / CI / non-TTY resolution. */
+  telemetryChoice: "enabled" | "disabled";
 }
 
 // ─── Option data ──────────────────────────────────────────────────────────────
@@ -458,6 +468,74 @@ function DownloadsSlide({
   );
 }
 
+function TelemetrySlide({
+  width,
+  rows,
+  selectedIndex,
+}: {
+  width: number;
+  rows: number;
+  selectedIndex: number;
+}) {
+  const opts = [
+    {
+      label: "Keep telemetry off (recommended default)",
+      detail: "No network calls · change later with /telemetry",
+    },
+    {
+      label: "Enable anonymous usage ping",
+      detail:
+        "Optional · once / 24h · sends only installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths",
+    },
+  ];
+
+  return (
+    <SlideLayout
+      width={width}
+      rows={rows}
+      footer={
+        <FooterHint
+          parts={[
+            { key: "Enter", label: "confirm & next" },
+            { key: "↑↓", label: "choose" },
+            { key: "←/b", label: "back" },
+            { key: "s", label: "skip (= off)" },
+          ]}
+        />
+      }
+    >
+      <SlideTitle
+        text="Anonymous usage ping"
+        sub="Opt-in only. Fresh installs send nothing until you say yes. Preview the exact JSON anytime with /telemetry show."
+      />
+
+      <Box flexDirection="column">
+        {opts.map((opt, i) => {
+          const selected = i === selectedIndex;
+          return (
+            <Box
+              key={opt.label}
+              marginBottom={0}
+              backgroundColor={selected ? palette.accentFill : undefined}
+            >
+              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+              <Box flexDirection="column">
+                <Text color={palette.text} bold={selected}>
+                  {opt.label}
+                </Text>
+                <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
+                  {"  "}
+                  {opt.detail}
+                </Text>
+              </Box>
+            </Box>
+          );
+        })}
+      </Box>
+    </SlideLayout>
+  );
+}
+
 const TIPS = [
   {
     key: "/",
@@ -540,16 +618,22 @@ function SetupShell({
   const [audioIdx, setAudioIdx] = useState(0);
   const [subtitleIdx, setSubtitleIdx] = useState(0);
   const [downloadsIdx, setDownloadsIdx] = useState(0);
+  // Default to "off" (index 0) so Enter without changing still declines.
+  const [telemetryIdx, setTelemetryIdx] = useState(0);
 
   const slide = SLIDE_ORDER[slideIdx] as Slide;
   const isPickerSlide =
-    slide === "prefs-audio" || slide === "prefs-subtitle" || slide === "downloads";
+    slide === "prefs-audio" ||
+    slide === "prefs-subtitle" ||
+    slide === "downloads" ||
+    slide === "telemetry";
 
   function buildPrefs(): SetupPrefs {
     return {
       audio: AUDIO_OPTS[audioIdx]?.value ?? "original",
       subtitle: SUBTITLE_OPTS[subtitleIdx]?.value ?? "en",
       downloadsEnabled: downloadsIdx === 0,
+      telemetryChoice: telemetryIdx === 1 ? "enabled" : "disabled",
     };
   }
 
@@ -603,6 +687,8 @@ function SetupShell({
           setSubtitleIdx((i) => Math.max(0, i - 1));
         } else if (slide === "downloads") {
           setDownloadsIdx((i) => Math.max(0, i - 1));
+        } else if (slide === "telemetry") {
+          setTelemetryIdx((i) => Math.max(0, i - 1));
         }
         return;
       }
@@ -613,6 +699,8 @@ function SetupShell({
           setSubtitleIdx((i) => Math.min(SUBTITLE_OPTS.length - 1, i + 1));
         } else if (slide === "downloads") {
           setDownloadsIdx((i) => Math.min(1, i + 1));
+        } else if (slide === "telemetry") {
+          setTelemetryIdx((i) => Math.min(1, i + 1));
         }
         return;
       }
@@ -667,6 +755,9 @@ function SetupShell({
             selectedIndex={downloadsIdx}
           />
         ) : null}
+        {slide === "telemetry" ? (
+          <TelemetrySlide width={cols} rows={rows - 2} selectedIndex={telemetryIdx} />
+        ) : null}
         {slide === "tips" ? <TipsSlide width={cols} rows={rows - 2} /> : null}
       </Box>
     </ViewportResizeGate>
@@ -698,7 +789,12 @@ export function runSetupFlow(snapshot: CapabilitySnapshot): {
     ),
     fallbackValue: {
       outcome: "skipped",
-      prefs: { audio: "original", subtitle: "en", downloadsEnabled: false },
+      prefs: {
+        audio: "original",
+        subtitle: "en",
+        downloadsEnabled: false,
+        telemetryChoice: "disabled",
+      },
     },
   });
 

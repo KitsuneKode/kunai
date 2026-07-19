@@ -206,6 +206,15 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
+      telemetry: normalizeTelemetryPreference(loaded.telemetry),
+      installId: typeof loaded.installId === "string" ? loaded.installId.trim() : "",
+      lastTelemetryPingAt:
+        typeof loaded.lastTelemetryPingAt === "number" &&
+        Number.isFinite(loaded.lastTelemetryPingAt)
+          ? Math.max(0, loaded.lastTelemetryPingAt)
+          : 0,
+      telemetryEndpoint:
+        typeof loaded.telemetryEndpoint === "string" ? loaded.telemetryEndpoint.trim() : "",
     };
     if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
       await store.save(service.config);
@@ -461,6 +470,22 @@ export class ConfigServiceImpl implements ConfigService {
 
   get downloadOnboardingDismissed(): boolean {
     return this.config.downloadOnboardingDismissed;
+  }
+
+  get telemetry(): KitsuneConfig["telemetry"] {
+    return this.config.telemetry;
+  }
+
+  get installId(): string {
+    return this.config.installId;
+  }
+
+  get lastTelemetryPingAt(): number {
+    return this.config.lastTelemetryPingAt;
+  }
+
+  get telemetryEndpoint(): string {
+    return this.config.telemetryEndpoint;
   }
 
   get updateChecksEnabled(): boolean {
@@ -761,6 +786,10 @@ function normalizeRecoveryMode(value: unknown): RecoveryMode {
 
 function normalizeContinueSourcePreference(value: unknown): ContinueSourcePreference {
   return value === "local" || value === "stream" || value === "ask" ? value : "auto";
+}
+
+function normalizeTelemetryPreference(value: unknown): KitsuneConfig["telemetry"] {
+  return value === "enabled" || value === "disabled" || value === "unset" ? value : "unset";
 }
 
 function normalizeStartupPriority(value: unknown): StartupPriority {

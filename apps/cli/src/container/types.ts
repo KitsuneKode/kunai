@@ -69,6 +69,7 @@ import type { ReleaseProgressWriter } from "../services/release-reconciliation/R
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { SyncService } from "../services/sync/SyncService";
+import type { TelemetryService } from "../services/telemetry/TelemetryService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import type { UpdateService } from "../services/update/UpdateService";
 import type { CapabilitySnapshot } from "../ui";
@@ -150,6 +151,7 @@ export interface Container {
   readonly historyCatalogEpisodeCounts: Map<string, number>;
   readonly updateService: UpdateService;
   readonly binaryAutoUpdater: BinaryAutoUpdater;
+  readonly telemetryService: TelemetryService;
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;

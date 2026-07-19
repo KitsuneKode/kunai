@@ -46,6 +46,7 @@ import { ReleaseReconciliationService } from "../services/release-reconciliation
 import { SEARCH_SERVICE_DEFINITIONS } from "../services/search/definitions";
 import { SearchRegistryImpl } from "../services/search/SearchRegistry";
 import { searchTitles } from "../services/search/SearchRoutingService";
+import { resolveTelemetryEndpoint, TelemetryService } from "../services/telemetry/TelemetryService";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
@@ -405,6 +406,11 @@ export function bootstrapServices(input: {
     config,
     currentVersion: options?.appVersion ?? "0.0.0",
   });
+  const telemetryService = new TelemetryService({
+    config,
+    currentVersion: options?.appVersion ?? "0.0.0",
+    endpoint: resolveTelemetryEndpoint(process.env, config.getRaw().telemetryEndpoint),
+  });
 
   return {
     dataDir: persistence.paths.dataDir,
@@ -455,6 +461,7 @@ export function bootstrapServices(input: {
     historyCatalogEpisodeCounts,
     updateService,
     binaryAutoUpdater,
+    telemetryService,
     listRepository,
     queueRepository,
     notificationRepository,

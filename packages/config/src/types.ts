@@ -9,6 +9,9 @@ export type QuitNearEndThresholdMode = "credits-or-90-percent" | "percent-only" 
 export type PresenceProvider = "off" | "discord";
 
 export type PresencePrivacy = "full" | "private";
+
+/** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
+export type TelemetryPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
@@ -105,6 +108,17 @@ export interface KitsuneConfig {
   onboardingVersion: number;
   downloadPath: string;
   downloadOnboardingDismissed: boolean;
+  /**
+   * Opt-in anonymous usage ping. Default `unset` → zero network calls.
+   * Payload is only `{ installId, version, os, arch, ts }`.
+   */
+  telemetry: TelemetryPreference;
+  /** Random UUID install id for opt-in telemetry. Never hostname/MAC/username-derived. */
+  installId: string;
+  /** Last successful cadence mark for the daily telemetry ping (epoch ms). */
+  lastTelemetryPingAt: number;
+  /** Optional override for the telemetry ingest URL (else env / built-in default). */
+  telemetryEndpoint: string;
   updateChecksEnabled: boolean;
   autoApplyBinaryUpdates: boolean;
   updateChannel: "stable" | "latest";

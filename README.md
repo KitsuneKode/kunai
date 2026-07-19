@@ -291,20 +291,22 @@ Ctrl+D            Download selected result (from browse)
 
 ### Command palette (`/`)
 
-| Command        | What it does                                         |
-| -------------- | ---------------------------------------------------- |
-| `/search`      | Start a new search                                   |
-| `/library`     | Browse offline titles, manage queue, toggle settings |
-| `/download`    | Queue the current episode for download               |
-| `/queue`       | View active, queued, failed downloads                |
-| `/discover`    | Personalized recommendations + trending              |
-| `/calendar`    | Unified release calendar — anime · series · movies   |
-| `/random`      | Surprise pick without autoplay                       |
-| `/setup`       | Run the setup wizard                                 |
-| `/settings`    | Configure provider, language, downloads, Discord     |
-| `/history`     | Watch history and resume                             |
-| `/diagnostics` | Runtime snapshot and recent events                   |
-| `/presence`    | Discord Rich Presence setup                          |
+| Command           | What it does                                         |
+| ----------------- | ---------------------------------------------------- |
+| `/search`         | Start a new search                                   |
+| `/library`        | Browse offline titles, manage queue, toggle settings |
+| `/download`       | Queue the current episode for download               |
+| `/queue`          | View active, queued, failed downloads                |
+| `/discover`       | Personalized recommendations + trending              |
+| `/calendar`       | Unified release calendar — anime · series · movies   |
+| `/random`         | Surprise pick without autoplay                       |
+| `/setup`          | Run the setup wizard                                 |
+| `/settings`       | Configure provider, language, downloads, Discord     |
+| `/history`        | Watch history and resume                             |
+| `/diagnostics`    | Runtime snapshot and recent events                   |
+| `/presence`       | Discord Rich Presence setup                          |
+| `/telemetry`      | Opt-in anonymous usage ping status / toggle          |
+| `/telemetry show` | Print the exact JSON that would be sent              |
 
 ---
 
@@ -382,6 +384,10 @@ install; just have the Discord desktop app running. It shows what you're watchin
 - `kunai --debug` for verbose traces during troubleshooting.
 - `/export-diagnostics` generates a redacted JSON snapshot for issue reports.
 - `/report-issue` opens GitHub issue triage guidance.
+- Opt-in telemetry (`/telemetry`) is off until you consent. Fresh installs send
+  nothing. When enabled, the ping is `{ installId, version, os, arch, ts }` only —
+  never titles, queries, providers, URLs, or paths. Preview with `/telemetry show`.
+  Honour `DO_NOT_TRACK=1` / `CI=true` as automatic declines.
 - Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).
 
 ---

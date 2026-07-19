@@ -1,0 +1,20 @@
+{
+  "name": "@kunai/telemetry-ingest",
+  "private": true,
+  "description": "Minimal user-owned Vercel ingest for Kunai opt-in anonymous usage pings.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "bun tsc --noEmit",
+    "lint": "oxlint .",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check .",
+    "test": "bun test test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:"
+  },
+  "peerDependencies": {
+    "typescript": "catalog:"
+  }
+}
