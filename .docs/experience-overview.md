@@ -133,11 +133,13 @@ When enabled (setup wizard or `/telemetry`), Kunai may send at most one ping per
 
 The receiving endpoint is a minimal user-owned Vercel function
 (`apps/telemetry-ingest`). It accepts POST only, validates the payload shape,
-and rate-limits per IP in process memory (no durable IP storage). For distinct
-counting it may keep the current UTC day’s install-id Set in memory; that is not
-a durable identity store. Platform access logs can still correlate IP↔body unless
-scrubbed. Abuse can inflate counters (and correlate if logs are retained); it
-cannot expose a user’s watch history.
+rejects clock skew, rate-limits per IP hash, and counts at most once per
+HMAC-hashed install id per UTC day. Durable storage (Upstash Redis) keeps only
+hashed ids (short TTL daily sets), a lifetime HyperLogLog, and aggregate day
+counts — never raw install UUIDs, titles, queries, or durable IPs. A cron job
+publishes a tiny public metrics JSON (yesterday actives + lifetime approx) for
+the docs site. Platform access logs can still correlate IP↔body unless scrubbed.
+Abuse can inflate counters; it cannot expose a user’s watch history.
 
 ## Personal Media Vocabulary
 

@@ -9,6 +9,7 @@ import { homeFlow, homeHero, homeHighlights, homeStartCards } from "@/lib/home-c
 import type { ProviderSummary } from "@/lib/home-presenters";
 import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import HomePageInteractive from "./home-page-interactive";
 
@@ -19,6 +20,7 @@ type HomePageShellProps = {
   readonly providerSummary: ProviderSummary;
   readonly cliVersion: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
+  readonly telemetryLine?: ReactNode;
 };
 
 export default function HomePageShell({
@@ -28,6 +30,7 @@ export default function HomePageShell({
   providerSummary,
   cliVersion,
   runtimeBaseline,
+  telemetryLine,
 }: HomePageShellProps) {
   return (
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
@@ -88,6 +91,7 @@ export default function HomePageShell({
             </li>
           ))}
         </ul>
+        {telemetryLine}
       </section>
 
       <section className="kunai-home-providers">

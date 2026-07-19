@@ -4,23 +4,31 @@
  * Accepts POST bodies shaped exactly as:
  *   { installId, version, os, arch, ts }
  *
- * Stores:
- * - ephemeral per-IP rate-limit timestamps (in-memory only; never persisted)
- * - for the current UTC day, an in-memory Set of install ids used only to
- *   compute a distinct count (not a durable identity store)
+ * Durable stores (when wired to Redis) keep only:
+ * - ephemeral rate-limit keys (IP hash / install hash) with short TTL
+ * - per-UTC-day SET of HMAC(installId) with 48h TTL
+ * - lifetime HyperLogLog of HMAC(installId)
+ * - cached daily distinct integers
  *
  * Does NOT store:
- * - IP addresses in durable storage (platform access logs are out of scope and
- *   can still correlate IP↔body unless scrubbed by the operator)
+ * - raw install UUIDs
+ * - IP addresses in durable identity storage
  * - titles, queries, provider results, URLs, or file paths
  *
- * Abuse model: a hostile client can inflate the daily distinct counter (by
- * minting many install ids). With retained platform logs they might correlate
- * IP↔installId. They cannot expose another user's watch history — that data is
- * never accepted.
+ * Abuse model: a hostile client can mint many install ids and inflate counters
+ * (subject to rate limits). They cannot expose another user's watch history —
+ * that data is never accepted. Redis dumps without TELEMETRY_HASH_SECRET cannot
+ * be joined back to clients.
  */
 
+import { createHmac } from "node:crypto";
+
 export const TELEMETRY_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
+
+/** Reject client clocks more than ±24h from server time. */
+export const TS_SKEW_MS = 24 * 60 * 60 * 1000;
+
+export const MAX_BODY_BYTES = 512;
 
 export type TelemetryIngestPayload = {
   readonly installId: string;
@@ -57,15 +65,39 @@ export function parseTelemetryPayload(body: unknown): TelemetryIngestPayload | n
   return { installId, version, os, arch, ts };
 }
 
+export function hashInstallId(secret: string, installId: string): string {
+  return createHmac("sha256", secret).update(installId, "utf8").digest("hex");
+}
+
+export function isTimestampSkewed(clientTs: number, now: number, skewMs = TS_SKEW_MS): boolean {
+  return Math.abs(clientTs - now) > skewMs;
+}
+
 export type RateLimitStore = {
-  /** Returns true when the request is allowed. Must not persist the IP. */
-  allow(ipKey: string, now: number): boolean;
+  /** Returns true when the request is allowed. Must not persist the raw IP. */
+  allow(ipKey: string, now: number): boolean | Promise<boolean>;
+};
+
+/** One successful count per installHash per UTC day. */
+export type InstallDayGate = {
+  /**
+   * Returns true when this installHash has not yet been counted for `day`.
+   * Implementations must mark it claimed when returning true.
+   */
+  claim(day: string, installHash: string): boolean | Promise<boolean>;
 };
 
 export type DailyDistinctStore = {
-  /** Record an install id for the UTC day; returns the distinct count for that day. */
-  record(day: string, installId: string): number;
-  count(day: string): number;
+  /** Record an installHash for the UTC day; returns the distinct count for that day. */
+  record(day: string, installHash: string): number | Promise<number>;
+  count(day: string): number | Promise<number>;
+  /** Test-only peek at members (memory store). */
+  debugMembers?(day: string): readonly string[];
+};
+
+export type LifetimeStore = {
+  add(installHash: string): void | Promise<void>;
+  approxCount(): number | Promise<number>;
 };
 
 /** Best-effort in-memory rate limit. IP keys live only in process memory. */
@@ -92,50 +124,103 @@ export function createMemoryRateLimitStore(options?: {
   };
 }
 
-/** In-memory daily distinct install-id counter (single-instance / warm lambda). */
+export function createMemoryInstallDayGate(): InstallDayGate {
+  const claimed = new Map<string, Set<string>>();
+  return {
+    claim(day: string, installHash: string): boolean {
+      let set = claimed.get(day);
+      if (!set) {
+        set = new Set();
+        claimed.set(day, set);
+      }
+      if (set.has(installHash)) return false;
+      set.add(installHash);
+      return true;
+    },
+  };
+}
+
+/** In-memory daily distinct install-hash counter. */
 export function createMemoryDailyDistinctStore(): DailyDistinctStore {
-  let day = "";
-  let ids = new Set<string>();
+  const byDay = new Map<string, Set<string>>();
 
   return {
-    record(nextDay: string, installId: string): number {
-      if (nextDay !== day) {
-        day = nextDay;
+    record(nextDay: string, installHash: string): number {
+      let ids = byDay.get(nextDay);
+      if (!ids) {
         ids = new Set();
+        byDay.set(nextDay, ids);
       }
-      ids.add(installId);
+      ids.add(installHash);
       return ids.size;
     },
     count(nextDay: string): number {
-      return nextDay === day ? ids.size : 0;
+      return byDay.get(nextDay)?.size ?? 0;
+    },
+    debugMembers(day: string): readonly string[] {
+      return [...(byDay.get(day) ?? [])];
+    },
+  };
+}
+
+/** In-memory lifetime distinct (exact Set — production uses HyperLogLog). */
+export function createMemoryLifetimeStore(): LifetimeStore {
+  const ids = new Set<string>();
+  return {
+    add(installHash: string): void {
+      ids.add(installHash);
+    },
+    approxCount(): number {
+      return ids.size;
     },
   };
 }
 
 export type IngestResult =
-  | { readonly ok: true; readonly day: string; readonly distinct: number }
+  | {
+      readonly ok: true;
+      readonly day: string;
+      readonly distinct: number;
+      readonly alreadyCounted?: boolean;
+    }
   | { readonly ok: false; readonly status: number; readonly error: string };
 
-export function ingestTelemetryPing(input: {
+export async function ingestTelemetryPing(input: {
   readonly method: string;
   readonly body: unknown;
   readonly ipKey: string;
   readonly now?: number;
+  readonly hashSecret: string;
   readonly rateLimit: RateLimitStore;
+  readonly installDayGate: InstallDayGate;
   readonly daily: DailyDistinctStore;
-}): IngestResult {
+  readonly lifetime: LifetimeStore;
+}): Promise<IngestResult> {
   if (input.method !== "POST") {
     return { ok: false, status: 405, error: "method_not_allowed" };
   }
+  if (!input.hashSecret.trim()) {
+    return { ok: false, status: 503, error: "misconfigured" };
+  }
   const now = input.now ?? Date.now();
-  if (!input.rateLimit.allow(input.ipKey, now)) {
+  if (!(await input.rateLimit.allow(input.ipKey, now))) {
     return { ok: false, status: 429, error: "rate_limited" };
   }
   const payload = parseTelemetryPayload(input.body);
   if (!payload) {
     return { ok: false, status: 400, error: "invalid_payload" };
   }
+  if (isTimestampSkewed(payload.ts, now)) {
+    return { ok: false, status: 400, error: "timestamp_skew" };
+  }
   const day = utcDayKey(now);
-  const distinct = input.daily.record(day, payload.installId);
+  const installHash = hashInstallId(input.hashSecret, payload.installId);
+  const claimed = await input.installDayGate.claim(day, installHash);
+  if (!claimed) {
+    const distinct = await input.daily.count(day);
+    return { ok: true, day, distinct, alreadyCounted: true };
+  }
+  const distinct = await input.daily.record(day, installHash);
+  await input.lifetime.add(installHash);
   return { ok: true, day, distinct };
 }

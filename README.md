@@ -387,7 +387,9 @@ install; just have the Discord desktop app running. It shows what you're watchin
 - Opt-in telemetry (`/telemetry`) is off until you consent. Fresh installs send
   nothing. When enabled, the ping is `{ installId, version, os, arch, ts }` only —
   never titles, queries, providers, URLs, or paths. Preview with `/telemetry show`.
-  Honour `DO_NOT_TRACK=1` / `CI=true` as automatic declines.
+  Honour `DO_NOT_TRACK=1` / `CI=true` as hard blocks on send and enable.
+  The ingest stores HMAC-hashed ids for daily/lifetime aggregates only; public
+  docs may show yesterday’s opt-in actives and an approximate lifetime total.
 - Kunai checks for a newer published version on startup and notifies you in-shell — updating is a quick reinstall (see [Uninstall](#uninstall) / [Quick Start](#quick-start)).
 
 ---

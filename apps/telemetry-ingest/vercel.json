@@ -1,9 +1,27 @@
 {
   "regions": ["iad1"],
-  "rewrites": [{ "source": "/api/ping", "destination": "/api/ping" }],
+  "rewrites": [{ "source": "/metrics/daily.json", "destination": "/api/metrics/daily" }],
+  "crons": [
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "5 0 * * *"
+    }
+  ],
   "functions": {
     "api/ping.ts": {
       "maxDuration": 5
+    },
+    "api/cron/snapshot.ts": {
+      "maxDuration": 10
+    },
+    "api/metrics/daily.ts": {
+      "maxDuration": 5
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/api/ping",
+      "headers": [{ "key": "Cache-Control", "value": "no-store" }]
+    }
+  ]
 }
