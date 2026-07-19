@@ -54,8 +54,10 @@ bun run experiments:list
 ```
 
 Shared dependency versions are managed with [Bun catalogs](https://bun.sh/docs/pm/catalogs)
-in the root `package.json` (`catalog:`, `catalog:lint`, `catalog:web`). Bump versions
-there, then run `bun install`.
+in the root `package.json` (`catalog:`, `catalog:lint`, `catalog:web`, …). Bump
+stable (`latest`) versions there, then run `bun install`. Lint/format tools live
+at the root via `catalog:lint`; package scripts resolve them through the
+workspace.
 
 ## Run
 

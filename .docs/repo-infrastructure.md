@@ -24,22 +24,28 @@ Repo infrastructure from the May 2026 superpowers plan is implemented.
 The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 `package.json` to pin shared versions once:
 
-- `catalog:` — TypeScript, React, `@types/bun`, `@types/node`, Zod
+- `catalog:` — TypeScript 7, React, React DOM, `@types/*`, Zod
 - `catalog:cli` — `commander`, `ink` (CLI runtime)
-- `catalog:lint` — `oxlint`, `oxfmt` (referenced from each workspace package)
+- `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
+  lint-staged resolve them via workspace hoist)
 - `catalog:providers` — `@assemblyscript/loader`, `crypto-js`, `@types/crypto-js`
 - `catalog:repo` — `turbo` (root orchestration only)
-- `catalog:web` — Next.js, Fumadocs, Tailwind, Radix, Motion, docs UI helpers
+- `catalog:web` — Next.js, Fumadocs, Tailwind, Motion, Base UI, Tabler icons,
+  docs UI helpers, and docs TypeScript 5.9 (`apps/docs` only)
 
-Root `overrides` dedupe known transitive drift (`lucide-react`, `@types/node`,
-`fumadocs-core`, `fumadocs-ui`).
+Prefer npm `latest` (stable) pins in catalogs — not `canary`, `preview`, `rc`,
+or `next` tags.
 
-`apps/experiments` is **outside** the default workspace. Main installs stay lean;
-research deps install only via `bun run experiments:install` (standalone
-`apps/experiments/bun.lock`).
+Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
+`fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
+re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
+
+`apps/experiments` is **outside** the default workspace, so it cannot use
+`catalog:` protocols. Main installs stay lean; research deps install only via
+`bun run experiments:install` (standalone `apps/experiments/bun.lock`).
 
 Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
-`packages/*`.
+`apps/telemetry-ingest`, `packages/*`.
 
 ## Local Hooks
 
@@ -94,16 +100,16 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job              | PR                                                          | Main         |
-| ---------------- | ----------------------------------------------------------- | ------------ |
-| `fmt`            | `turbo run fmt:check --affected`                            | full         |
-| `lint`           | `turbo run lint --affected`                                 | full         |
-| `typecheck`      | `turbo run typecheck --affected`                            | full         |
-| `test`           | `turbo run test --affected`                                 | full         |
-| `windows-cli`    | root typecheck + CLI tests when CLI paths change            | same on main |
-| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change | same on main |
-| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change   | same         |
-| `checks-docs`    | docs gate when docs paths change                            | same         |
+| Job              | PR                                                                                    | Main         |
+| ---------------- | ------------------------------------------------------------------------------------- | ------------ |
+| `fmt`            | `turbo run fmt:check --affected`                                                      | full         |
+| `lint`           | `turbo run lint --affected`                                                           | full         |
+| `typecheck`      | `turbo run typecheck --affected`                                                      | full         |
+| `test`           | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
+| `windows-cli`    | root typecheck + CLI tests when CLI paths change                                      | same on main |
+| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
+| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
+| `checks-docs`    | docs gate when docs paths change                                                      | same         |
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).

@@ -107,9 +107,7 @@
     "@kunai/storage": "workspace:*",
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
-    "@types/react": "catalog:",
-    "oxfmt": "catalog:lint",
-    "oxlint": "catalog:lint"
+    "@types/react": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"
