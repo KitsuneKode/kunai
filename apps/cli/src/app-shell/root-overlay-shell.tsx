@@ -47,7 +47,11 @@ import {
 
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
-import { buildDiagnosticsPanelInput } from "./diagnostics-panel-source";
+import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
+import {
+  resolveDiagnosticsExpandedSpanIds,
+  toggleDiagnosticsSpanExpanded,
+} from "./diagnostics-panel.model";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
 import { HistoryShell } from "./history-shell";
@@ -199,6 +203,24 @@ function wrapOverlayLayout(layout: OverlayLayoutValue, node: ReactNode) {
       </ViewportResizeGate>
     </OverlayLayoutProvider>
   );
+}
+
+/** Prefer the span header at scrollIndex; otherwise the nearest header above. */
+function findDiagnosticsSpanIdNearScroll(
+  lines: readonly { readonly spanId?: string }[],
+  scrollIndex: number,
+): string | null {
+  if (lines.length === 0) return null;
+  const start = Math.max(0, Math.min(scrollIndex, lines.length - 1));
+  for (let i = start; i >= 0; i -= 1) {
+    const spanId = lines[i]?.spanId;
+    if (spanId) return spanId;
+  }
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const spanId = lines[i]?.spanId;
+    if (spanId) return spanId;
+  }
+  return null;
 }
 
 function HelpShell({
@@ -496,6 +518,9 @@ export function RootOverlayShell({
       ? historyTabFromLegacy(overlay.initialFilterMode ?? "all")
       : ("all" satisfies HistoryTab);
   const [scrollIndex, setScrollIndex] = useState(0);
+  /** null = use newest-span-expanded defaults from the view model */
+  const [diagnosticsExpandedSpanIds, setDiagnosticsExpandedSpanIds] =
+    useState<ReadonlySet<string> | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(() =>
     overlay.type === "provider_picker" ? providerInitialIndex : overlayInitialIndex,
@@ -560,6 +585,25 @@ export function RootOverlayShell({
     getNotificationRevision,
     getNotificationRevision,
   );
+  const subscribeDiagnostics = useCallback(
+    (listener: () => void) => container.diagnosticsService.subscribe(listener),
+    [container.diagnosticsService],
+  );
+  const getDiagnosticsRevision = useCallback(
+    () => container.diagnosticsService.getRevision(),
+    [container.diagnosticsService],
+  );
+  const diagnosticsRevision = useSyncExternalStore(
+    subscribeDiagnostics,
+    getDiagnosticsRevision,
+    getDiagnosticsRevision,
+  );
+  useEffect(() => {
+    if (overlay.type === "diagnostics") {
+      setDiagnosticsExpandedSpanIds(null);
+      setScrollIndex(0);
+    }
+  }, [overlay.type]);
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyNextReleases, setHistoryNextReleases] = useState<
     NonNullable<HistoryPickerOptionsContext["nextReleases"]>
@@ -617,6 +661,17 @@ export function RootOverlayShell({
   };
   const continueSourcePreference: ContinueSourcePreference =
     rawConfig.continueSourcePreference ?? "auto";
+  // Diagnostics lines are memoized on service revision so arrow-key scrolling
+  // never rebuilds the span model / insight on every keystroke.
+  const diagnosticsLines = useMemo(() => {
+    void diagnosticsRevision;
+    if (overlay.type !== "diagnostics") return [];
+    return buildDiagnosticsPanelLines(
+      buildDiagnosticsPanelInput(container, {
+        expandedSpanIds: diagnosticsExpandedSpanIds,
+      }),
+    );
+  }, [container, diagnosticsExpandedSpanIds, diagnosticsRevision, overlay.type]);
   const staticLines =
     overlay.type === "help"
       ? buildHelpPanelLines()
@@ -627,7 +682,7 @@ export function RootOverlayShell({
             capabilitySnapshot: container.capabilitySnapshot,
           })
         : overlay.type === "diagnostics"
-          ? buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container))
+          ? diagnosticsLines
           : [];
   const lines = overlay.type === "history" ? (asyncLines ?? []) : staticLines;
   const genericPickerOptions = useMemo(
@@ -1436,6 +1491,18 @@ export function RootOverlayShell({
       container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
       return;
     }
+    if (overlay.type === "diagnostics" && input === " ") {
+      const targetSpanId = findDiagnosticsSpanIdNearScroll(lines, scrollIndex);
+      if (!targetSpanId) return;
+      const model = buildDiagnosticsSpanModel(
+        buildDiagnosticsPanelInput(container, {
+          expandedSpanIds: diagnosticsExpandedSpanIds,
+        }).recentEvents,
+      );
+      const current = resolveDiagnosticsExpandedSpanIds(model, diagnosticsExpandedSpanIds);
+      setDiagnosticsExpandedSpanIds(toggleDiagnosticsSpanExpanded(current, targetSpanId));
+      return;
+    }
     if (key.upArrow || key.downArrow) {
       if (isRootChoiceOverlay(overlay)) {
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
@@ -1979,13 +2046,15 @@ export function RootOverlayShell({
           taskLabel={
             overlay.type === "provider_picker"
               ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
-              : overlay.type === "notifications"
-                ? notificationActionDedupKey
-                  ? "Notification actions  ·  Enter runs, Esc returns"
-                  : "Notifications  ·  Enter acts, a actions, x dismisses"
-                : isRootMediaPickerOverlay(overlay)
-                  ? title
-                  : `${title}  ·  Esc closes and returns to the previous shell state`
+              : overlay.type === "diagnostics"
+                ? "Diagnostics  ·  ↑/↓ scroll, Space toggles span, Esc closes"
+                : overlay.type === "notifications"
+                  ? notificationActionDedupKey
+                    ? "Notification actions  ·  Enter runs, Esc returns"
+                    : "Notifications  ·  Enter acts, a actions, x dismisses"
+                  : isRootMediaPickerOverlay(overlay)
+                    ? title
+                    : `${title}  ·  Esc closes and returns to the previous shell state`
           }
           actions={footerActions}
           mode="detailed"

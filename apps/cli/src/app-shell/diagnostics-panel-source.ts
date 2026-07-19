@@ -6,6 +6,7 @@ import {
   summarizeRuntimeMemoryTrend,
 } from "@/services/diagnostics/runtime-memory";
 
+import { buildDiagnosticsPanelModel, type DiagnosticsPanelModel } from "./diagnostics-panel.model";
 import type { DiagnosticsPanelLineInput } from "./panel-data";
 
 export function buildDiagnosticsPanelInput(
@@ -13,12 +14,14 @@ export function buildDiagnosticsPanelInput(
   options: {
     youtubeProbe?: DiagnosticsPanelLineInput["youtubeProbe"];
     source?: string;
+    expandedSpanIds?: ReadonlySet<string> | null;
   } = {},
 ): DiagnosticsPanelLineInput {
   const memorySamples = getRuntimeMemorySamples();
+  const recentEvents = container.diagnosticsService.getRecent(container.debugTracePath ? 50 : 25);
   return {
     state: container.stateManager.getState(),
-    recentEvents: container.diagnosticsService.getRecent(container.debugTracePath ? 50 : 25),
+    recentEvents,
     developerMode: Boolean(container.debugTracePath),
     memorySamples,
     capabilitySnapshot: container.capabilitySnapshot,
@@ -33,7 +36,15 @@ export function buildDiagnosticsPanelInput(
     presenceSnapshot: container.presence.getSnapshot(),
     providers: container.providerRegistry.getAll().map((provider) => provider.metadata),
     getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+    expandedSpanIds: options.expandedSpanIds,
   };
+}
+
+/** Span-grouped view model for the diagnostics overlay (pure; no Ink). */
+export function buildDiagnosticsSpanModel(
+  recentEvents: DiagnosticsPanelLineInput["recentEvents"],
+): DiagnosticsPanelModel {
+  return buildDiagnosticsPanelModel({ recentEvents });
 }
 
 export function recordDiagnosticsPanelMemorySample(

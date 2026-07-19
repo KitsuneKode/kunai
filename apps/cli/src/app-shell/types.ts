@@ -327,6 +327,8 @@ export type ShellPanelLine = {
   label: string;
   detail?: string;
   tone?: ShellStatusTone;
+  /** Diagnostics span header target for expand/collapse. */
+  spanId?: string;
 };
 
 export type ShellPickerOption<T> = {

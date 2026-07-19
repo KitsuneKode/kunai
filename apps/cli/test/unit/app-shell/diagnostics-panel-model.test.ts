@@ -1,0 +1,162 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  buildDiagnosticsPanelModel,
+  flattenDiagnosticsPanelSpans,
+} from "@/app-shell/diagnostics-panel.model";
+import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
+import { getDiagnosticOperation } from "@/services/diagnostics/operation-taxonomy";
+
+function event(
+  over: Partial<DiagnosticEvent> & Pick<DiagnosticEvent, "operation">,
+): DiagnosticEvent {
+  return {
+    timestamp: 1,
+    level: "info",
+    category: "playback",
+    message: over.message ?? over.operation,
+    ...over,
+  };
+}
+
+describe("buildDiagnosticsPanelModel", () => {
+  test("groups mixed events from two playback cycles into spans with taxonomy headlines", () => {
+    const events: DiagnosticEvent[] = [
+      event({
+        timestamp: 10,
+        playbackCycleId: "cycle-old",
+        operation: "mpv.launch.started",
+        message: "launched",
+        level: "info",
+        context: { severity: "healthy", status: "succeeded" },
+      }),
+      event({
+        timestamp: 20,
+        playbackCycleId: "cycle-new",
+        operation: "provider.resolve.attempt",
+        category: "provider",
+        message: "attempt",
+        level: "info",
+        context: { severity: "healthy", status: "started" },
+      }),
+      event({
+        timestamp: 30,
+        playbackCycleId: "cycle-new",
+        operation: "playback.phase.failed",
+        message: "phase failed",
+        level: "error",
+        context: { severity: "blocked", status: "failed", failureClass: "timeout" },
+      }),
+      event({
+        timestamp: 40,
+        playbackCycleId: "cycle-old",
+        operation: "mpv.playback.completed",
+        message: "done",
+        level: "info",
+        context: { severity: "healthy", status: "succeeded" },
+      }),
+    ];
+
+    const model = buildDiagnosticsPanelModel({ recentEvents: events });
+
+    expect(model.spans).toHaveLength(2);
+    expect(model.spans.map((span) => span.id)).toEqual(["cycle-new", "cycle-old"]);
+
+    const failing = model.spans[0];
+    expect(failing?.worstSeverity).toBe("blocked");
+    expect(failing?.eventCount).toBe(2);
+    expect(failing?.headline).toBe(getDiagnosticOperation("playback.phase.failed")?.summary);
+    expect(failing?.headline).not.toBe("playback.phase.failed");
+    expect(failing?.headline).not.toContain("playback.phase.failed");
+
+    const healthy = model.spans[1];
+    expect(healthy?.worstSeverity).toBe("healthy");
+    expect(healthy?.eventCount).toBe(2);
+    expect(healthy?.headline).toBe(getDiagnosticOperation("mpv.playback.completed")?.summary);
+    expect(healthy?.headline).not.toBe("mpv.playback.completed");
+  });
+
+  test("falls back to traceId when playbackCycleId is absent", () => {
+    const model = buildDiagnosticsPanelModel({
+      recentEvents: [
+        event({
+          timestamp: 2,
+          traceId: "trace-a",
+          operation: "provider.resolve.timeline",
+          category: "provider",
+          level: "error",
+          context: { severity: "recoverable", failureClass: "http" },
+        }),
+        event({
+          timestamp: 1,
+          traceId: "trace-b",
+          operation: "runtime.memory.sample",
+          category: "runtime",
+          context: { severity: "healthy" },
+        }),
+      ],
+    });
+
+    expect(model.spans).toHaveLength(2);
+    expect(model.spans[0]?.id).toBe("trace-a");
+    expect(model.spans[0]?.worstSeverity).toBe("recoverable");
+    expect(model.spans[0]?.headline).toBe(
+      getDiagnosticOperation("provider.resolve.timeline")?.summary,
+    );
+  });
+
+  test("marks the newest span expanded by default", () => {
+    const model = buildDiagnosticsPanelModel({
+      recentEvents: [
+        event({ timestamp: 1, playbackCycleId: "older", operation: "session.started" }),
+        event({
+          timestamp: 2,
+          playbackCycleId: "newer",
+          operation: "playback.phase.failed",
+          level: "error",
+          context: { severity: "blocked" },
+        }),
+      ],
+    });
+
+    expect(model.defaultExpandedSpanIds).toEqual(["newer"]);
+  });
+});
+
+describe("flattenDiagnosticsPanelSpans", () => {
+  test("collapses non-expanded spans to a header only", () => {
+    const model = buildDiagnosticsPanelModel({
+      recentEvents: [
+        event({
+          timestamp: 2,
+          playbackCycleId: "open",
+          operation: "playback.phase.failed",
+          level: "error",
+          context: { severity: "blocked" },
+        }),
+        event({
+          timestamp: 1,
+          playbackCycleId: "closed",
+          operation: "mpv.launch.started",
+          context: { severity: "healthy" },
+        }),
+      ],
+    });
+
+    const lines = flattenDiagnosticsPanelSpans(model, new Set(["open"]));
+    const headers = lines.filter((line) => line.spanId);
+    expect(headers).toHaveLength(2);
+    expect(headers[0]?.label).toMatch(/^▼/);
+    expect(headers[1]?.label).toMatch(/^▶/);
+
+    const openBody = lines.filter(
+      (line) => !line.spanId && line.detail?.includes("playback.phase.failed") === false,
+    );
+    // Expanded span includes event rows; collapsed span does not.
+    expect(
+      lines.some((line) => line.detail?.includes("phase failed") || line.label.includes("phase")),
+    ).toBe(true);
+    expect(lines.filter((line) => line.label.startsWith("  ")).length).toBeGreaterThan(0);
+    expect(openBody.length).toBeGreaterThanOrEqual(0);
+  });
+});

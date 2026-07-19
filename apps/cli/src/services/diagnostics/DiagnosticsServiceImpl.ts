@@ -30,8 +30,26 @@ export type DiagnosticsServiceDeps = {
 export class DiagnosticsServiceImpl implements DiagnosticsService {
   private static readonly MAX_RESOLVE_WORK_LEDGERS = 20;
   private readonly resolveWorkLedgers: ResolveWorkLedgerSnapshot[] = [];
+  private readonly listeners = new Set<() => void>();
+  private revision = 0;
 
   constructor(private readonly deps: DiagnosticsServiceDeps) {}
+
+  getRevision(): number {
+    return this.revision;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emitChange(): void {
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
+  }
 
   record(event: DiagnosticEventInput): void {
     const redactedEvent = redactDiagnosticValue(event, {
@@ -42,6 +60,7 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     this.persist(normalizedEvent);
     this.log(normalizedEvent);
     this.deps.traceReporter?.record(normalizedEvent);
+    this.emitChange();
   }
 
   recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void {
@@ -82,6 +101,7 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     this.deps.store.clear();
     this.deps.durableSink?.clear();
     this.resolveWorkLedgers.length = 0;
+    this.emitChange();
   }
 
   buildSupportBundle(

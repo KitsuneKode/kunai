@@ -10,6 +10,10 @@ export interface DiagnosticsService {
   recordResolveWorkLedger(ledger: ResolveWorkLedgerSnapshot): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   getSnapshot(): readonly DiagnosticEvent[];
+  /** Monotonic revision for overlay memoization (invalidates on record/clear). */
+  getRevision(): number;
+  /** Subscribe to diagnostics buffer changes — fires after record/clear. */
+  subscribe(listener: () => void): () => void;
   flush(): void;
   clear(): void;
   buildSupportBundle(input?: {

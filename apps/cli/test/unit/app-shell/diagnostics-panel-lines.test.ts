@@ -131,7 +131,7 @@ describe("diagnostics-panel-lines", () => {
     const devSection = lines.slice(devStart + 1, exportStart);
     expect(devSection.some((line) => line.label === "Correlation")).toBe(true);
     expect(devSection.some((line) => line.label === "Provider attempts")).toBe(true);
-    expect(devSection.some((line) => line.label === "Recent events")).toBe(true);
+    expect(devSection.some((line) => line.label === "Recent spans")).toBe(true);
   });
 });
 

@@ -145,6 +145,8 @@ export type DiagnosticsPanelLineInput = {
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
   youtubeProbe?: YoutubeDiagnosticsProbe | null;
   developerMode?: boolean;
+  /** Override span expand/collapse; null/undefined uses newest-expanded defaults. */
+  expandedSpanIds?: ReadonlySet<string> | null;
 };
 
 export function buildDiagnosticsPanelLines({
@@ -160,6 +162,7 @@ export function buildDiagnosticsPanelLines({
   getProviderHealth,
   youtubeProbe,
   developerMode = false,
+  expandedSpanIds,
 }: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
   const insight = buildDiagnosticsInsight({
     state,
@@ -172,7 +175,11 @@ export function buildDiagnosticsPanelLines({
     getProviderHealth,
   });
 
-  const baseLines = buildDiagnosticsPanelLinesFromInsight({ insight, developerMode });
+  const baseLines = buildDiagnosticsPanelLinesFromInsight({
+    insight,
+    developerMode,
+    expandedSpanIds,
+  });
   const supplemental = buildDiagnosticsSupplementalLines({
     state,
     recentEvents,

@@ -109,7 +109,7 @@ export function getRootOverlaySubtitle({
 }): string {
   if (overlay.type === "help") return "Global commands, editing, filtering, and shell behavior";
   if (overlay.type === "about") return "Kunai";
-  if (overlay.type === "diagnostics") return "Current runtime snapshot and recent events";
+  if (overlay.type === "diagnostics") return "Current runtime snapshot and recent spans";
   if (overlay.type === "downloads")
     return "Live download queue, failed retries, and completed jobs";
   if (overlay.type === "library")

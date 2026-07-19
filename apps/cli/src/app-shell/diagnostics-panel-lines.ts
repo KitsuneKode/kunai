@@ -6,6 +6,11 @@ import {
   type DiagnosticsSubsystem,
 } from "@/services/diagnostics/diagnostics-insight";
 
+import {
+  buildDiagnosticsPanelModel,
+  flattenDiagnosticsPanelSpans,
+  resolveDiagnosticsExpandedSpanIds,
+} from "./diagnostics-panel.model";
 import type { ShellPanelLine } from "./types";
 
 const HEALTH_SUBSYSTEM_LABELS: Record<DiagnosticsSubsystem, string> = {
@@ -23,9 +28,12 @@ const HEALTH_SUBSYSTEM_LABELS: Record<DiagnosticsSubsystem, string> = {
 export function buildDiagnosticsPanelLinesFromInsight({
   insight,
   developerMode = false,
+  expandedSpanIds,
 }: {
   insight: DiagnosticsInsight;
   developerMode?: boolean;
+  /** When null/undefined, newest span is expanded by default. */
+  expandedSpanIds?: ReadonlySet<string> | null;
 }): readonly ShellPanelLine[] {
   const verdictTone = severityToTone(insight.sessionVerdict.severity);
 
@@ -42,7 +50,7 @@ export function buildDiagnosticsPanelLinesFromInsight({
     ...buildCurrentPlaybackLines(insight),
     ...buildDecisionTimelineLines(insight, developerMode),
     { label: "─── Developer Evidence", detail: "", tone: "info" },
-    ...buildDeveloperEvidenceLines(insight, developerMode),
+    ...buildDeveloperEvidenceLines(insight, developerMode, expandedSpanIds),
     { label: "─── Export And Report", detail: "", tone: "info" },
     { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
     { label: "/report-issue", detail: "Open the GitHub issue template with context" },
@@ -84,6 +92,7 @@ function buildCurrentPlaybackLines(insight: DiagnosticsInsight): ShellPanelLine[
 function buildDeveloperEvidenceLines(
   insight: DiagnosticsInsight,
   developerMode: boolean,
+  expandedSpanIds?: ReadonlySet<string> | null,
 ): ShellPanelLine[] {
   const dev = insight.developerEvidence;
   const correlationParts = [
@@ -145,14 +154,40 @@ function buildDeveloperEvidenceLines(
     });
   }
 
-  lines.push({
-    label: "Recent events",
-    detail: "newest first",
-    tone: "info",
-  });
-  lines.push(...formatDiagnosticTimelineLines(dev.recentEvents, developerMode ? 20 : 8));
+  lines.push(...buildRecentSpanLines(dev.recentEvents, developerMode, expandedSpanIds));
 
   return lines;
+}
+
+function buildRecentSpanLines(
+  recentEvents: readonly DiagnosticEvent[],
+  developerMode: boolean,
+  expandedSpanIds?: ReadonlySet<string> | null,
+): readonly ShellPanelLine[] {
+  const eventLimit = developerMode ? 40 : 16;
+  const boundedEvents = recentEvents.slice(0, eventLimit);
+  const model = buildDiagnosticsPanelModel({ recentEvents: boundedEvents });
+
+  if (model.spans.length === 0) {
+    return [
+      {
+        label: "Recent events",
+        detail: "newest first",
+        tone: "info",
+      },
+      ...formatDiagnosticTimelineLines(boundedEvents, developerMode ? 20 : 8),
+    ];
+  }
+
+  const expanded = resolveDiagnosticsExpandedSpanIds(model, expandedSpanIds);
+  return [
+    {
+      label: "Recent spans",
+      detail: "newest cycle first  ·  Space toggles",
+      tone: "info",
+    },
+    ...flattenDiagnosticsPanelSpans(model, expanded),
+  ];
 }
 
 /**
