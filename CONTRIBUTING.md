@@ -138,3 +138,20 @@ See `RELEASING.md` for full release-operator details.
 ## Code of conduct
 
 Be direct and kind. Focus feedback on code and behavior, not people. If something isn't working for you in the contribution process, open an issue.
+
+## Terminal demos
+
+The README gifs are generated with [VHS](https://github.com/charmbracelet/vhs)
+(needs `vhs`, `ttyd` and `ffmpeg` on your `PATH`). Every demo drives a
+network-free surface, so they regenerate deterministically:
+
+```bash
+bun run --cwd apps/cli test:vhs:setup     # setup wizard
+bun run --cwd apps/cli test:vhs:offline   # offline library + download queue
+bun run --cwd apps/cli test:vhs:palette   # command-palette tour
+bun run --cwd apps/cli test:vhs:all       # all of the above
+```
+
+Output lands in the gitignored `apps/cli/test/vhs/golden/`. Tapes deliberately
+avoid live search and trending so they never depend on provider availability —
+keep it that way when adding one.

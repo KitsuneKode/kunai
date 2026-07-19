@@ -36,10 +36,8 @@ kunai -S "Dune"
 - [Configuration](#configuration)
 - [Providers](#providers)
 - [FAQ](#faq)
-- [Architecture](#architecture-for-contributors)
-- [Development](#development)
 - [Uninstall](#uninstall)
-- [Contributing](#contributing)
+- [Contributing and development](#contributing-and-development)
 - [Appreciation](#appreciation)
 - [Disclaimer](#disclaimer)
 
@@ -69,9 +67,8 @@ help, diagnostics, and watch history without leaving the session:
 
 </div>
 
-More demos — the setup wizard and the offline library — regenerate locally with
-`bun run --cwd apps/cli test:vhs:all` (output in the gitignored
-`apps/cli/test/vhs/golden/`).
+Every surface is reachable this way — search, details, the release calendar,
+downloads, and Up Next — without leaving the session or touching a mouse.
 
 ---
 
@@ -526,77 +523,6 @@ pull && bun run relink:global` from source).
 
 ---
 
-## Architecture (for contributors)
-
-```text
-apps/cli/src/main.ts        Runtime entrypoint
-apps/cli/src/app-shell/     Terminal UI (Ink components, overlays, pickers)
-apps/cli/src/app/           App phases, session lifecycle, playback orchestration
-apps/cli/src/services/      Download, offline library, presence, config, diagnostics
-apps/cli/src/infra/         Player, IPC, filesystem, runtime mechanics
-packages/storage/           SQLite repositories and migrations
-packages/providers/         Provider adapter modules
-```
-
-Full architecture docs: [.docs/architecture.md](.docs/architecture.md)
-
----
-
-## Development
-
-```bash
-git clone https://github.com/kitsunekode/kunai.git
-cd kunai
-bun install
-
-# Run from source
-bun run dev
-bun run dev -- -S "Dune"
-
-# Link globally
-bun run link:global
-
-# Deterministic checks
-bun run fmt
-bun run lint
-bun run test
-bun run typecheck
-
-# Build / release confidence
-bun run build
-bun run pkg:check
-
-# Smoke tests
-bun run dev -- -S "Dune"
-bun run dev -- -S "Attack on Titan" -a
-bun run dev -- --discover
-bun run dev -- --calendar
-bun run dev -- --offline
-```
-
-Routine checks are deterministic and do not hit live providers or Discord.
-Provider and Rich Presence smokes are opt-in release checks; see
-[.docs/release-reliability-gate.md](.docs/release-reliability-gate.md) for the
-current gate.
-
-### Terminal demos
-
-The README gifs are generated with [VHS](https://github.com/charmbracelet/vhs)
-(needs `vhs`, `ttyd`, and `ffmpeg` on your `PATH`). Every demo drives a
-network-free surface, so they regenerate deterministically:
-
-```bash
-bun run --cwd apps/cli test:vhs:setup     # setup wizard
-bun run --cwd apps/cli test:vhs:offline   # offline library + download queue
-bun run --cwd apps/cli test:vhs:palette   # command-palette tour (help, diagnostics, history)
-bun run --cwd apps/cli test:vhs:all       # all of the above
-```
-
-Output lands in `apps/cli/test/vhs/golden/`. Tapes deliberately avoid live search
-and trending so they never depend on provider availability.
-
----
-
 ## Uninstall
 
 `kunai uninstall` is channel-aware — it removes the binary, runs the matching
@@ -627,12 +553,18 @@ and `~/Library/Caches/kunai`; Windows `%APPDATA%\kunai` and `%LOCALAPPDATA%\kuna
 
 ---
 
-## Contributing
+## Contributing and development
 
 Contributions are welcome — bug fixes, provider parity, platform testing, and test
 coverage all help. Provider fixes with `/diagnostics` output and macOS/Windows
-parity notes are the highest-value areas. See [CONTRIBUTING.md](CONTRIBUTING.md)
-to get started.
+parity notes are the highest-value areas, because they are the hardest to catch
+without more machines than we have.
+
+Kunai is a Bun monorepo: the CLI, provider adapters, storage, and the shared relay
+each live in their own package. Running from source, the deterministic check
+suite, changesets, and the release gate are all in
+[CONTRIBUTING.md](CONTRIBUTING.md). Design docs live in
+[.docs/architecture.md](.docs/architecture.md).
 
 ---
 
