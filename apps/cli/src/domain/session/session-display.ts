@@ -36,6 +36,19 @@ export function formatSessionProviderLabel(
   return providerName?.trim() || providerId;
 }
 
+/** Header destination pill while the browse shell is mounted (fallback). */
+export function describeBrowseHeaderDestination(
+  state: Pick<SessionState, "searchQuery" | "searchResults">,
+): string {
+  // Prefer the live browse-destination store when BrowseShell is mounted;
+  // this helper remains for session-only callers / tests.
+  const first = state.searchResults[0] as { readonly calendar?: unknown } | undefined;
+  if (first?.calendar) return "Schedule";
+  if (state.searchQuery.trim().length > 0) return "Search";
+  if (state.searchResults.length > 0) return "Trending";
+  return "Browse";
+}
+
 export function resolveProviderIdForSessionLane(
   state: Pick<SessionState, "mode" | "provider" | "defaultProviders">,
   providerRegistry: SessionProviderLaneLookup,

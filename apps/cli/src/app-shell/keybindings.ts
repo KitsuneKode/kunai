@@ -257,7 +257,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-title-control-menu",
     chord: { input: "m" },
-    label: "Open title control menu",
+    label: "Open starting-point menu for the highlighted title (same as Enter)",
     hintLabel: "menu",
     scope: "browse",
     group: "While browsing",
@@ -267,11 +267,12 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-title-control-menu-shift",
     chord: { input: "M", shift: true },
     display: "Shift+M",
-    label: "Open title control menu (query or list)",
+    label: "Open starting-point menu (legacy; prefer m on the list)",
     hintLabel: "menu",
     scope: "browse",
     group: "While browsing",
     footerPriority: 19,
+    helpOnly: true,
   },
   {
     id: "browse-notifications",

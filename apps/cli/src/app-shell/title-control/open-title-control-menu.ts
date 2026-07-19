@@ -31,6 +31,7 @@ export function buildTitleControlContext(
     readonly hasHistory?: boolean;
     readonly historyFinished?: boolean;
     readonly canResume?: boolean;
+    readonly providerName?: string;
   } = {},
 ): TitleControlContext {
   const title = state.currentTitle;
@@ -51,7 +52,7 @@ export function buildTitleControlContext(
     seasonCount: undefined,
     isFirstWatch: !(options.hasHistory ?? false),
     providerCount: options.providerCount,
-    providerName: state.provider,
+    providerName: options.providerName ?? state.provider,
     failedProvider: options.failedProvider,
     isLoading:
       state.playbackStatus === "loading" ||
@@ -128,6 +129,10 @@ export function buildTitleControlContextFromContainer(
     }
   }
 
+  const providerDisplayName =
+    providers.find((provider) => provider.metadata.id === state.provider)?.metadata.name ??
+    state.provider;
+
   return buildTitleControlContext(state, surface, {
     ...options,
     providerCount: providers.length,
@@ -135,6 +140,7 @@ export function buildTitleControlContextFromContainer(
     hasHistory,
     hasSavedPosition,
     historyFinished,
+    providerName: providerDisplayName,
   });
 }
 
@@ -187,7 +193,7 @@ export async function pickTitleControlShellAction(
       })),
       actionContext: buildPickerActionContext({
         container,
-        taskLabel: "Title control",
+        taskLabel: "Choose starting point",
       }),
     });
 

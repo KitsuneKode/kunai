@@ -150,6 +150,28 @@ describe("SessionState overlays", () => {
     expect(state.activeModals).toEqual([{ type: "notifications" }]);
   });
 
+  test("opening a different root overlay type pushes so Esc can return", () => {
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "notifications" },
+    });
+    state = reduceState(state, {
+      type: "OPEN_OVERLAY",
+      overlay: { type: "help" },
+    });
+
+    expect(state.activeModals).toEqual([{ type: "notifications" }, { type: "help" }]);
+
+    state = reduceState(state, { type: "CLOSE_TOP_OVERLAY" });
+    expect(state.activeModals).toEqual([{ type: "notifications" }]);
+  });
+
   test("replace opens the overlay when no panel is active", () => {
     const state = reduceState(
       createInitialState("vidking", "allanime", {

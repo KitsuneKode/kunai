@@ -28,6 +28,7 @@ import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useBrowseDestinationLabel } from "./browse-destination";
 import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -662,12 +663,15 @@ function AppRoot({ container }: { container: Container }) {
             rootContent?.kind === "post-playback"
           ? rootContent.kind
           : state.view;
+  const browseDestinationLabel = useBrowseDestinationLabel();
   const headerDestination =
     currentViewLabel === "playback"
       ? "Now Playing"
       : currentViewLabel === "post-playback"
         ? "Up Next"
-        : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
+        : currentViewLabel === "browse"
+          ? browseDestinationLabel
+          : currentViewLabel.charAt(0).toUpperCase() + currentViewLabel.slice(1);
   // Bell reflects UNREAD notifications and hides at zero (root-status-summary only
   // renders the bell when notificationCount > 0).
   const activeNotifications = container.notificationService.listActive(200, 0);

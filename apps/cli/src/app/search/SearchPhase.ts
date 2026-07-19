@@ -687,6 +687,77 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             continue;
           }
 
+          // Browse `m` opens the same playback entry path as Enter so the rich
+          // "Where to start?" / movie resume picker appears — not sparse title-control.
+          if (outcome.action === "menu") {
+            if (outcome.value) {
+              const originalSelected = outcome.value;
+              const deferAnimeProviderMapping =
+                !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;
+              const selectionMode = applySearchSelectionSessionRouting(container, originalSelected);
+              const selected = deferAnimeProviderMapping
+                ? originalSelected
+                : await mapAnimeDiscoveryResultToProviderNative(originalSelected, {
+                    mode: selectionMode,
+                    providerId: stateManager.getState().provider,
+                    animeLanguageProfile: container.config.animeLanguageProfile,
+                    providerRegistry,
+                    signal: context.signal,
+                  });
+              const selectedIndex = stateManager
+                .getState()
+                .searchResults.findIndex((result) => result.id === originalSelected.id);
+              if (selectedIndex >= 0) {
+                stateManager.dispatch({ type: "SELECT_RESULT", index: selectedIndex });
+              }
+              const title = await enrichSelectedTitleIdentity(
+                container.catalogIdentityService,
+                titleInfoFromSearchResult(
+                  selected,
+                  chooseSearchResultTitle(selected, container.config.animeTitlePreference),
+                ),
+                selectionMode,
+                context.signal,
+              );
+              stateManager.dispatch({
+                type: "SELECT_TITLE",
+                title,
+                videoMeta: videoMetaFromSearchResult(selected),
+              });
+              return { status: "success", value: title };
+            }
+
+            // Idle continue / queue: prime the title without locking an episode so
+            // PlaybackPhase still presents the starting-point menu.
+            if (!stateManager.getState().currentTitle) {
+              if (continueWatchingSelection) {
+                applyHistorySelectionProvider(container, continueWatchingSelection);
+                const title = await prepareReplayTitleForProvider(
+                  container,
+                  titleFromHistorySelection(continueWatchingSelection),
+                  continueWatchingSelection.entry,
+                );
+                stateManager.dispatch({ type: "SELECT_TITLE", title });
+              } else {
+                const queueNext = container.queueService.peekNext();
+                if (queueNext && latestIdleContext?.playlistNext?.titleId === queueNext.titleId) {
+                  const title = titleInfoFromQueueEntry(queueNext);
+                  stateManager.dispatch({ type: "SELECT_TITLE", title });
+                }
+              }
+            } else {
+              const existing = stateManager.getState().currentTitle;
+              if (existing) {
+                stateManager.dispatch({ type: "SELECT_TITLE", title: existing });
+              }
+            }
+
+            const menuTitle = stateManager.getState().currentTitle;
+            if (menuTitle) {
+              return { status: "success", value: menuTitle };
+            }
+          }
+
           if (outcome.action === "resume-continue-watching") {
             if (!continueWatchingSelection) {
               logger.info("Inline continue requested without a history target");

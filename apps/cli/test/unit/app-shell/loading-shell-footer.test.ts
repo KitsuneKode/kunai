@@ -24,7 +24,7 @@ test("loading footer advertises cancel while bootstrap is cancellable", () => {
 
   expect(actions.find((action) => action.action === "quit")).toMatchObject({
     key: "q",
-    label: "cancel",
+    label: "cancel → results",
   });
 });
 

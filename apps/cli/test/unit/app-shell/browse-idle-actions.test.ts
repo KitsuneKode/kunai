@@ -60,7 +60,7 @@ describe("browse idle actions", () => {
       "ready-now",
       "calendar-nudge",
     ]);
-    expect(model?.rows[0]?.hint).toBe("↵ resume");
+    expect(model?.rows[0]?.hint).toBe("↵ resume · m menu");
     expect(model?.rows[2]?.hint).toBeUndefined();
     expect(model?.rows[3]?.meta).toBe("2 new episodes · 1 show");
     expect(model?.hasSelectableRows).toBe(true);

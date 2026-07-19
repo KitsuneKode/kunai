@@ -53,11 +53,11 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
   if (!focused) return undefined;
   switch (rowId) {
     case "continue":
-      return "↵ resume";
+      return "↵ resume · m menu";
     case "offline-ready":
       return "↵ play offline";
     case "playlist-next":
-      return "↵ play next in queue";
+      return "↵ play next · m menu";
     case "ready-now":
       return "↵ open notices";
     case "calendar-nudge":

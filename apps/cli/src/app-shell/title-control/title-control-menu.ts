@@ -44,7 +44,7 @@ export function buildTitleControlMenuModel(ctx: TitleControlContext): TitleContr
   })).filter((group) => group.actions.length > 0);
 
   return {
-    title: "Title control",
+    title: "Where to start?",
     subtitle: buildSubtitle(ctx),
     groups,
   };

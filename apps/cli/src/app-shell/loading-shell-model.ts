@@ -126,7 +126,11 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
     // Advertise cancel while bootstrap is abortable (Esc/q already work; footer
     // makes the exit path discoverable and routes through the same quit action).
     ...(state.cancellable
-      ? [footerActionFromBinding("player-stop", "quit", bindings, { label: "cancel" })]
+      ? [
+          footerActionFromBinding("player-stop", "quit", bindings, {
+            label: "cancel → results",
+          }),
+        ]
       : []),
     ...(state.hasStreamCandidates
       ? [footerActionFromBinding("player-source", "source", bindings)]

@@ -1107,7 +1107,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           this.updatePlaybackFeedback(context, {
             detail: "Resolving provider stream",
-            note: "Esc cancels this resolve and returns to results",
+            note: "Esc cancel · returns to results",
           });
 
           const sourceRefreshAction = run.pendingSourceRefreshAction;

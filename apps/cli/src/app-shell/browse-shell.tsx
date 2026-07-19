@@ -20,6 +20,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
+import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
 import {
   applyBrowseResultFilters,
   describeBrowseResultFilters,
@@ -109,6 +110,7 @@ import {
   subscribeNotificationDetails,
   takeNotificationDetailsItem,
 } from "./root-overlay-bridge";
+import { SakuraLoader } from "./SakuraLoader";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -119,7 +121,6 @@ import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
 import { getWindowStart, measureColumns } from "./shell-text";
 import { palette } from "./shell-theme";
-import { SkeletonRows } from "./skeleton";
 import {
   toShellAction,
   type FooterAction,
@@ -213,7 +214,7 @@ export function BrowseShell<T>({
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
-  onResolve: (action: ShellAction) => void;
+  onResolve: (action: ShellAction, value?: T) => void;
   onSubmit: (value: T) => void;
   onCancel: () => void;
   idleContext?: import("./types").BrowseIdleContext;
@@ -316,6 +317,7 @@ export function BrowseShell<T>({
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
   const [idleContextRequestGate] = useState(() => createLatestRequestGate());
+  const reloadDiscoveryRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -436,11 +438,17 @@ export function BrowseShell<T>({
         setCommandInput("");
         setHighlightedCommandIndex(0);
       }
-      if (normalized.value.trim().length === 0) {
-        clearResults();
+      // Draft emptied while browsing discovery/trending: keep the loaded list.
+      // Clearing a submitted search restores trending when available.
+      if (normalized.value.trim().length === 0 && lastSearchedQuery.trim().length > 0) {
+        if (onLoadDiscovery && reloadDiscoveryRef.current) {
+          reloadDiscoveryRef.current();
+        } else {
+          clearResults();
+        }
       }
     },
-    [clearResults, setQuery],
+    [clearResults, lastSearchedQuery, onLoadDiscovery, setQuery],
   );
 
   const runSearch = useCallback(async () => {
@@ -501,14 +509,10 @@ export function BrowseShell<T>({
   }, [query, onSearch, resetCalendar]);
 
   const handleQuerySubmit = useCallback(() => {
-    const isDirty = query.trim() !== lastSearchedQuery;
-    const selected = displayOptions[selectedIndex];
-    if (!isDirty && selected && displayOptions.length > 0 && searchState === "ready") {
-      onSubmit(selected.value);
-      return;
-    }
+    // Query zone Enter always searches — never plays the highlighted companion
+    // row. List/idle own play/act via their own Enter handlers.
     void runSearch();
-  }, [query, lastSearchedQuery, displayOptions, selectedIndex, searchState, onSubmit, runSearch]);
+  }, [runSearch]);
 
   const loadDiscovery = async () => {
     if (!onLoadDiscovery) return;
@@ -542,6 +546,9 @@ export function BrowseShell<T>({
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Trending failed.");
     }
+  };
+  reloadDiscoveryRef.current = () => {
+    void loadDiscovery();
   };
 
   const loadRecommendations = async () => {
@@ -848,6 +855,21 @@ export function BrowseShell<T>({
     }
   }, [isCalendarView, displayOptions.length, focusZone]);
 
+  // Keep AppHeader destination in sync with the live browse surface (trending /
+  // recommendations / surprise / search) — ink-shell reads this store.
+  useEffect(() => {
+    setBrowseDestinationLabel(
+      resolveBrowseDestinationLabel({
+        isCalendar: isCalendarView,
+        query,
+        resultSubtitle,
+        emptyMessage,
+        hasResults: options.length > 0,
+        searchState,
+      }),
+    );
+  }, [emptyMessage, isCalendarView, options.length, query, resultSubtitle, searchState]);
+
   const moveCalendarDayFromInput = useCallback(
     (direction: 1 | -1) => {
       const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
@@ -936,7 +958,12 @@ export function BrowseShell<T>({
   // While the command palette is open, focus belongs to the palette — keep the
   // companion preview hidden so its (taller) content can't overlap the palette
   // rows or get clipped against the bottom of the viewport.
-  const showCompanion = showCompanionLayout && !compact && !commandMode && Boolean(selectedOption);
+  const showCompanion =
+    showCompanionLayout &&
+    !compact &&
+    !commandMode &&
+    Boolean(selectedOption) &&
+    (listFocused || idleFocused);
   const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
   const { poster, posterState: posterPreviewState } = usePosterPreview(
     settledOption?.previewImageUrl ?? undefined,
@@ -1281,16 +1308,30 @@ export function BrowseShell<T>({
       return;
     }
 
-    // Menu: bare `m` in the list zone; Shift+M anywhere when a row is selectable
-    // (mirrors Ctrl+O for details). Never Ctrl+M — that is Enter in a TTY.
-    const menuReady =
-      selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready";
+    // Menu only when list/idle owns focus — never from the search box.
+    // Query zone must stay a clean text field (no m / Shift+M chords).
+    // Never Ctrl+M — that is Enter in a TTY.
+    const idleMenuRow = idleReturnLoopModel?.rows[idleSelectedIndex];
+    const idleMenuTitleReady =
+      idleFocused &&
+      ((idleMenuRow?.id === "continue" && Boolean(activeIdleContext?.continueWatching?.titleId)) ||
+        (idleMenuRow?.id === "playlist-next" && Boolean(activeIdleContext?.playlistNext?.titleId)));
+    const resultsMenuReady =
+      listFocused &&
+      Boolean(selectedOption) &&
+      displayOptions.length > 0 &&
+      !queryDirty &&
+      searchState === "ready";
     if (
-      menuReady &&
-      ((listFocused && input === "m" && !key.shift && !key.ctrl && !key.meta) ||
-        ((input === "M" || (input.toLowerCase() === "m" && key.shift)) && !key.ctrl && !key.meta))
+      (listFocused || idleFocused) &&
+      input.toLowerCase() === "m" &&
+      !key.ctrl &&
+      !key.meta &&
+      (resultsMenuReady || idleMenuTitleReady)
     ) {
-      onResolve("menu");
+      // Pass the highlighted result so SearchPhase can open the same starting-point
+      // flow as Enter (not the sparse title-control hub with stale session title).
+      onResolve("menu", resultsMenuReady ? selectedOption?.value : undefined);
       return;
     }
 
@@ -1378,7 +1419,14 @@ export function BrowseShell<T>({
     }
 
     if (key.downArrow && idleFocused && idleReturnLoopModel) {
-      setIdleSelectedIndex((current) => Math.min(current + 1, idleReturnLoopModel.rows.length - 1));
+      const lastIndex = idleReturnLoopModel.rows.length - 1;
+      if (idleSelectedIndex >= lastIndex) {
+        // Circle back to search — same exit as ↑ on the first row / Esc.
+        setIdleSelectedIndex(0);
+        dispatchFocusZone({ type: "focus-query" });
+        return;
+      }
+      setIdleSelectedIndex((current) => Math.min(current + 1, lastIndex));
       return;
     }
 
@@ -1400,7 +1448,13 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-down" });
         return;
       }
-      setSelectedIndex((current) => (current + 1) % displayOptions.length);
+      // Last result + ↓ returns to search instead of wrapping the list — keeps
+      // the same ring as idle (search ↔ rows) without trapping in results.
+      if (boundedSelectedIndex >= displayOptions.length - 1) {
+        dispatchFocusZone({ type: "focus-query" });
+        return;
+      }
+      setSelectedIndex((current) => current + 1);
       return;
     }
 
@@ -1537,27 +1591,20 @@ export function BrowseShell<T>({
             onChange={updateQuery}
             onSubmit={handleQuerySubmit}
             placeholder={placeholder}
-            focus={!commandMode && !resultFilterFocused && !listFocused}
+            focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
             hint={
               commandMode
                 ? undefined
                 : displayOptions.length === 0
-                  ? "Type a title · / commands · /filters for guided search"
-                  : undefined
+                  ? canFocusIdleRows
+                    ? "Type a title · ↓ for you now · / commands"
+                    : "Type a title · / commands · /filters for guided search"
+                  : listFocused
+                    ? undefined
+                    : "↓ results · / commands"
             }
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
-            ignoreInput={(input, key) =>
-              // Shift+M opens title-control when results are ready; do not type "M".
-              Boolean(
-                displayOptions.length > 0 &&
-                !queryDirty &&
-                searchState === "ready" &&
-                !key.ctrl &&
-                !key.meta &&
-                (input === "M" || (input.toLowerCase() === "m" && key.shift)),
-              )
-            }
           />
         )}
 
@@ -1741,14 +1788,13 @@ export function BrowseShell<T>({
             width={Math.min(innerWidth, 72)}
           />
         ) : searchState === "loading" ? (
-          // Long request: fill the body with pulsing skeleton rows so the wait
-          // reads as "results are coming" rather than a frozen empty surface.
-          <Box marginTop={1} flexGrow={1}>
-            <SkeletonRows
-              rows={6}
-              titleWidth={Math.max(16, Math.min(34, innerWidth - 14))}
-              label={emptyMessage}
-              hint="Matching titles across the catalog · results usually land in a few seconds"
+          <Box marginTop={2} flexGrow={1} flexDirection="column">
+            <SakuraLoader
+              label={
+                emptyMessage.trim().length > 0 ? emptyMessage.replace(/\.\.\.$/, "…") : "Searching…"
+              }
+              sublabel="Matching titles across the catalog · usually a few seconds"
+              active
             />
           </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
@@ -1853,16 +1899,27 @@ export function BrowseShell<T>({
       {(() => {
         const browseBindingIds: string[] = [
           ...(listFocused && searchState === "ready" ? ["browse-details"] : []),
-          ...(options.length > 0 && !queryDirty && searchState === "ready" && !listFocused
-            ? ["browse-details-ctrl", "browse-filter"]
+          // Ctrl+O works from the search box without stealing typing — advertise
+          // it when results exist and query still owns focus.
+          ...(options.length > 0 &&
+          !queryDirty &&
+          searchState === "ready" &&
+          !listFocused &&
+          !idleFocused
+            ? ["browse-details-ctrl"]
             : []),
           ...(listFocused && searchState === "ready" ? ["browse-title-control-menu"] : []),
-          ...(options.length > 0 && !queryDirty && searchState === "ready" && !listFocused
-            ? ["browse-title-control-menu-shift"]
+          ...(idleFocused &&
+          (idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "continue" ||
+            idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "playlist-next")
+            ? ["browse-title-control-menu"]
+            : []),
+          ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
+            ? ["browse-filter"]
             : []),
           "browse-mode",
           ...(onLoadDiscovery ? ["browse-trending"] : []),
-          ...(options.length > 0 && !queryDirty
+          ...(listFocused && options.length > 0 && !queryDirty
             ? [
                 "browse-download",
                 ...(onQueueSelected ? ["browse-queue"] : []),
@@ -1874,13 +1931,19 @@ export function BrowseShell<T>({
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
             key: "enter",
-            label: listFocused ? "play" : options.length > 0 && !queryDirty ? "open" : "search",
+            label: idleFocused ? "act" : listFocused ? "play" : "search",
             action: "search",
             primary: true,
           },
           {
             key: "↑↓",
-            label: listFocused ? "navigate · ↑ top → search" : "navigate",
+            label: listFocused
+              ? "navigate · ↑↓ ends → search"
+              : idleFocused
+                ? "navigate · ↑↓ ends → search"
+                : canFocusIdleRows || options.length > 0
+                  ? "navigate · ↓ leave search"
+                  : "navigate",
             action: "search",
           },
           ...buildFooterActionsFromBindings("browse", {
@@ -1890,7 +1953,6 @@ export function BrowseShell<T>({
               "browse-details": "details",
               "browse-details-ctrl": "details",
               "browse-title-control-menu": "menu",
-              "browse-title-control-menu-shift": "menu",
               "browse-filter": "filters",
               "browse-mode": "toggle-mode",
               "browse-trending": "trending",
@@ -1903,18 +1965,12 @@ export function BrowseShell<T>({
               "browse-mode": {
                 label: getCommandLabel(commands, "toggle-mode", "switch mode"),
               },
-              "browse-details": {
-                label: "details · i",
-              },
-              "browse-details-ctrl": {
-                label: "details · Ctrl+O",
-              },
             },
           }),
           { key: "/", label: "commands", action: "command-mode" },
           {
             key: "esc",
-            label: listFocused ? "→ search" : "clear/back",
+            label: listFocused || idleFocused ? "→ search" : "clear/back",
             action: "quit",
           },
         ];
@@ -1924,9 +1980,17 @@ export function BrowseShell<T>({
           viewport.columns,
           viewport.breakpoint === "narrow" ? 3 : 5,
         );
+        const browseTaskLabel = resolveBrowseDestinationLabel({
+          isCalendar: isCalendarView,
+          query,
+          resultSubtitle,
+          emptyMessage,
+          hasResults: options.length > 0,
+          searchState,
+        });
         return (
           <ShellFooter
-            taskLabel={options.length > 0 && !queryDirty ? "Browse" : "Search"}
+            taskLabel={browseTaskLabel}
             mode={effectiveFooterMode}
             commandMode={commandMode}
             actions={visibleBrowseFooterActions}
@@ -2013,7 +2077,11 @@ export function openBrowseShell<T>({
         onOpenLink={onOpenLink}
         idleContext={idleContext}
         loadIdleContext={loadIdleContext}
-        onResolve={(action) => finish({ type: "action", action })}
+        onResolve={(action, value) =>
+          finish(
+            value !== undefined ? { type: "action", action, value } : { type: "action", action },
+          )
+        }
         onSubmit={(value) => finish({ type: "selected", value })}
         onCancel={() => finish({ type: "cancelled" })}
       />
