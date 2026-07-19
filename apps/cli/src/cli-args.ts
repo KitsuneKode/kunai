@@ -11,6 +11,7 @@ export type CliArgs = {
   debug: boolean;
   debugJson: boolean;
   debugSession: boolean;
+  supportBundle: boolean;
   zen: boolean;
   mpv: MpvRuntimeOptions;
   minimal: boolean;
@@ -81,6 +82,7 @@ DIAGNOSTICS
       --debug                Verbose redacted logging to ./logs.txt
       --debug-json           Debug + JSON event stream
       --debug-session        Debug + full session trace
+      --support-bundle       Write a redacted local support bundle and exit
   -h, --help                 Show this help
   -v, --version              Print the version
 
@@ -120,6 +122,7 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--debug",
   "--debug-json",
   "--debug-session",
+  "--support-bundle",
   "--setup",
   "--offline",
   "--discover",
@@ -173,6 +176,7 @@ type CommanderCliOptions = {
   readonly debug?: boolean;
   readonly debugJson?: boolean;
   readonly debugSession?: boolean;
+  readonly supportBundle?: boolean;
   readonly setup?: boolean;
   readonly offline?: boolean;
   readonly discover?: boolean;
@@ -214,6 +218,7 @@ function createCliCommand(): Command {
     .option("--debug")
     .option("--debug-json")
     .option("--debug-session")
+    .option("--support-bundle")
     .option("--setup")
     .option("--offline")
     .option("--discover")
@@ -285,6 +290,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     debug: false,
     debugJson: false,
     debugSession: false,
+    supportBundle: false,
     zen: false,
     mpv: {},
     minimal: false,
@@ -325,6 +331,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.debug = Boolean(options.debug || options.debugJson || options.debugSession);
   args.debugJson = Boolean(options.debugJson || options.debugSession);
   args.debugSession = Boolean(options.debugSession);
+  args.supportBundle = Boolean(options.supportBundle);
   args.setup = Boolean(options.setup);
   args.offline = Boolean(options.offline);
   if (options.discover) args.initialRoute = "recommendation";

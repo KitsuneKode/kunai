@@ -116,6 +116,8 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       events: this.getSnapshot(),
       sessionState: input?.sessionState ?? null,
       downloadSummary: input?.downloadSummary ?? null,
+      environment: input?.environment ?? null,
+      maxBytes: input?.maxBytes,
       now: this.deps.now,
     });
   }

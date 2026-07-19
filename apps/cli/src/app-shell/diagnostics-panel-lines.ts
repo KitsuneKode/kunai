@@ -53,6 +53,7 @@ export function buildDiagnosticsPanelLinesFromInsight({
     ...buildDeveloperEvidenceLines(insight, developerMode, expandedSpanIds),
     { label: "─── Export And Report", detail: "", tone: "info" },
     { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
+    { label: "e", detail: "Export support bundle from this overlay (shows path)" },
     { label: "/report-issue", detail: "Open the GitHub issue template with context" },
     {
       label: "kunai diagnostics recent",

@@ -155,7 +155,7 @@ describe("DiagnosticsServiceImpl", () => {
     expect(bundle.app).toEqual({ version: "1.2.3", debug: true });
     expect(bundle.eventCount).toBe(1);
     expect(bundle.events[0]?.context).toMatchObject({
-      streamUrl: "https://cdn.example/stream.m3u8?token=[redacted]",
+      streamUrl: "https://redacted-host/stream.m3u8",
       status: "succeeded",
       spanFamily: "cache.maintenance",
     });
@@ -274,7 +274,7 @@ describe("DiagnosticsServiceImpl", () => {
         expect.objectContaining({
           operation: "provider.resolve.timeline",
           context: expect.objectContaining({
-            url: "https://cdn.example/watch?token=[redacted]",
+            url: "https://cdn.example/watch",
             status: "failed",
             spanFamily: "provider.resolve",
           }),

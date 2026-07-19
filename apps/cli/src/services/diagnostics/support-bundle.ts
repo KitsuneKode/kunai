@@ -1,5 +1,10 @@
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
+import {
+  redactBundleValue,
+  resolveBundleRedactionOptions,
+  type BundleRedactionOptions,
+} from "./bundle-redaction";
 import type { DiagnosticEvent } from "./diagnostic-event";
 import {
   mapFailureToRecommendedAction,
@@ -13,6 +18,9 @@ import {
   type ResolveWorkDiagnosticsInsight,
 } from "./resolve-work-insight";
 
+/** Default support-bundle size budget (256 KiB). Oldest events drop first. */
+export const DEFAULT_SUPPORT_BUNDLE_MAX_BYTES = 256 * 1024;
+
 export type DiagnosticsBundleTriage = {
   readonly verdict: string;
   readonly likelyCause: string;
@@ -24,6 +32,24 @@ export type DiagnosticsBundleTriage = {
     readonly redacted: true;
     readonly excludes: readonly string[];
   };
+};
+
+export type DiagnosticsBundleEnvironment = {
+  readonly mpvVersion?: string | null;
+  readonly terminal?: string | null;
+  readonly enabledProviders?: readonly string[];
+  readonly schemaVersions?: {
+    readonly data: readonly string[];
+    readonly cache: readonly string[];
+  };
+  readonly runtimeHealth?: Record<string, unknown> | null;
+};
+
+export type DiagnosticsBundleTruncation = {
+  readonly truncated: true;
+  readonly maxBytes: number;
+  readonly droppedOldestEventCount: number;
+  readonly note: string;
 };
 
 export type DiagnosticsSupportBundle = {
@@ -41,7 +67,10 @@ export type DiagnosticsSupportBundle = {
     readonly platform: string;
     readonly arch: string;
     readonly bunVersion: string;
+    readonly mpvVersion?: string | null;
+    readonly terminal?: string | null;
   };
+  readonly environment: DiagnosticsBundleEnvironment;
   readonly privacy: {
     readonly redacted: true;
     readonly excludes: readonly string[];
@@ -53,6 +82,7 @@ export type DiagnosticsSupportBundle = {
   readonly sections: Record<string, DiagnosticsBundleSection>;
   readonly eventCount: number;
   readonly events: readonly DiagnosticEvent[];
+  readonly truncation?: DiagnosticsBundleTruncation;
 };
 
 export type DiagnosticsBundleCorrelation = {
@@ -96,6 +126,9 @@ export type BuildDiagnosticsSupportBundleInput = {
   readonly resolveWorkLedgers?: readonly ResolveWorkLedgerSnapshot[] | null;
   readonly events: readonly DiagnosticEvent[];
   readonly insight?: DiagnosticsInsight | null;
+  readonly environment?: DiagnosticsBundleEnvironment | null;
+  readonly maxBytes?: number;
+  readonly redaction?: BundleRedactionOptions;
   readonly now?: () => Date;
 };
 
@@ -103,22 +136,36 @@ export function buildDiagnosticsSupportBundle(
   input: BuildDiagnosticsSupportBundleInput,
 ): DiagnosticsSupportBundle {
   const now = input.now ?? (() => new Date());
-  const redactionOptions = { homeDir: process.env.HOME };
-  const events = redactDiagnosticValue(input.events, redactionOptions) as DiagnosticEvent[];
-  const capabilities = redactDiagnosticValue(input.capabilities ?? {}, redactionOptions) as Record<
-    string,
-    unknown
-  >;
+  const redactionOptions = input.redaction ?? resolveBundleRedactionOptions();
+  const legacyOptions = { homeDir: redactionOptions.homeDir };
+  const events = redactBundleValue(
+    redactDiagnosticValue(input.events, legacyOptions),
+    redactionOptions,
+  ) as DiagnosticEvent[];
+  const capabilities = redactBundleValue(
+    redactDiagnosticValue(input.capabilities ?? {}, legacyOptions),
+    redactionOptions,
+  ) as Record<string, unknown>;
   const playbackSourceInventory = input.playbackSourceInventory
-    ? (redactDiagnosticValue(
-        input.playbackSourceInventory,
+    ? (redactBundleValue(
+        redactDiagnosticValue(input.playbackSourceInventory, legacyOptions),
         redactionOptions,
       ) as PlaybackSourceInventoryDiagnosticsSummary)
     : undefined;
   const sections = buildBundleSections(events);
   const triage = buildBundleTriage(events, input.insight);
+  const environment = redactBundleValue(
+    {
+      mpvVersion: input.environment?.mpvVersion ?? null,
+      terminal: input.environment?.terminal ?? null,
+      enabledProviders: input.environment?.enabledProviders ?? [],
+      schemaVersions: input.environment?.schemaVersions ?? { data: [], cache: [] },
+      runtimeHealth: input.environment?.runtimeHealth ?? null,
+    } satisfies DiagnosticsBundleEnvironment,
+    redactionOptions,
+  ) as DiagnosticsBundleEnvironment;
 
-  return {
+  const bundle: DiagnosticsSupportBundle = {
     exportedAt: now().toISOString(),
     app: {
       version: input.appVersion,
@@ -133,10 +180,23 @@ export function buildDiagnosticsSupportBundle(
       platform: process.platform,
       arch: process.arch,
       bunVersion: Bun.version,
+      mpvVersion: environment.mpvVersion ?? null,
+      terminal: environment.terminal ?? null,
     },
+    environment,
     privacy: {
       redacted: true,
-      excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
+      excludes: [
+        "stream URLs",
+        "subtitle URLs",
+        "headers",
+        "tokens",
+        "local paths",
+        "history rows",
+        "titles",
+        "search queries",
+        "usernames",
+      ],
     },
     capabilities,
     playbackSourceInventory,
@@ -146,6 +206,56 @@ export function buildDiagnosticsSupportBundle(
     eventCount: events.length,
     events,
   };
+
+  return applySupportBundleSizeBudget(bundle, input.maxBytes ?? DEFAULT_SUPPORT_BUNDLE_MAX_BYTES);
+}
+
+/**
+ * Cap serialized bundle size by dropping oldest diagnostic events.
+ * Records truncation metadata in the file when events are removed.
+ */
+export function applySupportBundleSizeBudget(
+  bundle: DiagnosticsSupportBundle,
+  maxBytes: number = DEFAULT_SUPPORT_BUNDLE_MAX_BYTES,
+): DiagnosticsSupportBundle {
+  if (maxBytes <= 0) return bundle;
+  let events = [...bundle.events];
+  let dropped = 0;
+  let candidate: DiagnosticsSupportBundle = {
+    ...bundle,
+    eventCount: events.length,
+    events,
+  };
+
+  while (utf8ByteLength(JSON.stringify(candidate)) > maxBytes && events.length > 0) {
+    events = events.slice(1);
+    dropped += 1;
+    const eventInsights = buildBundleInsights(events, undefined);
+    candidate = {
+      ...bundle,
+      eventCount: events.length,
+      events,
+      sections: buildBundleSections(events),
+      correlation: buildBundleCorrelation(events),
+      insights: {
+        ...eventInsights,
+        // Ledger insight is independent of the event window; keep it under budget.
+        resolveWork: bundle.insights.resolveWork,
+      },
+      truncation: {
+        truncated: true,
+        maxBytes,
+        droppedOldestEventCount: dropped,
+        note: `Bundle exceeded ${maxBytes} bytes; dropped ${dropped} oldest diagnostic event${dropped === 1 ? "" : "s"}.`,
+      },
+    };
+  }
+
+  return candidate;
+}
+
+function utf8ByteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
 }
 
 function buildBundleInsights(

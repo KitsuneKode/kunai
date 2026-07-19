@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildDiagnosticsSupportBundle } from "@/services/diagnostics/support-bundle";
+import {
+  applySupportBundleSizeBudget,
+  buildDiagnosticsSupportBundle,
+  DEFAULT_SUPPORT_BUNDLE_MAX_BYTES,
+} from "@/services/diagnostics/support-bundle";
 
 describe("DiagnosticsSupportBundle", () => {
   test("builds layered summary and section metadata", () => {
@@ -33,7 +37,17 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
     expect(bundle.privacy).toEqual({
       redacted: true,
-      excludes: ["stream URLs", "subtitle URLs", "headers", "tokens", "local paths"],
+      excludes: [
+        "stream URLs",
+        "subtitle URLs",
+        "headers",
+        "tokens",
+        "local paths",
+        "history rows",
+        "titles",
+        "search queries",
+        "usernames",
+      ],
     });
   });
 
@@ -392,5 +406,78 @@ describe("DiagnosticsSupportBundle", () => {
     expect(bundle.triage.likelyCause).toBe("Cache database maintenance failed");
     expect(bundle.triage.affectedSubsystems).toContain("runtime");
     expect(bundle.triage.recommendedActions).toContain("retry");
+  });
+
+  test("includes environment metadata without history titles or stream hosts", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.3.0",
+      debug: false,
+      redaction: { homeDir: "/home/shadowuser", username: "shadowuser" },
+      environment: {
+        mpvVersion: "mpv 0.38.0",
+        terminal: "kitty",
+        enabledProviders: ["allanime", "vidking"],
+        schemaVersions: { data: ["001_data"], cache: ["001_cache"] },
+        runtimeHealth: { network: "ok", provider: "ok" },
+      },
+      events: [
+        {
+          timestamp: 1,
+          category: "provider",
+          level: "info",
+          operation: "provider.resolve",
+          message: `Resolved for /home/shadowuser/cache`,
+          context: {
+            url: "https://cdn.streamhost.example/play.m3u8?token=leak",
+            note: "USER=shadowuser",
+          },
+        },
+      ],
+    });
+
+    const serialized = JSON.stringify(bundle);
+    expect(bundle.runtime.mpvVersion).toBe("mpv 0.38.0");
+    expect(bundle.runtime.terminal).toBe("kitty");
+    expect(bundle.environment.enabledProviders).toEqual(["allanime", "vidking"]);
+    expect(bundle.environment.schemaVersions?.data).toContain("001_data");
+    expect(serialized).not.toContain("shadowuser");
+    expect(serialized).not.toContain("cdn.streamhost.example");
+    expect(serialized).not.toContain("token=leak");
+    expect(bundle).not.toHaveProperty("history");
+    expect(bundle).not.toHaveProperty("watchHistory");
+  });
+
+  test("caps bundle size by dropping oldest events and records truncation", () => {
+    const events = Array.from({ length: 80 }, (_, index) => ({
+      timestamp: index + 1,
+      category: "runtime" as const,
+      level: "info" as const,
+      operation: "runtime.tick",
+      message: `event-${index}-${"x".repeat(200)}`,
+    }));
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: false,
+      events,
+      maxBytes: 8_000,
+    });
+
+    expect(bundle.truncation?.truncated).toBe(true);
+    expect(bundle.truncation?.droppedOldestEventCount).toBeGreaterThan(0);
+    expect(bundle.truncation?.note).toContain("dropped");
+    expect(bundle.events[0]?.message).not.toContain("event-0-");
+    expect(Buffer.byteLength(JSON.stringify(bundle), "utf8")).toBeLessThanOrEqual(8_000);
+    expect(DEFAULT_SUPPORT_BUNDLE_MAX_BYTES).toBe(256 * 1024);
+
+    const alreadySmall = applySupportBundleSizeBudget(
+      buildDiagnosticsSupportBundle({
+        appVersion: "0.1.0",
+        debug: false,
+        events: events.slice(0, 2),
+        maxBytes: 256 * 1024,
+      }),
+      256 * 1024,
+    );
+    expect(alreadySmall.truncation).toBeUndefined();
   });
 });

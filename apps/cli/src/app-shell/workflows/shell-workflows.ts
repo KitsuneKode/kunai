@@ -49,6 +49,7 @@ import {
   buildSearchDiagnosticEvent,
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
+import { exportLocalSupportBundle } from "@/services/diagnostics/export-local-support-bundle";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import {
@@ -1202,32 +1203,15 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
 }
 
 async function handleExportDiagnostics(container: Container): Promise<"handled"> {
-  const fileName = `kunai-diagnostics-export-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  const path = join(process.cwd(), fileName);
-  const state = container.stateManager.getState();
-  const bundle = container.diagnosticsService.buildSupportBundle({
-    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-    playbackSourceInventory: state.stream?.providerResolveResult
-      ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-          selectedSubtitleUrl: state.stream.subtitle,
-        })
-      : null,
-    sessionState: state,
-  });
-  await writeAtomicJson(path, bundle);
-  await pruneOldDiagnosticFiles({
-    dir: process.cwd(),
-    prefix: "kunai-diagnostics-export-",
-    maxFiles: 10,
-  });
+  const written = await exportLocalSupportBundle(container);
   container.diagnosticsService.record(
     buildUiDiagnosticEvent({
       operation: "export-diagnostics",
       status: "succeeded",
       severity: "healthy",
       recommendedAction: "none",
-      message: "Diagnostics exported to file",
-      context: { path: fileName, tracePath: container.debugTracePath },
+      message: `Diagnostics exported to ${written.path}`,
+      context: { path: written.fileName, tracePath: container.debugTracePath },
     }),
   );
   return "handled";

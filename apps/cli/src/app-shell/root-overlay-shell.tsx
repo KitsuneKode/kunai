@@ -27,6 +27,7 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import {
@@ -746,7 +747,8 @@ export function RootOverlayShell({
   const effectiveSubtitle =
     (overlay.type === "notifications" ||
       overlay.type === "history" ||
-      overlay.type === "tracks_panel") &&
+      overlay.type === "tracks_panel" ||
+      overlay.type === "diagnostics") &&
     overlayStatus
       ? overlayStatus
       : subtitle;
@@ -758,6 +760,9 @@ export function RootOverlayShell({
           { key: "↑↓", label: "select", action: "details" as const },
           { key: "enter", label: "open", action: "details" as const, primary: true },
         ] satisfies readonly FooterAction[])
+      : []),
+    ...(overlay.type === "diagnostics"
+      ? ([{ key: "e", label: "export bundle", primary: true }] satisfies readonly FooterAction[])
       : []),
     { key: "/", label: "commands", action: "command-mode" },
     { key: "esc", label: "close", action: "quit" },
@@ -1503,6 +1508,36 @@ export function RootOverlayShell({
       setDiagnosticsExpandedSpanIds(toggleDiagnosticsSpanExpanded(current, targetSpanId));
       return;
     }
+    if (
+      overlay.type === "diagnostics" &&
+      (input === "e" || input === "E") &&
+      !key.ctrl &&
+      !key.meta
+    ) {
+      void (async () => {
+        try {
+          const { exportLocalSupportBundle } =
+            await import("@/services/diagnostics/export-local-support-bundle");
+          const written = await exportLocalSupportBundle(container);
+          setOverlayStatus(`Support bundle written: ${written.path}`);
+          container.diagnosticsService.record(
+            buildUiDiagnosticEvent({
+              operation: "export-diagnostics",
+              status: "succeeded",
+              severity: "healthy",
+              recommendedAction: "none",
+              message: `Diagnostics exported to ${written.path}`,
+              context: { path: written.fileName, tracePath: container.debugTracePath },
+            }),
+          );
+        } catch (error) {
+          setOverlayStatus(
+            `Support bundle export failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      })();
+      return;
+    }
     if (key.upArrow || key.downArrow) {
       if (isRootChoiceOverlay(overlay)) {
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
@@ -2047,7 +2082,7 @@ export function RootOverlayShell({
             overlay.type === "provider_picker"
               ? "Provider picker  ·  Type to filter, Enter to switch, Esc closes"
               : overlay.type === "diagnostics"
-                ? "Diagnostics  ·  ↑/↓ scroll, Space toggles span, Esc closes"
+                ? "Diagnostics  ·  ↑/↓ scroll, Space toggles span, e exports bundle, Esc closes"
                 : overlay.type === "notifications"
                   ? notificationActionDedupKey
                     ? "Notification actions  ·  Enter runs, Esc returns"

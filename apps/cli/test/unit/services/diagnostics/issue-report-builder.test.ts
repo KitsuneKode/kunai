@@ -29,8 +29,9 @@ describe("IssueReportBuilder", () => {
     });
 
     expect(draft.title).toContain("[provider]");
-    expect(draft.body).toContain("Provider failed for https://cdn.example/video.m3u8?token=");
+    expect(draft.body).toContain("Provider failed for https://redacted-host/video.m3u8");
     expect(draft.body).not.toContain("secret");
+    expect(draft.body).not.toContain("cdn.example");
     expect(draft.body).not.toContain(process.env.HOME ?? "__missing_home__");
     expect(draft.body).toContain("kunai-diagnostics-report.json");
     expect(draft.issueUrl).toStartWith("https://github.com/example/kunai/issues/new?");

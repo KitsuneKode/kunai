@@ -3,7 +3,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
-import type { DiagnosticsSupportBundle } from "./support-bundle";
+import type { DiagnosticsBundleEnvironment, DiagnosticsSupportBundle } from "./support-bundle";
 
 export interface DiagnosticsService {
   record(event: DiagnosticEventInput): void;
@@ -21,5 +21,7 @@ export interface DiagnosticsService {
     readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
     readonly sessionState?: SessionState | null;
     readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+    readonly environment?: DiagnosticsBundleEnvironment | null;
+    readonly maxBytes?: number;
   }): DiagnosticsSupportBundle;
 }
