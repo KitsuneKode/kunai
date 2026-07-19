@@ -9,11 +9,8 @@ import {
 } from "@/app-shell/pickers";
 
 export { buildPickerActionContext };
-import {
-  buildDiagnosticsPanelInput,
-  recordDiagnosticsPanelMemorySample,
-} from "@/app-shell/diagnostics-panel-source";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
+import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -72,8 +69,6 @@ import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storag
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
 
-import { buildDiagnosticsPanelLines } from "../panel-data";
-import { openRootOwnedOverlay } from "../root-overlay-bridge";
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { openProviderPicker } from "./picker-workflows";
@@ -982,19 +977,7 @@ async function handleStaticOverlay(
 }
 
 async function handleDiagnostics(container: Container): Promise<"handled"> {
-  const { stateManager } = container;
-  recordDiagnosticsPanelMemorySample(container, "diagnostics-command");
-  const { runYoutubeDiagnosticsProbes } =
-    await import("@/services/youtube/youtube-diagnostics-probes");
-  const youtubeProbe = await runYoutubeDiagnosticsProbes(container);
-  const lines = buildDiagnosticsPanelLines(buildDiagnosticsPanelInput(container, { youtubeProbe }));
-  await withOverlay(stateManager, { type: "diagnostics" }, () =>
-    openStaticInfoShell({
-      title: "Diagnostics",
-      subtitle: "Health summary and redacted runtime evidence",
-      lines,
-    }),
-  );
+  await openDiagnosticsOverlay(container, "diagnostics-command");
   return "handled";
 }
 

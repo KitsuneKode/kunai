@@ -59,6 +59,47 @@ test("diagnostic events repository stores redacted cache events and lists recent
   db.close();
 });
 
+test("diagnostic events repository lists current-session rows only", () => {
+  const db = migratedCacheDb();
+  const repository = new DiagnosticEventsRepository(db);
+
+  repository.insert({
+    timestamp: 10,
+    level: "info",
+    category: "runtime",
+    operation: "runtime.live",
+    message: "live-1",
+    sessionId: "session-live",
+  });
+  repository.insert({
+    timestamp: 20,
+    level: "info",
+    category: "runtime",
+    operation: "runtime.old",
+    message: "old-1",
+    sessionId: "session-old",
+  });
+  repository.insert({
+    timestamp: 30,
+    level: "warn",
+    category: "runtime",
+    operation: "runtime.live",
+    message: "live-2",
+    sessionId: "session-live",
+  });
+
+  expect(repository.listBySession("session-live", 10).map((event) => event.sessionId)).toEqual([
+    "session-live",
+    "session-live",
+  ]);
+  expect(repository.listBySession("session-live", 10).map((event) => event.message)).toEqual([
+    "live-2",
+    "live-1",
+  ]);
+
+  db.close();
+});
+
 test("diagnostic event pruning is bounded to diagnostic rows only", () => {
   const db = migratedCacheDb();
   const repo = new DiagnosticEventsRepository(db);

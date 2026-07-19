@@ -103,6 +103,7 @@ describe("AsyncDurableDiagnosticsSink", () => {
           throw new Error("disk full");
         },
         listRecent: () => [],
+        listBySession: () => [],
         getSnapshot: () => [],
         prune: () => ({ deleted: 0 }),
         clear: () => {},
@@ -113,5 +114,56 @@ describe("AsyncDurableDiagnosticsSink", () => {
     sink.flush();
     expect(() => sink.enqueue(event({ message: "second" }))).not.toThrow();
     sink.flush();
+  });
+
+  test("exposes session reads, failed state, and bounded failure callbacks", () => {
+    const failures: Array<{ operation: string; message: string }> = [];
+    const sink = new AsyncDurableDiagnosticsSink({
+      repository: {
+        insert: () => {
+          throw new Error(`disk full ${"x".repeat(500)}`);
+        },
+        listRecent: () => [],
+        listBySession: () => [],
+        getSnapshot: () => [],
+        prune: () => ({ deleted: 0 }),
+        clear: () => {},
+      } as unknown as DiagnosticEventsRepository,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    sink.enqueue(event({ message: "write" }));
+    sink.flush();
+
+    expect(sink.isFailed()).toBe(true);
+    expect(sink.listBySession("session-live", 10)).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.message.length).toBeLessThanOrEqual(240);
+    expect(() => sink.enqueue(event({ message: "after-fail" }))).not.toThrow();
+  });
+
+  test("read failures mark the sink failed and return empty session lists", () => {
+    const failures: Array<{ operation: string; message: string }> = [];
+    const sink = new AsyncDurableDiagnosticsSink({
+      repository: {
+        insert: () => {},
+        listRecent: () => {
+          throw new Error("read failed");
+        },
+        listBySession: () => {
+          throw new Error("session read failed");
+        },
+        getSnapshot: () => {
+          throw new Error("snapshot failed");
+        },
+        prune: () => ({ deleted: 0 }),
+        clear: () => {},
+      } as unknown as DiagnosticEventsRepository,
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(sink.listBySession("session-live", 5)).toEqual([]);
+    expect(sink.isFailed()).toBe(true);
+    expect(failures.some((failure) => failure.operation.includes("listBySession"))).toBe(true);
   });
 });

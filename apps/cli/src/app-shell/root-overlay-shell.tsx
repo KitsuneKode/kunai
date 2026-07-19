@@ -109,6 +109,7 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
+  openDiagnosticsOverlay,
   stageNotificationDetailsItem,
   stageNotificationPlaybackIntent,
 } from "./root-overlay-bridge";
@@ -789,6 +790,13 @@ export function RootOverlayShell({
             type: "SET_PLAYBACK_FEEDBACK",
             note: "Attention inbox is disabled.",
           });
+          return;
+        }
+        if (action === "diagnostics") {
+          if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+            container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          }
+          void openDiagnosticsOverlay(container, "diagnostics-overlay-command");
           return;
         }
         const nextOverlay =

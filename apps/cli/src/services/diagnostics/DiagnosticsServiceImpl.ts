@@ -13,6 +13,8 @@ export interface DurableDiagnosticsSink {
   enqueue(event: DiagnosticEvent): void;
   getRecent(limit?: number): readonly DiagnosticEvent[];
   getSnapshot(limit?: number): readonly DiagnosticEvent[];
+  listBySession?(sessionId: string, limit?: number): readonly DiagnosticEvent[];
+  isFailed?(): boolean;
   flush(): void;
   clear(): void;
 }
@@ -20,6 +22,7 @@ export interface DurableDiagnosticsSink {
 export type DiagnosticsServiceDeps = {
   readonly store: DiagnosticsStore;
   readonly logger: Logger;
+  readonly sessionId?: string;
   readonly appVersion?: string;
   readonly debug?: boolean;
   readonly now?: () => Date;
@@ -29,6 +32,7 @@ export type DiagnosticsServiceDeps = {
 
 export class DiagnosticsServiceImpl implements DiagnosticsService {
   private static readonly MAX_RESOLVE_WORK_LEDGERS = 20;
+  private static readonly MAX_SNAPSHOT_EVENTS = 500;
   private readonly resolveWorkLedgers: ResolveWorkLedgerSnapshot[] = [];
   private readonly listeners = new Set<() => void>();
   private revision = 0;
@@ -52,7 +56,11 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   }
 
   record(event: DiagnosticEventInput): void {
-    const redactedEvent = redactDiagnosticValue(event, {
+    const withSession: DiagnosticEventInput =
+      event.sessionId || !this.deps.sessionId
+        ? event
+        : { ...event, sessionId: this.deps.sessionId };
+    const redactedEvent = redactDiagnosticValue(withSession, {
       homeDir: process.env.HOME,
     }) as DiagnosticEventInput;
     const normalizedEvent = normalizeDiagnosticEvent(redactedEvent, this.deps.now?.().getTime());
@@ -74,15 +82,11 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   }
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
-    const durableEvents = this.readDurable((sink) => sink.getRecent(limit));
-    if (durableEvents && durableEvents.length > 0) return durableEvents;
-    return this.deps.store.getRecent(limit);
+    return this.mergeRecentEvents(limit);
   }
 
   getSnapshot(): readonly DiagnosticEvent[] {
-    const durableEvents = this.readDurable((sink) => sink.getSnapshot());
-    if (durableEvents && durableEvents.length > 0) return durableEvents;
-    return this.deps.store.getSnapshot();
+    return [...this.mergeRecentEvents(DiagnosticsServiceImpl.MAX_SNAPSHOT_EVENTS)].reverse();
   }
 
   flush(): void {
@@ -116,10 +120,37 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
       events: this.getSnapshot(),
       sessionState: input?.sessionState ?? null,
       downloadSummary: input?.downloadSummary ?? null,
+      releaseSummary: input?.releaseSummary ?? null,
+      releaseDiagnostics: input?.releaseDiagnostics ?? null,
+      presenceSnapshot: input?.presenceSnapshot ?? null,
+      memorySamples: input?.memorySamples ?? null,
+      getProviderHealth: input?.getProviderHealth,
       environment: input?.environment ?? null,
       maxBytes: input?.maxBytes,
       now: this.deps.now,
     });
+  }
+
+  private mergeRecentEvents(limit?: number): readonly DiagnosticEvent[] {
+    const memoryCap = limit ?? Number.POSITIVE_INFINITY;
+    const memory = this.deps.store.getRecent(Number.isFinite(memoryCap) ? memoryCap : undefined);
+    const sink = this.deps.durableSink;
+    if (!sink || sink.isFailed?.()) {
+      return limit === undefined ? memory : memory.slice(0, limit);
+    }
+
+    const durable = this.readDurable((active) => {
+      if (this.deps.sessionId && typeof active.listBySession === "function") {
+        return active.listBySession(this.deps.sessionId, limit);
+      }
+      return active.getRecent(limit);
+    });
+    if (!durable) {
+      return limit === undefined ? memory : memory.slice(0, limit);
+    }
+
+    const merged = mergeNewestFirst(memory, durable);
+    return limit === undefined ? merged : merged.slice(0, limit);
   }
 
   private persist(event: DiagnosticEvent): void {
@@ -173,4 +204,23 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
     else if (level === "error") this.deps.logger.error(event.message, context);
     else this.deps.logger.info(event.message, context);
   }
+}
+
+function mergeNewestFirst(
+  memory: readonly DiagnosticEvent[],
+  durable: readonly DiagnosticEvent[],
+): readonly DiagnosticEvent[] {
+  const seen = new Set<string>();
+  const merged: DiagnosticEvent[] = [];
+  for (const event of [...memory, ...durable]) {
+    const key = eventIdentity(event);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(event);
+  }
+  return merged.sort((left, right) => right.timestamp - left.timestamp);
+}
+
+function eventIdentity(event: DiagnosticEvent): string {
+  return JSON.stringify(event);
 }

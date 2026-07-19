@@ -15,7 +15,8 @@ import {
   writeSupportBundleFile,
   type WriteSupportBundleResult,
 } from "@/services/diagnostics/write-support-bundle";
-import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
+
+import { buildSupportBundleInputFromContainer } from "./diagnostics-bundle-input";
 
 export type ExportLocalSupportBundleResult = WriteSupportBundleResult & {
   readonly bundle: DiagnosticsSupportBundle;
@@ -36,18 +37,11 @@ export async function exportLocalSupportBundle(
     readonly prunePrefixes?: readonly string[];
   } = {},
 ): Promise<ExportLocalSupportBundleResult> {
-  const state = container.stateManager.getState();
   const environment = await buildSupportBundleEnvironment(container, {
     mpvVersion: options.mpvVersion,
   });
   const bundle = container.diagnosticsService.buildSupportBundle({
-    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-    playbackSourceInventory: state.stream?.providerResolveResult
-      ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-          selectedSubtitleUrl: state.stream.subtitle,
-        })
-      : null,
-    sessionState: state,
+    ...buildSupportBundleInputFromContainer(container),
     environment,
   });
   const written = await writeSupportBundleFile({

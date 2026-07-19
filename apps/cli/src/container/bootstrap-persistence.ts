@@ -258,11 +258,19 @@ export async function bootstrapPersistence(
   const diagnosticsService = new DiagnosticsServiceImpl({
     store: diagnosticsStore,
     logger,
+    sessionId,
     appVersion: options?.appVersion,
     debug,
     traceReporter,
     durableSink: new AsyncDurableDiagnosticsSink({
       repository: diagnosticEvents,
+      onFailure: (failure) => {
+        logger.warn("Diagnostics durable sink failed", {
+          category: "runtime",
+          operation: `diagnostics.durable.${failure.operation}.failed`,
+          error: failure.message,
+        });
+      },
     } satisfies DurableDiagnosticsSinkOptions),
   });
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {

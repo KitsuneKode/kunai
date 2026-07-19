@@ -1,9 +1,27 @@
 import type { SessionState } from "@/domain/session/SessionState";
+import type { PresenceSnapshot } from "@/services/presence/PresenceService";
+import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/storage-read-models";
+import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import type { PlaybackSourceInventoryDiagnosticsSummary } from "../playback/PlaybackSourceInventoryProjection";
 import type { ResolveWorkLedgerSnapshot } from "../playback/ResolveWorkLedger";
 import type { DiagnosticEvent, DiagnosticEventInput } from "./diagnostic-event";
+import type { RuntimeMemorySample } from "./runtime-memory";
 import type { DiagnosticsBundleEnvironment, DiagnosticsSupportBundle } from "./support-bundle";
+
+export type DiagnosticsSupportBundleInput = {
+  readonly capabilities?: Record<string, unknown> | null;
+  readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
+  readonly sessionState?: SessionState | null;
+  readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
+  readonly releaseSummary?: { titleCount: number; episodeCount: number } | null;
+  readonly releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
+  readonly presenceSnapshot?: PresenceSnapshot | null;
+  readonly memorySamples?: readonly RuntimeMemorySample[] | null;
+  readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  readonly environment?: DiagnosticsBundleEnvironment | null;
+  readonly maxBytes?: number;
+};
 
 export interface DiagnosticsService {
   record(event: DiagnosticEventInput): void;
@@ -16,12 +34,5 @@ export interface DiagnosticsService {
   subscribe(listener: () => void): () => void;
   flush(): void;
   clear(): void;
-  buildSupportBundle(input?: {
-    readonly capabilities?: Record<string, unknown> | null;
-    readonly playbackSourceInventory?: PlaybackSourceInventoryDiagnosticsSummary | null;
-    readonly sessionState?: SessionState | null;
-    readonly downloadSummary?: { active: number; completed: number; failed?: number } | null;
-    readonly environment?: DiagnosticsBundleEnvironment | null;
-    readonly maxBytes?: number;
-  }): DiagnosticsSupportBundle;
+  buildSupportBundle(input?: DiagnosticsSupportBundleInput): DiagnosticsSupportBundle;
 }

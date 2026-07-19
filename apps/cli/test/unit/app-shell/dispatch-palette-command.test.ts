@@ -3,6 +3,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 const openSetupWizardFromShell = mock(async () => {});
 const handleShellAction = mock(async () => "handled" as const);
 const openRootOwnedOverlay = mock(async () => {});
+const openDiagnosticsOverlay = mock(async () => {});
 
 mock.module("@/app-shell/workflows/setup-workflows", () => ({
   openSetupWizardFromShell,
@@ -10,6 +11,7 @@ mock.module("@/app-shell/workflows/setup-workflows", () => ({
 
 mock.module("@/app-shell/root-overlay-bridge", () => ({
   openRootOwnedOverlay,
+  openDiagnosticsOverlay,
   openNotificationsOverlay: async () => {},
 }));
 
@@ -28,6 +30,7 @@ afterEach(() => {
   openSetupWizardFromShell.mockClear();
   handleShellAction.mockClear();
   openRootOwnedOverlay.mockClear();
+  openDiagnosticsOverlay.mockClear();
 });
 
 describe("dispatchPaletteCommand", () => {
@@ -71,5 +74,14 @@ describe("dispatchPaletteCommand", () => {
     );
     expect(handleShellAction).toHaveBeenCalledTimes(2);
     expect(handleShellAction).toHaveBeenCalledWith({ action: "playlists", container });
+  });
+
+  test("diagnostics routes through the shared overlay opener", async () => {
+    const container = { stateManager: { dispatch: () => {} } };
+    await expect(dispatchPaletteCommand("browse", "diagnostics", container as never)).resolves.toBe(
+      "handled",
+    );
+    expect(openDiagnosticsOverlay).toHaveBeenCalledWith(container, "diagnostics-palette");
+    expect(openRootOwnedOverlay).not.toHaveBeenCalled();
   });
 });

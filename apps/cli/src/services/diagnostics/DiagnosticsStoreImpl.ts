@@ -13,7 +13,14 @@ export class DiagnosticsStoreImpl implements DiagnosticsStore {
   private events: DiagnosticEvent[] = [];
 
   record(event: DiagnosticEventInput): void {
-    this.events.push(normalizeDiagnosticEvent(redactEventInput(event)));
+    const existingTimestamp = (event as DiagnosticEventInput & { readonly timestamp?: number })
+      .timestamp;
+    this.events.push(
+      normalizeDiagnosticEvent(
+        redactEventInput(event),
+        typeof existingTimestamp === "number" ? existingTimestamp : undefined,
+      ),
+    );
 
     if (this.events.length > MAX_EVENTS) {
       this.events.splice(0, this.events.length - MAX_EVENTS);

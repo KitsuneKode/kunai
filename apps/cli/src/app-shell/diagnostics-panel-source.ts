@@ -9,6 +9,8 @@ import {
 import { buildDiagnosticsPanelModel, type DiagnosticsPanelModel } from "./diagnostics-panel.model";
 import type { DiagnosticsPanelLineInput } from "./panel-data";
 
+export type { DiagnosticsPanelLineInput };
+
 export function buildDiagnosticsPanelInput(
   container: Container,
   options: {

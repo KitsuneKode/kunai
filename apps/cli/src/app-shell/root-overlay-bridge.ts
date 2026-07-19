@@ -86,6 +86,36 @@ export async function openRootOwnedOverlay(
   });
 }
 
+export type DiagnosticsOverlayPreparation = {
+  readonly recordMemorySample: (container: Container, source: string) => void;
+  readonly runYoutubeProbes: (container: Container) => Promise<void>;
+};
+
+async function loadDiagnosticsOverlayPreparation(): Promise<DiagnosticsOverlayPreparation> {
+  const { recordDiagnosticsPanelMemorySample } = await import("./diagnostics-panel-source");
+  const { runYoutubeDiagnosticsProbes } =
+    await import("@/services/youtube/youtube-diagnostics-probes");
+  return {
+    recordMemorySample: recordDiagnosticsPanelMemorySample,
+    runYoutubeProbes: async (container) => {
+      // Probe results are recorded as normal diagnostic events; the overlay
+      // reconstructs YouTube evidence via extractYoutubeProbeFromEvents.
+      await runYoutubeDiagnosticsProbes(container);
+    },
+  };
+}
+
+export async function openDiagnosticsOverlay(
+  container: Container,
+  source: string,
+  load: () => Promise<DiagnosticsOverlayPreparation> = loadDiagnosticsOverlayPreparation,
+): Promise<void> {
+  const preparation = await load();
+  preparation.recordMemorySample(container, source);
+  await preparation.runYoutubeProbes(container);
+  await openRootOwnedOverlay(container, { type: "diagnostics" });
+}
+
 export async function openNotificationsOverlay(container: Container): Promise<{
   readonly playback: NotificationPlaybackIntent | null;
 }> {

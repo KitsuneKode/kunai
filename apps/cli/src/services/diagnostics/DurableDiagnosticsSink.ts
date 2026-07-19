@@ -2,12 +2,19 @@ import type { DiagnosticEventsRepository } from "@kunai/storage";
 
 import type { DiagnosticEvent } from "./diagnostic-event";
 
+export type DurableDiagnosticsFailure = {
+  readonly operation: string;
+  readonly message: string;
+};
+
 export interface DurableDiagnosticsSinkOptions {
   readonly repository: DiagnosticEventsRepository;
   readonly maxQueueSize?: number;
+  readonly onFailure?: (failure: DurableDiagnosticsFailure) => void;
 }
 
 const DEFAULT_MAX_QUEUE_SIZE = 1_000;
+const MAX_FAILURE_MESSAGE_LENGTH = 240;
 
 export class AsyncDurableDiagnosticsSink {
   private readonly maxQueueSize: number;
@@ -17,6 +24,10 @@ export class AsyncDurableDiagnosticsSink {
 
   constructor(private readonly options: DurableDiagnosticsSinkOptions) {
     this.maxQueueSize = options.maxQueueSize ?? DEFAULT_MAX_QUEUE_SIZE;
+  }
+
+  isFailed(): boolean {
+    return this.failed;
   }
 
   enqueue(event: DiagnosticEvent): void {
@@ -74,12 +85,35 @@ export class AsyncDurableDiagnosticsSink {
 
   getRecent(limit?: number): readonly DiagnosticEvent[] {
     this.flush();
-    return this.options.repository.listRecent(limit) as readonly DiagnosticEvent[];
+    if (this.failed) return [];
+    try {
+      return this.options.repository.listRecent(limit) as readonly DiagnosticEvent[];
+    } catch (error) {
+      this.markFailed("listRecent", error);
+      return [];
+    }
+  }
+
+  listBySession(sessionId: string, limit?: number): readonly DiagnosticEvent[] {
+    this.flush();
+    if (this.failed) return [];
+    try {
+      return this.options.repository.listBySession(sessionId, limit) as readonly DiagnosticEvent[];
+    } catch (error) {
+      this.markFailed("listBySession", error);
+      return [];
+    }
   }
 
   getSnapshot(limit?: number): readonly DiagnosticEvent[] {
     this.flush();
-    return this.options.repository.getSnapshot(limit) as readonly DiagnosticEvent[];
+    if (this.failed) return [];
+    try {
+      return this.options.repository.getSnapshot(limit) as readonly DiagnosticEvent[];
+    } catch (error) {
+      this.markFailed("getSnapshot", error);
+      return [];
+    }
   }
 
   flush(): void {
@@ -94,8 +128,8 @@ export class AsyncDurableDiagnosticsSink {
       if (!event) continue;
       try {
         this.options.repository.insert(event);
-      } catch {
-        this.failed = true;
+      } catch (error) {
+        this.markFailed("insert", error);
         this.queue.length = 0;
         return;
       }
@@ -103,8 +137,8 @@ export class AsyncDurableDiagnosticsSink {
 
     try {
       this.options.repository.prune();
-    } catch {
-      this.failed = true;
+    } catch (error) {
+      this.markFailed("prune", error);
     }
   }
 
@@ -112,8 +146,23 @@ export class AsyncDurableDiagnosticsSink {
     this.queue.length = 0;
     try {
       this.options.repository.clear();
+    } catch (error) {
+      this.markFailed("clear", error);
+    }
+  }
+
+  private markFailed(operation: string, error: unknown): void {
+    this.failed = true;
+    this.queue.length = 0;
+    const raw = error instanceof Error ? error.message : String(error);
+    const message =
+      raw.length <= MAX_FAILURE_MESSAGE_LENGTH
+        ? raw
+        : `${raw.slice(0, MAX_FAILURE_MESSAGE_LENGTH - 3)}...`;
+    try {
+      this.options.onFailure?.({ operation, message });
     } catch {
-      this.failed = true;
+      // Failure callbacks must never break diagnostics.
     }
   }
 
