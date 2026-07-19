@@ -6,6 +6,7 @@ import {
   formatMpvEpisodeDisplayTitle,
   shouldAbortPlaybackBeforeLaunch,
 } from "@/app/playback/mpv-session-lifecycle";
+import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
 import {
   formatPlaybackStreamRoute,
   playbackStartupStageForPlayerEvent,
@@ -29,6 +30,8 @@ import type { PlaybackStartupStage } from "@/services/playback/playback-startup-
 export type MpvPlaybackSessionHooks = {
   readonly onFeedback: (update: MpvPlaybackFeedback) => void;
   readonly onStartupMark?: (stage: PlaybackStartupStage) => void;
+  /** Abort in-flight mpv when the unconditional startup stall fires (no first progress). */
+  readonly onStartupStallAbort?: () => void | Promise<void>;
   readonly onPresenceLaunch: (input: {
     readonly positionSeconds: number;
     readonly subtitleCount?: number;
@@ -111,12 +114,39 @@ export async function runMpvPlaybackSession(
   let latestPresencePositionSeconds = input.startAt > 0 ? input.startAt : 0;
   let latestPresenceDurationSeconds = 0;
   let bootstrapStallTimer: ReturnType<typeof setTimeout> | null = null;
+  let startupStallFired = false;
+  let startupStallArmed = false;
 
   const clearBootstrapStallTimer = () => {
     if (bootstrapStallTimer !== null) {
       clearTimeout(bootstrapStallTimer);
       bootstrapStallTimer = null;
     }
+  };
+
+  const armStartupStallWatchdog = () => {
+    if (startupStallArmed || startupStallFired) return;
+    startupStallArmed = true;
+    clearBootstrapStallTimer();
+    bootstrapStallTimer = setTimeout(() => {
+      if (startupStallFired) return;
+      startupStallFired = true;
+      hooks.setPlaybackStatus("stalled");
+      const route = formatPlaybackStreamRoute(stream);
+      hooks.onFeedback({
+        detail: "Startup stalled — trying next source",
+        note: [
+          `startup-stall: no playback progress within ${STARTUP_STALL_TIMEOUT_MS / 1000}s`,
+          route,
+          "auto failover · o source · f fallback",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      });
+      void Promise.resolve(hooks.onStartupStallAbort?.()).catch(() => {
+        /* stop best-effort; play() return path marks suspectedDeadStream */
+      });
+    }, STARTUP_STALL_TIMEOUT_MS);
   };
 
   hooks.onFeedback({ detail: "Launching player", note: input.subtitleStatus });
@@ -149,26 +179,9 @@ export async function runMpvPlaybackSession(
         const startupStage = playbackStartupStageForPlayerEvent(event);
         if (startupStage) hooks.onStartupMark?.(startupStage);
 
-        if (startupStage === "subtitle-attached") {
-          clearBootstrapStallTimer();
-          bootstrapStallTimer = setTimeout(() => {
-            const status = hooks.getPlaybackStatus();
-            if (status === "playing" || status === "buffering" || status === "seeking") {
-              return;
-            }
-            hooks.setPlaybackStatus("stalled");
-            const route = formatPlaybackStreamRoute(stream);
-            hooks.onFeedback({
-              detail: "Bootstrap stalled",
-              note: [
-                "bootstrap-stall: no playback progress within 45s after subtitles",
-                route,
-                "o source · f fallback · purge via /commands",
-              ]
-                .filter(Boolean)
-                .join(" · "),
-            });
-          }, 45_000);
+        // Unconditional 20s watchdog from player launch (not subtitle-gated).
+        if (startupStage === "player-launch" || startupStage === "mpv-process-started") {
+          armStartupStallWatchdog();
         }
 
         if (startupStage === "first-progress" || event.type === "playback-started") {
@@ -231,6 +244,13 @@ export async function runMpvPlaybackSession(
     });
 
     hooks.setPlaybackStatus("finished");
+    if (startupStallFired) {
+      return {
+        ...result,
+        suspectedDeadStream: true,
+        endReason: result.endReason === "eof" ? result.endReason : "error",
+      };
+    }
     return result;
   } finally {
     clearBootstrapStallTimer();

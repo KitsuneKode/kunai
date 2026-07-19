@@ -42,6 +42,19 @@ export type PlaybackStatus =
   | "paused"
   | "finished"
   | "error";
+
+export function isPlaybackSessionActive(status: PlaybackStatus): boolean {
+  return (
+    status === "loading" ||
+    status === "ready" ||
+    status === "buffering" ||
+    status === "seeking" ||
+    status === "stalled" ||
+    status === "playing" ||
+    status === "paused"
+  );
+}
+
 export type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 export interface EpisodeNavigationState {

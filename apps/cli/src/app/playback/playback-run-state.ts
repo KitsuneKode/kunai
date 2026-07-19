@@ -33,6 +33,10 @@ export interface PlaybackRunState {
   autoSourceRecoverAttempts: number;
   /** Episode scope key the auto-recover attempt counter is bound to. */
   autoRecoverEpisodeKey: string | null;
+  /** Source ids already tried during startup stall / fail-to-start failover this episode. */
+  triedFailoverSourceIds: string[];
+  /** True after an automatic provider hop was spent for this episode failover cascade. */
+  startupProviderHopUsed: boolean;
   /** Forced local/online source selection for the next episode, when requested. */
   episodePlaybackSourceOverride: "local" | "online" | null;
   /** Timing metadata for a locally-resolved (offline) episode, when applicable. */
@@ -58,6 +62,8 @@ export function createPlaybackRunState(init: {
     pendingRecomputeSources: false,
     autoSourceRecoverAttempts: 0,
     autoRecoverEpisodeKey: null,
+    triedFailoverSourceIds: [],
+    startupProviderHopUsed: false,
     episodePlaybackSourceOverride: null,
     localEpisodeTiming: null,
     localPlaybackJobId: null,

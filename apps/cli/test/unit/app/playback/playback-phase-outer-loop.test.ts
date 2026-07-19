@@ -184,6 +184,28 @@ describe("planEpisodeIterationDirective (resolve failure)", () => {
     ).toEqual({ kind: "exit", result: "back_to_results" });
   });
 
+  test("Esc cancel never hops providers even when a fallback exists", () => {
+    expect(
+      planEpisodeIterationDirective({
+        ...base,
+        resolveAborted: true,
+        resolveAbortIntent: "cancel",
+        hasCompatibleFallbackProvider: true,
+      }),
+    ).toEqual({ kind: "exit", result: "back_to_results" });
+  });
+
+  test("fallback intent without compatible provider exits to results", () => {
+    expect(
+      planEpisodeIterationDirective({
+        ...base,
+        resolveAborted: true,
+        resolveAbortIntent: "fallback",
+        hasCompatibleFallbackProvider: false,
+      }),
+    ).toEqual({ kind: "exit", result: "back_to_results" });
+  });
+
   test("resolve failure retry restarts; dismiss exits", () => {
     expect(
       planEpisodeIterationDirective({

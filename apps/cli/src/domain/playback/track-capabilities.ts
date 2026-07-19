@@ -107,6 +107,22 @@ function isSourceSwitchable(state: PlaybackInventoryOptionState): boolean {
   return state === "available" || state === "skipped" || state === "failed";
 }
 
+/** Servers-style status chip for the source picker detail line. */
+function sourceStatusBadge(state: PlaybackInventoryOptionState): string | undefined {
+  switch (state) {
+    case "selected":
+      return "playing";
+    case "skipped":
+      return "skipped";
+    case "failed":
+      return "failed";
+    case "disabled":
+      return "unavailable";
+    default:
+      return undefined;
+  }
+}
+
 function riskFromState(state: PlaybackInventoryOptionState): TrackCapabilityRisk {
   switch (state) {
     case "failed":
@@ -210,6 +226,7 @@ export function buildTrackCapabilities(
     const primaryAudio = group.audioLanguages?.[0]?.toLowerCase().split("-")[0];
     const audioBadge =
       primaryAudio && primaryAudio !== "en" ? serverAudioBadge(group.audioLanguages) : undefined;
+    const statusBadge = sourceStatusBadge(group.state);
     const baseDetail = detailFromHintsAndNativeLabels(group.hints, group.nativeLabels, group.label);
     push({
       section: "source",
@@ -218,7 +235,7 @@ export function buildTrackCapabilities(
       selected: group.state === "selected",
       enabled: isSourceSwitchable(group.state),
       reason: group.disabledReason,
-      detail: [audioBadge, baseDetail].filter(Boolean).join("  ·  ") || undefined,
+      detail: [statusBadge, audioBadge, baseDetail].filter(Boolean).join("  ·  ") || undefined,
       risk: riskFromState(group.state),
     });
   }

@@ -50,6 +50,7 @@ import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy
 import { planProviderCandidates } from "./ProviderCandidatePlanner";
 import type { ProviderEndpointHealthService } from "./ProviderEndpointHealthService";
 import {
+  cancellationReasonFromSignal,
   decideResolveResultCommit,
   type ResolveCancellationReason,
 } from "./ResolveResultCommitPolicy";
@@ -216,6 +217,47 @@ export class PlaybackResolveService {
     },
   ) {}
 
+  /**
+   * Commit decision for a resolved stream. The cancellation reason rides on
+   * the aborting signal (AbortController.abort(reason)); the explicit input
+   * field remains as a test/override seam. `signal` may be a combined
+   * deadline signal — its reason wins, falling back to the caller's signal.
+   */
+  private resolveCommitDecision(
+    input: PlaybackResolveInput,
+    signal: AbortSignal = input.signal,
+  ): ReturnType<typeof decideResolveResultCommit> {
+    return decideResolveResultCommit({
+      hasResolvedStream: true,
+      signalAborted: signal.aborted,
+      cancellationReason:
+        input.cancellationReason ??
+        cancellationReasonFromSignal(signal) ??
+        cancellationReasonFromSignal(input.signal),
+    });
+  }
+
+  /**
+   * Output for a validated cache hit. A hit already lives in the cache, so a
+   * late arrival after cancellation needs no extra write — the stream is
+   * simply withheld from playback unless the session is still active.
+   */
+  private cachedHitOutput(
+    input: PlaybackResolveInput,
+    stream: StreamInfo,
+    provenance: "cached" | "revalidated",
+  ): PlaybackResolveOutput {
+    const commit = this.resolveCommitDecision(input);
+    return {
+      stream:
+        commit.action === "persist-and-return" ? { ...stream, cacheProvenance: provenance } : null,
+      providerId: input.providerId,
+      attempts: [],
+      cacheStatus: "hit",
+      cacheProvenance: provenance,
+    };
+  }
+
   /** High-confidence ARM season map for the title's AniList entry, if cached. */
   private tmdbSeasonHintFor(title: PlaybackResolveInput["title"]): number | undefined {
     const anilistId = title.externalIds?.anilistId;
@@ -284,23 +326,11 @@ export class PlaybackResolveService {
           // Fall through to refetch below
         } else {
           input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
-          return {
-            stream: { ...cachedStream, cacheProvenance: "revalidated" },
-            providerId: input.providerId,
-            attempts: [],
-            cacheStatus: "hit",
-            cacheProvenance: "revalidated",
-          };
+          return this.cachedHitOutput(input, cachedStream, "revalidated");
         }
       } else {
         input.onEvent?.({ type: "cache-hit", providerId: input.providerId });
-        return {
-          stream: { ...cachedStream, cacheProvenance: "cached" },
-          providerId: input.providerId,
-          attempts: [],
-          cacheStatus: "hit",
-          cacheProvenance: "cached",
-        };
+        return this.cachedHitOutput(input, cachedStream, "cached");
       }
     }
 
@@ -379,9 +409,17 @@ export class PlaybackResolveService {
           if (health.healthy) {
             emitSelectionDecision(input, input.providerId, inventoryResult);
             input.onEvent?.({ type: "cache-hit-validated", providerId: input.providerId });
-            await this.persistResolvedStream(input, input.providerId, inventoryStream);
+            // Unlike a cache hit, an inventory hit learned fresh health data,
+            // so the keep paths persist before returning.
+            const commit = this.resolveCommitDecision(input);
+            if (commit.action !== "discard") {
+              await this.persistResolvedStream(input, input.providerId, inventoryStream);
+            }
             return {
-              stream: { ...inventoryStream, cacheProvenance: "revalidated" },
+              stream:
+                commit.action === "persist-and-return"
+                  ? { ...inventoryStream, cacheProvenance: "revalidated" }
+                  : null,
               providerId: input.providerId,
               attempts: [],
               cacheStatus: "hit",
@@ -592,11 +630,7 @@ export class PlaybackResolveService {
         } else if (resolvedProviderId === input.providerId) {
           this.deps.titleProviderHealth?.recordCleanSuccess(input.title.id, input.providerId);
         }
-        const commitDecision = decideResolveResultCommit({
-          hasResolvedStream: true,
-          signalAborted: resolveSignal.aborted,
-          cancellationReason: input.cancellationReason,
-        });
+        const commitDecision = this.resolveCommitDecision(input, resolveSignal);
 
         if (commitDecision.action !== "discard") {
           await this.persistResolvedStream(

@@ -5,6 +5,7 @@ import {
   providerLaneToShellMode,
   resolveProviderLaneFromMetadata,
 } from "@/domain/provider-lane";
+import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
@@ -195,7 +196,7 @@ export async function applyProviderPickerSelection(input: {
 
   const next = container.stateManager.getState();
   const recomputeRequested =
-    isPlaybackActiveForProviderSwitch(next.playbackStatus) && Boolean(next.currentEpisode);
+    isPlaybackSessionActive(next.playbackStatus) && Boolean(next.currentEpisode);
   if (recomputeRequested) {
     void container.playerControl.recomputeCurrentPlayback(reason);
   }
@@ -207,15 +208,4 @@ export function resolveStreamProviderId(
   stream: { readonly providerResolveResult?: { readonly providerId?: string } } | null,
 ): string | undefined {
   return stream?.providerResolveResult?.providerId;
-}
-
-function isPlaybackActiveForProviderSwitch(status: string): boolean {
-  return (
-    status === "loading" ||
-    status === "ready" ||
-    status === "buffering" ||
-    status === "seeking" ||
-    status === "stalled" ||
-    status === "playing"
-  );
 }

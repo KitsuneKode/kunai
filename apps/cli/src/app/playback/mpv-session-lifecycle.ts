@@ -4,8 +4,8 @@ import type { EpisodeInfo, PlaybackResult, TitleInfo } from "@/domain/types";
 import type { PlayerControlService } from "@/infra/player/PlayerControlService";
 import type { PlayerService } from "@/infra/player/PlayerService";
 
-/** One automatic re-resolve per episode before surfacing post-play recovery. */
-export const MAX_AUTO_SOURCE_RECOVER_ATTEMPTS = 1;
+/** Startup stall → next source → next provider budget (sources + one provider hop). */
+export const MAX_AUTO_SOURCE_RECOVER_ATTEMPTS = 4;
 
 const MPV_TERMINAL_OSD_MS = 12_000;
 

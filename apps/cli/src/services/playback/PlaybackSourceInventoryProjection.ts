@@ -286,9 +286,11 @@ function projectSourceGroups(
       candidateCount: streams.length,
       providerStatus: source.status,
       hints: uniqueStrings([
-        typeof source.metadata?.flavorArchetype === "string"
-          ? source.metadata.flavorArchetype
-          : undefined,
+        typeof source.metadata?.sourceDetail === "string"
+          ? source.metadata.sourceDetail
+          : typeof source.metadata?.flavorArchetype === "string"
+            ? source.metadata.flavorArchetype
+            : undefined,
         ...buildPlaybackInventoryEvidenceHints({
           state,
           providerStatus: source.status,

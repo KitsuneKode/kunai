@@ -19,6 +19,8 @@ describe("createPlaybackRunState", () => {
       pendingRecomputeSources: false,
       autoSourceRecoverAttempts: 0,
       autoRecoverEpisodeKey: null,
+      triedFailoverSourceIds: [],
+      startupProviderHopUsed: false,
       episodePlaybackSourceOverride: null,
       localEpisodeTiming: null,
       localPlaybackJobId: null,

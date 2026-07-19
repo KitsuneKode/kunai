@@ -188,6 +188,10 @@ export class PlaybackResolveWorkService {
       entry.promise.then(
         (result) => {
           detach();
+          if (signal.aborted) {
+            reject(abortError());
+            return undefined;
+          }
           resolve(result);
           return undefined;
         },

@@ -283,7 +283,10 @@ export class PlayerServiceImpl implements PlayerService {
       skipCredits: policy.skipCredits,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
-      mpv: this.deps.mpv,
+      mpv: {
+        ...this.deps.mpv,
+        startupPriority: this.deps.config.startupPriority,
+      },
     });
 
     return result;
@@ -336,7 +339,10 @@ export class PlayerServiceImpl implements PlayerService {
       onControlReady: (control) => this.deps.playerControl.setActive(control),
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
-      mpv: this.deps.mpv,
+      mpv: {
+        ...this.deps.mpv,
+        startupPriority: this.deps.config.startupPriority,
+      },
     });
   }
 
@@ -388,7 +394,10 @@ export class PlayerServiceImpl implements PlayerService {
       this.persistentSession = await PersistentMpvSession.create({
         stream,
         options: sharedOptions,
-        mpv: this.deps.mpv,
+        mpv: {
+          ...this.deps.mpv,
+          startupPriority: this.deps.config.startupPriority,
+        },
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.deps.playerControl.setActive(control),
       });
