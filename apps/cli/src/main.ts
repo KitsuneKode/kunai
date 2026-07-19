@@ -696,8 +696,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await maybeRunAutoCleanupDownloads(container);
 
   if (args.supportBundle) {
-    const { exportLocalSupportBundle } =
-      await import("./services/diagnostics/export-local-support-bundle");
+    const { exportLocalSupportBundle } = await import("./app-shell/export-local-support-bundle");
     const written = await exportLocalSupportBundle(container);
     process.stdout.write(`${written.path}\n`);
     await disposeContainer(container);

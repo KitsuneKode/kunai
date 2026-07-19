@@ -1516,8 +1516,8 @@ export function RootOverlayShell({
     ) {
       void (async () => {
         try {
-          const { exportLocalSupportBundle } =
-            await import("@/services/diagnostics/export-local-support-bundle");
+          const { exportLocalSupportBundle, buildSupportBundleExportDiagnosticContext } =
+            await import("@/app-shell/export-local-support-bundle");
           const written = await exportLocalSupportBundle(container);
           setOverlayStatus(`Support bundle written: ${written.path}`);
           container.diagnosticsService.record(
@@ -1526,8 +1526,8 @@ export function RootOverlayShell({
               status: "succeeded",
               severity: "healthy",
               recommendedAction: "none",
-              message: `Diagnostics exported to ${written.path}`,
-              context: { path: written.fileName, tracePath: container.debugTracePath },
+              message: `Diagnostics exported to ${written.fileName}`,
+              context: buildSupportBundleExportDiagnosticContext(written.fileName),
             }),
           );
         } catch (error) {

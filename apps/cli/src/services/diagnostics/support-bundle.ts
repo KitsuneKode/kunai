@@ -251,6 +251,21 @@ export function applySupportBundleSizeBudget(
     };
   }
 
+  if (utf8ByteLength(JSON.stringify(candidate)) > maxBytes) {
+    return {
+      ...candidate,
+      truncation: {
+        truncated: true,
+        maxBytes,
+        droppedOldestEventCount: dropped,
+        note:
+          dropped > 0
+            ? `Bundle exceeded ${maxBytes} bytes after dropping ${dropped} oldest diagnostic event${dropped === 1 ? "" : "s"}; non-event payload alone remains oversized.`
+            : `Bundle exceeded ${maxBytes} bytes; non-event payload alone is oversized.`,
+      },
+    };
+  }
+
   return candidate;
 }
 

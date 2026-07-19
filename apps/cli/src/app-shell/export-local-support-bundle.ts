@@ -1,7 +1,12 @@
+import { basename } from "node:path";
+
 import type { Container } from "@/container";
 import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
-import type { DiagnosticsBundleEnvironment } from "@/services/diagnostics/support-bundle";
+import type {
+  DiagnosticsBundleEnvironment,
+  DiagnosticsSupportBundle,
+} from "@/services/diagnostics/support-bundle";
 import {
   buildDeclaredSchemaVersions,
   probeMpvVersion,
@@ -12,9 +17,13 @@ import {
 } from "@/services/diagnostics/write-support-bundle";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 
+export type ExportLocalSupportBundleResult = WriteSupportBundleResult & {
+  readonly bundle: DiagnosticsSupportBundle;
+};
+
 /**
- * Shared local-only support-bundle export used by `/export-diagnostics`,
- * the diagnostics overlay key, and `--support-bundle`. Never uploads.
+ * App-shell orchestrator for local-only support-bundle export.
+ * Keeps `@/container` out of diagnostics services. Never uploads.
  */
 export async function exportLocalSupportBundle(
   container: Container,
@@ -22,8 +31,11 @@ export async function exportLocalSupportBundle(
     readonly directory?: string;
     readonly now?: Date;
     readonly mpvVersion?: string | null;
+    /** Filename prefix; defaults to support-bundle. Report-issue may use a report prefix. */
+    readonly filePrefix?: string;
+    readonly prunePrefixes?: readonly string[];
   } = {},
-): Promise<WriteSupportBundleResult> {
+): Promise<ExportLocalSupportBundleResult> {
   const state = container.stateManager.getState();
   const environment = await buildSupportBundleEnvironment(container, {
     mpvVersion: options.mpvVersion,
@@ -42,19 +54,20 @@ export async function exportLocalSupportBundle(
     bundle,
     directory: options.directory,
     now: options.now,
+    filePrefix: options.filePrefix,
   });
-  await pruneOldDiagnosticFiles({
-    dir: options.directory ?? process.cwd(),
-    prefix: "kunai-support-bundle-",
-    maxFiles: 10,
-  });
-  // Also prune legacy export filenames so older `/export-diagnostics` files rotate out.
-  await pruneOldDiagnosticFiles({
-    dir: options.directory ?? process.cwd(),
-    prefix: "kunai-diagnostics-export-",
-    maxFiles: 10,
-  });
-  return written;
+  const prunePrefixes = options.prunePrefixes ?? [
+    "kunai-support-bundle-",
+    "kunai-diagnostics-export-",
+  ];
+  for (const prefix of prunePrefixes) {
+    await pruneOldDiagnosticFiles({
+      dir: options.directory ?? process.cwd(),
+      prefix,
+      maxFiles: 10,
+    });
+  }
+  return { ...written, bundle };
 }
 
 export async function buildSupportBundleEnvironment(
@@ -84,4 +97,11 @@ export async function buildSupportBundleEnvironment(
       memoryTrend: health.memoryTrend.detail,
     },
   };
+}
+
+/** Safe post-export diagnostic context: basename only, no absolute paths or trace paths. */
+export function buildSupportBundleExportDiagnosticContext(fileName: string): {
+  readonly path: string;
+} {
+  return { path: basename(fileName) };
 }

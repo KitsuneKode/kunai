@@ -13,15 +13,19 @@ export type WriteSupportBundleResult = {
 };
 
 /** Build a cwd-relative support-bundle filename the user can see and open. */
-export function buildSupportBundleFileName(now: Date = new Date()): string {
-  return `${SUPPORT_BUNDLE_FILE_PREFIX}${now.toISOString().replace(/[:.]/g, "-")}.json`;
+export function buildSupportBundleFileName(
+  now: Date = new Date(),
+  filePrefix: string = SUPPORT_BUNDLE_FILE_PREFIX,
+): string {
+  return `${filePrefix}${now.toISOString().replace(/[:.]/g, "-")}.json`;
 }
 
 export function resolveSupportBundlePath(
   directory: string = process.cwd(),
   now: Date = new Date(),
+  filePrefix: string = SUPPORT_BUNDLE_FILE_PREFIX,
 ): WriteSupportBundleResult {
-  const fileName = buildSupportBundleFileName(now);
+  const fileName = buildSupportBundleFileName(now, filePrefix);
   return { fileName, path: join(directory, fileName) };
 }
 
@@ -30,10 +34,12 @@ export async function writeSupportBundleFile(input: {
   readonly bundle: DiagnosticsSupportBundle;
   readonly directory?: string;
   readonly now?: Date;
+  readonly filePrefix?: string;
 }): Promise<WriteSupportBundleResult> {
   const target = resolveSupportBundlePath(
     input.directory ?? process.cwd(),
     input.now ?? new Date(),
+    input.filePrefix ?? SUPPORT_BUNDLE_FILE_PREFIX,
   );
   await writeAtomicJson(target.path, input.bundle);
   return target;

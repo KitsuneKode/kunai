@@ -7,10 +7,41 @@ export type BundleRedactionOptions = {
 
 const HOME_PATH_RE = /(?:^|[\s"'=])(\/(?:home|Users)\/[^/\s"'<>]+)/g;
 const URL_RE = /https?:\/\/[^\s"'<>]+/gi;
+/** Inventory / evidence lines often embed `host cdn.example` without a full URL. */
+const HOST_HINT_RE =
+  /\bhost\s+([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)\b/gi;
+
+/**
+ * Object keys whose string values must never appear in a support bundle.
+ * Values are replaced with `[redacted]` and also scrubbed from sibling strings
+ * (e.g. `message`) so query/title text cannot survive via free-form fields.
+ */
+const SENSITIVE_CONTENT_KEYS = new Set([
+  "query",
+  "search",
+  "searchquery",
+  "q",
+  "title",
+  "titlename",
+  "displaytitle",
+  "mediatitle",
+  "watchedtitle",
+  "showtitle",
+  "animetitle",
+  "seriestitle",
+  "movietitle",
+  "episodetitle",
+]);
+
+const HOST_FIELD_KEYS = new Set(["host", "streamhost", "cdnhost"]);
 
 /**
  * Pure support-bundle text redactor: collapses absolute home paths to `~`,
- * strips URL userinfo + query strings, and removes usernames from env/process strings.
+ * strips URL userinfo + query strings, redacts stream hosts / host hints,
+ * and removes usernames from env/process strings.
+ *
+ * Non-stream HTTPS URLs keep their host after query/auth stripping so maintainers
+ * can still see which API endpoint failed (e.g. `https://api.example/v1/meta`).
  */
 export function redactBundleText(value: string, options: BundleRedactionOptions = {}): string {
   let out = value;
@@ -22,6 +53,7 @@ export function redactBundleText(value: string, options: BundleRedactionOptions 
     return `${prefix}~`;
   });
   out = out.replace(URL_RE, (url) => redactBundleUrl(url));
+  out = out.replace(HOST_HINT_RE, "host [redacted-host]");
   if (options.username && options.username.length > 0) {
     out = redactUsernameOccurrences(out, options.username);
   }
@@ -30,15 +62,9 @@ export function redactBundleText(value: string, options: BundleRedactionOptions 
 
 /** Recursively redact strings inside JSON-like values for support bundles. */
 export function redactBundleValue(value: unknown, options: BundleRedactionOptions = {}): unknown {
-  if (typeof value === "string") return redactBundleText(value, options);
-  if (Array.isArray(value)) return value.map((item) => redactBundleValue(item, options));
-  if (!value || typeof value !== "object") return value;
-
-  const output: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    output[key] = redactBundleValue(entry, options);
-  }
-  return output;
+  const secrets = collectSensitiveLiterals(value);
+  const structured = redactStructure(value, options, undefined);
+  return secrets.length > 0 ? scrubLiteralSecrets(structured, secrets, options) : structured;
 }
 
 export function resolveBundleRedactionOptions(
@@ -50,6 +76,88 @@ export function resolveBundleRedactionOptions(
     (typeof env.USERNAME === "string" && env.USERNAME.length > 0 ? env.USERNAME : undefined) ??
     (homeDir ? usernameFromHomeDir(homeDir) : undefined);
   return { homeDir, username };
+}
+
+function collectSensitiveLiterals(value: unknown): string[] {
+  const found: string[] = [];
+  walkSensitiveLiterals(value, undefined, found);
+  // Longest first so nested phrases (title inside query) scrub cleanly.
+  return [...new Set(found)].sort((a, b) => b.length - a.length);
+}
+
+function walkSensitiveLiterals(value: unknown, key: string | undefined, found: string[]): void {
+  if (typeof value === "string") {
+    if (key && SENSITIVE_CONTENT_KEYS.has(key.toLowerCase()) && value.trim().length >= 2) {
+      found.push(value.trim());
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) walkSensitiveLiterals(item, key, found);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [entryKey, entry] of Object.entries(value)) {
+    walkSensitiveLiterals(entry, entryKey, found);
+  }
+}
+
+function redactStructure(
+  value: unknown,
+  options: BundleRedactionOptions,
+  key: string | undefined,
+): unknown {
+  if (typeof value === "string") {
+    if (key && SENSITIVE_CONTENT_KEYS.has(key.toLowerCase())) {
+      return "[redacted]";
+    }
+    const normalizedKey = key?.toLowerCase();
+    if (normalizedKey && HOST_FIELD_KEYS.has(normalizedKey)) {
+      return "[redacted-host]";
+    }
+    if (normalizedKey === "label" && looksLikeHostname(value)) {
+      return "[redacted-host]";
+    }
+    return redactBundleText(value, options);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactStructure(item, options, key));
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entry] of Object.entries(value)) {
+    if (SENSITIVE_CONTENT_KEYS.has(entryKey.toLowerCase())) {
+      output[entryKey] = "[redacted]";
+      continue;
+    }
+    output[entryKey] = redactStructure(entry, options, entryKey);
+  }
+  return output;
+}
+
+function scrubLiteralSecrets(
+  value: unknown,
+  secrets: readonly string[],
+  options: BundleRedactionOptions,
+): unknown {
+  if (typeof value === "string") {
+    let out = value;
+    for (const secret of secrets) {
+      if (secret.length < 2) continue;
+      out = out.split(secret).join("[redacted]");
+    }
+    return redactBundleText(out, options);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => scrubLiteralSecrets(item, secrets, options));
+  }
+  if (!value || typeof value !== "object") return value;
+  const output: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    output[key] = scrubLiteralSecrets(entry, secrets, options);
+  }
+  return output;
 }
 
 function redactBundleUrl(value: string): string {
@@ -81,6 +189,12 @@ function looksLikeStreamUrl(url: URL): boolean {
     path.includes("/stream") ||
     path.includes("/play")
   );
+}
+
+function looksLikeHostname(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length < 3 || trimmed.includes("/") || trimmed.includes(" ")) return false;
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(trimmed);
 }
 
 function redactUsernameOccurrences(value: string, username: string): string {

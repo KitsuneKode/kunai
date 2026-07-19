@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-19T17:27:32.367Z",
+  "syncedAt": "2026-07-19T18:48:10.553Z",
   "version": "0.2.6",
   "cliVersion": "0.2.6",
-  "cliSourceRevision": "17b9607e",
-  "cliSourceFingerprint": "cc3ee7036c0f02c7773c0fa08bba4cce2463fd156fe102f1e2cc3c8994108117",
-  "docsContentFingerprint": "4031e20d7dbcaceb0b28ddf8ab58a78460071389d566ac3396521360857a82ed",
+  "cliSourceRevision": "775733b4",
+  "cliSourceFingerprint": "7ead91f88bb50bf0a519dccea2ed6644bc448af414fbdc2a1ff51fed678caf38",
+  "docsContentFingerprint": "ed43d628500ac4656433a32eb39dd8be0c7f2ef2fedd37a179a1c8346b53ad04",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 78,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -726,6 +726,11 @@
       "short": "",
       "long": "--debug-session",
       "description": "Debug + full session trace"
+    },
+    {
+      "short": "",
+      "long": "--support-bundle",
+      "description": "Write a redacted local support bundle and exit"
     },
     {
       "short": "-h",

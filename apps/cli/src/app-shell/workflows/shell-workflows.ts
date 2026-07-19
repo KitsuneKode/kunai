@@ -13,6 +13,7 @@ import {
   buildDiagnosticsPanelInput,
   recordDiagnosticsPanelMemorySample,
 } from "@/app-shell/diagnostics-panel-source";
+import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
@@ -33,7 +34,6 @@ import {
 } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
 import { copyToClipboard, readClipboard } from "@/infra/clipboard";
-import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
 import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
@@ -49,9 +49,7 @@ import {
   buildSearchDiagnosticEvent,
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
-import { exportLocalSupportBundle } from "@/services/diagnostics/export-local-support-bundle";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
-import { pruneOldDiagnosticFiles } from "@/services/diagnostics/retention";
 import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
@@ -69,7 +67,6 @@ import {
   resolveOfflineArtifactStatus,
   resolveOfflineJobPreviewImage,
 } from "@/services/offline/offline-library";
-import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
 import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { fetchEpisodes } from "@/tmdb";
@@ -1203,6 +1200,8 @@ async function handleClearHistory(container: Container): Promise<"handled"> {
 }
 
 async function handleExportDiagnostics(container: Container): Promise<"handled"> {
+  const { buildSupportBundleExportDiagnosticContext } =
+    await import("@/app-shell/export-local-support-bundle");
   const written = await exportLocalSupportBundle(container);
   container.diagnosticsService.record(
     buildUiDiagnosticEvent({
@@ -1210,8 +1209,8 @@ async function handleExportDiagnostics(container: Container): Promise<"handled">
       status: "succeeded",
       severity: "healthy",
       recommendedAction: "none",
-      message: `Diagnostics exported to ${written.path}`,
-      context: { path: written.fileName, tracePath: container.debugTracePath },
+      message: `Diagnostics exported to ${written.fileName}`,
+      context: buildSupportBundleExportDiagnosticContext(written.fileName),
     }),
   );
   return "handled";
@@ -1238,24 +1237,15 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
   });
   if (!reportAction || reportAction === "cancel") return "handled";
   if (reportAction === "export-and-open") {
-    const fileName = `kunai-diagnostics-report-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-    const path = join(process.cwd(), fileName);
-    const state = container.stateManager.getState();
-    const bundle = container.diagnosticsService.buildSupportBundle({
-      capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
-      playbackSourceInventory: state.stream?.providerResolveResult
-        ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
-            selectedSubtitleUrl: state.stream.subtitle,
-          })
-        : null,
-      sessionState: state,
+    const { buildSupportBundleExportDiagnosticContext } =
+      await import("@/app-shell/export-local-support-bundle");
+    const written = await exportLocalSupportBundle(container, {
+      filePrefix: "kunai-diagnostics-report-",
+      prunePrefixes: ["kunai-diagnostics-report-", "kunai-support-bundle-"],
     });
-    await writeAtomicJson(path, bundle);
-    const draft = buildIssueReportDraft({ bundle, diagnosticsPath: fileName });
-    await pruneOldDiagnosticFiles({
-      dir: process.cwd(),
-      prefix: "kunai-diagnostics-report-",
-      maxFiles: 10,
+    const draft = buildIssueReportDraft({
+      bundle: written.bundle,
+      diagnosticsPath: written.fileName,
     });
     container.diagnosticsService.record(
       buildUiDiagnosticEvent({
@@ -1263,8 +1253,11 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
         status: "succeeded",
         severity: "healthy",
         recommendedAction: "none",
-        message: "Diagnostics report bundle exported",
-        context: { path: fileName, issueTitle: draft.title, tracePath: container.debugTracePath },
+        message: `Diagnostics report bundle exported to ${written.fileName}`,
+        context: {
+          ...buildSupportBundleExportDiagnosticContext(written.fileName),
+          issueTitle: draft.title,
+        },
       }),
     );
     await openIssueUrl(draft.issueUrl);
