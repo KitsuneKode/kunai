@@ -134,6 +134,7 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           make_latest: true
           body_path: .release/kunai-${{ steps.ver.outputs.tag }}.md
+          fail_on_unmatched_files: true
           files: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-arm64
@@ -146,3 +147,8 @@ jobs:
             apps/cli/dist/bin/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert published release assets
+        run: bun run scripts/verify-github-release-assets.ts "${{ steps.ver.outputs.tag }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -192,38 +192,60 @@ install_binary() {
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
 
-	require curl
-	mkdir -p "$BIN_DIR"
 	versions_dir="$DATA_DIR/versions"
 	version_path="$versions_dir/$resolved_version/kunai"
-	local tmp
+
+	if [[ "$DRY" == 1 ]]; then
+		info "Downloading $asset (v$resolved_version) ..."
+		info "[dry-run] curl -fsSL $url -o <temporary>/$asset"
+		info "[dry-run] curl -fsSL $sums -o <temporary>/SHA256SUMS"
+		write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "versioned"
+		info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+		path_hint "$BIN_DIR"
+		return
+	fi
+
+	require curl
+	mkdir -p "$BIN_DIR"
 	tmp="$(mktemp -d)"
 	trap '[[ -n "${tmp:-}" ]] && rm -rf "$tmp"' RETURN
 
 	info "Downloading $asset (v$resolved_version) ..."
-	if ! run curl -fsSL "$url" -o "$tmp/$asset"; then
+	if ! curl -fsSL "$url" -o "$tmp/$asset"; then
 		download_failed_hint "$asset"
 		exit 1
 	fi
-	if ! run curl -fsSL "$sums" -o "$tmp/SHA256SUMS"; then
+	if ! curl -fsSL "$sums" -o "$tmp/SHA256SUMS"; then
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
 
-	if [[ "$DRY" != 1 ]]; then
-		want="$(awk -v a="$asset" '$2==a {print $1}' "$tmp/SHA256SUMS")"
-		got="$(sha256_of "$tmp/$asset")"
-		if [[ -z "$want" || "$want" != "$got" ]]; then
-			err "Checksum mismatch for $asset (expected ${want:-<none>}, got $got)."
-			exit 1
-		fi
-		mkdir -p "$(dirname "$version_path")"
-		install -m 0755 "$tmp/$asset" "$version_path"
-		ln -sfn "$version_path" "$BIN_DIR/kunai"
-		if [[ "$os" == darwin ]]; then
-			xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
-			info "Cleared macOS quarantine when present (Gatekeeper may still prompt on first launch)."
-		fi
+	if [[ ! -s "$tmp/$asset" ]]; then
+		err "Downloaded asset $asset is empty; the release is incomplete."
+		download_failed_hint "$asset"
+		exit 1
+	fi
+
+	want="$(awk -v a="$asset" '$2==a {print $1}' "$tmp/SHA256SUMS")"
+	got="$(sha256_of "$tmp/$asset")"
+
+	if [[ -z "$want" ]]; then
+		err "SHA256SUMS has no entry for $asset; the release is incomplete."
+		download_failed_hint "$asset"
+		exit 1
+	fi
+
+	if [[ "$want" != "$got" ]]; then
+		err "Checksum mismatch for $asset (expected $want, got $got)."
+		exit 1
+	fi
+
+	mkdir -p "$(dirname "$version_path")"
+	install -m 0755 "$tmp/$asset" "$version_path"
+	ln -sfn "$version_path" "$BIN_DIR/kunai"
+	if [[ "$os" == darwin ]]; then
+		xattr -d com.apple.quarantine "$version_path" 2>/dev/null || true
+		info "Cleared macOS quarantine when present (Gatekeeper may still prompt on first launch)."
 	fi
 
 	write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "versioned"

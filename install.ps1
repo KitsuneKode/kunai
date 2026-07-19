@@ -23,9 +23,9 @@ $ErrorActionPreference = 'Stop'
 $DlBase = if ($env:KUNAI_DL_BASE) { $env:KUNAI_DL_BASE } else { 'https://github.com/KitsuneKode/kunai/releases' }
 $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { 'https://api.github.com/repos/KitsuneKode/kunai/releases/latest' }
 $Package = '@kitsunekode/kunai'
-$BinDir = Join-Path $env:LOCALAPPDATA 'kunai\bin'
-$DataDir = Join-Path $env:LOCALAPPDATA 'kunai'
-$ConfigDir = Join-Path $env:APPDATA 'kunai'
+$BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
+$DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
+$ConfigDir = if ($env:KUNAI_CONFIG_DIR) { $env:KUNAI_CONFIG_DIR } else { Join-Path $env:APPDATA 'kunai' }
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'
 
@@ -106,16 +106,17 @@ function Install-OptionalDeps {
     $reply = Read-Host 'Install mpv (required for playback)? [Y/n]'
     if ($reply -match '^[Nn]') { $installMpv = $false }
   }
-  if (-not $installMpv) { return }
-  if (Test-Cmd 'winget') {
-    Invoke-Step 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
-    return
+  if ($installMpv) {
+    if (Test-Cmd 'winget') {
+      Invoke-Step 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
+    }
+    elseif (Test-Cmd 'scoop') {
+      Invoke-Step 'scoop install mpv' { scoop install mpv }
+    }
+    else {
+      Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
+    }
   }
-  if (Test-Cmd 'scoop') {
-    Invoke-Step 'scoop install mpv' { scoop install mpv }
-    return
-  }
-  Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
 
   $installYtDlp = $true
   if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
@@ -141,12 +142,14 @@ function Install-Binary {
   $base = if ($Version -eq 'latest') { "$DlBase/latest/download" } else { "$DlBase/download/v$Version" }
   $versionPath = Join-Path (Join-Path $VersionsDir $resolved) 'kunai.exe'
 
-  New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-  New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
-  $tmp = Join-Path $BinDir '.kunai-new.exe'
-
   Write-Info "Downloading $asset (v$resolved) ..."
-  if (-not $DryRun) {
+  if ($DryRun) {
+    Write-Info "[dry-run] would download, verify SHA256, install to $versionPath and $BinPath"
+  }
+  else {
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
+    $tmp = Join-Path $BinDir '.kunai-new.exe'
     try {
       Invoke-WebRequest -Uri "$base/$asset" -OutFile $tmp -UseBasicParsing
       $sums = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
@@ -157,18 +160,27 @@ function Install-Binary {
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
-    $want = ($sums -split "`n" | Where-Object { $_ -match "\s$([regex]::Escape($asset))$" }) -replace '\s.*', ''
+    if ((Get-Item -Path $tmp).Length -eq 0) {
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+      throw "Downloaded asset $asset is empty; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
+    }
+
+    $want = ($sums -split "`n" |
+      Where-Object { $_ -match "\s$([regex]::Escape($asset))$" }) -replace '\s.*', ''
+
+    if ([string]::IsNullOrEmpty($want)) {
+      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+      throw "SHA256SUMS has no entry for $asset; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
+    }
+
     $got = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLower()
-    if ([string]::IsNullOrEmpty($want) -or $want -ne $got) {
+    if ($want -ne $got) {
       Remove-Item $tmp -Force -ErrorAction SilentlyContinue
       throw "Checksum mismatch for $asset (expected '$want', got '$got')."
     }
     Unblock-File -Path $tmp
     Move-Item -Force -Path $tmp -Destination $versionPath
     Copy-Item -Force -Path $versionPath -Destination $BinPath
-  }
-  else {
-    Write-Info "[dry-run] would download, verify SHA256, install to $versionPath and $BinPath"
   }
 
   Add-UserPath $BinDir

@@ -14,7 +14,7 @@ Use this before tagging a public beta or publishing packages.
 - [ ] **Runtime requirements match shipped providers** — user-facing docs only list active runtime requirements (`mpv` required; optional `yt-dlp`, optional `ffprobe`, terminal image stack) and avoid stale browser-runtime setup steps
 - [ ] **Platform install guidance is present** — Linux/macOS commands plus Windows package-manager options are documented in root README + npm README + quickstart
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
-- [ ] **AUR / brew** — track separately when maintainers pick up the release; keep CLI flags in sync with `--help` / quickstart
+- [ ] **GitHub Release assets** — all 8 binaries + `SHA256SUMS` present (`bun run scripts/verify-github-release-assets.ts`); upload uses `fail_on_unmatched_files: true`
 
 ## Smoke
 

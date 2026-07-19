@@ -91,7 +91,7 @@ curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh |
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 
-# Inspect first, pin a version, or pick a channel
+# Inspect first (no dirs created), pin a version, or pick a channel
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --version 0.3.0
 ```

@@ -33,11 +33,13 @@ On-disk layout (binary channel):
 ~/.config/kunai/install.json                  # channel manifest
 ```
 
-Dry run first when you want to inspect actions:
+Dry run first when you want to inspect actions without creating directories or downloading:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 ```
+
+If a release asset is missing or empty, the installer prints recovery options (`--method npm`, `--method bun`, `--method source`, or pin `--version X.Y.Z`).
 
 Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`.
 
