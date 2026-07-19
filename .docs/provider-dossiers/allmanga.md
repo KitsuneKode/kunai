@@ -5,7 +5,7 @@
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli`.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status:** Search and episode catalog are healthy. Some modern source payloads now return DASH-style separate audio/video tracks that Kunai does not yet model, so affected titles resolve no playable stream even though the provider data is valid.
+- **Current status (2026-07-18):** Episode resolve requires ani-cli `aaReq` AES-GCM attestation + rotated hex decrypt key (`origin/fix`). Without it the API returns `AA_CRYPTO_MISSING`. Search/episode catalog POST paths still work without `aaReq`.
 
 ## Current Evidence
 
@@ -21,10 +21,9 @@
 The source flow matches ani-cli:
 
 ```text
-episode GraphQL persisted GET
-  -> optional POST fallback
-  -> "tobeparsed" AES-CTR payload
-  -> decoded source names + encoded API paths
+episode GraphQL persisted GET + aaReq + x-build-id
+  -> "tobeparsed" AES-CTR payload (hex key)
+  -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
 ```

@@ -61,8 +61,8 @@ export type VidkingFlavorDefinition = {
   readonly audioLanguage: string;
   readonly moviesOnly?: boolean;
   /**
-   * Resolve probe order (speed/stability). Neon/Cypher first so we do not burn
-   * time on empty Yoru like a naive UI walk.
+   * Resolve probe order. English/primary servers follow catalogOrder with Yoru
+   * first; Cypher stays early as a Kunai direct-mp4 escape hatch (after Yoru).
    */
   readonly phaseAOrder?: number;
   /**
@@ -77,7 +77,8 @@ export type VidkingFlavorDefinition = {
 /**
  * Cineby catalog:
  *   UI (catalogOrder): Yoru → Neon → Sage → Jett → Breach → Vyse → Killjoy → Fade → Omen → Raze
- *   Resolve (phaseAOrder): Neon → Cypher → Yoru → …  (stable/fast first, like a good first click)
+ *   Resolve (phaseAOrder): Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse
+ * Localized Killjoy/Fade/Omen/Raze stay Phase B / lazy.
  * Cypher is Kunai-only (explicit quality ladder; not on the website).
  */
 const FLAVORS: readonly VidkingFlavorDefinition[] = [
@@ -90,7 +91,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "wings-cdn",
     audioLanguage: "en",
     catalogOrder: 0,
-    phaseAOrder: 2,
+    phaseAOrder: 0,
   },
   {
     id: "cineby-neon",
@@ -100,7 +101,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "wings-neon2",
     audioLanguage: "en",
     catalogOrder: 1,
-    phaseAOrder: 0,
+    phaseAOrder: 2,
   },
   {
     id: "cineby-sage",
@@ -110,6 +111,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "wings-ym",
     audioLanguage: "en",
     catalogOrder: 2,
+    phaseAOrder: 3,
   },
   {
     id: "cineby-jett",
@@ -119,6 +121,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "wings-jett",
     audioLanguage: "en",
     catalogOrder: 3,
+    phaseAOrder: 4,
   },
   {
     id: "cineby-breach",
@@ -128,6 +131,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     endpoint: "wings-m4uhd",
     audioLanguage: "en",
     catalogOrder: 4,
+    phaseAOrder: 5,
   },
   {
     id: "cineby-vyse",
@@ -138,6 +142,7 @@ const FLAVORS: readonly VidkingFlavorDefinition[] = [
     filterQuality: "English",
     audioLanguage: "en",
     catalogOrder: 5,
+    phaseAOrder: 6,
   },
   {
     id: "cineby-killjoy",

@@ -126,7 +126,10 @@ describe("stream health", () => {
       headers: { Referer: "https://provider.example/watch" },
       fetchImpl: async (url, init) => {
         calls.push({ url, init });
-        return new Response("#EXTM3U\n", { status: 200 });
+        if (String(url).endsWith("master.m3u8")) {
+          return new Response("#EXTM3U\n#EXTINF:3,\n/seg-1.ts\n", { status: 200 });
+        }
+        return new Response(new Uint8Array(2048).fill(1), { status: 206 });
       },
       timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
     });
@@ -136,7 +139,7 @@ describe("stream health", () => {
       probed: true,
       strategy: "hls-manifest-get",
     });
-    expect(calls).toHaveLength(1);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
     expect(calls[0]?.init.method).toBe("GET");
     expect(calls[0]?.init.headers).toEqual({ Referer: "https://provider.example/watch" });
   });

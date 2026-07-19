@@ -38,6 +38,19 @@ export function formatAnimeSourceLabel(input: AnimeSourceLabelInput): string {
 }
 
 /**
+ * Hybrid Miruro detail line (character is the primary label): `Sub · hard sub`.
+ * Omits the server/character token so Tracks can show it under Gintoki/Kagura.
+ */
+export function formatAnimeSourceDetail(input: {
+  readonly audio: AnimeAudioCategory;
+  readonly subtitleMode?: AnimeSubtitleMode;
+}): string {
+  const audio = input.audio === "dub" ? "Dub" : "Sub";
+  const mode = formatAnimeSubtitleMode(input.subtitleMode);
+  return mode ? `${audio} · ${mode}` : audio;
+}
+
+/**
  * Normalize raw keys (`fm-hls`, `kiwi`) without re-title-casing already human
  * labels (`Kiwi hardsub`, `FM HLS`) that providers polish themselves.
  */

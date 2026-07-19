@@ -121,7 +121,7 @@ describe("videasy preferred source fallback", () => {
     );
     // 1movies is deprecated, not in phase A
     expect(endpointSet.has("1movies")).toBe(false);
-    // Phase A resolve order is Neon/Cypher-first; inventory still shows Yoru first in UI.
+    // Phase A resolve order is Yoru → Cypher → Neon …; inventory still shows Yoru first in UI.
     expect(endpointSet.has("neon2")).toBe(true);
     expect(endpointSet.has("downloader2")).toBe(true);
     expect(endpointSet.has("cdn")).toBe(true);

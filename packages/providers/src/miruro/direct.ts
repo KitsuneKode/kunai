@@ -22,7 +22,11 @@ import type {
   SubtitleCandidate,
 } from "@kunai/types";
 
-import { miruroInventorySourceId } from "../catalogs/miruro";
+import {
+  miruroInventorySourceId,
+  miruroCharacterLabel,
+  miruroTechnicalServerLabel,
+} from "../catalogs/miruro";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import {
   type AnimeEpisodeMetadata,
@@ -34,9 +38,10 @@ import {
 import {
   animeQualityFields,
   formatAnimeSourceArchetype,
-  formatAnimeSourceLabel,
+  formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
+import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -55,14 +60,24 @@ export const MIRURO_REFERER = "https://www.miruro.bz/";
 /**
  * Pipe hosts that work in-browser (see user network capture on miruro.bz watch pages).
  * Prefer `www.` first — that is what Chrome hits for `/api/secure/pipe`.
- * Bun/fetch often gets Cloudflare 403 HTML; curl --http2 succeeds on the same URL.
+ * Bun/fetch often gets Cloudflare 403 HTML; curl --http2 sometimes succeeds on the same URL.
+ * Omit TLS-dead hosts (`miruro.tv`) so they do not burn the engine attempt budget.
  */
-export const MIRURO_PIPE_BASE_URLS = [
-  "https://www.miruro.bz",
-  "https://www.miruro.ru",
-  "https://miruro.bz",
-  "https://miruro.ru",
-] as const;
+export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miruro.ru"] as const;
+
+/**
+ * Miruro pipe API only answers from the `www.` hosts. The bare `miruro.bz` /
+ * `miruro.ru` origins are 301 redirects to `www.` and still return Cloudflare
+ * 403 HTML at the pipe path when blocked, so they add only latency and burn the
+ * fail-fast budget without ever resolving. `miruro.com` serves a different
+ * static app shell (no `/api/secure/pipe`), and `.tv` / `.to` are TLS-dead.
+ *
+ * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Set one
+ * above the real mirror count so a transient block on the primary host still
+ * lets the secondary `www.` mirror get a full attempt (the old threshold of 2
+ * aborted after both `www.` hosts failed, never reaching a working fallback).
+ */
+const MIRURO_WAF_FAIL_FAST_THRESHOLD = 3;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -76,7 +91,7 @@ const sourceCache = new TTLCache<string, unknown>(300_000);
 
 type MiruroPipeStream = {
   readonly url?: string;
-  readonly type?: "hls" | "embed";
+  readonly type?: "hls" | "embed" | "mp4";
   readonly quality?: string;
   readonly referer?: string;
   readonly resolution?: { readonly width?: number; readonly height?: number };
@@ -117,23 +132,6 @@ export type MiruroServerProfile = {
   readonly label: string;
   readonly subtitleDelivery: MiruroSubtitleDelivery;
   readonly hardSubLanguage?: string;
-};
-
-const MIRURO_PROVIDER_LABELS: Record<string, string> = {
-  kiwi: "Kiwi",
-  bee: "Bee",
-  ANIMEKAI: "AnimeKai",
-  ANIMEZ: "AnimeZ",
-  hop: "Hop",
-  ZORO: "Zoro",
-  ally: "Ally",
-  dune: "Dune",
-  // Servers observed live 2026-06-07 (see miruro research report) — without a
-  // label they render as the raw key. The candidate builder already iterates
-  // every server in the episodes `providers` map, so these just need names.
-  pewe: "Pewe",
-  moo: "Moo",
-  bonk: "Bonk",
 };
 
 export type MiruroResolvePayloadOptions = {
@@ -196,7 +194,7 @@ export function createMiruroPipeRequestUrls(encodedPayload: string): string[] {
   return MIRURO_PIPE_BASE_URLS.map((baseUrl) => `${baseUrl}/api/secure/pipe?e=${encodedPayload}`);
 }
 
-export function createMiruroResultFromPayload({
+export async function createMiruroResultFromPayload({
   input,
   sourceData,
   audioCategory,
@@ -206,7 +204,7 @@ export function createMiruroResultFromPayload({
   startedAt,
   events = [],
   failures = [],
-}: MiruroResolvePayloadOptions): ProviderResolveResult | null {
+}: MiruroResolvePayloadOptions): Promise<ProviderResolveResult | null> {
   const policy =
     cachePolicy ??
     createProviderCachePolicy({
@@ -218,9 +216,12 @@ export function createMiruroResultFromPayload({
       startupPriority: input.startupPriority,
     });
   const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
-  const rawStreams = rankMiruroStreams(
-    sourceData.streams?.filter((s) => s.type === "hls" && s.url) ?? [],
+  const expandedStreams = await expandMiruroPipeStreams(
+    sourceData.streams ?? [],
+    context,
+    context?.signal,
   );
+  const rawStreams = rankMiruroStreams(expandedStreams.filter((s) => s.type === "hls" && s.url));
   if (rawStreams.length === 0) return null;
   const subtitlePresentation = resolveMiruroSubtitlePresentation(
     audioCategory,
@@ -233,11 +234,15 @@ export function createMiruroResultFromPayload({
     hardSubLanguage: subtitlePresentation.hardSubLanguage,
   };
   const displaySourceLabel = displayMiruroSourceLabel(resolvedServerProfile, audioCategory);
+  const sourceDetail = formatAnimeSourceDetail({
+    audio: audioCategory,
+    subtitleMode: miruroSubtitleDeliveryToMode(resolvedServerProfile.subtitleDelivery),
+  });
   const subtitleDelivery = subtitlePresentation.subtitleDelivery;
   const playbackHost = resolveMiruroPlaybackHost(rawStreams[0]?.url);
   const flavorArchetype = formatAnimeSourceArchetype({
     audio: audioCategory,
-    detail: resolvedServerProfile.label,
+    detail: displaySourceLabel,
   });
 
   const seekBarVttUrl = firstMiruroThumbnailUrl(sourceData.thumbnails);
@@ -290,10 +295,18 @@ export function createMiruroResultFromPayload({
     const streamId = `stream:${MIRURO_PROVIDER_ID}:${Bun.hash(raw.url).toString(36)}`;
     const variantId = `variant:${MIRURO_PROVIDER_ID}:${sourceId}:${qualityLabel}`;
     const streamReferer = raw.referer || MIRURO_REFERER;
+    const streamOrigin = (() => {
+      try {
+        return new URL(streamReferer).origin;
+      } catch {
+        return "https://www.miruro.bz";
+      }
+    })();
     const streamSubtitleDelivery =
       subtitleDelivery === "unknown"
         ? undefined
         : (subtitleDelivery as "hardcoded" | "embedded" | "external");
+    const isMp4 = raw.type === "mp4";
 
     streams.push({
       id: streamId,
@@ -301,8 +314,8 @@ export function createMiruroResultFromPayload({
       sourceId,
       variantId,
       url: raw.url,
-      protocol: "hls",
-      container: "m3u8",
+      protocol: isMp4 ? "mp4" : "hls",
+      container: isMp4 ? "mp4" : "m3u8",
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
       hardSubLanguage: resolvedServerProfile.hardSubLanguage,
@@ -318,11 +331,14 @@ export function createMiruroResultFromPayload({
       artwork,
       headers: {
         Referer: streamReferer,
+        Origin: streamOrigin,
         "User-Agent": USER_AGENT,
       },
       confidence: 0.95,
       cachePolicy: policy,
-      ...(timingMetadata ? { metadata: timingMetadata } : {}),
+      metadata: timingMetadata
+        ? { ...timingMetadata, sourceDetail, server: resolvedServerProfile.id }
+        : { sourceDetail, server: resolvedServerProfile.id },
     });
 
     variants.push({
@@ -331,8 +347,8 @@ export function createMiruroResultFromPayload({
       sourceId,
       qualityLabel,
       qualityRank,
-      protocol: "hls",
-      container: "m3u8",
+      protocol: isMp4 ? "mp4" : "hls",
+      container: isMp4 ? "mp4" : "m3u8",
       audioLanguages: audioCategory === "sub" ? ["ja"] : ["en"],
       presentation: audioCategory,
       hardSubLanguage: resolvedServerProfile.hardSubLanguage,
@@ -370,6 +386,7 @@ export function createMiruroResultFromPayload({
     providerId: MIRURO_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
     selectionDecision: selection.decision,
+    streamReachabilityVerified: true,
     sources: [
       {
         id: sourceId,
@@ -390,6 +407,7 @@ export function createMiruroResultFromPayload({
           nativeLabel: serverProfile.label,
           flavorLabel: displaySourceLabel,
           flavorArchetype,
+          sourceDetail,
         },
       },
     ],
@@ -478,6 +496,36 @@ function normalizeMiruroTimingSegment(
   return { start: segment.start, end: segment.end };
 }
 
+/**
+ * Server try order. `kiwi` streams come from uwucdn.top/owocdn.top CDN with
+ * kwik.cx referral — these serve real video. `bonk` CDN (ibyteimg.com) is an
+ * image-only CDN that returns PNG placeholders for segments, so it goes last.
+ * Everything else follows the API's own discovery order.
+ */
+const MIRURO_SERVER_TRY_ORDER = [
+  "kiwi",
+  "pewe",
+  "bee",
+  "hop",
+  "moo",
+  "dune",
+  "ANIMEKAI",
+  "ANIMEZ",
+  "ZORO",
+  "ally",
+  "bonk",
+] as const;
+
+function sortMiruroProviderEntries(
+  entries: readonly (readonly [string, MiruroProviderEntry | undefined])[],
+): readonly (readonly [string, MiruroProviderEntry | undefined])[] {
+  const rank = (key: string): number => {
+    const index = MIRURO_SERVER_TRY_ORDER.indexOf(key as (typeof MIRURO_SERVER_TRY_ORDER)[number]);
+    return index >= 0 ? index : MIRURO_SERVER_TRY_ORDER.length;
+  };
+  return [...entries].sort(([a], [b]) => rank(a) - rank(b));
+}
+
 export function buildMiruroCycleCandidates({
   providers,
   episodes,
@@ -499,9 +547,21 @@ export function buildMiruroCycleCandidates({
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
   let priority = 0;
-  const defaultServers = ["kiwi", "bee", "hop", "ally", "pewe", "moo", "bonk"] as const;
+  const defaultServers = [
+    "kiwi",
+    "bee",
+    "hop",
+    "ally",
+    "pewe",
+    "moo",
+    "bonk",
+    "dune",
+    "ANIMEKAI",
+    "ANIMEZ",
+    "ZORO",
+  ] as const;
   const providerEntries = providers
-    ? Object.entries(providers)
+    ? sortMiruroProviderEntries(Object.entries(providers))
     : defaultServers.map((server) => [server, { episodes }] as const);
 
   for (const audioCategory of audioOrder) {
@@ -511,8 +571,13 @@ export function buildMiruroCycleCandidates({
         episodeNum,
       );
       if (!episodeEntry?.id) continue;
-      const serverProfile = createMiruroServerProfile(providerKey);
+      const serverProfile = createMiruroServerProfile(providerKey, audioCategory);
       const sourceId = miruroInventorySourceId(serverProfile.id, audioCategory);
+      const characterLabel = displayMiruroSourceLabel(serverProfile, audioCategory);
+      const sourceDetail = formatAnimeSourceDetail({
+        audio: audioCategory,
+        subtitleMode: miruroSubtitleDeliveryToMode(serverProfile.subtitleDelivery),
+      });
       const subtitlePriorityBoost =
         preferredSubtitleDelivery === "hardcoded" && audioCategory === "sub" ? -5_000 : 0;
       candidates.push({
@@ -521,7 +586,7 @@ export function buildMiruroCycleCandidates({
         sourceId,
         serverId: serverProfile.id,
         groupId: audioCategory,
-        label: displayMiruroSourceLabel(serverProfile, audioCategory),
+        label: characterLabel,
         nativeLabel: serverProfile.label,
         normalizedAudioLanguage: audioCategory === "sub" ? "ja" : "en",
         normalizedSubtitleLanguage: serverProfile.hardSubLanguage,
@@ -533,7 +598,8 @@ export function buildMiruroCycleCandidates({
           episodeId: episodeEntry.id,
           serverId: serverProfile.id,
           subtitleDelivery: serverProfile.subtitleDelivery,
-        } satisfies MiruroCycleCandidateMetadata,
+          sourceDetail,
+        } satisfies MiruroCycleCandidateMetadata & { readonly sourceDetail: string },
       });
       priority += 1;
     }
@@ -558,9 +624,18 @@ function buildMiruroSourceInventoryCandidates(
     const subtitleDelivery =
       metadata.subtitleDelivery === "embedded" || metadata.subtitleDelivery === "hardcoded"
         ? metadata.subtitleDelivery
-        : "unknown";
-    const label = candidate.label ?? candidate.nativeLabel ?? sourceId;
-    const serverLabel = candidate.nativeLabel ?? serverId;
+        : audioCategory === "sub"
+          ? "hardcoded"
+          : "unknown";
+    const label = candidate.label ?? miruroCharacterLabel(serverId, audioCategory);
+    const serverLabel = candidate.nativeLabel ?? miruroTechnicalServerLabel(serverId);
+    const sourceDetail =
+      typeof metadata.sourceDetail === "string"
+        ? metadata.sourceDetail
+        : formatAnimeSourceDetail({
+            audio: audioCategory,
+            subtitleMode: miruroSubtitleDeliveryToMode(subtitleDelivery),
+          });
     const host = miruroInventoryHost();
 
     return [
@@ -603,8 +678,9 @@ function buildMiruroSourceInventoryCandidates(
           flavorLabel: label,
           flavorArchetype: formatAnimeSourceArchetype({
             audio: audioCategory,
-            detail: serverLabel,
+            detail: label,
           }),
+          sourceDetail,
         },
       },
     ];
@@ -661,29 +737,171 @@ function parseMiruroCycleCandidateMetadata(
   };
 }
 
+function collectMiruroAvailableAudioModes(
+  providers: Record<string, MiruroProviderEntry | undefined>,
+  episodeNum: number,
+): ("sub" | "dub")[] {
+  const modes = new Set<"sub" | "dub">();
+  for (const entry of Object.values(providers)) {
+    if (findMiruroEpisodeEntry(entry?.episodes?.sub, episodeNum)) modes.add("sub");
+    if (findMiruroEpisodeEntry(entry?.episodes?.dub, episodeNum)) modes.add("dub");
+  }
+  return (["sub", "dub"] as const).filter((mode) => modes.has(mode));
+}
+
+/**
+ * Normalise Miruro pipe stream rows into final, playable leaves.
+ *
+ * Miruro servers return two incompatible shapes:
+ *  - Labeled leaf playlists (e.g. `kiwi`): each row carries `quality` /
+ *    `resolution` (`1080p`, `720p`, `360p`) and a direct `.m3u8` URL. The
+ *    quality ladder comes straight from the pipe.
+ *  - Unlabeled master playlists (e.g. `bonk`, `pewe`, `bee`): rows have no
+ *    `quality`, and the HLS row is a `master.m3u8`.
+ *
+ * For labeled streams the quality is already final and passes through.
+ * For unlabeled masters we attempt a brief fetch to expand into quality
+ * variants (most direct-play CDNs respond in <500ms). If the fetch fails
+ * (403 / timeout / non-master body) the original URL passes through as a
+ * single `auto` row — mpv plays a master playlist directly.
+ *
+ * Expansion fetches are run in parallel and capped at 1.5 s so that
+ * gatekept CDNs (owocdn via kwik.cx) do not block the pipeline.
+ */
+async function expandMiruroPipeStreams(
+  streams: readonly MiruroPipeStream[],
+  context: ProviderRuntimeContext | undefined,
+  signal?: AbortSignal,
+): Promise<MiruroPipeStream[]> {
+  const seen = new Set<string>();
+  const out: MiruroPipeStream[] = [];
+
+  function push(stream: MiruroPipeStream): void {
+    if (!stream.url || seen.has(stream.url)) return;
+    seen.add(stream.url);
+    out.push({ ...stream, isActive: stream.isActive ?? true });
+  }
+
+  const expandable: { stream: MiruroPipeStream; url: string; referer: string }[] = [];
+
+  for (const stream of streams) {
+    if (!stream.url || stream.type === "embed") continue;
+    if (
+      stream.type === "mp4" ||
+      (Boolean(stream.quality) && /\d+p/i.test(String(stream.quality)))
+    ) {
+      push(stream);
+      continue;
+    }
+    if (looksLikeHlsMasterUrl(stream.url)) {
+      expandable.push({ stream, url: stream.url, referer: stream.referer || MIRURO_REFERER });
+      continue;
+    }
+    push(stream);
+  }
+
+  if (expandable.length === 0) return out;
+
+  const fetchImpl =
+    context?.fetch?.fetch.bind(context.fetch) ??
+    ((url: string, init?: RequestInit) => fetch(url, init));
+
+  const results = await Promise.allSettled(
+    expandable.map(async ({ url, referer }) => {
+      const fetchHeaders: Record<string, string> = {
+        "User-Agent": USER_AGENT,
+        Referer: referer,
+        Origin: (() => {
+          try {
+            return new URL(referer).origin;
+          } catch {
+            return "https://www.miruro.bz";
+          }
+        })(),
+      };
+      const expandSignal = AbortSignal.timeout(1_500);
+      const combinedSignal = signal ? anySignal(signal, expandSignal) : expandSignal;
+      return expandHlsMasterPlaylist({
+        fetch: fetchImpl,
+        masterUrl: url,
+        headers: fetchHeaders,
+        signal: combinedSignal,
+      });
+    }),
+  );
+
+  for (let i = 0; i < expandable.length; i++) {
+    const entry = expandable[i];
+    if (!entry) continue;
+    const { stream } = entry;
+    const settled = results[i];
+    if (!settled || settled.status !== "fulfilled") {
+      push(stream);
+      continue;
+    }
+
+    const variants = settled.value;
+    const first = variants[0];
+    const isAutoFallback =
+      variants.length === 1 &&
+      first?.qualityLabel === "auto" &&
+      first?.url === stream.url &&
+      (first?.qualityRank ?? 0) <= 0;
+
+    if (isAutoFallback) {
+      push(stream);
+      continue;
+    }
+
+    for (const variant of variants) {
+      if (seen.has(variant.url)) continue;
+      seen.add(variant.url);
+      out.push({
+        ...stream,
+        url: variant.url,
+        quality: variant.qualityLabel,
+        resolution:
+          variant.qualityRank > 0
+            ? { width: Math.round((variant.qualityRank * 16) / 9), height: variant.qualityRank }
+            : stream.resolution,
+        isActive: stream.isActive ?? true,
+      });
+    }
+  }
+
+  return out;
+}
+
+function anySignal(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) {
+      controller.abort(s.reason);
+      return controller.signal;
+    }
+    s.addEventListener("abort", () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
+}
+
 function displayMiruroSourceLabel(
   serverProfile: MiruroServerProfile,
   audioCategory: MiruroAudioCategory,
 ): string {
-  return formatAnimeSourceLabel({
-    audio: audioCategory,
-    serverLabel: serverProfile.label,
-    subtitleMode: miruroSubtitleDeliveryToMode(serverProfile.subtitleDelivery),
-  });
+  return miruroCharacterLabel(serverProfile.id, audioCategory);
 }
 
-function createMiruroServerProfile(providerKey: string): MiruroServerProfile {
+function createMiruroServerProfile(
+  providerKey: string,
+  audioCategory: MiruroAudioCategory = "sub",
+): MiruroServerProfile {
   return {
     id: providerKey,
-    label: MIRURO_PROVIDER_LABELS[providerKey] ?? normalizeMiruroProviderLabel(providerKey),
-    subtitleDelivery: "unknown",
+    label: miruroTechnicalServerLabel(providerKey),
+    // Align with catalog defaults: sub assumes hardsub until pipe proves soft.
+    subtitleDelivery: audioCategory === "sub" ? "hardcoded" : "unknown",
+    hardSubLanguage: audioCategory === "sub" ? "en" : undefined,
   };
-}
-
-function normalizeMiruroProviderLabel(providerKey: string): string {
-  const spaced = providerKey.replace(/[_-]+/g, " ").trim();
-  if (!spaced) return "Unknown";
-  return spaced.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function resolveMiruroSubtitlePresentation(
@@ -923,20 +1141,25 @@ function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<strin
  * Bun/Node fetch often gets CF 403 HTML on /api/secure/pipe while the same URL works
  * with curl --http2 (browser network capture on www.miruro.bz). Prefer native fetch,
  * then fall back to curl HTTP/2 when available.
+ *
+ * When `wafLikely` is set (prior mirror already returned CF HTML), skip the long curl
+ * wait — curl rarely clears a region-wide WAF block and burns the resolve budget.
  */
 async function fetchMiruroPipeBody(
   url: string,
   headers: Record<string, string>,
   signal?: AbortSignal,
   fetchPort?: ProviderRuntimeContext["fetch"],
+  options: { readonly wafLikely?: boolean } = {},
 ): Promise<{
   readonly status: number;
   readonly text: string;
   readonly xObfuscated: string | null;
+  readonly cloudflareHtml: boolean;
 }> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
   const response = await requester(url, {
-    signal: signal ?? AbortSignal.timeout(8_000),
+    signal: signal ?? AbortSignal.timeout(options.wafLikely ? 3_000 : 8_000),
     headers,
   });
   const responseText = await response.text();
@@ -948,6 +1171,7 @@ async function fetchMiruroPipeBody(
       status: response.status,
       text: responseText,
       xObfuscated: response.headers.get("x-obfuscated"),
+      cloudflareHtml: false,
     };
   }
   // Curl is a response-level Cloudflare fallback, not a retry for transport
@@ -961,14 +1185,35 @@ async function fetchMiruroPipeBody(
       status: response.status,
       text: responseText,
       xObfuscated: response.headers.get("x-obfuscated"),
+      cloudflareHtml: false,
+    };
+  }
+
+  const fetchWasCloudflare =
+    isCloudflareHtmlBody(responseText) ||
+    (response.status === 403 && isCloudflareHtmlBody(responseText));
+
+  // Region-wide WAF: do not spend 20s of curl on every remaining mirror.
+  if (options.wafLikely && fetchWasCloudflare) {
+    return {
+      status: response.status || 403,
+      text: responseText,
+      xObfuscated: null,
+      cloudflareHtml: true,
     };
   }
 
   const curlPath = Bun.which("curl");
   if (!curlPath) {
-    throw new Error("HTTP 403");
+    return {
+      status: response.status || 403,
+      text: responseText,
+      xObfuscated: null,
+      cloudflareHtml: fetchWasCloudflare || isCloudflareHtmlBody(responseText),
+    };
   }
 
+  const curlMaxTime = fetchWasCloudflare || options.wafLikely ? "8" : "20";
   const args = [
     curlPath,
     "-sS",
@@ -995,7 +1240,7 @@ async function fetchMiruroPipeBody(
     "-w",
     "\n__KUNAI_CURL_STATUS__:%{http_code}",
     "--max-time",
-    "20",
+    curlMaxTime,
     url,
   ];
 
@@ -1034,6 +1279,7 @@ async function fetchMiruroPipeBody(
       status,
       text,
       xObfuscated: isMiruroObfuscatedPipeBody(text, null) ? "2" : null,
+      cloudflareHtml: isCloudflareHtmlBody(text),
     };
   } finally {
     signal?.removeEventListener("abort", onAbort);
@@ -1052,6 +1298,7 @@ async function pipeCall(
   const payload = { path, method: "GET" as const, query: q, body: null, version: "0.2.0" };
   const encoded = bytesToBase64url(new TextEncoder().encode(JSON.stringify(payload)));
   let lastError: unknown;
+  let wafHits = 0;
 
   const anilistId =
     typeof query.anilistId === "number" || typeof query.anilistId === "string"
@@ -1069,6 +1316,7 @@ async function pipeCall(
         headers,
         signal ?? context.signal,
         context.fetch,
+        { wafLikely: wafHits > 0 },
       );
       if (
         candidate.status >= 200 &&
@@ -1085,12 +1333,29 @@ async function pipeCall(
         }
         return JSON.parse(json);
       }
+      if (
+        candidate.cloudflareHtml ||
+        (candidate.status === 403 && isCloudflareHtmlBody(candidate.text))
+      ) {
+        wafHits += 1;
+        lastError = new Error("HTTP 403 (cloudflare html)");
+        if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
+          throw new Error(
+            "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)",
+            { cause: lastError },
+          );
+        }
+        continue;
+      }
       lastError = new Error(
         `HTTP ${candidate.status}${isCloudflareHtmlBody(candidate.text) ? " (cloudflare html)" : ""}`,
       );
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
       lastError = error;
+      if (error instanceof Error && error.message.includes("Cloudflare WAF on multiple mirrors")) {
+        throw error;
+      }
     }
   }
 
@@ -1166,6 +1431,15 @@ export const miruroProviderModule: CoreProviderModule = {
         input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
       ).catalogMode;
       const fallbackAudio = targetAudio === "dub" ? "sub" : "dub";
+      const availableModes = collectMiruroAvailableAudioModes(epData.providers, episodeNum);
+      if (availableModes.length > 0) {
+        emitTraceEvent(events, context, {
+          type: "inventory:audio-modes",
+          providerId: MIRURO_PROVIDER_ID,
+          message: `Episode catalog exposes ${availableModes.join(" and ")} audio modes`,
+          attributes: { modes: availableModes.join(",") },
+        });
+      }
       const cycleCandidates = buildMiruroCycleCandidates({
         providers: epData.providers,
         episodeNum,
@@ -1195,7 +1469,10 @@ export const miruroProviderModule: CoreProviderModule = {
         candidateTimeoutMs: 20_000,
         resolveCandidate: async (candidate) => {
           const metadata = parseMiruroCycleCandidateMetadata(candidate, context);
-          const serverProfile = createMiruroServerProfile(metadata.serverId);
+          const serverProfile = createMiruroServerProfile(
+            metadata.serverId,
+            metadata.audioCategory,
+          );
           const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
@@ -1225,7 +1502,7 @@ export const miruroProviderModule: CoreProviderModule = {
             });
           }
 
-          const result = createMiruroResultFromPayload({
+          const result = await createMiruroResultFromPayload({
             input,
             sourceData: srcData ?? {},
             audioCategory: metadata.audioCategory,

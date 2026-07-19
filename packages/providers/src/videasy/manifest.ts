@@ -62,10 +62,10 @@ export const videasyManifest = defineProviderManifest({
   notes: [
     "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at); api.wingsdatabase.com is a mirror.",
     "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
-    "2026-07-16: Inventory UI order matches cineby Servers (Yoru first). Resolve probes Neon → Cypher → Yoru for speed/stability.",
-    "2026-07-16: Skip stream preflight on balanced/fast (cineby-like); quality-first still validates.",
+    "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
+    "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",
     "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
-    "Cineplay (bc-frontend) is the default Videasy client profile; origin/referer follow cineplay.to.",
+    "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
     "Do not mark browser-safe because local decrypt/runtime behavior is required.",
   ],
 });

@@ -4,6 +4,7 @@ import {
   allmangaSubtitleMode,
   animeQualityFields,
   formatAnimeSourceArchetype,
+  formatAnimeSourceDetail,
   formatAnimeSourceLabel,
   miruroSubtitleDeliveryToMode,
 } from "../src/shared/anime-source-presentation";
@@ -32,6 +33,13 @@ describe("anime source presentation", () => {
         subtitleMode: "soft",
       }),
     ).toBe("Sub · Kiwi hardsub · soft sub");
+  });
+
+  test("formats hybrid Miruro detail without the character/server token", () => {
+    expect(formatAnimeSourceDetail({ audio: "sub", subtitleMode: "hard" })).toBe("Sub · hard sub");
+    expect(formatAnimeSourceDetail({ audio: "dub", subtitleMode: "unknown" })).toBe(
+      "Dub · subtitles unknown",
+    );
   });
 
   test("quality fields normalize auto and height ranks for both anime providers", () => {

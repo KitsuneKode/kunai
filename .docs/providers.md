@@ -169,21 +169,24 @@ Playback selection and language policy:
 - **Favorites vs title default:** favorites remain global config bias; a manual source pick on one title writes the title default and wins over favorites for that title until changed.
 - **Language seam:** `mediaLanguageProfileFor` (via `playback-profile-context`) supplies audio/subtitle/quality for resolve, prefetch, cache keys, and mpv handoff. Anime audio intent uses `resolveAnimeAudioIntent` (`original`/`ja` → sub catalog, `en`/`dub` → dub catalog).
 - **Prefetch/cache:** subtitle preference mismatch may soft-reuse prepared video; sub↔dub audio mode change is a hard miss and must re-resolve. Audio-mode switches invalidate episode caches but keep the title source default.
-- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed (AllManga does this when the catalog exposes sub and dub episode lists).
+- **Tracks sub/dub rows:** only when provider trace emits `inventory:audio-modes` with both modes confirmed (AllManga and Miruro emit this when the episode catalog exposes sub and/or dub).
 
 Source inventory and language normalization:
 
 - Use `packages/providers/src/shared/source-inventory.ts` for stable source,
   stream, and variant IDs, quality normalization/ranking, source evidence, and
   stream-to-source/variant projection.
+- Use `packages/providers/src/shared/hls-ladder.ts` (`expandHlsMasterPlaylist`) to
+  expand lone HLS master playlists into ranked quality candidates for Tracks
+  `/quality`. Wired for Miruro masters, AllManga `master.m3u8` links, and Vidlink
+  playlists.
 - Use strict ISO language fields for public stream/subtitle language data.
   Provider labels such as `Vietsub`, `H-SUB`, `HindiCast`, `FlowCast`, or
   site-specific server names belong in evidence/metadata, not in primary
   language fields.
 - VidKing and Rivestream use the shared helpers for series/movie source
-  inventory. AllManga and Miruro already expose anime-specific sub/dub/hardsub
-  evidence and should be moved further only when the provider hierarchy is kept
-  intact.
+  inventory. AllManga keeps technical `Sub · Server · mode` labels; Miruro uses
+  hybrid character-primary labels with `Sub/Dub · mode` detail.
 - UI handoff rules live in
   [.docs/source-inventory-ui-handoff.md](./source-inventory-ui-handoff.md).
 
@@ -400,9 +403,12 @@ If the provider has native search or episode listing, export standalone function
 - when fixing this family of providers, check:
   - search GraphQL query shape
   - episode list query shape
-  - `tobeparsed` decoding behavior
+  - episode source GET with persisted query + `aaReq` AES-GCM attestation (`x-build-id`, epoch/build_id) — without this the API returns `AA_CRYPTO_MISSING`
+  - `tobeparsed` AES-CTR decoding key (ani-cli hex key on `origin/fix`, not SHA-256 of a passphrase)
   - source-name inventory and ranking
   - downstream link extraction from decoded source URLs
+
+Parity tip: local ani-cli `master` may lag the crypto rotation on `origin/fix` (`get_aa_req`). Prefer that branch when AllAnime episode resolve breaks.
 
 Recommended workflow:
 

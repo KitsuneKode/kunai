@@ -6,6 +6,13 @@
 - **Production module:** `packages/providers/src/miruro/*`.
 - **Current status (2026-07-11):** **demote from default.** Live `container.engine.resolve(..., "miruro")` (One Piece AniList `21` / matrix E1159 fixture) fails before stream candidates. Anime default path remains AllAnime.
 
+## Production status (2026-07-18)
+
+- **Labels:** Hybrid — primary Tracks label is Gintama character (`Gintoki`, `Kagura`, …); detail is `Sub · hard sub` / `Dub · …` via `metadata.sourceDetail`. Emits `inventory:audio-modes` when the episode payload exposes sub and/or dub.
+- **HLS quality:** Lone Pipe `master.m3u8` rows expand through shared `expandHlsMasterPlaylist` ([`packages/providers/src/shared/hls-ladder.ts`](../../packages/providers/src/shared/hls-ladder.ts)) into multiple quality candidates for `/quality`.
+- **Live pipe (this environment):** `/api/secure/pipe` on `miruro.bz` / `miruro.ru` may return **HTTP 403 Cloudflare HTML**; fail-fast after 2 consecutive CF HTML mirrors.
+- **Recommended disposition:** keep **demoted from default** (`animeProviderPriority` default remains `["allanime"]`). Re-promote after opt-in live matrix passes.
+
 ## Production status (2026-07-11)
 
 - **Live matrix:** **fail** — One Piece fixture, isolated profile. Engine reports attempt timeout after `provider:start` (default ~12s) with zero streams.

@@ -10,17 +10,19 @@ test("miruroInventorySourceId keeps sub and dub as distinct source ids", () => {
   expect(miruroInventorySourceId("kiwi", "sub")).not.toBe(miruroInventorySourceId("kiwi", "dub"));
 });
 
-test("getMiruroKnownCatalog exposes separate sub and dub rows per server", () => {
+test("getMiruroKnownCatalog uses hybrid character-primary labels", () => {
   const catalog = getMiruroKnownCatalog(["sub", "dub"]);
   const kiwiSub = catalog.find((entry) => entry.sourceId.endsWith(":kiwi:sub"));
   const kiwiDub = catalog.find((entry) => entry.sourceId.endsWith(":kiwi:dub"));
   expect(kiwiSub).toBeDefined();
   expect(kiwiDub).toBeDefined();
   expect(kiwiSub?.sourceId).not.toBe(kiwiDub?.sourceId);
-  expect(kiwiSub?.label).toBe("Sub · Kiwi · hard sub");
-  expect(kiwiDub?.label).toBe("Dub · Kiwi · subtitles unknown");
-  expect(kiwiSub?.subtitle).toBe("Gintoki · sub");
-  expect(kiwiDub?.subtitle).toBe("Kagura · dub");
+  expect(kiwiSub?.label).toBe("Gintoki");
+  expect(kiwiDub?.label).toBe("Kagura");
+  expect(kiwiSub?.subtitle).toBe("Sub · hard sub");
+  expect(kiwiDub?.subtitle).toBe("Dub · subtitles unknown");
+  expect(kiwiSub?.metadata?.flavorArchetype).toBe("Gintoki · sub");
+  expect(kiwiDub?.metadata?.flavorArchetype).toBe("Kagura · dub");
   expect(kiwiSub?.host).toBe("www.miruro.bz");
 });
 
@@ -32,7 +34,7 @@ test("getMiruroKnownCatalog only exposes audio categories confirmed for the titl
   expect(catalog.some((entry) => entry.sourceId.endsWith(":dub"))).toBe(false);
 });
 
-test("allmanga and miruro catalogs share Sub/Dub · Server · mode labels", () => {
+test("allmanga keeps technical Sub/Dub · Server labels; miruro uses characters", () => {
   const allmangaSub = getAllmangaKnownCatalog("sub");
   const allmangaDub = getAllmangaKnownCatalog("dub");
   const defaultSub = allmangaSub.find((entry) => entry.sourceId.endsWith(":default"));
@@ -43,7 +45,8 @@ test("allmanga and miruro catalogs share Sub/Dub · Server · mode labels", () =
   expect(defaultDub?.subtitle).toBe("Nijika · dub");
 
   const miruro = getMiruroKnownCatalog(["sub"]);
-  expect(miruro.every((entry) => entry.label.startsWith("Sub · "))).toBe(true);
+  expect(miruro.every((entry) => !entry.label.startsWith("Sub · "))).toBe(true);
+  expect(miruro.some((entry) => entry.label === "Gintoki")).toBe(true);
   expect(allmangaSub.every((entry) => entry.label.startsWith("Sub · "))).toBe(true);
 });
 

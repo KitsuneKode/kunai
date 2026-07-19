@@ -311,7 +311,7 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
   const apiHeaders = videasyApiHeaders(seenHeaders);
   expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
   expect(apiHeaders?.get("x-session-token")).toBe("session-123");
-  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineby.at");
 });
 
 test("vidking direct resolver reads Videasy session token from runtime auth", async () => {
@@ -354,8 +354,8 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
   const apiHeaders = videasyApiHeaders(seenHeaders);
   expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
   expect(apiHeaders?.get("x-session-token")).toBe("runtime-session-123");
-  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
-  expect(apiHeaders?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineby.at");
+  expect(apiHeaders?.get("referer")).toBe("https://www.cineby.at/tv/61700/1/2");
 });
 
 test("vidking direct resolver can pair a session with a Bitcine app id", async () => {
@@ -400,8 +400,8 @@ test("vidking direct resolver can pair a session with a Bitcine app id", async (
   const apiHeaders = videasyApiHeaders(seenHeaders);
   expect(apiHeaders?.get("x-app-id")).toBe("bc-frontend");
   expect(apiHeaders?.get("x-session-token")).toBe("bitcine-session-123");
-  expect(apiHeaders?.get("origin")).toBe("https://www.cineplay.to");
-  expect(apiHeaders?.get("referer")).toBe("https://www.cineplay.to/tv/61700/1/2");
+  expect(apiHeaders?.get("origin")).toBe("https://www.cineby.at");
+  expect(apiHeaders?.get("referer")).toBe("https://www.cineby.at/tv/61700/1/2");
 });
 
 test("vidking session transport covers every registered Videasy flavor", async () => {
@@ -1108,7 +1108,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
     readonly seekBarVttUrl: string;
   }>("miruro/expected-normalized.json");
 
-  const result = createMiruroResultFromPayload({
+  const result = await createMiruroResultFromPayload({
     input: {
       title: {
         id: "anilist:999",
@@ -1136,7 +1136,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
   expect(result?.status).toBe("resolved");
   expect(result?.artwork?.seekBarVttUrl).toBe(expected.seekBarVttUrl);
   expect(result?.sources?.[0]).toMatchObject({
-    label: expect.stringContaining(expected.serverLabel),
+    label: "Gintoki",
     artwork: { seekBarVttUrl: expected.seekBarVttUrl },
     sourceEvidence: [
       expect.objectContaining({
@@ -1144,6 +1144,10 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
         nativeLabel: expected.serverLabel,
       }),
     ],
+  });
+  expect(result?.sources?.[0]?.metadata).toMatchObject({
+    nativeLabel: expected.serverLabel,
+    sourceDetail: expect.stringContaining("Sub ·"),
   });
   expect(result?.streams[0]).toMatchObject({
     audioLanguages: [expected.audioLanguage],
@@ -1165,7 +1169,7 @@ test("miruro evidence fixture preserves server evidence subtitles and seek thumb
 });
 
 test("miruro infers hardsub when sub stream has no pipe subtitles", async () => {
-  const result = createMiruroResultFromPayload({
+  const result = await createMiruroResultFromPayload({
     input: {
       title: {
         id: "anilist:999",
@@ -1211,7 +1215,7 @@ test("miruro fixture fast startup keeps the first ready stream", async () => {
   const sourceData = await readFixture<
     Parameters<typeof createMiruroResultFromPayload>[0]["sourceData"]
   >("miruro/source-response.json");
-  const result = createMiruroResultFromPayload({
+  const result = await createMiruroResultFromPayload({
     input: {
       title: {
         id: "anilist:999",
@@ -1256,20 +1260,28 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
   });
 
   expect(candidates.map((candidate) => candidate.label)).toEqual([
-    "Dub · Kiwi · subtitles unknown",
-    "Dub · Bee · subtitles unknown",
-    "Dub · Hop · subtitles unknown",
-    "Dub · Ally · subtitles unknown",
-    "Dub · Pewe · subtitles unknown",
-    "Dub · Moo · subtitles unknown",
-    "Dub · Bonk · subtitles unknown",
-    "Sub · Kiwi · subtitles unknown",
-    "Sub · Bee · subtitles unknown",
-    "Sub · Hop · subtitles unknown",
-    "Sub · Ally · subtitles unknown",
-    "Sub · Pewe · subtitles unknown",
-    "Sub · Moo · subtitles unknown",
-    "Sub · Bonk · subtitles unknown",
+    "Kagura",
+    "Okita",
+    "Hijikata",
+    "Katsura",
+    "Soyo",
+    "Kyubei",
+    "Sacchan",
+    "Katsura",
+    "Takasugi",
+    "Kamui",
+    "Mutsu",
+    "Gintoki",
+    "Shinpachi",
+    "Hijikata",
+    "Elizabeth",
+    "Soyo",
+    "Kyubei",
+    "Sacchan",
+    "Katsura",
+    "Takasugi",
+    "Kamui",
+    "Mutsu",
   ]);
   expect(candidates.map((candidate) => candidate.normalizedAudioLanguage)).toEqual([
     "en",
@@ -1279,6 +1291,14 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
     "en",
     "en",
     "en",
+    "en",
+    "en",
+    "en",
+    "en",
+    "ja",
+    "ja",
+    "ja",
+    "ja",
     "ja",
     "ja",
     "ja",
@@ -1308,18 +1328,20 @@ test("miruro source cycling builds candidates from every matching provider key",
   expect(candidates).toContainEqual(
     expect.objectContaining({
       serverId: "ANIMEKAI",
+      label: "Takasugi",
       nativeLabel: "AnimeKai",
       metadata: expect.objectContaining({
         audioCategory: "sub",
         serverId: "ANIMEKAI",
-        subtitleDelivery: "unknown",
+        subtitleDelivery: "hardcoded",
+        sourceDetail: "Sub · hard sub",
       }),
     }),
   );
 });
 
-test("miruro stream selection prefers active CDN HLS over direct kwik candidates", () => {
-  const result = createMiruroResultFromPayload({
+test("miruro stream selection prefers active CDN HLS over direct kwik candidates", async () => {
+  const result = await createMiruroResultFromPayload({
     input: {
       title: {
         id: "anilist:999",
@@ -1372,11 +1394,12 @@ test("miruro stream selection prefers active CDN HLS over direct kwik candidates
 });
 
 test("miruro pipe requests use only TLS-reachable official mirrors", () => {
+  // `www.` only: that is what the browser hits for /api/secure/pipe, and the
+  // bare hosts just redirect. TLS-dead hosts (miruro.tv) stay out so they
+  // cannot burn the engine's attempt budget.
   expect(createMiruroPipeRequestUrls("payload")).toEqual([
     "https://www.miruro.bz/api/secure/pipe?e=payload",
     "https://www.miruro.ru/api/secure/pipe?e=payload",
-    "https://miruro.bz/api/secure/pipe?e=payload",
-    "https://miruro.ru/api/secure/pipe?e=payload",
   ]);
 });
 

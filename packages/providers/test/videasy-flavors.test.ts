@@ -24,9 +24,16 @@ describe("vidking flavors", () => {
     expect(listEligibleVidkingFlavorIds("series")).toHaveLength(11);
   });
 
-  test("phase A contains only the bounded stable-first foreground tier", () => {
-    // Inventory/UI still uses catalogOrder (Yoru first); resolve probes Neon first.
-    expect(getPhaseAVidkingFlavorIds()).toEqual(["cineby-neon", "cineby-cypher", "cineby-yoru"]);
+  test("phase A contains Yoru-first English tier with Cypher escape hatch", () => {
+    expect(getPhaseAVidkingFlavorIds()).toEqual([
+      "cineby-yoru",
+      "cineby-cypher",
+      "cineby-neon",
+      "cineby-sage",
+      "cineby-jett",
+      "cineby-breach",
+      "cineby-vyse",
+    ]);
   });
 
   test("eligible inventory order follows Cineby Servers UI (Yoru first)", () => {
@@ -38,18 +45,19 @@ describe("vidking flavors", () => {
     ]);
   });
 
+  test("phase B keeps localized catalog sources for background inventory", () => {
+    expect(listPhaseBLazyProbeFlavorIds()).toContain("cineby-killjoy");
+    expect(listPhaseBLazyProbeFlavorIds("series")).toContain("cineby-fade");
+    expect(listPhaseBLazyProbeFlavorIds()).not.toContain("cineby-sage");
+    expect(listPhaseBLazyProbeFlavorIds()).not.toContain("videasy-german");
+  });
+
   test("resolveFlavorEngineOptions maps Neon to wings-neon2", () => {
     expect(resolveFlavorEngineOptions("cineby-neon")).toMatchObject({
       flavorId: "cineby-neon",
       serverEndpoint: "wings-neon2",
       flavorLabel: "Neon",
     });
-  });
-
-  test("phase B keeps non-fast active catalog sources for background inventory", () => {
-    expect(listPhaseBLazyProbeFlavorIds()).toContain("cineby-sage");
-    expect(listPhaseBLazyProbeFlavorIds("series")).toContain("cineby-killjoy");
-    expect(listPhaseBLazyProbeFlavorIds()).not.toContain("videasy-german");
   });
 
   test("public flavor listing excludes deprecated migration rows", () => {

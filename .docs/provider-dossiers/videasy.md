@@ -6,21 +6,21 @@
 - **Active stream API:** `api.speedracelight.com` (primary; used by player.videasy.to / cineby.at / cineplay.to). Mirror: `api.wingsdatabase.com`.
 - **Decrypt:** seed + `enc=2` + mvm1 PRNG XOR. **Must use sparse `Array(61)`** for PRNG state (`n in state` mask). Dense arrays break every payload.
 - **Cineby UI catalog** (https://www.cineby.at/tv/299167 “Dutton Ranch” example):
-  | UI | API route | Live note (S1E1) |
-  |----|-----------|------------------|
-  | Yoru | `/cdn` | often empty on TV |
-  | Neon | `/neon2` | **works** (HLS+DASH) |
-  | Sage | `/ym` | title-dependent |
-  | Jett | `/jett` | title-dependent |
-  | Breach | `/m4uhd` | often 403 |
-  | Vyse | `/hdmovie` quality=English | title-dependent |
-  | Killjoy | `/meine` language=german | **works** with imdbId |
-  | Fade | `/hdmovie` quality=Hindi | title-dependent |
-  | Omen | `/lamovie` | **works** |
-  | Raze | `/superflix` | needs full params |
-  | Cypher (Kunai) | `/downloader2` | **works** quality ladder |
+  | UI             | API route                  | Live note (S1E1)         |
+  | -------------- | -------------------------- | ------------------------ |
+  | Yoru           | `/cdn`                     | often empty on TV        |
+  | Neon           | `/neon2`                   | **works** (HLS+DASH)     |
+  | Sage           | `/ym`                      | title-dependent          |
+  | Jett           | `/jett`                    | title-dependent          |
+  | Breach         | `/m4uhd`                   | often 403                |
+  | Vyse           | `/hdmovie` quality=English | title-dependent          |
+  | Killjoy        | `/meine` language=german   | **works** with imdbId    |
+  | Fade           | `/hdmovie` quality=Hindi   | title-dependent          |
+  | Omen           | `/lamovie`                 | **works**                |
+  | Raze           | `/superflix`               | needs full params        |
+  | Cypher (Kunai) | `/downloader2`             | **works** quality ladder |
 - **Inventory order:** matches Cineby Servers UI — Yoru → Neon → Sage → Jett → Breach → Vyse → Killjoy → Fade → Omen → Raze; **Cypher** is Kunai-only after the catalog (not shown on the website).
-- **Resolve order:** stable-first Phase A is Neon → Cypher → Yoru; the remaining active catalog rows are background/manual candidates.
+- **Resolve order:** Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized Killjoy/Fade/Omen/Raze stay Phase B / lazy.
 - **Legacy:** `api.videasy.to/{server}/sources-with-title` still **404**.
 - **Fixtures:** Study Group `233347` S1E2; Dutton Ranch `299167` S1E1; crypto golden under `packages/providers/test/fixtures/videasy/wings-enc2-neon2.json`.
 - **Redaction:** do not store signed HLS URLs, cookies, or session tokens in this dossier.

@@ -71,7 +71,13 @@ import { videasyManifest, VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID } from "./man
 export { VIDEOSY_PROVIDER_ID, VIDKING_PROVIDER_ID };
 export const VIDKING_REFERER = "https://www.vidking.net/";
 export const VIDKING_ORIGIN = "https://www.vidking.net";
-/** Bitcine rebranded to Cineplay; Videasy bc-frontend sessions must use this origin/referer. */
+/** Default bc-frontend stream/API client profile (matches cineby.at seed + playback). */
+export const CINEBY_REFERER = "https://www.cineby.at/";
+export const CINEBY_ORIGIN = "https://www.cineby.at";
+/**
+ * Legacy Cineplay/Bitcine origin — kept for explicit embed-referer retry only.
+ * Default bc-frontend playback headers use {@link CINEBY_ORIGIN}.
+ */
 export const CINEPLAY_REFERER = "https://www.cineplay.to/";
 export const CINEPLAY_ORIGIN = "https://www.cineplay.to";
 /** Cineplay UI "Neon" server route on Videasy (legacy Kunai flavor still labels this Luffy/mb-flix). */
@@ -1201,15 +1207,23 @@ function buildEmbedReferer(
   if (mediaKind === "series" && (!season || !episode)) return null;
 
   if (normalizeVideasyAppId(appId) === "bc-frontend") {
+    // Prefer cineby.at title pages; cineplay.to remains available via CINEPLAY_* constants
+    // if an explicit embed-referer retry is wired later.
     return mediaKind === "series"
-      ? `https://www.cineplay.to/tv/${tmdbId}/${season}/${episode}?play=true`
-      : `https://www.cineplay.to/movie/${tmdbId}?play=true`;
+      ? `https://www.cineby.at/tv/${tmdbId}/${season}/${episode}`
+      : `https://www.cineby.at/movie/${tmdbId}`;
   }
 
   return mediaKind === "series"
     ? `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?autoPlay=true&episodeSelector=false&nextEpisode=false`
     : `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true`;
 }
+
+type VidkingStreamProbeOutcome = {
+  readonly ok: boolean;
+  /** True only when a real HTTP probe returned reachable (never attested on skip/timeout). */
+  readonly verified: boolean;
+};
 
 async function probeSelectedVidkingPayloadStream({
   decoded,
@@ -1233,7 +1247,7 @@ async function probeSelectedVidkingPayloadStream({
   readonly engineOptions?: VidKingEngineOptions;
   readonly events: ProviderTraceEvent[];
   readonly context: ProviderRuntimeContext;
-}): Promise<boolean> {
+}): Promise<VidkingStreamProbeOutcome> {
   const presentation = resolveVidkingPresentation(server, engineOptions ?? {});
   const streams = normalizeStreamCandidates({
     payload: decoded,
@@ -1248,7 +1262,7 @@ async function probeSelectedVidkingPayloadStream({
     engineOptions,
   });
   if (streams.length === 0) {
-    return false;
+    return { ok: false, verified: false };
   }
 
   const selection = selectReadyStream(streams, {
@@ -1261,17 +1275,11 @@ async function probeSelectedVidkingPayloadStream({
   const selected = selection.selected;
   const streamUrl = selected.url?.trim();
   if (!streamUrl) {
-    return false;
+    return { ok: false, verified: false };
   }
 
-  // Cineby/cineplay start playback immediately after decrypt — they do not HEAD the
-  // HLS master before returning. A resolve-gate preflight adds 0.5–2.5s and is the
-  // main reason Kunai feels slower than the website. Trust decrypt + URL shape;
-  // dead streams recover via playback recovery / source switch.
-  if (shouldSkipVideasyResolveGatePreflight(streamUrl, input.startupPriority)) {
-    return true;
-  }
-
+  // Always segment-probe HLS/direct before accepting a candidate. Balanced/fast used to
+  // skip this for website-parity latency; that attested dead CDN masters as healthy.
   const probeStartedAt = Date.now();
   const health = await runStreamHealthCheck({
     phase: "resolve-gate",
@@ -1284,7 +1292,8 @@ async function probeSelectedVidkingPayloadStream({
   const probeDurationMs = Date.now() - probeStartedAt;
 
   if (health.healthy) {
-    return true;
+    const verified = health.probed === true && health.probe?.status === "reachable";
+    return { ok: true, verified };
   }
 
   const probe = health.probe;
@@ -1309,22 +1318,7 @@ async function probeSelectedVidkingPayloadStream({
       probe: probe?.status ?? "failed",
     },
   });
-  return false;
-}
-
-/** Skip HTTP preflight for normal play; keep it for quality-first validation opt-in. */
-function shouldSkipVideasyResolveGatePreflight(
-  streamUrl: string,
-  startupPriority: ProviderResolveInput["startupPriority"],
-): boolean {
-  if (startupPriority === "quality-first") return false;
-  const lower = streamUrl.toLowerCase();
-  return (
-    lower.includes(".m3u8") ||
-    lower.includes(".mpd") ||
-    lower.startsWith("https://") ||
-    lower.startsWith("http://")
-  );
+  return { ok: false, verified: false };
 }
 
 /* ── Wings seed transport cache ──
@@ -1596,7 +1590,7 @@ async function tryVidkingServer(opts: {
             const guarded = await decodeVideasyGuardedPayload(payload, sessionToken);
             decoded = await decodeVidkingPayload(guarded, tmdbId);
           }
-          const streamVerified = await probeSelectedVidkingPayloadStream({
+          const streamProbe = await probeSelectedVidkingPayloadStream({
             decoded,
             input,
             cachePolicy,
@@ -1608,7 +1602,7 @@ async function tryVidkingServer(opts: {
             events,
             context,
           });
-          if (!streamVerified) {
+          if (!streamProbe.ok) {
             endpointHealth.recordFailure(server, { class: "transient", titleId });
             break;
           }
@@ -1627,7 +1621,7 @@ async function tryVidkingServer(opts: {
             streamOrigin: clientProfile.origin,
             sourceQualityFilter: engineOptions.filterQuality,
             engineOptions,
-            streamReachabilityVerified: true,
+            streamReachabilityVerified: streamProbe.verified,
           });
           if (result) {
             endpointHealth.recordSuccess(server);
@@ -1730,14 +1724,14 @@ export function resolveVideasyClientProfile(
   const referer =
     customReferer ??
     (tmdbId && input.mediaKind === "series" && input.episode?.season && input.episode?.episode
-      ? `https://www.cineplay.to/tv/${tmdbId}/${input.episode.season}/${input.episode.episode}`
+      ? `https://www.cineby.at/tv/${tmdbId}/${input.episode.season}/${input.episode.episode}`
       : tmdbId && input.mediaKind === "movie"
-        ? `https://www.cineplay.to/movie/${tmdbId}`
-        : CINEPLAY_REFERER);
+        ? `https://www.cineby.at/movie/${tmdbId}`
+        : CINEBY_REFERER);
 
   return {
     appId,
-    origin: CINEPLAY_ORIGIN,
+    origin: CINEBY_ORIGIN,
     defaultReferer: referer,
     streamReferer: referer,
   };

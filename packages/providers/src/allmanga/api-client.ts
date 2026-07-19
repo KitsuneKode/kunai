@@ -1,3 +1,5 @@
+import { createCipheriv, createHash } from "node:crypto";
+
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
@@ -11,6 +13,7 @@ import {
   shouldSkipExternalEpisodeMetadataEnrichment,
   type AnimeEpisodeMetadata,
 } from "../shared/anime-metadata";
+import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 
 export type AllMangaSearchResult = {
@@ -84,7 +87,20 @@ export type AllMangaAkDeferredDescriptor = {
 
 export type AllMangaSourceLane = "baseline" | "ak-only";
 
-const ALLMANGA_KEY_RAW = "Xot36i3lK3:v1";
+/**
+ * AllAnime crypto constants — keep aligned with ani-cli `origin/fix`
+ * (`get_aa_req`, `allanime_key`, epoch/build_id). Upstream rotates these.
+ *
+ * Previous key was SHA-256("Xot36i3lK3:v1"); episode resolve now requires an
+ * AES-GCM `aaReq` attestation or the API returns `AA_CRYPTO_MISSING`.
+ */
+export const ALLMANGA_KEY_HEX = "cf4777b5778aeadc9449e12769ea545d00c43cd8ff65d482364586cde204f359";
+export const ALLMANGA_QUERY_HASH =
+  "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
+/** Upstream clock bucket; rotate with ani-cli when AA_CRYPTO_* errors reappear. */
+export const ALLMANGA_EPOCH = 4130;
+/** Upstream client build id; sent as `x-build-id` and inside `aaReq`. */
+export const ALLMANGA_BUILD_ID = 41;
 
 const HEX: Record<string, string> = {
   "79": "A",
@@ -236,7 +252,8 @@ function extractRawSourcesFromPlaintext(
   text: string,
 ): Array<{ sourceName: string; sourceUrl: string }> {
   const results: Array<{ sourceName: string; sourceUrl: string }> = [];
-  const pattern = /"sourceUrl"\s*:\s*"--([^"]+)"[^}]*"sourceName"\s*:\s*"([^"]+)"/g;
+  // Match ani-cli: capture any sourceUrl (hex `--…` or direct https embed), not only `--`.
+  const pattern = /"sourceUrl"\s*:\s*"([^"]+)"[^}]*"sourceName"\s*:\s*"([^"]+)"/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     const [, sourceUrl, sourceName] = match;
@@ -245,6 +262,30 @@ function extractRawSourcesFromPlaintext(
     }
   }
   return results;
+}
+
+/**
+ * Build the AllAnime `aaReq` attestation (ani-cli `get_aa_req`).
+ * Layout: base64(0x01 || iv12 || ciphertext || gcmTag16)
+ * where iv = SHA-256(`${epoch}:${buildId}:${qh}:${ts}`)[0:12]
+ * and plaintext is `{"v":1,"ts",…}` encrypted with AES-256-GCM.
+ */
+export function buildAllMangaAaReq(nowMs: number = Date.now()): string {
+  const ts = Math.floor(nowMs / 300_000) * 300_000;
+  const payloadIv = `${ALLMANGA_EPOCH}:${ALLMANGA_BUILD_ID}:${ALLMANGA_QUERY_HASH}:${ts}`;
+  const payload = JSON.stringify({
+    v: 1,
+    ts,
+    epoch: ALLMANGA_EPOCH,
+    buildId: String(ALLMANGA_BUILD_ID),
+    qh: ALLMANGA_QUERY_HASH,
+  });
+  const iv = createHash("sha256").update(payloadIv).digest().subarray(0, 12);
+  const key = Buffer.from(ALLMANGA_KEY_HEX, "hex");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([Buffer.from([1]), iv, ciphertext, tag]).toString("base64");
 }
 
 function normalizeShowThumbnail(path: string | undefined): string | undefined {
@@ -534,18 +575,16 @@ export async function resolveEpisodeSources(opts: {
   const cached = sourceCache.get(cacheKey);
   if (cached) return cached;
 
-  const query = `query($showId:String! $translationType:VaildTranslationTypeEnumType! $episodeString:String!){
-    episode(showId:$showId translationType:$translationType episodeString:$episodeString){
-      episodeString sourceUrls
-    }
-  }`;
-
-  // Two-tier request matching ani-cli commit 6803b8a:
-  //   Tier 1 — GET with persisted query hash + youtu-chan.com Origin
-  //   Tier 2 — POST fallback with caller-provided referer
-  const queryHash = "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
+  // GET with persisted query + aaReq attestation (ani-cli origin/fix).
+  // Without aaReq the API returns AA_CRYPTO_MISSING; POST without aaReq fails the same way.
   const vars = { showId, translationType: mode, episodeString: epStr };
-  const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(JSON.stringify({ persistedQuery: { version: 1, sha256Hash: queryHash } }))}`;
+  const aaReq = buildAllMangaAaReq();
+  const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
+    JSON.stringify({
+      persistedQuery: { version: 1, sha256Hash: ALLMANGA_QUERY_HASH },
+      aaReq,
+    }),
+  )}`;
 
   let rawText: string | null = null;
 
@@ -556,25 +595,12 @@ export async function resolveEpisodeSources(opts: {
         Referer: "https://youtu-chan.com",
         Origin: "https://youtu-chan.com",
         "User-Agent": ua,
+        "x-build-id": String(ALLMANGA_BUILD_ID),
       },
     });
     if (getRes.ok) rawText = await getRes.text();
-  } catch {}
-
-  if (!rawText || !rawText.includes('"tobeparsed"')) {
-    try {
-      const postRes = await providerFetch(context, apiUrl, {
-        method: "POST",
-        signal: createTimeoutSignal(signal, 15_000),
-        headers: {
-          "Content-Type": "application/json",
-          Referer: referer,
-          "User-Agent": ua,
-        },
-        body: JSON.stringify({ query, variables: vars }),
-      });
-      if (postRes.ok) rawText = await postRes.text();
-    } catch {}
+  } catch {
+    // fall through — empty rawText returns []
   }
 
   if (!rawText) return [];
@@ -587,7 +613,7 @@ export async function resolveEpisodeSources(opts: {
       seedAllMangaEpisodeInfoFromPlaintext(showId, mode, plain);
       rawSources = extractRawSourcesFromPlaintext(plain);
     }
-  } else {
+  } else if (!rawText.includes("AA_CRYPTO")) {
     rawSources = await extractRawSources(rawText);
   }
   const direct: StreamLink[] = [];
@@ -598,8 +624,14 @@ export async function resolveEpisodeSources(opts: {
       continue;
     }
 
-    const raw = source.sourceUrl.startsWith("--") ? source.sourceUrl.slice(2) : source.sourceUrl;
-    const decoded = hexDecode(raw);
+    let decoded: string;
+    if (source.sourceUrl.startsWith("--")) {
+      decoded = hexDecode(source.sourceUrl.slice(2));
+    } else if (source.sourceUrl.startsWith("http://") || source.sourceUrl.startsWith("https://")) {
+      decoded = source.sourceUrl;
+    } else {
+      continue;
+    }
     if (!decoded) {
       continue;
     }
@@ -845,9 +877,8 @@ export async function searchAllManga(
 }
 
 async function deriveAllMangaKey(): Promise<CryptoKey> {
-  const keyBytes = new TextEncoder().encode(ALLMANGA_KEY_RAW);
-  const hashBuf = await crypto.subtle.digest("SHA-256", keyBytes);
-  return crypto.subtle.importKey("raw", hashBuf, { name: "AES-CTR" }, false, ["decrypt"]);
+  const keyBytes = Buffer.from(ALLMANGA_KEY_HEX, "hex");
+  return crypto.subtle.importKey("raw", keyBytes, { name: "AES-CTR" }, false, ["decrypt"]);
 }
 
 async function extractRawSources(
@@ -1128,34 +1159,28 @@ async function fetchM3u8Variants({
   readonly subtitle?: string;
   readonly signal?: AbortSignal;
 }): Promise<StreamLink[]> {
-  const response = await providerFetch(context, url, {
-    signal: createTimeoutSignal(signal, 15_000),
+  const variants = await expandHlsMasterPlaylist({
+    fetch: (requestUrl: string, init?: RequestInit) =>
+      providerFetch(context, requestUrl, {
+        ...init,
+        signal: createTimeoutSignal(signal, 15_000),
+        headers: {
+          Referer: referer,
+          "User-Agent": ua,
+          ...(init?.headers as Record<string, string> | undefined),
+        },
+      }),
+    masterUrl: url,
     headers: { Referer: referer, "User-Agent": ua },
+    signal,
   });
-  if (!response.ok) {
-    return [];
-  }
 
-  const m3u = await response.text();
-  const urlOf = new URL(url);
-  const base = `${urlOf.protocol}//${urlOf.host}${urlOf.pathname.replace(/[^/]*$/, "")}`;
-  const links: StreamLink[] = [];
-  const streamPattern = /RESOLUTION=\d+x(\d+)[^\n]*\n([^\n]+)/g;
-  let streamMatch: RegExpExecArray | null;
-  while ((streamMatch = streamPattern.exec(m3u)) !== null) {
-    const quality = streamMatch[1] ?? "unknown";
-    const href = streamMatch[2]?.trim() ?? "";
-    if (!href || href.startsWith("#")) {
-      continue;
-    }
-    links.push({
-      url: href.startsWith("http") ? href : base + href,
-      quality,
-      referer,
-      subtitle,
-    });
-  }
-  return links;
+  return variants.map((variant) => ({
+    url: variant.url,
+    quality: variant.qualityLabel.replace(/p$/i, "") || variant.qualityLabel,
+    referer,
+    subtitle,
+  }));
 }
 
 function base64urlToBytes(s: string): Uint8Array {

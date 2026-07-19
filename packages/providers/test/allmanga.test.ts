@@ -17,6 +17,8 @@ import {
 import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
+  buildAllMangaAaReq,
+  ALLMANGA_KEY_HEX,
   buildStreamHeaders,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
@@ -28,7 +30,7 @@ import {
   collectAllMangaLinksForStartup,
 } from "../src/index";
 
-const TEST_KEY_RAW = "Xot36i3lK3:v1";
+const TEST_KEY_HEX = ALLMANGA_KEY_HEX;
 const FIXTURE_BASE = new URL("./fixtures/allmanga/", import.meta.url);
 const TEST_CONTEXT: ProviderRuntimeContext = {
   providerId: "allanime",
@@ -194,9 +196,20 @@ describe("decodeTobeparsed", () => {
     const blob = await buildBlob(plain);
 
     await expect(decodeTobeparsed(blob)).resolves.toEqual([
-      { sourceUrl: "68656c6c6f", sourceName: "Default" },
-      { sourceUrl: "776f726c64", sourceName: "Yt-mp4" },
+      { sourceUrl: "--68656c6c6f", sourceName: "Default" },
+      { sourceUrl: "--776f726c64", sourceName: "Yt-mp4" },
     ]);
+  });
+});
+
+describe("buildAllMangaAaReq", () => {
+  test("builds a versioned AES-GCM attestation blob", () => {
+    const aaReq = buildAllMangaAaReq(1_700_000_000_000);
+    const raw = Buffer.from(aaReq, "base64");
+    expect(raw[0]).toBe(1);
+    expect(raw.length).toBeGreaterThan(1 + 12 + 16);
+    // Key must be 32 raw bytes (not SHA-256 of a passphrase).
+    expect(Buffer.from(ALLMANGA_KEY_HEX, "hex").length).toBe(32);
   });
 });
 
@@ -722,9 +735,8 @@ async function buildBlob(plain: string): Promise<string> {
   counter.set(iv, 0);
   counter[15] = 2;
 
-  const keyBytes = new TextEncoder().encode(TEST_KEY_RAW);
-  const hashBuf = await crypto.subtle.digest("SHA-256", keyBytes);
-  const key = await crypto.subtle.importKey("raw", hashBuf, { name: "AES-CTR" }, false, [
+  const keyBytes = Buffer.from(TEST_KEY_HEX, "hex");
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CTR" }, false, [
     "encrypt",
   ]);
 

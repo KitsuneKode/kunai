@@ -103,20 +103,23 @@ Always show **language** on subtitle when known from link metadata.
 
 ---
 
-### 2.4 Miruro (Gintama)
+### 2.4 Miruro (Gintama) — hybrid labels
 
-| Server key   | UI name                                     | Subtitle                                | Notes                                                 |
-| ------------ | ------------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
-| `kiwi` + sub | **Gintoki**                                 | Sub · primary                           | Default lazy-probe first for anime sub                |
-| `kiwi` + dub | **Kagura**                                  | Dub · primary                           |                                                       |
-| `bee` + sub  | **Shinpachi**                               | Sub · mirror                            |                                                       |
-| `bee` + dub  | **Okita**                                   | Dub · mirror                            |                                                       |
-| `hop`        | **Hijikata**                                | Sub/dub · alt                           |                                                       |
-| `ZORO`       | **Zoro**                                    | _avoid_ — conflicts with One Piece      | Rename display to **“Mutsu”** or map to **Elizabeth** |
-| Other keys   | **Elizabeth**, **Katsura**, **Takasugi**, … | From `MIRURO_PROVIDER_LABELS` expansion | One character per discovered key                      |
+Primary Tracks/source **label** is the character name. Detail line is `Sub · hard sub` / `Dub · soft sub` (not the raw server key). Technical tokens (`Kiwi`, `Bee`) stay on `serverName` / diagnostics only.
 
-**Rule:** Never show raw `kiwi` / `bee` in UI — only Gintama names + `Sub`/`Dub`.
+| Server key   | Primary label                             | Detail (subtitle / sourceDetail)         | Notes                                               |
+| ------------ | ----------------------------------------- | ---------------------------------------- | --------------------------------------------------- |
+| `kiwi` + sub | **Gintoki**                               | Sub · hard sub (soft when pipe has subs) | Default lazy-probe first for anime sub              |
+| `kiwi` + dub | **Kagura**                                | Dub · …                                  |                                                     |
+| `bee` + sub  | **Shinpachi**                             | Sub · …                                  |                                                     |
+| `bee` + dub  | **Okita**                                 | Dub · …                                  |                                                     |
+| `hop`        | **Hijikata**                              | Sub/dub · …                              |                                                     |
+| `ZORO`       | **Mutsu**                                 | Sub/dub · …                              | Avoid “Zoro” primary — One Piece / Videasy conflict |
+| Other keys   | **Takasugi**, **Kamui**, **Elizabeth**, … | From `MIRURO_THEME_DETAIL`               | One character per discovered key                    |
 
+**Rule:** Never show raw `kiwi` / `bee` as the primary UI title — only Gintama names. Audio + subtitle mode live on the detail line.
+
+**HLS:** Lone `master.m3u8` Pipe rows expand via shared `expandHlsMasterPlaylist` into ranked quality `StreamCandidate`s for the Tracks quality picker.
 ---
 
 ## 3. Playback behavior (resolve strategy)

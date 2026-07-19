@@ -12,6 +12,7 @@ import {
   type DirectStreamInput,
   type DirectStreamPayload,
 } from "../shared/direct-stream-source";
+import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -86,7 +87,35 @@ export function resolveVidlinkDirect(
           if (file?.url) streams.push({ url: file.url, qualityHint: quality });
         }
       }
-      if (stream.playlist) streams.push({ url: stream.playlist });
+      if (stream.playlist) {
+        const playlistHeaders = {
+          referer: VIDLINK_REFERER,
+          origin: VIDLINK_ORIGIN,
+          "user-agent": USER_AGENT,
+          ...stream.headers,
+        };
+        if (looksLikeHlsMasterUrl(stream.playlist) || /\.m3u8(?:[?#]|$)/i.test(stream.playlist)) {
+          const variants = await expandHlsMasterPlaylist({
+            fetch: (url: string, init?: RequestInit) =>
+              providerFetch(ctx, url, {
+                ...init,
+                headers: {
+                  ...playlistHeaders,
+                  ...(init?.headers as Record<string, string> | undefined),
+                },
+                signal: directStreamFetchSignal(ctx.signal, VIDLINK_FETCH_TIMEOUT_MS),
+              }),
+            masterUrl: stream.playlist,
+            headers: playlistHeaders,
+            signal: ctx.signal,
+          });
+          for (const variant of variants) {
+            streams.push({ url: variant.url, qualityHint: variant.qualityLabel });
+          }
+        } else {
+          streams.push({ url: stream.playlist });
+        }
+      }
 
       const payload: DirectStreamPayload = {
         streams,
