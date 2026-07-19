@@ -1,7 +1,11 @@
 {
   "$schema": "https://v2-10-0.turborepo.dev/schema.json",
   "tasks": {
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "typecheck": {
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "lint": {
@@ -18,7 +22,15 @@
       "outputs": []
     },
     "test": {
-      "dependsOn": ["typecheck"],
+      "dependsOn": ["transit"],
+      "outputs": []
+    },
+    "test:unit": {
+      "dependsOn": ["transit"],
+      "outputs": []
+    },
+    "test:integration": {
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "generate": {

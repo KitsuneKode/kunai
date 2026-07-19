@@ -14,6 +14,22 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 
 The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
+## Turborepo Test Caching
+
+`bun run test` is `turbo run test`. Unchanged packages replay from cache (local `.turbo` and optional remote `TURBO_TOKEN` / `TURBO_TEAM`).
+
+CLI suites are separate Turbo tasks so a unit-only change does not re-run integration:
+
+| Command                            | What runs                                                                                                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bun run test`                     | every workspace `test` script; CLI runs `test:unit` and `test:integration` in parallel under Turbo                    |
+| `bun run test:unit`                | packages that define `test:unit` (CLI today)                                                                          |
+| `bun run test:integration`         | packages that define `test:integration` (CLI today)                                                                   |
+| `bun run --cwd apps/cli test`      | both CLI suites sequentially (outside Turbo); path args after `--` select files, flag-only args append to both suites |
+| `bun run ci:affected` / CI PR jobs | `--affected` — only changed packages and their dependents                                                             |
+
+Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job and is no longer a hard prerequisite of `test`.
+
 ## Ink Render Harness (`apps/cli/test/harness/render-capture.ts`)
 
 This repo deliberately does **not** use `ink-testing-library`. The local harness

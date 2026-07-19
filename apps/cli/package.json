@@ -47,7 +47,7 @@
     "dev": "bun run src/main.ts",
     "profile:anime": "KUNAI_HEAP_PROFILE=1 KUNAI_HEAP_CAP_MB=2048 bun run src/main.ts -a --debug",
     "start": "bun run dist/kunai.js",
-    "test": "bun test test/unit test/integration",
+    "test": "bun run scripts/run-default-tests.ts",
     "test:coverage": "bun test test/unit test/integration --coverage",
     "test:coverage:report": "bun test test/unit test/integration --coverage --coverage-reporter=text",
     "test:file": "bun test",

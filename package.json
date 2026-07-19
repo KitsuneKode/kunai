@@ -113,7 +113,9 @@
     "relink:global": "bun run --cwd apps/cli relink:global",
     "prepare": "husky",
     "prototype:serve": "node .prototypes/_harness/server.js",
-    "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts"
+    "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration"
   },
   "dependencies": {
     "typescript": "catalog:"

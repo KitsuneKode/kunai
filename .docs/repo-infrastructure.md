@@ -100,16 +100,16 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job              | PR                                                          | Main         |
-| ---------------- | ----------------------------------------------------------- | ------------ |
-| `fmt`            | `turbo run fmt:check --affected`                            | full         |
-| `lint`           | `turbo run lint --affected`                                 | full         |
-| `typecheck`      | `turbo run typecheck --affected`                            | full         |
-| `test`           | `turbo run test --affected`                                 | full         |
-| `windows-cli`    | root typecheck + CLI tests when CLI paths change            | same on main |
-| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change | same on main |
-| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change   | same         |
-| `checks-docs`    | docs gate when docs paths change                            | same         |
+| Job              | PR                                                                                    | Main         |
+| ---------------- | ------------------------------------------------------------------------------------- | ------------ |
+| `fmt`            | `turbo run fmt:check --affected`                                                      | full         |
+| `lint`           | `turbo run lint --affected`                                                           | full         |
+| `typecheck`      | `turbo run typecheck --affected`                                                      | full         |
+| `test`           | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
+| `windows-cli`    | root typecheck + CLI tests when CLI paths change                                      | same on main |
+| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
+| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
+| `checks-docs`    | docs gate when docs paths change                                                      | same         |
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).

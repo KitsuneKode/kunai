@@ -1,0 +1,45 @@
+{
+  "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "dependsOn": ["test:unit", "test:integration"],
+      "cache": false,
+      "outputs": []
+    },
+    "test:unit": {
+      "dependsOn": ["transit"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!docs/**",
+        "!test/integration/**",
+        "!test/live/**",
+        "!test/vhs/**",
+        "!test/docker/**",
+        "!test/__captures__/**",
+        "!test/templates/**",
+        "!CHANGELOG.md",
+        "!README.md",
+        "!.npmignore"
+      ],
+      "outputs": []
+    },
+    "test:integration": {
+      "dependsOn": ["transit"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!docs/**",
+        "!test/unit/**",
+        "!test/live/**",
+        "!test/vhs/**",
+        "!test/docker/**",
+        "!test/__captures__/**",
+        "!test/templates/**",
+        "!CHANGELOG.md",
+        "!README.md",
+        "!.npmignore"
+      ],
+      "outputs": []
+    }
+  }
+}
