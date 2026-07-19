@@ -68,6 +68,30 @@ Pull requests and pushes to `main` use the composite setup action
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 `TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache.
 
+### Checkout is caller-owned
+
+**Every job must run `actions/checkout` before it uses a local composite
+action.** The composite deliberately does not check out.
+
+A local composite (`uses: ./.github/actions/...`) is loaded from the workspace,
+so GitHub can only resolve it once the repository is already on disk. If the
+composite performs the checkout itself, a job whose first step is that composite
+fails while trying to _find_ the action — before the checkout inside it can run.
+
+This broke the release pipeline silently: the composite carried its own
+checkout, `release.yml` had none of its own, and from 2026-06-27 the release job
+never reached publish. Version 0.2.6 has a version bump and release notes but no
+`v0.2.6` tag and no published binaries, while every local gate stayed green —
+local runs never execute workflow bootstrap.
+
+The invariant is enforced two ways:
+
+- `bun run scripts/ci-bootstrap-contract.ts` — exits non-zero listing any
+  composite that checks out, or any local-composite use not preceded by a
+  checkout in the same job.
+- `apps/cli/test/unit/scripts/ci-bootstrap-contract.test.ts` — the same rule in
+  the default test path, so a regression fails CI rather than the next release.
+
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
 | Job              | PR                                                          | Main         |

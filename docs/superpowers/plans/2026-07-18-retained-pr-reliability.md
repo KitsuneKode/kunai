@@ -25,7 +25,20 @@
 
 ## File Structure
 
-### Slice 1 — CI bootstrap
+### Slice 1 — CI bootstrap — ✅ LANDED 2026-07-19 (do not reimplement)
+
+Delivered on `main` ahead of this plan because it blocked the 0.3.0 release:
+`scripts/ci-bootstrap-contract.ts`, its unit test, checkout removed from the
+composite, checkout added to all 12 local-composite call sites across
+`ci.yml` / `release.yml` / `build-binaries.yml`, and the caller-owned-checkout
+section in `.docs/repo-infrastructure.md`.
+
+**Remaining for this track:** none in code. The one open item is _verification_
+— a real `workflow_dispatch` run of `release.yml` must reach the publish step.
+A green contract test is not evidence the pipeline works. Start at Slice 2.
+
+<details>
+<summary>Original Slice 1 scope (for reference)</summary>
 
 - Create `scripts/ci-bootstrap-contract.ts`: parse workflow YAML and report local-composite checkout-order violations.
 - Create `apps/cli/test/unit/scripts/ci-bootstrap-contract.test.ts`: lock the checked-in workflow contract.
@@ -34,6 +47,8 @@
 - Modify `.github/workflows/release.yml`: add checkout before both local-composite uses.
 - Modify `.github/workflows/build-binaries.yml`: add checkout before `all-targets` uses the local composite.
 - Modify `.docs/repo-infrastructure.md`: document caller-owned checkout.
+
+</details>
 
 ### Slice 2 — Overlay lifecycle
 
@@ -90,7 +105,7 @@
 
 ---
 
-### Task 0: Wait for WIP Settlement and Create the Implementation Branch
+### Task 0: Create the Implementation Branch (WIP settled 2026-07-19)
 
 **Files:** No product files.
 
@@ -109,7 +124,7 @@ git diff --name-only
 git diff --cached --name-only
 ```
 
-Expected: the active notification/startup work is no longer present as uncommitted changes. The design and plan files may remain uncommitted only if the user explicitly wants them carried onto the implementation branch.
+Expected: clean. As of 2026-07-19 all notification/startup/provider WIP is committed to `main`, the TypeScript 7 toolchain bump is committed, and only a personal `scripts/bin.sh` helper remains untracked. Branch from the current `main` tip — several files this plan touches (PlaybackResolveService, PlaybackPhase, ink-shell) were rewritten that day. The design and plan files may remain uncommitted only if the user explicitly wants them carried onto the implementation branch.
 
 - [ ] **Step 2: Stop if unrelated WIP remains**
 
