@@ -211,7 +211,9 @@ export function startHlsRelay(
         try {
           srcUrl = fromB64Url(rawB64);
           assertRelayUpstreamUrl(srcUrl);
-        } catch (err: unknown) {
+        } catch {
+          // Body stays generic on purpose: the exception text can carry the
+          // upstream URL, and this response crosses a process boundary.
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
@@ -249,7 +251,8 @@ export function startHlsRelay(
         try {
           srcUrl = fromB64Url(path.slice(3));
           assertRelayUpstreamUrl(srcUrl);
-        } catch (err: unknown) {
+        } catch {
+          // See above: never echo exception text into a relay response body.
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {

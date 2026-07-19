@@ -109,6 +109,7 @@ import {
   type RootHistorySelection,
 } from "./root-history-bridge";
 import {
+  clearNotificationPlaybackIntent,
   openDiagnosticsOverlay,
   stageNotificationDetailsItem,
   stageNotificationPlaybackIntent,
@@ -985,6 +986,15 @@ export function RootOverlayShell({
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
   }, [historyTab, overlay.type]);
+
+  // Discard any play-now intent left staged by an earlier inbox session.
+  // Only the palette route consumes the intent (it reads after close), so an
+  // inbox opened by direct dispatch can strand one; without this it would fire
+  // against the next palette-opened session and play the wrong title.
+  useEffect(() => {
+    if (overlay.type !== "notifications") return;
+    clearNotificationPlaybackIntent();
+  }, [overlay.type]);
 
   useEffect(() => {
     if (overlay.type !== "history") {

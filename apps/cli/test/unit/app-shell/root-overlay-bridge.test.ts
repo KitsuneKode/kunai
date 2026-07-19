@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  clearNotificationPlaybackIntent,
   getNotificationDetailsPending,
+  getNotificationPlaybackPending,
   openNotificationsOverlay,
   stageNotificationDetailsItem,
   stageNotificationPlaybackIntent,
   subscribeNotificationDetails,
+  subscribeNotificationPlayback,
   takeNotificationDetailsItem,
   takeNotificationPlaybackIntent,
 } from "@/app-shell/root-overlay-bridge";
@@ -48,6 +51,48 @@ describe("root-overlay-bridge notification intents", () => {
     });
     expect(takeNotificationPlaybackIntent()?.title.name).toBe("Example");
     expect(takeNotificationPlaybackIntent()).toBeNull();
+  });
+
+  test("playback intent notifies subscribers, matching the details intent", () => {
+    // The two intents behaved differently: details notified, playback did not,
+    // so consuming the playback intent depended on how the inbox was opened.
+    let pending = false;
+    const unsubscribe = subscribeNotificationPlayback(() => {
+      pending = getNotificationPlaybackPending();
+    });
+
+    stageNotificationPlaybackIntent({
+      title: { id: "tmdb:2", type: "series", name: "Notified" },
+    });
+    expect(pending).toBe(true);
+
+    unsubscribe();
+    expect(takeNotificationPlaybackIntent()?.title.name).toBe("Notified");
+  });
+
+  test("a stranded intent is dropped on clear, not replayed later", () => {
+    // Reproduces the wrong-title bug: an inbox opened by direct dispatch strands
+    // an intent nobody reads, which then fired against the next session.
+    stageNotificationPlaybackIntent({
+      title: { id: "tmdb:stranded", type: "series", name: "Stranded" },
+    });
+    expect(getNotificationPlaybackPending()).toBe(true);
+
+    clearNotificationPlaybackIntent();
+
+    expect(getNotificationPlaybackPending()).toBe(false);
+    expect(takeNotificationPlaybackIntent()).toBeNull();
+  });
+
+  test("clearing on open still lets the palette route read after close", () => {
+    // Ordering contract: the inbox clears on open, then the user stages, then
+    // openNotificationsOverlay reads after close. Clearing on *close* instead
+    // would break the one path that works today.
+    clearNotificationPlaybackIntent();
+    stageNotificationPlaybackIntent({
+      title: { id: "tmdb:3", type: "series", name: "Survives" },
+    });
+    expect(takeNotificationPlaybackIntent()?.title.name).toBe("Survives");
   });
 
   test("details intent notifies subscribers and clears on take", () => {

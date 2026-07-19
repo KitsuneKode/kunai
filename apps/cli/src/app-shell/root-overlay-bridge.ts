@@ -27,6 +27,7 @@ export type NotificationPlaybackIntent = {
 let pendingPlaybackIntent: NotificationPlaybackIntent | null = null;
 let pendingDetailsItem: MediaItemIdentity | null = null;
 const detailsListeners = new Set<() => void>();
+const playbackListeners = new Set<() => void>();
 
 export function subscribeNotificationDetails(listener: () => void): () => void {
   detailsListeners.add(listener);
@@ -39,8 +40,44 @@ export function getNotificationDetailsPending(): boolean {
   return pendingDetailsItem !== null;
 }
 
+/**
+ * Notify on stage, exactly as the details intent does.
+ *
+ * Without this, consuming the intent depended on *how* the overlay was opened:
+ * `openNotificationsOverlay` reads it on close, but the overlay is also opened
+ * by a direct `OPEN_OVERLAY` dispatch (root-overlay-shell), and on that path
+ * "play now" staged an intent that nobody ever read — so playback silently did
+ * nothing, and the stale intent then fired against the *next* session.
+ */
+export function subscribeNotificationPlayback(listener: () => void): () => void {
+  playbackListeners.add(listener);
+  return () => {
+    playbackListeners.delete(listener);
+  };
+}
+
+export function getNotificationPlaybackPending(): boolean {
+  return pendingPlaybackIntent !== null;
+}
+
 export function stageNotificationPlaybackIntent(intent: NotificationPlaybackIntent): void {
   pendingPlaybackIntent = intent;
+  for (const listener of playbackListeners) {
+    listener();
+  }
+}
+
+/**
+ * Drop an intent that was staged but never consumed.
+ *
+ * Must be called when the inbox *opens*, never when it closes: the palette
+ * route deliberately reads the intent after the overlay has closed, so clearing
+ * on close would break the one path that works. Clearing on open bounds the
+ * lifetime of a dropped hand-off to a single session, so a stale intent can no
+ * longer fire against a later, unrelated one.
+ */
+export function clearNotificationPlaybackIntent(): void {
+  pendingPlaybackIntent = null;
 }
 
 export function takeNotificationPlaybackIntent(): NotificationPlaybackIntent | null {

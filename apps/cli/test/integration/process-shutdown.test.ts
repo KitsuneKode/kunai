@@ -119,6 +119,7 @@ async function spawnAndSignal(
     throw new Error(
       `failed to deliver ${signal} to CLI process ${cliPid}: ${(error as Error).message}\n` +
         `--- transcript ---\n${readTranscript()}`,
+      { cause: error },
     );
   }
 
