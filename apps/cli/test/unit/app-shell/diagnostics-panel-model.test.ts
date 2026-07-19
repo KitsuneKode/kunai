@@ -132,12 +132,14 @@ describe("flattenDiagnosticsPanelSpans", () => {
           playbackCycleId: "open",
           operation: "playback.phase.failed",
           level: "error",
+          message: "phase failed",
           context: { severity: "blocked" },
         }),
         event({
           timestamp: 1,
           playbackCycleId: "closed",
           operation: "mpv.launch.started",
+          message: "launched",
           context: { severity: "healthy" },
         }),
       ],
@@ -146,17 +148,31 @@ describe("flattenDiagnosticsPanelSpans", () => {
     const lines = flattenDiagnosticsPanelSpans(model, new Set(["open"]));
     const headers = lines.filter((line) => line.spanId);
     expect(headers).toHaveLength(2);
+    expect(headers[0]?.spanId).toBe("open");
     expect(headers[0]?.label).toMatch(/^▼/);
+    expect(headers[1]?.spanId).toBe("closed");
     expect(headers[1]?.label).toMatch(/^▶/);
 
-    const openBody = lines.filter(
-      (line) => !line.spanId && line.detail?.includes("playback.phase.failed") === false,
+    // Section for a span id = header through the line before the next header.
+    function sectionForSpanId(spanId: string) {
+      const start = lines.findIndex((line) => line.spanId === spanId);
+      expect(start).not.toBe(-1);
+      const end = lines.findIndex((line, index) => index > start && Boolean(line.spanId));
+      return lines.slice(start, end < 0 ? lines.length : end);
+    }
+
+    const openSection = sectionForSpanId("open");
+    expect(openSection.length).toBeGreaterThan(1);
+    expect(openSection.slice(1).every((line) => !line.spanId && line.label.startsWith("  "))).toBe(
+      true,
     );
-    // Expanded span includes event rows; collapsed span does not.
-    expect(
-      lines.some((line) => line.detail?.includes("phase failed") || line.label.includes("phase")),
-    ).toBe(true);
-    expect(lines.filter((line) => line.label.startsWith("  ")).length).toBeGreaterThan(0);
-    expect(openBody.length).toBeGreaterThanOrEqual(0);
+    expect(openSection.some((line) => line.detail?.includes("phase failed"))).toBe(true);
+
+    // Collapsed span: header only — no indented body rows for that span id.
+    const closedSection = sectionForSpanId("closed");
+    expect(closedSection).toHaveLength(1);
+    expect(closedSection[0]?.spanId).toBe("closed");
+    expect(closedSection.some((line) => line.label.startsWith("  "))).toBe(false);
+    expect(closedSection.some((line) => line.detail?.includes("launched"))).toBe(false);
   });
 });

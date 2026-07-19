@@ -285,4 +285,34 @@ describe("DiagnosticsServiceImpl", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("exposes a revision that increments on record and clear; subscribe stops after unsubscribe", () => {
+    const service = new DiagnosticsServiceImpl({
+      store: new DiagnosticsStoreImpl(),
+      logger: createLogger(),
+    });
+    const revisions: number[] = [];
+    const unsubscribe = service.subscribe(() => revisions.push(service.getRevision()));
+
+    expect(service.getRevision()).toBe(0);
+
+    service.record({
+      category: "playback",
+      operation: "playback.start",
+      message: "Playback started",
+    });
+    service.clear();
+
+    expect(revisions).toEqual([1, 2]);
+    expect(service.getRevision()).toBe(2);
+
+    unsubscribe();
+    service.record({
+      category: "runtime",
+      operation: "runtime.memory.sample",
+      message: "after unsubscribe",
+    });
+    expect(revisions).toEqual([1, 2]);
+    expect(service.getRevision()).toBe(3);
+  });
 });
