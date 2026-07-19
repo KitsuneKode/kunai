@@ -4,10 +4,15 @@ import {
   listOrderedPlaybackSourceIds,
   pickNextCatalogSourceId,
   planStartupFailover,
+  STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
 import type { ProviderResolveResult } from "@kunai/types";
 
 describe("playback-source-failover", () => {
+  test("STARTUP_STALL_TIMEOUT_MS leaves headroom past 20s for slow CDNs", () => {
+    expect(STARTUP_STALL_TIMEOUT_MS).toBeGreaterThanOrEqual(45_000);
+  });
+
   test("pickNextCatalogSourceId returns the next untried source in order", () => {
     expect(
       pickNextCatalogSourceId(

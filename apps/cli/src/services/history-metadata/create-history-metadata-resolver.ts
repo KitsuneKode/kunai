@@ -57,11 +57,20 @@ function resolvedMetadataFromSearchResult(match: SearchResult): ResolvedHistoryM
 function pickSearchMatch(
   target: HistoryHealTarget,
   results: readonly SearchResult[],
+  /** True only when `results` come from the same catalog that issued `target.titleId`. */
+  sameIdNamespace: boolean,
 ): SearchResult | undefined {
   const byTitle = results.find((result) => isPlausibleMatch(target.title, result.title));
   if (byTitle) return byTitle;
   // Provider search often returns a romaji/alt catalog title while history keeps the
   // English display name the user watched under — accept an exact provider-native id.
+  //
+  // Only when the ids live in the same namespace. An anime target is also searched
+  // against TMDB (series), where a provider id like AllManga's collides with an
+  // unrelated TMDB id and healed the wrong poster, episode count, and external ids
+  // into history — which then poisoned release reconciliation ("caught up" on a
+  // mid-season episode). A missed heal is recoverable; a wrong one is not.
+  if (!sameIdNamespace) return undefined;
   return results.find((result) => result.id === target.titleId);
 }
 
@@ -75,7 +84,7 @@ export function createHistoryMetadataResolver(deps: {
 
       for (const mediaKind of searchKinds) {
         const results = await deps.search(target.title, mediaKind);
-        const match = pickSearchMatch(target, results);
+        const match = pickSearchMatch(target, results, mediaKind === target.mediaKind);
         const resolved = match ? resolvedMetadataFromSearchResult(match) : null;
         if (resolved) return resolved;
       }

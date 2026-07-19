@@ -296,6 +296,40 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Check that mpv is installed, then export diagnostics if the failure repeats.",
   },
   {
+    operation: "mpv.hls-relay.started",
+    category: "playback",
+    audience: "developer",
+    summary: "A curl HLS relay was started for a fingerprint-blocked CDN host.",
+  },
+  {
+    operation: "mpv.hls-relay.stopped",
+    category: "playback",
+    audience: "developer",
+    summary: "The curl HLS relay stopped after playback end, session release, idle, or error.",
+  },
+  {
+    operation: "mpv.hls-relay.upstream-error",
+    category: "playback",
+    audience: "both",
+    summary: "The HLS relay could not fetch an upstream playlist, segment, or key.",
+    userAction: "Refresh the source or try another Miruro server if playback stalls.",
+  },
+  {
+    operation: "mpv.hls-relay.unavailable",
+    category: "playback",
+    audience: "both",
+    summary: "The HLS relay could not start (usually curl missing from PATH).",
+    userAction: "Install curl, then retry Miruro playback.",
+  },
+  {
+    operation: "playback.startup-stall.aborted",
+    category: "playback",
+    audience: "both",
+    summary: "Startup stall watchdog aborted mpv before first playback progress.",
+    userAction:
+      "Wait for failover, pick another source, or refresh if the CDN is slow but healthy.",
+  },
+  {
     operation: "subtitle.lookup.skipped",
     category: "subtitle",
     audience: "both",

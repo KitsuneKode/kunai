@@ -1,6 +1,5 @@
 import { routePlaybackShellAction } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
-import { pickTitleControlShellAction } from "@/app-shell/title-control/open-title-control-menu";
 import type { PlaybackShellResult, PlaybackShellState } from "@/app-shell/types";
 import {
   enqueueCurrentPlaybackDownload,
@@ -143,11 +142,6 @@ export function createPostPlaybackMenuDeps(
     openPostPlaybackRecommendationActionPanel,
     handleShellAction,
     enqueueCurrentPlaybackDownload,
-    pickTitleControlPostPlayAction: ({ postPlayState, canResumePlayback }) =>
-      pickTitleControlShellAction(container, "post-play", {
-        postPlayState,
-        canResume: canResumePlayback,
-      }),
   };
 }
 

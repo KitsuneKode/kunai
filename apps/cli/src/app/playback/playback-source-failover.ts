@@ -3,7 +3,8 @@ import type { ProviderResolveResult } from "@kunai/types";
 /** ~3 catalog sources + 1 provider hop before surfacing post-play recovery. */
 export const MAX_STARTUP_FAILOVER_ATTEMPTS = 4;
 
-export const STARTUP_STALL_TIMEOUT_MS = 20_000;
+/** Abort + mark dead only after this long with no first progress (slow CDNs need headroom). */
+export const STARTUP_STALL_TIMEOUT_MS = 45_000;
 
 export type StartupFailoverPlan =
   | { readonly kind: "advance-source"; readonly sourceId: string }

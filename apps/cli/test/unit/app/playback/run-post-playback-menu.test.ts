@@ -157,7 +157,6 @@ function createDeps(overrides: Partial<PostPlaybackMenuDeps> = {}): TestDeps {
     openPostPlaybackRecommendationActionPanel: async () => {},
     handleShellAction: async () => "handled" as const,
     enqueueCurrentPlaybackDownload: async () => true,
-    pickTitleControlPostPlayAction: async () => null,
     dispatchCalls,
     ...overrides,
   };
@@ -294,13 +293,8 @@ describe("runPostPlaybackMenu", () => {
       tmdbUnavailable: false,
     };
     const iteration = createBaseIteration({ episodeAvailability: endAvailability });
-    let titleControlCalls = 0;
     let shellCalls = 0;
     const deps = createDeps({
-      pickTitleControlPostPlayAction: async () => {
-        titleControlCalls += 1;
-        return "replay";
-      },
       openPlaybackShell: async () => {
         shellCalls += 1;
         return "quit";
@@ -309,36 +303,11 @@ describe("runPostPlaybackMenu", () => {
       teardownPlaybackForPostPlayExit: async () => {},
     });
 
-    const result = await runPostPlaybackMenu(run, iteration, deps);
-    expect(titleControlCalls).toBe(1);
-    expect(shellCalls).toBe(0);
-    expect(iteration.titleControlAutoPresented).toBe(true);
-    expect(result.kind).toBe("restart");
-  });
-
-  test("dismissed title control auto-present falls through to post-play shell (TC4)", async () => {
-    const run = createRun();
-    const endAvailability: EpisodeAvailability = {
-      nextEpisode: null,
-      previousEpisode: { season: 1, episode: 4 },
-      nextSeasonEpisode: null,
-      upcomingNext: null,
-      animeNextReleaseUnknown: false,
-      tmdbUnavailable: false,
-    };
-    const iteration = createBaseIteration({ episodeAvailability: endAvailability });
-    let shellCalls = 0;
-    const deps = createDeps({
-      pickTitleControlPostPlayAction: async () => null,
-      openPlaybackShell: async () => {
-        shellCalls += 1;
-        return "quit";
-      },
-    });
-
+    // End-of-catalog states used to auto-present a bare title-control list
+    // *instead of* post-play, so the states with purpose-built screens were the
+    // only ones that never rendered them. Post-play now always owns the surface.
     await runPostPlaybackMenu(run, iteration, deps);
     expect(shellCalls).toBe(1);
-    expect(iteration.titleControlAutoPresented).toBe(true);
   });
 
   test("navigation action returns restart directive", async () => {

@@ -1,3 +1,9 @@
+// Pure URL helpers live in core so the CLI mpv relay (infra) can use them too;
+// re-exported here to keep existing @kunai/providers consumers working.
+import { isHlsPlaylistUrl, resolveHlsSegmentUrl } from "@kunai/core";
+
+export { isHlsPlaylistUrl, resolveHlsSegmentUrl };
+
 /** FFmpeg/mpv HLS over HTTP mis-parses large playlists with host-root segment paths. */
 
 export const FFMPEG_HLS_PARTIAL_READ_BYTES = 131_072;
@@ -11,10 +17,6 @@ export const HOST_ROOT_HLS_CDN_HOSTS = [
   "usa6.shegu.net",
   "goldweather.net",
 ] as const;
-
-export function isHlsPlaylistUrl(url: string): boolean {
-  return /\.m3u8(?:[?#]|$)/i.test(url);
-}
 
 export function isKnownHostRootHlsCdn(url: string): boolean {
   try {
@@ -79,16 +81,6 @@ export function parseFirstHlsMediaSegmentPath(manifestText: string): string | nu
     return trimmed;
   }
   return null;
-}
-
-export function resolveHlsSegmentUrl(manifestUrl: string, segmentPath: string): string {
-  if (segmentPath.startsWith("http://") || segmentPath.startsWith("https://")) {
-    return segmentPath;
-  }
-  if (segmentPath.startsWith("/") && !segmentPath.startsWith("//")) {
-    return `${new URL(manifestUrl).origin}${segmentPath}`;
-  }
-  return new URL(segmentPath, manifestUrl).toString();
 }
 
 export function absolutizeHostRootHlsManifest(manifestText: string, manifestUrl: string): string {

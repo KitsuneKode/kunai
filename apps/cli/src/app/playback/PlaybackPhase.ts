@@ -82,6 +82,7 @@ import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-
 import {
   listOrderedPlaybackSourceIds,
   planStartupFailover,
+  STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
 import {
   startAtResumePoint,
@@ -177,6 +178,7 @@ import {
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
 import {
+  buildPlaybackDiagnosticEvent,
   buildRecoveryDiagnosticEvent,
   buildSubtitleDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -2192,12 +2194,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             },
           });
           run.playbackSession = playbackDecision.session;
-          if (playbackDecision.shouldTreatAsInterrupted) {
-            stateManager.dispatch({
-              type: "SET_SESSION_AUTOPLAY_PAUSED",
-              paused: playbackDecision.session.autoplayPaused,
-            });
-          }
+          // The "interrupted" pause is an internal, per-episode guard so quitting
+          // mid-episode does not immediately auto-advance. It is deliberately NOT
+          // pushed into shell state: doing so rendered "autoplay paused" as if the
+          // user's session preference had changed just because they closed mpv.
+          // Only an explicit toggle changes the visible autoplay setting.
           let shouldAutoFallbackProvider = playbackDecision.shouldFallbackProvider;
           if (playbackDecision.shouldRefreshSource) {
             const isExplicitSourceRefresh =
@@ -3267,6 +3268,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       historyRepository,
       playbackEventRepository,
       playerControl,
+      diagnosticsService,
     } = context.container;
 
     const subtitleStatus = describePlaybackSubtitleStatus(
@@ -3375,6 +3377,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         onFeedback: (update) => this.updatePlaybackFeedback(context, update),
         onStartupMark,
         onStartupStallAbort: () => {
+          diagnosticsService.record(
+            buildPlaybackDiagnosticEvent({
+              operation: "playback.startup-stall.aborted",
+              status: "failed",
+              severity: "degraded",
+              failureClass: "timeout",
+              message: "Startup stall watchdog aborted mpv",
+              correlation,
+              context: {
+                timeoutMs: STARTUP_STALL_TIMEOUT_MS,
+                streamHost: (() => {
+                  try {
+                    return new URL(stream.url).hostname;
+                  } catch {
+                    return null;
+                  }
+                })(),
+              },
+            }),
+          );
           const active = playerControl.getActive();
           if (!active) return;
           void active.stop("startup-stall").catch(() => {

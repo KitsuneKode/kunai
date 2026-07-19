@@ -24,23 +24,6 @@ export function resolvePostPlayContinueResult(
   }
 }
 
-/** TC4: auto-present Title Control once on terminal / end-of-catalog post-play states. */
-export function shouldAutoPresentTitleControlForPostPlay(
-  postPlayState: PostPlayState,
-  availability: EpisodeAvailability,
-): boolean {
-  switch (postPlayState.kind) {
-    case "caught-up":
-    case "season-finale":
-    case "series-complete":
-      return true;
-    case "mid-series":
-      return !availability.nextEpisode && !availability.nextSeasonEpisode;
-    default:
-      return false;
-  }
-}
-
 type PostPlayBindingId =
   | "command-palette"
   | "post-continue"

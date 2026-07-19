@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
+import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
   absolutizeHostRootHlsManifest,
   isHlsPlaylistUrl,
@@ -33,6 +34,10 @@ export async function materializeHlsManifestForPlayback(
 ): Promise<MaterializedHlsManifest | null> {
   const manifestUrl = stream.url;
   if (!manifestUrl?.startsWith("http") || !isHlsPlaylistUrl(manifestUrl)) {
+    return null;
+  }
+  // Fingerprint-blocked CDNs must stay remote so the HLS relay can proxy segments.
+  if (streamNeedsHlsRelay(manifestUrl)) {
     return null;
   }
 

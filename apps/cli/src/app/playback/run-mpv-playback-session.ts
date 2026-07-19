@@ -30,7 +30,7 @@ import type { PlaybackStartupStage } from "@/services/playback/playback-startup-
 export type MpvPlaybackSessionHooks = {
   readonly onFeedback: (update: MpvPlaybackFeedback) => void;
   readonly onStartupMark?: (stage: PlaybackStartupStage) => void;
-  /** Abort in-flight mpv when the unconditional startup stall fires (no first progress). */
+  /** Abort in-flight mpv when the startup stall fires (no first progress within STARTUP_STALL_TIMEOUT_MS). */
   readonly onStartupStallAbort?: () => void | Promise<void>;
   readonly onPresenceLaunch: (input: {
     readonly positionSeconds: number;
@@ -179,7 +179,8 @@ export async function runMpvPlaybackSession(
         const startupStage = playbackStartupStageForPlayerEvent(event);
         if (startupStage) hooks.onStartupMark?.(startupStage);
 
-        // Unconditional 20s watchdog from player launch (not subtitle-gated).
+        // Unconditional watchdog from player launch (not subtitle-gated). Timeout is
+        // generous enough for slow-but-valid CDNs (AllManga) while still failing dead streams.
         if (startupStage === "player-launch" || startupStage === "mpv-process-started") {
           armStartupStallWatchdog();
         }

@@ -20,6 +20,12 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
+import {
+  startHlsRelay,
+  streamNeedsHlsRelay,
+  type HlsRelayHandle,
+  type HlsRelayStopReason,
+} from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -38,6 +44,7 @@ import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./Player
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
   private deferredMaterializedCleanups: Array<() => Promise<void>> = [];
+  private activeHlsRelay: HlsRelayHandle | null = null;
   private shuttingDown = false;
 
   constructor(
@@ -54,6 +61,7 @@ export class PlayerServiceImpl implements PlayerService {
 
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.stopActiveHlsRelay("session-release");
   }
 
   killActiveMpvProcessesSync(): void {
@@ -69,12 +77,17 @@ export class PlayerServiceImpl implements PlayerService {
     }
 
     const materialized = await materializePlaybackMediaForPlayback(stream);
-    const playbackStream = materialized.stream;
+    let playbackStream = materialized.stream;
     if (materialized.kind === "dash-mpd") {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });
     } else if (materialized.kind === "hls-manifest") {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "hls-manifest" });
     }
+
+    // Stop any prior cycle relay before starting a new one (autoplay-chain source swaps).
+    this.stopActiveHlsRelay("session-release");
+    playbackStream = this.maybeStartHlsRelay(playbackStream, options);
+
     options.onPlaybackEvent?.({ type: "launching-player" });
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
     if (!presentation.isInteractiveShellMounted()) {
@@ -110,6 +123,7 @@ export class PlayerServiceImpl implements PlayerService {
           resumePromptAt: options.resumePromptAt ?? 0,
           deferredMedia: Boolean(stream.deferredLocator),
           materializedMedia: materialized.kind,
+          hlsRelay: Boolean(this.activeHlsRelay),
         },
       }),
     );
@@ -197,7 +211,9 @@ export class PlayerServiceImpl implements PlayerService {
         (this.persistentSession?.isReusable() ?? false);
       if (shouldDeferCleanup) {
         this.deferMaterializedCleanup(materialized.cleanup);
+        // Keep activeHlsRelay for the next cycle; play() stops/replaces it at the top.
       } else {
+        this.stopActiveHlsRelay("playback-end");
         await materialized.cleanup();
       }
     }
@@ -205,12 +221,14 @@ export class PlayerServiceImpl implements PlayerService {
 
   async releasePersistentSession(): Promise<void> {
     if (!this.persistentSession) {
+      this.stopActiveHlsRelay("session-release");
       await this.flushDeferredMaterializedCleanups();
       return;
     }
     await this.persistentSession.close();
     this.persistentSession = null;
     this.deps.playerControl.setActive(null);
+    this.stopActiveHlsRelay("session-release");
     await this.flushDeferredMaterializedCleanups();
   }
 
@@ -443,6 +461,90 @@ export class PlayerServiceImpl implements PlayerService {
       );
       handler?.(event);
     };
+  }
+
+  private maybeStartHlsRelay(stream: StreamInfo, options: PlayerOptions): StreamInfo {
+    if (!streamNeedsHlsRelay(stream.url)) {
+      return stream;
+    }
+    try {
+      const handle = startHlsRelay(stream.url, stream.headers ?? {}, {
+        onStopped: (reason) => {
+          this.deps.diagnostics.record(
+            buildPlaybackDiagnosticEvent({
+              operation: "mpv.hls-relay.stopped",
+              status: "succeeded",
+              severity: "healthy",
+              recommendedAction: "none",
+              message: "HLS relay stopped",
+              correlation: options.correlation,
+              context: { reason, upstreamHost: handle.upstreamHost },
+            }),
+          );
+        },
+        onUpstreamError: (info) => {
+          this.deps.diagnostics.record(
+            buildPlaybackDiagnosticEvent({
+              operation: "mpv.hls-relay.upstream-error",
+              status: "failed",
+              severity: "degraded",
+              failureClass: "http",
+              message: "HLS relay upstream error",
+              correlation: options.correlation,
+              context: {
+                upstreamHost: info.host,
+                status: info.status ?? null,
+                error: info.message.slice(0, 160),
+              },
+            }),
+          );
+        },
+      });
+      this.activeHlsRelay = handle;
+      this.deps.logger.info("HLS relay started", { upstreamHost: handle.upstreamHost });
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: "mpv.hls-relay.started",
+          status: "started",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "HLS relay started",
+          correlation: options.correlation,
+          context: { upstreamHost: handle.upstreamHost },
+        }),
+      );
+      return { ...stream, url: handle.proxyUrl };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: "mpv.hls-relay.unavailable",
+          status: "failed",
+          severity: "blocked",
+          failureClass: "dependency",
+          message: "HLS relay unavailable",
+          correlation: options.correlation,
+          context: { error: message.slice(0, 160), streamHost: safeUrlHost(stream.url) },
+        }),
+      );
+      // Degrade to the direct URL instead of failing playback outright. The relay
+      // exists because these CDNs reject mpv's TLS handshake, so a direct attempt
+      // will probably fail too — but "probably" is not "certainly", and a missing
+      // curl or an unavailable local port must not be the reason a stream that
+      // used to play now cannot start at all.
+      this.deps.logger.warn("HLS relay unavailable — falling back to the direct stream URL", {
+        error: message,
+        streamHost: safeUrlHost(stream.url),
+      });
+      return stream;
+    }
+  }
+
+  private stopActiveHlsRelay(reason: HlsRelayStopReason): void {
+    if (!this.activeHlsRelay) return;
+    const handle = this.activeHlsRelay;
+    this.activeHlsRelay = null;
+    handle.stop(reason);
   }
 }
 

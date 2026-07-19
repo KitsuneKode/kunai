@@ -12,6 +12,27 @@ afterEach(async () => {
 });
 
 describe("hls manifest materializer", () => {
+  test("skips materialize for fingerprint-relay CDN hosts", async () => {
+    const stream: StreamInfo = {
+      url: "https://vault-06.uwucdn.top/path/index.m3u8",
+      headers: { Referer: "https://kwik.cx/" },
+      title: "Test",
+      timestamp: Date.now(),
+    };
+    const originalFetch = globalThis.fetch;
+    let fetched = false;
+    globalThis.fetch = (async () => {
+      fetched = true;
+      return new Response("#EXTM3U\n", { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      expect(await materializeHlsManifestForPlayback(stream)).toBeNull();
+      expect(fetched).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("materializes a fetched manifest into a local playlist file", async () => {
     const manifest = ["#EXTM3U", "#EXTINF:3,", "/mirror/seg-1.jpg"].join("\n");
     const originalFetch = globalThis.fetch;

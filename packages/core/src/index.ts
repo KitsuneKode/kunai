@@ -13,3 +13,4 @@ export * from "./providers/factory";
 export * from "./resolver";
 export * from "./trace";
 export * from "./trace-summary";
+export * from "./hls-url";

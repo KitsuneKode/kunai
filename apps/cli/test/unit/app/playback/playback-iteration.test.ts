@@ -63,7 +63,6 @@ describe("playback iteration", () => {
     const iteration = createIteration({ resolvedProviderId: "videasy" });
     expect(iteration.nearEndAutoNextDeclined).toBe(false);
     expect(iteration.postPlayProviderId).toBe("videasy");
-    expect(iteration.titleControlAutoPresented).toBe(false);
   });
 });
 

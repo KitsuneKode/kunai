@@ -33,7 +33,6 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
-import { streamNeedsHlsRelay, startHlsRelay, type HlsRelayHandle } from "@/infra/player/hls-relay";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -89,12 +88,6 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
-  let relayHandle: HlsRelayHandle | null = null;
-  if (streamNeedsHlsRelay(opts.url)) {
-    relayHandle = startHlsRelay(opts.url, opts.headers);
-    opts = { ...opts, url: relayHandle.proxyUrl };
-  }
-
   const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
     mpv: opts.mpv,
   });
@@ -131,7 +124,6 @@ export async function launchMpv(opts: {
       emitPlaybackEvent,
     );
   } finally {
-    relayHandle?.stop();
     unregisterMpv();
   }
 }

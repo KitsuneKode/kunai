@@ -1,7 +1,6 @@
 // Post-playback menu inner loop — extracted from PlaybackPhase.execute() so the
 // outer episode loop can call a single function and act on its directive.
 import { resolveCommandContext } from "@/app-shell/commands";
-import { shouldAutoPresentTitleControlForPostPlay } from "@/app-shell/title-control/title-control-post-play";
 import type { PlaybackShellResult, PlaybackShellState, ShellAction } from "@/app-shell/types";
 import {
   openTracksPanel,
@@ -178,10 +177,6 @@ export type PostPlaybackMenuDeps = {
   readonly openPostPlaybackRecommendationActionPanel: typeof openPostPlaybackRecommendationActionPanel;
   readonly handleShellAction: typeof handleShellAction;
   readonly enqueueCurrentPlaybackDownload: typeof enqueueCurrentPlaybackDownload;
-  readonly pickTitleControlPostPlayAction: (input: {
-    readonly postPlayState: PostPlayState;
-    readonly canResumePlayback: boolean;
-  }) => Promise<ShellAction | null>;
 };
 
 export async function runPostPlaybackMenu(
@@ -387,21 +382,13 @@ export async function runPostPlaybackMenu(
         : null;
     deps.dispatchWatchTimeSummary(watchTimeSummary);
 
+    // Post-play always renders its own surface. It previously auto-presented a
+    // bare title-control list for caught-up / season-finale / series-complete
+    // and for mid-series with nothing left to play — which meant the states
+    // with purpose-built screens (calendar framing, finale celebration,
+    // milestone) were the exact ones that never showed them, and the surface
+    // looked random. `m` still opens the title-control menu on demand here.
     let postAction: PlaybackShellResult | ShellAction | undefined;
-
-    if (
-      !iteration.titleControlAutoPresented &&
-      shouldAutoPresentTitleControlForPostPlay(postPlayState, episodeAvailability)
-    ) {
-      iteration.titleControlAutoPresented = true;
-      const titleControlPick = await deps.pickTitleControlPostPlayAction({
-        postPlayState,
-        canResumePlayback,
-      });
-      if (titleControlPick) {
-        postAction = titleControlPick;
-      }
-    }
 
     if (postAction === undefined) {
       const upcomingEpisode = episodeAvailability.nextEpisode;

@@ -39,7 +39,6 @@ export interface PlaybackIteration {
   /** B1: stopAfterCurrent snapshot before pre-menu clearing mutates session. */
   readonly stopAfterCurrentAtMenuEntry: boolean;
   /** TC4: title control auto-presented once this post-play iteration. */
-  titleControlAutoPresented: boolean;
 }
 
 export function createPlaybackIteration(input: {
@@ -63,6 +62,5 @@ export function createPlaybackIteration(input: {
     ...input,
     postPlayProviderId: input.resolvedProviderId,
     nearEndAutoNextDeclined: false,
-    titleControlAutoPresented: false,
   };
 }
