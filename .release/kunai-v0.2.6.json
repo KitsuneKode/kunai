@@ -12,5 +12,39 @@
     "npm": "npm install -g @kitsunekode/kunai@0.2.6",
     "bunx": "bunx @kitsunekode/kunai@0.2.6",
     "binaryLatest": "https://github.com/KitsuneKode/kunai/releases/latest"
-  }
+  },
+  "assets": [
+    {
+      "sha256": "f284737b9d273141d1be79b567db278ef2ea135977bc79203c730ee36be1aad1",
+      "name": "kunai-linux-x64"
+    },
+    {
+      "sha256": "388d46725680bb49f7bdae81dc3c16a5ff14105f586370477e28406169530a8d",
+      "name": "kunai-linux-x64-musl"
+    },
+    {
+      "sha256": "54009bebbdd0506261f9f3fc8bb13cb7b34eed51d1e723976d90f17069ed03fd",
+      "name": "kunai-linux-arm64"
+    },
+    {
+      "sha256": "09dd83b9d97c9a10f2de1dcc13d76515d6ced9e028c61609e7d32d82f2ed0c82",
+      "name": "kunai-linux-arm64-musl"
+    },
+    {
+      "sha256": "7f70108fa996940575f2df561a5ec3d6def03945986ba39e41b9f0ca09b83637",
+      "name": "kunai-darwin-x64"
+    },
+    {
+      "sha256": "42019eefa752ce32fa949069c18b2391b2831327c4a925f50d08fd5e6d0ed7a0",
+      "name": "kunai-darwin-arm64"
+    },
+    {
+      "sha256": "4af40a59b8a4f76e1da8d381bd4955e1a54917e19665166136d24f456e688064",
+      "name": "kunai-windows-x64.exe"
+    },
+    {
+      "sha256": "035ad6b4b1c370f94776ee64817af945d7bbb2f4875ce24f149e0742da1192d3",
+      "name": "kunai-windows-arm64.exe"
+    }
+  ]
 }

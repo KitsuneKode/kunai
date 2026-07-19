@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-16T11:51:02.590Z",
+  "syncedAt": "2026-07-19T17:27:32.367Z",
   "version": "0.2.6",
   "cliVersion": "0.2.6",
-  "cliSourceRevision": "78324377",
-  "cliSourceFingerprint": "a6a8ef7d8a16511831eac4439bddf78294c44c81b3c857717a1d55dfe83323a4",
-  "docsContentFingerprint": "87dcb75ff1925fef3c025cd225a023f1b8c6c382b2b92c47fd82e0634da78a7d",
+  "cliSourceRevision": "17b9607e",
+  "cliSourceFingerprint": "cc3ee7036c0f02c7773c0fa08bba4cce2463fd156fe102f1e2cc3c8994108117",
+  "docsContentFingerprint": "4031e20d7dbcaceb0b28ddf8ab58a78460071389d566ac3396521360857a82ed",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 78,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -21,17 +21,17 @@
       "notes": [
         "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at); api.wingsdatabase.com is a mirror.",
         "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
-        "2026-07-16: Inventory UI order matches cineby Servers (Yoru first). Resolve probes Neon → Cypher → Yoru for speed/stability.",
-        "2026-07-16: Skip stream preflight on balanced/fast (cineby-like); quality-first still validates.",
+        "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
+        "2026-07-18: Resolve-gate always segment-probes HLS before attesting streamReachabilityVerified; dead CDNs fail over instead of hanging.",
         "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
-        "Cineplay (bc-frontend) is the default Videasy client profile; origin/referer follow cineplay.to.",
+        "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
         "Do not mark browser-safe because local decrypt/runtime behavior is required."
       ]
     },
     {
       "id": "vidlink",
       "displayName": "VidLink",
-      "description": "Browserless VidLink resolver for movies and series — direct HLS with multi-language subtitles, no captcha or session token",
+      "description": "Movies and series with multi-language subtitles",
       "domain": "vidlink.pro",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
@@ -47,7 +47,7 @@
     {
       "id": "rivestream",
       "displayName": "Rivestream",
-      "description": "Rivestream direct resolver candidate (MurmurHash)",
+      "description": "Experimental source for movies and series — may be unstable",
       "domain": "rivestream.app",
       "recommended": true,
       "mediaKinds": ["movie", "series"],
@@ -58,7 +58,7 @@
     {
       "id": "allanime",
       "displayName": "AllManga",
-      "description": "AllManga-compatible anime API client (sub & dub, no browser needed)",
+      "description": "Anime episodes in sub and dub — the primary anime source",
       "domain": "allmanga.to",
       "recommended": false,
       "mediaKinds": ["anime"],
@@ -74,7 +74,7 @@
     {
       "id": "miruro",
       "displayName": "Miruro",
-      "description": "Miruro anime direct resolver (pipe API + XOR decrypt)",
+      "description": "Alternate anime source — useful when a title is missing elsewhere",
       "domain": "www.miruro.bz",
       "recommended": false,
       "mediaKinds": ["anime"],
@@ -84,7 +84,7 @@
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
         "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
         "Primary hosts: www.miruro.bz",
-        "www.miruro.ru. TLS-dead miruro.tv hosts stay off the resolve list.",
+        "www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
         "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
         "Still not the default anime auto-fallback (AllAnime remains primary); Miruro is available for manual pick when curl/http2 path works.",
         "May hit Cloudflare rate limits if called too frequently."
