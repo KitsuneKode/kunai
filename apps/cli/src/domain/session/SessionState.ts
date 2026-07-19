@@ -90,7 +90,7 @@ export type PickerOverlayState = {
 };
 
 export type OverlayState =
-  | { type: "settings" }
+  | { type: "settings"; initialSectionId?: string }
   | { type: "provider_picker"; currentProvider: string; lane: import("../types").ProviderLane }
   | ({ type: "subtitle_picker" } & PickerOverlayState)
   | ({ type: "season_picker"; currentSeason: number } & PickerOverlayState)

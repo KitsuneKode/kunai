@@ -142,6 +142,39 @@ bun run build:binaries -- --only linux-x64-musl
 Inside the container: binary at `/usr/local/bin/kunai`, bundle at
 `/work/support-bundle.json`, config under `$XDG_CONFIG_HOME/kunai/config.json`.
 
+## Cache And Provider Health Controls
+
+Two shell commands clear disposable local state without touching watch history
+or config. Prefer these before blaming a provider or wiping a profile.
+
+### `/reset-provider-health`
+
+**Symptom:** the runtime health line (or provider picker) shows a provider as
+`degraded` or `down`, auto-fallback skips it, or playback keeps avoiding a
+provider that used to work.
+
+**What it does:** forgets global and/or per-show provider failure memory so
+auto-fallback can try those providers again. It does **not** clear cached
+stream URLs, history, or config.
+
+When the runtime health provider line includes persisted `degraded`/`down`
+status, it appends the exact command: `/reset-provider-health`. After a
+successful reset, that health badge disappears from the line.
+
+### `/clear-cache`
+
+**Symptom:** playback keeps reusing a dead or stale stream URL, source inventory
+looks wrong for an episode you know should resolve differently, or you need a
+fresh resolve without resetting provider failure memory.
+
+**What it does:** clears stream/resolve cache (episode, title, or entire cache),
+optionally also provider failure memory via the same picker. Feedback always
+reports what was cleared and what was kept. **History and config are never
+touched.**
+
+Use `/clear-cache` for stale URLs; use `/reset-provider-health` when the problem
+is skipped/down providers rather than cached streams.
+
 ## Latency Triage Order
 
 Use `--debug-json` when reproducing provider/playback issues: active-runtime

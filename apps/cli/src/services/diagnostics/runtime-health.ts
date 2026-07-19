@@ -10,6 +10,7 @@ import {
 import {
   formatProviderHealthBadge,
   resolveEffectiveProviderHealth,
+  type EffectiveProviderHealthStatus,
 } from "@/services/playback/provider-health-policy";
 import type { ProviderHealth } from "@kunai/types";
 
@@ -357,6 +358,14 @@ function resolveDurationMs(
   return completedEvent.timestamp - start.timestamp;
 }
 
+function appendProviderHealthResetHint(
+  detail: string,
+  status: EffectiveProviderHealthStatus | undefined,
+): string {
+  if (status !== "degraded" && status !== "down") return detail;
+  return `${detail}  ·  /reset-provider-health`;
+}
+
 export function buildRuntimeHealthSnapshot(input: {
   readonly recentEvents: readonly DiagnosticEvent[];
   readonly currentProvider?: string | null;
@@ -367,30 +376,25 @@ export function buildRuntimeHealthSnapshot(input: {
   const telemetryProvider = summarizeProviderHealth(input.recentEvents, input.currentProvider);
   const effective = resolveEffectiveProviderHealth(input.persistedProviderHealth);
   const persistedBadge = formatProviderHealthBadge(effective ?? undefined);
-  const provider =
-    persistedBadge && telemetryProvider.tone === "neutral"
-      ? {
-          label: telemetryProvider.label,
-          detail: `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
-          tone:
-            effective?.effectiveStatus === "down"
-              ? ("error" as const)
-              : effective?.effectiveStatus === "degraded"
-                ? ("warning" as const)
-                : telemetryProvider.tone,
-        }
-      : persistedBadge
-        ? {
-            ...telemetryProvider,
-            detail: `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
-            tone:
-              effective?.effectiveStatus === "down"
-                ? ("error" as const)
-                : effective?.effectiveStatus === "degraded"
-                  ? ("warning" as const)
-                  : telemetryProvider.tone,
-          }
-        : telemetryProvider;
+  const healthDetail = persistedBadge
+    ? appendProviderHealthResetHint(
+        `${telemetryProvider.detail}  ·  health: ${persistedBadge}`,
+        effective?.effectiveStatus,
+      )
+    : telemetryProvider.detail;
+  const healthTone =
+    effective?.effectiveStatus === "down"
+      ? ("error" as const)
+      : effective?.effectiveStatus === "degraded"
+        ? ("warning" as const)
+        : telemetryProvider.tone;
+  const provider = persistedBadge
+    ? {
+        label: telemetryProvider.label,
+        detail: healthDetail,
+        tone: healthTone,
+      }
+    : telemetryProvider;
 
   return {
     network: summarizePlaybackNetworkHealth(input.recentEvents),

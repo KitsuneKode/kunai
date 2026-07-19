@@ -795,8 +795,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   about: (c) => handleStaticOverlay(c, "about"),
   diagnostics: (c) => handleDiagnostics(c),
   settings: (c) => handleSettings(c),
-  providers: (c) => handleSettings(c, { initialSectionId: "section:providers" }),
-  provider: (c) => handleProviderPicker(c),
+  providers: (c) => handleProvidersHub(c),
+  provider: (c) => handleProvidersHub(c),
   presence: (c) => handleSettings(c),
   telemetry: (c) => handleTelemetry(c),
   "telemetry-show": (c) => handleTelemetryShow(c),
@@ -1023,6 +1023,47 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   return "handled";
 }
 
+type ProvidersHubChoice = "session" | "defaults";
+
+/** Single entry for /providers: session switch vs sticky defaults. */
+async function handleProvidersHub(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const currentName =
+    container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider;
+  const laneLabel =
+    state.mode === "anime" ? "anime" : state.mode === "youtube" ? "YouTube" : "series";
+
+  const choice = await chooseFromListShell<ProvidersHubChoice>({
+    title: "Providers",
+    subtitle: `${currentName} · ${laneLabel} · session or defaults`,
+    actionContext: buildPickerActionContext({
+      container,
+      taskLabel: "Choose provider action",
+      allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
+    }),
+    options: [
+      {
+        value: "session" as const,
+        label: "Switch for this session",
+        detail: `Change the active ${laneLabel} provider until you quit or switch again`,
+      },
+      {
+        value: "defaults" as const,
+        label: "Set defaults & priority",
+        detail: "Sticky defaults and fallback order in settings",
+      },
+    ],
+  });
+
+  if (choice === "session") {
+    return handleProviderPicker(container);
+  }
+  if (choice === "defaults") {
+    return handleSettings(container, { initialSectionId: "section:providers" });
+  }
+  return "handled";
+}
+
 async function handleSettings(
   container: Container,
   options: { readonly initialSectionId?: string } = {},
@@ -1057,12 +1098,13 @@ async function handleClearCache(container: Container): Promise<"handled"> {
       ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
       : null;
 
+  const keptNote = "History and config were not touched.";
   const choice = await chooseFromListShell<
     "episode" | "title" | "streams" | "provider-memory" | "all" | false
   >({
     title: "Clear cache?",
     subtitle:
-      "Stream cache = saved m3u8 URLs. Provider memory = failure history that can skip fallbacks.",
+      "Stream cache = saved m3u8 URLs. Provider memory = failure history that can skip fallbacks. History and config are never touched.",
     options: [
       ...(title && episode
         ? [
@@ -1110,7 +1152,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     await purgeEpisodePlaybackCache(container, title, episode);
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Stream cache cleared for ${title.name} ${episodeCode ?? ""}.`.trim(),
+      note: `Cleared episode stream cache for ${title.name}${episodeCode ? ` ${episodeCode}` : ""}. Kept provider memory. ${keptNote}`,
     });
     return "handled";
   }
@@ -1119,7 +1161,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     await purgeTitlePlaybackCaches(container, title, episode ? [episode] : undefined);
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Stream cache cleared for ${title.name}.`,
+      note: `Cleared title stream cache for ${title.name}. Kept provider memory. ${keptNote}`,
     });
     return "handled";
   }
@@ -1138,7 +1180,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Entire stream cache cleared. Provider failure memory was not changed.",
+      note: `Cleared entire stream cache. Kept provider failure memory. ${keptNote}`,
     });
     return "handled";
   }
@@ -1159,7 +1201,7 @@ async function handleClearCache(container: Container): Promise<"handled"> {
     );
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Stream cache and all provider failure memory cleared.",
+      note: `Cleared stream cache and all provider failure memory. ${keptNote}`,
     });
   }
   return "handled";

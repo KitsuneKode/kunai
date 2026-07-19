@@ -187,6 +187,39 @@ describe("runtime health diagnostics", () => {
 
     expect(health.provider.detail).toContain("health:");
     expect(health.provider.detail).toContain("down");
+    expect(health.provider.detail).toContain("/reset-provider-health");
     expect(health.provider.tone).toBe("error");
+  });
+
+  test("appends /reset-provider-health when persisted health is degraded", () => {
+    const health = buildRuntimeHealthSnapshot({
+      currentProvider: "vidking",
+      recentEvents: [],
+      persistedProviderHealth: {
+        providerId: "vidking",
+        status: "degraded",
+        checkedAt: new Date().toISOString(),
+        consecutiveFailures: 2,
+      },
+    });
+
+    expect(health.provider.detail).toContain("degraded");
+    expect(health.provider.detail).toContain("/reset-provider-health");
+    expect(health.provider.tone).toBe("warning");
+  });
+
+  test("does not append /reset-provider-health when persisted health is healthy", () => {
+    const health = buildRuntimeHealthSnapshot({
+      currentProvider: "vidking",
+      recentEvents: [],
+      persistedProviderHealth: {
+        providerId: "vidking",
+        status: "healthy",
+        checkedAt: new Date().toISOString(),
+        consecutiveFailures: 0,
+      },
+    });
+
+    expect(health.provider.detail).not.toContain("/reset-provider-health");
   });
 });
