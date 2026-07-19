@@ -88,4 +88,27 @@ describe("resolveBrowseDestinationLabel", () => {
       }),
     ).toBe("Schedule");
   });
+
+  test("idle home tip mentioning /trending stays Browse", () => {
+    expect(
+      resolveBrowseDestinationLabel({
+        isCalendar: false,
+        query: "",
+        resultSubtitle: "",
+        emptyMessage: "Search for a title — or try /trending to see what's popular",
+        hasResults: false,
+        searchState: "idle",
+      }),
+    ).toBe("Browse");
+    expect(
+      resolveBrowseDestinationLabel({
+        isCalendar: false,
+        query: "",
+        resultSubtitle: "",
+        emptyMessage: "Search for a title — or try /trending to see what's popular",
+        hasResults: true,
+        searchState: "ready",
+      }),
+    ).toBe("Browse");
+  });
 });

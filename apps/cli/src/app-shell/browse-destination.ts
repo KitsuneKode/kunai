@@ -63,7 +63,14 @@ export function resolveBrowseDestinationLabel(input: {
   const query = input.query.trim();
   if (query.length > 0) return "Search";
 
-  const haystack = `${input.resultSubtitle} ${input.emptyMessage ?? ""}`.toLowerCase();
+  // Subtitle is the destination of truth after a route load ("12 trending · TMDB").
+  // Idle empty hints say "try /trending" — that must NOT flip the home label.
+  // Loading emptyMessage is consulted only while searchState === "loading".
+  const subtitle = input.resultSubtitle.toLowerCase();
+  const loadingHint =
+    input.searchState === "loading" ? (input.emptyMessage ?? "").toLowerCase() : "";
+  const haystack = `${subtitle} ${loadingHint}`.trim();
+
   if (haystack.includes("recommend") || haystack.includes("discover")) {
     return "Recommendations";
   }
@@ -76,6 +83,9 @@ export function resolveBrowseDestinationLabel(input: {
   ) {
     return "Schedule";
   }
-  if (haystack.includes("trending") || input.hasResults) return "Trending";
+  if (haystack.includes("trending")) return "Trending";
+
+  // Home / idle with no loaded discovery route stays Browse — never invent Trending
+  // just because leftover rows exist without a destination subtitle.
   return "Browse";
 }
