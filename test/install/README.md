@@ -1,0 +1,66 @@
+# Installer scenarios
+
+Execution-level tests for `install.sh`. Every other update test in the repo
+mocks the filesystem and network; these actually run the installer and assert
+what ended up on disk and on `PATH`.
+
+```sh
+test/install/run.sh                    # all scenarios
+test/install/run.sh npm-contamination  # one
+```
+
+Each scenario runs in a fresh, network-less container as a non-root user with a
+real `$HOME`, so state never leaks between runs and never touches your own
+install. `install.sh` is bind-mounted from the working tree, so scenarios always
+test your current changes rather than a copy baked into the image.
+
+## How it stays hermetic
+
+`install.sh` takes `KUNAI_DL_BASE`, `KUNAI_RELEASES_API`, `KUNAI_BIN_DIR` and
+`KUNAI_DATA_DIR` as overrides, and `curl` handles `file://` URLs. So
+`make-fake-release.sh` writes a release tree to disk and the installer consumes
+it directly — no HTTP server, no ports, no daemons, no network.
+
+## What these prove, and what they don't
+
+The served asset is a stub script that reports a version, **not a real Kunai
+build**. These scenarios prove install _mechanics_: version resolution, asset
+naming, checksum verification, on-disk layout, and which binary owns `PATH`.
+
+They do not prove the shipped binary runs. That belongs to the E2E playback
+harness (#30). Keep the two honest and separate — a stub passing here is not
+evidence that a release works.
+
+## Scenarios
+
+| Scenario            | Covers                                               |
+| ------------------- | ---------------------------------------------------- |
+| `npm-contamination` | npm global install, then native install over the top |
+
+### npm-contamination
+
+The likeliest real-world breakage: a user installs via npm, later installs
+natively, and ends up with two `kunai` on `PATH`. Which one runs is decided by
+`PATH` order, not by which is newer.
+
+This scenario found a real defect on its first run. `install.sh` reported
+`Done. kunai is on PATH` while `kunai --version` still returned the old npm
+build — the native binary was installed correctly but shadowed, and the
+manifest claimed `channel: binary` while the user ran an npm shim. The in-app
+installer already handled this (`services/update/run-install.ts` →
+`cleanupNpmInstallations`); the shell installer did not. Fixed by
+`resolve_conflicting_installs` in `install.sh`.
+
+## Adding a scenario
+
+Drop an executable `scenarios/<name>.sh`. It runs as `/harness/scenario.sh` with
+`install.sh`, `make-fake-release.sh` and `stub-npm-package` mounted under
+`/harness`. Exit non-zero to fail.
+
+Assert invariants rather than exit codes — the defect above was invisible to
+exit codes, because the installer genuinely succeeded at installing. What was
+wrong was the state it left behind.
+
+Planned next (see `.plans/plan-0.3.0-release-readiness.md#A1`): fresh install,
+upgrade + retention pruning, flat→versioned migration, uninstall, and
+interrupted-upgrade recovery.

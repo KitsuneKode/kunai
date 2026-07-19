@@ -250,7 +250,65 @@ install_binary() {
 
 	write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "versioned"
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+	resolve_conflicting_installs
 	path_hint "$BIN_DIR"
+}
+
+# Every kunai on PATH, in lookup order. `command -v` reports only the winner,
+# which is precisely what hides this problem: a stale shim earlier in PATH
+# shadows the build we just installed.
+list_path_kunai() {
+	local dir
+	while IFS= read -r -d ':' dir || [[ -n "$dir" ]]; do
+		[[ -n "$dir" && -x "$dir/kunai" ]] && printf '%s\n' "$dir/kunai"
+	done <<<"$PATH:"
+}
+
+# A native install leaves any older npm/bun global install in place, and those
+# usually sit earlier in PATH — so `kunai` would keep running the old build
+# while the installer claims success. The in-app installer already cleans these
+# up (services/update/run-install.ts); this mirrors it for the shell path.
+resolve_conflicting_installs() {
+	local launcher="$BIN_DIR/kunai" found others=() entry
+	[[ "$DRY" == 1 ]] && return 0
+
+	while IFS= read -r found; do
+		[[ "$found" == "$launcher" ]] && continue
+		others+=("$found")
+	done < <(list_path_kunai)
+
+	[[ "${#others[@]}" -eq 0 ]] && return 0
+
+	warn "Another kunai is already on PATH and would shadow this install:"
+	for entry in "${others[@]}"; do
+		printf '    %s\n' "$entry"
+	done
+
+	if ! ask "Remove the conflicting global install(s)?" y; then
+		warn "Left in place. 'kunai' will keep running ${others[0]} until you remove it."
+		return 0
+	fi
+
+	if have npm; then
+		run npm uninstall -g "$KUNAI_PACKAGE" >/dev/null 2>&1 || true
+	fi
+	if have bun; then
+		run bun remove --global "$KUNAI_PACKAGE" >/dev/null 2>&1 || true
+	fi
+
+	# Report against reality rather than assuming the uninstall worked.
+	local remaining=()
+	while IFS= read -r found; do
+		[[ "$found" == "$launcher" ]] && continue
+		remaining+=("$found")
+	done < <(list_path_kunai)
+
+	if [[ "${#remaining[@]}" -eq 0 ]]; then
+		info "Removed conflicting install(s); kunai now resolves to $launcher."
+	else
+		warn "Could not remove: ${remaining[*]}"
+		warn "Remove it manually, or 'kunai' will keep running that build."
+	fi
 }
 
 ensure_bun() {

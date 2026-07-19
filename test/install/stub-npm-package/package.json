@@ -1,0 +1,9 @@
+{
+  "name": "@kitsunekode/kunai",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Stub stand-in for a previously published npm build, used only by installer scenarios.",
+  "bin": {
+    "kunai": "bin/kunai.js"
+  }
+}
