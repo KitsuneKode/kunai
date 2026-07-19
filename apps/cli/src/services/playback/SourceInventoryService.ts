@@ -10,7 +10,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
-export const SOURCE_INVENTORY_SCHEMA_VERSION = "v4";
+export const SOURCE_INVENTORY_SCHEMA_VERSION = "v5";
 
 export type SourceInventoryCacheInput = {
   readonly providerId: string;
@@ -21,6 +21,7 @@ export type SourceInventoryCacheInput = {
   readonly absoluteEpisode?: number;
   readonly audioMode?: string;
   readonly subtitleLanguage?: string;
+  readonly qualityPreference?: string;
   readonly startupPriority?: StartupPriority;
   readonly runtime?: ProviderRuntime;
   readonly schemaVersion?: string;
@@ -194,6 +195,7 @@ export function buildSourceInventoryCachePreimage(input: SourceInventoryCacheInp
     normalizePart(input.absoluteEpisode),
     normalizePart(input.audioMode),
     normalizePart(input.subtitleLanguage),
+    normalizePart(input.qualityPreference),
     normalizePart(input.startupPriority ?? "balanced"),
     normalizePart(input.runtime),
   ].join("\0");

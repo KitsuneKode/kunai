@@ -252,6 +252,67 @@ test("PlaybackResolveService does not cache deferred media locators", async () =
   expect(cache.setKeys).toHaveLength(0);
 });
 
+test("PlaybackResolveService forwards quality preference to source inventory get and set", async () => {
+  const reads: Array<{ qualityPreference?: string }> = [];
+  const writes: Array<{ qualityPreference?: string }> = [];
+  const engine = createMockEngine({
+    result: {
+      status: "resolved",
+      providerId: "primary" as ProviderId,
+      streams: [
+        {
+          id: "stream:primary:1",
+          providerId: "primary" as ProviderId,
+          url: "https://primary.example/stream.m3u8",
+          protocol: "hls" as const,
+          confidence: 0.9,
+          cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+        },
+      ],
+      subtitles: [],
+      trace: {
+        id: "trace:primary",
+        startedAt: new Date().toISOString(),
+        title: { id: "12345", kind: "movie", title: "Test Movie" },
+        cacheHit: false,
+        steps: [],
+        failures: [],
+      },
+      failures: [],
+    },
+    providerId: "primary" as ProviderId,
+    attempts: [{ providerId: "primary" as ProviderId, result: undefined }],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async (input) => {
+        reads.push(input);
+        return null;
+      },
+      set: async (input) => {
+        writes.push(input);
+      },
+      delete: async () => {},
+    },
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    qualityPreference: "720p",
+    signal: new AbortController().signal,
+  });
+
+  expect(reads[0]?.qualityPreference).toBe("720p");
+  expect(writes[0]?.qualityPreference).toBe("720p");
+});
+
 test("PlaybackResolveService reuses source inventory before a provider resolve", async () => {
   let providerCalls = 0;
   const inventory = {

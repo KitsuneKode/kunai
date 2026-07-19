@@ -79,7 +79,7 @@ For playback recovery debugging, prefer stable operation names over free-form lo
 - `resolve.work.insight`: a redacted local resolve-work graph was exported for request economy diagnostics.
 - `resolve.cache.hit`, `resolve.cache.miss`, `resolve.cache.stale`: cache decision.
 - `resolve.refetch.failed.cached-fallback`: no fresher source was found, so Kunai kept the current cached stream.
-- `source-inventory.cache.hit`, `source-inventory.cache.miss`, `source-inventory.cache.set`, `source-inventory.cache.invalidated`: source inventory cache decisions. These events use short key hashes, not full key preimages.
+- `source-inventory.cache.hit`, `source-inventory.cache.miss`, `source-inventory.cache.set`, `source-inventory.cache.invalidated`: source inventory cache decisions. These events use short key hashes, not full key preimages. Schema `v5` partitions inventory by quality preference (same identity as resolve, invalidation, Tracks hints, and Videasy phase-B dedupe); diagnostics still never expose the raw preimage.
 - `mpv.preflight-definitive-failure` / `preflight-definitive-failure`: one-shot mpv launch was stopped early because the stream preflight proved the URL was dead before IPC took ownership.
 - `post-playback.recommendations.seed`: the post-playback screen rendered from already-prefetched recommendations or an empty rail without waiting for a fresh network request.
 - `post-playback.recommendations.warm`: non-critical recommendation data warmed in the background after the shell was already usable.

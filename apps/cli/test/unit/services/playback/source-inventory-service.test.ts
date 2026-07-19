@@ -23,15 +23,27 @@ afterEach(() => {
 });
 
 describe("SourceInventoryService", () => {
-  test("uses v4 schema keys for provider metadata inventory", () => {
-    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v4");
+  test("uses v5 schema keys that partition inventory by quality preference", () => {
+    const baseInput: SourceInventoryCacheInput = {
+      providerId: "vidking",
+      mediaKind: "series",
+      titleId: "1396",
+      season: 1,
+      episode: 5,
+    };
+    const cacheKey = (qualityPreference?: string) =>
+      buildSourceInventoryCacheKey({ ...baseInput, qualityPreference });
+
+    expect(SOURCE_INVENTORY_SCHEMA_VERSION).toBe("v5");
     expect(
       buildSourceInventoryCachePreimage({
         providerId: "allmanga",
         mediaKind: "anime",
         titleId: "provider-title",
-      }).startsWith("v4\0"),
+      }).startsWith("v5\0"),
     ).toBe(true);
+    expect(cacheKey("auto")).not.toBe(cacheKey("720p"));
+    expect(cacheKey("720p")).not.toBe(cacheKey("1080p"));
   });
 
   test("separates provider audio subtitle and episode dimensions in cache keys", () => {
@@ -55,32 +67,6 @@ describe("SourceInventoryService", () => {
     ]);
 
     expect(keys.size).toBe(5);
-  });
-
-  test("does not include selected quality in the inventory key", () => {
-    const key = buildSourceInventoryCacheKey({
-      providerId: "vidking",
-      mediaKind: "series",
-      titleId: "127529",
-      season: 1,
-      episode: 2,
-      audioMode: "sub",
-      subtitleLanguage: "en",
-      runtime: "direct-http" as const,
-    });
-
-    expect(key).toBe(
-      buildSourceInventoryCacheKey({
-        providerId: "vidking",
-        mediaKind: "series",
-        titleId: "127529",
-        season: 1,
-        episode: 2,
-        audioMode: "sub",
-        subtitleLanguage: "en",
-        runtime: "direct-http",
-      }),
-    );
   });
 
   test("locks byte-affecting source inventory identity inputs", () => {

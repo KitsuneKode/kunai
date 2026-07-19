@@ -8,28 +8,30 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 const config = {
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
-  seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "auto" },
+  seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "720p" },
   movieLanguageProfile: { audio: "original", subtitle: "en", quality: "auto" },
   startupPriority: "balanced",
 } as KitsuneConfig;
 
 describe("playback-source-cache-invalidation", () => {
   test("buildSourceInventoryCacheInput maps series mode from title type", () => {
-    expect(
-      buildSourceInventoryCacheInput(
-        "vidking",
-        { id: "1396", type: "series", name: "Breaking Bad" },
-        { season: 1, episode: 5 },
-        "series",
-        config,
-      ),
-    ).toMatchObject({
-      providerId: "vidking",
-      mediaKind: "series",
-      titleId: "1396",
-      season: 1,
-      episode: 5,
-    });
+    const inventoryInput = buildSourceInventoryCacheInput(
+      "vidking",
+      { id: "1396", type: "series", name: "Breaking Bad" },
+      { season: 1, episode: 5 },
+      "series",
+      config,
+    );
+    expect(inventoryInput).toEqual(
+      expect.objectContaining({
+        providerId: "vidking",
+        mediaKind: "series",
+        titleId: "1396",
+        season: 1,
+        episode: 5,
+        qualityPreference: "720p",
+      }),
+    );
   });
 
   test("invalidateEpisodePlaybackCaches clears resolve cache and source inventory", async () => {

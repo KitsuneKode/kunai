@@ -365,6 +365,7 @@ export class PlaybackResolveService {
       episode: input.episode.episode,
       audioMode: input.audioPreference,
       subtitleLanguage: input.subtitlePreference,
+      qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
     const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);

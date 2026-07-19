@@ -104,6 +104,49 @@ describe("VideasyLazySourceProbeService", () => {
     expect(streamIds).toEqual([...new Set(streamIds)]);
   });
 
+  test("does not dedupe phase-B work across different quality preferences", async () => {
+    const probedQualities: string[] = [];
+    let release1080!: () => void;
+    const gate1080 = new Promise<void>((resolve) => {
+      release1080 = resolve;
+    });
+    const service = new VideasyLazySourceProbeService({
+      probeConcurrency: 1,
+      sourceInventory: {
+        get: async (key) => {
+          if (key.qualityPreference === "1080p") await gate1080;
+          return null;
+        },
+        set: async () => {},
+      },
+      resolveVideasyDirect: async (probeInput) => {
+        probedQualities.push(String(probeInput.qualityPreference ?? "none"));
+        return baseResult();
+      },
+    });
+
+    const pending1080 = service.schedulePhaseB({
+      resolveInput: { ...resolveInput(), qualityPreference: "1080p" },
+      context: runtimeContext(),
+      baseResult: baseResult(),
+      inventoryKey: { ...inventoryKey, qualityPreference: "1080p" },
+      preferredAudioLanguage: "de",
+    });
+    await Bun.sleep(5);
+    const pending720 = service.schedulePhaseB({
+      resolveInput: { ...resolveInput(), qualityPreference: "720p" },
+      context: runtimeContext(),
+      baseResult: baseResult(),
+      inventoryKey: { ...inventoryKey, qualityPreference: "720p" },
+      preferredAudioLanguage: "de",
+    });
+    release1080();
+    await Promise.all([pending1080, pending720]);
+
+    expect(probedQualities).toContain("1080p");
+    expect(probedQualities).toContain("720p");
+  });
+
   test("honors injected probe concurrency", async () => {
     let active = 0;
     let maxActive = 0;

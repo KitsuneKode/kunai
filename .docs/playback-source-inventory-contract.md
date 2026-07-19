@@ -84,19 +84,30 @@ Inventory keys must separate independent dimensions:
 
 ```text
 provider id
-provider result schema version
+provider result schema version (currently v5)
 media kind
 title id
 season / episode / absolute episode
 audio mode or language, such as sub/dub
 subtitle language or none
+quality preference (temporary partition — see below)
+startup priority
 runtime class when behavior differs
 region/account/debrid scope when introduced
 ```
 
-Quality should not be part of the inventory key when the provider returns all qualities up front. In that case quality is a selection over cached inventory.
+Ideal end state: quality is not part of the inventory key when the provider returns
+all qualities up front, because quality is then a selection over cached inventory.
 
-Quality may be part of a deferred variant key only when the provider genuinely requires another call to materialize a specific quality.
+Current exception (`SOURCE_INVENTORY_SCHEMA_VERSION = "v5"`): cached
+`ProviderResolveResult.selectedStreamId` is quality-influenced, so inventory rows
+are temporarily partitioned by `qualityPreference`. Explicit invalidation, Tracks
+cross-provider hints, Videasy lazy probes, and phase-B in-flight dedupe all use
+the same identity (`buildSourceInventoryCacheKey`). Diagnostics expose only short
+key hashes, never full preimages.
+
+Quality may also be part of a deferred variant key when the provider genuinely
+requires another call to materialize a specific quality.
 
 ## Source, Quality, And Language Switching
 

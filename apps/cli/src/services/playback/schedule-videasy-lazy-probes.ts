@@ -49,6 +49,7 @@ export function scheduleVideasyLazySourceProbes(input: {
     episode: input.episode.episode,
     audioMode: input.audioPreference,
     subtitleLanguage: input.subtitlePreference,
+    qualityPreference: input.qualityPreference,
     startupPriority: input.startupPriority as ProviderResolveInput["startupPriority"],
   };
 

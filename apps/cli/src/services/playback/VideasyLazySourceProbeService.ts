@@ -14,23 +14,17 @@ import type {
 } from "@kunai/types";
 
 import { providerWorkLanePolicy } from "./provider-work-lane-policy";
-import type { SourceInventoryService } from "./SourceInventoryService";
-import type { SourceInventoryCacheInput } from "./SourceInventoryService";
+import {
+  buildSourceInventoryCacheKey,
+  type SourceInventoryService,
+  type SourceInventoryCacheInput,
+} from "./SourceInventoryService";
 
 const DEFAULT_PROBE_CONCURRENCY = providerWorkLanePolicy("background-inventory").concurrency;
 type VideasyDirectResolver = typeof resolveVideasyDirect;
 
 function phaseBSessionKey(key: SourceInventoryCacheInput): string {
-  return [
-    key.providerId,
-    key.mediaKind,
-    key.titleId,
-    key.season,
-    key.episode,
-    key.audioMode,
-    key.subtitleLanguage,
-    key.startupPriority,
-  ].join("\u001e");
+  return buildSourceInventoryCacheKey(key);
 }
 
 export class VideasyLazySourceProbeService {
