@@ -1,6 +1,5 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { shellModeToDefaultProviderKey } from "@/services/providers/provider-lane";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 
 import { providerForLane } from "./lane-settings-sync";
@@ -47,10 +46,11 @@ export async function applySettingsToRuntime({
     profile: next.movieLanguageProfile,
   });
 
-  const laneKey = shellModeToDefaultProviderKey(state.mode);
-  const currentDefault = state.defaultProviders[laneKey];
+  const beforeDefault = providerForLane(before, state.mode);
   const nextDefault = providerForLane(next, state.mode);
-  if (state.provider === currentDefault && state.provider !== nextDefault) {
+  // Changing the lane default updates the live session provider so
+  // /settings → Providers (and /providers) take effect immediately.
+  if (beforeDefault !== nextDefault) {
     stateManager.dispatch({
       type: "SET_PROVIDER",
       provider: nextDefault,

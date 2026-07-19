@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { buildSettingsPage } from "./build-page";
 import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey } from "./controller";
+import { isSettingVisible } from "./gates";
 import { persistSettingsDraft } from "./persist";
+import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
 import { settingsEqual } from "./settings-equal";
 import { SettingsOverlay } from "./SettingsOverlay";
@@ -17,6 +19,7 @@ export function SettingsShell({
   width,
   maxRows,
   commandMode,
+  initialSectionId,
   onClose,
   onStatus,
   onRedraw,
@@ -25,13 +28,24 @@ export function SettingsShell({
   readonly width: number;
   readonly maxRows: number;
   readonly commandMode: boolean;
+  readonly initialSectionId?: string;
   readonly onClose: () => void;
   readonly onStatus: (message: string | null) => void;
   readonly onRedraw: () => void;
 }) {
-  const [state, setState] = useState<SettingsUiState>(() =>
-    createSettingsUiState(container.config.getRaw()),
-  );
+  const [state, setState] = useState<SettingsUiState>(() => {
+    const base = createSettingsUiState(container.config.getRaw());
+    if (!initialSectionId) return base;
+    const ctx = buildSettingsRegistryContext(container, base.draft);
+    const sections = buildSettingsRegistry(ctx)
+      .filter((row) => isSettingVisible(row, ctx))
+      .filter((row) => row.kind === "section");
+    const idx = sections.findIndex((row) => row.id === initialSectionId);
+    return {
+      ...base,
+      activeSectionIndex: idx >= 0 ? idx : 0,
+    };
+  });
 
   const registryCtx = useMemo(
     () => buildSettingsRegistryContext(container, state.draft),

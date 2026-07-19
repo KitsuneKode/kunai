@@ -1455,6 +1455,8 @@ export function RootOverlayShell({
             });
           })();
         }
+        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        return;
       } else if (overlay.type === "notifications") {
         if (notificationPlayConfirm) {
           const choice = notificationPlayConfirmOptions[selectedIndex]?.value ?? "cancel";
@@ -1789,6 +1791,7 @@ export function RootOverlayShell({
             width={overlayLayout.contentColumns}
             maxRows={maxLines}
             commandMode={commandMode}
+            initialSectionId={overlay.initialSectionId}
             onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
             onStatus={setOverlayStatus}
             onRedraw={onRedraw}

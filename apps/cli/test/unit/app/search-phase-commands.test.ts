@@ -15,7 +15,7 @@ test("search browse command palette exposes stable watch and library surfaces fi
     "playlists",
     "up-next",
     "stats",
-    "provider",
+    "providers",
     "library",
     "downloads",
     "notifications",

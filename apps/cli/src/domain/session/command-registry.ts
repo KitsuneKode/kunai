@@ -114,7 +114,6 @@ export const COMMAND_CONTEXTS = {
     "setup",
     "settings",
     "providers",
-    "provider",
     "presence",
     "telemetry",
     "telemetry-show",
@@ -340,7 +339,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "providers",
     label: "Providers",
     aliases: ["providers", "provider-settings", "default-provider"],
-    description: "Open provider defaults and fallback priority in settings",
+    description: "Switch the session provider or set defaults and priority",
   },
   {
     id: "presence",
@@ -397,10 +396,11 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Exit Kunai",
   },
   {
+    // Browse/overlay: Providers hub. Playback palette: tracks provider section.
     id: "provider",
-    label: "Switch Provider",
+    label: "Providers",
     aliases: ["provider", "switch-provider"],
-    description: "Switch the active session provider for this mode",
+    description: "Open the providers hub (or tracks provider section while playing)",
   },
   {
     id: "continue",
@@ -1011,7 +1011,6 @@ function resolveCommandState(
     case "random":
     case "surprise":
     case "settings":
-    case "providers":
     case "presence":
     case "telemetry":
     case "telemetry-show":
@@ -1052,6 +1051,7 @@ function resolveCommandState(
       return { enabled: true };
 
     case "provider":
+    case "providers":
       if (resolving) {
         return {
           enabled: false,

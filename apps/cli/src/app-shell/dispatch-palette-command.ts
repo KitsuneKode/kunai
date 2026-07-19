@@ -226,7 +226,14 @@ export async function dispatchPaletteCommand(
   if (action === "notifications") {
     return routeNotificationsInbox(container);
   }
-  if (action === "provider") return "provider";
+  // Playback keeps /provider as the tracks-panel provider section; browse and
+  // overlays use the Providers hub (session switch vs sticky defaults).
+  if (action === "provider" && _surface === "playback") {
+    return "provider";
+  }
+  if (action === "providers" || action === "provider") {
+    return workflows.runAction("providers", container);
+  }
   if (action === "up-next") return openRootQueueSelection(container);
   if (action === "playlists" || action === "playlist") {
     return workflows.runAction("playlists", container);
@@ -235,13 +242,6 @@ export async function dispatchPaletteCommand(
   if (action === "history") return openRootHistorySelection(container, "history");
   if (action === "settings" || action === "presence") {
     await openRootOwnedOverlay(container, { type: "settings" });
-    return "handled";
-  }
-  if (action === "providers") {
-    await openRootOwnedOverlay(container, {
-      type: "settings",
-      initialSectionId: "section:providers",
-    });
     return "handled";
   }
   if (action === "setup") {
