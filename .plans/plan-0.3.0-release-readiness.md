@@ -22,19 +22,20 @@ and network, so none of them prove an install works.
 writes to `~/.local/bin` and `~/.local/share`, so local runs either pollute the
 real install or force trusting env overrides.
 
-Hermetic testing is possible because the installer takes overrides:
-`KUNAI_DL_BASE`, `KUNAI_RELEASES_API`, `KUNAI_BIN_DIR`, `KUNAI_DATA_DIR`
-(`install.sh:17-24`). A fake release server satisfies all of them.
-Started already at `test/install/fake-release-server.ts` (serves the tag_name
-JSON, the `kunai-<os>-<arch>[-musl]` assets, and a matching `SHA256SUMS`).
+**Harness landed** at `test/install/` (see its README). No server is needed:
+`curl` handles `file://` and the installer takes `KUNAI_DL_BASE`,
+`KUNAI_RELEASES_API`, `KUNAI_BIN_DIR`, `KUNAI_DATA_DIR` overrides
+(`install.sh:17-24`), so scenarios run `--network none` with no ports or
+daemons. Run with `test/install/run.sh [scenario]`.
 
 Scenarios, in priority order:
 
-1. **npm → native contamination.** Install via npm, then natively. This is where
-   `cleanupNpmInstallations` (`native-installer/cleanup-npm.ts`) either works or
-   leaves two `kunai` on PATH shadowing each other. It is best-effort and
-   swallows errors by design, so it can fail silently today with nothing to
-   catch it. Highest real-world likelihood.
+1. **npm → native contamination — DONE, found a real defect.** `install.sh`
+   reported success while `kunai --version` still returned the older npm build:
+   the native binary installed correctly and was then shadowed, because npm's
+   global bin usually precedes `~/.local/bin`. `cleanupNpmInstallations` only
+   ran on the in-app path, never from `install.sh`. Fixed by
+   `resolve_conflicting_installs`. 5/5 assertions green.
 2. **Fresh install** — version, launcher path, manifest `channel: binary` /
    `layout: versioned`.
 3. **Upgrade N-1 → N** — version advances, old version pruned per
@@ -211,11 +212,27 @@ exactly the touched files.
 
 ## E. Docs and README
 
-### E1. #32 — README reads as a dev doc, not a product page
+### E1. #32 — README is mostly already a product page (re-checked 2026-07-20)
 
-Should answer, above the fold: what Kunai is, what it does for a user, how to
-install in one line, and what it looks like. Needs a cast or GIF, real usage,
-and the supported/unsupported boundary from `.docs/experience-overview.md`.
+The issue's premise is stale. `README.md` already opens with a hero SVG, badges,
+a one-line install, a "Why Kunai" positioning section, and a **Showcase with a
+real GIF** (`.design/brand/demo-command-palette.gif`). VHS is already the
+recording tool and already wired: `test:vhs:setup`, `test:vhs:offline`,
+`test:vhs:palette`, `test:vhs:all`, with tapes that avoid live search so they
+regenerate deterministically.
+
+The remaining gap is narrower and worth stating precisely: **the showcase demos
+the command palette — an interface tour — not the core loop.** The compelling
+30 seconds is search → mpv plays → episode ends → Next Up counts down → next
+episode starts. That is the product; a palette tour is a feature tour.
+
+There is a real tension to resolve first, not paper over: the tapes deliberately
+avoid live search and providers so they never depend on provider availability.
+A loop demo needs either a recorded fixture/offline path or an accepted
+non-deterministic tape. Decide that before shooting.
+
+Secondary: 657 lines with a 16-entry TOC — the top matters most for a product
+page. And the Up Next / resume work from this session is not represented yet.
 
 ### E2. Install instructions must match reality
 
