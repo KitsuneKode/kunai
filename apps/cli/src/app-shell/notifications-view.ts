@@ -86,7 +86,62 @@ export type BuildNotificationsViewInput = {
   readonly pageSize: number;
   readonly selectedDedupKey: string | null;
   readonly now: string;
+  /** Optional poster lookup by titleId (e.g. from watch history). */
+  readonly resolvePosterUrl?: (titleId: string) => string | undefined;
 };
+
+const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
+
+function httpsPosterUrl(raw: string): string | undefined {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function toPosterUrl(posterPath: string | null | undefined): string | undefined {
+  if (!posterPath) return undefined;
+  if (/^https?:\/\//i.test(posterPath)) return httpsPosterUrl(posterPath);
+  if (posterPath.startsWith("/")) return `${TMDB_POSTER_BASE_URL}${posterPath}`;
+  return undefined;
+}
+
+function posterUrlOf(
+  record: NotificationRecord,
+  resolvePosterUrl?: (titleId: string) => string | undefined,
+): string | undefined {
+  if (record.itemJson) {
+    try {
+      const parsed = JSON.parse(record.itemJson) as {
+        posterUrl?: unknown;
+        posterPath?: unknown;
+        titleId?: unknown;
+      };
+      if (typeof parsed.posterUrl === "string") {
+        const fromUrl = httpsPosterUrl(parsed.posterUrl);
+        if (fromUrl) return fromUrl;
+      }
+      if (typeof parsed.posterPath === "string") {
+        const fromPath = toPosterUrl(parsed.posterPath);
+        if (fromPath) return fromPath;
+      }
+      if (typeof parsed.titleId === "string" && resolvePosterUrl) {
+        const resolved = resolvePosterUrl(parsed.titleId);
+        if (resolved) return httpsPosterUrl(resolved) ?? resolved;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  const media = parseNotificationMediaItem(record);
+  if (media?.titleId && resolvePosterUrl) {
+    const resolved = resolvePosterUrl(media.titleId);
+    if (resolved) return httpsPosterUrl(resolved) ?? resolved;
+  }
+  return undefined;
+}
 
 /** Attention groups: recover/repair first, then new content, updates, receipts, unknown. */
 const TYPE_GROUP: Readonly<Record<string, number>> = {
@@ -136,18 +191,6 @@ function sortRecords(
   return entries.map((entry) => entry.record);
 }
 
-function posterUrlOf(record: NotificationRecord): string | undefined {
-  if (!record.itemJson) return undefined;
-  try {
-    const parsed = JSON.parse(record.itemJson) as { posterUrl?: unknown };
-    if (typeof parsed.posterUrl !== "string") return undefined;
-    const url = new URL(parsed.posterUrl);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function relativeTime(updatedAt: string, now: string): string {
   const deltaMs = Date.parse(now) - Date.parse(updatedAt);
   const mins = Math.max(0, Math.floor(deltaMs / 60000));
@@ -157,7 +200,11 @@ function relativeTime(updatedAt: string, now: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function toRow(record: NotificationRecord, now: string): NotificationRow {
+function toRow(
+  record: NotificationRecord,
+  now: string,
+  resolvePosterUrl?: (titleId: string) => string | undefined,
+): NotificationRow {
   const primaryAction = getNotificationActionPresentation(getNotificationPrimaryAction(record));
   return {
     dedupKey: record.dedupKey,
@@ -170,7 +217,7 @@ function toRow(record: NotificationRecord, now: string): NotificationRow {
     unread: !record.readAt,
     actionable: primaryAction.id !== "dismiss",
     primaryAction,
-    posterUrl: posterUrlOf(record),
+    posterUrl: posterUrlOf(record, resolvePosterUrl),
     relativeTime: relativeTime(record.updatedAt, now),
   };
 }
@@ -268,7 +315,7 @@ export function buildNotificationsView(input: BuildNotificationsViewInput): Noti
 
   const start = page * pageSize;
   const pageRecords = orderedRecords.slice(start, start + pageSize);
-  const rows = pageRecords.map((record) => toRow(record, input.now));
+  const rows = pageRecords.map((record) => toRow(record, input.now, input.resolvePosterUrl));
 
   const selectedIndex =
     selectedGlobalIndex >= 0 ? selectedGlobalIndex - start : rows.length > 0 ? 0 : -1;

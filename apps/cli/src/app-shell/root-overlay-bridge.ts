@@ -68,8 +68,11 @@ export async function openRootOwnedOverlay(
 ): Promise<void> {
   const { stateManager } = container;
 
+  // OPEN_OVERLAY pushes a different type and replaces only the same type
+  // (see shouldReplaceOpenOverlay). Never REPLACE_TOP across types — that
+  // erases Esc history (e.g. notifications → help cannot return to inbox).
   stateManager.dispatch({
-    type: stateManager.getState().activeModals.length > 0 ? "REPLACE_TOP_OVERLAY" : "OPEN_OVERLAY",
+    type: "OPEN_OVERLAY",
     overlay,
   });
   await new Promise<void>((resolve) => {

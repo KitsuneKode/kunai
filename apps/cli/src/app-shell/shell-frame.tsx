@@ -1,4 +1,4 @@
-import { useLineEditor } from "@/app-shell/line-editor";
+import { useLineEditor, type LineEditorKey } from "@/app-shell/line-editor";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { Box, Text, useInput } from "ink";
 import React from "react";
@@ -150,6 +150,7 @@ export function InputField({
   maxWidth,
   onRedraw,
   terminalWidth: terminalWidthProp,
+  ignoreInput,
 }: {
   label: string;
   value: string;
@@ -161,6 +162,8 @@ export function InputField({
   maxWidth?: number;
   onRedraw?: () => void;
   terminalWidth?: number;
+  /** When true, skip line-editor handling (parent surface owns the chord). */
+  ignoreInput?: (input: string, key: LineEditorKey) => boolean;
 }) {
   const { cols } = useShellDimensions();
   const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
@@ -175,6 +178,7 @@ export function InputField({
 
   useInput((input, key) => {
     if (!focus) return;
+    if (ignoreInput?.(input, key)) return;
     const route = routeShellInput(input, key, { textInputFocused: focus });
     if (route.owner === "hard-global") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });

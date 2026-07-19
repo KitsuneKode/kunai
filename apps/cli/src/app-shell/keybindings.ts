@@ -264,6 +264,16 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     footerPriority: 18,
   },
   {
+    id: "browse-title-control-menu-shift",
+    chord: { input: "M", shift: true },
+    display: "Shift+M",
+    label: "Open title control menu (query or list)",
+    hintLabel: "menu",
+    scope: "browse",
+    group: "While browsing",
+    footerPriority: 19,
+  },
+  {
     id: "browse-notifications",
     chord: { input: "n", shift: true },
     display: "Shift+N",

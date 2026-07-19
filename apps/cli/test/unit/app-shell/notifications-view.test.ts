@@ -318,6 +318,47 @@ describe("buildNotificationsView projection", () => {
     expect(facts.get("Provider")).toBe("allanime");
   });
 
+  it("enriches missing posterUrl from resolvePosterUrl by titleId", () => {
+    const projected = view({
+      records: [
+        rec({
+          dedupKey: "a",
+          updatedAt: "2026-07-16T10:00:00.000Z",
+          itemJson: JSON.stringify({
+            mediaKind: "anime",
+            titleId: "tmdb:42",
+            title: "Frieren",
+            season: 1,
+            episode: 6,
+          }),
+        }),
+      ],
+      resolvePosterUrl: (titleId) =>
+        titleId === "tmdb:42" ? "https://image.tmdb.org/t/p/w342/abc.jpg" : undefined,
+    });
+
+    expect(projected.rail?.preview.posterUrl).toBe("https://image.tmdb.org/t/p/w342/abc.jpg");
+  });
+
+  it("normalizes posterPath in itemJson to a TMDB HTTPS URL", () => {
+    const projected = view({
+      records: [
+        rec({
+          dedupKey: "a",
+          updatedAt: "2026-07-16T10:00:00.000Z",
+          itemJson: JSON.stringify({
+            mediaKind: "anime",
+            titleId: "tmdb:1",
+            title: "Frieren",
+            posterPath: "/poster.jpg",
+          }),
+        }),
+      ],
+    });
+
+    expect(projected.rail?.preview.posterUrl).toBe("https://image.tmdb.org/t/p/w342/poster.jpg");
+  });
+
   it("uses archive lifecycle hints on the archive tab", () => {
     const projected = view({
       records: [rec({ dedupKey: "a", archivedAt: "2026-07-16T11:00:00.000Z" })],

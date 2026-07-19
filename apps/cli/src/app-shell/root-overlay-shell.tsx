@@ -749,26 +749,19 @@ export function RootOverlayShell({
                     : { type: action };
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          container.stateManager.dispatch({
-            type: "OPEN_OVERLAY",
-            overlay: nextOverlay,
-          });
-        } else {
-          container.stateManager.dispatch({
-            type: "REPLACE_TOP_OVERLAY",
-            overlay: nextOverlay,
-          });
         }
+        container.stateManager.dispatch({
+          type: "OPEN_OVERLAY",
+          overlay: nextOverlay,
+        });
         return;
       }
       if (action === "library") {
         const nextOverlay = { type: "library" as const, view: "library" as const };
         if (isRootMediaPickerOverlay(overlay) && overlay.id) {
           container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
-          container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
-        } else {
-          container.stateManager.dispatch({ type: "REPLACE_TOP_OVERLAY", overlay: nextOverlay });
         }
+        container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: nextOverlay });
         return;
       }
       if (PALETTE_WORKFLOW_ACTIONS.has(action)) {
@@ -863,6 +856,12 @@ export function RootOverlayShell({
     pageSize: notifPageSize,
     selectedDedupKey: notificationsState.selectedDedupKey,
     now: new Date().toISOString(),
+    resolvePosterUrl: (titleId) => {
+      for (const { titleId: id, entry } of historySelections) {
+        if (id === titleId && entry.posterUrl) return entry.posterUrl;
+      }
+      return container.historyRepository.getLatestForTitle(titleId)?.posterUrl;
+    },
   });
   const notificationUnreadCount = useMemo(() => {
     void notificationRevision;

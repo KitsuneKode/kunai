@@ -292,6 +292,9 @@ export function BrowseShell<T>({
       (initialResultSubtitle ?? "").includes("schedule") ||
       (initialResultSubtitle ?? "").includes("airing today");
     if (bootsIntoCalendar) return "list";
+    // Remount after playback / Esc-cancel-resolve preserves results — own the list
+    // so selection highlight and Enter/m match what the user left on.
+    if ((initialResults?.length ?? 0) > 0) return "list";
     return createInitialBrowseFocusZone({
       startIdle: !!(
         settings?.minimalMode &&
@@ -300,6 +303,8 @@ export function BrowseShell<T>({
       ),
     });
   });
+  /** Zone to restore when closing browse-local overlays (details). */
+  const focusZoneBeforeOverlayRef = useRef<BrowseFocusZone | null>(null);
   const [idleSelectedIndex, setIdleSelectedIndex] = useState(0);
   const focusZoneContextRef = useRef<BrowseFocusZoneContext>({
     hasResults: false,
@@ -469,7 +474,6 @@ export function BrowseShell<T>({
       setLastSearchedQuery(rawQuery);
       setResultFilter("");
       setFilterModeOpen(false);
-      setFocusZone("query");
       addSearchQuery(rawQuery);
       setOptions(filteredOptions);
       setSelectedIndex(0);
@@ -481,12 +485,14 @@ export function BrowseShell<T>({
       );
       setActiveFilterBadges(activeBadges);
       setSearchState("ready");
+      setFocusZone(filteredOptions.length > 0 ? "list" : "query");
     } catch (error) {
       if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
+      setFocusZone("query");
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Search failed.");
     }
@@ -523,12 +529,14 @@ export function BrowseShell<T>({
       setEmptyMessage(response.emptyMessage ?? "Trending is unavailable right now.");
       setActiveFilterBadges([]);
       setSearchState("ready");
+      setFocusZone(response.options.length > 0 ? "list" : "query");
     } catch (error) {
       if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
+      setFocusZone("query");
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Trending failed.");
     }
@@ -555,6 +563,7 @@ export function BrowseShell<T>({
       setEmptyMessage(response.emptyMessage ?? "Recommendations are unavailable right now.");
       setActiveFilterBadges([]);
       setSearchState("ready");
+      setFocusZone(response.options.length > 0 ? "list" : "query");
 
       if (response.revalidate) {
         void response.revalidate
@@ -568,6 +577,7 @@ export function BrowseShell<T>({
             setEmptyMessage(
               nextResponse.emptyMessage ?? "Recommendations are unavailable right now.",
             );
+            setFocusZone(nextResponse.options.length > 0 ? "list" : "query");
             return undefined;
           })
           .catch(() => {
@@ -581,6 +591,7 @@ export function BrowseShell<T>({
       setSearchState("error");
       setOptions([]);
       setSelectedIndex(0);
+      setFocusZone("query");
       setErrorMessage(formatBrowseShellError(error));
       setEmptyMessage("Recommendations failed.");
     }
@@ -589,6 +600,13 @@ export function BrowseShell<T>({
   const closeOverlay = () => {
     detailRequestGateRef.current.invalidate();
     setActiveOverlay(null);
+    const restore = focusZoneBeforeOverlayRef.current;
+    focusZoneBeforeOverlayRef.current = null;
+    if (restore) {
+      setFocusZone(restore);
+    } else if (options.length > 0) {
+      setFocusZone("list");
+    }
   };
 
   useEffect(() => {
@@ -647,7 +665,9 @@ export function BrowseShell<T>({
       const detailRequestId = detailRequestGateRef.current.begin();
       const panel = buildBrowseDetailsPanel(resolved);
       setCommandMode(false);
-      setFocusZone("query");
+      focusZoneBeforeOverlayRef.current = focusZone;
+      // Keep list ownership under the sheet so close restores the highlighted row,
+      // not a forced dump into the search field.
 
       const seed = buildBrowseDetailsSheetSeed(resolved);
       const value = resolved.value as unknown as Partial<SearchResult>;
@@ -696,7 +716,7 @@ export function BrowseShell<T>({
         })();
       }
     },
-    [selectedOption, mode],
+    [selectedOption, mode, focusZone],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -1258,7 +1278,15 @@ export function BrowseShell<T>({
       return;
     }
 
-    if (listFocused && input.toLowerCase() === "m" && selectedOption && searchState === "ready") {
+    // Menu: bare `m` in the list zone; Shift+M anywhere when a row is selectable
+    // (mirrors Ctrl+O for details). Never Ctrl+M — that is Enter in a TTY.
+    const menuReady =
+      selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready";
+    if (
+      menuReady &&
+      ((listFocused && input === "m" && !key.shift && !key.ctrl && !key.meta) ||
+        ((input === "M" || (input.toLowerCase() === "m" && key.shift)) && !key.ctrl && !key.meta))
+    ) {
       onResolve("menu");
       return;
     }
@@ -1516,6 +1544,17 @@ export function BrowseShell<T>({
             }
             maxWidth={innerWidth}
             onRedraw={clearShellScreen}
+            ignoreInput={(input, key) =>
+              // Shift+M opens title-control when results are ready; do not type "M".
+              Boolean(
+                displayOptions.length > 0 &&
+                !queryDirty &&
+                searchState === "ready" &&
+                !key.ctrl &&
+                !key.meta &&
+                (input === "M" || (input.toLowerCase() === "m" && key.shift)),
+              )
+            }
           />
         )}
 
@@ -1814,6 +1853,10 @@ export function BrowseShell<T>({
           ...(options.length > 0 && !queryDirty && searchState === "ready" && !listFocused
             ? ["browse-details-ctrl", "browse-filter"]
             : []),
+          ...(listFocused && searchState === "ready" ? ["browse-title-control-menu"] : []),
+          ...(options.length > 0 && !queryDirty && searchState === "ready" && !listFocused
+            ? ["browse-title-control-menu-shift"]
+            : []),
           "browse-mode",
           ...(onLoadDiscovery ? ["browse-trending"] : []),
           ...(options.length > 0 && !queryDirty
@@ -1843,6 +1886,8 @@ export function BrowseShell<T>({
             actions: {
               "browse-details": "details",
               "browse-details-ctrl": "details",
+              "browse-title-control-menu": "menu",
+              "browse-title-control-menu-shift": "menu",
               "browse-filter": "filters",
               "browse-mode": "toggle-mode",
               "browse-trending": "trending",
@@ -1855,10 +1900,20 @@ export function BrowseShell<T>({
               "browse-mode": {
                 label: getCommandLabel(commands, "toggle-mode", "switch mode"),
               },
+              "browse-details": {
+                label: "details · i",
+              },
+              "browse-details-ctrl": {
+                label: "details · Ctrl+O",
+              },
             },
           }),
           { key: "/", label: "commands", action: "command-mode" },
-          { key: "esc", label: "clear/back", action: "quit" },
+          {
+            key: "esc",
+            label: listFocused ? "→ search" : "clear/back",
+            action: "quit",
+          },
         ];
         const visibleBrowseFooterActions = selectFooterActions(
           allBrowseFooterActions,

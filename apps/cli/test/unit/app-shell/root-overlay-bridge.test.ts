@@ -91,4 +91,25 @@ describe("root-overlay-bridge notification intents", () => {
     expect(getNotificationDetailsPending()).toBe(true);
     expect(takeNotificationDetailsItem()?.title).toBe("Details Target");
   });
+
+  test("openRootOwnedOverlay pushes a different overlay type on top of an open modal", async () => {
+    const { openRootOwnedOverlay } = await import("@/app-shell/root-overlay-bridge");
+    const container = createOverlayContainer();
+    container.stateManager.dispatch({
+      type: "OPEN_OVERLAY",
+      overlay: { type: "notifications" },
+    });
+
+    const opened = openRootOwnedOverlay(container, { type: "help" });
+    await Promise.resolve();
+    expect(container.stateManager.getState().activeModals.map((m) => m.type)).toEqual([
+      "notifications",
+      "help",
+    ]);
+    container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+    await opened;
+    expect(container.stateManager.getState().activeModals.map((m) => m.type)).toEqual([
+      "notifications",
+    ]);
+  });
 });
