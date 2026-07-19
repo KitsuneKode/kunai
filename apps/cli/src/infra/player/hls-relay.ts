@@ -212,7 +212,7 @@ export function startHlsRelay(
           srcUrl = fromB64Url(rawB64);
           assertRelayUpstreamUrl(srcUrl);
         } catch (err: unknown) {
-          return new Response(err instanceof Error ? err.message : String(err), { status: 403 });
+          return new Response("invalid upstream URL", { status: 403 });
         }
         try {
           const r = await curlFetch(srcUrl, referer, origin);
@@ -240,7 +240,7 @@ export function startHlsRelay(
             host: new URL(srcUrl).hostname,
             message,
           });
-          return new Response(message, { status: 502 });
+          return new Response("upstream fetch failed", { status: 502 });
         }
       }
 
@@ -250,7 +250,7 @@ export function startHlsRelay(
           srcUrl = fromB64Url(path.slice(3));
           assertRelayUpstreamUrl(srcUrl);
         } catch (err: unknown) {
-          return new Response(err instanceof Error ? err.message : String(err), { status: 403 });
+          return new Response("invalid upstream URL", { status: 403 });
         }
         try {
           const r = await curlFetch(srcUrl, referer, origin);
@@ -278,7 +278,7 @@ export function startHlsRelay(
             host: new URL(srcUrl).hostname,
             message,
           });
-          return new Response(message, { status: 502 });
+          return new Response("upstream fetch failed", { status: 502 });
         }
       }
 

@@ -101,6 +101,17 @@ type MiruroPipeStream = {
   readonly isActive?: boolean;
 };
 
+function isNumericQualityLabel(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed.toLowerCase().endsWith("p")) return false;
+  const digits = trimmed.slice(0, -1);
+  if (digits.length === 0) return false;
+  for (const ch of digits) {
+    if (ch < "0" || ch > "9") return false;
+  }
+  return true;
+}
+
 type MiruroSourcesResponse = {
   readonly streams?: readonly MiruroPipeStream[];
   readonly subtitles?: readonly MiruroPipeSubtitle[];
@@ -786,10 +797,7 @@ async function expandMiruroPipeStreams(
 
   for (const stream of streams) {
     if (!stream.url || stream.type === "embed") continue;
-    if (
-      stream.type === "mp4" ||
-      (Boolean(stream.quality) && /\d+p/i.test(String(stream.quality)))
-    ) {
+    if (stream.type === "mp4" || (typeof stream.quality === "string" && isNumericQualityLabel(stream.quality))) {
       push(stream);
       continue;
     }

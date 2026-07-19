@@ -89,7 +89,10 @@ function pruneExpiredCooldowns(now: number): void {
 }
 
 function normalizeInstanceUrl(value: string): string {
-  const trimmed = value.trim().replace(/\/+$/, "");
+  const trimmedInput = value.trim();
+  let end = trimmedInput.length;
+  while (end > 0 && trimmedInput.charCodeAt(end - 1) === 47) end -= 1;
+  const trimmed = trimmedInput.slice(0, end);
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
   return `https://${trimmed}`;
 }
