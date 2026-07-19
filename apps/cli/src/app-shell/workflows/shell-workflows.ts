@@ -795,8 +795,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   about: (c) => handleStaticOverlay(c, "about"),
   diagnostics: (c) => handleDiagnostics(c),
   settings: (c) => handleSettings(c),
-  providers: (c) => handleProvidersHub(c),
-  provider: (c) => handleProvidersHub(c),
+  providers: (c) => handleSettings(c, { initialSectionId: "section:providers" }),
+  provider: (c) => handleProviderPicker(c),
   presence: (c) => handleSettings(c),
   telemetry: (c) => handleTelemetry(c),
   "telemetry-show": (c) => handleTelemetryShow(c),
@@ -1019,47 +1019,6 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
       pickedProviderId: picked,
       reason: "provider-picker-switch",
     });
-  }
-  return "handled";
-}
-
-type ProvidersHubChoice = "session" | "defaults";
-
-/** Single entry for /providers: session switch vs sticky defaults. */
-async function handleProvidersHub(container: Container): Promise<"handled"> {
-  const state = container.stateManager.getState();
-  const currentName =
-    container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider;
-  const laneLabel =
-    state.mode === "anime" ? "anime" : state.mode === "youtube" ? "YouTube" : "series";
-
-  const choice = await chooseFromListShell<ProvidersHubChoice>({
-    title: "Providers",
-    subtitle: `${currentName} · ${laneLabel} · session or defaults`,
-    actionContext: buildPickerActionContext({
-      container,
-      taskLabel: "Choose provider action",
-      allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
-    }),
-    options: [
-      {
-        value: "session" as const,
-        label: "Switch for this session",
-        detail: `Change the active ${laneLabel} provider until you quit or switch again`,
-      },
-      {
-        value: "defaults" as const,
-        label: "Set defaults & priority",
-        detail: "Sticky defaults and fallback order in settings",
-      },
-    ],
-  });
-
-  if (choice === "session") {
-    return handleProviderPicker(container);
-  }
-  if (choice === "defaults") {
-    return handleSettings(container, { initialSectionId: "section:providers" });
   }
   return "handled";
 }
