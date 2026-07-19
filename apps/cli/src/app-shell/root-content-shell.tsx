@@ -12,6 +12,7 @@ import type { ResolvedRootContent, RootContentSession } from "./root-content-sta
 import { getRootOverlayResetKey } from "./root-overlay-model";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
+import { RootContentSuspension } from "./RootContentSuspension";
 import { RootOverlayLoader } from "./RootOverlayLoader";
 
 export type RootContentRendererContext = {
@@ -23,10 +24,25 @@ export type RootContentRendererContext = {
   readonly clearShellScreen: () => void;
 };
 
-export function renderMountedRootContent(session: RootContentSession): React.ReactElement {
+/**
+ * Renders a mounted browse/post-playback session in a stable first-child
+ * position whether or not a root-owned overlay currently covers it. The
+ * `Box` identity (keyed by session id) and the `RootContentSuspension`
+ * wrapper are present in both states — only `display` and the suspended
+ * flag change — so React never unmounts the session's local state (typed
+ * query, selection, focus zone, calendar cursor, …) while an overlay is
+ * open on top of it.
+ */
+export function RetainedRootContentLayer({
+  session,
+  suspended,
+}: {
+  readonly session: RootContentSession;
+  readonly suspended: boolean;
+}): React.ReactElement {
   return (
-    <Box key={session.id} flexGrow={1}>
-      {session.element}
+    <Box key={session.id} flexGrow={1} display={suspended ? "none" : "flex"}>
+      <RootContentSuspension suspended={suspended}>{session.element}</RootContentSuspension>
     </Box>
   );
 }
@@ -102,7 +118,14 @@ export function RootContentBody({
     case "playback":
       return renderPlaybackRootContent(ctx.playbackRootInput);
     case "mounted":
-      return renderMountedRootContent(resolved.session);
+      return <RetainedRootContentLayer session={resolved.session} suspended={false} />;
+    case "overlay-over-mounted":
+      return (
+        <>
+          <RetainedRootContentLayer session={resolved.session} suspended />
+          {ctx.rootOverlay ? renderRootOverlayContent(ctx.rootOverlay, ctx) : null}
+        </>
+      );
     case "overlay":
       return ctx.rootOverlay
         ? renderRootOverlayContent(ctx.rootOverlay, ctx)

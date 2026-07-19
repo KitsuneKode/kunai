@@ -5,6 +5,7 @@ import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
+import { useRootContentSuspended } from "./RootContentSuspension";
 import { useShellInput } from "./shell-command-input";
 import { ShellCommandModeProvider } from "./shell-command-mode";
 import {
@@ -58,7 +59,11 @@ export function ShellFrame({
   terminalWidth?: number;
   terminalRows?: number;
 }) {
+  const rootContentSuspended = useRootContentSuspended();
+  const inputDisabled = inputLocked || rootContentSuspended;
+
   useInput((input, key) => {
+    if (inputDisabled) return;
     if (isHardGlobalQuit(input, key)) {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
@@ -67,14 +72,14 @@ export function ShellFrame({
   const { commandMode, commandInput, commandCursor, highlightedIndex } = useShellInput({
     footerActions,
     commands,
-    disabled: inputLocked,
+    disabled: inputDisabled,
     letterKeysHandledExternally,
     escapeAction,
     onResolve,
   });
 
   useInput((input, key) => {
-    if (inputLocked || commandMode) return;
+    if (inputDisabled || commandMode) return;
     if (input === "?") {
       onResolve("help");
       return;
@@ -131,7 +136,7 @@ export function ShellFrame({
           taskLabel={footerTask}
           actions={footerActions}
           mode={footerMode}
-          commandMode={commandMode && !inputLocked}
+          commandMode={commandMode && !inputDisabled}
           terminalWidth={cols}
         />
       </Box>
@@ -175,9 +180,10 @@ export function InputField({
     onSubmit,
     onRedraw,
   });
+  const rootContentSuspended = useRootContentSuspended();
 
   useInput((input, key) => {
-    if (!focus) return;
+    if (!focus || rootContentSuspended) return;
     if (ignoreInput?.(input, key)) return;
     const route = routeShellInput(input, key, { textInputFocused: focus });
     if (route.owner === "hard-global") {

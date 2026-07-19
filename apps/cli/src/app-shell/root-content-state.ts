@@ -88,7 +88,18 @@ export type ResolvedRootContent =
   | { readonly kind: "error" }
   | { readonly kind: "playback" }
   | { readonly kind: "mounted"; readonly session: RootContentSession }
+  | { readonly kind: "overlay-over-mounted"; readonly session: RootContentSession }
   | { readonly kind: "overlay" };
+
+/**
+ * Kinds allowed to stay mounted (hidden, not torn down) beneath a root-owned
+ * overlay. Browse and post-playback carry local UI state worth preserving;
+ * picker/loading sessions are short-lived promises that are safe to keep
+ * fully hidden behind a plain overlay surface instead.
+ */
+export function isRetainableRootContentKind(kind: RootContentKind): boolean {
+  return kind === "browse" || kind === "post-playback";
+}
 
 export function resolveRootContentFromSession(
   state: SessionState,
@@ -120,7 +131,9 @@ export function resolvedRootContentFromSurface(
     case "root-content":
       return rootContent ? { kind: "mounted", session: rootContent } : { kind: "idle" };
     case "root-overlay":
-      return { kind: "overlay" };
+      return rootContent && isRetainableRootContentKind(rootContent.kind)
+        ? { kind: "overlay-over-mounted", session: rootContent }
+        : { kind: "overlay" };
     case "mounted-screen":
     case "idle":
     default:

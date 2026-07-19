@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   clearRootContentSession,
   getRootContentSession,
+  isRetainableRootContentKind,
   mountRootContent,
   type RootContentKind,
   resolveRootContentFromSession,
@@ -106,5 +107,42 @@ describe("root content state", () => {
   test("resolvedRootContentFromSurface prefers overlay during active playback", () => {
     expect(resolvedRootContentFromSurface("root-overlay", null)).toEqual({ kind: "overlay" });
     expect(resolvedRootContentFromSurface("playback", null)).toEqual({ kind: "playback" });
+  });
+
+  test("resolvedRootContentFromSurface retains browse/post-playback sessions beneath an overlay", () => {
+    const browseSession = {
+      id: 41,
+      kind: "browse",
+      element: React.createElement("text", null, "browse"),
+    } as const;
+
+    expect(resolvedRootContentFromSurface("root-overlay", browseSession)).toEqual({
+      kind: "overlay-over-mounted",
+      session: browseSession,
+    });
+
+    expect(
+      resolvedRootContentFromSurface("root-overlay", {
+        ...browseSession,
+        kind: "post-playback",
+      }),
+    ).toMatchObject({ kind: "overlay-over-mounted" });
+
+    for (const kind of ["picker", "loading"] as const) {
+      expect(
+        resolvedRootContentFromSurface("root-overlay", {
+          ...browseSession,
+          kind,
+        }),
+      ).toEqual({ kind: "overlay" });
+    }
+  });
+
+  test("isRetainableRootContentKind only allows browse and post-playback", () => {
+    expect(isRetainableRootContentKind("browse")).toBe(true);
+    expect(isRetainableRootContentKind("post-playback")).toBe(true);
+    expect(isRetainableRootContentKind("picker")).toBe(false);
+    expect(isRetainableRootContentKind("loading")).toBe(false);
+    expect(isRetainableRootContentKind("playback")).toBe(false);
   });
 });

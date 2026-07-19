@@ -4,6 +4,7 @@ import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-tr
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { SearchResult, ShellMode } from "@/domain/types";
@@ -368,7 +369,8 @@ export function BrowseShell<T>({
     options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
-  const calendarNow = useCalendarNow(isCalendarView);
+  const rootContentSuspended = useRootContentSuspended();
+  const calendarNow = useCalendarNow(isCalendarView, rootContentSuspended);
 
   // Calendar UI state owns the active type and one concrete date scope.
   const calendar = useCalendarState({
@@ -1031,6 +1033,7 @@ export function BrowseShell<T>({
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {
+    if (rootContentSuspended) return;
     recordKeystroke("browse", key.upArrow ? "up" : key.downArrow ? "down" : input);
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });

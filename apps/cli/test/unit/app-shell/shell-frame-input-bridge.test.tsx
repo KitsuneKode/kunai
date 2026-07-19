@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ResolvedAppCommand } from "@/app-shell/commands";
+import { RootContentSuspension } from "@/app-shell/RootContentSuspension";
 import { ShellFrame } from "@/app-shell/shell-frame";
 import type { FooterAction, ShellAction } from "@/app-shell/types";
 import { Text } from "ink";
@@ -104,6 +105,28 @@ describe("ShellFrame input ownership (bridge)", () => {
     handle.stdin.enqueue("g");
     expect(resolved).toEqual([]);
     expect(unhandled).toContain("g");
+    handle.unmount();
+  });
+
+  test("retained-content suspension drops frame input", () => {
+    const resolved: ShellAction[] = [];
+    const unhandled: string[] = [];
+    const handle = render(
+      <RootContentSuspension suspended>
+        <Frame
+          onResolve={(action) => resolved.push(action)}
+          onUnhandledInput={(input) => unhandled.push(input)}
+        />
+      </RootContentSuspension>,
+      { columns: 100 },
+    );
+
+    for (const input of ["g", "?", "x", "/"]) {
+      handle.stdin.enqueue(input);
+    }
+
+    expect(resolved).toEqual([]);
+    expect(unhandled).toEqual([]);
     handle.unmount();
   });
 

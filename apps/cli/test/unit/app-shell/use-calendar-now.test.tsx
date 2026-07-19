@@ -6,8 +6,28 @@ import React, { act } from "react";
 
 import { render } from "../../harness/render-capture";
 
-function CalendarNowProbe({ enabled }: { readonly enabled: boolean }) {
-  return <Text>{`now=${useCalendarNow(enabled)}`}</Text>;
+function CalendarNowProbe({
+  enabled,
+  suspended,
+}: {
+  readonly enabled: boolean;
+  readonly suspended?: boolean;
+}) {
+  return <Text>{`now=${useCalendarNow(enabled, suspended)}`}</Text>;
+}
+
+type SuspendControl = { current: (next: boolean) => void };
+
+function CalendarNowSuspensionProbe({
+  enabled,
+  control,
+}: {
+  readonly enabled: boolean;
+  readonly control: SuspendControl;
+}) {
+  const [suspended, setSuspended] = React.useState(false);
+  control.current = setSuspended;
+  return <Text>{`now=${useCalendarNow(enabled, suspended)}`}</Text>;
 }
 
 describe("useCalendarNow", () => {
@@ -56,6 +76,35 @@ describe("useCalendarNow", () => {
       nowMs = 1_060_000;
       act(() => timers[0]?.callback());
       expect(handle.lastFrame()).toContain(`now=${nowMs}`);
+    } finally {
+      handle.unmount();
+    }
+    expect(timers).toHaveLength(0);
+  });
+
+  test("does not schedule a timer while suspended, even when enabled", () => {
+    const handle = render(<CalendarNowProbe enabled suspended />, { columns: 40 });
+    try {
+      expect(timers).toHaveLength(0);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("pauses the timer on suspend and resumes it on the same mount", () => {
+    const control: SuspendControl = { current: () => {} };
+    const handle = render(<CalendarNowSuspensionProbe enabled control={control} />, {
+      columns: 40,
+    });
+
+    try {
+      expect(timers).toHaveLength(1);
+
+      act(() => control.current(true));
+      expect(timers).toHaveLength(0);
+
+      act(() => control.current(false));
+      expect(timers).toHaveLength(1);
     } finally {
       handle.unmount();
     }
