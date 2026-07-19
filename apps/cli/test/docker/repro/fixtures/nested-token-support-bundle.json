@@ -1,0 +1,78 @@
+{
+  "exportedAt": "2026-07-20T00:00:00.000Z",
+  "app": {
+    "version": "0.0.0-test",
+    "debug": true
+  },
+  "summary": {
+    "headline": "nested-token fixture",
+    "sections": []
+  },
+  "triage": {
+    "verdict": "ok",
+    "likelyCause": "fixture",
+    "affectedSubsystems": [],
+    "recommendedActions": [],
+    "correlationSummary": "",
+    "lastEventBySubsystem": {},
+    "privacy": {
+      "redacted": true,
+      "excludes": []
+    }
+  },
+  "runtime": {
+    "platform": "linux",
+    "arch": "x64",
+    "bunVersion": "1.3.14",
+    "mpvVersion": "mpv 0.38",
+    "terminal": "xterm"
+  },
+  "environment": {
+    "mpvVersion": "mpv 0.38",
+    "terminal": "xterm",
+    "enabledProviders": ["videasy", "allanime"],
+    "schemaVersions": {
+      "data": [],
+      "cache": []
+    },
+    "runtimeHealth": {
+      "network": "ok"
+    }
+  },
+  "privacy": {
+    "redacted": true,
+    "excludes": ["history rows", "titles", "stream URLs"]
+  },
+  "capabilities": {},
+  "insights": {},
+  "correlation": {
+    "sessionIds": [],
+    "playbackCycleIds": [],
+    "providerAttemptIds": [],
+    "traceIds": []
+  },
+  "sections": {},
+  "eventCount": 0,
+  "events": [],
+  "settings": {
+    "provider": "videasy",
+    "animeProvider": "allanime",
+    "providerRelay": {
+      "enabled": true,
+      "baseUrl": "https://relay.example.invalid",
+      "token": "top-level-secret-token",
+      "fallbackToDirect": true,
+      "providers": {
+        "videasy": {
+          "enabled": true,
+          "token": "nested-provider-secret-token",
+          "baseUrl": "https://provider-relay.example.invalid"
+        },
+        "allanime": {
+          "enabled": false,
+          "token": "another-nested-secret"
+        }
+      }
+    }
+  }
+}

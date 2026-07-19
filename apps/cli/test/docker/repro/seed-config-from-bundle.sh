@@ -35,10 +35,24 @@ fi
 # Prefer optional redacted settings object when present (future / maintainer-augmented
 # bundles). Whitelist only non-PII keys — never titleProviderPreferences contents
 # that might encode title ids, tokens, paths, or sync credentials.
+# providerRelay.providers is normalized to { enabled: boolean } only so nested
+# token/baseUrl/secret fields cannot survive seeding.
 SETTINGS_JSON="$(jq -c '
-  def is_scalar_or_list:
-    type == "boolean" or type == "number" or type == "string"
-    or (type == "array" and (map(type == "string" or type == "number" or type == "boolean") | all));
+  # Note: do not use `// true` for enabled — jq treats false as missing.
+  def normalize_providers:
+    (. // {})
+    | to_entries
+    | map({
+        key: .key,
+        value: {
+          enabled: (
+            if (.value | type) == "object" then (.value.enabled != false)
+            else true
+            end
+          )
+        }
+      })
+    | from_entries;
 
   def whitelist_settings:
     {
@@ -70,7 +84,7 @@ SETTINGS_JSON="$(jq -c '
               baseUrl: "",
               token: "",
               fallbackToDirect: (.fallbackToDirect // true),
-              providers: (.providers // {})
+              providers: ((.providers // {}) | normalize_providers)
             }
           end
       )
@@ -98,6 +112,22 @@ CONFIG_JSON="$(jq -n \
     else ($ids | map({(.): {enabled: true}}) | add)
     end;
 
+  # Note: do not use `// true` for enabled — jq treats false as missing.
+  def normalize_providers:
+    (. // {})
+    | to_entries
+    | map({
+        key: .key,
+        value: {
+          enabled: (
+            if (.value | type) == "object" then (.value.enabled != false)
+            else true
+            end
+          )
+        }
+      })
+    | from_entries;
+
   (if $settings != null then $settings else {} end)
   | .providerRelay = (
       (.providerRelay // {})
@@ -108,7 +138,7 @@ CONFIG_JSON="$(jq -n \
           fallbackToDirect: ((.providerRelay.fallbackToDirect) // true),
           providers: (
             if ((.providerRelay.providers // {}) | length) > 0 then
-              .providerRelay.providers
+              (.providerRelay.providers | normalize_providers)
             else
               providers_from_enabled($enabled)
             end
@@ -134,11 +164,56 @@ CONFIG_JSON="$(jq -n \
   | if $debug == true then . + { showMemory: true } else . end
 ')"
 
-# Final scrub: refuse to write if any obvious PII/secret keys slipped through.
+# Force empty top-level secrets and re-normalize providers (defense in depth).
+CONFIG_JSON="$(echo "$CONFIG_JSON" | jq '
+  # Note: do not use `// true` for enabled — jq treats false as missing.
+  def normalize_providers:
+    (. // {})
+    | to_entries
+    | map({
+        key: .key,
+        value: {
+          enabled: (
+            if (.value | type) == "object" then (.value.enabled != false)
+            else true
+            end
+          )
+        }
+      })
+    | from_entries;
+
+  .providerRelay.baseUrl = ""
+  | .providerRelay.token = ""
+  | .providerRelay.providers = (.providerRelay.providers | normalize_providers)
+  | .videasySessionToken = ""
+  | .presenceDiscordClientId = ""
+  | .presenceDiscordOpenUrl = ""
+  | .downloadPath = ""
+  | .mpvKunaiScriptPath = ""
+  | .titleProviderPreferences = {}
+  | .favoriteSources = []
+')"
+
+# Refuse to write if any secret-like string value is still non-empty, including
+# nested providers.*.token. Empty-string placeholders for known secret keys are OK.
+if echo "$CONFIG_JSON" | jq -e '
+  def secret_key:
+    test("(?i)^(token|password|cookie|authorization|secret|api[_-]?key)$")
+    or test("(?i)(SessionToken|ClientSecret|AccessToken|RefreshToken)$");
+
+  [.. | objects | to_entries[] | select(.key | secret_key) | .value]
+  | map(select(type == "string" and length > 0))
+  | length > 0
+' >/dev/null; then
+  echo "seed-config: refusing to write config with non-empty secret values" >&2
+  exit 1
+fi
+
+# Also refuse unexpected sensitive key names that are not empty placeholders.
 if echo "$CONFIG_JSON" | jq -e '
   (.. | objects | keys[]) as $k
   | select(
-      ($k | test("(?i)token|password|cookie|authorization|secret|history|titleId|displayTitle|query|username|email|path"))
+      ($k | test("(?i)password|cookie|authorization|secret|history|titleId|displayTitle|query|username|email"))
       and ($k | IN(
         "downloadPath",
         "mpvKunaiScriptPath",
@@ -153,19 +228,6 @@ if echo "$CONFIG_JSON" | jq -e '
   echo "seed-config: refusing to write config with unexpected sensitive keys" >&2
   exit 1
 fi
-
-# Force empty secrets even if whitelist somehow passed values.
-CONFIG_JSON="$(echo "$CONFIG_JSON" | jq '
-  .providerRelay.baseUrl = ""
-  | .providerRelay.token = ""
-  | .videasySessionToken = ""
-  | .presenceDiscordClientId = ""
-  | .presenceDiscordOpenUrl = ""
-  | .downloadPath = ""
-  | .mpvKunaiScriptPath = ""
-  | .titleProviderPreferences = {}
-  | .favoriteSources = []
-')"
 
 printf '%s\n' "$CONFIG_JSON" >"$CONFIG_DIR/config.json"
 # Empty provider overrides — never import reporter overrides wholesale.
