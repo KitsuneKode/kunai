@@ -1,6 +1,7 @@
 import type { OverlayState, SessionState, StateTransition } from "@/domain/session/SessionState";
 
 import type { KeyScope } from "./keybindings";
+import type { RootContentKind } from "./root-content-state";
 
 export type RootOwnedOverlay = Extract<
   OverlayState,
@@ -66,9 +67,12 @@ export function resolveRootShellSurface(
   {
     hasRootContent,
     hasMountedScreen,
+    rootContentKind,
   }: {
     hasRootContent: boolean;
     hasMountedScreen: boolean;
+    /** Kind of the mounted root-content session, when one is mounted. */
+    rootContentKind?: RootContentKind;
   },
 ): RootShellSurface {
   if (state.playbackStatus === "error") {
@@ -85,6 +89,15 @@ export function resolveRootShellSurface(
   ) {
     if (rootOverlay) {
       return "root-overlay";
+    }
+    // A picker mounted as root content during playback (the `m` title-control
+    // menu routes through openListShell → mountRootContent) must take over the
+    // terminal, exactly like a root-owned overlay does. Returning "playback"
+    // here rendered the loading/playing surface over it, so the menu looked
+    // dead while its promise sat awaiting a selection the user could not see.
+    // Scoped to "picker" so a browse/post-play session can never mask playback.
+    if (hasRootContent && rootContentKind === "picker") {
+      return "root-content";
     }
     return "playback";
   }

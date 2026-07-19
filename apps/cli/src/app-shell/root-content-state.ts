@@ -103,6 +103,7 @@ export function resolveRootContentFromSession(
   const surface = resolveRootShellSurface(state, {
     hasRootContent: Boolean(rootContent),
     hasMountedScreen,
+    rootContentKind: rootContent?.kind,
   });
   return resolvedRootContentFromSurface(surface, rootContent);
 }

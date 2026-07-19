@@ -893,8 +893,19 @@ function AppRoot({ container }: { container: Container }) {
     // Abort in-flight resolve via workControl, then stop any active player.
     // During pure bootstrap there is no player (stop is a no-op); during late
     // ready/bootstrap the player may already exist and must not be left running.
-    container.workControl.cancelActive("playback-loading-esc");
+    const cancelledWork = container.workControl.cancelActive("playback-loading-esc");
     void container.playerControl.stopCurrentPlayback("playback-loading-esc");
+    if (!cancelledWork) {
+      // No resolve was in flight — the post-resolve / failed-mpv window, where
+      // the phase is between iterations. stopCurrentPlayback still records the
+      // stop intent for the post-playback decision, but nothing repaints, so
+      // acknowledge the keypress instead of leaving cancel looking dead.
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        detail: "Cancelling…",
+        note: "Returning to results",
+      });
+    }
   }, [container]);
 
   const onStop = useCallback(() => {

@@ -358,6 +358,43 @@ describe("SessionState overlays", () => {
       }),
     ).toBe("root-content");
   });
+
+  test("a picker mounted during playback takes over instead of hiding under it", () => {
+    // The `m` title-control menu mounts through openListShell -> mountRootContent
+    // while playback is loading/playing. Returning "playback" here rendered the
+    // playback surface on top and the menu looked dead.
+    let state = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    state = reduceState(state, { type: "SET_PLAYBACK_STATUS", status: "playing" });
+
+    expect(
+      resolveRootShellSurface(state, {
+        hasRootContent: true,
+        hasMountedScreen: false,
+        rootContentKind: "picker",
+      }),
+    ).toBe("root-content");
+
+    // A non-picker session (browse/post-play) must never mask live playback.
+    expect(
+      resolveRootShellSurface(state, {
+        hasRootContent: true,
+        hasMountedScreen: false,
+        rootContentKind: "browse",
+      }),
+    ).toBe("playback");
+
+    // Without a mounted picker, playback still owns the surface.
+    expect(
+      resolveRootShellSurface(state, {
+        hasRootContent: false,
+        hasMountedScreen: false,
+      }),
+    ).toBe("playback");
+  });
 });
 
 describe("SessionState responsive layout", () => {
