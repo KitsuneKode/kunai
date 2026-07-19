@@ -12,16 +12,84 @@ This page explains **user-visible provider behavior**. It does not document scra
 
 ## Active providers
 
-The production registry lists providers available at runtime. See the live table on [Feature tour](/docs/users/feature-tour#active-providers) — it syncs from the CLI container when docs are generated.
+Live registry synced from the CLI when docs are generated. Click a provider name to jump to its notes below.
 
-Typical split:
+<ProviderTable />
 
-| Mode | Default providers | Notes |
-| --- | --- | --- |
-| Movies / series | Videasy, VidLink, Rivestream | Rivestream is beta candidate |
-| Anime | AllManga-compatible client, Miruro | Miruro is beta candidate |
+Mode defaults at a glance:
+
+- **Movies / series** — Videasy, VidLink, Rivestream (candidate)
+- **Anime** — AllManga-compatible client (`allanime` id), Miruro (candidate)
+- **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
+
+<ProviderDocSection id="videasy" title="Videasy">
+
+**When to use:** default movies and series path. Fast direct streams with source selection and subtitles.
+
+**Config id:** `videasy` (legacy alias `vidking` still accepted). Prefer this as `provider` unless a title works better elsewhere.
+
+**Caveats:** catalog and source availability can change; use `/recover` then `/fallback` when a stream dies.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="vidlink" title="VidLink">
+
+**When to use:** movies and series with multi-language subtitle inventory.
+
+**Config id:** `vidlink`. A solid second default in `providerPriority` after Videasy.
+
+**Caveats:** subtitle language coverage is not guaranteed for every title.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="rivestream" title="Rivestream">
+
+**When to use:** movies and series when you want another recommended default in the chain. Marked **candidate** — quality varies by title.
+
+**Config id:** `rivestream`. Safe to keep in priority after Videasy/VidLink.
+
+**Caveats:** treat failures as normal for a beta candidate; fallback is expected.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="allanime" title="AllManga">
+
+**When to use:** primary anime source (sub and dub). Display name is AllManga; the runtime id is `allanime`.
+
+**Config id:** `allanime` for `animeProvider` / `animeProviderPriority`.
+
+```json
+{
+  "animeProvider": "allanime",
+  "animeProviderPriority": ["allanime", "miruro"]
+}
+```
+
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Do not confuse the display name with the config id.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="miruro" title="Miruro">
+
+**When to use:** alternate anime source when a title is missing or weak on AllManga.
+
+**Config id:** `miruro`. Candidate status — keep after `allanime` in priority.
+
+**Caveats:** quality and catalog coverage vary; use as fallback, not as the only anime provider.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="youtube" title="YouTube">
+
+**When to use:** YouTube mode for video search and playback (Invidious search, yt-dlp stream handoff to mpv).
+
+**Config id:** `youtube`. Switch with `/youtube-mode` or the mode cycle.
+
+**Caveats:** requires network; yt-dlp must be available for resolve. This is not a TMDB movie/series provider.
+
+</ProviderDocSection>
 
 ## How resolution works (user view)
 
@@ -67,6 +135,8 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
   "animeProviderPriority": ["allanime", "miruro"]
 }
 ```
+
+The anime client shows as **AllManga** in the UI; the config id remains `allanime`.
 
 Rules:
 

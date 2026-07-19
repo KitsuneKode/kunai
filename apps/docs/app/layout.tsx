@@ -2,16 +2,12 @@
 import "./global.css";
 import { KunaiSearchDialog } from "@/components/search/kunai-search-dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { fontClassNames, fontStyleVars } from "@/lib/fonts";
+import { fontClassNames } from "@/lib/fonts";
 /* eslint-enable import/no-unassigned-import */
 import { docsSiteUrl } from "@/lib/site";
-import { cn } from "@/lib/utils";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
-import type { CSSProperties, ReactNode } from "react";
-
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   metadataBase: new URL(docsSiteUrl),
@@ -31,12 +27,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { readonly children: ReactNode }) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={cn("dark", fontClassNames, "font-sans", geist.variable)}
-      style={fontStyleVars() as CSSProperties}
-    >
+    <html lang="en" suppressHydrationWarning className={`dark ${fontClassNames}`}>
       <body className="bg-fd-background text-fd-foreground flex min-h-screen flex-col antialiased">
         <RootProvider
           search={{

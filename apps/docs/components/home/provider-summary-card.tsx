@@ -27,7 +27,10 @@ export function ProviderSummaryCard({ summary }: ProviderSummaryCardProps) {
             <span>Provider guide</span>
             <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
           </Link>
-          <Link className="kunai-button border-fd-border" href="/docs/users/cli-reference">
+          <Link
+            className="kunai-button border-fd-border"
+            href="/docs/users/providers#active-providers"
+          >
             Full provider table
           </Link>
         </div>

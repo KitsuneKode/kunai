@@ -1,26 +1,22 @@
-import { GeistMono } from "geist/font/mono";
-import { GeistSans } from "geist/font/sans";
+import { Cormorant_Garamond, JetBrains_Mono, Outfit } from "next/font/google";
 
-/** Geist Sans for UI + display; variable maps to --font-geist-sans */
-export const fontSans = GeistSans;
+export const fontSans = Outfit({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
-/** Geist Mono for code / ASCII / terminal surfaces */
-export const fontMono = GeistMono;
+export const fontSerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-serif",
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+});
 
-/**
- * Serif alias points at sans so leftover `font-serif` / `--font-serif`
- * classes stay on Geist instead of Georgia.
- */
-export const fontClassNames = [
-  fontSans.variable,
-  fontMono.variable,
-  // Remap legacy CSS vars used across the docs app
-].join(" ");
+export const fontMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
-export function fontStyleVars(): Record<string, string> {
-  return {
-    ["--font-sans" as string]: "var(--font-geist-sans)",
-    ["--font-serif" as string]: "var(--font-geist-sans)",
-    ["--font-mono" as string]: "var(--font-geist-mono)",
-  };
-}
+export const fontClassNames = [fontSans.variable, fontSerif.variable, fontMono.variable].join(" ");

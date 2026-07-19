@@ -231,6 +231,13 @@ export const docNavEntries: readonly DocNavEntry[] = [
     group: "reference",
     surfaces: ["hub", "sidebar"],
   },
+  {
+    title: "Opt-in telemetry",
+    href: "/telemetry",
+    description: "Public opt-in usage pulse, exact ping payload, and consent controls.",
+    group: "reference",
+    surfaces: ["hub", "sidebar"],
+  },
 ] as const;
 
 export type HomeSectionConfig = {

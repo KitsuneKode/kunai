@@ -1,21 +1,21 @@
-/* Typography hierarchy — Geist Sans display + body, Geist Mono data */
+/* Typography hierarchy — Outfit body, Cormorant display, JetBrains Mono data */
 
 .kunai-type-display {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-weight: 300;
+  letter-spacing: -0.03em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
 }
 
 .kunai-type-title {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-title);
   line-height: 1.12;
-  font-weight: 550;
-  letter-spacing: -0.025em;
+  font-weight: 400;
+  letter-spacing: -0.02em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
 }
@@ -52,11 +52,11 @@
 .kunai-display-title {
   margin: 0.5rem 0 0;
   max-width: 20ch;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-weight: 300;
+  letter-spacing: -0.03em;
   text-wrap: balance;
   color: var(--color-fd-foreground);
 }
@@ -98,25 +98,18 @@
   color: var(--kunai-ok);
 }
 
-.kunai-ascii-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Single plane around the home terminal — no separate ASCII card */
+.kunai-hero-terminal-plane {
   border: 1px solid var(--kunai-line);
   border-radius: var(--kunai-radius-outer);
   background: color-mix(in oklab, var(--kunai-surface) 88%, transparent);
   box-shadow: var(--kunai-shadow-sm);
-  padding: 1.25rem 1.5rem;
   overflow: hidden;
 }
 
-.kunai-ascii-pre {
-  margin: 0;
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: clamp(0.55rem, 1.4vw, 0.78rem);
-  line-height: 1.15;
-  letter-spacing: 0.02em;
-  color: var(--kunai-accent);
-  white-space: pre;
-  user-select: none;
+.kunai-hero-terminal-plane .kunai-terminal-stage {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }

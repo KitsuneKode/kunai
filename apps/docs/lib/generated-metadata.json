@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-19T20:17:33.581Z",
+  "syncedAt": "2026-07-19T20:45:38.378Z",
   "version": "0.2.6",
   "cliVersion": "0.2.6",
-  "cliSourceRevision": "3515a8ff",
-  "cliSourceFingerprint": "cd733508b5edc9df4d1be310bb161525479bdb31e40a661ae88afe5ca852ca75",
-  "docsContentFingerprint": "fc5f00edf13e5f2d2154fc7800092f9c8af8b05decb53661b656aaca2d4e1a44",
+  "cliSourceRevision": "ef12baec",
+  "cliSourceFingerprint": "e803177be613d101d510ca04cdf703d4adab30d934513835f45a2ed7b63262b2",
+  "docsContentFingerprint": "8d692c0e0dff485090539f60896712b87d03d22f8b2a64639c5561b618746ec5",
   "featureStatusRevision": "532e1c0d85d8c99a7d3a0a1b5bd9dcf8b4b691de109a1784dcdbb2a6201eb3af",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -47,7 +47,7 @@
     {
       "id": "rivestream",
       "displayName": "Rivestream",
-      "description": "Experimental source for movies and series — may be unstable",
+      "description": "Beta movies/series source — recommended default, quality can vary by title",
       "domain": "rivestream.app",
       "recommended": true,
       "mediaKinds": ["movie", "series"],

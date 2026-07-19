@@ -76,12 +76,4 @@ describe("docs home shell", () => {
     expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
     expect(homeHero.secondaryCta.href).toBe("/docs");
   });
-
-  test("ascii brand mark ships non-empty art", () => {
-    const ascii = readSource("lib/brand/ascii-kunai.ts");
-    expect(ascii).toContain("ASCII_KUNAI");
-    expect(ascii).toContain("/\\\\");
-    const shell = readSource("app/(home)/home-page-shell.tsx");
-    expect(shell).toContain("AsciiBrandMark");
-  });
 });

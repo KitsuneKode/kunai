@@ -1,5 +1,5 @@
 ---
-title: Supported And Unsupported
+title: Supported and unsupported
 description: What Kunai supports in beta, what is experimental, and what is explicitly out of scope.
 status: shipped
 ---
@@ -16,55 +16,24 @@ Use this codegen-backed table as the single product posture source. Narrative se
 
 ## CLI and install channels
 
-<Tabs items={["Binary install", "Package managers", "Source"]}>
-<Tab value="Binary install">
+Install paths are documented once on [Getting started](/docs/users/getting-started) and [Install and update](/docs/users/install-and-update). In beta:
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
-```
-
-Windows:
-
-```powershell
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
-```
-
-**Beta supported.** Binaries embed the Bun runtime — you do not need Bun installed to run them. Releases are unsigned; see [Install and update](/docs/users/install-and-update).
-
-</Tab>
-<Tab value="Package managers">
-
-```sh
-bun install -g @kitsunekode/kunai
-npm install -g @kitsunekode/kunai
-```
-
-**Beta supported.** Bun is the primary tested runtime for JS bundle installs.
-
-</Tab>
-<Tab value="Source">
-
-```sh
-git clone https://github.com/KitsuneKode/kunai.git
-cd kunai && bun install && bun run link:global
-```
-
-**Supported for contributors.** Requires Bun.
-
-</Tab>
-</Tabs>
+- **Bun global** — primary tested JS install (`bun install -g @kitsunekode/kunai`)
+- **Binary installers** — embed Bun; you still need `mpv`
+- **Source checkout** — for contributors (`bun run link:global`)
 
 ## Providers
 
-Production providers are registered in the CLI container. The [Feature tour](/docs/users/feature-tour) embeds a live table synced from the registry.
+Production providers are registered in the CLI container. The live table and per-provider notes live on [Providers](/docs/users/providers#active-providers).
 
 | Provider family | Typical use | Status |
 | --- | --- | --- |
-| Videasy (`videasy`, legacy `vidking` alias) | Movies and series | Shipped |
-| VidLink | Movies and series | Shipped |
-| AllManga-compatible (`allanime` id) | Anime | Shipped |
-| Rivestream | Movies and series | Beta — candidate; quality varies |
-| Miruro | Anime | Beta — candidate; quality varies |
+| Videasy (`videasy`, legacy `vidking` alias) | Movies and series | Active |
+| VidLink | Movies and series | Active |
+| AllManga-compatible (`allanime` id) | Anime | Active |
+| Rivestream | Movies and series | Candidate — quality varies |
+| Miruro | Anime | Candidate — quality varies |
+| YouTube | Video mode (Invidious + yt-dlp) | Production |
 | Cineby | — | Not in production engine (research module) |
 | Playwright / browser providers | — | Not supported in active runtime |
 

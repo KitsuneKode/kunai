@@ -1,4 +1,3 @@
-import { AsciiBrandMark } from "@/components/home/ascii-brand-mark";
 import { HomeHeroStatic } from "@/components/home/home-hero-static";
 import { HomeTerminalIsland } from "@/components/home/home-terminal-island";
 import { ProviderSummaryCard } from "@/components/home/provider-summary-card";
@@ -36,8 +35,7 @@ export default function HomePageShell({
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
       <section className="kunai-home-hero grid items-center gap-10 pb-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <HomeHeroStatic />
-        <div className="flex flex-col gap-4">
-          <AsciiBrandMark />
+        <div className="kunai-hero-terminal-plane flex flex-col">
           <HomeTerminalIsland
             providers={providers}
             paletteCommands={paletteCommands}
@@ -113,6 +111,10 @@ export default function HomePageShell({
             <h2 className="kunai-display-title max-w-2xl text-3xl md:text-4xl">
               Install once, then keep playback predictable.
             </h2>
+            <p className="kunai-type-body text-fd-muted-foreground mt-3 max-w-xl text-sm">
+              Recovery stays in the shell. No shared public relay — when you need geo metadata help,
+              you own the relay URL.
+            </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-4">
             <Link

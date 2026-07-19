@@ -5,6 +5,7 @@ import {
   IconClockHour4,
   IconFileText,
   IconMessageReport,
+  IconRadar2,
   IconTerminal2,
   IconTool,
 } from "@tabler/icons-react";
@@ -27,10 +28,10 @@ export function baseOptions(): BaseLayoutProps {
     githubUrl: "https://github.com/KitsuneKode/kunai",
     links: [
       {
-        text: "Docs",
+        text: "Overview",
         url: "/docs",
         icon: <IconFileText className="size-4" stroke={1.5} />,
-        active: "nested-url",
+        active: "url",
       },
       {
         text: "Guides",
@@ -54,6 +55,12 @@ export function baseOptions(): BaseLayoutProps {
         text: "Feedback",
         url: "/feedback",
         icon: <IconMessageReport className="size-4" stroke={1.5} />,
+        active: "url",
+      },
+      {
+        text: "Telemetry",
+        url: "/telemetry",
+        icon: <IconRadar2 className="size-4" stroke={1.5} />,
         active: "url",
       },
       {

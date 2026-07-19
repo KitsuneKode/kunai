@@ -15,22 +15,11 @@ Kunai is a terminal-first media shell. You search for a title, pick what to watc
 
 <QuickStartSteps />
 
-## Install Kunai
+## Other install methods
 
-Canonical path (Bun + setup). Binary installers remain available as a secondary option.
+The steps above use Bun global + `kunai --setup`. Use these tabs only when you need a different channel.
 
-<Tabs items={["Bun global (recommended)", "Binary", "npm global", "Source checkout"]}>
-<Tab value="Bun global (recommended)">
-
-```sh
-bun install -g @kitsunekode/kunai
-kunai --setup
-kunai -S "Dune"
-```
-
-During beta, Bun is the supported install and dev runtime. You still need `mpv` for playback.
-
-</Tab>
+<Tabs items={["Binary", "npm global", "Source checkout"]}>
 <Tab value="Binary">
 
 Linux / macOS:
@@ -76,39 +65,43 @@ Use `bun run dev -- <flags>` when you need to forward argv without a global link
 </Tab>
 </Tabs>
 
-## Common launch patterns
+## Launch recipes
+
+Four common first-week patterns. Full flag list: [CLI reference](/docs/users/cli-reference).
+
+### First play (search, then pick)
 
 ```sh
-kunai
 kunai -S "Dune"
-kunai -S "Dune" --jump 1
-kunai -a -S "Attack on Titan" --jump 1
-kunai --continue
-kunai --history
-kunai --offline
-kunai --zen --offline
-kunai --discover
-kunai --random
-kunai --calendar
 ```
 
+`-S` opens search results — it does not auto-play. Add `--jump 1` or `-q` when you want the first match selected automatically.
+
+### Anime mode
+
+```sh
+kunai -a -S "Attack on Titan" --jump 1
+```
+
+### Continue where you left off
+
+```sh
+kunai --continue
+```
+
+Use `--history` when you want to pick from recent entries instead of the newest unfinished one.
+
+### Offline library
+
+```sh
+kunai --offline
+```
+
+`--zen --offline` keeps chrome minimal over the same library. Download-only bootstrap: `kunai --download -S "Title"` (resolve, queue, exit).
+
 <Callout type="idea" title="Search does not mean auto-play">
-`-S "Title"` runs search and lands on results. Add `--jump 1` or `-q` when you want the first match selected automatically.
+`-S "Title"` lands on results. Discovery trays (`--discover`, `--random`, `--calendar`) also open without auto-play.
 </Callout>
-
-## What the flags mean
-
-| Flag / command | Behavior |
-| --- | --- |
-| `-S "Title"` | Bootstrap search — shows results, does not auto-play by itself |
-| `--jump 1` | Select the first result after search |
-| `-q` | Quick search — acts like `--jump 1` when a query is present |
-| `--continue` / `--resume` | Open the newest unfinished local history entry |
-| `--history` | Open history picker at startup |
-| `--offline` | Open completed downloads first (same intent as `/library`) |
-| `--zen --offline` | Minimal chrome over the offline library |
-| `--discover`, `--random`, `--calendar` | Open those trays first — no auto-play |
-| `kunai --download -S "Title"` | **Download-only** bootstrap: resolve, queue, exit |
 
 <ScopeCallout variant="downloads" />
 
@@ -147,4 +140,5 @@ Open `/diagnostics`. For a shareable bundle use `/export-diagnostics` — export
 
 - [Platforms](/docs/users/platforms) for OS-specific optional tools
 - [CLI reference](/docs/users/cli-reference) for launch flags and provider tables synced from the CLI
+- [Providers](/docs/users/providers) for fallback chains and per-provider notes
 - [Playback and recovery](/docs/users/playback-and-recovery) for the full failure playbook

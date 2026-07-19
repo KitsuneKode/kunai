@@ -31,7 +31,7 @@ describe("docs home content", () => {
   test("keeps recovery and provider promises in user-facing copy", () => {
     expect(homeFlow.map((step) => step.title)).toContain("Play in mpv");
     expect(homeHighlights.some((item) => item.label === "Recovery built in")).toBe(true);
-    expect(homeHero.description).toContain("pick up where you left off");
+    expect(homeHero.description).toContain("recover without restarting");
   });
 
   test("provider count in highlights matches codegen", () => {

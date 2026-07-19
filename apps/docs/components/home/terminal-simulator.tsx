@@ -334,8 +334,12 @@ const TerminalSimulator = memo(function TerminalSimulator({
             <span className="kunai-status-dot kunai-status-dot--focus" />
             kunai shell
           </span>
-          <span className="kunai-text-accent text-[10px] font-semibold">cli active</span>
-          <span className="kunai-step-meta">mpv verified</span>
+          <span className="kunai-terminal-badges">
+            <span className="kunai-text-accent text-[10px] font-semibold tracking-wide">
+              cli active
+            </span>
+            <span className="kunai-step-meta">mpv verified</span>
+          </span>
         </div>
 
         <div

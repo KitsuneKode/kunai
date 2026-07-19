@@ -12,9 +12,9 @@ export async function OptInTelemetryLine() {
       {" · "}
       <Link
         className="hover:text-fd-foreground underline decoration-dotted underline-offset-2"
-        href="/docs/users/reliability-and-privacy#opt-in-telemetry"
+        href="/telemetry"
       >
-        opt-in only
+        opt-in pulse
       </Link>
       {" · lifetime is approximate"}
     </p>

@@ -27,7 +27,6 @@
     "fumadocs-core": "^16.11.5",
     "fumadocs-mdx": "^15.2.0",
     "fumadocs-ui": "^16.11.5",
-    "geist": "^1.7.2",
     "motion": "^12.42.2",
     "next": "^16.2.10",
     "react": "^19.2.7",

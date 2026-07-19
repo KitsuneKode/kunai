@@ -16,12 +16,14 @@ describe("docs shell", () => {
     expect(links).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          text: "Docs",
+          text: "Overview",
           url: "/docs",
+          active: "url",
         }),
         expect.objectContaining({
           text: "Guides",
           url: "/docs/users",
+          active: "nested-url",
         }),
         expect.objectContaining({
           text: "Debug",
@@ -34,6 +36,10 @@ describe("docs shell", () => {
         expect.objectContaining({
           text: "Feedback",
           url: "/feedback",
+        }),
+        expect.objectContaining({
+          text: "Telemetry",
+          url: "/telemetry",
         }),
       ]),
     );

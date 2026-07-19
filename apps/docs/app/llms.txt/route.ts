@@ -31,6 +31,7 @@ export async function GET() {
         `- [${release.title}](${docsSiteUrl}${releasePath(release.tag)}): ${release.tag}`,
     ),
     `- [Feedback](${docsSiteUrl}/feedback): File bugs, provider issues, and feature requests on GitHub`,
+    `- [Opt-in telemetry](${docsSiteUrl}/telemetry): Public opt-in usage pulse and consent rules`,
     "",
   ];
 

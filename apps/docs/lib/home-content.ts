@@ -21,10 +21,10 @@ export type HomeFlowStep = {
 };
 
 export const homeHero = {
-  eyebrow: "Kunai CLI",
-  title: "A calm command shell for playable streams.",
+  eyebrow: "Terminal-first playback",
+  title: "Kunai — a calm command shell for playable streams.",
   description:
-    "Search your catalog, resolve a direct stream locally, hand playback to mpv, and pick up where you left off when something breaks.",
+    "Search your catalog, resolve a direct stream on your machine, hand playback to mpv, and recover without restarting when something stalls.",
   installCommands: [CANONICAL_INSTALL, CANONICAL_SETUP],
   primaryCta: {
     label: "Get started",

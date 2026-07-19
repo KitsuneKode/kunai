@@ -25,6 +25,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.6,
     },
+    {
+      url: `${docsSiteUrl}/telemetry`,
+      changeFrequency: "daily",
+      priority: 0.55,
+    },
     ...releases.map((release) => ({
       url: `${docsSiteUrl}${releasePath(release.tag)}`,
       changeFrequency: "monthly" as const,

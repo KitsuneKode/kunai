@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type ReleaseNotesSection = {
   readonly title: string;
@@ -25,9 +26,29 @@ export type ReleaseNotesArtifact = {
   readonly assets?: readonly { readonly name: string; readonly sha256: string }[];
 };
 
+function thisDir(): string {
+  // Bun exposes import.meta.dir; Next/Turbopack does not — use import.meta.url there.
+  if (typeof import.meta.dir === "string" && import.meta.dir.length > 0) {
+    return import.meta.dir;
+  }
+  if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
+    return fileURLToPath(new URL(".", import.meta.url));
+  }
+  return process.cwd();
+}
+
 function repoRoot(): string {
-  // apps/docs/lib → monorepo root (stable regardless of process.cwd)
-  return resolve(import.meta.dir, "../../..");
+  // Prefer path relative to this module (apps/docs/lib → monorepo root).
+  // Fall back to Next's usual cwd (apps/docs) or an already-at-root cwd.
+  const candidates = [
+    resolve(thisDir(), "../../.."),
+    resolve(process.cwd(), "../.."),
+    process.cwd(),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, ".release"))) return candidate;
+  }
+  return candidates[0] ?? process.cwd();
 }
 
 function releaseDir(): string {

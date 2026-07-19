@@ -108,15 +108,24 @@
 .kunai-terminal-top {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
   justify-content: space-between;
   border-radius: 0.5rem;
-  padding: 0.75rem 0.9rem;
+  padding: 0.65rem 0.85rem;
   color: var(--color-fd-muted-foreground);
   font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.kunai-terminal-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-inline-end: 0.15rem;
 }
 
 .kunai-terminal-body {
@@ -382,7 +391,7 @@
 .kunai-final h2 {
   margin: 0.6rem 0 0;
   max-width: 16ch;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
   line-height: var(--kunai-leading-tight);
   font-weight: 300;
@@ -961,25 +970,26 @@
   transform: scale(0.96) !important;
 }
 
-/* Premium Code Blocks (home + shared reference tables) */
-.prose pre,
-.fd-codeblock,
-pre:not(#nd-docs-layout pre) {
-  background-color: #0b070e !important;
-  border: 1px solid var(--kunai-line) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
-  border-radius: 0.75rem !important;
+/* Premium Code Blocks (home surfaces only — docs MDX scoped in docs-chrome.css) */
+.kunai-home .prose pre,
+.kunai-home .fd-codeblock,
+.kunai-home pre:not(#nd-docs-layout pre) {
+  background-color: #0b070e;
+  border: 1px solid var(--kunai-line);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  min-height: 0;
   transition:
     border-color 200ms var(--kunai-ease-out),
     box-shadow 200ms var(--kunai-ease-out);
 }
-.prose pre:hover,
-.fd-codeblock:hover,
-pre:hover {
-  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line)) !important;
+.kunai-home .prose pre:hover,
+.kunai-home .fd-codeblock:hover {
+  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
   box-shadow:
     0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent),
-    0 4px 20px rgba(0, 0, 0, 0.3) !important;
+    0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 /* Premium Tables (home only — docs tables scoped above) */
@@ -996,7 +1006,7 @@ pre:hover {
 .kunai-home table th {
   background: color-mix(in oklab, var(--kunai-surface-strong) 80%, transparent);
   color: #fff;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif);
   font-weight: 600;
   font-size: 0.9rem;
   text-transform: uppercase;

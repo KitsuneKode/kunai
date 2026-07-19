@@ -42,7 +42,7 @@ h4,
 h5,
 h6,
 .font-serif {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
 }
 
 code,
@@ -127,7 +127,7 @@ pre,
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-serif), Georgia, serif;
   --radius-sm: calc(var(--kunai-radius-inner) * 0.6);
   --radius-md: calc(var(--kunai-radius-inner) * 0.8);
   --radius-lg: var(--kunai-radius-inner);

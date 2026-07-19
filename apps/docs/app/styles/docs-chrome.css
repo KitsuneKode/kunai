@@ -15,19 +15,29 @@
     --fd-toc-width: 17rem;
   }
 
-  #nd-nav {
+  /* Positioning wrapper only — glass lives on the inner Fumadocs bar */
+  #nd-home-layout #nd-nav {
     position: sticky;
     top: 0.75rem;
     z-index: 40;
     margin-inline: auto;
     max-width: min(96rem, calc(100vw - 1.5rem));
-    border-radius: var(--kunai-radius-pill);
-    border: 1px solid color-mix(in oklab, white 8%, transparent);
-    background: color-mix(in oklab, var(--kunai-surface) 72%, transparent);
-    box-shadow: var(--kunai-shadow-sm);
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
-  #nd-nav,
+  #nd-home-layout #nd-nav > div {
+    border-radius: var(--kunai-radius-pill);
+    border: 1px solid color-mix(in oklab, white 8%, transparent);
+    border-bottom: 1px solid color-mix(in oklab, white 8%, transparent);
+    background: color-mix(in oklab, var(--kunai-surface) 72%, transparent) !important;
+    box-shadow: var(--kunai-shadow-sm);
+    backdrop-filter: blur(16px);
+    overflow: hidden;
+  }
+
   #nd-sidebar,
   #nd-toc {
     backdrop-filter: blur(16px);
@@ -93,11 +103,16 @@
   font-weight: 600;
 }
 
-/* Page title hierarchy — Geist display, not serif */
+/* Home product hops: color-only active (no thick inset rail competing with page tree) */
+#nd-home-layout #nd-nav a[data-active="true"] {
+  border-inline-start: none;
+}
+
+/* Page title hierarchy */
 #nd-docs-layout h1 {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-display);
-  font-weight: 500;
+  font-weight: 300;
   line-height: var(--kunai-leading-tight);
   letter-spacing: -0.03em;
   text-wrap: balance;
@@ -158,17 +173,16 @@
 }
 
 #nd-docs-layout .prose :where(h2):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-serif), Georgia, serif;
   font-size: var(--kunai-text-title);
-  font-weight: 550;
+  font-weight: 400;
   letter-spacing: -0.02em;
   margin-top: 2.5rem;
   text-wrap: balance;
 }
 
 #nd-docs-layout .prose :where(h3, h4):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  font-weight: 550;
+  font-family: var(--font-serif), Georgia, serif;
   letter-spacing: -0.015em;
   text-wrap: balance;
 }
@@ -187,6 +201,32 @@
   background: color-mix(in oklab, var(--kunai-bg) 96%, transparent);
   box-shadow: var(--kunai-shadow-sm);
   border-radius: var(--kunai-radius-inner);
+  margin-block: 0.85rem;
+  padding: 0.85rem 1rem;
+  min-height: 0;
+  line-height: 1.45;
+}
+
+/* Fumadocs code figure — keep one-line fences compact */
+#nd-docs-layout .fd-codeblock,
+#nd-docs-layout figure:has(> pre),
+#nd-docs-layout [data-rehype-pretty-code-figure] {
+  margin-block: 0.85rem;
+  min-height: 0;
+}
+
+#nd-docs-layout .fd-codeblock pre,
+#nd-docs-layout figure:has(> pre) > pre,
+#nd-docs-layout [data-rehype-pretty-code-figure] > pre {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  min-height: 0;
+}
+
+#nd-docs-layout .fd-codeblock [data-line],
+#nd-docs-layout [data-rehype-pretty-code-figure] [data-line] {
+  min-height: 0;
+  padding-block: 0.05rem;
 }
 
 /* Fumadocs Callout — liquid glass edge */

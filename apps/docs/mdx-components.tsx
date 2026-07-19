@@ -1,6 +1,7 @@
 import { DocSectionCards } from "@/components/docs/doc-section-cards";
 import { DocsHubIntro } from "@/components/docs/docs-hub-intro";
 import { DocsRootCards } from "@/components/docs/docs-root-cards";
+import { ProviderDocSection } from "@/components/docs/provider-doc-section";
 import { QuickStartSteps } from "@/components/docs/quick-start-steps";
 import { ScopeCallout } from "@/components/docs/scope-callout";
 import { CliFlagsTable } from "@/components/reference/cli-flags-table";
@@ -33,6 +34,7 @@ const kunaiMdxComponents = {
   DocsHubIntro,
   QuickStartSteps,
   ScopeCallout,
+  ProviderDocSection,
 } satisfies MDXComponents;
 
 export function useMDXComponents(components?: MDXComponents): MDXComponents {
