@@ -8,6 +8,22 @@ export type ReleaseBinaryChecksum = {
   readonly sha256: string;
 };
 
+/**
+ * Only the release pipeline may author the checksums in `.release/*.json`.
+ *
+ * A local `build-binaries` run produces binaries that are byte-different from
+ * CI's (different toolchain, paths, timestamps), so merging its SHA256SUMS
+ * silently replaced the committed hashes with ones no published artifact will
+ * ever match. That file is what a user verifies a download against, so shipping
+ * dev-machine hashes breaks verification for everyone.
+ *
+ * Set `KUNAI_WRITE_RELEASE_CHECKSUMS=1` to opt in deliberately.
+ */
+export function shouldWriteReleaseChecksums(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.KUNAI_WRITE_RELEASE_CHECKSUMS === "1") return true;
+  return Boolean(env.CI?.trim());
+}
+
 /** Parse a `SHA256SUMS` manifest (`<hex>  <filename>` per line). */
 export function parseSha256sums(content: string): readonly ReleaseBinaryChecksum[] {
   const assets: ReleaseBinaryChecksum[] = [];

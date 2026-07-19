@@ -19,7 +19,10 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { mergeReleaseNotesChecksums } from "../../../scripts/release-binary-checksums.ts";
+import {
+  mergeReleaseNotesChecksums,
+  shouldWriteReleaseChecksums,
+} from "../../../scripts/release-binary-checksums.ts";
 import { RELEASE_BINARY_TARGETS } from "../src/services/update/platform-assets";
 import {
   assertNoForbiddenReleaseInputs,
@@ -141,21 +144,28 @@ async function main(): Promise<void> {
 
   const builtAllTargets = targets.length === RELEASE_BINARY_TARGETS.length;
   if (builtAllTargets && existsSync(join(OUT, "SHA256SUMS"))) {
-    const version = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")) as {
-      version?: string;
-    };
-    if (version.version) {
-      try {
-        mergeReleaseNotesChecksums({
-          repoRoot: REPO_ROOT,
-          version: version.version,
-          checksumsPath: join(OUT, "SHA256SUMS"),
-        });
-        console.log(`[binaries] merged SHA256SUMS into .release/kunai-v${version.version}.json`);
-      } catch (error) {
-        console.warn(
-          `[binaries] skipped release-notes checksum merge: ${error instanceof Error ? error.message : String(error)}`,
-        );
+    if (!shouldWriteReleaseChecksums()) {
+      console.log(
+        "[binaries] skipped release-notes checksum merge: local build " +
+          "(set KUNAI_WRITE_RELEASE_CHECKSUMS=1 to override)",
+      );
+    } else {
+      const version = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")) as {
+        version?: string;
+      };
+      if (version.version) {
+        try {
+          mergeReleaseNotesChecksums({
+            repoRoot: REPO_ROOT,
+            version: version.version,
+            checksumsPath: join(OUT, "SHA256SUMS"),
+          });
+          console.log(`[binaries] merged SHA256SUMS into .release/kunai-v${version.version}.json`);
+        } catch (error) {
+          console.warn(
+            `[binaries] skipped release-notes checksum merge: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     }
   }

@@ -8,6 +8,7 @@ import {
   REQUIRED_RELEASE_ASSET_NAMES,
   assertRequiredReleaseAssets,
 } from "../../../../../scripts/release-asset-contract";
+import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
 
@@ -39,5 +40,25 @@ describe("distribution release-asset contract", () => {
     for (const name of REQUIRED_RELEASE_ASSET_NAMES) {
       expect(workflow).toContain(`apps/cli/dist/bin/${name}`);
     }
+  });
+});
+
+describe("release checksum authorship", () => {
+  // A local build produces binaries that are byte-different from CI's, so
+  // merging its SHA256SUMS replaced the committed hashes with ones no published
+  // artifact can match. That file is what users verify a download against.
+  test("a local build does not author release checksums", () => {
+    expect(shouldWriteReleaseChecksums({})).toBe(false);
+    expect(shouldWriteReleaseChecksums({ CI: "" })).toBe(false);
+    expect(shouldWriteReleaseChecksums({ CI: "   " })).toBe(false);
+  });
+
+  test("CI authors them", () => {
+    expect(shouldWriteReleaseChecksums({ CI: "true" })).toBe(true);
+    expect(shouldWriteReleaseChecksums({ CI: "1" })).toBe(true);
+  });
+
+  test("an explicit opt-in authors them outside CI", () => {
+    expect(shouldWriteReleaseChecksums({ KUNAI_WRITE_RELEASE_CHECKSUMS: "1" })).toBe(true);
   });
 });
