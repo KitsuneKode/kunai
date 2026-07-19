@@ -464,6 +464,10 @@ export function BrowseShell<T>({
     setFocusZone("query");
     setErrorMessage(null);
     setEmptyMessage(`Searching for “${rawQuery}”…`);
+    // Drop prior rows so the loading surface wins over a stale list.
+    setOptions([]);
+    setSelectedIndex(0);
+    setResultSubtitle("");
     resetCalendar();
 
     try {
@@ -519,16 +523,21 @@ export function BrowseShell<T>({
 
     const requestId = searchRequestGateRef.current.begin();
     setQuery("");
+    setLastSearchedQuery("");
     setSearchState("loading");
     setErrorMessage(null);
     setEmptyMessage("Loading trending…");
+    setOptions([]);
+    setSelectedIndex(0);
+    setResultSubtitle("");
+    setActiveFilterBadges([]);
+    setFocusZone("query");
     resetCalendar();
 
     try {
       const response = await onLoadDiscovery();
       if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
-      setLastSearchedQuery("");
       setOptions(response.options);
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
@@ -556,16 +565,37 @@ export function BrowseShell<T>({
 
     const requestId = searchRequestGateRef.current.begin();
     setQuery("");
+    setLastSearchedQuery("");
     setSearchState("loading");
     setErrorMessage(null);
     setEmptyMessage("Loading recommendations…");
+    setOptions([]);
+    setSelectedIndex(0);
+    setResultSubtitle("");
+    setActiveFilterBadges([]);
+    setFocusZone("query");
     resetCalendar();
 
     try {
       const response = await onLoadRecommendations();
       if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 
-      setLastSearchedQuery("");
+      // Cold cache: stay on the loading surface until the network refresh lands.
+      // Warm cache: paint immediately, then soft-refresh in the background.
+      if (response.options.length === 0 && response.revalidate) {
+        setResultSubtitle(response.subtitle);
+        setEmptyMessage("Loading recommendations…");
+        const nextResponse = await response.revalidate;
+        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+        setOptions(nextResponse.options);
+        setSelectedIndex(0);
+        setResultSubtitle(nextResponse.subtitle);
+        setEmptyMessage(nextResponse.emptyMessage ?? "Recommendations are unavailable right now.");
+        setSearchState("ready");
+        setFocusZone(nextResponse.options.length > 0 ? "list" : "query");
+        return;
+      }
+
       setOptions(response.options);
       setSelectedIndex(0);
       setResultSubtitle(response.subtitle);
@@ -1650,6 +1680,22 @@ export function BrowseShell<T>({
           />
         ) : activeOverlay ? (
           <OverlayPanel overlay={activeOverlay} width={innerWidth} />
+        ) : searchState === "loading" && !isCalendarView ? (
+          <Box marginTop={2} flexGrow={1} flexDirection="column">
+            <SakuraLoader
+              label={
+                emptyMessage.trim().length > 0 ? emptyMessage.replace(/\.\.\.$/, "…") : "Loading…"
+              }
+              sublabel={
+                emptyMessage.toLowerCase().includes("trending")
+                  ? "Fetching what's popular right now"
+                  : emptyMessage.toLowerCase().includes("recommend")
+                    ? "Building picks from your watch history"
+                    : "Matching titles across the catalog · usually a few seconds"
+              }
+              active
+            />
+          </Box>
         ) : displayOptions.length > 0 ? (
           <Box
             flexDirection={companionBesideList ? "row" : "column"}
@@ -1787,16 +1833,6 @@ export function BrowseShell<T>({
             model={buildCalendarEmptyState(calendarEmptyModeLabel)}
             width={Math.min(innerWidth, 72)}
           />
-        ) : searchState === "loading" ? (
-          <Box marginTop={2} flexGrow={1} flexDirection="column">
-            <SakuraLoader
-              label={
-                emptyMessage.trim().length > 0 ? emptyMessage.replace(/\.\.\.$/, "…") : "Searching…"
-              }
-              sublabel="Matching titles across the catalog · usually a few seconds"
-              active
-            />
-          </Box>
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
             <StateBlock
