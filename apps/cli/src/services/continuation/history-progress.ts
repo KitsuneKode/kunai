@@ -7,10 +7,9 @@
 
 import { isAnimeOnlyProviderId } from "@/domain/media/content-kind";
 import type { ContentType, ProviderLane } from "@/domain/types";
+import { isHistoryProgressFinished } from "@kunai/storage";
 import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
 import type { MediaKind } from "@kunai/types";
-
-const FINISHED_RATIO = 0.95;
 
 /**
  * Corrected anime/series/movie kind for a (possibly legacy) history row.
@@ -120,11 +119,10 @@ export function readLatestHistoryByTitle(
  * The persisted `completed` flag (written richly from credits/threshold/EOF) wins.
  * The 95% ratio is only a fallback when a positive duration is known.
  */
+// Re-exported from @kunai/storage, which owns HistoryProgress. Lower layers
+// (domain/queue) need this predicate too and must not import upward.
 export function isFinished(progress: HistoryProgress): boolean {
-  if (progress.completed) return true;
-  const duration = progress.durationSeconds ?? 0;
-  if (duration <= 0) return false;
-  return progress.positionSeconds / duration >= FINISHED_RATIO;
+  return isHistoryProgressFinished(progress);
 }
 
 export function formatTimestamp(seconds: number): string {

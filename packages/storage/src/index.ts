@@ -28,6 +28,7 @@ export {
   HistoryRepository,
 } from "./repositories/history";
 export type { HistoryProgress, HistoryProgressInput } from "./repositories/history";
+export { HISTORY_FINISHED_RATIO, isHistoryProgressFinished } from "./repositories/history";
 export {
   externalIdsToAliases,
   HistoryTitleAliasRepository,
