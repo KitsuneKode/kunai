@@ -111,6 +111,37 @@ URLs, headers, cookies, tokens, raw title IDs, or arbitrary provider evidence.
 
 Use `/report-issue` for a preview-first issue flow. It asks before writing a redacted diagnostics report bundle and then opens the GitHub issue chooser. Use `/export-diagnostics` when you only want the bundle and do not want to open a browser.
 
+## Maintainer reproduction container (not shipped)
+
+This harness is **maintainer-only**. It is not a user-facing feature and must not
+be linked from end-user docs, installers, or in-app help. Use it when a reporter
+has already exported a redacted support bundle and you need the same startup
+configuration on a small machine.
+
+The image is Alpine + Bun + mpv (target under ~200 MB). `run-repro.sh` mounts the
+linux musl release binary, a throwaway XDG profile, and the bundle. Config is
+pre-seeded from the bundle's **redacted settings** (or `environment.enabledProviders`
+when no `settings` object is present). History rows, titles, search queries,
+tokens, and user data paths are never copied into the container profile.
+
+```sh
+# Build musl binary if needed
+bun run build:binaries -- --only linux-x64-musl
+
+# Reproduce from a host-exported bundle (interactive throwaway shell)
+./apps/cli/test/docker/repro/run-repro.sh ./kunai-support-bundle-….json --build
+
+# Non-interactive smoke (version/help + seeded providers)
+./apps/cli/test/docker/repro/run-repro.sh \
+  ./apps/cli/test/docker/repro/fixtures/sample-support-bundle.json --smoke --build
+
+# Image size + seed privacy assertions
+./apps/cli/test/docker/repro/smoke-assert.sh
+```
+
+Inside the container: binary at `/usr/local/bin/kunai`, bundle at
+`/work/support-bundle.json`, config under `$XDG_CONFIG_HOME/kunai/config.json`.
+
 ## Latency Triage Order
 
 Use `--debug-json` when reproducing provider/playback issues: active-runtime

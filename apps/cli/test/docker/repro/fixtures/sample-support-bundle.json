@@ -1,0 +1,57 @@
+{
+  "exportedAt": "2026-07-20T00:00:00.000Z",
+  "app": {
+    "version": "0.0.0-test",
+    "debug": true
+  },
+  "summary": {
+    "headline": "fixture",
+    "sections": []
+  },
+  "triage": {
+    "verdict": "ok",
+    "likelyCause": "fixture",
+    "affectedSubsystems": [],
+    "recommendedActions": [],
+    "correlationSummary": "",
+    "lastEventBySubsystem": {},
+    "privacy": {
+      "redacted": true,
+      "excludes": []
+    }
+  },
+  "runtime": {
+    "platform": "linux",
+    "arch": "x64",
+    "bunVersion": "1.3.14",
+    "mpvVersion": "mpv 0.38",
+    "terminal": "xterm"
+  },
+  "environment": {
+    "mpvVersion": "mpv 0.38",
+    "terminal": "xterm",
+    "enabledProviders": ["videasy", "allanime", "rivestream"],
+    "schemaVersions": {
+      "data": [],
+      "cache": []
+    },
+    "runtimeHealth": {
+      "network": "ok"
+    }
+  },
+  "privacy": {
+    "redacted": true,
+    "excludes": ["history rows", "titles", "stream URLs"]
+  },
+  "capabilities": {},
+  "insights": {},
+  "correlation": {
+    "sessionIds": [],
+    "playbackCycleIds": [],
+    "providerAttemptIds": [],
+    "traceIds": []
+  },
+  "sections": {},
+  "eventCount": 0,
+  "events": []
+}
