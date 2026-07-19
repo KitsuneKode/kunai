@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { Logger } from "@/infra/logger/Logger";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
-import { DiagnosticsServiceImpl } from "@/services/diagnostics/DiagnosticsServiceImpl";
+import {
+  diagnosticEventIdentity,
+  DiagnosticsServiceImpl,
+} from "@/services/diagnostics/DiagnosticsServiceImpl";
+import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
+import { AsyncDurableDiagnosticsSink } from "@/services/diagnostics/DurableDiagnosticsSink";
+import { DiagnosticEventsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 function silentLogger(): Logger {
   return {
@@ -105,6 +114,35 @@ describe("diagnostics read policy", () => {
     expect(service.getRecent(10)).toEqual([shared, distinct]);
   });
 
+  test("semantic identity ignores key order and omitted undefined fields", () => {
+    const memoryShaped = event({
+      message: "shaped",
+      sessionId: "session-live",
+      timestamp: 42,
+      providerId: undefined,
+      context: { status: "succeeded", severity: "healthy", z: 1, a: 2 },
+    });
+    const sqliteShaped: DiagnosticEvent = {
+      timestamp: 42,
+      level: "info",
+      category: "runtime",
+      operation: "runtime.event",
+      message: "shaped",
+      sessionId: "session-live",
+      context: { a: 2, severity: "healthy", status: "succeeded", z: 1 },
+    };
+    expect(JSON.stringify(memoryShaped)).not.toBe(JSON.stringify(sqliteShaped));
+    expect(diagnosticEventIdentity(memoryShaped)).toBe(diagnosticEventIdentity(sqliteShaped));
+
+    const service = serviceWith({
+      sessionId: "session-live",
+      memory: [memoryShaped],
+      durableBySession: [sqliteShaped],
+      durableGlobal: [],
+    });
+    expect(service.getRecent(10)).toHaveLength(1);
+  });
+
   test("getRecent enforces the requested limit", () => {
     const service = serviceWith({
       sessionId: "session-live",
@@ -146,5 +184,36 @@ describe("diagnostics read policy", () => {
         .getRecent(10)
         .map((entry) => entry.message),
     ).toEqual(["memory-only"]);
+  });
+
+  test("record round-trip through durable insert/listBySession does not double in getRecent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-diagnostics-roundtrip-"));
+    const db = openKunaiDatabase(join(dir, "cache.sqlite"));
+    try {
+      runMigrations(db, "cache");
+      const repository = new DiagnosticEventsRepository(db);
+      const service = new DiagnosticsServiceImpl({
+        sessionId: "session-live",
+        store: new DiagnosticsStoreImpl(),
+        logger: silentLogger(),
+        durableSink: new AsyncDurableDiagnosticsSink({ repository }),
+        now: () => new Date("2026-07-19T12:00:00.000Z"),
+      });
+
+      service.record({
+        category: "runtime",
+        operation: "runtime.memory.sample",
+        message: "Runtime memory sample",
+        context: { source: "diagnostics-panel", status: "succeeded" },
+      });
+      service.flush();
+
+      expect(repository.listBySession("session-live", 10)).toHaveLength(1);
+      expect(service.getRecent(10)).toHaveLength(1);
+      expect(service.getSnapshot()).toHaveLength(1);
+    } finally {
+      db.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

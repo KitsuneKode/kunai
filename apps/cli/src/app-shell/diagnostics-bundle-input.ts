@@ -34,5 +34,7 @@ export function buildSupportBundleInputFromContainer(
     presenceSnapshot: panelInput.presenceSnapshot ?? null,
     memorySamples: panelInput.memorySamples ?? null,
     getProviderHealth: panelInput.getProviderHealth,
+    // Same event window the panel rendered — what you see is what you export.
+    events: panelInput.recentEvents,
   };
 }

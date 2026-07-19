@@ -19,6 +19,8 @@ export type DiagnosticsSupportBundleInput = {
   readonly presenceSnapshot?: PresenceSnapshot | null;
   readonly memorySamples?: readonly RuntimeMemorySample[] | null;
   readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  /** When set (e.g. panel recentEvents), export uses this window instead of getSnapshot(). */
+  readonly events?: readonly DiagnosticEvent[] | null;
   readonly environment?: DiagnosticsBundleEnvironment | null;
   readonly maxBytes?: number;
 };

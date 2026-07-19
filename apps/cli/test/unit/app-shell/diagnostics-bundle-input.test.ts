@@ -6,7 +6,11 @@ import type { DiagnosticsPanelLineInput } from "@/app-shell/panel-data";
 import type { Container } from "@/container";
 import { createInitialState } from "@/domain/session/SessionState";
 import type { Logger } from "@/infra/logger/Logger";
-import { DiagnosticsServiceImpl } from "@/services/diagnostics/DiagnosticsServiceImpl";
+import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
+import {
+  diagnosticEventIdentity,
+  DiagnosticsServiceImpl,
+} from "@/services/diagnostics/DiagnosticsServiceImpl";
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/storage-read-models";
@@ -42,14 +46,37 @@ const releaseDiagnostics: ReleaseProgressDiagnosticsSummary = {
   dueNowCount: 0,
 };
 
+function orderNormalizedIdentities(events: readonly DiagnosticEvent[]): readonly string[] {
+  return [...events]
+    .sort((left, right) => left.timestamp - right.timestamp)
+    .map((entry) => diagnosticEventIdentity(entry));
+}
+
 describe("diagnostics bundle input parity", () => {
   test("panel and exported bundle share the same current-session evidence", () => {
     const diagnosticsService = new DiagnosticsServiceImpl({
       store: new DiagnosticsStoreImpl(),
       logger: silentLogger(),
+      sessionId: "session-live",
       appVersion: "0.2.6",
       now: () => new Date("2026-07-19T12:00:00.000Z"),
     });
+    diagnosticsService.record({
+      category: "download",
+      operation: "download.job.failed",
+      level: "warn",
+      message: "Download failed",
+      context: { status: "failed" },
+    });
+    diagnosticsService.record({
+      category: "presence",
+      operation: "presence.clear.failed",
+      level: "warn",
+      message: "Presence unavailable",
+    });
+    const recentEvents = diagnosticsService.getRecent(25);
+    expect(recentEvents.length).toBeGreaterThan(0);
+
     const state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },
       series: { audio: "original", subtitle: "en" },
@@ -58,7 +85,7 @@ describe("diagnostics bundle input parity", () => {
     const getProviderHealth = () => undefined;
     const panelInput: DiagnosticsPanelLineInput = {
       state,
-      recentEvents: [],
+      recentEvents,
       downloadSummary: { active: 0, completed: 1, failed: 1 },
       releaseSummary: { titleCount: 2, episodeCount: 4 },
       releaseDiagnostics,
@@ -83,6 +110,13 @@ describe("diagnostics bundle input parity", () => {
     expect(bundleInput.presenceSnapshot).toBe(panelInput.presenceSnapshot);
     expect(bundleInput.memorySamples).toBe(panelInput.memorySamples);
     expect(bundleInput.getProviderHealth).toBe(panelInput.getProviderHealth);
+    expect(bundleInput.events).toBe(panelInput.recentEvents);
+
+    expect(panelInput.recentEvents.length).toBeGreaterThan(0);
+    expect(bundle.events.length).toBe(panelInput.recentEvents.length);
+    expect(orderNormalizedIdentities(bundle.events)).toEqual(
+      orderNormalizedIdentities(panelInput.recentEvents),
+    );
 
     expect(panelLines.find((line) => line.label === "Downloads")?.tone).toBe("warning");
     expect(panelLines.find((line) => line.label === "Discord")?.tone).toBe("warning");

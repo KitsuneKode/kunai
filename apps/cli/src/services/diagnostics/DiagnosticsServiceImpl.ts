@@ -111,13 +111,17 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
   buildSupportBundle(
     input?: Parameters<DiagnosticsService["buildSupportBundle"]>[0],
   ): ReturnType<DiagnosticsService["buildSupportBundle"]> {
+    const events =
+      input?.events !== undefined && input.events !== null
+        ? chronologicalEvents(input.events)
+        : this.getSnapshot();
     return buildDiagnosticsBundle({
       appVersion: this.deps.appVersion ?? "unknown",
       debug: this.deps.debug ?? false,
       capabilities: input?.capabilities ?? {},
       playbackSourceInventory: input?.playbackSourceInventory ?? null,
       resolveWorkLedgers: this.resolveWorkLedgers,
-      events: this.getSnapshot(),
+      events,
       sessionState: input?.sessionState ?? null,
       downloadSummary: input?.downloadSummary ?? null,
       releaseSummary: input?.releaseSummary ?? null,
@@ -213,7 +217,7 @@ function mergeNewestFirst(
   const seen = new Set<string>();
   const merged: DiagnosticEvent[] = [];
   for (const event of [...memory, ...durable]) {
-    const key = eventIdentity(event);
+    const key = diagnosticEventIdentity(event);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(event);
@@ -221,6 +225,37 @@ function mergeNewestFirst(
   return merged.sort((left, right) => right.timestamp - left.timestamp);
 }
 
-function eventIdentity(event: DiagnosticEvent): string {
-  return JSON.stringify(event);
+/** Stable across memory vs SQLite row shapes (key order / omitted undefined). */
+export function diagnosticEventIdentity(event: DiagnosticEvent): string {
+  return [
+    event.timestamp,
+    event.operation,
+    event.message,
+    event.sessionId ?? "",
+    canonicalDiagnosticContext(event.context),
+  ].join("|");
+}
+
+function canonicalDiagnosticContext(context: Record<string, unknown> | undefined): string {
+  if (!context) return "";
+  return JSON.stringify(sortKeysDeep(context));
+}
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      const entry = record[key];
+      if (entry === undefined) continue;
+      sorted[key] = sortKeysDeep(entry);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+function chronologicalEvents(events: readonly DiagnosticEvent[]): readonly DiagnosticEvent[] {
+  return [...events].sort((left, right) => left.timestamp - right.timestamp);
 }
