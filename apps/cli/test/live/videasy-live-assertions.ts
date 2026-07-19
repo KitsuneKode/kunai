@@ -4,13 +4,13 @@
  */
 
 /**
- * Resolve probe order (stable/fast first). Inventory UI still shows Cineby order
- * (Yoru first) via catalogOrder — this list is what source:start traces should follow.
+ * Resolve probe order (Yoru-first catalog, Cypher early escape hatch).
+ * Inventory UI still shows Cineby order (Yoru first) via catalogOrder.
  */
 export const VIDEASY_PHASE_A_LABELS = [
-  "Neon",
-  "Cypher",
   "Yoru",
+  "Cypher",
+  "Neon",
   "Sage",
   "Jett",
   "Breach",
@@ -21,11 +21,11 @@ export const VIDEASY_PHASE_A_LABELS = [
   "Raze",
 ] as const;
 
-/** Acceptable first resolve probes (stable English path). */
-export const VIDEASY_CATALOG_LEAD_LABELS = ["Neon", "Cypher", "Yoru"] as const;
+/** Acceptable first resolve probes (English Phase A lead). */
+export const VIDEASY_CATALOG_LEAD_LABELS = ["Yoru", "Cypher", "Neon"] as const;
 
 /** Known playable English/mirror labels when the API is healthy. */
-export const VIDEASY_PREFERRED_ENGLISH_WINNERS = ["Neon", "Cypher", "Yoru", "Sage"] as const;
+export const VIDEASY_PREFERRED_ENGLISH_WINNERS = ["Yoru", "Cypher", "Neon", "Sage"] as const;
 
 export type VideasyLiveFixtureId = "dutton-ranch" | "bloodhounds" | "study-group" | "dune";
 
@@ -243,7 +243,7 @@ export function evaluateVideasyLiveSmoke(
     severity: "hard",
     message: firstProbeOk
       ? `First probe is stable-first (${input.probeOrderLabels[0]})`
-      : `First probe should be Neon/Cypher/Yoru; got ${input.probeOrderLabels[0] ?? "(none)"}`,
+      : `First probe should be Yoru/Cypher/Neon; got ${input.probeOrderLabels[0] ?? "(none)"}`,
   });
 
   const phaseAOrdered = isVideasyPhaseAPrefixOrdered(input.probeOrderLabels);
@@ -252,8 +252,8 @@ export function evaluateVideasyLiveSmoke(
     ok: phaseAOrdered,
     severity: "soft",
     message: phaseAOrdered
-      ? "Probe order respects stable-first Phase A among known labels"
-      : `Probe order drifts from stable-first Phase A: ${input.probeOrderLabels.join(" → ") || "(empty)"}`,
+      ? "Probe order respects Yoru-first Phase A among known labels"
+      : `Probe order drifts from Yoru-first Phase A: ${input.probeOrderLabels.join(" → ") || "(empty)"}`,
   });
 
   const duration = input.resolveDurationMs;

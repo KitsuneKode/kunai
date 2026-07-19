@@ -115,7 +115,56 @@ describe("dispatchActivePlaybackCommand", () => {
     expect(calls).toEqual([
       "next:playback-loading-command-next",
       "previous:playback-loading-command-previous",
+      "cancel:playback-loading-command-stop",
       "stop:playback-loading-command-stop",
+    ]);
+  });
+
+  test("quit always aborts active resolve work and stops playback", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      workControl: {
+        cancelActive: (reason) => {
+          calls.push(`cancel:${reason}`);
+          return true;
+        },
+      },
+    });
+
+    await dispatchActivePlaybackCommand("quit", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual([
+      "cancel:playback-loading-command-stop",
+      "stop:playback-loading-command-stop",
+    ]);
+  });
+
+  test("search aborts active resolve work before returning to search", async () => {
+    const calls: string[] = [];
+    const deps = createDeps(calls, {
+      workControl: {
+        cancelActive: (reason) => {
+          calls.push(`cancel:${reason}`);
+          return true;
+        },
+      },
+    });
+
+    await dispatchActivePlaybackCommand("search", {
+      deps,
+      canGoNext: false,
+      canGoPrevious: false,
+      canToggleAutoplay: false,
+    });
+
+    expect(calls).toEqual([
+      "cancel:playback-loading-command-search",
+      "search:playback-loading-command-search",
     ]);
   });
 

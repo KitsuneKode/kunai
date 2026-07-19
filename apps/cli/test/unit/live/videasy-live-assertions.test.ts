@@ -40,21 +40,22 @@ describe("videasy live assertions", () => {
     expect(labels).toEqual(["Neon", "Cypher", "Yoru"]);
   });
 
-  test("probe order is healthy when first attempt is Neon (stable resolve lead)", () => {
-    expect(isVideasyProbeOrderHealthy(["Neon", "Cypher", "Yoru"])).toBe(true);
+  test("probe order is healthy when first attempt is Yoru/Cypher/Neon", () => {
+    expect(isVideasyProbeOrderHealthy(["Yoru", "Cypher", "Neon"])).toBe(true);
     expect(isVideasyProbeOrderHealthy(["Cypher", "Neon"])).toBe(true);
+    expect(isVideasyProbeOrderHealthy(["Neon", "Cypher"])).toBe(true);
     expect(isVideasyProbeOrderHealthy(["Killjoy", "Neon"])).toBe(false);
     expect(isVideasyProbeOrderHealthy([])).toBe(false);
   });
 
   test("phase A prefix order rejects inverted probes vs resolve order", () => {
-    expect(isVideasyPhaseAPrefixOrdered(["Neon", "Cypher", "Yoru"], VIDEASY_PHASE_A_LABELS)).toBe(
+    expect(isVideasyPhaseAPrefixOrdered(["Yoru", "Cypher", "Neon"], VIDEASY_PHASE_A_LABELS)).toBe(
       true,
     );
-    expect(isVideasyPhaseAPrefixOrdered(["Yoru", "Neon"], VIDEASY_PHASE_A_LABELS)).toBe(false);
+    expect(isVideasyPhaseAPrefixOrdered(["Neon", "Yoru"], VIDEASY_PHASE_A_LABELS)).toBe(false);
   });
 
-  test("evaluateVideasyLiveSmoke passes stable-first resolve that lands on Neon", () => {
+  test("evaluateVideasyLiveSmoke passes Yoru-first resolve that lands on Neon", () => {
     const fixture = VIDEASY_LIVE_FIXTURES[0]!;
     const result = evaluateVideasyLiveSmoke({
       fixture,
@@ -64,7 +65,7 @@ describe("videasy live assertions", () => {
       resolveDurationMs: 8_400,
       selectedSourceLabel: "Neon",
       selectedSourceId: "source:videasy:wings-neon2",
-      probeOrderLabels: ["Neon"],
+      probeOrderLabels: ["Yoru", "Neon"],
       failureCodes: [],
     });
     expect(result.ok).toBe(true);

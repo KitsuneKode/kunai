@@ -17,8 +17,8 @@ import {
 } from "@/domain/provider-lane";
 import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
-import type { SessionState } from "@/domain/session/SessionState";
-import { openExternalUrl } from "@/infra/shell/open-external-url";
+import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
+import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import { continuationSignalsForHistoryEntry } from "@/services/continuation/history-continuation-signals";
@@ -36,8 +36,16 @@ import {
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { appReleasePageUrl } from "@/services/update/release-url";
 import { Box, Text, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
+import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { buildDiagnosticsPanelInput } from "./diagnostics-panel-source";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
@@ -64,6 +72,8 @@ import {
   buildNotificationActionOptions,
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
+  getSelectedNotificationActionId,
+  selectNotificationPickerOptions,
 } from "./notification-overlay-model";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
@@ -89,7 +99,6 @@ import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import { buildQueueView } from "./queue-view";
 import {
-  hasPendingRootHistorySelection,
   resolveRootHistorySelection,
   releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
@@ -106,7 +115,7 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { hasPendingRootQueueSelection, resolveRootQueueSelection } from "./root-queue-bridge";
+import { resolveRootQueueSelection } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
@@ -538,7 +547,19 @@ export function RootOverlayShell({
   const [notificationsState, setNotificationsState] = useState<NotificationsOverlayState>(
     createNotificationsOverlayState,
   );
-  const [notifTick, setNotifTick] = useState(0);
+  const subscribeNotifications = useCallback(
+    (listener: () => void) => container.notificationService.subscribe(listener),
+    [container.notificationService],
+  );
+  const getNotificationRevision = useCallback(
+    () => container.notificationService.getRevision(),
+    [container.notificationService],
+  );
+  const notificationRevision = useSyncExternalStore(
+    subscribeNotifications,
+    getNotificationRevision,
+    getNotificationRevision,
+  );
   const [historySelections, setHistorySelections] = useState<readonly RootHistorySelection[]>([]);
   const [historyNextReleases, setHistoryNextReleases] = useState<
     NonNullable<HistoryPickerOptionsContext["nextReleases"]>
@@ -824,14 +845,16 @@ export function RootOverlayShell({
       selectedIndex,
     ],
   );
-  // notifTick forces a fresh service read after mutations (read/archive/mark-all).
-  void notifTick;
-  const notificationRecordsAll =
-    overlay.type === "notifications"
+  // Service revision changes invalidate the durable snapshot; selection-only renders
+  // reuse it so synchronous SQLite reads stay out of the keyboard-navigation hot path.
+  const notificationRecordsAll = useMemo(() => {
+    void notificationRevision;
+    return overlay.type === "notifications"
       ? notificationsState.tab === "active"
         ? container.notificationService.listAllActive()
         : container.notificationService.listAllArchived()
       : [];
+  }, [container.notificationService, notificationRevision, notificationsState.tab, overlay.type]);
   const notificationsView = buildNotificationsView({
     records: notificationRecordsAll,
     tab: notificationsState.tab,
@@ -841,8 +864,10 @@ export function RootOverlayShell({
     selectedDedupKey: notificationsState.selectedDedupKey,
     now: new Date().toISOString(),
   });
-  const notificationUnreadCount =
-    overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
+  const notificationUnreadCount = useMemo(() => {
+    void notificationRevision;
+    return overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
+  }, [container.notificationService, notificationRevision, overlay.type]);
   const notificationRecordsByKey = new Map(
     notificationRecordsAll.map((record) => [record.dedupKey, record] as const),
   );
@@ -883,6 +908,13 @@ export function RootOverlayShell({
       detail: "Keep current playback",
     },
   ];
+  const activeNotificationPickerOptions = selectNotificationPickerOptions({
+    confirmationActive: notificationPlayConfirm !== null,
+    actionPickerActive: notificationActionDedupKey !== null,
+    inbox: filteredNotificationOptions,
+    actions: filteredNotificationActionOptions,
+    confirmation: notificationPlayConfirmOptions,
+  });
 
   useEffect(() => {
     if (overlay.type !== "history") return;
@@ -946,13 +978,7 @@ export function RootOverlayShell({
     const notification = notificationRecordsAll.find((record) => record.dedupKey === dedupKey);
     if (!notification) return;
     const resolvedAction = actionId ?? getNotificationPrimaryAction(notification);
-    const playbackActive =
-      state.playbackStatus === "loading" ||
-      state.playbackStatus === "ready" ||
-      state.playbackStatus === "buffering" ||
-      state.playbackStatus === "seeking" ||
-      state.playbackStatus === "stalled" ||
-      state.playbackStatus === "playing";
+    const playbackActive = isPlaybackSessionActive(state.playbackStatus);
 
     // Pin identity before execution so the refreshed view stays on this notice
     // even when a mark-read re-sorts it under the Attention ordering.
@@ -979,9 +1005,8 @@ export function RootOverlayShell({
         },
       }),
       appUpdate: {
-        openReleasePage: (latestVersion) => {
-          openExternalUrl(appReleasePageUrl(latestVersion));
-        },
+        openReleasePage: (latestVersion) =>
+          openExternalUrlAndWait(appReleasePageUrl(latestVersion)),
       },
       notifications: {
         dismiss: (key) => container.notificationService.archive(key),
@@ -1012,7 +1037,7 @@ export function RootOverlayShell({
           const nearest = nearestNotificationDedupKey(notificationsView.orderedDedupKeys, dedupKey);
           setNotificationsState((current) => ({ ...current, selectedDedupKey: nearest }));
         }
-        setOverlayStatus(
+        const actionStatus =
           resolvedAction === "dismiss"
             ? "Notification dismissed"
             : resolvedAction === "restore-queue"
@@ -1037,9 +1062,12 @@ export function RootOverlayShell({
                                 ? "Opening details"
                                 : resolvedAction === "update-app"
                                   ? "Opening release page in your browser"
-                                  : "Action queued",
+                                  : "Action queued";
+        setOverlayStatus(
+          result.markReadError
+            ? `${actionStatus}, but the notification remains unread`
+            : actionStatus,
         );
-        setNotifTick((tick) => tick + 1);
         onRedraw();
       } catch (error) {
         setOverlayStatus(`Notification action failed: ${String(error)}`);
@@ -1214,13 +1242,7 @@ export function RootOverlayShell({
         return;
       }
 
-      if (overlay.type === "history" && hasPendingRootHistorySelection()) {
-        resolveRootHistorySelection(null);
-      }
-      if (overlay.type === "queue" && hasPendingRootQueueSelection()) {
-        resolveRootQueueSelection(null);
-      }
-      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      cancelRootOverlay(overlay, container.stateManager);
       return;
     }
     if (overlay.type === "history") {
@@ -1345,7 +1367,6 @@ export function RootOverlayShell({
           view: notificationsView,
           setState: setNotificationsState,
           onRedraw,
-          setNotifTick,
           setOverlayStatus,
           setNotificationActionDedupKey,
           setFilterQuery,
@@ -1382,7 +1403,11 @@ export function RootOverlayShell({
           return;
         }
         if (notificationActionDedupKey) {
-          const actionId = filteredNotificationActionOptions[selectedIndex]?.value;
+          const actionId = getSelectedNotificationActionId(
+            filteredNotificationActionOptions,
+            selectedIndex,
+          );
+          if (!actionId) return;
           runNotificationAction(notificationActionDedupKey, actionId);
           setNotificationActionDedupKey(null);
           setFilterQuery("");
@@ -1430,9 +1455,7 @@ export function RootOverlayShell({
               : overlay.type === "history"
                 ? historyView.flatRows.length
                 : overlay.type === "notifications"
-                  ? notificationActionDedupKey
-                    ? filteredNotificationActionOptions.length
-                    : filteredNotificationOptions.length
+                  ? activeNotificationPickerOptions.length
                   : filteredGenericPickerOptions.length;
         if (optionCount > 0) {
           setSelectedIndex((current) =>
@@ -1545,23 +1568,11 @@ export function RootOverlayShell({
                 : notificationActionDedupKey
                   ? "Choose an explicit action for this notice"
                   : effectiveSubtitle,
-              options: notificationPlayConfirm
-                ? notificationPlayConfirmOptions
-                : notificationActionDedupKey
-                  ? filteredNotificationActionOptions
-                  : filteredNotificationOptions,
+              options: activeNotificationPickerOptions,
               filterQuery: notificationPlayConfirm ? "" : filterQuery,
               selectedIndex: Math.min(
                 selectedIndex,
-                Math.max(
-                  (notificationPlayConfirm
-                    ? notificationPlayConfirmOptions
-                    : notificationActionDedupKey
-                      ? filteredNotificationActionOptions
-                      : filteredNotificationOptions
-                  ).length - 1,
-                  0,
-                ),
+                Math.max(activeNotificationPickerOptions.length - 1, 0),
               ),
               busy: false,
             }

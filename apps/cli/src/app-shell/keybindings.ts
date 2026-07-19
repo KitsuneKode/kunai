@@ -626,7 +626,8 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "history-tab",
     chord: { named: "tab" },
-    label: "Cycle history tabs",
+    display: "Tab · Shift+Tab",
+    label: "Cycle history tabs (Shift reverses)",
     hintLabel: "tabs",
     scope: "history",
     group: "History",
@@ -634,9 +635,9 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   },
   {
     id: "history-type-filter",
-    chord: { named: "tab", shift: true },
-    display: "Shift+Tab",
-    label: "Cycle type filter",
+    chord: { named: "leftArrow" },
+    display: "←→",
+    label: "Cycle type filter (← reverse, → forward)",
     hintLabel: "filter",
     scope: "history",
     group: "History",

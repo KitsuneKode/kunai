@@ -61,6 +61,37 @@ test("buildMpvArgs attaches only the preferred subtitle during initial launch", 
   ]);
 });
 
+test("buildMpvArgs uses fast-start demuxer profile when startupPriority is fast", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/stream.m3u8",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Fast",
+    },
+    null,
+    { mpv: { startupPriority: "fast" } },
+  );
+  expect(args).toContain("--demuxer-readahead-secs=10");
+  expect(args).toContain("--demuxer-max-bytes=48MiB");
+  expect(args.some((arg) => arg.includes("reconnect_delay_max=3"))).toBe(true);
+});
+
+test("buildMpvArgs debug mode does not pass unsupported term-msg-level", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/stream.m3u8",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Debug",
+    },
+    null,
+    { mpv: { debug: true } },
+  );
+  expect(args).toContain("--msg-level=all=v");
+  expect(args.some((arg) => arg.startsWith("--term-msg-level"))).toBe(false);
+});
+
 test("buildMpvArgs passes --script-opts when scriptOpts is set", () => {
   const args = buildMpvArgs(
     {

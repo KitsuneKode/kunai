@@ -26,7 +26,7 @@ export const MediaListShell = React.memo(function MediaListShell({
   railModel,
   poster,
 }: MediaListShellProps) {
-  const hasRail = rail !== undefined || railModel != null;
+  const hasRail = rail !== undefined || (railModel !== undefined && railModel !== null);
   const showRail = shouldRenderPreviewRail({ columns, hasModel: hasRail });
   return (
     <Box flexDirection={showRail ? "row" : "column"} justifyContent="space-between" flexGrow={1}>

@@ -15,6 +15,29 @@ test("loading footer exposes source picker when stream candidates exist", () => 
   expect(actions.find((action) => action.action === "source")?.key).toBe("o");
 });
 
+test("loading footer advertises cancel while bootstrap is cancellable", () => {
+  const actions = buildLoadingFooterActions({
+    title: "Bad Guys",
+    operation: "loading",
+    cancellable: true,
+  });
+
+  expect(actions.find((action) => action.action === "quit")).toMatchObject({
+    key: "q",
+    label: "cancel",
+  });
+});
+
+test("loading footer omits cancel when bootstrap is not cancellable", () => {
+  const actions = buildLoadingFooterActions({
+    title: "Bad Guys",
+    operation: "loading",
+    cancellable: false,
+  });
+
+  expect(actions.find((action) => action.action === "quit")).toBeUndefined();
+});
+
 test("loading footer exposes autoplay controls for series playback even at episode boundaries", () => {
   const actions = buildLoadingFooterActions({
     title: "Bad Guys",

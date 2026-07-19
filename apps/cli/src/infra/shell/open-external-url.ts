@@ -30,8 +30,7 @@ async function spawnExternalUrl(url: string): Promise<boolean> {
         stderr: "ignore",
         stdin: "ignore",
       });
-      await proc.exited;
-      return true;
+      if ((await proc.exited) === 0) return true;
     } catch {
       // try next opener
     }

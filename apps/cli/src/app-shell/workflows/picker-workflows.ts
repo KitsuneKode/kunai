@@ -125,10 +125,14 @@ export async function openTracksPanel(
   });
 
   if (stream) {
+    const phaseBAbort = new AbortController();
     scheduleVideasyLazySourceProbesFromContainer(container, stream, {
+      signal: phaseBAbort.signal,
       onInventoryUpdated: async (nextStream) => {
+        if (phaseBAbort.signal.aborted) return;
         container.stateManager.dispatch({ type: "SET_STREAM", stream: nextStream });
         const refreshed = await buildTracksPanelData(nextStream, container);
+        if (phaseBAbort.signal.aborted) return;
         const refreshedGroups = options.failedCurrentReason
           ? annotateCurrentTrackFailure(refreshed.groups, options.failedCurrentReason)
           : refreshed.groups;
@@ -140,6 +144,9 @@ export async function openTracksPanel(
         });
       },
     });
+    const resolved = await waitForSessionPicker(container.stateManager, id);
+    phaseBAbort.abort();
+    return resolved ? decodeTrackSelection(resolved) : null;
   }
 
   const resolved = await waitForSessionPicker(container.stateManager, id);

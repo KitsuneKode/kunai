@@ -121,6 +121,9 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "search" || action === "back-to-search") {
+    // Bootstrap may have no active player yet — abort resolve first, then ask
+    // player control (no-op without a player) so search still exits resolve cleanly.
+    deps.workControl.cancelActive("playback-loading-command-search");
     await deps.playerControl.returnToSearchFromPlayback("playback-loading-command-search");
     return "handled";
   }
@@ -172,6 +175,10 @@ export async function dispatchActivePlaybackCommand(
     return "handled";
   }
   if (action === "quit") {
+    // During resolve, workControl owns the AbortController and stop has no player.
+    // During play, work may still be registered with a resolve-only cancel hook —
+    // always stop the player too so quit never becomes a no-op.
+    deps.workControl.cancelActive("playback-loading-command-stop");
     await deps.playerControl.stopCurrentPlayback("playback-loading-command-stop");
     return "handled";
   }

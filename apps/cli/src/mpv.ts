@@ -33,6 +33,7 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import { streamNeedsHlsRelay, startHlsRelay, type HlsRelayHandle } from "@/infra/player/hls-relay";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -88,6 +89,12 @@ export async function launchMpv(opts: {
     await unlinkIfExists(ipcEndpoint.path);
   }
 
+  let relayHandle: HlsRelayHandle | null = null;
+  if (streamNeedsHlsRelay(opts.url)) {
+    relayHandle = startHlsRelay(opts.url, opts.headers);
+    opts = { ...opts, url: relayHandle.proxyUrl };
+  }
+
   const args = buildMpvArgs(opts, ipcServerCliArg(ipcEndpoint), {
     mpv: opts.mpv,
   });
@@ -124,6 +131,7 @@ export async function launchMpv(opts: {
       emitPlaybackEvent,
     );
   } finally {
+    relayHandle?.stop();
     unregisterMpv();
   }
 }
@@ -552,14 +560,24 @@ export function buildMpvArgs(
   args.push("--cache-pause=yes");
   args.push("--cache-pause-initial=no");
   args.push("--cache-pause-wait=2");
-  args.push("--demuxer-readahead-secs=60");
-  args.push("--demuxer-max-bytes=200MiB");
-  // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
-  // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
-  // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
-  args.push(
-    "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
-  );
+  const fastStart = config?.mpv?.startupPriority === "fast";
+  if (fastStart) {
+    args.push("--demuxer-readahead-secs=10");
+    args.push("--demuxer-max-bytes=48MiB");
+    // Shorter reconnect window so dead CDNs fail fast into Kunai failover.
+    args.push(
+      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=3,reconnect_max_retries=3",
+    );
+  } else {
+    args.push("--demuxer-readahead-secs=60");
+    args.push("--demuxer-max-bytes=200MiB");
+    // libavformat HTTP/HLS reconnect hints (backend-dependent). We still rely on IPC
+    // watchdogs + refresh/reload; keep-open=always is intentionally not used here because
+    // it can suppress end-file and stall autoplay/session hand-off (see keep-open=no above).
+    args.push(
+      "--demuxer-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=10,reconnect_max_retries=8",
+    );
+  }
   // Materialized local HLS playlists reference remote HTTPS segments. libavformat defaults
   // to file,crypto,data only for local manifests, which makes every segment fail instantly.
   if (isLocalHlsManifestPlaybackUrl(opts.url)) {
@@ -569,8 +587,8 @@ export function buildMpvArgs(
     args.push("--no-config");
   }
   if (config?.mpv?.debug) {
+    // `--term-msg-level` is not a valid mpv flag and aborts launch; use msg-level only.
     args.push("--msg-level=all=v");
-    args.push("--term-msg-level=all=v");
   }
   if (config?.mpv?.logFile) {
     args.push(`--log-file=${config.mpv.logFile}`);

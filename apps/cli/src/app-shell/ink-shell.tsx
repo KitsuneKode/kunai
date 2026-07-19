@@ -890,10 +890,11 @@ function AppRoot({ container }: { container: Container }) {
   );
 
   const onCancel = useCallback(() => {
-    const cancelledWork = container.workControl.cancelActive("playback-loading-esc");
-    if (!cancelledWork) {
-      void container.playerControl.stopCurrentPlayback("playback-loading-esc");
-    }
+    // Abort in-flight resolve via workControl, then stop any active player.
+    // During pure bootstrap there is no player (stop is a no-op); during late
+    // ready/bootstrap the player may already exist and must not be left running.
+    container.workControl.cancelActive("playback-loading-esc");
+    void container.playerControl.stopCurrentPlayback("playback-loading-esc");
   }, [container]);
 
   const onStop = useCallback(() => {

@@ -2,7 +2,21 @@ import { describe, expect, test } from "bun:test";
 
 import { resolveEscTransition, resolveRootShellSurface } from "@/app-shell/root-shell-state";
 import { parseCommand, resolveCommands } from "@/domain/session/command-registry";
-import { createInitialState, reduceState } from "@/domain/session/SessionState";
+import {
+  createInitialState,
+  isPlaybackSessionActive,
+  reduceState,
+} from "@/domain/session/SessionState";
+
+describe("SessionState playback activity", () => {
+  test("treats paused playback as an active session", () => {
+    expect(isPlaybackSessionActive("paused")).toBeTrue();
+    expect(isPlaybackSessionActive("playing")).toBeTrue();
+    expect(isPlaybackSessionActive("idle")).toBeFalse();
+    expect(isPlaybackSessionActive("finished")).toBeFalse();
+    expect(isPlaybackSessionActive("error")).toBeFalse();
+  });
+});
 
 describe("SessionState overlays", () => {
   test("stores clears and resets playback problem state", () => {
