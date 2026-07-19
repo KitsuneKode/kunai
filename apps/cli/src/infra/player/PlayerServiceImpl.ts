@@ -76,7 +76,23 @@ export class PlayerServiceImpl implements PlayerService {
       throw new PlaybackAbortedError("playback aborted");
     }
 
-    const materialized = await materializePlaybackMediaForPlayback(stream);
+    const materialized = await materializePlaybackMediaForPlayback(stream, (reason, detail) => {
+      // Falling through to the direct URL is fine, but a CDN that blocks our
+      // fetch must not be invisible — it is the first thing to look at when a
+      // stream plays in a browser yet fails here.
+      if (reason !== "fetch-failed" && reason !== "http-error") return;
+      this.deps.diagnostics.record(
+        buildPlaybackDiagnosticEvent({
+          operation: "mpv.hls-manifest.materialize-skipped",
+          status: "failed",
+          severity: "degraded",
+          failureClass: "http",
+          message: "HLS manifest prefetch failed — using the direct stream URL",
+          correlation: options.correlation,
+          context: { reason, detail: detail?.slice(0, 160), streamHost: safeUrlHost(stream.url) },
+        }),
+      );
+    });
     let playbackStream = materialized.stream;
     if (materialized.kind === "dash-mpd") {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });

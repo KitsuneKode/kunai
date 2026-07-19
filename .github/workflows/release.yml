@@ -50,6 +50,10 @@ jobs:
       published: ${{ steps.changesets.outputs.published }}
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release
@@ -100,6 +104,10 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-binaries

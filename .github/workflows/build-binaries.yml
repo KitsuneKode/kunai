@@ -32,6 +32,10 @@ jobs:
     timeout-minutes: 35
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: binaries-all

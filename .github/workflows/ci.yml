@@ -69,6 +69,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: fmt
@@ -87,6 +91,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: lint
@@ -105,6 +113,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: typecheck
@@ -123,6 +135,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: test
@@ -146,6 +162,10 @@ jobs:
     # Promote this job to blocking only after the native mpv named-pipe smoke
     # exists and the Windows parity backlog in repo-infrastructure.md is empty.
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: windows-cli
@@ -189,6 +209,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: build
@@ -207,6 +231,10 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: docs
@@ -228,6 +256,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: binaries

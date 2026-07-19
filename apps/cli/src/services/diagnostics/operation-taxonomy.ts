@@ -322,6 +322,15 @@ export const DIAGNOSTIC_OPERATION_CATALOG: readonly DiagnosticOperationCatalogEn
     userAction: "Install curl, then retry Miruro playback.",
   },
   {
+    operation: "mpv.hls-manifest.materialize-skipped",
+    category: "playback",
+    audience: "both",
+    summary:
+      "The HLS playlist could not be pre-fetched (CDN blocked or errored), so mpv was handed the direct URL instead.",
+    userAction:
+      "Usually harmless. If playback then fails, try another source or provider — the CDN is likely rejecting this client.",
+  },
+  {
     operation: "playback.startup-stall.aborted",
     category: "playback",
     audience: "both",
