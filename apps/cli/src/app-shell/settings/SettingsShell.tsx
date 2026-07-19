@@ -6,6 +6,7 @@ import { buildSettingsPage } from "./build-page";
 import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey } from "./controller";
 import { isSettingVisible } from "./gates";
+import { firstSelectableRowIndex } from "./navigation";
 import { persistSettingsDraft } from "./persist";
 import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
@@ -35,15 +36,22 @@ export function SettingsShell({
 }) {
   const [state, setState] = useState<SettingsUiState>(() => {
     const base = createSettingsUiState(container.config.getRaw());
-    if (!initialSectionId) return base;
     const ctx = buildSettingsRegistryContext(container, base.draft);
-    const sections = buildSettingsRegistry(ctx)
-      .filter((row) => isSettingVisible(row, ctx))
-      .filter((row) => row.kind === "section");
-    const idx = sections.findIndex((row) => row.id === initialSectionId);
+    let activeSectionIndex = 0;
+    if (initialSectionId) {
+      const sections = buildSettingsRegistry(ctx)
+        .filter((row) => isSettingVisible(row, ctx))
+        .filter((row) => row.kind === "section");
+      const idx = sections.findIndex((row) => row.id === initialSectionId);
+      activeSectionIndex = idx >= 0 ? idx : 0;
+    }
+    // Row 0 is the section header (not focusable). Land on the first real setting
+    // so the highlight is visible and Down doesn't skip past it.
+    const page = buildSettingsPage(ctx, { activeSectionIndex });
     return {
       ...base,
-      activeSectionIndex: idx >= 0 ? idx : 0,
+      activeSectionIndex,
+      selectedIndex: firstSelectableRowIndex(page),
     };
   });
 

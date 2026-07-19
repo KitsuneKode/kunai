@@ -175,7 +175,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <ClaudeTabRow
           labels={sectionLabels}
           activeIndex={state.activeSectionIndex}
-          hint="Tab next section"
+          hint="Tab / Shift+Tab"
           maxWidth={rowWidth}
           dense
         />

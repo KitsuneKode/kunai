@@ -3,7 +3,12 @@ import type { Key } from "ink";
 
 import { buildSettingsPage, listSettingsSectionLabels } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
-import { clampSelectedIndex, moveSelectedIndex, selectableSettingsRows } from "./navigation";
+import {
+  clampSelectedIndex,
+  firstSelectableRowIndex,
+  moveSelectedIndex,
+  resolveSelectableRowIndex,
+} from "./navigation";
 import { shouldDebouncePersist } from "./persist";
 import type { PersistTiming } from "./persist";
 import { moveProviderInOrder } from "./provider-order";
@@ -326,26 +331,25 @@ export function handleSettingsKey(
       state: {
         ...state,
         searchQuery: nextQuery,
-        selectedIndex: clampSelectedIndex(
-          0,
-          selectableSettingsRows(filtered).length || filtered.rows.length,
-        ),
+        selectedIndex: firstSelectableRowIndex(filtered),
         error: null,
       },
     };
   }
 
   if (key.tab && !state.searchQuery.trim()) {
+    // Tab forward, Shift+Tab reverse — same pattern as help/calendar/history tabs.
     const sectionCount = listSettingsSectionLabels(ctx.registryCtx).length;
     if (sectionCount > 1) {
-      const nextSection = (state.activeSectionIndex + 1) % sectionCount;
+      const delta = key.shift ? -1 : 1;
+      const nextSection = (state.activeSectionIndex + delta + sectionCount) % sectionCount;
       const filtered = buildSettingsPage(ctx.registryCtx, { activeSectionIndex: nextSection });
       return {
         handled: true,
         state: {
           ...state,
           activeSectionIndex: nextSection,
-          selectedIndex: clampSelectedIndex(0, selectableSettingsRows(filtered).length),
+          selectedIndex: firstSelectableRowIndex(filtered),
           error: null,
         },
       };
@@ -354,12 +358,17 @@ export function handleSettingsKey(
 
   if (key.backspace || key.delete) {
     if (state.searchQuery.length > 0) {
+      const nextQuery = state.searchQuery.slice(0, -1);
+      const filtered = buildSettingsPage(ctx.registryCtx, {
+        searchQuery: nextQuery,
+        activeSectionIndex: state.activeSectionIndex,
+      });
       return {
         handled: true,
         state: {
           ...state,
-          searchQuery: state.searchQuery.slice(0, -1),
-          selectedIndex: 0,
+          searchQuery: nextQuery,
+          selectedIndex: firstSelectableRowIndex(filtered),
         },
       };
     }
@@ -377,10 +386,7 @@ export function handleSettingsKey(
       state: {
         ...state,
         searchQuery: nextQuery,
-        selectedIndex: clampSelectedIndex(
-          state.selectedIndex,
-          selectableSettingsRows(filtered).length || filtered.rows.length,
-        ),
+        selectedIndex: resolveSelectableRowIndex(filtered, state.selectedIndex),
       },
     };
   }
