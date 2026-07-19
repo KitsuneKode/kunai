@@ -260,9 +260,20 @@ export function buildPlaybackRootLoadingShellState(
   };
 }
 
+/**
+ * Warm the modules behind the track/source panel (`o`, quality, subtitles)
+ * while the playback surface is idle. Both entry points lazy-import them, and
+ * a cold import on the first keypress read as "o does nothing" for a beat.
+ */
+function preloadTracksPanelModules(): void {
+  void import("./workflows");
+  void import("@/app/playback/tracks-panel-pick");
+}
+
 export function PlaybackRootContent(input: PlaybackRootContentInput) {
   const { state, handlers, canGoNext, canGoPrevious, canToggleAutoplay, canStopAfterCurrent } =
     input;
+  useEffect(preloadTracksPanelModules, []);
   const playbackIsActive =
     state.playbackStatus === "ready" ||
     state.playbackStatus === "buffering" ||
@@ -347,6 +358,7 @@ function PlaybackShell({
   onResolve: (result: PlaybackShellResult) => void;
 }) {
   usePosterSurfaceBoundaryCleanup(true);
+  useEffect(preloadTracksPanelModules, []);
   const playbackViewport = useDebouncedViewportPolicy("playback");
   const overlayBlocksInput = useSessionSelector(
     container.stateManager,

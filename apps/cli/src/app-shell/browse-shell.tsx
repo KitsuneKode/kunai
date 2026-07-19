@@ -994,11 +994,17 @@ export function BrowseShell<T>({
         : [],
     [isCalendarView, displayOptions, calendarNow, calendarDayFilter, lastCalendarVisitAt],
   );
+  // Minimal-scroll windowing: remember where the window started last render so
+  // arrow presses move the highlight through a stable window instead of
+  // re-anchoring (which slid the whole list and re-rendered every row).
+  const calendarWindowStartRef = useRef(0);
   const calendarWindow = windowCalendarRowsByLines(
     calendarRenderRows,
     boundedSelectedIndex,
     maxVisible,
+    calendarWindowStartRef.current,
   );
+  calendarWindowStartRef.current = calendarWindow.start;
   const visibleCalendarRows = calendarRenderRows.slice(calendarWindow.start, calendarWindow.end);
 
   useInput((input, key) => {

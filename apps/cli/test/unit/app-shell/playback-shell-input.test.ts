@@ -101,6 +101,22 @@ describe("resolvePlaybackShellInput", () => {
     expect(resolvePlaybackShellInput("f", emptyKey(), ctx)).toBeNull();
   });
 
+  test("q cancels on a failed bootstrap surface (post-mpv auto-recover window)", () => {
+    // After a failed mpv session the phase re-resolves while the surface stays
+    // mounted; the footer advertises cancel, so q must start the cancel chain
+    // rather than resolving to nothing.
+    const ctx = {
+      operation: "loading" as const,
+      cancellable: true,
+      fallbackAvailable: true,
+      canOpenSourcePicker: true,
+      recoveryViewActive: true,
+      playbackTroubleActive: false,
+      handlers: handlers({ onCancel: () => {} }),
+    };
+    expect(resolvePlaybackShellInput("q", emptyKey(), ctx)?.kind).toBe("cancel");
+  });
+
   test("bootstrap q is a no-op cancel when surface is not cancellable", () => {
     const ctx = {
       operation: "loading" as const,

@@ -101,6 +101,10 @@ import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-p
 export { openPlaybackShell } from "./playback-mount-shell";
 
 const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
+// Statuses where mpv owns the session and `q` means stop, not cancel. `ready`
+// is deliberately absent: bootstrap can sit in `ready` before first frame, and
+// cancel must stay available there (it always has been).
+const PLAYING_PLAYBACK_STATUSES = ["buffering", "seeking", "stalled", "playing"] as const;
 const ROOT_STATUS_DEBOUNCE_MS = 250;
 const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
   { key: "/", label: "commands", action: "command-mode" },
@@ -775,7 +779,16 @@ function AppRoot({ container }: { container: Container }) {
   const canGoPrevious = Boolean(isSeriesPlayback && state.episodeNavigation.hasPrevious);
   const canToggleAutoplay = Boolean(isSeriesPlayback);
   const canStopAfterCurrent = Boolean(isSeriesPlayback);
-  const playbackCanCancel = state.playbackStatus === "loading" || state.playbackStatus === "ready";
+  // Cancel stays live for every non-playing state the playback surface can be
+  // mounted in — not just loading/ready. Between a failed mpv session and the
+  // next auto-recover resolve the status is `idle`, which used to make q/Esc a
+  // dead key on a surface whose footer still advertised cancel: the whole
+  // cancel chain (abort in-flight resolve, record a `stop` intent for the
+  // post-playback decision) never started. While mpv is actually playing, `q`
+  // routes to stop instead, so this only widens the bootstrap/failure window.
+  const playbackCanCancel = !PLAYING_PLAYBACK_STATUSES.some(
+    (status) => status === state.playbackStatus,
+  );
   const fallbackProvider =
     state.currentTitle && state.currentEpisode
       ? container.providerRegistry

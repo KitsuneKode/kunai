@@ -429,6 +429,70 @@ test("windowCalendarRowsByLines keeps the selected row inside the line budget", 
   expect(lines).toBeLessThanOrEqual(10);
 });
 
+test("windowCalendarRowsByLines keeps a stable window while selection moves inside it", () => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({
+    option: dayStripOption({ label: `row-${i}` }),
+    optionIndex: i,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: false,
+    dayHeaderLabel: null as string | null,
+    showForYouHeaderOnce: false,
+    isNew: false,
+    tracked: false,
+  }));
+
+  // Walk the selection down from the top: the window must not move until the
+  // selection reaches its bottom edge, and then advance by exactly one row.
+  let window = windowCalendarRowsByLines(rows, 0, 8);
+  expect(window.start).toBe(0);
+  for (let selected = 1; selected < 12; selected += 1) {
+    const next = windowCalendarRowsByLines(rows, selected, 8, window.start);
+    if (selected < window.end) {
+      expect(next.start).toBe(window.start);
+    } else {
+      expect(next.start).toBe(window.start + 1);
+    }
+    expect(selected).toBeGreaterThanOrEqual(next.start);
+    expect(selected).toBeLessThan(next.end);
+    window = next;
+  }
+
+  // Crossing the top edge puts the selection at the first visible row.
+  const scrolledUp = windowCalendarRowsByLines(rows, 1, 8, 5);
+  expect(scrolledUp.start).toBe(1);
+});
+
+test("windowCalendarRowsByLines back-fills the window at the end of the list", () => {
+  const rows = Array.from({ length: 10 }, (_, i) => ({
+    option: dayStripOption({ label: `row-${i}` }),
+    optionIndex: i,
+    timeLabel: "6 PM",
+    episodeCode: "E1",
+    statusLabel: "resolving",
+    statusColor: "#fff",
+    statusDim: true,
+    statusGlyph: "·",
+    weekTag: null as string | null,
+    showDayHeader: false,
+    dayHeaderLabel: null as string | null,
+    showForYouHeaderOnce: false,
+    isNew: false,
+    tracked: false,
+  }));
+  // Selecting the last row with a stale window start keeps the screen full
+  // instead of rendering a single row at the top.
+  const window = windowCalendarRowsByLines(rows, 9, 6, 0);
+  expect(window.end).toBe(10);
+  expect(window.end - window.start).toBe(6);
+  expect(window.start).toBeLessThanOrEqual(9);
+});
+
 test("calendarPriorityBand prefers tracked titles in for-you", () => {
   const tracked = calOption({ label: "Tracked", releaseAt: todayAt(20), inWatchlist: true });
   const watched = calOption({ label: "Watched", releaseAt: todayAt(20), inHistory: true });

@@ -616,17 +616,77 @@ export function calendarRowLineCost<T>(row: CalendarRenderRow<T>): number {
 }
 
 /** Pick a contiguous slice of pre-built render rows that fits `maxLines` of
- *  rendered height while keeping `selectedIndex` visible. Grows downward first
- *  (natural reading order), then upward to use any remaining budget. */
+ *  rendered height while keeping `selectedIndex` visible.
+ *
+ *  With `previousStart`, the window scrolls minimally: it stays put while the
+ *  selection moves inside it and only shifts when the selection crosses an
+ *  edge. Without it (first paint), the window anchors at the selection and
+ *  grows downward, then upward. Re-anchoring on every keypress made the whole
+ *  list slide under a stationary highlight and forced Ink to re-render every
+ *  visible row per arrow press — the "row slides / nav lags" calendar bug. */
 export function windowCalendarRowsByLines<T>(
   rows: readonly CalendarRenderRow<T>[],
   selectedIndex: number,
   maxLines: number,
+  previousStart?: number,
 ): { readonly start: number; readonly end: number } {
   const budget = Math.max(1, maxLines);
   const anchor = Math.min(Math.max(0, selectedIndex), rows.length - 1);
   const anchorRow = rows[anchor];
   if (!anchorRow) return { start: 0, end: 0 };
+
+  // Exclusive end of the window that starts at `start` (≥ one row).
+  const endFrom = (startIndex: number): number => {
+    let used = 0;
+    let end = startIndex;
+    while (end < rows.length) {
+      const row = rows[end];
+      if (!row) break;
+      const next = used + calendarRowLineCost(row);
+      if (next > budget && end > startIndex) break;
+      used = next;
+      end += 1;
+      if (used > budget) break;
+    }
+    return Math.max(end, startIndex + 1);
+  };
+  // Back-fill upward so a bottom-of-list window still uses the full budget.
+  const backfilledStart = (startIndex: number, endIndex: number): number => {
+    let used = 0;
+    for (let i = startIndex; i < endIndex; i += 1) {
+      const row = rows[i];
+      if (row) used += calendarRowLineCost(row);
+    }
+    let start = startIndex;
+    while (start > 0) {
+      const row = rows[start - 1];
+      if (!row) break;
+      const next = used + calendarRowLineCost(row);
+      if (next > budget) break;
+      used = next;
+      start -= 1;
+    }
+    return start;
+  };
+
+  if (previousStart !== undefined) {
+    let start = Math.min(Math.max(0, previousStart), rows.length - 1);
+    if (anchor < start) {
+      // Selection crossed the top edge: it becomes the first visible row.
+      return { start: anchor, end: endFrom(anchor) };
+    }
+    let end = endFrom(start);
+    while (anchor >= end && start < anchor) {
+      // Selection crossed the bottom edge: advance one row at a time until it fits.
+      start += 1;
+      end = endFrom(start);
+    }
+    if (anchor < end) {
+      if (end === rows.length) start = backfilledStart(start, end);
+      return { start, end };
+    }
+    // The selected row alone exceeds the budget — fall through to anchor mode.
+  }
 
   let used = calendarRowLineCost(anchorRow);
   let start = anchor;
