@@ -1,5 +1,6 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
+import { isTelemetryEnvBlocked, type TelemetryEnvFlags } from "./consent";
 import { ensureInstallId } from "./install-id";
 
 /** Official opt-in ping endpoint. Override with `KUNAI_TELEMETRY_URL`. */
@@ -40,6 +41,8 @@ export type TelemetryServiceDeps = {
   readonly now?: () => number;
   readonly platform?: { readonly os: string; readonly arch: string };
   readonly pingTimeoutMs?: number;
+  /** Injectable for tests; defaults to `process.env`. */
+  readonly env?: TelemetryEnvFlags;
 };
 
 export class TelemetryService {
@@ -47,28 +50,48 @@ export class TelemetryService {
   private readonly now: () => number;
   private readonly platform: { readonly os: string; readonly arch: string };
   private readonly pingTimeoutMs: number;
+  private readonly env: TelemetryEnvFlags;
 
   constructor(private readonly deps: TelemetryServiceDeps) {
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
     this.now = deps.now ?? (() => Date.now());
     this.platform = deps.platform ?? { os: process.platform, arch: process.arch };
     this.pingTimeoutMs = deps.pingTimeoutMs ?? 2_500;
+    this.env = deps.env ?? {
+      DO_NOT_TRACK: process.env.DO_NOT_TRACK,
+      CI: process.env.CI,
+    };
   }
 
   getStatus(): TelemetryStatus {
     return this.deps.config.getRaw().telemetry;
   }
 
-  async setStatus(status: Exclude<TelemetryStatus, "unset">): Promise<void> {
+  /**
+   * Persist consent. Enabling is refused when DO_NOT_TRACK or CI is set — stores
+   * `disabled` instead so config cannot override the hard env gate.
+   */
+  async setStatus(status: Exclude<TelemetryStatus, "unset">): Promise<{
+    readonly applied: Exclude<TelemetryStatus, "unset">;
+  }> {
     const installId = ensureInstallId(this.deps.config.getRaw());
-    await this.deps.config.update({ telemetry: status, installId });
+    const applied = status === "enabled" && isTelemetryEnvBlocked(this.env) ? "disabled" : status;
+    await this.deps.config.update({ telemetry: applied, installId });
     await this.deps.config.save();
+    return { applied };
   }
 
-  /** Exact JSON that would be sent — never includes titles, queries, paths, or URLs. */
-  previewPayload(): TelemetryPayload {
+  /**
+   * Exact JSON that would be sent — never includes titles, queries, paths, or URLs.
+   * Persists a fresh install id so repeated previews stay stable.
+   */
+  async previewPayload(): Promise<TelemetryPayload> {
     const config = this.deps.config.getRaw();
     const installId = ensureInstallId(config);
+    if (installId !== config.installId) {
+      await this.deps.config.update({ installId });
+      await this.deps.config.save();
+    }
     return {
       installId,
       version: this.deps.currentVersion,
@@ -88,6 +111,10 @@ export class TelemetryService {
   async maybePing(): Promise<void> {
     const config = this.deps.config.getRaw();
     if (config.telemetry !== "enabled") {
+      return;
+    }
+    // Hard gate: env flags win over a stale enabled config.
+    if (isTelemetryEnvBlocked(this.env)) {
       return;
     }
     const endpoint = this.deps.endpoint.trim();

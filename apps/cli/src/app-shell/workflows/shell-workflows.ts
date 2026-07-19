@@ -1265,7 +1265,7 @@ async function handleUpdate(container: Container): Promise<"handled"> {
 }
 
 async function handleTelemetryShow(container: Container): Promise<"handled"> {
-  const payload = container.telemetryService.previewPayload();
+  const payload = await container.telemetryService.previewPayload();
   const json = JSON.stringify(payload, null, 2);
   await chooseFromListShell({
     title: "Telemetry payload",
@@ -1284,11 +1284,12 @@ async function handleTelemetryShow(container: Container): Promise<"handled"> {
 
 async function handleTelemetry(container: Container): Promise<"handled"> {
   const status = container.telemetryService.getStatus();
-  const payload = container.telemetryService.previewPayload();
+  const payload = await container.telemetryService.previewPayload();
   const subtitle = [
     `Status: ${status}`,
     "Sends at most once per day when enabled.",
     "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
+    "DO_NOT_TRACK=1 and CI=true hard-block sends even if previously enabled.",
     `Change anytime with /telemetry · preview with /telemetry show`,
   ].join("  ·  ");
 
@@ -1318,7 +1319,14 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
     return handleTelemetryShow(container);
   }
   if (choice === "enable") {
-    await container.telemetryService.setStatus("enabled");
+    const { applied } = await container.telemetryService.setStatus("enabled");
+    if (applied === "disabled") {
+      container.stateManager.dispatch({
+        type: "SET_PLAYBACK_FEEDBACK",
+        note: "Telemetry stays disabled (DO_NOT_TRACK or CI is set).",
+      });
+      return "handled";
+    }
     container.telemetryService.pingInBackground();
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",

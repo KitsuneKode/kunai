@@ -17,12 +17,30 @@ function isTruthyEnv(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+export type TelemetryEnvFlags = {
+  readonly DO_NOT_TRACK?: string | undefined;
+  readonly CI?: string | undefined;
+};
+
+/**
+ * Hard gate for send and enable paths — not only consent.
+ * When DO_NOT_TRACK or CI is set, telemetry must never fetch, even if config says enabled.
+ */
+export function isTelemetryEnvBlocked(
+  env: TelemetryEnvFlags = {
+    DO_NOT_TRACK: process.env.DO_NOT_TRACK,
+    CI: process.env.CI,
+  },
+): boolean {
+  return isTruthyEnv(env.DO_NOT_TRACK) || isTruthyEnv(env.CI);
+}
+
 /**
  * Resolve telemetry consent. Decline / timeout / non-TTY / CI / DO_NOT_TRACK → disabled.
  * Opt-in only: enabled solely when the user explicitly chooses yes in an interactive TTY.
  */
 export function resolveTelemetryConsent(input: TelemetryConsentInput): TelemetryConsentDecision {
-  if (isTruthyEnv(input.env.DO_NOT_TRACK) || isTruthyEnv(input.env.CI)) {
+  if (isTelemetryEnvBlocked(input.env)) {
     return "disabled";
   }
   if (!input.isTty) {

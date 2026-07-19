@@ -83,6 +83,70 @@ describe("TelemetryService privacy gate", () => {
     });
     await enabledButEmptyEndpoint.maybePing();
   });
+
+  test("enabled + DO_NOT_TRACK performs zero network calls", async () => {
+    const fetchCalls: unknown[] = [];
+    const fetchImpl: TelemetryFetch = async (...args) => {
+      fetchCalls.push(args);
+      throw new Error("fetch must not be called when DO_NOT_TRACK is set");
+    };
+    const service = new TelemetryService({
+      config: makeConfig({
+        telemetry: "enabled",
+        installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        lastTelemetryPingAt: 0,
+      }),
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl,
+      env: { DO_NOT_TRACK: "1" },
+      now: () => Date.UTC(2026, 6, 20),
+      platform: { os: "linux", arch: "x64" },
+    });
+    await service.maybePing();
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("enabled + CI=true performs zero network calls", async () => {
+    const fetchCalls: unknown[] = [];
+    const fetchImpl: TelemetryFetch = async (...args) => {
+      fetchCalls.push(args);
+      throw new Error("fetch must not be called when CI is set");
+    };
+    const service = new TelemetryService({
+      config: makeConfig({
+        telemetry: "enabled",
+        installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        lastTelemetryPingAt: 0,
+      }),
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl,
+      env: { CI: "true" },
+      now: () => Date.UTC(2026, 6, 20),
+      platform: { os: "linux", arch: "x64" },
+    });
+    await service.maybePing();
+    expect(fetchCalls).toEqual([]);
+  });
+
+  test("setStatus(enabled) under DO_NOT_TRACK stores disabled and never fetches", async () => {
+    const fetchImpl: TelemetryFetch = async () => {
+      throw new Error("fetch must not run after DNT-blocked enable");
+    };
+    const config = makeConfig({ telemetry: "unset", installId: "" });
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl,
+      env: { DO_NOT_TRACK: "1" },
+    });
+    const result = await service.setStatus("enabled");
+    expect(result.applied).toBe("disabled");
+    expect(config.rawRef.telemetry).toBe("disabled");
+    await service.maybePing();
+  });
 });
 
 describe("install id", () => {
@@ -142,7 +206,7 @@ describe("telemetry payload contract", () => {
     ]);
   });
 
-  test("previewPayload matches the wire contract without fetching", () => {
+  test("previewPayload matches the wire contract without fetching", async () => {
     const fetchImpl: TelemetryFetch = async () => {
       throw new Error("previewPayload must not fetch");
     };
@@ -158,13 +222,34 @@ describe("telemetry payload contract", () => {
       platform: { os: "linux", arch: "arm64" },
     });
 
-    expect(service.previewPayload()).toEqual({
+    expect(await service.previewPayload()).toEqual({
       installId: "11111111-2222-4333-8444-555555555555",
       version: "0.3.0",
       os: "linux",
       arch: "arm64",
       ts: 1_700_000_000_000,
     });
+  });
+
+  test("previewPayload persists a fresh install id so previews stay stable", async () => {
+    const config = makeConfig({ telemetry: "unset", installId: "" });
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: "https://example.test/api/ping",
+      fetchImpl: async () => {
+        throw new Error("previewPayload must not fetch");
+      },
+      now: () => 1_700_000_000_000,
+      platform: { os: "linux", arch: "x64" },
+    });
+    const first = await service.previewPayload();
+    const second = await service.previewPayload();
+    expect(first.installId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(second.installId).toBe(first.installId);
+    expect(config.rawRef.installId).toBe(first.installId);
   });
 });
 

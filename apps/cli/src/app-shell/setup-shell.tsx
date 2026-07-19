@@ -660,6 +660,13 @@ function SetupShell({
     }
 
     if (input === "s" || input === "S") {
+      // On the telemetry slide, `s` declines the ping and continues setup —
+      // it must not abort the whole wizard.
+      if (slide === "telemetry") {
+        setTelemetryIdx(0);
+        advance();
+        return;
+      }
       skip();
       return;
     }

@@ -6,16 +6,18 @@
  *
  * Stores:
  * - ephemeral per-IP rate-limit timestamps (in-memory only; never persisted)
- * - aggregate daily distinct install-id counts (install ids themselves are not
- *   retained beyond the current UTC day set used for distinct counting)
+ * - for the current UTC day, an in-memory Set of install ids used only to
+ *   compute a distinct count (not a durable identity store)
  *
  * Does NOT store:
- * - IP addresses
+ * - IP addresses in durable storage (platform access logs are out of scope and
+ *   can still correlate IP↔body unless scrubbed by the operator)
  * - titles, queries, provider results, URLs, or file paths
  *
- * Abuse model: a hostile client can only inflate the daily distinct counter
- * (by minting many install ids). They cannot expose another user's identity or
- * viewing history, because that data is never accepted or retained.
+ * Abuse model: a hostile client can inflate the daily distinct counter (by
+ * minting many install ids). With retained platform logs they might correlate
+ * IP↔installId. They cannot expose another user's watch history — that data is
+ * never accepted.
  */
 
 export const TELEMETRY_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
