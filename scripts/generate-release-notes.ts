@@ -173,17 +173,51 @@ function artifactPaths(version: string): { readonly json: string; readonly markd
   return { json: `${base}.json`, markdown: `${base}.md` };
 }
 
-function serializeArtifact(artifact: ReleaseNotesArtifact): string {
-  return `${JSON.stringify(artifactWithoutBinaryChecksums(artifact), null, 2)}\n`;
+function serializeArtifact(
+  artifact: ReleaseNotesArtifact,
+  publishedChecksums?: readonly ReleaseBinaryChecksum[],
+): string {
+  const base = artifactWithoutBinaryChecksums(artifact);
+  const merged = publishedChecksums ? { ...base, assets: publishedChecksums } : base;
+  return `${JSON.stringify(merged, null, 2)}\n`;
 }
 
-function writeArtifact(artifact: ReleaseNotesArtifact): void {
-  const paths = artifactPaths(artifact.version);
-  mkdirSync(dirname(paths.json), { recursive: true });
-  writeFileSync(paths.json, serializeArtifact(artifact), "utf8");
-  writeFileSync(paths.markdown, renderReleaseNotesMarkdown(artifact), "utf8");
-  console.log(`[release-notes] wrote ${paths.json}`);
-  console.log(`[release-notes] wrote ${paths.markdown}`);
+/**
+ * Checksums already merged into the artifact on disk, if any.
+ *
+ * Note generation deliberately does not author checksums — only the release
+ * pipeline may (see `release-binary-checksums.ts`). But that made a plain
+ * rewrite silently *delete* whatever CI had merged in, and `checkArtifact`
+ * compares with checksums excluded on both sides, so the gate could not see the
+ * loss: regenerating notes locally destroyed published hashes and still
+ * reported OK. Carrying them forward keeps regeneration non-destructive without
+ * ever authoring a hash here.
+ */
+function readPublishedChecksums(path: string): readonly ReleaseBinaryChecksum[] | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    const onDisk = JSON.parse(readFileSync(path, "utf8")) as ReleaseNotesArtifact;
+    return onDisk.assets && onDisk.assets.length > 0 ? onDisk.assets : undefined;
+  } catch {
+    // A corrupt artifact is about to be overwritten anyway; nothing to preserve.
+    return undefined;
+  }
+}
+
+export async function writeArtifact({
+  path,
+  artifact,
+}: {
+  readonly path: string;
+  readonly artifact: ReleaseNotesArtifact;
+}): Promise<void> {
+  const markdownPath = path.replace(/\.json$/, ".md");
+  mkdirSync(dirname(path), { recursive: true });
+  const published = readPublishedChecksums(path);
+  writeFileSync(path, serializeArtifact(artifact, published), "utf8");
+  writeFileSync(markdownPath, renderReleaseNotesMarkdown(artifact), "utf8");
+  console.log(`[release-notes] wrote ${path}`);
+  console.log(`[release-notes] wrote ${markdownPath}`);
 }
 
 function checkArtifact(artifact: ReleaseNotesArtifact): void {
@@ -217,16 +251,16 @@ function checkArtifact(artifact: ReleaseNotesArtifact): void {
   console.log(`[release-notes] OK — ${artifact.tag} artifacts are in sync.`);
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const check = process.argv.includes("--check");
   const artifact = buildReleaseNotesArtifact(readReleaseSource());
   if (check) {
     checkArtifact(artifact);
     return;
   }
-  writeArtifact(artifact);
+  await writeArtifact({ path: artifactPaths(artifact.version).json, artifact });
 }
 
 if (import.meta.main) {
-  main();
+  await main();
 }
