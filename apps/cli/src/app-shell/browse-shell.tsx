@@ -7,6 +7,7 @@ import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { addSearchQuery, getSearchHistory } from "@/app-shell/search-history";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import type { FilterStateKey } from "@/domain/search/SearchIntent";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -22,6 +23,13 @@ import React, {
 
 import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
 import { decideBrowseFilterAction } from "./browse-filter-actions";
+import {
+  getLastFilterStateKey,
+  getStructuredFilterChips,
+  nextBrowseEscFilterLayer,
+  removeFilterTokenFromQuery,
+  stripStructuredFiltersFromQuery,
+} from "./browse-filter-chips";
 import {
   applyBrowseResultFilters,
   describeBrowseResultFilters,
@@ -416,6 +424,7 @@ export function BrowseShell<T>({
     () => filterBrowseOptionsByResultFilter(options, resultFilter),
     [options, resultFilter],
   );
+  const structuredFilterChips = useMemo(() => getStructuredFilterChips(query), [query]);
   const calendarOptionsForDay = useCallback(
     (dayKey: string | null): readonly BrowseShellOption<T>[] => {
       const scheduleOptions = narrowedOptions as readonly BrowseShellOption<
@@ -471,66 +480,85 @@ export function BrowseShell<T>({
     [clearResults, lastSearchedQuery, onLoadDiscovery, setQuery],
   );
 
-  const runSearch = useCallback(async () => {
-    const parsedQuery = parseBrowseFilterQuery(query);
-    const trimmed = parsedQuery.searchQuery.trim();
-    const rawQuery = query.trim();
-    const hasFilters = hasBrowseResultFilters(parsedQuery.filters);
-    if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters)) return;
-    const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
+  const runSearch = useCallback(
+    async (queryOverride?: string) => {
+      const activeQuery = queryOverride ?? query;
+      const parsedQuery = parseBrowseFilterQuery(activeQuery);
+      const trimmed = parsedQuery.searchQuery.trim();
+      const rawQuery = activeQuery.trim();
+      const hasFilters = hasBrowseResultFilters(parsedQuery.filters);
+      if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters)) return;
+      const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
 
-    const requestId = searchRequestGateRef.current.begin();
-    setSearchState("loading");
-    setFocusZone("query");
-    setErrorMessage(null);
-    setEmptyMessage(`Searching for “${rawQuery}”…`);
-    // Drop prior rows so the loading surface wins over a stale list.
-    setOptions([]);
-    setSelectedIndex(0);
-    setResultSubtitle("");
-    resetCalendar();
-
-    try {
-      const response = await onSearch(rawQuery);
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
-      const needsLocalFilters =
-        response.localFilterBadges === undefined && response.upstreamFilterBadges === undefined;
-      const filteredOptions = needsLocalFilters
-        ? applyBrowseResultFilters(response.options, parsedQuery.filters)
-        : response.options;
-      const activeBadges = [
-        ...(response.upstreamFilterBadges ?? filterBadges).map((badge) => `upstream ${badge}`),
-        ...(response.localFilterBadges ?? []).map((badge) => `local ${badge}`),
-        ...(response.unsupportedFilterBadges ?? []).map((badge) => `unsupported ${badge}`),
-      ];
-      const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
-
-      setLastSearchedQuery(rawQuery);
-      setResultFilter("");
-      setFilterModeOpen(false);
-      addSearchQuery(rawQuery);
-      setOptions(filteredOptions);
-      setSelectedIndex(0);
-      setResultSubtitle(`${response.subtitle}${filterSuffix}`);
-      setEmptyMessage(
-        activeBadges.length > 0
-          ? "No results matched those filters."
-          : (response.emptyMessage ?? "No results found."),
-      );
-      setActiveFilterBadges(activeBadges);
-      setSearchState("ready");
-      setFocusZone(filteredOptions.length > 0 ? "list" : "query");
-    } catch (error) {
-      if (!searchRequestGateRef.current.isCurrent(requestId)) return;
-
-      setSearchState("error");
+      const requestId = searchRequestGateRef.current.begin();
+      setSearchState("loading");
+      setFocusZone("query");
+      setErrorMessage(null);
+      setEmptyMessage(`Searching for “${rawQuery}”…`);
+      // Drop prior rows so the loading surface wins over a stale list.
       setOptions([]);
       setSelectedIndex(0);
-      setFocusZone("query");
-      setErrorMessage(formatBrowseShellError(error));
-      setEmptyMessage("Search failed.");
-    }
-  }, [query, onSearch, resetCalendar]);
+      setResultSubtitle("");
+      resetCalendar();
+
+      try {
+        const response = await onSearch(rawQuery);
+        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+        const needsLocalFilters =
+          response.localFilterBadges === undefined && response.upstreamFilterBadges === undefined;
+        const filteredOptions = needsLocalFilters
+          ? applyBrowseResultFilters(response.options, parsedQuery.filters)
+          : response.options;
+        const activeBadges = [
+          ...(response.upstreamFilterBadges ?? filterBadges).map((badge) => `upstream ${badge}`),
+          ...(response.localFilterBadges ?? []).map((badge) => `local ${badge}`),
+          ...(response.unsupportedFilterBadges ?? []).map((badge) => `unsupported ${badge}`),
+        ];
+        const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
+
+        setLastSearchedQuery(rawQuery);
+        setResultFilter("");
+        setFilterModeOpen(false);
+        addSearchQuery(rawQuery);
+        setOptions(filteredOptions);
+        setSelectedIndex(0);
+        setResultSubtitle(`${response.subtitle}${filterSuffix}`);
+        setEmptyMessage(
+          activeBadges.length > 0
+            ? "No results matched those filters."
+            : (response.emptyMessage ?? "No results found."),
+        );
+        setActiveFilterBadges(activeBadges);
+        setSearchState("ready");
+        setFocusZone(filteredOptions.length > 0 ? "list" : "query");
+      } catch (error) {
+        if (!searchRequestGateRef.current.isCurrent(requestId)) return;
+
+        setSearchState("error");
+        setOptions([]);
+        setSelectedIndex(0);
+        setFocusZone("query");
+        setErrorMessage(formatBrowseShellError(error));
+        setEmptyMessage("Search failed.");
+      }
+    },
+    [query, onSearch, resetCalendar],
+  );
+
+  const clearStructuredFilterChip = useCallback(
+    (key: FilterStateKey) => {
+      const nextQuery = removeFilterTokenFromQuery(query, key);
+      setQuery(nextQuery);
+      const shouldRefresh =
+        (searchState === "ready" || searchState === "error") &&
+        lastSearchedQuery.trim().length > 0 &&
+        options.length > 0;
+      if (shouldRefresh) {
+        void runSearch(nextQuery);
+      }
+    },
+    [lastSearchedQuery, options.length, query, runSearch, searchState, setQuery],
+  );
 
   const handleQuerySubmit = useCallback(() => {
     // Query zone Enter always searches — never plays the highlighted companion
@@ -1437,16 +1465,21 @@ export function BrowseShell<T>({
       return;
     }
     if (key.escape) {
-      // Layered step-back: results focus → query focus → clear results → clear
-      // query → cancel. Esc first hands the list's focus back to the search box.
-      //
-      // Calendar is self-contained: it has no query box to fall back into, so
-      // Escape closes it directly instead of entering a hidden focus state.
       if (isCalendarView) {
         clearResults();
         return;
       }
-      if (resultFilterFocused || filterModeOpen) {
+
+      const escLayer = nextBrowseEscFilterLayer({
+        narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
+        resultFilterNonEmpty: resultFilter.length > 0,
+        structuredChipCount: structuredFilterChips.length,
+        hasResultsOrErrorOrLoading:
+          options.length > 0 || searchState === "error" || searchState === "loading",
+        queryNonEmpty: query.trim().length > 0,
+      });
+
+      if (escLayer === "narrow") {
         if (resultFilter.length > 0) {
           setResultFilter("");
         }
@@ -1454,22 +1487,34 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "focus-query" });
         return;
       }
-      if (listFocused) {
+
+      if (escLayer === "chips") {
+        const plainQuery = stripStructuredFiltersFromQuery(query);
+        setQuery(plainQuery);
+        const shouldRefresh =
+          searchState === "ready" && options.length > 0 && plainQuery.trim().length > 0;
+        if (shouldRefresh) {
+          void runSearch(plainQuery);
+        }
+        dispatchFocusZone({ type: "focus-query" });
+        return;
+      }
+
+      if (listFocused || idleFocused) {
         dispatchFocusZone({ type: "escape" });
         return;
       }
-      if (idleFocused) {
-        dispatchFocusZone({ type: "escape" });
-        return;
-      }
-      if (options.length > 0 || searchState === "error" || searchState === "loading") {
+
+      if (escLayer === "results") {
         clearResults();
         return;
       }
-      if (query.length > 0) {
+
+      if (escLayer === "query") {
         updateQuery("");
         return;
       }
+
       onCancel();
       return;
     }
@@ -1649,27 +1694,69 @@ export function BrowseShell<T>({
             </Text>
           </Box>
         ) : (
-          <InputField
-            label="Search title"
-            value={query}
-            onChange={updateQuery}
-            onSubmit={handleQuerySubmit}
-            placeholder={placeholder}
-            focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
-            hint={
-              commandMode
-                ? undefined
-                : displayOptions.length === 0
-                  ? canFocusIdleRows
-                    ? "Type a title · ↓ for you now · / commands"
-                    : "Type a title · / commands · /filters for guided search"
-                  : listFocused
-                    ? undefined
-                    : "↓ results · / commands"
-            }
-            maxWidth={innerWidth}
-            onRedraw={clearShellScreen}
-          />
+          <>
+            {structuredFilterChips.length > 0 && !ultraCompact ? (
+              <Box marginTop={1} flexWrap="wrap">
+                <Text color={palette.dim}>Query filters </Text>
+                {structuredFilterChips.map((chip, index) => (
+                  <Box key={`${chip.key}-${chip.label}`} marginRight={2}>
+                    <Text color={palette.accentSoft}>
+                      {index < 9 ? `${index + 1} ` : ""}
+                      {chip.label}
+                      <Text color={palette.muted}> ×</Text>
+                    </Text>
+                  </Box>
+                ))}
+                <Text color={palette.dim} dimColor>
+                  {" · 1-9 clear one (empty query) · Backspace peels last · Esc clears all"}
+                </Text>
+              </Box>
+            ) : null}
+            <InputField
+              label="Search title"
+              value={query}
+              onChange={updateQuery}
+              onSubmit={handleQuerySubmit}
+              placeholder={placeholder}
+              focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
+              hint={
+                commandMode
+                  ? undefined
+                  : displayOptions.length === 0
+                    ? canFocusIdleRows
+                      ? "Type a title · ↓ for you now · / commands"
+                      : "Type a title · / commands · /filters for guided search"
+                    : listFocused
+                      ? undefined
+                      : "↓ results · / commands"
+              }
+              maxWidth={innerWidth}
+              onRedraw={clearShellScreen}
+              ignoreInput={(input, key) => {
+                if (
+                  /^[1-9]$/.test(input) &&
+                  query.length === 0 &&
+                  structuredFilterChips.length > 0
+                ) {
+                  const chip = structuredFilterChips[Number(input) - 1];
+                  if (chip) {
+                    clearStructuredFilterChip(chip.key);
+                  }
+                  return true;
+                }
+                if (key.backspace && query.length === 0 && structuredFilterChips.length > 0) {
+                  const lastKey = getLastFilterStateKey(
+                    parseBrowseFilterQuery(query).filters.state,
+                  );
+                  if (lastKey) {
+                    clearStructuredFilterChip(lastKey);
+                  }
+                  return true;
+                }
+                return false;
+              }}
+            />
+          </>
         )}
 
         {queryDirty &&
