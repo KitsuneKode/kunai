@@ -43,12 +43,35 @@ export async function withReleaseFixture(
   }
 }
 
-export function installCommandShim(root: string, name: string): void {
+export function withoutKunaiPathOverrides(
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const env = { ...source };
+  for (const key of [
+    "KUNAI_BIN_DIR",
+    "KUNAI_CONFIG_DIR",
+    "KUNAI_DATA_DIR",
+    "KUNAI_CACHE_DIR",
+    "KUNAI_SOURCE_DIR",
+    "KUNAI_INSTALL_DIR",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+  ])
+    delete env[key];
+  return env;
+}
+
+export function installCommandShim(
+  root: string,
+  name: string,
+  contents = "#!/bin/sh\nexit 0\n",
+): void {
   if (process.platform === "win32") {
     writeFileSync(join(root, `${name}.cmd`), "@echo off\r\nexit /b 0\r\n");
     return;
   }
-  writeFileSync(join(root, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  writeFileSync(join(root, name), contents, { mode: 0o755 });
 }
 
 /** Asset name the Bash installer would pick on this host. */

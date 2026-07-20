@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { delimiter, join } from "node:path";
+
+import { getKunaiPaths } from "@kunai/storage";
 
 import {
   createInstallerSandbox,
   hostInstallShAsset,
+  installCommandShim,
+  withoutKunaiPathOverrides,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
 
@@ -73,6 +77,36 @@ describe("install.sh dry-run", () => {
       expect(existsSync(sandbox.binDir)).toBe(false);
       expect(existsSync(sandbox.dataDir)).toBe(false);
       expect(existsSync(sandbox.configDir)).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("macOS defaults match runtime paths", () => {
+    const sandbox = createInstallerSandbox("install-sh-darwin-paths");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(
+        shimDir,
+        "uname",
+        '#!/bin/sh\nif [ "$1" = "-s" ]; then echo Darwin; else echo arm64; fi\n',
+      );
+
+      const runtimePaths = getKunaiPaths({
+        platform: "darwin",
+        homeDir: sandbox.root,
+        env: { TMPDIR: join(sandbox.root, "tmp") },
+      });
+      const env = withoutKunaiPathOverrides();
+      env.HOME = sandbox.root;
+      env.PATH = `${shimDir}${delimiter}${env.PATH ?? ""}`;
+
+      const result = runInstallSh(["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"], env);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`${runtimePaths.dataDir}/versions/9.8.7/kunai`);
+      expect(result.stdout).toContain(`${runtimePaths.configDir}/install.json`);
     } finally {
       sandbox.cleanup();
     }
