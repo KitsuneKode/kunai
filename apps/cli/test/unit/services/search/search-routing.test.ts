@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { normalizeSearchIntent } from "@/domain/search/SearchIntent";
+import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, ProviderMetadata } from "@/domain/types";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 
@@ -584,6 +585,82 @@ describe("searchTitles", () => {
       upstream: [],
       local: ["type series", "rating >= 8", "sort rating"],
       unsupported: ["genre comedy"],
+    });
+  });
+
+  test("applies type:playlist locally against SearchResult.contentShape", async () => {
+    const searchRegistry = {
+      getDefault: () => ({
+        metadata: { id: "youtube-catalog", name: "YouTube" },
+        search: async () => [
+          {
+            id: "youtube:v1",
+            type: "movie",
+            title: "Track",
+            year: "",
+            overview: "",
+            posterPath: null,
+            contentShape: "video",
+          },
+          {
+            id: "youtube:p1",
+            type: "movie",
+            title: "Mix",
+            year: "",
+            overview: "",
+            posterPath: null,
+            contentShape: "playlist",
+          },
+        ],
+      }),
+      getForProvider: () => undefined,
+    };
+
+    const providerRegistry: any = {
+      get: () => ({
+        metadata: {
+          id: "youtube",
+          name: "YouTube",
+          description: "",
+          recommended: true,
+          isAnimeProvider: false,
+          domain: "youtube.com",
+        },
+        search: async () => searchRegistry.getDefault().search(),
+      }),
+      getDefault: () => providerRegistry.get(),
+      getDefaultForMode: () => providerRegistry.get(),
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "mix",
+        mode: "youtube",
+        filters: { type: "playlist" },
+      }),
+      {
+        mode: "youtube",
+        providerId: "youtube",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    expect(result.results.map((r) => r.id)).toEqual(["youtube:p1"]);
+    expect(result.evidence.local).toContain("type playlist");
+    expect(result.evidence.unsupported).not.toContain("type playlist");
+  });
+
+  test("bootstrap helper keeps structured filters on the intent path", () => {
+    const engine = createSearchIntentEngine().fromText("mob mode:anime year:2024 rating:7", {
+      currentMode: "series",
+    });
+    expect(engine.intent).toMatchObject({
+      query: "mob",
+      mode: "anime",
+      filters: { year: 2024, minRating: 7 },
     });
   });
 });

@@ -298,12 +298,19 @@ export type BrowseIdleContext = {
 
 export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefined>;
 
+export type BrowseLocalFilterFacts = {
+  readonly mediaType?: "movie" | "series";
+  readonly contentShape?: "video" | "playlist" | "channel";
+  readonly isAnime?: boolean;
+};
+
 export type BrowseShellOption<T> = {
   value: T;
   label: string;
   detail?: string;
   previewTitle?: string;
   previewMeta?: readonly string[];
+  readonly localFilterFacts?: BrowseLocalFilterFacts;
   /** Structured calendar item — calendar renderer reads this instead of strings. */
   calendar?: CalendarItem;
   previewGroup?: string;

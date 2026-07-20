@@ -146,6 +146,11 @@ export function toBrowseResultOption(
 
   return {
     value: result,
+    localFilterFacts: {
+      mediaType: result.type,
+      contentShape: result.contentShape,
+      isAnime: result.isAnime === true,
+    },
     label: isYoutubeResult
       ? displayTitle
       : result.year

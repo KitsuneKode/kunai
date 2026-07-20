@@ -320,7 +320,13 @@ function applyLocalSearchFilters(
   const localKeys = new Set(evidence.local.map((badge) => badge.split(" ")[0]).filter(Boolean));
   let filtered = results;
   if (localKeys.has("type") && intent.filters.type && intent.filters.type !== "all") {
-    filtered = filtered.filter((result) => result.type === intent.filters.type);
+    const type = intent.filters.type;
+    filtered = filtered.filter((result) => {
+      if (type === "video" || type === "playlist" || type === "channel") {
+        return result.contentShape === type;
+      }
+      return result.type === type;
+    });
   }
   if (localKeys.has("rating") && typeof intent.filters.minRating === "number") {
     const minRating = intent.filters.minRating;

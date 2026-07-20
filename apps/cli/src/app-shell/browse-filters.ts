@@ -70,7 +70,7 @@ export function applyBrowseResultFilters<T>(
   filters: BrowseResultFilters,
 ): readonly BrowseShellOption<T>[] {
   return options.filter((option) => {
-    if (filters.type !== "all" && getOptionType(option) !== filters.type) return false;
+    if (filters.type !== "all" && !getOptionTypeFilterMatch(option, filters.type)) return false;
     if (filters.year && !option.previewMeta?.includes(filters.year)) return false;
     if (filters.provider && !matchesProviderFilter(option, filters.provider)) return false;
     if (
@@ -110,9 +110,24 @@ export function hasBrowseResultFilters(filters: BrowseResultFilters): boolean {
   return describeBrowseResultFilters(filters).length > 0;
 }
 
-function getOptionType<T>(option: BrowseShellOption<T>): BrowseResultTypeFilter {
+function getOptionTypeFilterMatch<T>(
+  option: BrowseShellOption<T>,
+  wanted: SearchIntentTypeFilter,
+): boolean {
+  if (wanted === "all") return true;
+  const facts = option.localFilterFacts;
+  if (wanted === "video" || wanted === "playlist" || wanted === "channel") {
+    return facts?.contentShape === wanted;
+  }
+  if (wanted === "movie" || wanted === "series") {
+    return (facts?.mediaType ?? getLegacyPreviewType(option)) === wanted;
+  }
+  return true;
+}
+
+function getLegacyPreviewType<T>(option: BrowseShellOption<T>): "movie" | "series" | undefined {
   const type = option.previewMeta?.find((value) => value === "Movie" || value === "Series");
-  return type === "Movie" ? "movie" : type === "Series" ? "series" : "all";
+  return type === "Movie" ? "movie" : type === "Series" ? "series" : undefined;
 }
 
 function parseOptionRating<T>(option: BrowseShellOption<T>): number | null {

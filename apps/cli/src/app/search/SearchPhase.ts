@@ -252,15 +252,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const searchIntent = createSearchIntentEngine().fromText(currentState.searchQuery, {
             currentMode: currentState.mode,
           });
-          const searchMode =
-            searchIntent.intent.mode === "anime" ||
-            searchIntent.intent.mode === "series" ||
-            searchIntent.intent.mode === "youtube"
-              ? searchIntent.intent.mode
-              : currentState.mode;
           const search = await observeOnline(container, "search-error", () =>
-            searchTitles(searchIntent.intent.query, {
-              mode: searchMode,
+            searchTitles(searchIntent.intent, {
+              mode: stateManager.getState().mode,
               providerId: currentState.provider,
               animeLanguageProfile: container.config.animeLanguageProfile,
               youtubeLanguageProfile: container.config.youtubeLanguageProfile,

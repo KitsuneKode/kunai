@@ -154,4 +154,26 @@ describe("browse filters", () => {
       "better-call-saul",
     ]);
   });
+
+  test("filters YouTube playlist options by typed content shape, not preview bag-of-words", () => {
+    const options = [
+      {
+        value: "v",
+        label: "Video",
+        previewMeta: ["Video"],
+        localFilterFacts: { contentShape: "video" as const },
+      },
+      {
+        value: "p",
+        label: "Playlist",
+        previewMeta: ["Playlist"],
+        localFilterFacts: { contentShape: "playlist" as const },
+      },
+    ];
+    const filtered = applyBrowseResultFilters(
+      options as any,
+      parseBrowseFilterQuery("type:playlist").filters,
+    );
+    expect(filtered.map((o) => o.value)).toEqual(["p"]);
+  });
 });
