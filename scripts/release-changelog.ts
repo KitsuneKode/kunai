@@ -5,6 +5,12 @@ export interface ChangelogEntry {
   body: string;
 }
 
+export type ChangelogChangeKind = "major" | "minor" | "patch";
+export interface ChangelogChange {
+  readonly kind: ChangelogChangeKind;
+  readonly body: string;
+}
+
 export function compareSemver(a: string, b: string): number {
   const parsePart = (value: string | undefined): number => Number.parseInt(value ?? "0", 10);
   const [aMaj, aMin, aPat] = a.split(".");
@@ -49,6 +55,37 @@ function sliceChangelogSection(content: string, header: string): string | null {
   return content.slice(bodyStart, bodyEnd).trim();
 }
 
+const CHANGESET_GROUPS: readonly {
+  readonly kind: ChangelogChangeKind;
+  readonly heading: string;
+}[] = [
+  { kind: "major", heading: "Major Changes" },
+  { kind: "minor", heading: "Minor Changes" },
+  { kind: "patch", heading: "Patch Changes" },
+];
+
+/**
+ * Parses a rendered changeset body (the block below a `## X.Y.Z` heading) into
+ * ordered, kind-tagged entries. Recognizes the `### Major/Minor/Patch Changes`
+ * group wrappers, splits the top-level `- ` entries within each group, and
+ * cleans each entry: attribution prefixes (commit links, `sha:` ids, and
+ * `Thanks @user! -` credits), HTML comments, and one level of changeset
+ * indentation are removed, while nested prose and sub-headings survive.
+ */
+export function parseChangesetEntries(rawBody: string): readonly ChangelogChange[] {
+  const cleaned = stripHtmlComments(rawBody);
+  const changes: ChangelogChange[] = [];
+  for (const { kind, heading } of CHANGESET_GROUPS) {
+    const group = sliceChangesetGroup(cleaned, heading);
+    if (group === null) continue;
+    for (const block of splitChangesetEntries(group)) {
+      const body = renderChangesetEntry(block);
+      if (body) changes.push({ kind, body });
+    }
+  }
+  return changes;
+}
+
 /** Parses the top `## X.Y.Z` entry from a per-package changelog. */
 export function parseTopCliChangelogEntry(content: string): ChangelogEntry | null {
   const headerRe = /^## (\d+\.\d+\.\d+)\s*$/m;
@@ -58,13 +95,94 @@ export function parseTopCliChangelogEntry(content: string): ChangelogEntry | nul
   const rawBody = sliceChangelogSection(content, match[1]);
   if (rawBody === null) return null;
 
-  let raw = rawBody.trim();
-  raw = raw.replace(/^### Patch Changes\s*\n+/, "");
-  const blank = raw.indexOf("\n\n");
-  const indentedBody = blank >= 0 ? raw.slice(blank + 2) : "";
-  const unindented = unindent(indentedBody);
-  const body = `${match[1]} — ${firstLineSummary(raw)}\n\n${unindented}`.trim();
+  const changes = parseChangesetEntries(rawBody);
+  const body =
+    changes.length > 0
+      ? changes
+          .map((change) => change.body)
+          .join("\n\n")
+          .trim()
+      : stripHtmlComments(rawBody).trim();
   return { version: match[1], body };
+}
+
+function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+/** Extracts the content of a single `### <heading>` group up to the next `### ` heading. */
+function sliceChangesetGroup(content: string, heading: string): string | null {
+  const headingRe = new RegExp(`^### ${escapeRegex(heading)}\\s*$`, "m");
+  const match = headingRe.exec(content);
+  if (!match || match.index === undefined) return null;
+
+  const rest = content.slice(match.index + match[0].length);
+  const nextHeading = /^### .+$/m.exec(rest);
+  const end = nextHeading?.index ?? rest.length;
+  return rest.slice(0, end).trim();
+}
+
+/**
+ * Splits a group's body into blocks. Each top-level `- ` bullet starts a new
+ * block; any prose before the first bullet becomes a leading block so nothing
+ * is dropped.
+ */
+function splitChangesetEntries(group: string): readonly string[] {
+  const preamble: string[] = [];
+  const blocks: string[] = [];
+  let current: string[] | null = null;
+
+  for (const line of group.split("\n")) {
+    if (line.startsWith("- ")) {
+      if (current) blocks.push(current.join("\n"));
+      current = [line];
+    } else if (current) {
+      current.push(line);
+    } else {
+      preamble.push(line);
+    }
+  }
+  if (current) blocks.push(current.join("\n"));
+
+  const lead = preamble.join("\n").trim();
+  return lead ? [lead, ...blocks] : blocks;
+}
+
+/** Cleans a single entry block: strip the bullet + attribution, de-indent, promote headings. */
+function renderChangesetEntry(block: string): string {
+  const lines = block.split("\n").map((line, index) => {
+    if (index === 0 && line.startsWith("- ")) {
+      return cleanEntrySummary(line.slice(2));
+    }
+    return line.startsWith("  ") ? line.slice(2) : line;
+  });
+  return promoteNestedHeadings(lines.join("\n"))
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "")
+    .trimEnd();
+}
+
+/** Removes changeset attribution from an entry's summary line. */
+function cleanEntrySummary(summary: string): string {
+  let s = summary.replace(/^\[[^\]]*\]\([^)]*\)\s*/, "");
+  if (s.startsWith("Thanks ")) {
+    const bangIdx = s.indexOf("! - ");
+    if (bangIdx >= 0) s = s.slice(bangIdx + 4);
+  }
+  s = s.replace(/^[0-9a-f]{6,40}:\s+/i, "");
+  return s.trim();
+}
+
+/**
+ * Promotes nested changeset headings up one level so they render as top-level
+ * release-note sections, clamped so nothing rises above `###` (the section
+ * level). A nested `#### Highlights` becomes `### Highlights`; an existing
+ * `### Highlights` is left untouched.
+ */
+function promoteNestedHeadings(text: string): string {
+  return text.replace(/^(#{3,6})(\s)/gm, (_match, hashes: string, space: string) => {
+    return "#".repeat(Math.max(3, hashes.length - 1)) + space;
+  });
 }
 
 /** Parses a specific `## vX.Y.Z` entry from the root changelog (if present). */
@@ -72,25 +190,4 @@ export function parseRootChangelogEntry(content: string, rootKey: string): Chang
   const rawBody = sliceChangelogSection(content, rootKey);
   if (rawBody === null) return null;
   return { version: rootKey.replace(/^v/, ""), body: rawBody.trim() };
-}
-
-function firstLineSummary(raw: string): string {
-  const firstLine = raw.split("\n", 1)[0] ?? "";
-  let s = firstLine.replace(/^- /, "");
-  const thanksIdx = s.indexOf("Thanks ");
-  if (thanksIdx >= 0) {
-    const bangIdx = s.indexOf("! - ", thanksIdx);
-    if (bangIdx >= 0) {
-      s = s.slice(bangIdx + 4);
-    }
-  }
-  return s.trim();
-}
-
-function unindent(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => (line.startsWith("  ") ? line.slice(2) : line))
-    .join("\n")
-    .replace(/^\n+|\n+$/g, "");
 }
