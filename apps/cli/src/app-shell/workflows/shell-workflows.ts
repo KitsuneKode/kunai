@@ -806,6 +806,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   },
   "clear-cache": (c) => handleClearCache(c),
   "reset-provider-health": (c) => handleResetProviderHealth(c),
+  "forget-title-provider-preference": (c) => handleForgetTitleProviderPreference(c),
   "clear-history": (c) => handleClearHistory(c),
   "export-diagnostics": (c) => handleExportDiagnostics(c),
   "report-issue": (c) => handleReportIssue(c),
@@ -1086,6 +1087,28 @@ async function handleResetProviderHealth(container: Container): Promise<"handled
   });
   if (!scope) return "handled";
   await applyProviderHealthResetScope(container, scope);
+  return "handled";
+}
+
+async function handleForgetTitleProviderPreference(container: Container): Promise<"handled"> {
+  const state = container.stateManager.getState();
+  const title = state.currentTitle;
+  if (!title) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "Select a title first.",
+    });
+    return "handled";
+  }
+
+  const { clearTitleProviderPreference } = await import("@/app/playback/playback-provider-switch");
+  const cleared = await clearTitleProviderPreference(container, title, state.mode);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: cleared
+      ? `Forgot provider preference for ${title.name}.`
+      : `No saved provider preference for ${title.name}.`,
+  });
   return "handled";
 }
 

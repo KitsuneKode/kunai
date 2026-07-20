@@ -34,4 +34,16 @@ describe("keybinding collisions", () => {
     const ids = KEYBINDINGS.map((b) => b.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  test("no new F or Shift+F binding for provider health reset", () => {
+    const healthBindings = KEYBINDINGS.filter(
+      (binding) =>
+        binding.id.includes("reset-provider-health") ||
+        binding.commandId === "reset-provider-health" ||
+        binding.label.toLowerCase().includes("reset provider health"),
+    );
+    for (const binding of healthBindings) {
+      expect(binding.chord.input?.toLowerCase() === "f").toBe(false);
+    }
+  });
 });

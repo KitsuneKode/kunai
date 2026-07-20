@@ -1,4 +1,5 @@
 import type { ShellAction } from "@/app-shell/types";
+import { resolveTitleProviderPreferenceForTitle } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import { providerLaneMatchesMode } from "@/domain/provider-lane";
@@ -27,6 +28,7 @@ export function buildTitleControlContext(
     readonly cancellable?: boolean;
     readonly titleName?: string;
     readonly hasTitle?: boolean;
+    readonly hasTitleProviderPreference?: boolean;
     readonly hasSavedPosition?: boolean;
     readonly hasHistory?: boolean;
     readonly historyFinished?: boolean;
@@ -42,6 +44,7 @@ export function buildTitleControlContext(
     titleType: title?.type,
     isAnime: state.mode === "anime" || title?.isAnime === true,
     hasTitle: options.hasTitle ?? Boolean(title),
+    hasTitleProviderPreference: options.hasTitleProviderPreference,
     hasHistory: options.hasHistory ?? false,
     hasSavedPosition: options.hasSavedPosition ?? false,
     historyFinished: options.historyFinished ?? false,
@@ -133,6 +136,10 @@ export function buildTitleControlContextFromContainer(
     providers.find((provider) => provider.metadata.id === state.provider)?.metadata.name ??
     state.provider;
 
+  const hasTitleProviderPreference = title
+    ? Boolean(resolveTitleProviderPreferenceForTitle(container.config.getRaw(), title, state.mode))
+    : false;
+
   return buildTitleControlContext(state, surface, {
     ...options,
     providerCount: providers.length,
@@ -141,6 +148,7 @@ export function buildTitleControlContextFromContainer(
     hasSavedPosition,
     historyFinished,
     providerName: providerDisplayName,
+    hasTitleProviderPreference,
   });
 }
 

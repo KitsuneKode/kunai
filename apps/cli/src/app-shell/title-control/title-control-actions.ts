@@ -23,6 +23,7 @@ export type TitleControlActionId =
   | "purge-title-cache"
   | "reset-provider-health"
   | "clear-cache"
+  | "forget-title-provider-preference"
   | "download"
   | "mark-watched"
   | "mark-unwatched"
@@ -54,6 +55,7 @@ export type TitleControlContext = {
   readonly titleType?: "series" | "movie";
   readonly isAnime?: boolean;
   readonly hasTitle?: boolean;
+  readonly hasTitleProviderPreference?: boolean;
   readonly hasHistory?: boolean;
   readonly hasSavedPosition?: boolean;
   readonly historyFinished?: boolean;
@@ -287,6 +289,17 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     when: () => enabled(),
   },
   {
+    id: "forget-title-provider-preference",
+    label: "Forget preference for this title",
+    detail: "Clear the sticky provider pin for this title only",
+    group: "providers-data",
+    shellAction: "forget-title-provider-preference",
+    when: (ctx) =>
+      ctx.hasTitle && ctx.hasTitleProviderPreference
+        ? enabled()
+        : disabled("No saved provider preference for this title"),
+  },
+  {
     id: "download",
     label: "Download",
     group: "this-title",
@@ -388,6 +401,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "purge-title-cache",
     "reset-provider-health",
     "clear-cache",
+    "forget-title-provider-preference",
     "download",
     "mark-watched",
     "mark-unwatched",

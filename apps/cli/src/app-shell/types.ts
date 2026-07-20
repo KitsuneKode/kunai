@@ -84,6 +84,7 @@ export type ShellAction =
   | "next-season"
   | "clear-cache"
   | "reset-provider-health"
+  | "forget-title-provider-preference"
   | "clear-history"
   | "export-diagnostics"
   | "report-issue"

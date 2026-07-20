@@ -28,6 +28,18 @@ export function storageSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     },
     {
       kind: "action",
+      id: "resetProviderHealth",
+      label: "Reset provider health",
+      detail: "Forget local provider failure memory so auto-fallback can retry",
+      tone: "danger",
+      run: async (ctx) => {
+        const { handleShellAction } = await import("../../workflows");
+        await handleShellAction({ action: "reset-provider-health", container: ctx.container });
+        return "Provider health reset.";
+      },
+    },
+    {
+      kind: "action",
       id: "clearHistory",
       label: "Clear watch history",
       detail: "Reset all watch progress and history",
