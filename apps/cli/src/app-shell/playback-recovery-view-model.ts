@@ -1,5 +1,6 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 
+import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import type { ActionRowModel } from "./primitives/ActionList.model";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import type { LoadingShellState } from "./types";
@@ -52,7 +53,9 @@ export function buildPlaybackRecoveryViewModel(
       detail: state.fallbackProviderName
         ? `Try ${state.fallbackProviderName}`
         : "Try another compatible provider",
-      shortcut: "Shift+F",
+      shortcut: footerKeyFromBinding(
+        KEYBINDINGS.find((binding) => binding.id === "player-fallback")!,
+      ),
       tone: "warning",
     });
   }

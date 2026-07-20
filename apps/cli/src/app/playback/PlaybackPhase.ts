@@ -737,6 +737,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       while (true) {
         if (context.signal.aborted) {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+          this.releasePlaybackLedgerWithoutPersist();
           await container.player.releasePersistentSession();
           return { status: "cancelled" };
         }
@@ -1955,6 +1956,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (context.signal.aborted) {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+            this.releasePlaybackLedgerWithoutPersist();
             await container.player.releasePersistentSession();
             return { status: "cancelled" };
           }
@@ -1980,6 +1982,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           } catch (error) {
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+              this.releasePlaybackLedgerWithoutPersist();
               await container.player.releasePersistentSession();
               return { status: "cancelled" };
             }
@@ -1988,6 +1991,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (context.signal.aborted) {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+            this.releasePlaybackLedgerWithoutPersist();
             await container.player.releasePersistentSession();
             return { status: "cancelled" };
           }
@@ -2134,6 +2138,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
             }
           } else {
+            this.releasePlaybackLedgerWithoutPersist();
             diagnosticsService.record({
               category: "playback",
               message: "Skipped history save",
@@ -3071,6 +3076,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }
     } catch (e) {
       if (context.signal.aborted) {
+        this.releasePlaybackLedgerWithoutPersist();
         this.updatePlaybackFeedback(context, { detail: null, note: null });
         return { status: "cancelled" };
       }
@@ -3292,6 +3298,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       ...stream,
       subtitle: subtitleDecision.subtitle ?? undefined,
     };
+  }
+
+  private releasePlaybackLedgerWithoutPersist(): void {
+    this.playbackLedger?.abandon();
+    this.playbackLedger = null;
+    this.unregisterActiveCheckpoint?.();
+    this.unregisterActiveCheckpoint = null;
   }
 
   private async playStream(

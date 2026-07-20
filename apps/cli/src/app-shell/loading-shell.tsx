@@ -4,6 +4,7 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
+import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import { buildLoadingFooterActions } from "./loading-shell-model";
 import {
   getLoadingDisclosure,
@@ -39,6 +40,9 @@ const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 // Matches getLoadingDisclosure's `showDiagnostics`/`showElapsed` gate: the
 // runtime health line only becomes visible once the diagnostics strip reveals.
 const LOADING_DIAGNOSTICS_REVEAL_SECONDS = 5;
+const PLAYER_FALLBACK_KEY = footerKeyFromBinding(
+  KEYBINDINGS.find((binding) => binding.id === "player-fallback")!,
+);
 
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
@@ -817,7 +821,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
-                      {"r recover  ·  Shift+F fallback  ·  o source  ·  d diagnostics"}
+                      {`r recover  ·  ${PLAYER_FALLBACK_KEY} fallback  ·  o source  ·  d diagnostics`}
                     </Text>
                   </Box>
                 ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (

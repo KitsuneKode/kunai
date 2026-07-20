@@ -59,3 +59,53 @@ test("finalize without bumpLastWatched preserves existing lastWatchedAt", () => 
   expect(row?.lastWatchedAt).toBe(oldTimestamp);
   expect(row?.positionSeconds).toBe(400);
 });
+
+test("DNS checkpoint does not overwrite existing resume position or lastWatchedAt", () => {
+  const { ledger, repo } = makeLedger();
+  const oldTimestamp = "2026-06-01T12:00:00.000Z";
+
+  repo.upsertProgress({
+    title,
+    episode,
+    positionSeconds: 400,
+    durationSeconds: 1_400,
+    completed: false,
+    watchedSeconds: 400,
+    lastWatchedAt: oldTimestamp,
+    updatedAt: oldTimestamp,
+  });
+
+  ledger.start({ title, episode, mediaKind: "series" }, 0);
+  ledger.onPaused(0, 1_400);
+  ledger.checkpoint();
+
+  const row = repo.getProgress(title, episode);
+  expect(row?.positionSeconds).toBe(400);
+  expect(row?.lastWatchedAt).toBe(oldTimestamp);
+  expect(row?.updatedAt).toBe(oldTimestamp);
+});
+
+test("DNS abandon clears ledger without persisting on shutdown flush", () => {
+  const { ledger, repo } = makeLedger();
+  const oldTimestamp = "2026-06-01T12:00:00.000Z";
+
+  repo.upsertProgress({
+    title,
+    episode,
+    positionSeconds: 400,
+    durationSeconds: 1_400,
+    completed: false,
+    watchedSeconds: 400,
+    lastWatchedAt: oldTimestamp,
+    updatedAt: oldTimestamp,
+  });
+
+  ledger.start({ title, episode, mediaKind: "series" }, 0);
+  ledger.onProgress(0, 1_400);
+  ledger.abandon();
+  ledger.checkpoint();
+
+  const row = repo.getProgress(title, episode);
+  expect(row?.positionSeconds).toBe(400);
+  expect(row?.lastWatchedAt).toBe(oldTimestamp);
+});

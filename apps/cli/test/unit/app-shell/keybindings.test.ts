@@ -196,7 +196,7 @@ test("buildFooterActionsFromBindings can wire browse actions from the registry",
   });
 
   expect(actions.map((action) => `${action.key}:${action.label}:${action.action}`)).toEqual([
-    "Ctrl+O:details:details",
-    "Ctrl+D / d:download:download",
+    "⌃O:details:details",
+    "⌃D / d:download:download",
   ]);
 });

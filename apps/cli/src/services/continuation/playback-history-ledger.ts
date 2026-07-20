@@ -1,4 +1,4 @@
-import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
+import { ENGAGE_SECONDS, isDidNotStartProgress } from "@/domain/playback/progress-engage-policy";
 import type { HistoryRepository, PlaybackEventRepository } from "@kunai/storage";
 import type { EpisodeIdentity, MediaKind, ProviderId, TitleIdentity } from "@kunai/types";
 
@@ -127,10 +127,27 @@ export class PlaybackHistoryLedger {
     this.context = null;
   }
 
+  /** Drop ledger state without persisting — used when history save is skipped or aborted. */
+  abandon(): void {
+    this.context = null;
+  }
+
   checkpoint(): void {
     if (!this.context) return;
-    const now = new Date().toISOString();
     const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
+    const isDnsCheckpoint = isDidNotStartProgress({
+      trustedProgressSeconds: this.lastPositionSeconds,
+      durationSeconds: this.durationSeconds,
+    });
+    if (isDnsCheckpoint) {
+      if ((existing?.positionSeconds ?? 0) > 0) {
+        return;
+      }
+      if (!existing) {
+        return;
+      }
+    }
+    const now = new Date().toISOString();
     const shouldBumpLastWatched = this.lastPositionSeconds > ENGAGE_SECONDS;
     const lastWatchedAt = shouldBumpLastWatched ? now : (existing?.lastWatchedAt ?? null);
     this.historyRepository.checkpointProgress({

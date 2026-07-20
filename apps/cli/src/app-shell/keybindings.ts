@@ -132,7 +132,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "edit-home-end",
     chord: { input: "a", ctrl: true },
-    display: "Ctrl+A / E",
+    display: "⌃A / E",
     label: "Jump to start / end of input",
     scope: "editing",
     group: "Editing",
@@ -149,7 +149,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "edit-word-move",
     chord: { named: "leftArrow", ctrl: true },
-    display: "Ctrl+← / →",
+    display: "⌃← / →",
     label: "Move cursor by word",
     scope: "editing",
     group: "Editing",
@@ -195,7 +195,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-details-ctrl",
     chord: { input: "o", ctrl: true },
-    display: "Ctrl+O",
+    display: "⌃O",
     label: "Show title details",
     hintLabel: "details",
     scope: "browse",
@@ -204,7 +204,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-download",
     chord: { input: "d", ctrl: true },
-    display: "Ctrl+D / d",
+    display: "⌃D / d",
     label: "Download the highlighted title",
     hintLabel: "download",
     scope: "browse",
@@ -231,7 +231,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-follow",
     chord: { input: "W", shift: true },
-    display: "Shift+W",
+    display: "⇧W",
     label: "Follow releases for the highlighted title",
     hintLabel: "follow",
     scope: "browse",
@@ -266,7 +266,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-title-control-menu-shift",
     chord: { input: "M", shift: true },
-    display: "Shift+M",
+    display: "⇧M",
     label: "Open starting-point menu (legacy; prefer m on the list)",
     hintLabel: "menu",
     scope: "browse",
@@ -277,7 +277,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-notifications",
     chord: { input: "n", shift: true },
-    display: "Shift+N",
+    display: "⇧N",
     label: "Open notifications inbox",
     hintLabel: "inbox",
     scope: "browse",
@@ -320,7 +320,6 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     // Deliberate chord: switching providers mid-session is disruptive, so it
     // must not fire from a stray keypress the way a bare `f` could.
     chord: { input: "F", shift: true },
-    display: "Shift+F",
     label: "Switch to another provider (fallback)",
     hintLabel: "fallback",
     scope: "player",
@@ -362,7 +361,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "player-return-search",
     chord: { input: "S" },
-    display: "Shift+S",
+    display: "⇧S",
     label: "Return to search",
     scope: "player",
     group: "In the player",
@@ -496,7 +495,6 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "post-fallback",
     chord: { input: "F", shift: true },
-    display: "Shift+F",
     label: "Switch to another provider (fallback)",
     hintLabel: "fallback",
     scope: "postPlayback",
@@ -549,7 +547,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "queue-open",
     chord: { input: "Q", shift: true },
-    display: "Shift+Q",
+    display: "⇧Q",
     label: "Open Up Next",
     hintLabel: "up next",
     scope: "browse",
@@ -637,7 +635,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "history-tab",
     chord: { named: "tab" },
-    display: "Tab · Shift+Tab",
+    display: "Tab · ⇧Tab",
     label: "Cycle history tabs (Shift reverses)",
     hintLabel: "tabs",
     scope: "history",
