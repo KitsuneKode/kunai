@@ -220,9 +220,11 @@ describe("install.sh release asset failures", () => {
           const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
           });
           expect(result.status).toBe(0);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
+          expect(result.stdout).toContain(`PATH winner: ${join(sandbox.binDir, "kunai")}`);
         },
       );
     } finally {

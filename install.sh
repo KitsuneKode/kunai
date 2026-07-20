@@ -285,7 +285,7 @@ install_binary() {
 
 	write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "versioned"
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
-	warn_conflicting_installs
+	report_path_winner
 	path_hint "$BIN_DIR"
 }
 
@@ -308,9 +308,13 @@ list_path_kunai() {
 # bookkeeping, and silently deleting software a user installed deliberately is
 # a surprise no installer should spring. Naming the conflict and the exact
 # remediation leaves them in control.
-warn_conflicting_installs() {
+report_path_winner() {
 	local launcher="$BIN_DIR/kunai" found others=() entry winner
 	[[ "$DRY" == 1 ]] && return 0
+
+	winner="$(command -v kunai 2>/dev/null || true)"
+	info "PATH winner: $winner"
+	[[ "$winner" == "$launcher" ]] && return 0
 
 	while IFS= read -r found; do
 		[[ "$found" == "$launcher" ]] && continue
@@ -318,9 +322,6 @@ warn_conflicting_installs() {
 	done < <(list_path_kunai)
 
 	[[ "${#others[@]}" -eq 0 ]] && return 0
-
-	winner="$(command -v kunai 2>/dev/null || true)"
-	[[ "$winner" == "$launcher" ]] && return 0
 
 	printf '\n'
 	warn "Another kunai comes earlier on your PATH and will keep running instead:"
