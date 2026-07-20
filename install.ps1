@@ -100,6 +100,68 @@ function Add-UserPath([string]$Dir) {
   }
 }
 
+function Get-KunaiPathCandidates {
+  [OutputType([string[]])]
+  param()
+
+  $pathValue = if ($null -eq $env:Path) { '' } else { $env:Path }
+  $pathExtensions = if ([string]::IsNullOrWhiteSpace($env:PATHEXT)) {
+    @('.COM', '.EXE', '.BAT', '.CMD')
+  }
+  else {
+    @($env:PATHEXT -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  }
+  $seen = @{}
+  $candidates = New-Object 'System.Collections.Generic.List[string]'
+
+  foreach ($pathEntry in ($pathValue -split ';')) {
+    $directory = $pathEntry.Trim()
+    if ([string]::IsNullOrWhiteSpace($directory)) { continue }
+
+    foreach ($extension in $pathExtensions) {
+      try {
+        $candidate = [System.IO.Path]::GetFullPath((Join-Path $directory "kunai$extension"))
+      }
+      catch {
+        continue
+      }
+      if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+
+      $canonicalKey = $candidate.ToLowerInvariant()
+      if ($seen.ContainsKey($canonicalKey)) { continue }
+      $seen[$canonicalKey] = $true
+      [void]$candidates.Add($candidate)
+    }
+  }
+
+  return $candidates.ToArray()
+}
+
+function Write-KunaiPathDiagnostic {
+  param([string]$InstalledPath)
+
+  $candidates = @(Get-KunaiPathCandidates)
+  $winner = if ($candidates.Count -gt 0) { $candidates[0] } else { $null }
+  $winnerText = if ($null -eq $winner) { '(none)' } else { $winner }
+  Write-Info "PATH winner: $winnerText"
+
+  if ($null -eq $winner -or -not [string]::Equals($winner, $InstalledPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+    Write-Info "Planned native path: $InstalledPath"
+    if ($null -eq $winner) {
+      Write-Warn 'No kunai executable is currently found on PATH.'
+      Write-Info "Add $BinDir to PATH if you want the native install to win."
+    }
+    elseif ($winner -match '[\\/]npm[\\/]kunai\.(com|exe|bat|cmd)$') {
+      Write-Warn 'A stale npm shim is earlier in PATH.'
+      Write-Info "After confirming it is unused: npm uninstall -g $Package"
+    }
+    else {
+      Write-Info "Move $BinDir ahead of $winner in PATH if you want the native install to win."
+    }
+    Write-Info 'Reopen your shell, then run: Get-Command kunai -All'
+  }
+}
+
 function Install-OptionalDeps {
   $installMpv = $true
   if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
@@ -185,6 +247,7 @@ function Install-Binary {
 
   Add-UserPath $BinDir
   Write-Manifest 'binary' $resolved $BinPath $versionPath 'versioned'
+  Write-KunaiPathDiagnostic $BinPath
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
 }
 

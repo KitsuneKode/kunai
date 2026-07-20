@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
 import {
@@ -219,6 +219,55 @@ describePwsh("install.ps1 release asset failures", () => {
           });
           expect(result.status).toBe(0);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
+const describeWindows = process.platform === "win32" && pwshAvailable() ? describe : describe.skip;
+
+describeWindows("install.ps1 PATH diagnostics", () => {
+  test("reports a stale npm shim as the PATH winner without removing it", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-fixture-payload";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-stale-npm");
+    const npmBinDir = join(sandbox.root, "npm");
+    const npmShimPath = join(npmBinDir, "kunai.cmd");
+    const nativePath = join(sandbox.binDir, "kunai.exe");
+    mkdirSync(npmBinDir);
+    installCommandShim(npmBinDir, "kunai");
+
+    const env: NodeJS.ProcessEnv = { ...sandbox.env };
+    const inheritedPath =
+      Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === "path") delete env[key];
+    }
+    env.Path = `${npmBinDir};${inheritedPath}`;
+
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${digest}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+            ...env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+
+          expect(result.status).toBe(0);
+          expect(existsSync(npmShimPath)).toBe(true);
+          expect(result.stdout).toContain(`PATH winner: ${npmShimPath}`);
+          expect(result.stdout).toContain(`Planned native path: ${nativePath}`);
+          expect(result.stdout).toContain("npm uninstall -g @kitsunekode/kunai");
         },
       );
     } finally {
