@@ -274,7 +274,7 @@ async function openPlaybackStreamSelectionPicker(
   }
 }
 
-async function openActivePlaybackEpisodePicker(
+export async function openActivePlaybackEpisodePicker(
   container: Container,
   reason: string,
 ): Promise<void> {
@@ -285,6 +285,7 @@ async function openActivePlaybackEpisodePicker(
 
   const watchedEntries = container.historyRepository.listByTitle(title.id);
   const isAnime = state.mode === "anime";
+  const animeEpisodes = state.currentAnimeEpisodes ?? undefined;
   let pickerEpisode = currentEpisode;
 
   while (true) {
@@ -293,6 +294,7 @@ async function openActivePlaybackEpisodePicker(
       currentEpisode: pickerEpisode,
       isAnime,
       animeEpisodeCount: title.episodeCount,
+      animeEpisodes,
       watchedEntries,
     });
     if (picker.options.length === 0) return;

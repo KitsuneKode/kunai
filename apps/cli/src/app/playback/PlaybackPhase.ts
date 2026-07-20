@@ -1089,6 +1089,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const [currentAnimeEpisodes, shellEpisodePicker, episodeAvailability] = await Promise.all(
             [currentAnimeEpisodesPromise, shellEpisodePickerPromise, episodeAvailabilityPromise],
           );
+          stateManager.dispatch({
+            type: "SET_CURRENT_ANIME_EPISODES",
+            episodes: currentAnimeEpisodes ?? null,
+          });
           recordStartupMark("episode-context-ready");
 
           const navigationState = toEpisodeNavigationState(title.type, episodeAvailability, {

@@ -5,6 +5,7 @@ import type { EpisodeInfo, EpisodePickerOption, TitleInfo } from "@/domain/types
 import {
   formatEpisodePickerDetail,
   formatEpisodePickerLabel,
+  formatEpisodePreviewSynopsis,
 } from "@/services/catalog/episode-display";
 import { formatTimestamp, isFinished } from "@/services/continuation/history-progress";
 import { fetchEpisodes } from "@/tmdb";
@@ -62,6 +63,7 @@ export async function buildPlaybackEpisodePickerOptions({
           episode: entry.index,
           label: entry.label,
           baseDetail: entry.detail,
+          previewBody: formatEpisodePreviewSynopsis(entry.name ? undefined : entry.detail),
           previewImageUrl: entry.previewImageUrl,
           releaseBadge: releaseBadges?.get(`1:${entry.index}`),
           offlineDownloaded: downloadedEpisodes?.has(`1:${entry.index}`),
@@ -113,6 +115,7 @@ export async function buildPlaybackEpisodePickerOptions({
       episode: entry.number,
       label: formatEpisodePickerLabel(entry.number, entry.name, entry.overview),
       previewImageUrl: entry.stillPath,
+      previewBody: formatEpisodePreviewSynopsis(entry.overview),
       baseDetail:
         formatEpisodePickerDetail({
           airDate: entry.airDate,
@@ -223,6 +226,7 @@ export function buildEpisodePickerOption({
   episode,
   label,
   baseDetail,
+  previewBody,
   previewImageUrl,
   releaseBadge,
   offlineDownloaded,
@@ -233,6 +237,7 @@ export function buildEpisodePickerOption({
   episode: number;
   label: string;
   baseDetail?: string;
+  previewBody?: string;
   previewImageUrl?: string;
   releaseBadge?: string;
   offlineDownloaded?: boolean;
@@ -266,6 +271,7 @@ export function buildEpisodePickerOption({
       offlineDownloaded ? "↓ offline" : undefined,
       baseDetail,
     ),
+    previewBody,
     previewImageUrl,
     tone,
     badge,

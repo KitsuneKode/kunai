@@ -99,6 +99,19 @@ describe("buildEpisodePickerOption", () => {
     expect(option.badge).toBe("17%");
   });
 
+  test("forwards previewBody synopsis", () => {
+    const option = buildEpisodePickerOption({
+      season: 1,
+      episode: 1,
+      label: "Episode 1",
+      baseDetail: "meta",
+      previewBody: "A long synopsis for the preview rail.",
+      current: true,
+    });
+
+    expect(option.previewBody).toBe("A long synopsis for the preview rail.");
+  });
+
   test("current episode: neutral label + ▸ badge (no ▶ prefix, no rainbow)", () => {
     const option = buildEpisodePickerOption({
       season: 1,
@@ -130,6 +143,22 @@ describe("buildEpisodePickerOption", () => {
 });
 
 describe("buildPlaybackEpisodePickerOptions", () => {
+  test("anime path prefers animeEpisodes labels over numbered stubs", async () => {
+    const options = await buildPlaybackEpisodePickerOptions({
+      title: seriesTitle,
+      currentEpisode: { season: 1, episode: 2 },
+      isAnime: true,
+      animeEpisodeCount: 12,
+      animeEpisodes: [
+        { index: 1, label: "Episode 1 · Beginnings", detail: "Air date", name: "Beginnings" },
+        { index: 2, label: "Episode 2 · Rising", detail: "Air date", name: "Rising" },
+      ],
+    });
+
+    expect(options.options[1]?.label).toContain("Rising");
+    expect(options.options[1]?.label).not.toBe("Episode 2");
+  });
+
   test("uses provider episode catalogs for anime and marks the current episode", async () => {
     const animeEpisodes: EpisodePickerOption[] = [
       { index: 1, label: "Episode 1", detail: "Source episode 1" },
@@ -155,6 +184,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
         value: "1:1",
         label: "Episode 1",
         detail: "Source episode 1",
+        previewBody: "Source episode 1",
         previewImageUrl: undefined,
         tone: undefined,
         badge: undefined,
@@ -163,6 +193,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
         value: "1:2",
         label: "Episode 2",
         detail: "Source episode 2",
+        previewBody: "Source episode 2",
         previewImageUrl: "https://img.example/anime-e2.jpg",
         tone: "warning",
         badge: "▸",
@@ -220,6 +251,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
           value: "2:5",
           label: "Episode 5  ·  The Current One",
           detail: "Jan 1, 2026",
+          previewBody: "A test overview",
           previewImageUrl: "https://img.example/s02e05.jpg",
           tone: "success",
           badge: "✓",
@@ -228,6 +260,7 @@ describe("buildPlaybackEpisodePickerOptions", () => {
           value: "2:6",
           label: "Episode 6  ·  The Next One",
           detail: "unknown air date",
+          previewBody: undefined,
           previewImageUrl: undefined,
           tone: "warning",
           badge: "17%",

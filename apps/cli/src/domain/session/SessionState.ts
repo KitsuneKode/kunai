@@ -9,7 +9,14 @@ import type { TitleDetail } from "../catalog/title-detail";
 import { videoMetaFromSearchResult } from "../media/video-meta";
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
-import type { EpisodeInfo, SearchResult, StreamInfo, TitleInfo, VideoMeta } from "../types";
+import type {
+  EpisodeInfo,
+  EpisodePickerOption,
+  SearchResult,
+  StreamInfo,
+  TitleInfo,
+  VideoMeta,
+} from "../types";
 import { rankFuzzyMatches } from "./fuzzy-match";
 import {
   DEFAULT_LAYOUT_PREFERENCES,
@@ -145,6 +152,8 @@ export interface SessionState {
 
   readonly currentTitle: TitleInfo | null;
   readonly currentEpisode: EpisodeInfo | null;
+  /** Provider anime episode catalog for the active title; cleared on title change / playback end. */
+  readonly currentAnimeEpisodes: readonly EpisodePickerOption[] | null;
   /**
    * Catalog detail for `currentTitle`, made reactive so the playback/post-play
    * panels light up when the warm `fetchTitleDetail` resolves. `null` until it
@@ -206,6 +215,10 @@ export type StateTransition =
       detail: TitleDetail;
     }
   | { type: "SELECT_EPISODE"; episode: EpisodeInfo }
+  | {
+      type: "SET_CURRENT_ANIME_EPISODES";
+      episodes: readonly EpisodePickerOption[] | null;
+    }
   | {
       type: "SET_EPISODE_NAVIGATION";
       navigation: Partial<EpisodeNavigationState>;
@@ -282,6 +295,7 @@ export function createInitialState(
     movieLanguageProfile: initialProfiles.movie,
     currentTitle: null,
     currentEpisode: null,
+    currentAnimeEpisodes: null,
     titleDetail: null,
     videoMeta: null,
     episodeNavigation: DEFAULT_EPISODE_NAVIGATION,
@@ -322,6 +336,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         provider: transition.provider,
         currentTitle: null,
         currentEpisode: null,
+        currentAnimeEpisodes: null,
         titleDetail: null,
         videoMeta: null,
         stream: null,
@@ -405,6 +420,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         view: "details",
         currentTitle: transition.title,
         currentEpisode: null,
+        currentAnimeEpisodes: null,
         // Reset detail/video metadata so a new title never shows the previous
         // one's facts; the warm fetch re-dispatches SET_TITLE_DETAIL when ready.
         titleDetail: null,
@@ -436,6 +452,12 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         ...state,
         view: "playback",
         currentEpisode: transition.episode,
+      };
+
+    case "SET_CURRENT_ANIME_EPISODES":
+      return {
+        ...state,
+        currentAnimeEpisodes: transition.episodes,
       };
 
     case "SET_EPISODE_NAVIGATION":
@@ -483,6 +505,9 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         playbackDetail: keepPlaybackFeedback ? state.playbackDetail : null,
         playbackNote: keepPlaybackFeedback ? state.playbackNote : null,
         playbackProblem: transition.status === "loading" ? null : state.playbackProblem,
+        ...(transition.status === "idle" || transition.status === "finished"
+          ? { currentAnimeEpisodes: null }
+          : {}),
       };
 
     case "SET_PLAYBACK_FEEDBACK":
@@ -689,6 +714,7 @@ export function reduceState(state: SessionState, transition: StateTransition): S
         view: "home",
         currentTitle: null,
         currentEpisode: null,
+        currentAnimeEpisodes: null,
         titleDetail: null,
         videoMeta: null,
         episodeNavigation: DEFAULT_EPISODE_NAVIGATION,
