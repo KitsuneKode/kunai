@@ -2,6 +2,7 @@ import {
   didPlaybackReachCompletionThreshold,
   type QuitNearEndThresholdMode,
 } from "@/domain/playback/playback-policy";
+import { PERSIST_RESUME_SECONDS } from "@/domain/playback/progress-engage-policy";
 import type { PlaybackResult, PlaybackTimingMetadata } from "@/domain/types";
 
 export type PlaybackProgressPoint = {
@@ -25,7 +26,7 @@ export function isResumeProgressPoint(
   thresholdMode: QuitNearEndThresholdMode,
   timing?: PlaybackTimingMetadata | null,
 ): boolean {
-  if (point.positionSeconds <= 10) return false;
+  if (point.positionSeconds <= PERSIST_RESUME_SECONDS) return false;
   if (
     point.durationSeconds > 0 &&
     point.positionSeconds >= Math.max(0, point.durationSeconds - 5)

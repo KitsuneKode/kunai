@@ -19,6 +19,7 @@ describe("playback-history", () => {
         watchedSeconds: 42,
         duration: 120,
         endReason: "quit",
+        lastTrustedProgressSeconds: 42,
       }),
     ).toBe(true);
   });
@@ -130,6 +131,25 @@ describe("playback-history", () => {
     expect(toHistoryTimestamp(result)).toBe(420);
   });
 
+  test("shouldPersistHistory uses persist gate, not engage gate", () => {
+    expect(
+      shouldPersistHistory({
+        watchedSeconds: 0,
+        duration: 600,
+        endReason: "quit",
+        lastTrustedProgressSeconds: 11,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPersistHistory({
+        watchedSeconds: 0,
+        duration: 600,
+        endReason: "quit",
+        lastTrustedProgressSeconds: 10,
+      }),
+    ).toBe(false);
+  });
+
   test("does not turn near-end error exits into completed history", () => {
     const result = {
       watchedSeconds: 1499,
@@ -137,6 +157,7 @@ describe("playback-history", () => {
       endReason: "error" as const,
       lastNonZeroPositionSeconds: 1499,
       lastNonZeroDurationSeconds: 1500,
+      lastTrustedProgressSeconds: 1499,
     };
 
     expect(shouldPersistHistory(result)).toBe(true);

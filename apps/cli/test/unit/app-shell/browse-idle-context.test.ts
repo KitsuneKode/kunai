@@ -68,4 +68,54 @@ describe("buildBrowseIdleContext", () => {
     expect(idleContext?.offlineReadyNext?.title).toBe("Offline Next");
     expect(idleContext?.playlistNext?.title).toBe("Queued");
   });
+
+  test("Continue hero requires engage gate (>30s) and ignores DNS-short rows", async () => {
+    const container = {
+      queueService: {
+        peekNext: () => null,
+      },
+      releaseProgressCache: {
+        summarizeActive: () => ({ titleCount: 0, episodeCount: 0 }),
+        getByTitleIds: () => new Map(),
+      },
+      offlineAssetService: {
+        listNextReadyByTitleCursors: () => [],
+      },
+      historyRepository: {
+        listLatestByTitle: () => [],
+      },
+    };
+
+    const { idleContext } = await buildBrowseIdleContext(container as never, {
+      preloadedHistory: {
+        "tmdb:short": {
+          key: "tmdb:short",
+          titleId: "tmdb:short",
+          title: "Too Short",
+          season: 1,
+          episode: 1,
+          positionSeconds: 30,
+          durationSeconds: 1200,
+          completed: false,
+          createdAt: "2026-07-21T09:00:00.000Z",
+          updatedAt: "2026-07-21T10:00:00.000Z",
+          mediaKind: "series",
+        },
+        "tmdb:engaged": {
+          key: "tmdb:engaged",
+          titleId: "tmdb:engaged",
+          title: "Engaged Title",
+          season: 1,
+          episode: 2,
+          positionSeconds: 31,
+          durationSeconds: 1200,
+          completed: false,
+          createdAt: "2026-07-21T09:00:00.000Z",
+          updatedAt: "2026-07-21T09:30:00.000Z",
+          mediaKind: "series",
+        },
+      },
+    });
+    expect(idleContext?.continueWatching?.title).toBe("Engaged Title");
+  });
 });

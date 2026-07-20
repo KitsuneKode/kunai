@@ -20,6 +20,21 @@ function resultAt(
   };
 }
 
+test("isResumeProgressPoint rejects at persist gate boundary", () => {
+  expect(
+    resumeSecondsFromProgressPoint(
+      { positionSeconds: 10, durationSeconds: 600 },
+      "credits-or-90-percent",
+    ),
+  ).toBe(0);
+  expect(
+    resumeSecondsFromProgressPoint(
+      { positionSeconds: 11, durationSeconds: 600 },
+      "credits-or-90-percent",
+    ),
+  ).toBe(11);
+});
+
 test("resumeSecondsFromProgressPoint keeps ordinary progress", () => {
   expect(
     resumeSecondsFromProgressPoint(

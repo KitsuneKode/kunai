@@ -1,3 +1,4 @@
+import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
 import type { HistoryRepository, PlaybackEventRepository } from "@kunai/storage";
 import type { EpisodeIdentity, MediaKind, ProviderId, TitleIdentity } from "@kunai/types";
 
@@ -80,6 +81,7 @@ export class PlaybackHistoryLedger {
     readonly completed: boolean;
     readonly providerId?: ProviderId;
     readonly posterUrl?: string;
+    readonly bumpLastWatched?: boolean;
   }): void {
     if (!this.context) return;
     this.durationSeconds = input.durationSeconds;
@@ -90,18 +92,27 @@ export class PlaybackHistoryLedger {
       this.engagedSeconds = Math.max(this.engagedSeconds, input.positionSeconds);
     }
     const now = new Date().toISOString();
+    const bumpLastWatched = input.bumpLastWatched ?? true;
+    const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
+    const isDnsFinalize = input.positionSeconds <= 0 && input.durationSeconds > 0;
+    const positionSeconds =
+      bumpLastWatched === false && isDnsFinalize && (existing?.positionSeconds ?? 0) > 0
+        ? existing!.positionSeconds
+        : input.positionSeconds;
+    const lastWatchedAt =
+      bumpLastWatched === false ? (existing?.lastWatchedAt ?? existing?.updatedAt ?? now) : now;
     this.recordEvent("complete", {
-      positionSeconds: input.positionSeconds,
+      positionSeconds,
       durationSeconds: input.durationSeconds,
     });
     this.historyRepository.upsertProgress({
       title: this.context.title,
       episode: this.context.episode,
-      positionSeconds: input.positionSeconds,
+      positionSeconds,
       durationSeconds: input.durationSeconds,
       completed: input.completed,
       watchedSeconds: this.engagedSeconds,
-      lastWatchedAt: now,
+      lastWatchedAt,
       completedAt: input.completed ? now : null,
       providerId: input.providerId ?? this.context.providerId,
       posterUrl: input.posterUrl ?? this.context.posterUrl,
@@ -113,13 +124,15 @@ export class PlaybackHistoryLedger {
   checkpoint(): void {
     if (!this.context) return;
     const now = new Date().toISOString();
+    const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
+    const shouldBumpLastWatched = this.lastPositionSeconds > ENGAGE_SECONDS;
     this.historyRepository.checkpointProgress({
       title: this.context.title,
       episode: this.context.episode,
       positionSeconds: this.lastPositionSeconds,
       durationSeconds: this.durationSeconds > 0 ? this.durationSeconds : undefined,
       watchedSeconds: this.engagedSeconds,
-      lastWatchedAt: now,
+      lastWatchedAt: shouldBumpLastWatched ? now : existing?.lastWatchedAt,
       providerId: this.context.providerId,
       posterUrl: this.context.posterUrl,
       updatedAt: now,

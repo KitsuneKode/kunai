@@ -146,6 +146,10 @@ import {
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import {
+  evaluateProgressEngage,
+  trustedProgressFromPlaybackResult,
+} from "@/domain/playback/progress-engage-policy";
+import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
@@ -1993,12 +1997,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // that completed during playback is reflected in completion status.
           const quitThresholdMode = config.quitNearEndThresholdMode;
           if (shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)) {
-            const historyTimestamp = toHistoryTimestamp(
+            const didComplete = didPlaybackReachCompletionThreshold(
               result,
               effectiveTiming.current,
               quitThresholdMode,
             );
-            const didComplete = didPlaybackReachCompletionThreshold(
+            const evidence = trustedProgressFromPlaybackResult(result);
+            const decision = evaluateProgressEngage(evidence, {
+              reachedCompletionThreshold: didComplete,
+            });
+            let historyTimestamp = toHistoryTimestamp(
               result,
               effectiveTiming.current,
               quitThresholdMode,
@@ -2007,6 +2015,37 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: resolvedProviderId,
             });
             const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
+            const episodeIdentity =
+              title.type === "series"
+                ? {
+                    season: currentEpisode.season,
+                    episode: currentEpisode.episode,
+                  }
+                : undefined;
+            const titleIdentity = {
+              id: title.id,
+              kind: persistedKind,
+              title: title.name,
+              externalIds: title.externalIds,
+            };
+            if (decision.isDidNotStart) {
+              const existingProgress = container.historyRepository.getProgressForTitleIdentity(
+                titleIdentity,
+                episodeIdentity,
+              );
+              if (existingProgress && existingProgress.positionSeconds > 0) {
+                historyTimestamp = existingProgress.positionSeconds;
+              }
+            }
+            const existingProgressForBump = container.historyRepository.getProgressForTitleIdentity(
+              titleIdentity,
+              episodeIdentity,
+            );
+            const lastWatchedAt = decision.shouldBumpLastWatched
+              ? new Date().toISOString()
+              : (existingProgressForBump?.lastWatchedAt ??
+                existingProgressForBump?.updatedAt ??
+                new Date().toISOString());
             if (this.playbackLedger) {
               this.playbackLedger.finalize({
                 positionSeconds: historyTimestamp,
@@ -2014,30 +2053,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 completed: didComplete,
                 providerId: resolvedProviderId,
                 posterUrl: title.posterUrl,
+                bumpLastWatched: decision.shouldBumpLastWatched,
               });
               this.playbackLedger = null;
               this.unregisterActiveCheckpoint?.();
               this.unregisterActiveCheckpoint = null;
             } else {
               container.historyRepository.upsertProgress({
-                title: {
-                  id: title.id,
-                  kind: persistedKind,
-                  title: title.name,
-                  externalIds: title.externalIds,
-                },
-                episode:
-                  title.type === "series"
-                    ? {
-                        season: currentEpisode.season,
-                        episode: currentEpisode.episode,
-                      }
-                    : undefined,
+                title: titleIdentity,
+                episode: episodeIdentity,
                 positionSeconds: historyTimestamp,
                 durationSeconds: result.duration,
                 completed: didComplete,
                 watchedSeconds: didComplete ? result.duration : historyTimestamp,
-                lastWatchedAt: new Date().toISOString(),
+                lastWatchedAt,
                 completedAt: didComplete ? new Date().toISOString() : null,
                 providerId: resolvedProviderId,
                 posterUrl: title.posterUrl,

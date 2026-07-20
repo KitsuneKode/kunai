@@ -1,5 +1,6 @@
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
+import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
 import {
   historyContentType,
   historyEpisodeLabel,
@@ -41,7 +42,7 @@ export async function buildBrowseIdleContext(
     );
 
     const topEntry = sortedByRecency.find(
-      ([, entry]) => !entry.completed && entry.positionSeconds > 30,
+      ([, entry]) => !entry.completed && entry.positionSeconds > ENGAGE_SECONDS,
     );
     if (topEntry) {
       const [titleId, top] = topEntry;
