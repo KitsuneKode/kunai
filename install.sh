@@ -64,6 +64,27 @@ require() { have "$1" || {
 	exit 1
 }; }
 
+canonical_path() {
+	local path="$1" component
+	local -a suffix=()
+
+	[[ "$path" == /* ]] || path="$PWD/$path"
+	while [[ ! -d "$path" ]]; do
+		suffix=("$(basename "$path")" "${suffix[@]}")
+		path="$(dirname "$path")"
+	done
+	path="$(cd -P "$path" && pwd -P)" || return 1
+
+	for component in "${suffix[@]}"; do
+		case "$component" in
+		"" | .) ;;
+		..) path="$(dirname "$path")" ;;
+		*) path="$path/$component" ;;
+		esac
+	done
+	printf '%s\n' "$path"
+}
+
 detect_os() {
 	case "$(uname -s)" in
 	Linux) echo linux ;;
@@ -344,13 +365,22 @@ install_bun() {
 }
 
 install_source() {
-	require git
-	ensure_bun
-	info "Cloning Kunai into $SOURCE_DIR..."
-	if [[ "$SOURCE_DIR" == "$DATA_DIR" || "$SOURCE_DIR" == "$CONFIG_DIR" || "$SOURCE_DIR" == "$CACHE_DIR" ]]; then
+	local source_path data_path config_path cache_path
+	source_path="$(canonical_path "$SOURCE_DIR")" || {
+		err "Unable to resolve source checkout path: $SOURCE_DIR"
+		exit 1
+	}
+	data_path="$(canonical_path "$DATA_DIR")" || exit 1
+	config_path="$(canonical_path "$CONFIG_DIR")" || exit 1
+	cache_path="$(canonical_path "$CACHE_DIR")" || exit 1
+	if [[ "$source_path" == "$data_path" || "$source_path" == "$config_path" || "$source_path" == "$cache_path" ]]; then
 		err "Source checkout path must not equal Kunai data, config, or cache paths."
 		exit 1
 	fi
+
+	require git
+	ensure_bun
+	info "Cloning Kunai into $SOURCE_DIR..."
 
 	if [[ -d "$SOURCE_DIR/.git" ]]; then
 		run git -C "$SOURCE_DIR" pull --ff-only

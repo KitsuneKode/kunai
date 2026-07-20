@@ -5,6 +5,21 @@ failures=0
 pass() { printf '  PASS %s\n' "$1"; }
 fail() { printf '  FAIL %s\n       %s\n' "$1" "${2:-}"; failures=$((failures + 1)); }
 
+assert_runtime_alias_rejected() {
+  local name="$1" candidate="$2" install_log
+  export KUNAI_SOURCE_DIR="$candidate"
+  if install_log="$(/harness/install.sh --method source --version 0.3.0 --yes --skip-deps 2>&1)"; then
+    fail "$name source install accepted runtime alias" "$candidate"
+  elif grep -q "Source checkout path must not equal Kunai data, config, or cache paths." <<<"$install_log"; then
+    pass "$name source alias rejected by runtime path guard"
+  else
+    fail "$name source alias bypassed runtime path guard" "$install_log"
+  fi
+  [[ -f "$seed" && "$(cat "$seed")" == "preserve-me" ]] \
+    && pass "$name alias preserved seeded runtime data" \
+    || fail "$name alias changed seeded runtime data" "$seed"
+}
+
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
@@ -15,6 +30,8 @@ data_dir="$XDG_DATA_HOME/kunai"
 cache_dir="$XDG_CACHE_HOME/kunai"
 source_dir="$KUNAI_SOURCE_DIR"
 seed="$data_dir/seeded-history.txt"
+lexical_data_alias="$data_dir/."
+symlink_data_alias="$HOME/kunai-runtime-data-link"
 shim_dir="$HOME/test-bin"
 mkdir -p "$data_dir" "$shim_dir"
 printf 'preserve-me\n' >"$seed"
@@ -57,5 +74,9 @@ fi
 [[ ! -e "$cache_dir" ]] \
   && pass "source install did not create checkout in cache" \
   || fail "source install created checkout in cache" "$cache_dir"
+
+assert_runtime_alias_rejected "lexical data" "$lexical_data_alias"
+ln -s "$data_dir" "$symlink_data_alias"
+assert_runtime_alias_rejected "symlinked data" "$symlink_data_alias"
 
 (( failures == 0 ))
