@@ -55,6 +55,7 @@ import {
   buildPostPlayQueueNextLabel,
 } from "@/app/post-play/post-play-input";
 import type { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
+import { postPlaybackRecommendationItemsToRailItems } from "@/app/post-play/post-playback-recommendations";
 import {
   resolvePostPlaybackEpisodeNavigationRoute,
   resolvePostPlaybackExitOutcome,
@@ -149,6 +150,7 @@ export type PostPlaybackMenuDeps = {
   readonly openPlaybackShell: (input: {
     container: Container;
     state: PlaybackShellState;
+    recommendationRail?: PostPlaybackRecommendationRail;
   }) => Promise<PlaybackShellResult>;
   readonly openTracksPanel: typeof openTracksPanel;
   readonly chooseEpisodeFromMetadata: (input: {
@@ -423,6 +425,7 @@ export async function runPostPlaybackMenu(
           : undefined;
       postAction = await deps.openPlaybackShell({
         container,
+        recommendationRail: deps.recommendationRail,
         state: {
           type: title.type,
           title: title.name,
@@ -476,17 +479,9 @@ export async function runPostPlaybackMenu(
           // Carry the session's captured video metadata so the post-play `video`
           // panel keeps channel/views/length facts that were shown during playback.
           videoMeta: container.stateManager.getState().videoMeta,
-          recommendationRailItems: recommendationRailItems.slice(0, 4).map((item) => ({
-            id: item.id,
-            title: item.title,
-            type: item.type,
-            ...(item.sourceId ? { sourceId: item.sourceId } : {}),
-            ...(item.titleAliases ? { titleAliases: item.titleAliases } : {}),
-            ...(item.year ? { year: item.year } : {}),
-            ...(item.overview ? { overview: item.overview } : {}),
-            ...(item.posterPath !== undefined ? { posterPath: item.posterPath } : {}),
-            ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
-          })),
+          recommendationRailItems: postPlaybackRecommendationItemsToRailItems(
+            recommendationRailItems.slice(0, 4),
+          ),
           commands: deps.resolvePostPlaybackCommands(),
         } as PlaybackShellState,
       });

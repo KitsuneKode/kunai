@@ -8,6 +8,8 @@ import {
   compactPlaybackSubtitleStatus,
   describePlaybackSubtitleStatus,
 } from "@/app/playback/subtitle-status";
+import type { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
+import { postPlaybackRecommendationItemsToRailItems } from "@/app/post-play/post-playback-recommendations";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
 import {
@@ -47,6 +49,7 @@ import { ResizeBlocker } from "./shell-primitives";
 import { APP_LABEL } from "./shell-theme";
 import type {
   LoadingShellState,
+  PlaybackRecommendationRailItem,
   PlaybackShellResult,
   PlaybackShellState,
   ShellAction,
@@ -345,10 +348,12 @@ function PlaybackShell({
   container,
   state,
   onResolve,
+  recommendationRail,
 }: {
   container: Container;
   state: PlaybackShellState;
   onResolve: (result: PlaybackShellResult) => void;
+  readonly recommendationRail?: PostPlaybackRecommendationRail;
 }) {
   usePosterSurfaceBoundaryCleanup(true);
   useEffect(preloadTracksPanelModules, []);
@@ -390,6 +395,26 @@ function PlaybackShell({
     .filter((item): item is string => Boolean(item))
     .join("  ·  ");
   const recommendations = state.recommendationRailItems ?? [];
+  const [liveRecommendations, setLiveRecommendations] =
+    useState<readonly PlaybackRecommendationRailItem[]>(recommendations);
+
+  useEffect(() => {
+    setLiveRecommendations(state.recommendationRailItems ?? []);
+  }, [state.recommendationRailItems]);
+
+  useEffect(() => {
+    if (!recommendationRail || !state.postPlayState) return undefined;
+    const syncFromRail = () => {
+      const loaded = recommendationRail.loadedItems;
+      if (loaded && loaded.length > 0) {
+        setLiveRecommendations(postPlaybackRecommendationItemsToRailItems(loaded));
+      }
+    };
+    syncFromRail();
+    return recommendationRail.subscribe(syncFromRail);
+  }, [recommendationRail, state.postPlayState]);
+
+  const activeRecommendations = state.postPlayState ? liveRecommendations : recommendations;
   const postPlayView = buildPostPlayView({
     title: state.title,
     episodeLabel: state.episodeLabel ?? "",
@@ -397,7 +422,7 @@ function PlaybackShell({
     queueNextLabel: state.queueNextLabel,
     resumeLabel: state.resumeLabel,
     postPlayState,
-    recommendations,
+    recommendations: activeRecommendations,
     totalEpisodes: state.totalEpisodes,
     watchedEpisodes: state.watchedEpisodes,
     currentSeason: state.currentSeason ?? state.season,
@@ -501,7 +526,7 @@ function PlaybackShell({
           hasNextSeason:
             postPlayState.kind === "season-finale" ? postPlayState.hasNextSeason : false,
           selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
-          recommendationCount: recommendations.length,
+          recommendationCount: activeRecommendations.length,
         });
         if (!resolved) return;
         if (resolved.type === "run-selected-action") {
@@ -509,12 +534,12 @@ function PlaybackShell({
           return;
         }
         if (resolved.type === "recommendation") {
-          const item = recommendations[resolved.index];
+          const item = activeRecommendations[resolved.index];
           if (item) onResolve({ type: "play-recommendation", item });
           return;
         }
         if (resolved.type === "recommendation-actions") {
-          const item = recommendations[resolved.index];
+          const item = activeRecommendations[resolved.index];
           if (item) onResolve({ type: "open-recommendation-actions", items: [item] });
           return;
         }
@@ -543,7 +568,7 @@ function PlaybackShell({
           queueNextLabel={state.queueNextLabel}
           resumeLabel={state.resumeLabel}
           postPlayState={postPlayState}
-          recommendations={recommendations}
+          recommendations={activeRecommendations}
           totalEpisodes={state.totalEpisodes}
           watchedEpisodes={state.watchedEpisodes}
           currentSeason={state.currentSeason ?? state.season}
@@ -568,14 +593,21 @@ function PlaybackShell({
 export function openPlaybackShell({
   state,
   container,
+  recommendationRail,
 }: {
   state: PlaybackShellState;
   container: Container;
+  readonly recommendationRail?: PostPlaybackRecommendationRail;
 }): Promise<PlaybackShellResult> {
   const session = mountRootContent<PlaybackShellResult>({
     kind: state.postPlayState ? "post-playback" : "playback",
     renderContent: (finish) => (
-      <PlaybackShell container={container} state={state} onResolve={finish} />
+      <PlaybackShell
+        container={container}
+        state={state}
+        onResolve={finish}
+        recommendationRail={recommendationRail}
+      />
     ),
     fallbackValue: "quit",
   });

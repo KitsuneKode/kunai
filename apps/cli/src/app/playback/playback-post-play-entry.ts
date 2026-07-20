@@ -87,6 +87,7 @@ export type CreatePostPlaybackMenuDepsInput = {
   readonly openPlaybackShell: (input: {
     container: Container;
     state: PlaybackShellState;
+    recommendationRail?: PostPlaybackRecommendationRail;
   }) => Promise<PlaybackShellResult>;
   readonly chooseEpisodeFromMetadata: PostPlaybackMenuDeps["chooseEpisodeFromMetadata"];
   readonly episodeInfoFromSelection: PostPlaybackMenuDeps["episodeInfoFromSelection"];

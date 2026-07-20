@@ -1,3 +1,4 @@
+import type { PlaybackRecommendationRailItem } from "@/app-shell/types";
 import { buildDiscoverSections } from "@/app/discover/discover-sections";
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";
@@ -13,6 +14,22 @@ export interface PostPlaybackRecommendationItem {
   readonly overview?: string;
   readonly posterPath?: string | null;
   readonly episodeCount?: number;
+}
+
+export function postPlaybackRecommendationItemsToRailItems(
+  items: readonly PostPlaybackRecommendationItem[],
+): readonly PlaybackRecommendationRailItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    ...(item.sourceId ? { sourceId: item.sourceId } : {}),
+    ...(item.titleAliases ? { titleAliases: item.titleAliases } : {}),
+    ...(item.year ? { year: item.year } : {}),
+    ...(item.overview ? { overview: item.overview } : {}),
+    ...(item.posterPath !== undefined ? { posterPath: item.posterPath } : {}),
+    ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
+  }));
 }
 
 export function seedPostPlaybackRecommendationItems({
@@ -77,6 +94,7 @@ type RecommendationRailContainer = Pick<
 export class PostPlaybackRecommendationRail {
   private loaded: readonly PostPlaybackRecommendationItem[] | null = null;
   private inFlight = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly deps: {
@@ -92,6 +110,23 @@ export class PostPlaybackRecommendationRail {
   /** True once a live load has been attempted this post-play session. */
   get attempted(): boolean {
     return this.loaded !== null;
+  }
+
+  /** Cached background/block load result, if any. */
+  get loadedItems(): readonly PostPlaybackRecommendationItem[] | null {
+    return this.loaded;
+  }
+
+  /** Notified when a background load finishes and cached items are ready. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyLoaded(): void {
+    for (const listener of this.listeners) listener();
   }
 
   /**
@@ -166,6 +201,7 @@ export class PostPlaybackRecommendationRail {
         .catch(() => [] as readonly PostPlaybackRecommendationItem[])
         .then((items) => {
           this.loaded = items;
+          this.notifyLoaded();
           container.diagnosticsService.record({
             category: "playback",
             operation: "post-playback.recommendations.background",

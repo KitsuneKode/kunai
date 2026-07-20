@@ -188,7 +188,7 @@ function DiscoveryCard({
           title={card.title}
           cols={posterCols}
           rows={3}
-          enabled
+          enabled={Boolean(card.posterUrl)}
         />
       </Box>
       <Text color={palette.accent} bold>
@@ -232,7 +232,13 @@ function DiscoveryCards({
       {cards.map((card) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
           <Box width={5}>
-            <MiniPosterTile url={card.posterUrl} title={card.title} cols={4} rows={2} enabled />
+            <MiniPosterTile
+              url={card.posterUrl}
+              title={card.title}
+              cols={4}
+              rows={2}
+              enabled={Boolean(card.posterUrl)}
+            />
           </Box>
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}

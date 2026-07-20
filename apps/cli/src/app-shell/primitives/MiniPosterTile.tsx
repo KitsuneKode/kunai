@@ -44,7 +44,7 @@ export function MiniPosterTile({
   readonly debounceMs?: number;
   readonly placeholderColor?: string;
 }) {
-  const { poster } = usePosterPreview(url, {
+  const { poster, posterState } = usePosterPreview(url, {
     rows,
     cols,
     enabled: enabled && Boolean(url),
@@ -53,6 +53,15 @@ export function MiniPosterTile({
     preserveTerminalImages: true,
     debounceMs,
   });
-  if (poster.kind !== "none") return <Text>{poster.placeholder}</Text>;
-  return <Text color={placeholderColor}>{initialsOf(title)}</Text>;
+
+  if (!url) {
+    return <Text color={placeholderColor}>{initialsOf(title)}</Text>;
+  }
+
+  if (poster.kind !== "none" && poster.placeholder) {
+    return <Text>{poster.placeholder}</Text>;
+  }
+
+  const fallback = posterState === "loading" ? "…" : initialsOf(title);
+  return <Text color={placeholderColor}>{fallback}</Text>;
 }
