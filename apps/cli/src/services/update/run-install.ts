@@ -1,10 +1,5 @@
 import { writeInstallManifest } from "./install-manifest";
-import {
-  checkInstall,
-  cleanupNpmInstallations,
-  getInstallDiagnostics,
-  installLatest,
-} from "./native-installer";
+import { checkInstall, getInstallDiagnostics, installLatest } from "./native-installer";
 import { DEFAULT_DL_BASE } from "./native-installer/install-layout";
 
 const PKG = "@kitsunekode/kunai";
@@ -37,14 +32,6 @@ export async function runInstall(argv: RunInstallArgv): Promise<number> {
       return 1;
     }
 
-    const npmCleanup = await cleanupNpmInstallations();
-    if (npmCleanup.removed > 0) {
-      console.log("Removed stale npm global install.");
-    }
-    for (const err of npmCleanup.errors) {
-      console.warn(err);
-    }
-
     const setup = await checkInstall();
     for (const msg of setup) {
       const fn =
@@ -52,9 +39,14 @@ export async function runInstall(argv: RunInstallArgv): Promise<number> {
       fn(msg.message);
     }
 
-    const diagnostics = await getInstallDiagnostics();
-    for (const d of diagnostics) {
-      if (d.code === "ok") console.log(d.message);
+    for (const diagnostic of await getInstallDiagnostics()) {
+      const output =
+        diagnostic.level === "error"
+          ? console.error
+          : diagnostic.level === "warn"
+            ? console.warn
+            : console.log;
+      output(diagnostic.message);
     }
 
     if (!skipDeps) {

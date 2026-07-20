@@ -25,10 +25,5 @@ export {
 } from "./version-lock";
 export { cleanupOldVersions } from "./cleanup-versions";
 export { migrateFlatInstall, type MigrateFlatResult } from "./migrate-flat-install";
-export {
-  cleanupNpmInstallations,
-  removeInstalledSymlink,
-  type CleanupNpmResult,
-} from "./cleanup-npm";
 export { getInstallDiagnostics, type InstallDiagnostic } from "./install-diagnostic";
 export { isMuslEnvironment, isMuslEnvironmentSync } from "./musl";
