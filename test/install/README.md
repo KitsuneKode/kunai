@@ -5,9 +5,14 @@ mocks the filesystem and network; these actually run the installer and assert
 what ended up on disk and on `PATH`.
 
 ```sh
+bun run test:installer:scenarios       # all scenarios (canonical entry point)
 test/install/run.sh                    # all scenarios
 test/install/run.sh npm-contamination  # one
 ```
+
+These scenarios run as a blocking CI gate. The `Installer ownership scenarios`
+job runs `bun run test:installer:scenarios` whenever the installer path filter
+matches, so a regression in installer ownership fails the build.
 
 Each scenario runs in a fresh, network-less container as a non-root user with a
 real `$HOME`, so state never leaks between runs and never touches your own

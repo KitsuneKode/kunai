@@ -61,9 +61,11 @@ jobs:
               - 'scripts/release-asset-contract.ts'
               - 'scripts/verify-github-release-assets.ts'
               - 'apps/cli/test/integration/native-installer-docker.test.ts'
+              - 'test/install/**'
               - 'install.sh'
               - 'install.ps1'
               - 'packages/**'
+              - 'package.json'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
 
@@ -351,3 +353,17 @@ jobs:
         env:
           KUNAI_INSTALLER_DOCKER: "1"
         run: bash apps/cli/test/docker/native-installer/run-local.sh --skip-build --skip-image-build
+
+  installer-scenarios:
+    name: Installer ownership scenarios
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: installer-scenarios
+      - name: Run hermetic installer scenarios
+        run: bun run test:installer:scenarios
