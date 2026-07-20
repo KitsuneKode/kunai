@@ -17,7 +17,7 @@ export function createInstallerSandbox(name: string) {
       KUNAI_BIN_DIR: binDir,
       KUNAI_DATA_DIR: dataDir,
       KUNAI_CONFIG_DIR: configDir,
-    },
+    } as NodeJS.ProcessEnv,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }

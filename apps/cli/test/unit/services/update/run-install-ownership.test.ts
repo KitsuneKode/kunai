@@ -1,18 +1,32 @@
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+
+import type { InstallDiagnostic } from "@/services/update/native-installer/install-diagnostic";
 
 const UPDATE_ROOT = join(import.meta.dir, "../../../../src/services/update");
 const installLatest = mock(async () => ({ status: "installed" as const, version: "0.3.0" }));
 const checkInstall = mock(async () => []);
-const getInstallDiagnostics = mock(async () => []);
+const getInstallDiagnostics = mock(async (): Promise<InstallDiagnostic[]> => []);
 
-mock.module("@/services/update/native-installer", () => ({
+// Capture the real module before mocking so we can put it back afterwards.
+// The native-installer index re-exports install-diagnostic; a leaked module
+// mock therefore poisons later suites that import the real diagnostic through
+// the same registry, and `mock.restore()` does not undo `mock.module`.
+const NATIVE_INSTALLER_SPECIFIER = "@/services/update/native-installer";
+const realNativeInstaller = { ...(await import(NATIVE_INSTALLER_SPECIFIER)) };
+
+mock.module(NATIVE_INSTALLER_SPECIFIER, () => ({
+  ...realNativeInstaller,
   checkInstall,
   getInstallDiagnostics,
   installLatest,
 }));
 
 const { runInstall } = await import("@/services/update/run-install");
+
+afterAll(() => {
+  mock.module(NATIVE_INSTALLER_SPECIFIER, () => realNativeInstaller);
+});
 
 test("native install has no package-manager cleanup side effect", async () => {
   const source = await Bun.file(join(UPDATE_ROOT, "run-install.ts")).text();

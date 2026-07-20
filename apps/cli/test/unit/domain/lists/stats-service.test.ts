@@ -9,6 +9,10 @@ function makeStatsService(): { service: StatsService; history: HistoryRepository
   return { service: new StatsService(db), history: new HistoryRepository(db) };
 }
 
+// Relative timestamps keep these fixtures inside the default 30-day stats
+// window regardless of when the suite runs (absolute dates silently expire).
+const daysAgo = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString();
+
 test("getStats uses watched_seconds and completed episodes for honesty", () => {
   const { service, history } = makeStatsService();
 
@@ -19,7 +23,7 @@ test("getStats uses watched_seconds and completed episodes for honesty", () => {
     durationSeconds: 1_200,
     completed: true,
     watchedSeconds: 900,
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: daysAgo(3),
   });
   history.upsertProgress({
     title: { id: "show-a", kind: "series", title: "Show A" },
@@ -28,7 +32,7 @@ test("getStats uses watched_seconds and completed episodes for honesty", () => {
     durationSeconds: 1_200,
     completed: false,
     watchedSeconds: 400,
-    updatedAt: "2026-06-21T12:00:00.000Z",
+    updatedAt: daysAgo(2),
   });
 
   const stats = service.getStats(30);
@@ -88,7 +92,7 @@ test("anime kind filter uses corrected provider markers", () => {
     completed: true,
     watchedSeconds: 1_000,
     providerId: "allanime",
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: daysAgo(3),
   });
   history.upsertProgress({
     title: { id: "tmdb:2", kind: "series", title: "Regular Drama" },
@@ -98,7 +102,7 @@ test("anime kind filter uses corrected provider markers", () => {
     completed: true,
     watchedSeconds: 500,
     providerId: "videasy",
-    updatedAt: "2026-06-20T13:00:00.000Z",
+    updatedAt: daysAgo(2),
   });
 
   const animeStats = service.getStats(30, "anime");
@@ -143,7 +147,7 @@ test("seriesCompleted counts titles with all stored episodes completed", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 1_000,
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: daysAgo(3),
   });
   history.upsertProgress({
     title: { id: "done", kind: "series", title: "Done Show" },
@@ -152,7 +156,7 @@ test("seriesCompleted counts titles with all stored episodes completed", () => {
     durationSeconds: 1_000,
     completed: true,
     watchedSeconds: 1_000,
-    updatedAt: "2026-06-21T12:00:00.000Z",
+    updatedAt: daysAgo(2),
   });
   history.upsertProgress({
     title: { id: "partial", kind: "series", title: "Partial Show" },
@@ -161,7 +165,7 @@ test("seriesCompleted counts titles with all stored episodes completed", () => {
     durationSeconds: 1_000,
     completed: false,
     watchedSeconds: 500,
-    updatedAt: "2026-06-21T13:00:00.000Z",
+    updatedAt: daysAgo(1),
   });
 
   const stats = service.getStats(30);
@@ -179,7 +183,7 @@ test("exportStatsJson and exportStatsCsv include extended metrics", () => {
     completed: true,
     watchedSeconds: 1_000,
     providerId: "allanime",
-    updatedAt: "2026-06-20T21:00:00.000Z",
+    updatedAt: daysAgo(2),
   });
 
   const json = service.exportStatsJson(30);
@@ -257,7 +261,7 @@ test("getStats includes video kind in type breakdown", () => {
     durationSeconds: 600,
     completed: true,
     watchedSeconds: 600,
-    updatedAt: "2026-06-20T12:00:00.000Z",
+    updatedAt: daysAgo(3),
   });
 
   const stats = service.getStats(30, "video");
