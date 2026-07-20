@@ -22,9 +22,11 @@ import {
   CLI_ENTRY,
   formatBuildSize,
   NPM_BUNDLE_OUT,
+  NPM_POSTINSTALL_OUT,
   assertNoForbiddenReleaseInputs,
   forbiddenReleaseInputs,
   npmBundleBuildOptions,
+  npmPostinstallBuildOptions,
   printBuildSizeTable,
   requireBuildMetafile,
   topReleaseInputs,
@@ -34,6 +36,7 @@ const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
 const ENTRY = join(ROOT, CLI_ENTRY);
 const BIN = join(ROOT, NPM_BUNDLE_OUT);
+const POSTINSTALL = join(ROOT, NPM_POSTINSTALL_OUT);
 const ASSETS = join(DIST, "assets");
 
 const clean = process.argv.includes("--clean");
@@ -53,8 +56,35 @@ async function assetBytes(): Promise<number> {
 
 async function cleanNpmDistArtifacts(): Promise<void> {
   await rm(BIN, { force: true });
+  await rm(POSTINSTALL, { force: true });
   await rm(join(DIST, "build-meta.json"), { force: true });
   await rm(ASSETS, { recursive: true, force: true });
+}
+
+/**
+ * Build the bundled npm postinstall hook (dist/postinstall.js). Kept next to the
+ * npm bundle so the same metafile guard applies and the published tarball ships a
+ * self-contained hook with no runtime import from excluded source files.
+ */
+async function buildPostinstallHook(): Promise<number> {
+  const result = await Bun.build(npmPostinstallBuildOptions(ROOT));
+  if (!result.success) {
+    console.error("[build] Bun postinstall build failed");
+    for (const log of result.logs) {
+      console.error(log);
+    }
+    process.exit(1);
+  }
+
+  assertNoForbiddenReleaseInputs(requireBuildMetafile(result.metafile));
+
+  if (!existsSync(POSTINSTALL)) {
+    console.error("[build] Build succeeded but dist/postinstall.js was not created.");
+    process.exit(1);
+  }
+
+  await chmod(POSTINSTALL, 0o755);
+  return Bun.file(POSTINSTALL).size;
 }
 
 async function main(): Promise<void> {
@@ -96,6 +126,8 @@ async function main(): Promise<void> {
 
   await chmod(BIN, 0o755);
 
+  const postinstallBytes = await buildPostinstallHook();
+
   const bundleBytes = Bun.file(BIN).size;
   const assetsTotal = await assetBytes();
   const ms = Date.now() - start;
@@ -103,8 +135,9 @@ async function main(): Promise<void> {
   printBuildSizeTable(
     [
       { label: "dist/kunai.js", bytes: bundleBytes },
+      { label: "dist/postinstall.js", bytes: postinstallBytes },
       { label: "dist/assets/*", bytes: assetsTotal },
-      { label: "dist/ total", bytes: bundleBytes + assetsTotal },
+      { label: "dist/ total", bytes: bundleBytes + postinstallBytes + assetsTotal },
     ],
     "npm release artifact",
   );

@@ -34,6 +34,7 @@ describe("assertNpmPackContents", () => {
         "README.md",
         "package.json",
         "dist/kunai.js",
+        "dist/postinstall.js",
         "dist/assets/kunai-bridge-qvcd1402.lua",
       ]),
     ).not.toThrow();
@@ -42,6 +43,12 @@ describe("assertNpmPackContents", () => {
   test("fails when binaries are present", () => {
     expect(() => assertNpmPackContents(["dist/kunai.js", "dist/bin/kunai-linux-x64"])).toThrow(
       "forbidden paths",
+    );
+  });
+
+  test("requires the bundled postinstall file", () => {
+    expect(() => assertNpmPackContents(["dist/kunai.js", "package.json"])).toThrow(
+      "dist/postinstall.js",
     );
   });
 });
@@ -91,6 +98,7 @@ describe("verifyNpmPackDryRun", () => {
     const stdout = `
 npm notice Tarball Contents
 npm notice 2.5MB dist/kunai.js
+npm notice 0.6MB dist/postinstall.js
 npm notice Tarball Details
 npm notice package size: 1.2 MB
 npm notice unpacked size: 3.1 MB

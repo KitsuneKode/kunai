@@ -70,6 +70,7 @@
     "test": "turbo run test",
     "test:coverage": "bun run --cwd apps/cli test:coverage",
     "test:cli:file": "bun run --cwd apps/cli test:file",
+    "test:npm-global-install": "bun run --cwd apps/cli test:npm-global-install",
     "test:installer:docker": "bun run --cwd apps/cli test:installer:docker",
     "test:installer:ci": "bun run --cwd apps/cli test:installer:ci",
     "test:installer:scenarios": "bash test/install/run.sh",
