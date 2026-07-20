@@ -22,12 +22,13 @@ export type BrowseLibraryFilterAvailability = {
 
 export function browseLibraryFilterAvailability(input: {
   readonly downloadsEnabled: boolean;
-  readonly sessionMode: "anime" | "series" | "movie" | "youtube";
+  /** Release facets need calendar/release browse context, not just non-YouTube mode. */
+  readonly calendarReleaseContext?: boolean;
 }): BrowseLibraryFilterAvailability {
   return {
     watched: true,
     downloaded: input.downloadsEnabled,
-    release: input.sessionMode !== "youtube",
+    release: input.calendarReleaseContext === true,
   };
 }
 

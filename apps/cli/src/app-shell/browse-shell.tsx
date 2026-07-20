@@ -31,10 +31,9 @@ import {
   stripStructuredFiltersFromQuery,
 } from "./browse-filter-chips";
 import {
-  applyBrowseResultFilters,
-  describeBrowseResultFilters,
   hasBrowseResultFilters,
   parseBrowseFilterQuery,
+  processBrowseSearchResults,
 } from "./browse-filters";
 import {
   browseFocusZoneReducer,
@@ -488,7 +487,6 @@ export function BrowseShell<T>({
       const rawQuery = activeQuery.trim();
       const hasFilters = hasBrowseResultFilters(parsedQuery.filters);
       if (rawQuery.length === 0 || (trimmed.length === 0 && !hasFilters)) return;
-      const filterBadges = describeBrowseResultFilters(parsedQuery.filters);
 
       const requestId = searchRequestGateRef.current.begin();
       setSearchState("loading");
@@ -504,15 +502,11 @@ export function BrowseShell<T>({
       try {
         const response = await onSearch(rawQuery);
         if (!searchRequestGateRef.current.isCurrent(requestId)) return;
-        const needsLocalFilters =
-          response.localFilterBadges === undefined && response.upstreamFilterBadges === undefined;
-        const filteredOptions = needsLocalFilters
-          ? applyBrowseResultFilters(response.options, parsedQuery.filters)
-          : response.options;
+        const processed = processBrowseSearchResults(response, parsedQuery);
         const activeBadges = [
-          ...(response.upstreamFilterBadges ?? filterBadges).map((badge) => `upstream ${badge}`),
-          ...(response.localFilterBadges ?? []).map((badge) => `local ${badge}`),
-          ...(response.unsupportedFilterBadges ?? []).map((badge) => `unsupported ${badge}`),
+          ...processed.upstreamFilterBadges.map((badge) => `upstream ${badge}`),
+          ...processed.localFilterBadges.map((badge) => `local ${badge}`),
+          ...processed.unsupportedFilterBadges.map((badge) => `unsupported ${badge}`),
         ];
         const filterSuffix = activeBadges.length > 0 ? `  ·  ${activeBadges.join(", ")}` : "";
 
@@ -520,7 +514,7 @@ export function BrowseShell<T>({
         setResultFilter("");
         setFilterModeOpen(false);
         addSearchQuery(rawQuery);
-        setOptions(filteredOptions);
+        setOptions(processed.options);
         setSelectedIndex(0);
         setResultSubtitle(`${response.subtitle}${filterSuffix}`);
         setEmptyMessage(
@@ -530,7 +524,7 @@ export function BrowseShell<T>({
         );
         setActiveFilterBadges(activeBadges);
         setSearchState("ready");
-        setFocusZone(filteredOptions.length > 0 ? "list" : "query");
+        setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
         if (!searchRequestGateRef.current.isCurrent(requestId)) return;
 

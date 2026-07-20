@@ -119,6 +119,92 @@ export function hasBrowseResultFilters(filters: BrowseResultFilters): boolean {
   return describeBrowseResultFilters(filters).length > 0;
 }
 
+const LIBRARY_FILTER_BADGE_KEYS = ["downloaded", "watched", "release"] as const;
+
+type LibraryFilterBadgeKey = (typeof LIBRARY_FILTER_BADGE_KEYS)[number];
+
+export type BrowseSearchFilterBadges = {
+  readonly upstreamFilterBadges: readonly string[];
+  readonly localFilterBadges: readonly string[];
+  readonly unsupportedFilterBadges: readonly string[];
+};
+
+export type BrowseSearchPostProcessInput<T> = {
+  readonly options: readonly BrowseShellOption<T>[];
+  readonly upstreamFilterBadges?: readonly string[];
+  readonly localFilterBadges?: readonly string[];
+  readonly unsupportedFilterBadges?: readonly string[];
+};
+
+export function processBrowseSearchResults<T>(
+  response: BrowseSearchPostProcessInput<T>,
+  parsedQuery: ParsedBrowseFilterQuery,
+): {
+  readonly options: readonly BrowseShellOption<T>[];
+} & BrowseSearchFilterBadges {
+  const fallbackBadges = describeBrowseResultFilters(parsedQuery.filters);
+  const filteredOptions = applyBrowseResultFilters(response.options, parsedQuery.filters);
+  const reconciled = reconcileBrowseSearchFilterBadges(parsedQuery.filters, filteredOptions, {
+    upstreamFilterBadges: response.upstreamFilterBadges ?? fallbackBadges,
+    localFilterBadges: response.localFilterBadges ?? [],
+    unsupportedFilterBadges: response.unsupportedFilterBadges ?? [],
+  });
+  return {
+    options: filteredOptions,
+    ...reconciled,
+  };
+}
+
+export function reconcileBrowseSearchFilterBadges<T>(
+  filters: BrowseResultFilters,
+  options: readonly BrowseShellOption<T>[],
+  badges: BrowseSearchFilterBadges,
+): BrowseSearchFilterBadges {
+  let local = [...badges.localFilterBadges];
+  let unsupported = [...badges.unsupportedFilterBadges];
+  const localKeys = new Set(local.map(filterBadgeKey));
+
+  for (const key of LIBRARY_FILTER_BADGE_KEYS) {
+    if (!canApplyLibraryFilterAtBrowse(key, filters, options)) continue;
+    const promoted = unsupported.filter((badge) => filterBadgeKey(badge) === key);
+    if (promoted.length === 0) continue;
+    unsupported = unsupported.filter((badge) => filterBadgeKey(badge) !== key);
+    for (const badge of promoted) {
+      if (!localKeys.has(key)) {
+        local.push(badge);
+        localKeys.add(key);
+      }
+    }
+  }
+
+  return {
+    upstreamFilterBadges: badges.upstreamFilterBadges,
+    localFilterBadges: local,
+    unsupportedFilterBadges: unsupported,
+  };
+}
+
+function filterBadgeKey(badge: string): string {
+  return badge.split(" ")[0] ?? badge;
+}
+
+function canApplyLibraryFilterAtBrowse<T>(
+  key: LibraryFilterBadgeKey,
+  filters: BrowseResultFilters,
+  options: readonly BrowseShellOption<T>[],
+): boolean {
+  if (key === "downloaded") {
+    if (typeof filters.downloaded !== "boolean") return false;
+    return options.some((option) => option.localFilterFacts?.downloaded !== undefined);
+  }
+  if (key === "watched") {
+    if (!filters.watched) return false;
+    return options.some((option) => option.localFilterFacts?.watched !== undefined);
+  }
+  if (!filters.release) return false;
+  return options.some((option) => option.localFilterFacts?.release !== undefined);
+}
+
 function getOptionTypeFilterMatch<T>(
   option: BrowseShellOption<T>,
   wanted: SearchIntentTypeFilter,

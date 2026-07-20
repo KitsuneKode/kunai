@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyBrowseResultFilters, parseBrowseFilterQuery } from "@/app-shell/browse-filters";
+import {
+  parseBrowseFilterQuery,
+  processBrowseSearchResults,
+  reconcileBrowseSearchFilterBadges,
+} from "@/app-shell/browse-filters";
 import {
   browseLibraryFilterAvailability,
   buildLocalFilterFacts,
@@ -24,11 +28,38 @@ describe("library filter facts", () => {
       },
     ];
 
-    const filtered = applyBrowseResultFilters(
-      options as any,
-      parseBrowseFilterQuery("downloaded:true").filters,
+    const processed = processBrowseSearchResults(
+      {
+        options: options as any,
+        upstreamFilterBadges: ["type series"],
+        localFilterBadges: [],
+        unsupportedFilterBadges: ["downloaded true"],
+      },
+      parseBrowseFilterQuery("downloaded:true"),
     );
-    expect(filtered.map((o) => o.value)).toEqual(["b"]);
+    expect(processed.options.map((o) => o.value)).toEqual(["b"]);
+    expect(processed.localFilterBadges).toContain("downloaded true");
+    expect(processed.unsupportedFilterBadges).not.toContain("downloaded true");
+  });
+
+  test("reconcileBrowseSearchFilterBadges promotes library keys when facts exist", () => {
+    const reconciled = reconcileBrowseSearchFilterBadges(
+      parseBrowseFilterQuery("downloaded:true").filters,
+      [
+        {
+          value: "offline",
+          label: "Offline title",
+          localFilterFacts: { downloaded: true },
+        },
+      ] as any,
+      {
+        upstreamFilterBadges: [],
+        localFilterBadges: [],
+        unsupportedFilterBadges: ["downloaded true"],
+      },
+    );
+    expect(reconciled.localFilterBadges).toEqual(["downloaded true"]);
+    expect(reconciled.unsupportedFilterBadges).toEqual([]);
   });
 
   test("buildLocalFilterFacts maps history + offline badges", () => {
@@ -50,16 +81,22 @@ describe("library filter facts", () => {
     });
   });
 
-  test("browseLibraryFilterAvailability hides offline chips when downloads disabled", () => {
+  test("browseLibraryFilterAvailability gates release chips on calendar context", () => {
     expect(
-      browseLibraryFilterAvailability({ downloadsEnabled: false, sessionMode: "anime" }),
+      browseLibraryFilterAvailability({
+        downloadsEnabled: false,
+        calendarReleaseContext: true,
+      }),
     ).toMatchObject({
       watched: true,
       downloaded: false,
       release: true,
     });
     expect(
-      browseLibraryFilterAvailability({ downloadsEnabled: true, sessionMode: "youtube" }),
+      browseLibraryFilterAvailability({
+        downloadsEnabled: true,
+        calendarReleaseContext: false,
+      }),
     ).toMatchObject({
       watched: true,
       downloaded: true,

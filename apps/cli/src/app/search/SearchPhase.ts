@@ -652,6 +652,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const chip = await chooseSearchFilterChip(stateManager.getState().searchQuery, {
               sessionMode: stateManager.getState().mode,
               downloadsEnabled: container.config.downloadsEnabled,
+              calendarReleaseContext: stateManager
+                .getState()
+                .searchResults.some(isCalendarSearchResult),
             });
             if (chip) {
               const nextQuery = appendSearchFilterChip(stateManager.getState().searchQuery, chip);
@@ -1000,11 +1003,15 @@ async function loadSearchRoute(
 
 async function chooseSearchFilterChip(
   currentQuery: string,
-  context: { readonly sessionMode: ShellMode; readonly downloadsEnabled: boolean },
+  context: {
+    readonly sessionMode: ShellMode;
+    readonly downloadsEnabled: boolean;
+    readonly calendarReleaseContext?: boolean;
+  },
 ): Promise<string | null> {
   const library = browseLibraryFilterAvailability({
     downloadsEnabled: context.downloadsEnabled,
-    sessionMode: context.sessionMode,
+    calendarReleaseContext: context.calendarReleaseContext,
   });
   const options: Array<{ value: string | null; label: string; detail: string }> = [
     // ── Type ──
