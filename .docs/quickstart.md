@@ -124,8 +124,10 @@ Then run `/report-issue` to open the GitHub issue form with triage guidance.
 Browse filters can be typed directly in search, for example:
 
 ```text
-type:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en
+mode:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en
 ```
+
+`type:anime` is accepted as an alias for `mode:anime` with a correction hint.
 
 Filters stack in one structured state. Unsupported filters are reported as local/unsupported evidence instead of being silently treated as provider-applied.
 

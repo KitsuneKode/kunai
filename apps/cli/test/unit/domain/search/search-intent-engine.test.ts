@@ -31,4 +31,12 @@ describe("SearchIntentEngine", () => {
     expect(result.intent.mode).toBe("anime");
     expect(result.warnings).toEqual(["Ignored unsupported filter mood:bleak"]);
   });
+
+  test("engine surfaces alias correction as a warning", () => {
+    const result = createSearchIntentEngine().fromText("dune type:anime", {
+      currentMode: "series",
+    });
+    expect(result.intent.mode).toBe("anime");
+    expect(result.warnings.some((w) => w.includes("type:anime"))).toBe(true);
+  });
 });

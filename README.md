@@ -312,7 +312,7 @@ Ctrl+D            Download selected result (from browse)
 ### Search and discover
 
 - **Search** any title by name. Anime and series modes use different provider sets.
-- **Stack filters** in one query: `type:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en`.
+- **Stack filters** in one query: `mode:anime year:2026 rating:7 genre:isekai audio:ja subtitles:en` (`type:anime` is accepted as an alias).
 - **Discover** personalized recommendations and trending titles.
 - **Release calendar** is one content-kind–aware window across anime, series, and movies — filter by type (Tab) or day (←/→), with honest "airs today / releases / available" status. Provider resolution happens only after you open a row.
 - **Random / Surprise** spins a non-autoplaying tray of cached recommendations.

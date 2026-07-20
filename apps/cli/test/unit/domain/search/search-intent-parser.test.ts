@@ -94,3 +94,45 @@ describe("SearchIntentParser", () => {
     });
   });
 });
+
+describe("SearchIntentParser Track B vocabulary", () => {
+  test("parses mode:youtube", () => {
+    expect(parseSearchIntentText("lofi mode:youtube")).toMatchObject({
+      query: "lofi",
+      mode: "youtube",
+      errors: [],
+      corrections: [],
+    });
+  });
+
+  test("aliases type:anime to mode:anime with correction", () => {
+    const parsed = parseSearchIntentText("mob type:anime year:2024");
+    expect(parsed).toMatchObject({
+      query: "mob",
+      mode: "anime",
+      filters: { year: 2024 },
+      errors: [],
+    });
+    expect(parsed.filterState.mode).toBe("anime");
+    expect(parsed.filterState.type).toBeUndefined();
+    expect(parsed.corrections).toEqual([
+      {
+        from: "type:anime",
+        to: "mode:anime",
+        message: "Interpreted type:anime as mode:anime",
+      },
+    ]);
+  });
+
+  test("parses YouTube content shapes on type allowlist", () => {
+    expect(parseSearchIntentText("jazz type:playlist mode:youtube")).toMatchObject({
+      query: "jazz",
+      mode: "youtube",
+      filters: { type: "playlist" },
+      filterState: { query: "jazz", mode: "youtube", type: "playlist" },
+      errors: [],
+    });
+    expect(parseSearchIntentText("type:video").filters.type).toBe("video");
+    expect(parseSearchIntentText("type:channel").filters.type).toBe("channel");
+  });
+});

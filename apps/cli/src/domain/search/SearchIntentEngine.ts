@@ -36,7 +36,10 @@ export function createSearchIntentEngine(): SearchIntentEngine {
           sort: intent.sort,
           errors: parsed.errors,
         }).filter((chip) => !chip.endsWith(" ignored")),
-        warnings: parsed.errors.map(formatParseWarning),
+        warnings: [
+          ...parsed.corrections.map((correction) => correction.message),
+          ...parsed.errors.map(formatParseWarning),
+        ],
       };
     },
   };

@@ -85,4 +85,14 @@ describe("SearchIntent", () => {
       "rating >= 8",
     ]);
   });
+
+  test("describes YouTube content shape chips on filter state", () => {
+    const state = normalizeFilterState({
+      query: "jazz",
+      mode: "youtube",
+      type: "playlist",
+    });
+
+    expect(describeFilterStateChips(state)).toEqual(["mode youtube", "type playlist"]);
+  });
 });

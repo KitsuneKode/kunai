@@ -15,6 +15,12 @@ export type SearchIntentParseError = {
   readonly reason: "unsupported-filter" | "unsupported-value";
 };
 
+export type SearchIntentParseCorrection = {
+  readonly from: string;
+  readonly to: string;
+  readonly message: string;
+};
+
 export type ParsedSearchIntentText = {
   readonly query: string;
   readonly filterState: FilterState;
@@ -22,10 +28,18 @@ export type ParsedSearchIntentText = {
   readonly sort?: SearchSort;
   readonly mode?: SearchIntentMode;
   readonly errors: readonly SearchIntentParseError[];
+  readonly corrections: readonly SearchIntentParseCorrection[];
 };
 
-const SEARCH_MODES = new Set<SearchIntentMode>(["anime", "series", "movie", "all"]);
-const TYPE_FILTERS = new Set<SearchIntentTypeFilter>(["movie", "series", "all"]);
+const SEARCH_MODES = new Set<SearchIntentMode>(["anime", "series", "movie", "youtube", "all"]);
+const TYPE_FILTERS = new Set<SearchIntentTypeFilter>([
+  "movie",
+  "series",
+  "all",
+  "video",
+  "playlist",
+  "channel",
+]);
 const WATCH_FILTERS = new Set<WatchFilter>(["any", "unwatched", "watching", "completed"]);
 const RELEASE_FILTERS = new Set<ReleaseFilter>(["today", "this-week", "upcoming"]);
 const SEARCH_SORTS = new Set<SearchSort>(["relevance", "progress", "recent", "popular", "rating"]);
@@ -33,6 +47,7 @@ const SEARCH_SORTS = new Set<SearchSort>(["relevance", "progress", "recent", "po
 export function parseSearchIntentText(text: string): ParsedSearchIntentText {
   const terms: string[] = [];
   const errors: SearchIntentParseError[] = [];
+  const corrections: SearchIntentParseCorrection[] = [];
   const filters: {
     type?: SearchIntentTypeFilter;
     genres?: string[];
@@ -62,6 +77,15 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
       continue;
     }
     if (key === "type") {
+      if (value === "anime") {
+        mode = "anime";
+        corrections.push({
+          from: "type:anime",
+          to: "mode:anime",
+          message: "Interpreted type:anime as mode:anime",
+        });
+        continue;
+      }
       if (isTypeFilter(value)) filters.type = value;
       else errors.push({ key, value, reason: "unsupported-value" });
       continue;
@@ -143,6 +167,7 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
     sort,
     mode,
     errors,
+    corrections,
   };
 }
 

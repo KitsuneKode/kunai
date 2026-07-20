@@ -156,9 +156,9 @@ function browseIdleHint(mode: ShellMode): string {
 function browseEmptyDetail(mode: ShellMode, message: string): string | undefined {
   if (!message.includes("trending")) return undefined;
   if (mode === "youtube") {
-    return "Use type:playlist to narrow · /filters for all tokens";
+    return "Use type:playlist|video|channel to narrow · /filters for guided facets";
   }
-  return "Use year:2022 or type:anime to narrow · /filters for all tokens";
+  return "Use year:2022 or mode:anime to narrow · /filters for guided facets";
 }
 
 function browseFilterPlaceholder(mode: ShellMode): string {
