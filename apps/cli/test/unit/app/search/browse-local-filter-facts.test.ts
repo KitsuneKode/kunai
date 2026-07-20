@@ -34,12 +34,7 @@ describe("library filter facts", () => {
   test("buildLocalFilterFacts maps history + offline badges", () => {
     const facts = buildLocalFilterFacts({
       result: {
-        id: "t1",
         type: "series",
-        title: "X",
-        year: "2024",
-        overview: "",
-        posterPath: null,
       },
       historyEntry: {
         titleId: "t1",

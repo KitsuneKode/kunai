@@ -1,5 +1,9 @@
 # Search Filter State Implementation Plan
 
+> **Truth (2026-07-21):** P6 domain/`FilterState` landed earlier, but browse wiring was incomplete.
+> Track B (`docs/superpowers/plans/2026-07-21-search-filter-ux-repair.md`, spec §10) repairs
+> vocabulary, `/filters` vs Ctrl+F, bootstrap intent parity, chip clear, and library-filter honesty.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace brittle typed-token filtering with a guided, stackable `FilterState` that behaves like a real browse/search filter system.
@@ -14,9 +18,9 @@
 
 ```text
 SLICE_ID: P6
-SLICE_STATUS: implemented
-SLICE_OWNER: codex
-SLICE_LAST_UPDATED: 2026-05-18
+SLICE_STATUS: repaired-by-track-b
+SLICE_OWNER: —
+SLICE_LAST_UPDATED: 2026-07-21
 SLICE_CURRENT_TASK: complete
 SLICE_BLOCKERS: none
 ```
@@ -73,6 +77,7 @@ Do not change provider scraper code in this slice.
 - [x] Make typed browse filters share `FilterState`; interactive `/filters` UI remains the existing command-help surface.
 - [x] Show active filter chips through the shared browse-filter description path.
 - [x] Mark unsupported filters as local or unsupported instead of pretending upstream applied them.
+- [x] **Superseded by Track B (2026-07-21):** `/filters` vs Ctrl+F split, clearable chips, Esc peel order, and library-filter honesty are now wired in browse shell + SearchPhase.
 - [ ] Run `bun run --cwd apps/cli test:unit`.
 - [ ] Commit with message `feat(shell): wire structured browse filters`.
 
