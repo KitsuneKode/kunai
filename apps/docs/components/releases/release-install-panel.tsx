@@ -11,6 +11,8 @@ export function ReleaseInstallPanel({
   release = null,
   showCanonical = true,
 }: ReleaseInstallPanelProps) {
+  const showVersioned = release?.status === "published";
+
   return (
     <div className="border-fd-border bg-fd-background flex flex-col gap-3 rounded-md border p-4 text-sm">
       {showCanonical ? (
@@ -26,7 +28,7 @@ export function ReleaseInstallPanel({
           </code>
         </>
       ) : null}
-      {release ? (
+      {showVersioned && release ? (
         <>
           <p className="kunai-type-caption m-0 mt-2">Versioned package shortcuts</p>
           <code className="kunai-code-row">

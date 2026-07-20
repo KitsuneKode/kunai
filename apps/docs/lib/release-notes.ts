@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { repoRoot } from "./repo-root";
 
+export type ReleasePublicationStatus = "staged" | "published" | "withdrawn";
+
 export type ReleaseNotesSection = {
   readonly title: string;
   readonly body: string;
@@ -10,7 +12,9 @@ export type ReleaseNotesSection = {
 };
 
 export type ReleaseNotesArtifact = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  readonly status: ReleasePublicationStatus;
+  readonly publishedAt: string | null;
   readonly packageName: string;
   readonly version: string;
   readonly tag: string;
@@ -40,12 +44,16 @@ export function readReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
     .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
     .map((file) => JSON.parse(readFileSync(join(dir, file), "utf8")) as ReleaseNotesArtifact)
     .filter(
-      (artifact) => artifact.schemaVersion === 1 && artifact.packageName === "@kitsunekode/kunai",
+      (artifact) => artifact.schemaVersion === 2 && artifact.packageName === "@kitsunekode/kunai",
     );
 }
 
+export function publishedReleaseNotesArtifacts(): readonly ReleaseNotesArtifact[] {
+  return readReleaseNotesArtifacts().filter((artifact) => artifact.status === "published");
+}
+
 export function latestReleaseNotesArtifact(): ReleaseNotesArtifact | null {
-  return readReleaseNotesArtifacts()[0] ?? null;
+  return publishedReleaseNotesArtifacts()[0] ?? null;
 }
 
 /** Normalize tags like `v0.2.6` or `0.2.6` for lookup. */
@@ -70,6 +78,20 @@ export function getReleaseByTag(tag: string): ReleaseNotesArtifact | null {
 
 export function githubReleaseTagUrl(tag: string): string {
   return `https://github.com/KitsuneKode/kunai/releases/tag/${normalizeReleaseTag(tag)}`;
+}
+
+/** Public GitHub release URL — only for published artifacts. */
+export function githubReleaseUrl(release: ReleaseNotesArtifact): string | null {
+  if (release.status !== "published") return null;
+  return githubReleaseTagUrl(release.tag);
+}
+
+/** Checksums visible only for published releases. */
+export function releaseAssetsForDisplay(
+  release: ReleaseNotesArtifact,
+): readonly { readonly name: string; readonly sha256: string }[] {
+  if (release.status !== "published") return [];
+  return release.assets ?? [];
 }
 
 function sectionItemsFromMarkdownBody(body: string): string[] {

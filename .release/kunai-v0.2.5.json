@@ -1,5 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "status": "published",
+  "publishedAt": "2026-06-07T20:43:55Z",
   "packageName": "@kitsunekode/kunai",
   "version": "0.2.5",
   "tag": "v0.2.5",

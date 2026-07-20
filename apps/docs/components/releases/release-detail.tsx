@@ -2,7 +2,8 @@ import { ReleaseInstallPanel } from "@/components/releases/release-install-panel
 import { ReleaseSectionList, SummaryBlocks } from "@/components/releases/release-sections";
 import {
   displaySectionsForRelease,
-  githubReleaseTagUrl,
+  githubReleaseUrl,
+  releaseAssetsForDisplay,
   type ReleaseNotesArtifact,
 } from "@/lib/release-notes";
 import Link from "next/link";
@@ -13,7 +14,9 @@ type ReleaseDetailProps = {
 
 export function ReleaseDetail({ release }: ReleaseDetailProps) {
   const sections = displaySectionsForRelease(release);
-  const assets = release.assets ?? [];
+  const assets = releaseAssetsForDisplay(release);
+  const githubUrl = githubReleaseUrl(release);
+  const isStaged = release.status === "staged";
 
   return (
     <article className="flex flex-col gap-10">
@@ -24,6 +27,9 @@ export function ReleaseDetail({ release }: ReleaseDetailProps) {
           </Link>
           <span className="text-fd-muted-foreground"> / </span>
           <span className="tabular-nums">{release.tag}</span>
+          {isStaged ? (
+            <span className="text-fd-muted-foreground"> · staged (not published)</span>
+          ) : null}
         </p>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -33,12 +39,14 @@ export function ReleaseDetail({ release }: ReleaseDetailProps) {
             ) : null}
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
-            <a
-              className="text-fd-primary font-medium underline-offset-4 hover:underline"
-              href={githubReleaseTagUrl(release.tag)}
-            >
-              GitHub release
-            </a>
+            {githubUrl ? (
+              <a
+                className="text-fd-primary font-medium underline-offset-4 hover:underline"
+                href={githubUrl}
+              >
+                GitHub release
+              </a>
+            ) : null}
             <Link
               href="/feedback"
               className="text-fd-muted-foreground font-medium underline-offset-4 hover:underline"

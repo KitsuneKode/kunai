@@ -1,5 +1,5 @@
 import { codeMetadata } from "@/lib/code-metadata";
-import { readReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
+import { publishedReleaseNotesArtifacts, releasePath } from "@/lib/release-notes";
 import { docsSiteUrl } from "@/lib/site";
 import { source } from "@/lib/source";
 
@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 
 export async function GET() {
   const pages = source.getPages();
-  const releases = readReleaseNotesArtifacts();
+  const releases = publishedReleaseNotesArtifacts();
   const lines = [
     "# Kunai Docs",
     "",
