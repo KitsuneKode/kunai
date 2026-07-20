@@ -1010,6 +1010,9 @@ async function chooseSearchFilterChip(currentQuery: string): Promise<string | nu
       // ── Type ──
       { value: "type:movie", label: "Type · Movies", detail: "Only movies" },
       { value: "type:series", label: "Type · Series", detail: "Only TV / series" },
+      { value: "type:video", label: "YouTube · Videos", detail: "Only videos" },
+      { value: "type:playlist", label: "YouTube · Playlists", detail: "Only playlists" },
+      { value: "type:channel", label: "YouTube · Channels", detail: "Only channels" },
       { value: "mode:anime", label: "Type · Anime", detail: "Search anime catalogs" },
       { value: "mode:youtube", label: "Type · YouTube", detail: "Search YouTube" },
       // ── Genre (anime catalogs honor these directly) ──

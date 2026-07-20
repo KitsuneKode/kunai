@@ -10,6 +10,7 @@ export type ShellAction =
   | "setup"
   | "search"
   | "filters"
+  | "narrow-results"
   | "back-to-search"
   | "trending"
   | "recommendation"

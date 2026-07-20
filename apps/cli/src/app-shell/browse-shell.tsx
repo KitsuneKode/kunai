@@ -21,6 +21,7 @@ import React, {
 } from "react";
 
 import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
+import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
   applyBrowseResultFilters,
   describeBrowseResultFilters,
@@ -805,7 +806,17 @@ export function BrowseShell<T>({
       return true;
     }
     if (action === "filters") {
-      if (searchState === "ready" && options.length > 0 && !isCalendarView) {
+      // Never hijack — SearchPhase owns guided facets (idle + with results).
+      return false;
+    }
+    if (action === "narrow-results") {
+      const decision = decideBrowseFilterAction({
+        action: "narrow-results",
+        searchState,
+        optionCount: options.length,
+        isCalendarView,
+      });
+      if (decision.kind === "open-narrow") {
         setFilterModeOpen(true);
         setCommandMode(false);
         setCommandInput("");
@@ -859,8 +870,8 @@ export function BrowseShell<T>({
     searchState === "idle" &&
     Boolean(idleReturnLoopModel?.hasSelectableRows);
 
-  // Local narrow mode only earns space on long result sets. It is explicit
-  // (/filters or Ctrl+F) so normal title search stays calm and single-purpose.
+  // Local narrow mode only earns space on long result sets. Ctrl+F opens it;
+  // /filters opens guided facets via SearchPhase.
   const showResultFilterBar =
     searchState === "ready" &&
     options.length >= MIN_RESULTS_FOR_LOCAL_FILTER &&
@@ -1312,11 +1323,7 @@ export function BrowseShell<T>({
     }
 
     if ((input === "f" && key.ctrl) || input === "\x06") {
-      if (searchState === "ready" && options.length > 0 && !isCalendarView) {
-        setFilterModeOpen(true);
-        setFocusZone("filter");
-        setCommandMode(false);
-      }
+      handleLocalAction("narrow-results");
       return;
     }
 
@@ -2016,7 +2023,7 @@ export function BrowseShell<T>({
               "browse-details": "details",
               "browse-details-ctrl": "details",
               "browse-title-control-menu": "menu",
-              "browse-filter": "filters",
+              "browse-filter": "narrow-results",
               "browse-mode": "toggle-mode",
               "browse-trending": "trending",
               "browse-download": "download",
