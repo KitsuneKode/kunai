@@ -47,6 +47,14 @@ test("native install emits every diagnostic at its matching severity", async () 
   }
 
   expect(logs).toContain("info diagnostic");
+  expect(warnings).not.toContain("info diagnostic");
+  expect(errors).not.toContain("info diagnostic");
+
   expect(warnings).toContain("warn diagnostic");
+  expect(logs).not.toContain("warn diagnostic");
+  expect(errors).not.toContain("warn diagnostic");
+
   expect(errors).toContain("error diagnostic");
+  expect(logs).not.toContain("error diagnostic");
+  expect(warnings).not.toContain("error diagnostic");
 });
