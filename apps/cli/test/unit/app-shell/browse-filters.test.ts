@@ -14,18 +14,21 @@ const OPTIONS: readonly BrowseShellOption<string>[] = [
     label: "Breaking Bad",
     previewMeta: ["Series", "2008"],
     previewRating: "9.5/10 TMDB",
+    localFilterFacts: { mediaType: "series" },
   },
   {
     value: "el-camino",
     label: "El Camino",
     previewMeta: ["Movie", "2019"],
     previewRating: "7.3/10 TMDB",
+    localFilterFacts: { mediaType: "movie" },
   },
   {
     value: "better-call-saul",
     label: "Better Call Saul",
     previewMeta: ["Series", "2015"],
     previewRating: "9.0/10 TMDB",
+    localFilterFacts: { mediaType: "series" },
   },
   {
     value: "solo-leveling",
@@ -37,6 +40,12 @@ const OPTIONS: readonly BrowseShellOption<string>[] = [
       { label: "Local progress", detail: "continue S01E04 · 12:00", tone: "warning" },
       { label: "Metadata source", detail: "allanime search", tone: "success" },
     ],
+    localFilterFacts: {
+      mediaType: "series",
+      downloaded: true,
+      watched: "watching",
+      release: "today",
+    },
   },
   {
     value: "frieren",
@@ -47,6 +56,11 @@ const OPTIONS: readonly BrowseShellOption<string>[] = [
       { label: "Local progress", detail: "watched", tone: "success" },
       { label: "Metadata source", detail: "anilist trending", tone: "success" },
     ],
+    localFilterFacts: {
+      mediaType: "series",
+      watched: "completed",
+      release: "upcoming",
+    },
   },
 ];
 

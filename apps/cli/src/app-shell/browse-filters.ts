@@ -1,3 +1,8 @@
+import {
+  matchesLibraryDownloadedFilter,
+  matchesLibraryReleaseFilter,
+  matchesLibraryWatchedFilter,
+} from "@/app/search/browse-local-filter-facts";
 import type {
   FilterState,
   FilterStateKey,
@@ -75,12 +80,16 @@ export function applyBrowseResultFilters<T>(
     if (filters.provider && !matchesProviderFilter(option, filters.provider)) return false;
     if (
       typeof filters.downloaded === "boolean" &&
-      matchesDownloadedFilter(option) !== filters.downloaded
+      !matchesLibraryDownloadedFilter(option.localFilterFacts, filters.downloaded)
     ) {
       return false;
     }
-    if (filters.watched && !matchesWatchedFilter(option, filters.watched)) return false;
-    if (filters.release && !matchesReleaseFilter(option, filters.release)) return false;
+    if (filters.watched && !matchesLibraryWatchedFilter(option.localFilterFacts, filters.watched)) {
+      return false;
+    }
+    if (filters.release && !matchesLibraryReleaseFilter(option.localFilterFacts, filters.release)) {
+      return false;
+    }
     if (typeof filters.minRating === "number") {
       const rating = parseOptionRating(option);
       if (rating === null || rating < filters.minRating) return false;
@@ -141,39 +150,6 @@ function matchesProviderFilter<T>(option: BrowseShellOption<T>, provider: string
   return getOptionSearchText(option).includes(provider.trim().toLowerCase());
 }
 
-function matchesDownloadedFilter<T>(option: BrowseShellOption<T>): boolean {
-  const text = getOptionSearchText(option);
-  return (
-    hasAny(text, ["downloaded", "offline ready", "offline downloaded", "local file"]) &&
-    !hasAny(text, ["not downloaded", "no download"])
-  );
-}
-
-function matchesWatchedFilter<T>(option: BrowseShellOption<T>, watched: WatchFilter): boolean {
-  const text = getOptionSearchText(option);
-  const completed = hasAny(text, ["watched", "completed", "finished"]);
-  const watching = hasAny(text, ["continue", "resume", "started", "in progress"]);
-
-  if (watched === "completed") return completed;
-  if (watched === "watching") return watching;
-  if (watched === "unwatched") return !completed && !watching;
-  return completed || watching;
-}
-
-function matchesReleaseFilter<T>(option: BrowseShellOption<T>, release: ReleaseFilter): boolean {
-  const text = getOptionSearchText(option);
-  if (release === "today") {
-    return hasAny(text, ["release today", "releasing today", "airing today"]);
-  }
-  if (release === "upcoming") {
-    return hasAny(text, ["release upcoming", "upcoming", "coming soon"]);
-  }
-  if (release === "this-week") {
-    return hasAny(text, ["release this week", "this week", "this-week"]);
-  }
-  return false;
-}
-
 function getOptionSearchText<T>(option: BrowseShellOption<T>): string {
   const facts: string[] = [];
   for (const fact of option.previewFacts ?? []) {
@@ -193,8 +169,4 @@ function getOptionSearchText<T>(option: BrowseShellOption<T>): string {
     .filter((value): value is string => typeof value === "string" && value.length > 0)
     .join(" ")
     .toLowerCase();
-}
-
-function hasAny(text: string, needles: readonly string[]): boolean {
-  return needles.some((needle) => text.includes(needle));
 }

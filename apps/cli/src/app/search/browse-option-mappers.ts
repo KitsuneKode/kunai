@@ -1,4 +1,5 @@
 import type { BrowseShellOption } from "@/app-shell/types";
+import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
@@ -38,6 +39,10 @@ function toCalendarBrowseOption(
   const posterUrl = toPosterUrl(result.posterPath);
   return {
     value: result,
+    localFilterFacts: buildLocalFilterFacts({
+      result,
+      calendar,
+    }),
     label: result.title,
     detail: result.overview?.trim() ?? "",
     calendar,
@@ -146,11 +151,11 @@ export function toBrowseResultOption(
 
   return {
     value: result,
-    localFilterFacts: {
-      mediaType: result.type,
-      contentShape: result.contentShape,
-      isAnime: result.isAnime === true,
-    },
+    localFilterFacts: buildLocalFilterFacts({
+      result,
+      historyEntry,
+      enrichmentBadges,
+    }),
     label: isYoutubeResult
       ? displayTitle
       : result.year

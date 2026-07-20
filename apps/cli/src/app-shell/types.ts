@@ -1,6 +1,7 @@
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
+import type { ReleaseFilter, WatchFilter } from "@/domain/search/SearchIntent";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
@@ -302,6 +303,9 @@ export type BrowseLocalFilterFacts = {
   readonly mediaType?: "movie" | "series";
   readonly contentShape?: "video" | "playlist" | "channel";
   readonly isAnime?: boolean;
+  readonly downloaded?: boolean;
+  readonly watched?: WatchFilter;
+  readonly release?: ReleaseFilter;
 };
 
 export type BrowseShellOption<T> = {
