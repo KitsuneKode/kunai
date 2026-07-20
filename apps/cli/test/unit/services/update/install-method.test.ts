@@ -44,6 +44,44 @@ describe("install method detection", () => {
     ).toBe("npm-global");
   });
 
+  test("detects Windows npm and Bun global entrypoints", () => {
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint:
+          "C:\\Users\\k\\AppData\\Roaming\\npm\\node_modules\\@kitsunekode\\kunai\\dist\\kunai.js",
+        platform: "win32",
+      }).kind,
+    ).toBe("npm-global");
+
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint:
+          "C:\\Users\\k\\.bun\\install\\global\\node_modules\\@kitsunekode\\kunai\\dist\\kunai.js",
+        platform: "win32",
+      }).kind,
+    ).toBe("bun-global");
+  });
+
+  test("detects Windows source checkouts with Windows path operations", () => {
+    const cwd = "C:\\Users\\k\\src\\kunai";
+    const sourceFiles = new Set([
+      "C:\\Users\\k\\src\\kunai\\package.json",
+      "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
+      "C:\\Users\\k\\src\\kunai\\.git",
+    ]);
+
+    expect(
+      detectInstallMethod({
+        cwd,
+        entrypoint: "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
+        platform: "win32",
+        fileExists: (path) => sourceFiles.has(path),
+      }).kind,
+    ).toBe("source");
+  });
+
   test("falls back to binary/package or unknown guidance", () => {
     const binary = detectInstallMethod({
       cwd: "/tmp",
