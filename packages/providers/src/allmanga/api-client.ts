@@ -93,6 +93,8 @@ export type AllMangaSourceLane = "baseline" | "ak-only";
  *
  * Previous key was SHA-256("Xot36i3lK3:v1"); episode resolve now requires an
  * AES-GCM `aaReq` attestation or the API returns `AA_CRYPTO_MISSING`.
+ *
+ * Last rotated: 2026-07-20 (commit 82776c40, ani-cli a06ee54)
  */
 export const ALLMANGA_KEY_HEX = "f34fa715e2958b8c1ebc6efa4d089acd8f196d8b83d4b6201586c00c8a52e4a8";
 export const ALLMANGA_QUERY_HASH =
