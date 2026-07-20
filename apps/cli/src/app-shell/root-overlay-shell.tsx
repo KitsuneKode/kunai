@@ -48,6 +48,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
 import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
@@ -140,7 +141,7 @@ import {
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
 import type { FooterAction, ShellPanelLine } from "./types";
-import { handleHistoryOverlayInput } from "./use-history-overlay-input";
+import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
   handleNotificationsOverlayInput,
@@ -572,6 +573,9 @@ export function RootOverlayShell({
     readonly actionId: NotificationActionId;
   } | null>(null);
   const [historySourceChoiceTitleId, setHistorySourceChoiceTitleId] = useState<string | null>(null);
+  const [historyPendingDelete, setHistoryPendingDelete] = useState<HistoryDeletePending | null>(
+    null,
+  );
   const [notificationsState, setNotificationsState] = useState<NotificationsOverlayState>(
     createNotificationsOverlayState,
   );
@@ -654,6 +658,15 @@ export function RootOverlayShell({
     setHistoryCatalogBounds(catalogBounds);
     return historyEntries;
   }, [container]);
+  const onHistoryMutated = useCallback(() => {
+    void reloadHistoryOverlay().then((entries) => {
+      setSelectedIndex((current) =>
+        entries.length === 0 ? 0 : Math.min(current, entries.length - 1),
+      );
+      onRedraw();
+    });
+    requestBrowseIdleContextRefresh();
+  }, [onRedraw, reloadHistoryOverlay]);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
   const commands = resolveCommandContext(state, "rootOverlay");
   const historyPickerContext: HistoryPickerOptionsContext = {
@@ -987,6 +1000,7 @@ export function RootOverlayShell({
   useEffect(() => {
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
+    setHistoryPendingDelete(null);
   }, [historyTab, overlay.type]);
 
   // Discard any play-now intent left staged by an earlier inbox session.
@@ -1281,7 +1295,8 @@ export function RootOverlayShell({
         confirmationActive:
           (overlay.type === "notifications" &&
             Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
-          (overlay.type === "history" && historySourceChoiceTitleId !== null),
+          (overlay.type === "history" &&
+            (historySourceChoiceTitleId !== null || historyPendingDelete !== null)),
         pickerOverlay: isRootMediaPickerOverlay(overlay),
         surfaceOwnsEscape: overlay.type === "library" || overlay.type === "downloads",
       });
@@ -1303,6 +1318,10 @@ export function RootOverlayShell({
       if (backAction === "cancel-confirmation") {
         if (overlay.type === "history" && historySourceChoiceTitleId !== null) {
           setHistorySourceChoiceTitleId(null);
+          setOverlayStatus(null);
+        }
+        if (overlay.type === "history" && historyPendingDelete !== null) {
+          setHistoryPendingDelete(null);
           setOverlayStatus(null);
         }
         if (overlay.type === "notifications" && notificationPlayConfirm) {
@@ -1343,6 +1362,9 @@ export function RootOverlayShell({
           setSelectedIndex,
           setOverlayStatus: (status) => setOverlayStatus(status),
           onRedraw,
+          pendingDelete: historyPendingDelete,
+          setPendingDelete: setHistoryPendingDelete,
+          onHistoryMutated,
           onConfirmSelection: (selection, options) => {
             if (selection) {
               void import("@/services/continuation/continuation-diagnostics").then(
@@ -1934,6 +1956,7 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
           rowWidth={rowWidth}
+          pendingDelete={historyPendingDelete}
         />
         {commandMode ? (
           <CommandPalette
@@ -1945,7 +1968,13 @@ export function RootOverlayShell({
         ) : null}
         <ShellFooter
           taskLabel={
-            historySourceChoiceTitleId ? "History · l local, s stream, Esc cancel" : "History"
+            historyPendingDelete
+              ? historyPendingDelete.kind === "episode"
+                ? `Delete episode progress for ${historyPendingDelete.label}? y confirm · Esc cancel`
+                : `Delete all history for ${historyPendingDelete.label}? y confirm · Esc cancel`
+              : historySourceChoiceTitleId
+                ? "History · l local, s stream, Esc cancel"
+                : "History"
           }
           actions={historyFooterActions()}
           mode="detailed"

@@ -142,3 +142,13 @@ export type ContinueWatchingSelection = {
   readonly titleId: string;
   readonly entry: HistoryProgress;
 };
+
+let browseIdleRefreshListener: (() => void) | null = null;
+
+export function setBrowseIdleRefreshListener(listener: (() => void) | null): void {
+  browseIdleRefreshListener = listener;
+}
+
+export function requestBrowseIdleContextRefresh(): void {
+  browseIdleRefreshListener?.();
+}

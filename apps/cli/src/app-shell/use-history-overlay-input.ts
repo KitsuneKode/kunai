@@ -14,8 +14,12 @@ import {
   resolveContinueSourceAction,
   type ContinueSourcePreference,
 } from "@/services/continuation/continuation-source";
-import { isFinished } from "@/services/continuation/history-progress";
+import { historyEpisodeLabel, isFinished } from "@/services/continuation/history-progress";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+
+export type HistoryDeletePending =
+  | { readonly kind: "episode"; readonly key: string; readonly label: string }
+  | { readonly kind: "title"; readonly titleId: string; readonly label: string };
 
 export type HistoryOverlayInputContext = {
   readonly container: Container;
@@ -36,6 +40,9 @@ export type HistoryOverlayInputContext = {
   readonly setSelectedIndex: (update: (current: number) => number) => void;
   readonly setOverlayStatus: (status: string | null) => void;
   readonly onRedraw: () => void;
+  readonly pendingDelete: HistoryDeletePending | null;
+  readonly setPendingDelete: (next: HistoryDeletePending | null) => void;
+  readonly onHistoryMutated: () => void;
   readonly onConfirmSelection: (
     selection: RootHistorySelection | null,
     options?: { readonly sourceOverride?: "local" | "stream" },
@@ -43,6 +50,11 @@ export type HistoryOverlayInputContext = {
 };
 
 export type HistoryOverlayInputResult = "handled" | "not-handled";
+
+function historyDeleteLabel(entry: RootHistorySelection["entry"]): string {
+  const episode = historyEpisodeLabel(entry);
+  return episode ? `${entry.title} · ${episode}` : entry.title;
+}
 
 /** History overlay key map extracted from root-overlay-shell (Phase 9). */
 export function handleHistoryOverlayInput(
@@ -55,6 +67,40 @@ export function handleHistoryOverlayInput(
   const projection = picked
     ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
     : undefined;
+
+  if (ctx.pendingDelete) {
+    if (input.toLowerCase() === "y") {
+      const pending = ctx.pendingDelete;
+      if (pending.kind === "episode") {
+        ctx.container.historyRepository.deleteProgressByKey(pending.key);
+      } else {
+        ctx.container.historyRepository.deleteTitle(pending.titleId);
+      }
+      ctx.setPendingDelete(null);
+      ctx.setOverlayStatus(
+        pending.kind === "episode"
+          ? `Removed episode progress for ${pending.label}`
+          : `Removed all history for ${pending.label}`,
+      );
+      ctx.onHistoryMutated();
+      return "handled";
+    }
+    if (key.escape) {
+      ctx.setPendingDelete(null);
+      ctx.setOverlayStatus(null);
+      return "handled";
+    }
+    if (
+      key.upArrow ||
+      key.downArrow ||
+      key.leftArrow ||
+      key.rightArrow ||
+      key.tab ||
+      input.length === 1
+    ) {
+      return "handled";
+    }
+  }
 
   if (ctx.sourceChoiceTitleId && picked === ctx.sourceChoiceTitleId && selected) {
     if (input.toLowerCase() === "l") {
@@ -215,6 +261,26 @@ export function handleHistoryOverlayInput(
       ),
       { sourceOverride },
     );
+    return "handled";
+  }
+  if (selected && input === "x" && !key.shift) {
+    ctx.setPendingDelete({
+      kind: "episode",
+      key: selected.entry.key,
+      label: historyDeleteLabel(selected.entry),
+    });
+    ctx.setOverlayStatus(
+      `Delete episode progress for ${historyDeleteLabel(selected.entry)}? y confirm · Esc cancel`,
+    );
+    return "handled";
+  }
+  if (selected && (input === "X" || input === "x") && key.shift) {
+    ctx.setPendingDelete({
+      kind: "title",
+      titleId: selected.titleId,
+      label: selected.entry.title,
+    });
+    ctx.setOverlayStatus(`Delete all history for ${selected.entry.title}? y confirm · Esc cancel`);
     return "handled";
   }
   return "not-handled";

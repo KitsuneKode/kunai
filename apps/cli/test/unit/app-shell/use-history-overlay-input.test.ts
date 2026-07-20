@@ -51,6 +51,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
       setSelectedIndex: () => {},
       setOverlayStatus: () => {},
       onRedraw: () => {},
+      pendingDelete: null,
+      setPendingDelete: () => {},
+      onHistoryMutated: () => {},
       onConfirmSelection: (selection: RootHistorySelection | null) => {
         confirmations.push({ localJobId: selection?.localJobId });
       },
@@ -102,6 +105,9 @@ describe("handleHistoryOverlayInput", () => {
         setSelectedIndex: () => {},
         setOverlayStatus: (status) => calls.push(`status:${status}`),
         onRedraw: () => calls.push("redraw"),
+        pendingDelete: null,
+        setPendingDelete: () => {},
+        onHistoryMutated: () => {},
         onConfirmSelection: () => {},
       },
     );

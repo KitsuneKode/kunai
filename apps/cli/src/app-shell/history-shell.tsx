@@ -14,17 +14,20 @@ import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { RETURN_LOOP_HISTORY_NEW_EMPTY, RETURN_LOOP_HISTORY_SUBTITLE } from "./return-loop-copy";
 import { palette } from "./shell-theme";
+import type { HistoryDeletePending } from "./use-history-overlay-input";
 
 export function HistoryShell({
   view,
   columns,
   listWidth,
   rowWidth,
+  pendingDelete = null,
 }: {
   readonly view: HistoryView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
+  readonly pendingDelete?: HistoryDeletePending | null;
 }) {
   const railWidth = 32;
   const railGap = 2;
@@ -163,10 +166,27 @@ export function HistoryShell({
 
       {selectedRow ? (
         <Box flexDirection="column">
-          <ResumeCard label={selectedRow.resumeAction} action="↵ enter" width={effectiveRowWidth} />
-          {selectedRow.dualSourceAvailable ? (
-            <Text color={palette.dim}>[l] local · [s] stream</Text>
-          ) : null}
+          {pendingDelete ? (
+            <Box marginTop={1}>
+              <Text color={palette.accentDeep}>
+                {"⚠ "}
+                {pendingDelete.kind === "episode"
+                  ? `Delete episode progress for ${pendingDelete.label}? y confirm · Esc cancel`
+                  : `Delete all history for ${pendingDelete.label}? y confirm · Esc cancel`}
+              </Text>
+            </Box>
+          ) : (
+            <>
+              <ResumeCard
+                label={selectedRow.resumeAction}
+                action="↵ enter"
+                width={effectiveRowWidth}
+              />
+              {selectedRow.dualSourceAvailable ? (
+                <Text color={palette.dim}>[l] local · [s] stream</Text>
+              ) : null}
+            </>
+          )}
         </Box>
       ) : null}
     </Box>

@@ -654,6 +654,25 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "History",
     helpOnly: true,
   },
+  {
+    id: "history-delete-episode",
+    chord: { input: "x" },
+    label: "Delete episode progress",
+    hintLabel: "delete ep",
+    scope: "history",
+    group: "History",
+    footerPriority: 35,
+  },
+  {
+    id: "history-delete-title",
+    chord: { input: "X", shift: true },
+    display: "⇧X",
+    label: "Delete whole title from history",
+    hintLabel: "delete title",
+    scope: "history",
+    group: "History",
+    footerPriority: 36,
+  },
 
   // ── Notifications ──
   {

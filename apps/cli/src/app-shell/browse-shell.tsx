@@ -38,6 +38,7 @@ import {
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
 import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
+import { setBrowseIdleRefreshListener } from "./browse-idle-context";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -359,6 +360,21 @@ export function BrowseShell<T>({
       requestGate.invalidate();
     };
   }, [idleContextRequestGate, loadIdleContext]);
+
+  useEffect(() => {
+    if (!loadIdleContext) return undefined;
+    setBrowseIdleRefreshListener(() => {
+      void (async () => {
+        try {
+          const next = await loadIdleContext();
+          setActiveIdleContext(next);
+        } catch {
+          // best-effort refresh after history mutations
+        }
+      })();
+    });
+    return () => setBrowseIdleRefreshListener(null);
+  }, [loadIdleContext]);
 
   const [companionDetails, setCompanionDetails] = useState<DetailsPanelData>(() =>
     buildDetailsPanelDataFromBrowseOption(initialResults?.[initialSelectedIndex ?? 0]),
