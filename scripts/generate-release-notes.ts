@@ -3,38 +3,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import {
+  RELEASE_ARTIFACT_SCHEMA_VERSION,
+  publicationStateFromUnknown,
+  type ReleaseBinaryChecksum,
+  type ReleaseNotesArtifact,
+  type ReleaseNotesSection,
+} from "./release-artifact.ts";
 import { artifactWithoutBinaryChecksums } from "./release-binary-checksums.ts";
 import { parseRootChangelogEntry, parseTopCliChangelogEntry } from "./release-changelog.ts";
 
-export type ReleaseNotesSection = {
-  readonly title: string;
-  readonly body: string;
-  readonly items: readonly string[];
-};
-
-export type ReleaseBinaryChecksum = {
-  readonly name: string;
-  readonly sha256: string;
-};
-
-export type ReleaseNotesArtifact = {
-  readonly schemaVersion: 1;
-  readonly packageName: string;
-  readonly version: string;
-  readonly tag: string;
-  readonly title: string;
-  readonly date: string | null;
-  readonly summary: string;
-  readonly sections: readonly ReleaseNotesSection[];
-  readonly changelogBody: string;
-  readonly install: {
-    readonly npm: string;
-    readonly bunx: string;
-    readonly binaryLatest: string;
-  };
-  /** Populated after `build:binaries` merges `dist/bin/SHA256SUMS` (optional in repo). */
-  readonly assets?: readonly ReleaseBinaryChecksum[];
-};
+export type { ReleaseBinaryChecksum, ReleaseNotesArtifact, ReleaseNotesSection };
+export { RELEASE_ARTIFACT_SCHEMA_VERSION } from "./release-artifact.ts";
 
 export type BuildReleaseNotesArtifactInput = {
   readonly packageName: string;
@@ -85,7 +65,9 @@ export function buildReleaseNotesArtifact(
   const parts = parseReleaseBodySections(input.body);
   const tag = `v${input.version}`;
   return {
-    schemaVersion: 1,
+    schemaVersion: RELEASE_ARTIFACT_SCHEMA_VERSION,
+    status: "staged",
+    publishedAt: null,
     packageName: input.packageName,
     version: input.version,
     tag,
@@ -173,31 +155,57 @@ function artifactPaths(version: string): { readonly json: string; readonly markd
   return { json: `${base}.json`, markdown: `${base}.md` };
 }
 
+type PreservedDiskFields = {
+  readonly assets?: readonly ReleaseBinaryChecksum[];
+  readonly status?: ReleaseNotesArtifact["status"];
+  readonly publishedAt?: string | null;
+};
+
 function serializeArtifact(
   artifact: ReleaseNotesArtifact,
-  publishedChecksums?: readonly ReleaseBinaryChecksum[],
+  preserved?: PreservedDiskFields,
 ): string {
   const base = artifactWithoutBinaryChecksums(artifact);
-  const merged = publishedChecksums ? { ...base, assets: publishedChecksums } : base;
+  const withPublication =
+    preserved?.status !== undefined
+      ? {
+          ...base,
+          status: preserved.status,
+          publishedAt: preserved.publishedAt ?? null,
+        }
+      : base;
+  const merged = preserved?.assets
+    ? { ...withPublication, assets: preserved.assets }
+    : withPublication;
   return `${JSON.stringify(merged, null, 2)}\n`;
 }
 
 /**
- * Checksums already merged into the artifact on disk, if any.
+ * Checksums and publication state already merged into the artifact on disk.
  *
  * Note generation deliberately does not author checksums — only the release
- * pipeline may (see `release-binary-checksums.ts`). But that made a plain
- * rewrite silently *delete* whatever CI had merged in, and `checkArtifact`
- * compares with checksums excluded on both sides, so the gate could not see the
- * loss: regenerating notes locally destroyed published hashes and still
- * reported OK. Carrying them forward keeps regeneration non-destructive without
- * ever authoring a hash here.
+ * pipeline may (see `release-binary-checksums.ts`). Publication status is owned
+ * by `set-release-status.ts`. Carrying both forward keeps regeneration
+ * non-destructive.
  */
-function readPublishedChecksums(path: string): readonly ReleaseBinaryChecksum[] | undefined {
+function readPreservedDiskFields(path: string): PreservedDiskFields | undefined {
   if (!existsSync(path)) return undefined;
   try {
-    const onDisk = JSON.parse(readFileSync(path, "utf8")) as ReleaseNotesArtifact;
-    return onDisk.assets && onDisk.assets.length > 0 ? onDisk.assets : undefined;
+    const onDisk = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    const publication = publicationStateFromUnknown(onDisk);
+    const assets =
+      onDisk &&
+      typeof onDisk === "object" &&
+      "assets" in onDisk &&
+      Array.isArray((onDisk as ReleaseNotesArtifact).assets) &&
+      (onDisk as ReleaseNotesArtifact).assets!.length > 0
+        ? (onDisk as ReleaseNotesArtifact).assets
+        : undefined;
+    if (!publication && !assets) return undefined;
+    return {
+      ...(assets ? { assets } : {}),
+      ...(publication ? { status: publication.status, publishedAt: publication.publishedAt } : {}),
+    };
   } catch {
     // A corrupt artifact is about to be overwritten anyway; nothing to preserve.
     return undefined;
@@ -213,11 +221,24 @@ export async function writeArtifact({
 }): Promise<void> {
   const markdownPath = path.replace(/\.json$/, ".md");
   mkdirSync(dirname(path), { recursive: true });
-  const published = readPublishedChecksums(path);
-  writeFileSync(path, serializeArtifact(artifact, published), "utf8");
+  const preserved = readPreservedDiskFields(path);
+  writeFileSync(path, serializeArtifact(artifact, preserved), "utf8");
   writeFileSync(markdownPath, renderReleaseNotesMarkdown(artifact), "utf8");
   console.log(`[release-notes] wrote ${path}`);
   console.log(`[release-notes] wrote ${markdownPath}`);
+}
+
+/** Compare note content only — assets and publication state are owned elsewhere. */
+function artifactForNotesCheck(
+  artifact: ReleaseNotesArtifact,
+): Omit<ReleaseNotesArtifact, "assets" | "status" | "publishedAt"> {
+  const {
+    assets: _assets,
+    status: _status,
+    publishedAt: _publishedAt,
+    ...rest
+  } = artifactWithoutBinaryChecksums(artifact) as ReleaseNotesArtifact;
+  return rest;
 }
 
 function checkArtifact(artifact: ReleaseNotesArtifact): void {
@@ -229,8 +250,8 @@ function checkArtifact(artifact: ReleaseNotesArtifact): void {
     errors.push(`${paths.json} is missing.`);
   } else {
     const onDisk = JSON.parse(readFileSync(paths.json, "utf8")) as ReleaseNotesArtifact;
-    const expected = artifactWithoutBinaryChecksums(artifact);
-    const actual = artifactWithoutBinaryChecksums(onDisk);
+    const expected = artifactForNotesCheck(artifact);
+    const actual = artifactForNotesCheck(onDisk);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       errors.push(`${paths.json} is out of date.`);
     }

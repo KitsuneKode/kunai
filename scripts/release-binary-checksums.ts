@@ -1,12 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { ReleaseNotesArtifact } from "./generate-release-notes.ts";
+import type { ReleaseBinaryChecksum, ReleaseNotesArtifact } from "./release-artifact.ts";
 
-export type ReleaseBinaryChecksum = {
-  readonly name: string;
-  readonly sha256: string;
-};
+export type { ReleaseBinaryChecksum };
 
 /**
  * Only the release pipeline may author the checksums in `.release/*.json`.

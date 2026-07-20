@@ -83,7 +83,9 @@ describe("buildReleaseNotesArtifact", () => {
     });
 
     expect(artifact).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      status: "staged",
+      publishedAt: null,
       packageName: "@kitsunekode/kunai",
       version: "0.2.6",
       tag: "v0.2.6",
