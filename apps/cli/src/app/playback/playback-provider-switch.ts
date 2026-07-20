@@ -29,7 +29,7 @@ export function resolveTitleProviderPreferenceForTitle(
   return resolveTitleProviderPreference(config, canonicalId, title.id);
 }
 
-async function persistTitleProviderPreference(
+export async function persistTitleProviderPreference(
   container: Pick<Container, "config">,
   title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
   providerId: string,
@@ -48,6 +48,29 @@ async function persistTitleProviderPreference(
   nextPrefs[canonicalId] = providerId;
   await container.config.update({ titleProviderPreferences: nextPrefs });
   await container.config.save();
+}
+
+export async function clearTitleProviderPreference(
+  container: Pick<Container, "config">,
+  title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">,
+  mode?: ShellMode,
+): Promise<boolean> {
+  const raw = container.config.getRaw();
+  const canonicalId = resolveTitleHistoryLookupId(title, mode);
+  const nextPrefs = { ...raw.titleProviderPreferences };
+  let changed = false;
+  if (canonicalId in nextPrefs) {
+    delete nextPrefs[canonicalId];
+    changed = true;
+  }
+  if (title.id !== canonicalId && title.id in nextPrefs) {
+    delete nextPrefs[title.id];
+    changed = true;
+  }
+  if (!changed) return false;
+  await container.config.update({ titleProviderPreferences: nextPrefs });
+  await container.config.save();
+  return true;
 }
 
 /**

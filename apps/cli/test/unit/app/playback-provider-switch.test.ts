@@ -4,6 +4,7 @@ import {
   applyProviderPickerSelection,
   applyTitleProviderPreferenceToSession,
   applyUserProviderSwitch,
+  clearTitleProviderPreference,
   resolveTitleProviderPreferenceForTitle,
 } from "@/app/playback/playback-provider-switch";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
@@ -322,5 +323,30 @@ describe("playback provider switch", () => {
     expect(currentProvider).toBe("vidlink");
     expect(deletedProviders.sort()).toEqual(["rivestream", "vidlink"]);
     expect(recomputeReasons).toEqual(["provider-picker-switch"]);
+  });
+
+  test("clearTitleProviderPreference removes only the canonical title pin", async () => {
+    const updates: Array<Partial<KitsuneConfig>> = [];
+    const container = {
+      config: {
+        getRaw: () => ({
+          titleProviderPreferences: {
+            "anilist:1": "miruro",
+            "anilist:2": "vidking",
+          },
+        }),
+        update: async (partial: Partial<KitsuneConfig>) => {
+          updates.push(partial);
+        },
+        save: async () => {},
+      },
+    };
+    const cleared = await clearTitleProviderPreference(
+      container as never,
+      { id: "anilist:1", type: "series", isAnime: true },
+      "anime",
+    );
+    expect(cleared).toBe(true);
+    expect(updates.at(-1)?.titleProviderPreferences).toEqual({ "anilist:2": "vidking" });
   });
 });
