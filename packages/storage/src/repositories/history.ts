@@ -21,7 +21,7 @@ export interface HistoryProgressInput {
   readonly durationSeconds?: number;
   readonly completed?: boolean;
   readonly watchedSeconds?: number;
-  readonly lastWatchedAt?: string;
+  readonly lastWatchedAt?: string | null;
   readonly completedAt?: string | null;
   readonly providerId?: ProviderId;
   readonly posterUrl?: string;
@@ -43,7 +43,7 @@ export interface HistoryProgress {
   readonly providerId?: ProviderId;
   readonly externalIds?: ProviderExternalIds;
   readonly posterUrl?: string;
-  readonly lastWatchedAt?: string;
+  readonly lastWatchedAt?: string | null;
   readonly completedAt?: string;
   readonly updatedAt: string;
   readonly createdAt: string;
@@ -97,7 +97,8 @@ export class HistoryRepository {
       }
     }
     const watchedSeconds = resolveWatchedSeconds(input, existing);
-    const lastWatchedAt = input.lastWatchedAt ?? now;
+    const lastWatchedAt =
+      input.lastWatchedAt !== undefined ? input.lastWatchedAt : (existing?.lastWatchedAt ?? now);
     const resolvedCompleted = input.completed ?? existing?.completed ?? false;
     const completedAt =
       input.completedAt === null
@@ -257,7 +258,11 @@ export class HistoryRepository {
       ? resolvePersistedHistoryTitle(input.title, input.providerId)
       : input.title;
     const existing = this.getProgress(persistedTitle, input.episode);
-    const now = input.lastWatchedAt ?? input.updatedAt ?? new Date().toISOString();
+    const updatedAt = input.updatedAt ?? new Date().toISOString();
+    const lastWatchedAt =
+      input.lastWatchedAt !== undefined
+        ? input.lastWatchedAt
+        : (existing?.lastWatchedAt ?? updatedAt);
     this.upsertProgress({
       ...input,
       title: persistedTitle,
@@ -266,9 +271,10 @@ export class HistoryRepository {
         input.completedAt !== undefined
           ? input.completedAt
           : (input.completed ?? existing?.completed)
-            ? (existing?.completedAt ?? now)
+            ? (existing?.completedAt ?? updatedAt)
             : null,
-      lastWatchedAt: now,
+      lastWatchedAt,
+      updatedAt,
     });
   }
 

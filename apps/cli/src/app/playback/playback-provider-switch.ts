@@ -1,5 +1,6 @@
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import type { Container } from "@/container";
+import { decideSoftFallbackPromote } from "@/domain/playback/soft-fallback-preference-policy";
 import {
   providerLaneMatchesMode,
   providerLaneToShellMode,
@@ -27,6 +28,28 @@ export function resolveTitleProviderPreferenceForTitle(
 ): string | undefined {
   const canonicalId = resolveTitleHistoryLookupId(title, mode);
   return resolveTitleProviderPreference(config, canonicalId, title.id);
+}
+
+export async function promoteSoftFallbackAfterEngage(
+  container: Pick<Container, "config">,
+  input: {
+    readonly title: Pick<TitleInfo, "id" | "type" | "externalIds" | "isAnime">;
+    readonly mode?: ShellMode;
+    readonly sessionSoftProviderId: string | null;
+    readonly configuredProviderId: string;
+    readonly engaged: boolean;
+  },
+): Promise<void> {
+  const canonicalTitleId = resolveTitleHistoryLookupId(input.title, input.mode);
+  const promote = decideSoftFallbackPromote({
+    sessionSoftProviderId: input.sessionSoftProviderId,
+    configuredProviderId: input.configuredProviderId,
+    engaged: input.engaged,
+    canonicalTitleId,
+  });
+  if (promote.kind === "promote-durable") {
+    await persistTitleProviderPreference(container, input.title, promote.providerId, input.mode);
+  }
 }
 
 export async function persistTitleProviderPreference(

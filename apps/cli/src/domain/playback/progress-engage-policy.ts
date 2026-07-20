@@ -1,3 +1,5 @@
+import type { EndReason } from "@/domain/types";
+
 export const PERSIST_RESUME_SECONDS = 10;
 export const ENGAGE_SECONDS = 30;
 
@@ -5,7 +7,7 @@ export type ProgressEngageEvidence = {
   readonly trustedProgressSeconds: number;
   readonly durationSeconds: number;
   readonly suspectedDeadStream?: boolean;
-  readonly endReason?: "quit" | "eof" | "error" | "abort";
+  readonly endReason?: EndReason;
   readonly watchedSeconds?: number;
 };
 

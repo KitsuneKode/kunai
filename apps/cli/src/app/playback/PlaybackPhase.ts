@@ -59,6 +59,7 @@ import {
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
 import {
+  promoteSoftFallbackAfterEngage,
   resolveStreamProviderId,
   resolveTitleProviderPreference,
 } from "@/app/playback/playback-provider-switch";
@@ -153,6 +154,7 @@ import {
   describeProviderResolveAttemptDetail,
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
+import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type {
@@ -1530,14 +1532,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
             }
 
-            if (resolvedProviderId !== currentProvider.metadata.id) {
+            const hop = decideSoftFallbackOnResolve({
+              configuredProviderId: currentProvider.metadata.id,
+              resolvedProviderId,
+            });
+            if (hop.kind === "session-soft-hop") {
               logger.info("Resolved stream with fallback provider", {
                 from: currentProvider.metadata.id,
-                fallback: resolvedProviderId,
+                fallback: hop.providerId,
               });
-              run.sessionSoftProviderId = resolvedProviderId;
+              run.sessionSoftProviderId = hop.providerId;
+              this.playbackLedger?.alignProvider(hop.providerId);
               const fallbackName =
-                providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
+                providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
               this.updatePlaybackFeedback(context, {
                 note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
               });
@@ -1963,6 +1970,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               startIntent.suppressResumePrompt,
               playbackCorrelation,
               (stage) => recordStartupMark(stage, preparedStream),
+              run.sessionSoftProviderId ?? resolvedProviderId,
               playbackIterationAbort.signal,
             );
           } catch (error) {
@@ -2045,7 +2053,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               ? new Date().toISOString()
               : (existingProgressForBump?.lastWatchedAt ??
                 existingProgressForBump?.updatedAt ??
-                new Date().toISOString());
+                null);
             if (this.playbackLedger) {
               this.playbackLedger.finalize({
                 positionSeconds: historyTimestamp,
@@ -2073,6 +2081,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 updatedAt: new Date().toISOString(),
               });
             }
+            await promoteSoftFallbackAfterEngage(container, {
+              title,
+              mode: stateManager.getState().mode,
+              sessionSoftProviderId: run.sessionSoftProviderId,
+              configuredProviderId: currentProvider.metadata.id,
+              engaged: decision.isEngaged,
+            });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
             enqueueReleaseReconciliation(
               container,
@@ -3288,6 +3303,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     suppressResumePrompt = false,
     correlation?: DiagnosticCorrelation,
     onStartupMark?: (stage: PlaybackStartupStage) => void,
+    historyProviderId?: string,
     playbackIterationSignal?: AbortSignal,
   ): Promise<PlaybackResult> {
     const {
@@ -3326,8 +3342,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       startedAtMs: Date.now(),
     });
 
+    const ledgerProviderId = historyProviderId ?? stateManager.getState().provider;
     const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
-      providerId: stateManager.getState().provider,
+      providerId: ledgerProviderId,
     });
     this.playbackLedger = new PlaybackHistoryLedger(historyRepository, playbackEventRepository);
     // Shutdown flushes this before releasing mpv, so the latest resume
@@ -3347,7 +3364,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           title.type === "series"
             ? { season: episode.season, episode: episode.episode }
             : undefined,
-        providerId: stateManager.getState().provider,
+        providerId: ledgerProviderId,
         posterUrl: title.posterUrl,
         mediaKind: persistedKind,
       },
