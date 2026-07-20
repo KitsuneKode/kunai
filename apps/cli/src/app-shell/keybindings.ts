@@ -872,16 +872,16 @@ export function commandBackedBindingsForScope(scope: KeyScope): readonly KeyBind
   );
 }
 
-/** Human-readable chord, e.g. "Esc", "↑", "/", "Ctrl+C". */
+/** Human-readable chord using locked glyphs: ⇧ Shift, ⌃ Ctrl. */
 export function formatChord(chord: KeyChord): string {
   const modifiers: string[] = [];
-  if (chord.ctrl) modifiers.push("Ctrl");
-  if (chord.meta) modifiers.push("Alt");
-  if (chord.shift) modifiers.push("Shift");
+  if (chord.ctrl) modifiers.push("⌃");
+  if (chord.shift) modifiers.push("⇧");
   const base = chord.named
     ? (NAMED_LABELS[chord.named] ?? chord.named)
-    : formatPrintable(chord.input ?? "", modifiers.length > 0);
-  return [...modifiers, base].join("+");
+    : formatPrintable(chord.input ?? "", modifiers.length > 0 || chord.meta === true);
+  const core = [...modifiers, base].join("");
+  return chord.meta ? `Alt+${core}` : core;
 }
 
 function formatPrintable(input: string, hasModifier: boolean): string {
@@ -966,7 +966,8 @@ export type FooterBindingsContext = {
 export function footerKeyFromBinding(binding: KeyBinding): string {
   if (binding.display) return binding.display;
   if (binding.chord.named === "return") return "enter";
-  return formatChord(binding.chord).toLowerCase();
+  if (binding.chord.named === "escape") return "esc";
+  return formatChord(binding.chord);
 }
 
 /** Build structured footer actions from the keybinding registry for a scope. */

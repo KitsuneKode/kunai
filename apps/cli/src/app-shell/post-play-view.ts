@@ -19,7 +19,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
-import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
+import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { resolvePostPlayContinueResult } from "./post-play-footer-actions";
 import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -161,7 +161,7 @@ function postPlayShortcut(
   fallback: string,
 ): string {
   const binding = bindings.find((candidate) => candidate.id === bindingId);
-  return binding ? formatChord(binding.chord).toLowerCase() : fallback;
+  return binding ? footerKeyFromBinding(binding) : fallback;
 }
 
 function postPlayShortcutGroup(

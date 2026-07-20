@@ -30,9 +30,12 @@ import {
 import {
   browseFocusZoneReducer,
   createInitialBrowseFocusZone,
+  isBareBrowseLetterHotkey,
   isBrowseFilterFocused,
   isBrowseIdleFocused,
   isBrowseListFocused,
+  isReservedBrowseSurfaceChord,
+  shouldSuppressBrowseLetterHotkeys,
   type BrowseFocusZone,
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
@@ -1245,6 +1248,14 @@ export function BrowseShell<T>({
       setCommandMode(true);
       setCommandInput("");
       setHighlightedCommandIndex(0);
+      return;
+    }
+
+    if (
+      shouldSuppressBrowseLetterHotkeys({ commandMode: false, focusZone }) &&
+      isBareBrowseLetterHotkey(input, key) &&
+      !isReservedBrowseSurfaceChord(input, key)
+    ) {
       return;
     }
 

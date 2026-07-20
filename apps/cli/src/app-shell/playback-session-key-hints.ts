@@ -1,4 +1,4 @@
-import { formatChord, KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
+import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "@/app-shell/keybindings";
 import { isLocalPlaybackStream } from "@/app/playback/playback-source-ui";
 import {
   buildPlaybackControlSummary,
@@ -35,7 +35,7 @@ function appendBindingHint(
   const binding = findHintBinding(id, bindings);
   if (!binding) return;
   parts.push(
-    `${formatChord(binding.chord)} ${labelOverride ?? binding.hintLabel ?? binding.label}`,
+    `${footerKeyFromBinding(binding)} ${labelOverride ?? binding.hintLabel ?? binding.label}`,
   );
 }
 

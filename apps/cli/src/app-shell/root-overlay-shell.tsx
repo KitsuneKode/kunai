@@ -91,7 +91,11 @@ import {
   notificationsFooterActions,
   queueFooterActions,
 } from "./overlay-footer-actions";
-import { isOverlayCancelActive, shouldHandleOverlayEscape } from "./overlay-input-safety";
+import {
+  isOverlayCancelActive,
+  shouldHandleOverlayEscape,
+  shouldHistoryOverlayAcceptFilterInput,
+} from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
 import { type BrowseOverlay, OverlayPanel } from "./overlay-panel";
 import {
@@ -1183,6 +1187,7 @@ export function RootOverlayShell({
     const cancelActive = isOverlayCancelActive({
       overlay,
       pickerFilterQuery,
+      historyPendingDelete,
     });
 
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1691,7 +1696,14 @@ export function RootOverlayShell({
         });
         return;
       }
-      if (filterEditor.handleInput(input, key)) {
+      if (
+        shouldHistoryOverlayAcceptFilterInput({
+          overlayType: overlay.type,
+          pendingDelete: historyPendingDelete,
+          sourceChoiceTitleId: historySourceChoiceTitleId,
+        }) &&
+        filterEditor.handleInput(input, key)
+      ) {
         return;
       }
     }

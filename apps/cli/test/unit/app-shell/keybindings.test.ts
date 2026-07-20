@@ -24,8 +24,16 @@ test("formatChord renders printable, named, and modified chords", () => {
   expect(formatChord({ named: "tab" })).toBe("Tab");
   expect(formatChord({ named: "upArrow" })).toBe("↑");
   expect(formatChord({ named: "downArrow" })).toBe("↓");
-  expect(formatChord({ input: "c", ctrl: true })).toBe("Ctrl+C");
+  expect(formatChord({ input: "c", ctrl: true })).toBe("⌃C");
   expect(formatChord({ input: "r", meta: true })).toBe("Alt+R");
+  expect(formatChord({ input: "x", shift: true })).toBe("⇧X");
+});
+
+test("footerKeyFromBinding preserves registry letter case for history delete", () => {
+  const episode = KEYBINDINGS.find((binding) => binding.id === "history-delete-episode")!;
+  const title = KEYBINDINGS.find((binding) => binding.id === "history-delete-title")!;
+  expect(footerKeyFromBinding(episode)).toBe("x");
+  expect(footerKeyFromBinding(title)).toBe("⇧X");
 });
 
 test("matchBinding matches a named-key chord within scope", () => {

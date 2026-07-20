@@ -1,6 +1,6 @@
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
-import { formatChord, KEYBINDINGS, type KeyBinding } from "../keybindings";
+import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "../keybindings";
 import type { FooterAction, ShellAction } from "../types";
 import type { TitleControlActionId, TitleControlContext } from "./title-control-actions";
 import { buildTitleControlActions } from "./title-control-actions";
@@ -78,7 +78,7 @@ function actionFromBinding(
 ): FooterAction {
   const binding = options.bindings.find((candidate) => candidate.id === id);
   return {
-    key: binding ? formatChord(binding.chord).toLowerCase() : "",
+    key: binding ? footerKeyFromBinding(binding) : "",
     label: options.label ?? binding?.hintLabel ?? binding?.label ?? action,
     action,
     primary: options.primary,

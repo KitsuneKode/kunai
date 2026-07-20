@@ -1,6 +1,6 @@
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
-import { formatChord, KEYBINDINGS, type KeyBinding } from "./keybindings";
+import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { selectFooterActions } from "./shell-primitives";
 import type { FooterAction, LoadingShellState, ShellMode } from "./types";
 
@@ -33,7 +33,7 @@ function footerActionFromBinding(
 ): FooterAction {
   const binding = bindings.find((candidate) => candidate.id === id);
   return {
-    key: binding ? formatChord(binding.chord).toLowerCase() : "",
+    key: binding ? footerKeyFromBinding(binding) : "",
     label: options.label ?? binding?.hintLabel ?? binding?.label ?? String(action),
     action,
     primary: options.primary,

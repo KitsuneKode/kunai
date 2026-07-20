@@ -96,3 +96,31 @@ export function isBrowseIdleFocused(zone: BrowseFocusZone): boolean {
 export function isBrowseTextInputZone(zone: BrowseFocusZone): boolean {
   return zone === "query" || zone === "filter";
 }
+
+/** True while command palette or a browse text field owns printable input. */
+export function shouldSuppressBrowseLetterHotkeys(input: {
+  readonly commandMode: boolean;
+  readonly focusZone: BrowseFocusZone;
+}): boolean {
+  return input.commandMode || isBrowseTextInputZone(input.focusZone);
+}
+
+/** Bare a–z hotkeys (no modifiers) that must not fire while text input owns focus. */
+export function isBareBrowseLetterHotkey(
+  input: string,
+  key: { readonly ctrl?: boolean; readonly meta?: boolean; readonly shift?: boolean },
+): boolean {
+  if (key.ctrl || key.meta || key.shift) return false;
+  return input.length === 1 && /^[a-zA-Z]$/.test(input);
+}
+
+/** Chords that still route while the search/command line owns focus (Ctrl+C, `/`, Esc). */
+export function isReservedBrowseSurfaceChord(
+  input: string,
+  key: { readonly ctrl?: boolean; readonly meta?: boolean; readonly escape?: boolean },
+): boolean {
+  if (key.escape) return true;
+  if ((input === "c" && key.ctrl) || input === "\x03") return true;
+  if (input === "/" && !key.ctrl && !key.meta) return true;
+  return false;
+}
