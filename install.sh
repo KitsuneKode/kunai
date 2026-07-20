@@ -19,9 +19,10 @@ KUNAI_PACKAGE="${KUNAI_PACKAGE:-@kitsunekode/kunai}"
 KUNAI_DL_BASE="${KUNAI_DL_BASE:-https://github.com/KitsuneKode/kunai/releases}"
 KUNAI_RELEASES_API="${KUNAI_RELEASES_API:-https://api.github.com/repos/KitsuneKode/kunai/releases/latest}"
 BIN_DIR="${KUNAI_BIN_DIR:-$HOME/.local/bin}"
+SOURCE_DIR="${KUNAI_SOURCE_DIR:-${KUNAI_INSTALL_DIR:-$HOME/.local/src/kunai}}"
 CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
-INSTALL_DIR="${KUNAI_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
-DATA_DIR="${KUNAI_DATA_DIR:-$INSTALL_DIR}"
+DATA_DIR="${KUNAI_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
+CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 
 METHOD="binary"
 VERSION="latest"
@@ -345,18 +346,25 @@ install_bun() {
 install_source() {
 	require git
 	ensure_bun
-	info "Cloning Kunai into $INSTALL_DIR..."
-	run mkdir -p "$(dirname "$INSTALL_DIR")"
-	if [[ -d "$INSTALL_DIR/.git" ]]; then
-		run git -C "$INSTALL_DIR" pull --ff-only
+	info "Cloning Kunai into $SOURCE_DIR..."
+	if [[ "$SOURCE_DIR" == "$DATA_DIR" || "$SOURCE_DIR" == "$CONFIG_DIR" ]]; then
+		err "Source checkout path must not equal Kunai data or config paths."
+		exit 1
+	fi
+
+	if [[ -d "$SOURCE_DIR/.git" ]]; then
+		run git -C "$SOURCE_DIR" pull --ff-only
+	elif [[ -e "$SOURCE_DIR" ]]; then
+		err "Refusing to replace existing non-checkout path: $SOURCE_DIR"
+		exit 1
 	else
-		run rm -rf "$INSTALL_DIR"
-		run git clone --depth 1 "$KUNAI_REPO" "$INSTALL_DIR"
+		run mkdir -p "$(dirname "$SOURCE_DIR")"
+		run git clone --depth 1 "$KUNAI_REPO" "$SOURCE_DIR"
 	fi
 	if [[ "$DRY" == 1 ]]; then
-		info "[dry-run] would run in $INSTALL_DIR: bun install && bun run build && bun run link:global"
+		info "[dry-run] would run in $SOURCE_DIR: bun install && bun run build && bun run link:global"
 	else
-		(cd "$INSTALL_DIR" && bun install && bun run build && bun run link:global)
+		(cd "$SOURCE_DIR" && bun install && bun run build && bun run link:global)
 	fi
 	write_manifest source "$VERSION" "$(command -v kunai || echo kunai)"
 }
