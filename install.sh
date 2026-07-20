@@ -347,8 +347,8 @@ install_source() {
 	require git
 	ensure_bun
 	info "Cloning Kunai into $SOURCE_DIR..."
-	if [[ "$SOURCE_DIR" == "$DATA_DIR" || "$SOURCE_DIR" == "$CONFIG_DIR" ]]; then
-		err "Source checkout path must not equal Kunai data or config paths."
+	if [[ "$SOURCE_DIR" == "$DATA_DIR" || "$SOURCE_DIR" == "$CONFIG_DIR" || "$SOURCE_DIR" == "$CACHE_DIR" ]]; then
+		err "Source checkout path must not equal Kunai data, config, or cache paths."
 		exit 1
 	fi
 

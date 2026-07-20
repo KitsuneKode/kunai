@@ -7,10 +7,12 @@ fail() { printf '  FAIL %s\n       %s\n' "$1" "${2:-}"; failures=$((failures + 1
 
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_CACHE_HOME="$HOME/.cache"
 export KUNAI_SOURCE_DIR="$HOME/.local/src/kunai"
 export KUNAI_CONFIG_DIR="$XDG_CONFIG_HOME/kunai"
 
 data_dir="$XDG_DATA_HOME/kunai"
+cache_dir="$XDG_CACHE_HOME/kunai"
 source_dir="$KUNAI_SOURCE_DIR"
 seed="$data_dir/seeded-history.txt"
 shim_dir="$HOME/test-bin"
@@ -45,5 +47,15 @@ export PATH="$shim_dir:$PATH"
 [[ "$source_dir" != "$data_dir" ]] \
   && pass "source and data paths differ" \
   || fail "source and data paths overlap" "$source_dir"
+
+export KUNAI_SOURCE_DIR="$cache_dir"
+if /harness/install.sh --method source --version 0.3.0 --yes --skip-deps; then
+  fail "source install accepted cache path" "$cache_dir"
+else
+  pass "source install rejected cache path"
+fi
+[[ ! -e "$cache_dir" ]] \
+  && pass "source install did not create checkout in cache" \
+  || fail "source install created checkout in cache" "$cache_dir"
 
 (( failures == 0 ))
