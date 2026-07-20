@@ -81,12 +81,12 @@ _Archetype: Technical (Server = Decryption Method)_
 
 ## 3. 0-RAM Implementation Guide & Guardrails
 
-| Provider       | Strategy   | Key / Algorithm                   | Guardrail Notes                                                                              |
-| :------------- | :--------- | :-------------------------------- | :------------------------------------------------------------------------------------------- |
-| **VidKing**    | WASM + AES | `tmdbId` / Empty Key `""`         | WASM binary updates occasionally. Always supply `Origin: https://www.vidking.net`.           |
-| **Miruro**     | Pipe API   | XOR + Gzip / `71951034f...`       | Rate-limited by Cloudflare. Must debounce UI clicks and use AbortSignals.                    |
-| **Rivestream** | API Hash   | Bitwise Hash / Salt Table         | The 64-char `cArray` salt rotates. If extraction fails, fall back to Embed iframe scraping.  |
-| **AllManga**   | GQL + AES  | Persisted Query / `Xot36i3lK3:v1` | Domain `tools.fast4speed.rsvp` streams strictly require `allmanga.to` Referer to avoid 403s. |
+| Provider       | Strategy   | Key / Algorithm                       | Guardrail Notes                                                                                                                                              |
+| :------------- | :--------- | :------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **VidKing**    | WASM + AES | `tmdbId` / Empty Key `""`             | WASM binary updates occasionally. Always supply `Origin: https://www.vidking.net`.                                                                           |
+| **Miruro**     | Pipe API   | XOR + Gzip / `71951034f...`           | Rate-limited by Cloudflare. Must debounce UI clicks and use AbortSignals.                                                                                    |
+| **Rivestream** | API Hash   | Bitwise Hash / Salt Table             | The 64-char `cArray` salt rotates. If extraction fails, fall back to Embed iframe scraping.                                                                  |
+| **AllManga**   | GQL + AES  | Persisted Query / AES-256-GCM `aaReq` | Domain `tools.fast4speed.rsvp` streams strictly require `allmanga.to` Referer to avoid 403s. Key/epoch/build_id rotate upstream; track ani-cli `origin/fix`. |
 
 ---
 

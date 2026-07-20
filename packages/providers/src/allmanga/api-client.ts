@@ -94,13 +94,13 @@ export type AllMangaSourceLane = "baseline" | "ak-only";
  * Previous key was SHA-256("Xot36i3lK3:v1"); episode resolve now requires an
  * AES-GCM `aaReq` attestation or the API returns `AA_CRYPTO_MISSING`.
  */
-export const ALLMANGA_KEY_HEX = "cf4777b5778aeadc9449e12769ea545d00c43cd8ff65d482364586cde204f359";
+export const ALLMANGA_KEY_HEX = "f34fa715e2958b8c1ebc6efa4d089acd8f196d8b83d4b6201586c00c8a52e4a8";
 export const ALLMANGA_QUERY_HASH =
   "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
 /** Upstream clock bucket; rotate with ani-cli when AA_CRYPTO_* errors reappear. */
-export const ALLMANGA_EPOCH = 4130;
+export const ALLMANGA_EPOCH = 6884;
 /** Upstream client build id; sent as `x-build-id` and inside `aaReq`. */
-export const ALLMANGA_BUILD_ID = 41;
+export const ALLMANGA_BUILD_ID = 50;
 
 const HEX: Record<string, string> = {
   "79": "A",
@@ -270,14 +270,20 @@ function extractRawSourcesFromPlaintext(
  * where iv = SHA-256(`${epoch}:${buildId}:${qh}:${ts}`)[0:12]
  * and plaintext is `{"v":1,"ts",…}` encrypted with AES-256-GCM.
  */
-export function buildAllMangaAaReq(nowMs: number = Date.now()): string {
+export function buildAllMangaAaReq(
+  nowMs: number = Date.now(),
+  epochOverride?: number,
+  buildIdOverride?: number,
+): string {
+  const epoch = epochOverride ?? ALLMANGA_EPOCH;
+  const buildId = buildIdOverride ?? ALLMANGA_BUILD_ID;
   const ts = Math.floor(nowMs / 300_000) * 300_000;
-  const payloadIv = `${ALLMANGA_EPOCH}:${ALLMANGA_BUILD_ID}:${ALLMANGA_QUERY_HASH}:${ts}`;
+  const payloadIv = `${epoch}:${buildId}:${ALLMANGA_QUERY_HASH}:${ts}`;
   const payload = JSON.stringify({
     v: 1,
     ts,
-    epoch: ALLMANGA_EPOCH,
-    buildId: String(ALLMANGA_BUILD_ID),
+    epoch,
+    buildId: String(buildId),
     qh: ALLMANGA_QUERY_HASH,
   });
   const iv = createHash("sha256").update(payloadIv).digest().subarray(0, 12);
@@ -577,30 +583,45 @@ export async function resolveEpisodeSources(opts: {
 
   // GET with persisted query + aaReq attestation (ani-cli origin/fix).
   // Without aaReq the API returns AA_CRYPTO_MISSING; POST without aaReq fails the same way.
+  // The server rotates epochs; if AA_CRYPTO_STALE is returned we retry with higher epochs.
   const vars = { showId, translationType: mode, episodeString: epStr };
-  const aaReq = buildAllMangaAaReq();
-  const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
-    JSON.stringify({
-      persistedQuery: { version: 1, sha256Hash: ALLMANGA_QUERY_HASH },
-      aaReq,
-    }),
-  )}`;
+  const maxRetries = 30;
 
   let rawText: string | null = null;
 
-  try {
-    const getRes = await providerFetch(context, getUrl, {
-      signal: createTimeoutSignal(signal, 12_000),
-      headers: {
-        Referer: "https://youtu-chan.com",
-        Origin: "https://youtu-chan.com",
-        "User-Agent": ua,
-        "x-build-id": String(ALLMANGA_BUILD_ID),
-      },
-    });
-    if (getRes.ok) rawText = await getRes.text();
-  } catch {
-    // fall through — empty rawText returns []
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const epochOffset = attempt > 0 ? attempt : 0;
+    const aaReq = buildAllMangaAaReq(undefined, ALLMANGA_EPOCH + epochOffset);
+    const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
+      JSON.stringify({
+        persistedQuery: { version: 1, sha256Hash: ALLMANGA_QUERY_HASH },
+        aaReq,
+      }),
+    )}`;
+
+    try {
+      const getRes = await providerFetch(context, getUrl, {
+        signal: createTimeoutSignal(signal, 12_000),
+        headers: {
+          Referer: "https://youtu-chan.com",
+          Origin: "https://mkissa.to",
+          "User-Agent": ua,
+          "x-build-id": String(ALLMANGA_BUILD_ID),
+        },
+      });
+      if (getRes.ok) rawText = await getRes.text();
+    } catch {
+      // fall through — empty rawText returns []
+    }
+
+    if (!rawText) return [];
+
+    if (rawText.includes('"tobeparsed"') || !rawText.includes("AA_CRYPTO_STALE")) {
+      break;
+    }
+
+    rawText = null;
+    if (attempt > 0) await Bun.sleep(100);
   }
 
   if (!rawText) return [];
