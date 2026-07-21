@@ -38,7 +38,10 @@ import {
 import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
-import type { PlaybackOutcome } from "@/app/playback/playback-outcome";
+import {
+  playlistAdvanceFromQueueIntent,
+  type PlaybackOutcome,
+} from "@/app/playback/playback-outcome";
 import { planPlaylistAutoAdvance } from "@/app/playback/playback-playlist-autoadvance";
 import {
   createPostPlaybackMenuDeps,
@@ -107,6 +110,7 @@ import {
   playbackStartupStageForPlayerEvent,
   summarizeStartupStreamSource,
 } from "@/app/playback/policies/startup-stage-policy";
+import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import {
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
@@ -469,9 +473,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       await selectionCoordinator.applyEpisodeSelection(providerId, target, selection);
     };
     const sourceRefreshCooldown = createSourceRefreshCooldownState();
+    const queueAttempt = title.queuePlaybackIntent
+      ? createQueuePlaybackAttempt(container.queueService, title.queuePlaybackIntent)
+      : null;
 
     try {
       // Episode selection (for series)
+      queueAttempt?.setStage("episode-selection");
       let episode: EpisodeInfo | undefined;
       // One-shot shared start position from a share link (kunai://...&t=). Consumed once
       // here; the series path applies it via the resolver, the movie path inline below.
@@ -763,6 +771,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           run.episodePlaybackSourceOverride = queuedSourceOverride;
           invalidateRecentEpisodeStream(currentEpisode);
         }
+        queueAttempt?.setStage("provider-resolution");
         run.playbackSession = this.transitionPlaybackSession(
           context,
           run.playbackSession,
@@ -1969,6 +1978,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           let result: PlaybackResult;
           try {
+            queueAttempt?.setStage("player-launch");
             result = await this.playStream(
               preparedStream,
               title,
@@ -1984,6 +1994,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               (stage) => recordStartupMark(stage, preparedStream),
               run.sessionSoftProviderId ?? resolvedProviderId,
               playbackIterationAbort.signal,
+              () => {
+                queueAttempt?.acknowledgeStarted();
+              },
             );
           } catch (error) {
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
@@ -2897,37 +2910,43 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
           if (playlistAutoNext?.kind === "queue") {
             const nextPlaylistItem = playlistAutoNext.entry;
-            const nextPlaylistLabel =
-              formatQueueEntryLabel(nextPlaylistItem) ?? nextPlaylistItem.title;
-            const playlistCountdown = await runAutoplayAdvanceCountdown({
-              seconds: 3,
-              signal: context.signal,
-              sleep: (ms) => Bun.sleep(ms),
-              onTick: (remaining) => {
-                this.updatePlaybackFeedback(context, {
-                  detail: "Playlist next ready",
-                  note: `Next: ${nextPlaylistLabel} in ${remaining}s  ·  a to pause`,
-                });
-              },
-              isCancelled: () => stateManager.getState().autoplaySessionPaused,
-            });
-            if (playlistCountdown !== "cancelled") {
-              container.queueService.advance();
-              const titleInfo: TitleInfo = {
-                id: nextPlaylistItem.titleId,
-                name: nextPlaylistItem.title,
-                type: nextPlaylistItem.mediaKind === "movie" ? "movie" : "series",
-              };
-              return {
-                status: "success",
-                value: {
-                  type: "playlist-advance",
-                  titleInfo,
-                  mode: nextPlaylistItem.mediaKind === "anime" ? "anime" : "series",
-                  season: nextPlaylistItem.season,
-                  episode: nextPlaylistItem.episode,
+            const selectedQueueId = nextPlaylistItem.id;
+            const autoNextIntent = container.queueService.beginPlayback(
+              selectedQueueId,
+              "auto-next",
+            );
+            if (autoNextIntent) {
+              const nextPlaylistLabel =
+                formatQueueEntryLabel(nextPlaylistItem) ?? nextPlaylistItem.title;
+              const playlistCountdown = await runAutoplayAdvanceCountdown({
+                seconds: 3,
+                signal: context.signal,
+                sleep: (ms) => Bun.sleep(ms),
+                onTick: (remaining) => {
+                  this.updatePlaybackFeedback(context, {
+                    detail: "Playlist next ready",
+                    note: `Next: ${nextPlaylistLabel} in ${remaining}s  ·  a to pause`,
+                  });
                 },
-              };
+                isCancelled: () => stateManager.getState().autoplaySessionPaused,
+              });
+              if (playlistCountdown !== "cancelled") {
+                return {
+                  status: "success",
+                  value: playlistAdvanceFromQueueIntent({
+                    intent: autoNextIntent,
+                    title: nextPlaylistItem.title,
+                    season: nextPlaylistItem.season,
+                    episode: nextPlaylistItem.episode,
+                  }),
+                };
+              }
+              container.queueService.rollbackBeforeStart(autoNextIntent, {
+                code: "playback-aborted",
+                stage: "handoff",
+                at: new Date().toISOString(),
+                detail: "auto-next countdown cancelled",
+              });
             }
             {
               const autoplayPaused = stateManager.getState().autoplaySessionPaused;
@@ -3106,6 +3125,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         }),
       };
     } finally {
+      queueAttempt?.rollbackIfUnacknowledged("playback-aborted");
       this.updatePlaybackFeedback(context, { detail: null, note: null });
       await player.releasePersistentSession();
     }
@@ -3338,6 +3358,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     onStartupMark?: (stage: PlaybackStartupStage) => void,
     historyProviderId?: string,
     playbackIterationSignal?: AbortSignal,
+    onConfirmedPlaybackStart?: () => void,
   ): Promise<PlaybackResult> {
     const {
       player,
@@ -3458,6 +3479,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       hooks: {
         onFeedback: (update) => this.updatePlaybackFeedback(context, update),
         onStartupMark,
+        onConfirmedPlaybackStart,
         onStartupStallAbort: () => {
           diagnosticsService.record(
             buildPlaybackDiagnosticEvent({

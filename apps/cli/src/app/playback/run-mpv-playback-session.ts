@@ -32,6 +32,11 @@ export type MpvPlaybackSessionHooks = {
   readonly onStartupMark?: (stage: PlaybackStartupStage) => void;
   /** Abort in-flight mpv when the startup stall fires (no first progress within STARTUP_STALL_TIMEOUT_MS). */
   readonly onStartupStallAbort?: () => void | Promise<void>;
+  /**
+   * Fired once on confirmed `playback-started` (not process spawn / IPC).
+   * Queue acknowledgement belongs here.
+   */
+  readonly onConfirmedPlaybackStart?: () => void;
   readonly onPresenceLaunch: (input: {
     readonly positionSeconds: number;
     readonly subtitleCount?: number;
@@ -116,6 +121,7 @@ export async function runMpvPlaybackSession(
   let bootstrapStallTimer: ReturnType<typeof setTimeout> | null = null;
   let startupStallFired = false;
   let startupStallArmed = false;
+  let confirmedPlaybackStartNotified = false;
 
   const clearBootstrapStallTimer = () => {
     if (bootstrapStallTimer !== null) {
@@ -211,6 +217,10 @@ export async function runMpvPlaybackSession(
           hooks.setPlaybackStatus("seeking");
         } else if (event.type === "playback-started") {
           hooks.setPlaybackStatus("playing");
+          if (!confirmedPlaybackStartNotified) {
+            confirmedPlaybackStartNotified = true;
+            hooks.onConfirmedPlaybackStart?.();
+          }
           hooks.onPresenceStarted({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
