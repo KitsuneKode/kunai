@@ -107,13 +107,13 @@ test("formatPlaybackSessionKeysHint lists session state and only available nav k
   expect(hint).toContain("autoplay on");
   expect(hint).toContain("autoskip paused");
   expect(hint).toContain("q stop");
-  expect(hint).toContain("n next");
+  expect(hint).toContain("n / N next");
   expect(hint).not.toContain("p prev");
   expect(hint).not.toContain("-");
   expect(hint).not.toContain("k tracks");
   expect(hint).not.toContain("t tracks");
   expect(hint).toContain("o source");
-  expect(hint).toContain("k quality");
+  expect(hint).toContain("k / K quality");
   expect(hint).toContain("/ commands");
 });
 

@@ -47,7 +47,7 @@ cd "$REPO_ROOT"
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   echo "→ Building linux-x64 + linux-x64-musl binaries..."
-  bun run build:binaries -- --only linux-x64 --only linux-x64-musl
+  bun run --cwd apps/cli build:binaries -- --only linux-x64 --only linux-x64-musl
 fi
 
 GLIBC_BIN="$REPO_ROOT/apps/cli/dist/bin/kunai-linux-x64"

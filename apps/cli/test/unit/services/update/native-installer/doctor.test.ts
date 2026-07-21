@@ -268,4 +268,29 @@ describe("buildDoctorReport", () => {
     expect(text).toContain("missing-version-binary");
     expect(text).toMatch(/Remediation|kunai upgrade/);
   });
+
+  test("checksum failures point to the force-install repair path", async () => {
+    const { root, layout } = await makeRoot();
+    await seedLegacyManifestAndStaleState(root, layout);
+    await writeFile(versionBinaryPath(layout, "1.0.0"), "CORRUPTED-BINARY");
+
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+
+    const finding = report.findings.find(
+      (candidate) =>
+        candidate.code === "version-checksum-mismatch" ||
+        candidate.code === "version-size-mismatch",
+    );
+    expect(finding?.remediation).toContain(
+      "Re-run `kunai install --force` to redownload and reverify.",
+    );
+  });
 });

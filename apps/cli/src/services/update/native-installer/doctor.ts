@@ -332,7 +332,7 @@ function collectFindings(input: {
         severity: "error",
         code: `version-${version.verification}`,
         message: `Version ${version.version}: ${version.detail ?? version.verification}.`,
-        remediation: ["Re-run `kunai upgrade --force` to redownload and reverify."],
+        remediation: ["Re-run `kunai install --force` to redownload and reverify."],
       });
     } else if (
       version.verification === "untrusted-metadata" ||
