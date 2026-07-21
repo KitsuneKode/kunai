@@ -8,6 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$ROOT/../.." && pwd)"
 BIN_DIR="$ROOT/dist/bin"
 SKIP_VERSION=0
 PARTIAL=0
@@ -41,37 +42,45 @@ if [[ "$PARTIAL" -eq 1 ]]; then
     exit 1
   fi
   mapfile -t ASSETS < <(awk '{print $2}' "$BIN_DIR/SHA256SUMS")
-fi
 
-missing=0
-for asset in "${ASSETS[@]}"; do
-  if [[ ! -f "$BIN_DIR/$asset" ]]; then
-    echo "✗ missing $BIN_DIR/$asset" >&2
-    missing=1
-  fi
-done
-if [[ "$missing" -ne 0 ]]; then
-  exit 1
-fi
-
-if [[ ! -f "$BIN_DIR/SHA256SUMS" ]]; then
-  echo "✗ missing $BIN_DIR/SHA256SUMS" >&2
-  exit 1
-fi
-
-(
-  cd "$BIN_DIR"
-  sha256sum -c SHA256SUMS
-)
-
-if [[ "$SKIP_VERSION" -eq 0 && -f "$BIN_DIR/kunai-linux-x64" ]]; then
-  version_out="$("$BIN_DIR/kunai-linux-x64" --version)"
-  echo "$version_out"
-  grep -q '^kunai ' <<<"$version_out" || {
-    echo "✗ kunai-linux-x64 --version must print kunai semver, not Bun runtime" >&2
+  missing=0
+  for asset in "${ASSETS[@]}"; do
+    if [[ ! -f "$BIN_DIR/$asset" ]]; then
+      echo "✗ missing $BIN_DIR/$asset" >&2
+      missing=1
+    fi
+  done
+  if [[ "$missing" -ne 0 ]]; then
     exit 1
-  }
-  "$BIN_DIR/kunai-linux-x64" --help >/dev/null
+  fi
+
+  (
+    cd "$BIN_DIR"
+    sha256sum -c SHA256SUMS
+  )
+
+  if [[ "$SKIP_VERSION" -eq 0 && -f "$BIN_DIR/kunai-linux-x64" ]]; then
+    version_out="$("$BIN_DIR/kunai-linux-x64" --version)"
+    echo "$version_out"
+    grep -q '^kunai ' <<<"$version_out" || {
+      echo "✗ kunai-linux-x64 --version must print kunai semver, not Bun runtime" >&2
+      exit 1
+    }
+    "$BIN_DIR/kunai-linux-x64" --help >/dev/null
+  fi
+
+  echo "✓ release binaries verified (${#ASSETS[@]} targets + SHA256SUMS, partial)"
+  exit 0
 fi
 
-echo "✓ release binaries verified (${#ASSETS[@]} targets + SHA256SUMS)"
+VERSION="$(cd "$ROOT" && bun -e 'console.log(require("./package.json").version)')"
+VERIFY_ARGS=(
+  "$BIN_DIR"
+  --expected-version "$VERSION"
+)
+if [[ "$SKIP_VERSION" -eq 1 ]]; then
+  VERIFY_ARGS+=(--skip-version-smoke)
+fi
+
+bun "$REPO_ROOT/scripts/verify-release-artifact-directory.ts" "${VERIFY_ARGS[@]}"
+echo "✓ release binaries verified (8 targets + SHA256SUMS)"
