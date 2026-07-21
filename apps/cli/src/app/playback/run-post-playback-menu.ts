@@ -1,6 +1,7 @@
 // Post-playback menu inner loop — extracted from PlaybackPhase.execute() so the
 // outer episode loop can call a single function and act on its directive.
 import { resolveCommandContext } from "@/app-shell/commands";
+import { claimQueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
 import type { PlaybackShellResult, PlaybackShellState, ShellAction } from "@/app-shell/types";
 import {
   openTracksPanel,
@@ -11,7 +12,10 @@ import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import type { EpisodePrefetchTarget } from "@/app/playback/episode-prefetch";
 import { buildEpisodeNavigationTransitionContext } from "@/app/playback/playback-episode-navigation";
 import type { PlaybackIteration } from "@/app/playback/playback-iteration";
-import type { PlaybackOutcome } from "@/app/playback/playback-outcome";
+import {
+  playlistAdvanceFromQueueIntent,
+  type PlaybackOutcome,
+} from "@/app/playback/playback-outcome";
 import {
   canAdvanceIntoRecommendation,
   canAutoContinueIntoRecommendation,
@@ -297,6 +301,11 @@ export async function runPostPlaybackMenu(
       }
     }
     const mode = deps.getMode();
+    // Snapshot the queue head once per menu pass for identity + label. Play queued
+    // must claim this id — never a later reordered peekNext() head.
+    const queueHeadSnapshot = container.queueService.peekNext();
+    const queueNextLabel = buildPostPlayQueueNextLabel(queueHeadSnapshot);
+    const queueNextEntryId = queueHeadSnapshot?.id;
     const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
       sessionMode: run.playbackSession.mode,
       hasNextEpisode: Boolean(iteration.episodeAvailability.nextEpisode),
@@ -304,7 +313,7 @@ export async function runPostPlaybackMenu(
       autoplayPaused: run.playbackSession.autoplayPaused,
       autoplaySessionPaused: deps.getAutoplaySessionPaused(),
       aborted: signal.aborted,
-      hasQueuedNext: Boolean(container.queueService.peekNext()),
+      hasQueuedNext: Boolean(queueHeadSnapshot),
       autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
     });
     const recommendationRailItems = await deps.recommendationRail.resolveRailItems({
@@ -317,7 +326,7 @@ export async function runPostPlaybackMenu(
       ? evaluateAutoAdvanceNextUp({
           guards: deps.readAutoAdvanceGuards(),
           nextEpisode: null,
-          queueHead: container.queueService.peekNext(),
+          queueHead: queueHeadSnapshot,
           topRecommendation: topRec
             ? {
                 mediaKind: topRec.type === "movie" ? "movie" : "series",
@@ -476,7 +485,8 @@ export async function runPostPlaybackMenu(
             priorEpisode,
             previousEpisodePickerOption?.label,
           ),
-          queueNextLabel: buildPostPlayQueueNextLabel(container.queueService.peekNext()),
+          queueNextLabel,
+          queueNextEntryId,
           nextEpisodeThumbUrl,
           previousEpisodeThumbUrl,
           totalEpisodes: title.episodeCount ?? iteration.shellEpisodePicker.options.length,
@@ -535,6 +545,30 @@ export async function runPostPlaybackMenu(
               ),
             },
           },
+        };
+      }
+      if (postAction.type === "play-queue-entry") {
+        // Claim the exact advertised id — do not substitute a reordered peekNext head.
+        const launch = claimQueuePlaybackLaunch(
+          container.queueService,
+          postAction.queueEntryId,
+          "post-play",
+        );
+        if (!launch) {
+          container.logger.info("Post-play queue claim failed; leaving row pending for retry", {
+            queueEntryId: postAction.queueEntryId,
+          });
+          continue postPlayback;
+        }
+        await deps.teardownPlaybackForPostPlayExit();
+        return {
+          kind: "playlist-advance",
+          value: playlistAdvanceFromQueueIntent({
+            intent: launch.intent,
+            title: launch.title,
+            season: launch.intent.season,
+            episode: launch.intent.episode,
+          }),
         };
       }
       if (postAction.type === "queue-recommendation") {

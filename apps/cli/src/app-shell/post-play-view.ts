@@ -43,6 +43,8 @@ export type PostPlayActionRow = {
   readonly detail: string;
   readonly shortcut: string;
   readonly primary: boolean;
+  /** Exact queue row when `id` is `queue-next` — never re-peek at resolve time. */
+  readonly queueEntryId?: string;
 };
 
 // ── Discovery card ────────────────────────────────────────────────────────────
@@ -132,6 +134,8 @@ export type BuildPostPlayViewProps = {
    * Netflix-like policy: binge the current series first, else play the queue.
    */
   readonly queueNextLabel?: string;
+  /** Exact queue row id snapped with `queueNextLabel` from one `peekNext()`. */
+  readonly queueNextEntryId?: string;
   readonly resumeLabel?: string;
   readonly postPlayState: PostPlayState;
   readonly recommendations?: readonly PlaybackRecommendationRailItem[];
@@ -241,6 +245,35 @@ function buildNextUpHero(
     };
   }
   return undefined;
+}
+
+/** Primary action when a queue head is advertised on complete / caught-up screens. */
+function buildQueueNextAction(
+  bindings: readonly KeyBinding[],
+  queueNextLabel: string,
+  queueNextEntryId: string,
+): PostPlayActionRow {
+  return {
+    id: "queue-next",
+    label: "Play queued",
+    detail: queueNextLabel,
+    shortcut: `↵ ${postPlayShortcut(bindings, "post-continue", "n")}`,
+    primary: true,
+    queueEntryId: queueNextEntryId,
+  };
+}
+
+function withQueueNextPrimary(
+  bindings: readonly KeyBinding[],
+  props: BuildPostPlayViewProps,
+  actions: readonly PostPlayActionRow[],
+): readonly PostPlayActionRow[] {
+  const { queueNextLabel, queueNextEntryId } = props;
+  if (!queueNextLabel || !queueNextEntryId) return actions;
+  return [
+    buildQueueNextAction(bindings, queueNextLabel, queueNextEntryId),
+    ...actions.map((action) => (action.primary ? { ...action, primary: false } : action)),
+  ];
 }
 
 function buildDiscovery(
@@ -381,7 +414,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       heroLabel: "✓ movie complete",
       heroColor: "ok",
       completionLine: `✓ ${title}`,
-      actions: [
+      actions: withQueueNextPrimary(bindings, props, [
         {
           id: "replay",
           label: "Replay",
@@ -396,7 +429,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           shortcut: postPlayShortcut(bindings, "post-search", "s"),
           primary: false,
         },
-      ],
+      ]),
       discoveryHeading: "because you watched this",
       discovery,
       // Movies have no episode chain, but a queued title can still be Up Next.
@@ -478,7 +511,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       heroLabel: "◉ caught up · airing",
       heroColor: "ok",
       heroSub: airLine,
-      actions: [
+      actions: withQueueNextPrimary(bindings, props, [
         {
           id: "bookmark",
           label: "Bookmark",
@@ -500,7 +533,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           shortcut: postPlayShortcut(bindings, "post-search", "s"),
           primary: false,
         },
-      ],
+      ]),
       discoveryHeading: "you might also like",
       discovery,
       // Caught up on this series, but a queued title can still be Up Next now.
@@ -548,7 +581,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
               primary: false,
             },
           ]
-        : [
+        : withQueueNextPrimary(bindings, props, [
             {
               id: "search",
               label: "Search",
@@ -563,7 +596,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
               shortcut: postPlayShortcut(bindings, "post-episode", "e"),
               primary: false,
             },
-          ],
+          ]),
       discoveryHeading: "you might also like",
       discovery,
       railFacts: buildSeriesRailFacts(props, progressBar),
@@ -594,7 +627,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     heroColor: "milestone",
     heroSub: seriesMeta || undefined,
     celebration,
-    actions: [
+    actions: withQueueNextPrimary(bindings, props, [
       {
         id: "search",
         label: "Search",
@@ -616,7 +649,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         shortcut: postPlayShortcut(bindings, "post-replay", "r"),
         primary: false,
       },
-    ],
+    ]),
     discoveryHeading: "because you finished this",
     discovery,
     // No episode chain remains, but a queued title can still be Up Next.
@@ -702,6 +735,9 @@ function buildSeriesCompleteRailFacts(
 export function isPostPlayPlaybackRestartResult(
   result: import("./types").PlaybackShellResult,
 ): boolean {
+  if (typeof result === "object" && result !== null && result.type === "play-queue-entry") {
+    return true;
+  }
   if (typeof result !== "string") return false;
   return (
     result === "resume" ||
@@ -731,6 +767,11 @@ export type PostPlayUnhandledInputContext = {
    */
   readonly canResume?: boolean;
   readonly hasNextSeason?: boolean;
+  /**
+   * Exact advertised queue row for complete / caught-up (and queue-only finale)
+   * screens. When set, Enter/`n` claim this id — never a later peekNext head.
+   */
+  readonly queueNextEntryId?: string;
 };
 
 export type PostPlayUnhandledInputResult =
@@ -753,6 +794,19 @@ export function resolvePostPlayUnhandledInput(
   }
   const binding = resolveKeybinding(["postPlayback"], input, key);
   if (binding?.id === "post-continue") {
+    // Queue-backed complete / caught-up (and queue-only season finales) advertise
+    // Play queued as the primary verb — `n` must claim that same snapped id.
+    if (
+      context.queueNextEntryId &&
+      (context.postPlayStateKind === "series-complete" ||
+        context.postPlayStateKind === "caught-up" ||
+        (context.postPlayStateKind === "season-finale" && !context.hasNextSeason))
+    ) {
+      return {
+        type: "shell-result",
+        result: { type: "play-queue-entry", queueEntryId: context.queueNextEntryId },
+      };
+    }
     // Resolve `n` through the shared continue policy so the key matches the
     // footer label exactly (resume / next-season / no-op) instead of always
     // firing a bare `next` that dead-ends at season/series boundaries.
@@ -805,6 +859,10 @@ export function resolvePostPlayMenuAction(
       return "resume";
     case "next":
       return "next";
+    case "queue-next":
+      return action.queueEntryId
+        ? { type: "play-queue-entry", queueEntryId: action.queueEntryId }
+        : null;
     case "episodes":
       return "pick-episode";
     case "next-season":

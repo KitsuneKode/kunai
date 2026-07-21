@@ -53,6 +53,31 @@ describe("post-play menu actions", () => {
     expect(isPostPlayPlaybackRestartResult({ type: "track-selection", pick: {} as never })).toBe(
       false,
     );
+    expect(
+      isPostPlayPlaybackRestartResult({ type: "play-queue-entry", queueEntryId: "qe-1" }),
+    ).toBe(true);
+  });
+
+  test("resolvePostPlayMenuAction maps queue-next to the captured queue entry id", () => {
+    expect(
+      resolvePostPlayMenuAction({
+        id: "queue-next",
+        label: "Play queued",
+        detail: "Queued Show · S01E02",
+        shortcut: "↵ n",
+        primary: true,
+        queueEntryId: "qe-advertised",
+      }),
+    ).toEqual({ type: "play-queue-entry", queueEntryId: "qe-advertised" });
+    expect(
+      resolvePostPlayMenuAction({
+        id: "queue-next",
+        label: "Play queued",
+        detail: "missing id",
+        shortcut: "↵ n",
+        primary: true,
+      }),
+    ).toBeNull();
   });
 
   test("isPostPlayConfirmInput accepts return and carriage return", () => {

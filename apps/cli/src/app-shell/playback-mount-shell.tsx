@@ -420,6 +420,7 @@ function PlaybackShell({
     episodeLabel: state.episodeLabel ?? "",
     nextEpisodeLabel: state.nextEpisodeLabel,
     queueNextLabel: state.queueNextLabel,
+    queueNextEntryId: state.queueNextEntryId,
     resumeLabel: state.resumeLabel,
     postPlayState,
     recommendations: activeRecommendations,
@@ -527,6 +528,7 @@ function PlaybackShell({
             postPlayState.kind === "season-finale" ? postPlayState.hasNextSeason : false,
           selectedActionAvailable: postPlayView.actions[selectedActionIndex] !== undefined,
           recommendationCount: activeRecommendations.length,
+          queueNextEntryId: state.queueNextEntryId,
         });
         if (!resolved) return;
         if (resolved.type === "run-selected-action") {
@@ -566,6 +568,7 @@ function PlaybackShell({
           nextEpisodeLabel={state.nextEpisodeLabel}
           previousEpisodeLabel={state.previousEpisodeLabel}
           queueNextLabel={state.queueNextLabel}
+          queueNextEntryId={state.queueNextEntryId}
           resumeLabel={state.resumeLabel}
           postPlayState={postPlayState}
           recommendations={activeRecommendations}

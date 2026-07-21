@@ -157,6 +157,11 @@ export type PlaybackShellState = {
   readonly previousEpisodeLabel?: string;
   /** Cross-title queue head label, shown as Up Next when no episode chain remains. */
   readonly queueNextLabel?: string;
+  /**
+   * Exact queue row id snapped with `queueNextLabel` from one `peekNext()`.
+   * Post-play Play queued / Enter / n must claim this id — never a reordered head.
+   */
+  readonly queueNextEntryId?: string;
   readonly totalEpisodes?: number;
   readonly watchedEpisodes?: number;
   readonly currentSeason?: number;
@@ -395,6 +400,10 @@ export type PlaybackShellResult =
   | {
       readonly type: "open-recommendation-actions";
       readonly items: readonly PlaybackRecommendationRailItem[];
+    }
+  | {
+      readonly type: "play-queue-entry";
+      readonly queueEntryId: string;
     };
 
 export function toShellAction(commandId: AppCommandId): ShellAction {

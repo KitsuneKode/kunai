@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
-import { buildPostPlayView } from "@/app-shell/post-play-view";
+import {
+  buildPostPlayView,
+  resolvePostPlayMenuAction,
+  resolvePostPlayUnhandledInput,
+} from "@/app-shell/post-play-view";
 
 const base = {
   title: "Test Title",
@@ -60,4 +64,67 @@ test("up-next is absent when neither a next episode nor a queue head exists", ()
     queueNextLabel: undefined,
   });
   expect(view.upNext).toBeUndefined();
+});
+
+test("series-complete with a queued item puts queue-next first and resolves Enter to that id", () => {
+  const view = buildPostPlayView({
+    ...base,
+    postPlayState: { kind: "series-complete" },
+    nextEpisodeLabel: undefined,
+    queueNextLabel: "Queued Anime · S01E13",
+    queueNextEntryId: "qe-exact-13",
+  });
+  expect(view.actions[0]?.id).toBe("queue-next");
+  expect(view.actions[0]?.primary).toBe(true);
+  expect(view.actions[0]?.queueEntryId).toBe("qe-exact-13");
+  expect(resolvePostPlayMenuAction(view.actions[0]!)).toEqual({
+    type: "play-queue-entry",
+    queueEntryId: "qe-exact-13",
+  });
+  expect(
+    resolvePostPlayUnhandledInput(
+      "n",
+      {},
+      {
+        postPlayStateKind: "series-complete",
+        selectedActionAvailable: true,
+        recommendationCount: 0,
+        queueNextEntryId: "qe-exact-13",
+      },
+    ),
+  ).toEqual({
+    type: "shell-result",
+    result: { type: "play-queue-entry", queueEntryId: "qe-exact-13" },
+  });
+});
+
+test("caught-up with a queued item puts queue-next first and resolves n to that id", () => {
+  const view = buildPostPlayView({
+    ...base,
+    postPlayState: { kind: "caught-up", nextAirDate: "Thu 23:00" },
+    nextEpisodeLabel: undefined,
+    queueNextLabel: "Next Title",
+    queueNextEntryId: "qe-caught-up-1",
+  });
+  expect(view.actions[0]?.id).toBe("queue-next");
+  expect(view.actions[0]?.primary).toBe(true);
+  expect(resolvePostPlayMenuAction(view.actions[0]!)).toEqual({
+    type: "play-queue-entry",
+    queueEntryId: "qe-caught-up-1",
+  });
+  expect(
+    resolvePostPlayUnhandledInput(
+      "n",
+      {},
+      {
+        postPlayStateKind: "caught-up",
+        selectedActionAvailable: true,
+        recommendationCount: 0,
+        queueNextEntryId: "qe-caught-up-1",
+      },
+    ),
+  ).toEqual({
+    type: "shell-result",
+    result: { type: "play-queue-entry", queueEntryId: "qe-caught-up-1" },
+  });
 });

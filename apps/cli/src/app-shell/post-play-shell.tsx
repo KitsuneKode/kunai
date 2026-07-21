@@ -45,6 +45,8 @@ export type PostPlayShellProps = {
   /** Previous-episode label so the rail can render a distinct PREVIOUS mini-card. */
   previousEpisodeLabel?: string;
   queueNextLabel?: string;
+  /** Exact queue row id snapped with `queueNextLabel` from one `peekNext()`. */
+  queueNextEntryId?: string;
   resumeLabel?: string;
   postPlayState: PostPlayState;
   recommendations?: readonly PlaybackRecommendationRailItem[];
@@ -371,6 +373,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   nextEpisodeLabel,
   previousEpisodeLabel,
   queueNextLabel,
+  queueNextEntryId,
   resumeLabel,
   postPlayState,
   recommendations = EMPTY_RECOMMENDATIONS,
@@ -408,6 +411,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     episodeLabel,
     nextEpisodeLabel,
     queueNextLabel,
+    queueNextEntryId,
     resumeLabel,
     postPlayState,
     recommendations,

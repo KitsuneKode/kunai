@@ -321,6 +321,108 @@ describe("runPostPlaybackMenu", () => {
     const result = await runPostPlaybackMenu(run, iteration, deps);
     expect(result.kind).toBe("restart");
   });
+
+  test("play-queue-entry claims the advertised id via beginPlayback, not a reordered head", async () => {
+    const run = createRun();
+    const endAvailability: EpisodeAvailability = {
+      nextEpisode: null,
+      previousEpisode: { season: 1, episode: 4 },
+      nextSeasonEpisode: null,
+      upcomingNext: null,
+      animeNextReleaseUnknown: false,
+      tmdbUnavailable: false,
+    };
+    const iteration = createBaseIteration({ episodeAvailability: endAvailability });
+
+    const advertised = {
+      id: "qe-advertised",
+      title: "Advertised Title",
+      mediaKind: "series" as const,
+      titleId: "tmdb:99",
+      season: 1,
+      episode: 3,
+    };
+    const reorderedHead = {
+      id: "qe-reordered-head",
+      title: "Reordered Head",
+      mediaKind: "series" as const,
+      titleId: "tmdb:1",
+      season: 1,
+      episode: 1,
+    };
+    let peekCalls = 0;
+    const beginCalls: Array<{ id: string; source: string }> = [];
+    const deps = createDeps({
+      container: {
+        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+        config: { autoplayRecommendations: true, showWatchTimeStats: false },
+        queueService: {
+          peekNext: () => {
+            peekCalls += 1;
+            // After the menu snapshots the advertised head, reorder so a later
+            // peek would return a different row — claim must still use the id.
+            return peekCalls === 1 ? advertised : reorderedHead;
+          },
+          beginPlayback: (id: string, source: string) => {
+            beginCalls.push({ id, source });
+            if (id !== advertised.id) return undefined;
+            return {
+              queueEntryId: advertised.id,
+              titleId: advertised.titleId,
+              mediaKind: "series",
+              season: advertised.season,
+              episode: advertised.episode,
+              source,
+            };
+          },
+          getAll: () => [reorderedHead, advertised],
+        },
+        stateManager: {
+          getState: () => ({
+            mode: "series",
+            autoplaySessionPaused: false,
+            autoskipSessionPaused: false,
+            provider: "allanime",
+            animeLanguageProfile: { subtitle: "en" },
+            seriesLanguageProfile: { subtitle: "en" },
+            videoMeta: null,
+          }),
+          dispatch: () => {},
+        },
+      } as unknown as Container,
+      openPlaybackShell: async (input) => {
+        expect(input.state.queueNextEntryId).toBe("qe-advertised");
+        expect(input.state.queueNextLabel).toContain("Advertised Title");
+        return { type: "play-queue-entry", queueEntryId: "qe-advertised" };
+      },
+      teardownPlaybackForPostPlayExit: async () => {},
+    });
+
+    const result = await runPostPlaybackMenu(run, iteration, deps);
+    expect(result).toEqual({
+      kind: "playlist-advance",
+      value: {
+        type: "playlist-advance",
+        titleInfo: {
+          id: "tmdb:99",
+          name: "Advertised Title",
+          type: "series",
+          queuePlaybackIntent: {
+            queueEntryId: "qe-advertised",
+            titleId: "tmdb:99",
+            mediaKind: "series",
+            season: 1,
+            episode: 3,
+            source: "post-play",
+          },
+        },
+        mode: "series",
+        season: 1,
+        episode: 3,
+      },
+    });
+    expect(beginCalls).toEqual([{ id: "qe-advertised", source: "post-play" }]);
+  });
 });
 
 describe("alignPostPlayProviderRestart", () => {
