@@ -93,7 +93,7 @@ function resolvedResult(providerId: "videasy" | "allanime", url: string, titleId
 }
 
 function pickUrl(input: {
-  title: { id: string; type: string };
+  title: { id: string };
   episode?: { season?: number; episode?: number; absoluteEpisode?: number };
 }): string {
   const id = input.title.id;
@@ -178,8 +178,8 @@ const allanimeManifest = defineProviderManifest({
 export const videasySmokeProviderModule: CoreProviderModule = {
   providerId: "videasy",
   manifest: videasyManifest,
-  async search(query) {
-    const q = query.toLowerCase();
+  async search(input) {
+    const q = input.query.toLowerCase();
     const out = [];
     if (COMPILED_SMOKE_FIXTURES.movie.title.toLowerCase().includes(q) || q.includes("movie")) {
       out.push({
@@ -227,8 +227,8 @@ export const videasySmokeProviderModule: CoreProviderModule = {
 export const allanimeSmokeProviderModule: CoreProviderModule = {
   providerId: "allanime",
   manifest: allanimeManifest,
-  async search(query) {
-    const q = query.toLowerCase();
+  async search(input) {
+    const q = input.query.toLowerCase();
     if (!(COMPILED_SMOKE_FIXTURES.anime.title.toLowerCase().includes(q) || q.includes("anime"))) {
       return [];
     }

@@ -38,6 +38,7 @@ async function playOnce(
 ): Promise<{ readonly endReason: string; readonly sawPlaybackStart: boolean }> {
   let sawPlaybackStart = false;
   const result = await container.player.play(stream(url), {
+    url,
     displayTitle,
     playbackMode,
     onPlaybackEvent: (event) => {
@@ -136,6 +137,7 @@ async function runQueueManual(container: Container): Promise<number> {
   attempt.setStage("player-launch");
   let acknowledged = false;
   const result = await container.player.play(stream(fx.streamUrl), {
+    url: fx.streamUrl,
     displayTitle: fx.claimedTitle,
     playbackMode: "autoplay-chain",
     onPlaybackEvent: (event) => {
@@ -168,6 +170,7 @@ async function runAutoNext(container: Container): Promise<number> {
   const fx = COMPILED_SMOKE_FIXTURES.autoNext;
   let sawPlaybackStart = false;
   const first = await container.player.play(stream(fx.firstStreamUrl), {
+    url: fx.firstStreamUrl,
     displayTitle: `${fx.title} Ep1`,
     playbackMode: "autoplay-chain",
     onPlaybackEvent: (event) => {
@@ -180,6 +183,7 @@ async function runAutoNext(container: Container): Promise<number> {
   if (!sawPlaybackStart && first.endReason !== "eof") return 1;
   sawPlaybackStart = false;
   const second = await container.player.play(stream(fx.secondStreamUrl), {
+    url: fx.secondStreamUrl,
     displayTitle: `${fx.title} Ep2`,
     playbackMode: "autoplay-chain",
     onPlaybackEvent: (event) => {
@@ -220,6 +224,7 @@ async function runFailedHandoff(container: Container): Promise<number> {
   attempt.setStage("player-launch");
   let sawStart = false;
   await container.player.play(stream(fx.streamUrl), {
+    url: fx.streamUrl,
     displayTitle: fx.title,
     playbackMode: "autoplay-chain",
     onPlaybackEvent: (event) => {
@@ -291,6 +296,7 @@ async function runShutdownRestore(container: Container): Promise<number> {
   if (!intent) return 1;
 
   const playPromise = container.player.play(stream(fx.streamUrl), {
+    url: fx.streamUrl,
     displayTitle: fx.title,
     playbackMode: "autoplay-chain",
     onPlaybackEvent: (event) => {

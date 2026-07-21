@@ -7,6 +7,7 @@ import {
   parseVersionFromExecPath,
   versionBinaryPath,
 } from "@/services/update/native-installer/install-layout";
+import type { CanonicalVersion } from "@/services/update/version";
 
 describe("install layout paths", () => {
   test("derives versioned paths from data dir", () => {
@@ -34,7 +35,7 @@ describe("install layout paths", () => {
       platform: "linux",
     });
     const execPath = join(layout.versionsDir, "2.0.1", "kunai");
-    expect(parseVersionFromExecPath(execPath, layout)).toBe("2.0.1");
+    expect(parseVersionFromExecPath(execPath, layout)).toBe("2.0.1" as CanonicalVersion);
     expect(parseVersionFromExecPath("/usr/bin/kunai", layout)).toBeNull();
   });
 

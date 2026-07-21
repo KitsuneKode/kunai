@@ -167,22 +167,24 @@ function sanitizeRoute(route: ReleaseProviderSignoffRoute): ReleaseProviderSigno
 }
 
 function assertRouteShape(route: ReleaseProviderSignoffRoute): void {
+  const { lane } = route;
   if (!route.configuredProvider.trim()) {
-    throw new Error(`Release signoff lane ${route.lane} requires configuredProvider`);
+    throw new Error(`Release signoff lane ${lane} requires configuredProvider`);
   }
-  if (!("successfulProvider" in route)) {
-    throw new Error(`Release signoff lane ${route.lane} requires successfulProvider field`);
+  // Runtime completeness check — `in` would narrow the required field to `never`.
+  if ((route as { successfulProvider?: unknown }).successfulProvider === undefined) {
+    throw new Error(`Release signoff lane ${lane} requires successfulProvider field`);
   }
   if (typeof route.resolved !== "boolean") {
-    throw new Error(`Release signoff lane ${route.lane} requires resolved boolean`);
+    throw new Error(`Release signoff lane ${lane} requires resolved boolean`);
   }
   if (typeof route.streamCandidates !== "number" || !Number.isFinite(route.streamCandidates)) {
-    throw new Error(`Release signoff lane ${route.lane} requires streamCandidates number`);
+    throw new Error(`Release signoff lane ${lane} requires streamCandidates number`);
   }
   if (route.streamReachable !== null && typeof route.streamReachable !== "boolean") {
-    throw new Error(`Release signoff lane ${route.lane} requires streamReachable boolean|null`);
+    throw new Error(`Release signoff lane ${lane} requires streamReachable boolean|null`);
   }
   if (typeof route.durationMs !== "number" || !Number.isFinite(route.durationMs)) {
-    throw new Error(`Release signoff lane ${route.lane} requires durationMs number`);
+    throw new Error(`Release signoff lane ${lane} requires durationMs number`);
   }
 }
