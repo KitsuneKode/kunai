@@ -30,6 +30,10 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 - [ ] **npm / Git** — documented clone + `bun install` + optional `bun run link:global` ([README](README.md), [.docs/quickstart.md](.docs/quickstart.md))
 - [ ] **Runtime requirements match shipped providers** — user-facing docs only list active runtime requirements (`mpv` required; optional `yt-dlp`, optional `ffprobe`, terminal image stack) and avoid stale browser-runtime setup steps
 - [ ] **Platform install guidance is present** — Linux/macOS commands plus Windows package-manager options are documented in root README + npm README + quickstart
+- [ ] **0.3.0 support matrix is exact** — four Linux targets supported; macOS x64/arm64 beta; Windows x64 beta; Windows ARM64 experimental; WSL = Linux env; BSD unsupported binary ([docs/users/supported-and-unsupported.mdx](docs/users/supported-and-unsupported.mdx), [README](README.md))
+- [ ] **Alpine + WSL recipes present** — `apk add mpv yt-dlp ffmpeg` + install.sh; Windows-native vs WSL PATH/mpv/data separated
+- [ ] **Installer troubleshooting present** — `command -v -a kunai`, `Get-Command kunai -All`, doctor text/JSON, ownership, checksum/404, rollback, uninstall-by-owner, unsigned binaries, PATH shadowing ([docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues))
+- [ ] **YouTube cookie safety documented** — `cookiesFromBrowser` / absolute `cookiesFile`; never paste contents; review redacted bundles; no DRM bypass claim
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
 - [ ] **GitHub Release assets** — all 8 binaries + `SHA256SUMS` present (`bun run scripts/verify-github-release-assets.ts`); upload uses `fail_on_unmatched_files: true`
 

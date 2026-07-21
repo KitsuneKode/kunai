@@ -33,6 +33,24 @@ Unknown provider ids in priority arrays are ignored. Providers not listed remain
 
 More on fallback behavior: [Providers](/docs/users/providers).
 
+### YouTube metadata and cookies
+
+```json
+{
+  "youtubeMetadata": {
+    "cookiesFromBrowser": "firefox",
+    "cookiesFile": "/absolute/path/to/cookies.txt"
+  }
+}
+```
+
+- `cookiesFromBrowser` — optional browser profile name for yt-dlp (no default).
+- `cookiesFile` — optional **absolute** path to a cookie file (no default).
+- Never paste cookie contents into issues or chat. Review redacted `/export-diagnostics` bundles before sharing.
+- Kunai does not bypass DRM or YouTube access controls; cookies only help yt-dlp with content your account can already play.
+
+See [Providers → YouTube](/docs/users/providers#youtube).
+
 ### Provider relay
 
 `providerRelay` is optional. Leave `baseUrl` empty for direct provider fetches

@@ -145,17 +145,41 @@ The update panel shows install-method-aware guidance:
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
-## Platform gaps (current)
+## Platform support matrix (0.3.0)
 
-| Platform | Status |
+| Target | Status |
 | --- | --- |
-| Linux glibc x64/arm64 | Supported |
-| Linux musl (Alpine) | Supported via `kunai-linux-*-musl` release binaries |
-| macOS x64/arm64 (Apple Silicon) | Beta |
-| Windows x64 | Beta |
-| Windows ARM64 | Experimental |
-| FreeBSD / BSD | Not published — use npm/bun/source (contributor-oriented) |
+| `linux-x64`, `linux-arm64` (glibc) | **Supported** |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported** |
+| `darwin-x64`, `darwin-arm64` | **Beta** |
+| `windows-x64` | **Beta** |
+| `windows-arm64` | **Experimental** |
+| WSL | Linux binary + Linux mpv/PATH/data — not Windows-native |
+| FreeBSD / other BSD | **Unsupported** binary — npm/bun/source only |
 | Code signing / notarization | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
+
+### Alpine / musl quick start
+
+```sh
+apk add mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+### Windows-native vs WSL
+
+| Concern | Windows-native | WSL |
+| --- | --- | --- |
+| Installer | `install.ps1` | Linux `install.sh` inside the distro |
+| Binary | `kunai.exe` under `%LOCALAPPDATA%\kunai\bin` | `~/.local/bin/kunai` (Linux) |
+| Player | Windows `mpv.exe` on User PATH | Linux `mpv` on WSL PATH |
+| Config / data | `%APPDATA%\kunai`, `%LOCALAPPDATA%\kunai` | `~/.config/kunai`, `~/.local/share/kunai` |
+| Protocol handler | Not registered — use `kunai --open` | Linux-only registration available |
+
+Do not point a Windows-native Kunai at WSL `mpv`, or a WSL Kunai at Windows PATH entries.
+
+When install, PATH, ownership, checksum, or rollback fails, see [Installer troubleshooting](/docs/users/troubleshooting#installer-and-path-issues).
 
 Override the download mirror for air-gapped or future CDN hosting:
 

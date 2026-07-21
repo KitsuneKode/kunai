@@ -64,11 +64,11 @@ The bundle is **redacted by design**. It should include:
 It must **not** include:
 
 - Raw stream URLs or signed query parameters
-- Cookies, authorization headers, or session tokens
+- Cookies, authorization headers, or session tokens (including YouTube `cookiesFromBrowser` / `cookiesFile` material)
 - Private home-directory paths (redacted to placeholders)
 
 <Callout type="warning" title="Review before sharing">
-Open the exported JSON locally before attaching to a public issue or chat. If something sensitive slipped through, redact it manually and note the omission in your report.
+Open the exported JSON locally before attaching to a public issue or chat. If something sensitive slipped through, redact it manually and note the omission in your report. Never paste cookie file contents into the issue body — point to a redacted bundle path only.
 </Callout>
 
 ## Reporting an issue

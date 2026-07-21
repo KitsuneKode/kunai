@@ -79,8 +79,35 @@ If `kunai` is missing or shadowed after install, diagnose PATH and ownership:
 ```bash
 kunai doctor
 kunai doctor --json
-command -v -a kunai   # Linux/macOS: list every kunai on PATH
+command -v -a kunai          # Linux/macOS/WSL: list every kunai on PATH
+# PowerShell: Get-Command kunai -All
+kunai rollback --list        # verified local versions only
+kunai uninstall              # ownership-aware; use npm uninstall -g for npm channel
 ```
+
+### Support matrix (0.3.0)
+
+| Target                                      | Status                                                         |
+| ------------------------------------------- | -------------------------------------------------------------- |
+| Linux glibc/musl x64 + arm64 (four targets) | Supported                                                      |
+| macOS x64/arm64                             | Beta                                                           |
+| Windows x64                                 | Beta                                                           |
+| Windows ARM64                               | Experimental                                                   |
+| WSL                                         | Linux environment (separate from Windows-native PATH/mpv/data) |
+| BSD                                         | Unsupported binary                                             |
+
+Alpine:
+
+```bash
+apk add mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+YouTube cookies (optional): `youtubeMetadata.cookiesFromBrowser` or absolute
+`cookiesFile` — never paste cookie contents into issues; review redacted
+`/export-diagnostics` bundles. No DRM bypass claim.
 
 ## Useful Commands
 

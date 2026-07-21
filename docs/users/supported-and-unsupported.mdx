@@ -75,20 +75,26 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 
 See [Reliability and privacy](/docs/users/reliability-and-privacy).
 
-## Platform support
+## Platform support (0.3.0)
 
-| Platform | Playback | Binary install | Status |
+Exact binary targets and posture:
+
+| Target | Playback | Binary install | Status |
 | --- | --- | --- | --- |
-| Linux (glibc) | mpv | `install.sh` | Supported (x64 and arm64) |
-| Linux (musl/Alpine) | mpv | musl binaries | Supported |
-| macOS | mpv | `install.sh` | Beta (x64 and Apple Silicon; Gatekeeper may block unsigned binary) |
-| Windows x64 | mpv | `install.ps1` | Beta (SmartScreen may warn) |
-| Windows ARM64 | mpv | `install.ps1` | Experimental |
-| FreeBSD / BSD | Source only | Not published | Unsupported binary |
+| `linux-x64` (glibc) | mpv | `install.sh` → `kunai-linux-x64` | **Supported** |
+| `linux-arm64` (glibc) | mpv | `install.sh` → `kunai-linux-arm64` | **Supported** |
+| `linux-x64-musl` (Alpine) | mpv | `install.sh` → `kunai-linux-x64-musl` | **Supported** |
+| `linux-arm64-musl` (Alpine) | mpv | `install.sh` → `kunai-linux-arm64-musl` | **Supported** |
+| `darwin-x64` | mpv | `install.sh` | **Beta** (unsigned; Gatekeeper may block) |
+| `darwin-arm64` | mpv | `install.sh` | **Beta** (unsigned; Gatekeeper may block) |
+| `windows-x64` | mpv | `install.ps1` | **Beta** (SmartScreen may warn) |
+| `windows-arm64` | mpv | `install.ps1` | **Experimental** |
+| WSL (any distro) | mpv (Linux) | Linux `install.sh` | Uses the **Linux** environment — not Windows-native PATH/mpv/data |
+| FreeBSD / other BSD | Source only | Not published | **Unsupported** binary |
 
-Poster previews: Kitty when available, otherwise built-in half-block; `chafa` is optional.
+`kunai://` protocol registration is **Linux-only** (including WSL). Poster previews: Kitty when available, otherwise built-in half-block; `chafa` is optional.
 
-More: [Platforms](/docs/users/platforms).
+More: [Platforms](/docs/users/platforms), [Install and update](/docs/users/install-and-update).
 
 ## Legal and content boundaries
 

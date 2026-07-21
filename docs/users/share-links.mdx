@@ -48,7 +48,7 @@ Register the OS protocol handler (**Linux-only** in 0.3.0):
 kunai --install-protocol-handler
 ```
 
-After registration on Linux, `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation. On macOS/Windows, keep using `kunai --open`.
+After registration on Linux (including WSL), `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation. On macOS and Windows-native, keep using `kunai --open`. A WSL registration does not cover Windows-native browsers outside WSL.
 
 ## URL shape
 

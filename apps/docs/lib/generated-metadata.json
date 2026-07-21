@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-21T06:03:48.951Z",
+  "syncedAt": "2026-07-21T06:10:00.326Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "5a37d999",
+  "cliSourceRevision": "815ea6b2",
   "cliSourceFingerprint": "e33b6fa79cdd43cf46a7a8611f9dba8e7e408aedeccc3955fd7a46e82965b359",
-  "docsContentFingerprint": "cb8591840ff66f767af922c0c951b0380ea6d96054354bf2bb2dc03bf565e9b5",
+  "docsContentFingerprint": "6714ab853bcb4be3f7fdddaf1dfd41e910c758e504dba7a63aef565c42701f46",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],

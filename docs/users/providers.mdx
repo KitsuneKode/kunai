@@ -87,7 +87,23 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 **Config id:** `youtube`. Switch with `/youtube-mode` or the mode cycle.
 
-**Caveats:** requires network; yt-dlp must be available for resolve. This is not a TMDB movie/series provider.
+**Caveats:** requires network; yt-dlp must be available for resolve. This is not a TMDB movie/series provider. Kunai does **not** bypass DRM or circumvent YouTube access controls — it only forwards optional cookies you already have to yt-dlp/mpv.
+
+### Cookie safety (age-restricted / members)
+
+Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → YouTube):
+
+| Key | Safe usage |
+| --- | --- |
+| `cookiesFromBrowser` | Browser name for yt-dlp `--cookies-from-browser` (for example `chrome`, `firefox`). Reads cookies from that browser profile on your machine. |
+| `cookiesFile` | **Absolute** path to a Netscape cookie file passed as yt-dlp `--cookies`. Relative paths are easy to mis-resolve — use an absolute path. |
+
+Safety rules:
+
+- Never paste cookie file contents into issues, chats, or support bundles.
+- Prefer `cookiesFromBrowser` when it works; keep `cookiesFile` private on disk.
+- Before sharing `/export-diagnostics` or `/report-issue` output, open the redacted bundle locally and confirm cookies/tokens/paths stay redacted.
+- There is no shipped default cookie file and no claim of DRM bypass.
 
 </ProviderDocSection>
 

@@ -14,3 +14,6 @@ symptoms:
   - id: share-link-issues
     question: Why does a share link or protocol handler fail?
     anchor: share link or protocol handler issues
+  - id: installer-path-issues
+    question: Why is kunai missing, shadowed, or failing install health?
+    anchor: installer and path issues

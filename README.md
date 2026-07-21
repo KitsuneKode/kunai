@@ -32,6 +32,7 @@ kunai -S "Dune"
   - [Install](#install)
   - [Install by platform](#install-by-platform)
   - [What you need up front](#what-you-need-up-front)
+  - [Support matrix (0.3.0)](#support-matrix-030)
 - [Usage](#usage)
 - [Key Bindings](#key-bindings)
 - [Features](#features)
@@ -183,6 +184,50 @@ winget install yt-dlp hpjansson.Chafa ImageMagick.ImageMagick Gyan.FFmpeg
 > `ffprobe` ships inside the FFmpeg package on every platform.
 
 </details>
+
+<details>
+<summary><b>Alpine / musl</b></summary>
+
+```bash
+apk add mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+</details>
+
+<details>
+<summary><b>WSL</b></summary>
+
+WSL is a **Linux** environment — install Linux `kunai` + Linux `mpv` inside the distro.
+Do not mix Windows-native `kunai.exe` / `mpv.exe` / `%APPDATA%` with WSL PATH or data.
+
+```bash
+# Inside WSL (Debian/Ubuntu example)
+sudo apt install mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+</details>
+
+### Support matrix (0.3.0)
+
+| Target                                        | Status                              |
+| --------------------------------------------- | ----------------------------------- |
+| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                       |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                       |
+| `darwin-x64`, `darwin-arm64`                  | **Beta**                            |
+| `windows-x64`                                 | **Beta**                            |
+| `windows-arm64`                               | **Experimental**                    |
+| WSL                                           | Linux install + Linux mpv/PATH/data |
+| FreeBSD / other BSD                           | **Unsupported** binary              |
+
+Installer health: `kunai doctor` / `kunai doctor --json`. List PATH shadows with
+`command -v -a kunai` (Unix/WSL) or `Get-Command kunai -All` (Windows PowerShell).
+See [docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues).
 
 ### What you need up front
 
@@ -515,6 +560,19 @@ for the detected renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging.
 Keep it current with `kunai upgrade` (channel-aware). Kunai also notifies you
 in-shell when a newer version is published. Package-manager reinstall and source
 `git pull && bun run relink:global` remain secondary paths.
+
+**`kunai` missing, shadowed, or install ownership wrong?**
+Run `kunai doctor` (or `kunai doctor --json`). List every binary with
+`command -v -a kunai` / `Get-Command kunai -All`. Rollback with
+`kunai rollback --list` / `kunai rollback`. Uninstall only via the owning channel
+(`kunai uninstall`, or `npm uninstall -g` for npm). Checksums/404s → pin a
+version or re-verify `SHA256SUMS`. Unsigned beta binaries may need SmartScreen
+unblock or macOS quarantine removal.
+
+**YouTube age-restricted / members content?**
+Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in
+`config.json`. Never paste cookie contents into issues; review redacted
+`/export-diagnostics` bundles first. Kunai does not bypass DRM.
 
 ---
 

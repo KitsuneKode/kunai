@@ -15,16 +15,19 @@ Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and 
 
 ## Support posture (0.3.0)
 
-| Platform | Status |
+| Target | Status |
 | --- | --- |
-| Linux (glibc/musl, x64/arm64) | Supported |
-| macOS x64/arm64 | Beta |
-| Windows x64 | Beta |
-| Windows ARM64 | Experimental |
+| Linux glibc `linux-x64`, `linux-arm64` | **Supported** |
+| Linux musl `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported** |
+| macOS `darwin-x64`, `darwin-arm64` | **Beta** |
+| Windows `windows-x64` | **Beta** |
+| Windows `windows-arm64` | **Experimental** |
+| WSL | Linux install + Linux mpv/PATH/data (not Windows-native) |
+| FreeBSD / other BSD | **Unsupported** binary — npm/bun/source only |
 
-`kunai://` protocol registration is **Linux-only** in 0.3.0. macOS/Windows can still use `kunai --open` without OS handler registration.
+`kunai://` protocol registration is **Linux-only** in 0.3.0 (including WSL). macOS/Windows can still use `kunai --open` without OS handler registration.
 
-<Tabs items={["Linux", "macOS", "Windows", "Source checkout"]}>
+<Tabs items={["Linux", "Alpine / musl", "macOS", "Windows", "WSL", "Source checkout"]}>
 <Tab value="Linux">
 
 Recommended install (self-contained binary — Bun runtime embedded; you do not need Bun installed):
@@ -47,10 +50,24 @@ kunai --setup
 Recommended optional tools:
 
 - `mpv` — playback engine (required for watching; setup/browsing work without it)
-- `yt-dlp` — offline download jobs
+- `yt-dlp` — offline download jobs and YouTube playback
 - `ffprobe` — optional validation of completed artifacts
 - `chafa` — optional richer poster previews (half-block works without it)
 - `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
+
+</Tab>
+<Tab value="Alpine / musl">
+
+Alpine and other musl hosts use the `kunai-linux-*-musl` release assets. `install.sh` selects musl automatically when the host libc is musl.
+
+```sh
+apk add mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+Ensure `~/.local/bin` is on your shell `PATH` after install. Treat this as a normal Linux environment — not a Windows PATH.
 
 </Tab>
 <Tab value="macOS">
@@ -69,7 +86,7 @@ bun install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links.
+Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links. Unsigned binaries may need quarantine cleared — see [Install and update](/docs/users/install-and-update#unsigned-binaries-beta).
 
 </Tab>
 <Tab value="Windows">
@@ -81,9 +98,26 @@ irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 kunai --setup
 ```
 
-Kunai runs where a capable terminal and **mpv** are available. Windows Terminal is the most predictable surface.
+Kunai runs where a capable terminal and **native Windows `mpv.exe`** are available on the **same** PATH as Kunai. Windows Terminal is the most predictable surface.
 
 Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation. Protocol registration is Linux-only — use `kunai --open` for share links.
+
+Do **not** mix this with a WSL install: Windows-native Kunai cannot use WSL `mpv`, WSL PATH entries, or Linux config/data directories.
+
+</Tab>
+<Tab value="WSL">
+
+WSL is a **Linux** environment. Install the Linux binary and Linux tools inside the distro — do not expect Windows-native `kunai.exe` / `mpv.exe` / `%APPDATA%` to apply.
+
+```sh
+# Inside WSL (Ubuntu/Debian example)
+sudo apt install mpv yt-dlp ffmpeg
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+kunai --setup
+```
+
+On Alpine WSL, use the Alpine recipe instead (`apk add …`). Config and data live under the Linux home (`~/.config/kunai`, `~/.local/share/kunai`), separate from any Windows-native install.
 
 </Tab>
 <Tab value="Source checkout">
@@ -97,7 +131,7 @@ bun run dev -- -S "Dune"
 bun run dev -- -a -S "Attack on Titan"
 ```
 
-Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions — not the preferred end-user install.
+Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions — not the preferred end-user install. BSD hosts without a published binary should use this path (or npm/bun global), not `install.sh`.
 
 </Tab>
 </Tabs>
@@ -107,7 +141,8 @@ Source checkouts are the best path for debugging provider changes, playback reco
 - If an opener is missing, Kunai keeps running and leaves you in the current shell context.
 - Provider and Discord live smokes are **manual** release checks — not background activity triggered by normal use.
 - Episode numbers are **1-based** in the UI; providers adapt internally.
-- Discord Rich Presence uses local Unix-socket IPC on Linux/macOS and a named pipe on Windows.
+- Discord Rich Presence uses local Unix-socket IPC on Linux/macOS (and WSL) and a named pipe on Windows-native.
+- Windows-native and WSL installs are separate worlds: separate PATH, separate mpv, separate config/data.
 
 ## Related
 

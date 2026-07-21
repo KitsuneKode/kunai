@@ -221,10 +221,68 @@ More: [Platforms](/docs/users/platforms), [Getting started](/docs/users/getting-
 1. Copy a fresh link with `/share` from an active session — links need `cat=` or `q=` query params.
 2. For clipboard open, run `/watch` immediately after copying (some terminals clear clipboard on focus change).
 3. Trusted terminal launch: `kunai --open "kunai://play?..."` works without OS registration.
-4. Register handler once: `kunai --install-protocol-handler`, then retry from browser or chat app.
+4. Register handler once (**Linux / WSL only**): `kunai --install-protocol-handler`, then retry from browser or chat app. macOS/Windows-native stay on `kunai --open`.
 5. Handoff URLs from the OS may require confirmation — that is expected for untrusted surfaces.
 
 More: [Share links](/docs/users/share-links).
+
+---
+
+## Installer and PATH issues
+
+**Symptoms:** `kunai: command not found`; wrong binary runs; upgrade/uninstall refuses ownership; install fails checksum or 404; unsigned binary blocked; rollback needed after a bad upgrade.
+
+### What to try
+
+1. List every `kunai` on PATH (shadowing is the most common failure):
+
+   ```sh
+   # Linux / macOS / WSL
+   command -v -a kunai
+   ```
+
+   ```powershell
+   # Windows-native PowerShell
+   Get-Command kunai -All
+   ```
+
+2. Run read-only install health:
+
+   ```sh
+   kunai doctor
+   kunai doctor --json
+   ```
+
+   Doctor reports PATH winners, ownership/`install.json`, version metadata, and remediations. It does not migrate or uninstall.
+
+3. **Ownership mismatch:** use the owner channel. Binary installs → `kunai upgrade` / `kunai uninstall`. npm → `npm uninstall -g @kitsunekode/kunai` or ownership-aware `kunai uninstall`. Do not delete a package-manager install with a raw `rm` of another channel's launcher.
+
+4. **Checksum / 404 on install or upgrade:** confirm the release tag exists and `SHA256SUMS` matches. Retry with `kunai upgrade --force` or pin an explicit version (`install.sh … --version X.Y.Z`). A 404 usually means the asset for your target (for example musl vs glibc) is missing — check [Platforms](/docs/users/platforms).
+
+5. **Rollback** to a previously verified local version (does not re-download):
+
+   ```sh
+   kunai rollback --list
+   kunai rollback
+   kunai rollback --to <version>
+   ```
+
+6. **Unsigned binaries (beta):** Windows SmartScreen → `Unblock-File` on `kunai.exe`; macOS Gatekeeper → `xattr -dr com.apple.quarantine` on the install path; Linux → verify against `SHA256SUMS`. Details: [Unsigned binaries](/docs/users/install-and-update#unsigned-binaries-beta).
+
+7. **PATH shadowing:** put the intended install directory first (`~/.local/bin` on Unix, `%LOCALAPPDATA%\kunai\bin` on Windows). Remove or rename earlier shadowed copies. Re-check with `command -v -a kunai` / `Get-Command kunai -All`, then `kunai doctor`.
+
+8. Keep Windows-native and WSL installs separate — different PATH, mpv, and data roots. See [Platforms](/docs/users/platforms).
+
+### Evidence to collect
+
+| Field | Where to find it |
+| --- | --- |
+| PATH candidates / winner | `kunai doctor` or `kunai doctor --json` |
+| Install channel / ownership | `~/.config/kunai/install.json` (Windows: `%APPDATA%\kunai\install.json`) |
+| Checksum / verification | doctor findings; GitHub Release `SHA256SUMS` |
+| Rollback candidates | `kunai rollback --list` |
+
+More: [Install and update](/docs/users/install-and-update), [Platforms](/docs/users/platforms).
 
 ---
 
