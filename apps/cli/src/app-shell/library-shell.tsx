@@ -1,6 +1,13 @@
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import {
+  buildLibraryFlatRows,
+  buildLibraryShelfSections,
+  libraryRowKey,
+  type LibraryShelfRow,
+  type LibraryShelfSection,
+} from "@/app-shell/library-shelf-model";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
 import {
   libraryFooterActions,
@@ -34,17 +41,10 @@ import {
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
-import type { ListItem } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 
 type TabId = "library" | "queue";
-
-type LibraryShelfSection = "in-progress" | "downloaded" | "saved";
-
-type LibraryShelfRow =
-  | { readonly kind: "offline"; readonly group: OfflineLibraryShelfGroup }
-  | { readonly kind: "saved"; readonly item: ListItem };
 
 type LibraryRenderItem =
   | { readonly kind: "section"; readonly label: string }
@@ -54,15 +54,6 @@ type LibraryRenderItem =
       readonly flatIndex: number;
       readonly selected: boolean;
     };
-
-const SHELF_SECTION_ORDER: readonly {
-  readonly key: LibraryShelfSection;
-  readonly label: string;
-}[] = [
-  { key: "in-progress", label: "In progress" },
-  { key: "downloaded", label: "Downloaded" },
-  { key: "saved", label: "Saved" },
-];
 
 export function LibraryShell({
   container,
@@ -189,7 +180,6 @@ function LibraryTab({ container }: { container: Container }) {
   const [entries, setEntries] = useState<
     readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] | null
   >(null);
-  const [watchlist, setWatchlist] = useState<readonly ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -209,7 +199,6 @@ function LibraryTab({ container }: { container: Container }) {
         if (cancelled) return;
         setEntries(result);
         setHistoryMap(history);
-        setWatchlist(container.listService.getWatchlist());
         setLoadError(null);
         setLoading(false);
       } catch (error: unknown) {
@@ -232,19 +221,15 @@ function LibraryTab({ container }: { container: Container }) {
 
   const flatRows = useMemo(() => {
     if (!shelf) return [];
-    const rows = buildLibraryFlatRows(shelf.groups, watchlist, historyMap);
+    const rows = buildLibraryFlatRows({ groups: shelf.groups, historyByTitle: historyMap });
     const normalized = filterQuery.trim().toLowerCase();
     if (!normalized) return rows;
-    return rows.filter((row) => {
-      if (row.kind === "offline") {
-        return row.group.titleName.toLowerCase().includes(normalized);
-      }
-      return row.item.title.toLowerCase().includes(normalized);
-    });
-  }, [shelf, watchlist, historyMap, filterQuery]);
+    return rows.filter((row) => row.group.titleName.toLowerCase().includes(normalized));
+  }, [shelf, historyMap, filterQuery]);
   const sections = useMemo(
-    () => (shelf ? buildLibraryShelfSections(shelf.groups, watchlist, historyMap) : []),
-    [shelf, watchlist, historyMap],
+    () =>
+      shelf ? buildLibraryShelfSections({ groups: shelf.groups, historyByTitle: historyMap }) : [],
+    [shelf, historyMap],
   );
 
   const totalRows = flatRows.length;
@@ -259,7 +244,7 @@ function LibraryTab({ container }: { container: Container }) {
   const showScrollUp = windowStart > 0;
   const showScrollDown = windowEnd < totalRows;
   const selectedRow = totalRows > 0 ? flatRows[safeIndex] : null;
-  const selectedOfflineGroup = selectedRow?.kind === "offline" ? selectedRow.group : null;
+  const selectedOfflineGroup = selectedRow?.group ?? null;
 
   const detailEntries = useMemo(() => {
     if (!detailGroup || !entries) return [];
@@ -419,7 +404,7 @@ function LibraryTab({ container }: { container: Container }) {
     );
   }
 
-  if ((!entries || entries.length === 0) && watchlist.length === 0) {
+  if (!entries || entries.length === 0) {
     return (
       <Box flexDirection="column" flexGrow={1}>
         <StateBlock
@@ -484,23 +469,15 @@ function LibraryTab({ container }: { container: Container }) {
           return <SectionGroup key={`section-${item.label}`} label={item.label} marginTop={1} />;
         }
         const { row, selected } = item;
-        const title =
-          row.kind === "offline"
-            ? formatLibraryTitle(
-                row.group,
-                isLibraryGroupProtected(row.group, entries ?? [], protectedIds),
-              )
-            : row.item.title;
-        const ep =
-          row.kind === "offline"
-            ? formatLibrarySeasonCode(row.group)
-            : formatSavedSeasonCode(row.item);
+        const title = formatLibraryTitle(
+          row.group,
+          isLibraryGroupProtected(row.group, entries ?? [], protectedIds),
+        );
+        const ep = formatLibrarySeasonCode(row.group);
         const status = formatLibraryStatus(row, historyMap);
         return (
           <ListRow
-            key={
-              row.kind === "offline" ? row.group.key : `saved-${row.item.titleId}-${row.item.id}`
-            }
+            key={row.group.key}
             selected={selected}
             rowWidth={rowWidth}
             flexColumnIndex={rowLayout.flexColumnIndex}
@@ -554,50 +531,8 @@ function LibraryTab({ container }: { container: Container }) {
   );
 }
 
-function libraryRowKey(row: LibraryShelfRow): string {
-  return row.kind === "offline" ? row.group.key : `saved:${row.item.titleId}`;
-}
-
-function buildLibraryFlatRows(
-  groups: readonly OfflineLibraryShelfGroup[],
-  watchlist: readonly ListItem[],
-  historyMap: Record<string, HistoryProgress>,
-): LibraryShelfRow[] {
-  const sections = buildLibraryShelfSections(groups, watchlist, historyMap);
-  return sections.flatMap((section) => section.rows);
-}
-
-function buildLibraryShelfSections(
-  groups: readonly OfflineLibraryShelfGroup[],
-  watchlist: readonly ListItem[],
-  historyMap: Record<string, HistoryProgress>,
-): { label: string; rows: LibraryShelfRow[] }[] {
-  const offlineTitleIds = new Set(groups.map((group) => group.titleId));
-  const savedOnly: LibraryShelfRow[] = [];
-  for (const item of watchlist) {
-    if (!offlineTitleIds.has(item.titleId)) {
-      savedOnly.push({ kind: "saved", item });
-    }
-  }
-
-  const buckets: Record<LibraryShelfSection, LibraryShelfRow[]> = {
-    "in-progress": [],
-    downloaded: [],
-    saved: savedOnly,
-  };
-
-  for (const group of groups) {
-    buckets[classifyLibrarySection(group, historyMap)].push({ kind: "offline", group });
-  }
-
-  return SHELF_SECTION_ORDER.map(({ key, label }) => ({
-    label,
-    rows: buckets[key],
-  })).filter((section) => section.rows.length > 0);
-}
-
 function buildVisibleLibraryItems(
-  sections: readonly { label: string; rows: readonly LibraryShelfRow[] }[],
+  sections: readonly LibraryShelfSection[],
   flatRows: readonly LibraryShelfRow[],
   selectedIndex: number,
   windowStart: number,
@@ -624,20 +559,6 @@ function buildVisibleLibraryItems(
     }
   }
   return items;
-}
-
-function classifyLibrarySection(
-  group: OfflineLibraryShelfGroup,
-  historyMap: Record<string, HistoryProgress>,
-): LibraryShelfSection {
-  const hist = historyMap[group.titleId];
-  if (hist && !isFinished(hist) && hist.positionSeconds > 30) {
-    const duration = hist.durationSeconds ?? 0;
-    const pct = duration > 0 ? (hist.positionSeconds / duration) * 100 : 0;
-    if (pct > 0 && pct < 95) return "in-progress";
-  }
-  if (group.readyCount > 0) return "downloaded";
-  return "saved";
 }
 
 function isLibraryGroupProtected(
@@ -673,18 +594,10 @@ function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
   return "—";
 }
 
-function formatSavedSeasonCode(item: ListItem): string {
-  if (typeof item.season === "number") return `S${String(item.season).padStart(2, "0")}`;
-  return "—";
-}
-
 function formatLibraryStatus(
   row: LibraryShelfRow,
   historyMap: Record<string, HistoryProgress>,
 ): { label: string; color: string; dim: boolean } {
-  if (row.kind === "saved") {
-    return { label: "◆ saved", color: palette.dim, dim: true };
-  }
   const { group } = row;
   const hist = historyMap[group.titleId];
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
@@ -703,7 +616,7 @@ function formatLibraryStatus(
   if (group.issueCount > 0) {
     return { label: `${group.issueCount}⚠`, color: palette.accentDeep, dim: false };
   }
-  return { label: "◆ saved", color: palette.dim, dim: true };
+  return { label: "needs attention", color: palette.dim, dim: true };
 }
 
 function buildLibraryPreviewRailModel(

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { buildLibraryShelfSections } from "@/app-shell/library-shelf-model";
+import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import {
   formatOfflineLibraryGroupDetail,
   formatOfflineLibraryGroupLabel,
@@ -118,6 +120,20 @@ describe("offline library status model (B11 / strategy doc 'offline repair')", (
   test("group with no issues does NOT claim a repair path", () => {
     const groups = groupOfflineLibraryEntries([makeEntry("1", "ready")]);
     expect(formatOfflineLibraryGroupDetail(groups[0]!)).not.toContain("needs attention");
+  });
+
+  test("broken offline titles surface under Needs attention, not Watchlist/Saved", () => {
+    const shelf = createOfflineLibraryEngine().buildShelf([
+      makeEntry("1", "missing", { titleId: "t-missing", titleName: "Missing Ep" }),
+      makeEntry("2", "invalid-file", { titleId: "t-invalid", titleName: "Invalid Ep" }),
+    ]);
+    const sections = buildLibraryShelfSections({
+      groups: shelf.groups,
+      historyByTitle: {},
+    });
+    expect(sections.map((section) => section.id)).toEqual(["needs-attention"]);
+    expect(sections[0]?.rows.every((row) => row.kind === "offline")).toBe(true);
+    expect(sections.some((section) => section.id === "downloaded")).toBe(false);
   });
 });
 
