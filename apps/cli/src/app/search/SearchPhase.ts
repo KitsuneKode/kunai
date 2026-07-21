@@ -522,6 +522,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   note: noteForExternalOpenFailure(opened),
                 });
               }
+              return undefined;
             });
           },
           onSearch: async (query) => {
