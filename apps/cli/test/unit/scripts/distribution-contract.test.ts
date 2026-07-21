@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -181,6 +189,52 @@ describe("release workflow candidate-before-publication contract", () => {
     const pub = publish();
     expect(pub).toMatch(/environment:\s*release-production/);
   });
+});
+
+describe("release:pack script contract", () => {
+  const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  const releasePack = rootPackage.scripts["release:pack"] ?? "";
+
+  test("does not use bun --cwd with pm or combine --destination with --filename", () => {
+    expect(releasePack.length).toBeGreaterThan(0);
+    // Bun treats `bun --cwd … pm` as a script named "pm", not `bun pm`.
+    expect(releasePack).not.toMatch(/bun\s+--cwd\b/);
+    // Bun 1.3.14 rejects combining --destination and --filename.
+    const hasDestination = /\s--destination\b/.test(releasePack);
+    const hasFilename = /\s--filename\b/.test(releasePack);
+    expect(hasDestination && hasFilename).toBe(false);
+    expect(releasePack).toContain("bun pm pack");
+    expect(releasePack).toContain("kunai-npm.tgz");
+    expect(releasePack).toContain(".release-candidate");
+  });
+
+  test("bun run release:pack writes a non-empty .release-candidate/kunai-npm.tgz", async () => {
+    const tarball = join(REPO_ROOT, ".release-candidate", "kunai-npm.tgz");
+    try {
+      if (existsSync(tarball)) {
+        unlinkSync(tarball);
+      }
+      const proc = Bun.spawn(["bun", "run", "release:pack"], {
+        cwd: REPO_ROOT,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      expect(exitCode, `release:pack failed\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
+      expect(existsSync(tarball)).toBe(true);
+      expect(statSync(tarball).size).toBeGreaterThan(0);
+    } finally {
+      if (existsSync(tarball)) {
+        unlinkSync(tarball);
+      }
+    }
+  }, 30_000);
 });
 
 describe("verifyReleaseArtifactDirectory", () => {
