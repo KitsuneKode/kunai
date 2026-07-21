@@ -156,6 +156,14 @@ export async function writeInstallManifest(
     throw new Error("Refusing to write install manifest with unsafe managedPaths");
   }
 
+  let previousVersion: string | undefined;
+  if (partial.previousVersion !== undefined) {
+    previousVersion = parseCanonicalVersion(partial.previousVersion) ?? undefined;
+    if (!previousVersion) {
+      throw new Error(`Invalid install manifest previousVersion: ${partial.previousVersion}`);
+    }
+  }
+
   const existing = await inspectInstallManifest(configDir);
   const now = new Date().toISOString();
   const installedAt = existing.status === "loaded" ? existing.manifest.installedAt : now;
@@ -171,7 +179,7 @@ export async function writeInstallManifest(
     installedAt,
     updatedAt: now,
     ...(partial.versionedPath ? { versionedPath: partial.versionedPath } : {}),
-    ...(partial.previousVersion ? { previousVersion: partial.previousVersion } : {}),
+    ...(previousVersion ? { previousVersion } : {}),
     ...(partial.observedProvenance ? { observedProvenance: partial.observedProvenance } : {}),
     ...(partial.target ? { target: partial.target } : {}),
     ...(partial.artifactSha256 ? { artifactSha256: partial.artifactSha256 } : {}),
@@ -231,6 +239,14 @@ function inspectCurrentSchema(
   }
   if (!parseCanonicalVersion(record.activeVersion)) {
     return { status: "invalid", reason: "invalid-version" };
+  }
+  if (record.previousVersion !== undefined) {
+    if (
+      typeof record.previousVersion !== "string" ||
+      !parseCanonicalVersion(record.previousVersion)
+    ) {
+      return { status: "invalid", reason: "invalid-version" };
+    }
   }
   if (
     !Array.isArray(record.managedPaths) ||

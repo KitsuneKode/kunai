@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { win32 } from "node:path";
 
-import { readInstallManifest, type InstallManifest } from "../install-manifest";
+import { inspectInstallManifest, type InstallManifest } from "../install-manifest";
 import { detectInstallMethod } from "../install-method";
 import { findKunaiPathCandidates } from "../path-candidates";
 import { getInstallLayoutPaths } from "./install-layout";
@@ -17,6 +17,7 @@ export type GetInstallDiagnosticsInput = {
   readonly pathExt?: string;
   readonly platform?: NodeJS.Platform;
   readonly fileExists?: (path: string) => boolean;
+  /** Test seam only. Production uses read-only `inspectInstallManifest`. */
   readonly readManifest?: () => Promise<InstallManifest | null>;
 };
 
@@ -27,8 +28,17 @@ function pathsMatch(left: string, right: string, platform: NodeJS.Platform): boo
   return left === right;
 }
 
+async function loadManifestForDiagnostics(
+  readManifest?: () => Promise<InstallManifest | null>,
+): Promise<InstallManifest | null> {
+  if (readManifest) return readManifest();
+  const inspection = await inspectInstallManifest();
+  return inspection.status === "loaded" ? inspection.manifest : null;
+}
+
 /**
  * Install health checks: manifest vs reality, stale npm alongside native, etc.
+ * Never rewrites install.json — inspection only.
  */
 export async function getInstallDiagnostics(
   input: GetInstallDiagnosticsInput = {},
@@ -36,7 +46,7 @@ export async function getInstallDiagnostics(
   const fileExists = input.fileExists ?? existsSync;
   const platform = input.platform ?? process.platform;
   const pathValue = input.pathValue ?? process.env.PATH ?? "";
-  const manifest = await (input.readManifest ?? readInstallManifest)();
+  const manifest = await loadManifestForDiagnostics(input.readManifest);
   const detected = detectInstallMethod({ fileExists, platform });
   const pathCandidates = findKunaiPathCandidates({
     pathValue,

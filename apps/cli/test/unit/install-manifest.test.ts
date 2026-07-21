@@ -255,6 +255,64 @@ test("inspect rejects malicious managed paths on schema v1", async () => {
   expect(await Bun.file(path).text()).toBe(before);
 });
 
+test("inspect rejects invalid previousVersion", async () => {
+  const dir = tempDir();
+  const path = join(dir, "install.json");
+  const bad = {
+    schemaVersion: 1,
+    method: "binary",
+    activeVersion: "1.0.1",
+    previousVersion: "1.0.0-beta",
+    preferredChannel: "stable",
+    launcherPath: "/x/kunai",
+    managedPaths: [],
+    downloadBaseUrl: "https://dl",
+    installedAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  await Bun.write(path, JSON.stringify(bad));
+  const before = await Bun.file(path).text();
+  expect(await inspectInstallManifest(dir)).toMatchObject({
+    status: "invalid",
+    reason: "invalid-version",
+  });
+  expect(await readInstallManifest(dir)).toBeNull();
+  expect(await Bun.file(path).text()).toBe(before);
+});
+
+test("write rejects non-canonical previousVersion", async () => {
+  const dir = tempDir();
+  await expect(
+    writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.0.1",
+        previousVersion: "v1.0.0",
+        launcherPath: "/x/kunai",
+        downloadBaseUrl: "https://dl",
+      },
+      dir,
+    ),
+  ).rejects.toThrow(/previousVersion/);
+});
+
+test("write accepts canonical previousVersion", async () => {
+  const dir = tempDir();
+  await writeInstallManifest(
+    {
+      method: "binary",
+      activeVersion: "1.0.1",
+      previousVersion: "1.0.0",
+      launcherPath: "/x/kunai",
+      versionedPath: "/data/versions/1.0.1/kunai",
+      downloadBaseUrl: "https://dl",
+    },
+    dir,
+  );
+  const m = await readInstallManifest(dir);
+  expect(m?.previousVersion).toBe("1.0.0");
+});
+
 test("write preserves installedAt and refreshes updatedAt", async () => {
   const dir = tempDir();
   await writeInstallManifest(

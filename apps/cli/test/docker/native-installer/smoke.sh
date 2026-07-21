@@ -59,9 +59,10 @@ bash "$REPO/install.sh" --method binary --version 1.0.0 --yes --skip-deps
 
 [[ -L "$KUNAI_BIN_DIR/kunai" ]] || fail "launcher symlink missing"
 [[ -f "$KUNAI_DATA_DIR/versions/1.0.0/kunai" ]] || fail "versioned binary missing"
+# install.sh still writes legacy shape until Task 8; assert bootstrap fields only here.
 grep -q '"layout": "versioned"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json layout"
 grep -q '"versionPath"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json versionPath"
-pass "install.sh created versioned layout"
+pass "install.sh created versioned layout (legacy bootstrap)"
 
 "$KUNAI_BIN_DIR/kunai" --version >/tmp/kunai-version.txt
 grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver, got: $(head -1 /tmp/kunai-version.txt)"
@@ -70,7 +71,10 @@ pass "kunai --version: $(head -1 /tmp/kunai-version.txt)"
 # --- kunai upgrade -> v1.0.1 ---
 "$KUNAI_BIN_DIR/kunai" upgrade
 [[ -f "$KUNAI_DATA_DIR/versions/1.0.1/kunai" ]] || fail "upgrade did not install v1.0.1"
-grep -q '"version": "1.0.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest not updated to 1.0.1"
+grep -q '"schemaVersion": 1' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing schemaVersion"
+grep -q '"method": "binary"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest method not binary"
+grep -q '"activeVersion": "1.0.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest not updated to activeVersion 1.0.1"
+grep -q '"versionedPath"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing versionedPath"
 launcher_target="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
 [[ "$launcher_target" == *"/versions/1.0.1/kunai" ]] || fail "launcher not pointing at 1.0.1 ($launcher_target)"
 pass "kunai upgrade moved launcher to v1.0.1"

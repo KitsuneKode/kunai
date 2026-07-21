@@ -1442,9 +1442,10 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
 async function openUpdateShell(container: Container): Promise<void> {
   const { getPendingRestartVersion } = await import("@/services/update/BinaryAutoUpdater");
   const { getInstallDiagnostics } = await import("@/services/update/native-installer");
-  const { readInstallManifest } = await import("@/services/update/install-manifest");
+  const { inspectInstallManifest } = await import("@/services/update/install-manifest");
 
-  const manifest = await readInstallManifest();
+  const inspection = await inspectInstallManifest();
+  const manifest = inspection.status === "loaded" ? inspection.manifest : null;
   const channel = manifest?.method ?? "unknown";
   const config = container.config.getRaw();
 
