@@ -39,7 +39,7 @@ import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import {
-  playlistAdvanceFromQueueIntent,
+  resolvePlaylistAutoNextCountdown,
   type PlaybackOutcome,
 } from "@/app/playback/playback-outcome";
 import { planPlaylistAutoAdvance } from "@/app/playback/playback-playlist-autoadvance";
@@ -2930,23 +2930,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 },
                 isCancelled: () => stateManager.getState().autoplaySessionPaused,
               });
-              if (playlistCountdown !== "cancelled") {
+              const autoNextDecision = resolvePlaylistAutoNextCountdown({
+                intent: autoNextIntent,
+                title: nextPlaylistItem.title,
+                season: nextPlaylistItem.season,
+                episode: nextPlaylistItem.episode,
+                countdown: playlistCountdown === "cancelled" ? "cancelled" : "advanced",
+              });
+              if (autoNextDecision.kind === "advance") {
                 return {
                   status: "success",
-                  value: playlistAdvanceFromQueueIntent({
-                    intent: autoNextIntent,
-                    title: nextPlaylistItem.title,
-                    season: nextPlaylistItem.season,
-                    episode: nextPlaylistItem.episode,
-                  }),
+                  value: autoNextDecision.outcome,
                 };
               }
-              container.queueService.rollbackBeforeStart(autoNextIntent, {
-                code: "playback-aborted",
-                stage: "handoff",
-                at: new Date().toISOString(),
-                detail: "auto-next countdown cancelled",
-              });
+              container.queueService.rollbackBeforeStart(
+                autoNextDecision.intent,
+                autoNextDecision.failure,
+              );
             }
             {
               const autoplayPaused = stateManager.getState().autoplaySessionPaused;
