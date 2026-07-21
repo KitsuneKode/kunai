@@ -14,6 +14,9 @@ One fullscreen, keyboard-driven terminal session.
 ```bash
 # Zero prerequisites — installs a self-contained binary (no Bun/Node needed)
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+mpv --version
+kunai --setup
 kunai -S "Dune"
 ```
 
@@ -84,30 +87,43 @@ Linux, macOS, and Windows.
 ```bash
 # Recommended — zero prerequisites
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+mpv --version
+kunai --setup
+kunai -S "Dune"
+```
 
-# Windows (PowerShell)
+`-S` lands on search results — select a title, pick an episode when prompted, wait
+for provider resolution, then confirm the committed `mpv` startup. If `mpv` is
+missing, setup and browsing stay available; only playback handoff is blocked.
+
+Windows (PowerShell):
+
+```powershell
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+```
 
-# Inspect first (no dirs created), pin a version, or pick a channel
+Inspect first (no dirs created), pin a version, or pick a channel:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --version 0.3.0
 ```
 
-Then run `kunai` to open the shell, or `kunai -S "Dune"` to search directly.
 Inside the shell, `/` opens the command palette from anywhere.
 
-Keep it current with `kunai upgrade`; remove it with `kunai uninstall`
+Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
 (add `--purge` to also delete config/history/cache).
 
-> **Alternatives for developers / Bun users** (these require Bun `>=1.3.9` at
-> runtime — the published `dist/kunai.js` starts with `#!/usr/bin/env bun`):
+> **Alternatives** (require Bun `>=1.3.9` at runtime — the published `dist/kunai.js`
+> starts with `#!/usr/bin/env bun`). Source checkout is contributor-oriented:
 >
 > ```bash
 > # npm or bun global
 > npm install -g @kitsunekode/kunai      # or: bun install -g @kitsunekode/kunai
 > # the installer can do this too: install.sh ... | bash -s -- --method npm
 >
-> # From source
+> # From source (contributors)
 > git clone https://github.com/kitsunekode/kunai.git
 > cd kunai && bun install && bun run link:global
 > ```
@@ -176,13 +192,13 @@ winget install yt-dlp hpjansson.Chafa ImageMagick.ImageMagick Gyan.FFmpeg
 | **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
 | **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
 | **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
-| **chafa**       | Optional             | Poster previews in non-Kitty terminals. `sudo pacman -S chafa`                          |
+| **chafa**       | Optional             | Richer poster previews in non-Kitty terminals; half-block fallback works without it     |
 | **ImageMagick** | Optional             | Broader poster format support. `sudo pacman -S imagemagick`                             |
-| **Discord**     | Optional             | Rich Presence (watching status on profile)                                              |
+| **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                            |
 
-If mpv is missing, Kunai won't start playback. Everything else is optional and
-detected automatically — the setup wizard (`/setup` or `kunai --setup`) walks
-through each capability and what it enables.
+If mpv is missing, Kunai won't start playback — setup and browsing remain available.
+Everything else is optional and detected automatically — the setup wizard
+(`/setup` or `kunai --setup`) walks through each capability and what it enables.
 
 ---
 
@@ -241,6 +257,8 @@ there. The ones you'll reach for most:
 
 ```text
 /                 Command palette (from anywhere)
+Tab               Cycle browse filters / content kind
+Shift+F           Open filters (browse)
 Enter             Search, open, confirm
 Esc               Close, clear, go back
 ↑↓                Navigate results, episodes, options
@@ -288,22 +306,23 @@ Ctrl+D            Download selected result (from browse)
 
 ### Command palette (`/`)
 
-| Command           | What it does                                         |
-| ----------------- | ---------------------------------------------------- |
-| `/search`         | Start a new search                                   |
-| `/library`        | Browse offline titles, manage queue, toggle settings |
-| `/download`       | Queue the current episode for download               |
-| `/queue`          | View active, queued, failed downloads                |
-| `/discover`       | Personalized recommendations + trending              |
-| `/calendar`       | Unified release calendar — anime · series · movies   |
-| `/random`         | Surprise pick without autoplay                       |
-| `/setup`          | Run the setup wizard                                 |
-| `/settings`       | Configure provider, language, downloads, Discord     |
-| `/history`        | Watch history and resume                             |
-| `/diagnostics`    | Runtime snapshot and recent events                   |
-| `/presence`       | Discord Rich Presence setup                          |
-| `/telemetry`      | Opt-in anonymous usage ping status / toggle          |
-| `/telemetry show` | Print the exact JSON that would be sent              |
+| Command           | What it does                                               |
+| ----------------- | ---------------------------------------------------------- |
+| `/search`         | Start a new search                                         |
+| `/library`        | Browse offline titles, manage queue, toggle settings       |
+| `/download`       | Queue the current episode for download                     |
+| `/downloads`      | View active, queued, failed downloads                      |
+| `/up-next`        | Current playback order (`/queue` is a compatibility alias) |
+| `/discover`       | Personalized recommendations + trending                    |
+| `/calendar`       | Unified release calendar — anime · series · movies         |
+| `/random`         | Surprise pick without autoplay                             |
+| `/setup`          | Run the setup wizard                                       |
+| `/settings`       | Configure provider, language, downloads, Discord           |
+| `/history`        | Watch history and resume                                   |
+| `/diagnostics`    | Runtime snapshot and recent events                         |
+| `/presence`       | Discord Rich Presence setup                                |
+| `/telemetry`      | Opt-in anonymous usage ping status / toggle                |
+| `/telemetry show` | Print the exact JSON that would be sent                    |
 
 ---
 
@@ -360,9 +379,10 @@ All completed downloads are grouped by title in the library panel (`/library`):
 
 ### Discord Rich Presence
 
-Enable via `/presence` or `/settings`. Kunai talks to Discord over its **local
-Unix-socket IPC** directly — there's no extra service or `discord-rpc` package to
-install; just have the Discord desktop app running. It shows what you're watching:
+Enable via `/presence` or `/settings`. Kunai talks to Discord over **local IPC**
+(Unix socket on Linux/macOS, named pipe on Windows) — there's no extra service or
+`discord-rpc` package to install; just have the Discord desktop app running. It
+shows what you're watching:
 
 - **Watching Kunai** — Attack on Titan · Season 1, Episode 5 · provider
 - A browsing state when you're searching between episodes
@@ -402,25 +422,25 @@ install; just have the Discord desktop app running. It shows what you're watchin
 
 ### Optional — what each enables
 
-| Tool                | What it gives you                                                                                    | Without it                                                                           |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.         | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
-| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)                   | Downloads still work; integrity check is skipped.                                    |
-| **chafa**           | Poster previews in terminals that don't support the Kitty protocol (Sixel/WezTerm/Windows Terminal). | No poster previews in those terminals.                                               |
-| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                       | Posters work but may fail on unusual formats.                                        |
-| **Discord desktop** | Rich Presence — shows "Watching Kunai" on your Discord profile.                                      | No Discord integration.                                                              |
-| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                                | Falls back to chafa or none.                                                         |
+| Tool                | What it gives you                                                                              | Without it                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.   | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
+| **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)             | Downloads still work; integrity check is skipped.                                    |
+| **chafa**           | Optional richer poster previews (Sixel/ANSI) in terminals without Kitty graphics.              | Built-in half-block poster fallback still works.                                     |
+| **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                 | Posters work but may fail on unusual formats.                                        |
+| **Discord desktop** | Rich Presence via local Unix-socket / named-pipe IPC — shows "Watching Kunai" on your profile. | No Discord integration.                                                              |
+| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                          | Half-block fallback (chafa optional for richer output).                              |
 
 ### Poster previews by terminal
 
-| Terminal               | Protocol          | How                                    |
-| ---------------------- | ----------------- | -------------------------------------- |
-| Kitty                  | Native            | Best quality, no extra tools           |
-| Ghostty                | Kitty-compatible  | Same as Kitty                          |
-| WezTerm                | Sixel via chafa   | Install `chafa`                        |
-| Windows Terminal 1.22+ | Sixel via chafa   | Install `chafa`                        |
-| Everything else        | Symbols via chafa | Install `chafa` for text-based preview |
-| Non-TTY / unsupported  | None              | No posters                             |
+| Terminal               | Protocol             | How                                            |
+| ---------------------- | -------------------- | ---------------------------------------------- |
+| Kitty                  | Native               | Best quality, no extra tools                   |
+| Ghostty                | Kitty-compatible     | Same as Kitty                                  |
+| WezTerm                | Sixel via chafa      | Optional `chafa`; half-block works without it  |
+| Windows Terminal 1.22+ | Sixel via chafa      | Optional `chafa`; half-block works without it  |
+| Everything else        | Half-block (default) | Built-in; optional `chafa` for richer previews |
+| Non-TTY / unsupported  | None                 | No posters                                     |
 
 Environment overrides:
 
@@ -512,14 +532,14 @@ Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
 missing; everything else keeps working.
 
 **No poster previews.**
-Kitty and Ghostty render natively. Other terminals need **chafa** for Sixel/symbol
-output. Check `/diagnostics` for the detected renderer, or set
-`KUNAI_IMAGE_DEBUG=1` for verbose logging.
+Kitty and Ghostty render natively. Elsewhere Kunai uses a built-in **half-block**
+fallback; **chafa** is optional for richer Sixel/ANSI output. Check `/diagnostics`
+for the detected renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging.
 
 **How do I update?**
-Kunai notifies you in-shell when a newer version is published. Update by
-reinstalling: `npm install -g @kitsunekode/kunai` (or re-run the installer / `git
-pull && bun run relink:global` from source).
+Keep it current with `kunai upgrade` (channel-aware). Kunai also notifies you
+in-shell when a newer version is published. Package-manager reinstall and source
+`git pull && bun run relink:global` remain secondary paths.
 
 ---
 

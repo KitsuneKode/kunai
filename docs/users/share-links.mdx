@@ -6,8 +6,8 @@ status: shipped
 
 Kunai uses one portable `kunai://` link format for sharing what to play. Links anchor to catalog metadata (TMDB, AniList, MAL, IMDb) so the receiver can resolve through their own providers.
 
-<ScopeCallout variant="beta" title="Protocol handler is optional">
-  `kunai --open` works without OS registration. Run `kunai --install-protocol-handler` once if you want the OS to open `kunai://` links from browsers or chat apps.
+<ScopeCallout variant="beta" title="Protocol handler is Linux-only">
+  `kunai --open` works on every platform without OS registration. `kunai --install-protocol-handler` registers the `kunai://` OS handler on **Linux only** in 0.3.0.
 </ScopeCallout>
 
 ## Copy a link from the shell
@@ -42,13 +42,13 @@ Trusted open (no confirmation prompt):
 kunai --open "kunai://play?cat=tmdb%3A438631&kind=movie"
 ```
 
-Register the OS protocol handler (optional):
+Register the OS protocol handler (**Linux-only** in 0.3.0):
 
 ```sh
 kunai --install-protocol-handler
 ```
 
-After registration, `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation.
+After registration on Linux, `kunai://` links from browsers or chat apps route through `--handoff-url`, which may ask for confirmation. On macOS/Windows, keep using `kunai --open`.
 
 ## URL shape
 

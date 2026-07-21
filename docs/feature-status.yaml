@@ -63,7 +63,7 @@ features:
   - id: install-scripts
     label: install.sh / install.ps1
     status: beta
-    description: OS installer scripts for global Bun package setup.
+    description: Preferred native binary installers; Bun/npm secondary; source contributor-oriented.
   - id: browser-providers
     label: Browser / Playwright providers
     status: planned

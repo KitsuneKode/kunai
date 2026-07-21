@@ -65,15 +65,19 @@ kunai --setup
 </Tab>
 <Tab value="npm global">
 
+Requires Bun on your `PATH` (the published entry is `#!/usr/bin/env bun`):
+
 ```sh
 npm install -g @kitsunekode/kunai
-kunai
+kunai --setup
 ```
 
-Global npm installs write `install.json` automatically via `postinstall` so `kunai upgrade` routes correctly.
+Global npm installs write `install.json` automatically via bundled `postinstall` so ownership-aware `kunai upgrade` / `kunai uninstall` route correctly. Diagnose PATH shadows with `kunai doctor`.
 
 </Tab>
 <Tab value="Source">
+
+Contributor-oriented — not the preferred end-user path:
 
 ```sh
 git clone https://github.com/KitsuneKode/kunai.git
@@ -98,17 +102,22 @@ Production code signing and notarization are a post-beta goal, not a beta blocke
 
 ## Lifecycle (CLI only)
 
-After install, all lifecycle commands run through the binary:
+After install, all lifecycle commands run through the binary. **`kunai upgrade` is the primary update path** for every channel:
 
 ```text
 kunai install              # binary install/reinstall (default)
-kunai uninstall            # channel-aware removal
-kunai uninstall --purge    # also delete config/history/cache
-kunai upgrade              # channel-aware self-update
+kunai upgrade              # primary channel-aware self-update
 kunai upgrade --check      # report only (+ install diagnostics)
+kunai rollback             # previous verified local version
+kunai rollback --list      # list local verified candidates
+kunai rollback --to <ver>  # explicit verified version
+kunai doctor               # PATH / ownership health
+kunai doctor --json        # same report as JSON
+kunai uninstall            # ownership-aware removal
+kunai uninstall --purge    # also delete config/history/cache
 ```
 
-Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall — that matches how Claude Code and other production CLIs keep a single owner for lifecycle logic inside the binary.
+Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall — lifecycle logic stays inside the binary.
 
 `kunai --version` shows the active install channel when `install.json` is present.
 
@@ -140,11 +149,12 @@ You can snooze automatic checks for seven days or disable them from the update p
 
 | Platform | Status |
 | --- | --- |
-| Linux glibc x64/arm64 | Supported via release binaries |
-| macOS x64/arm64 (Apple Silicon) | Supported via release binaries |
-| Windows x64/arm64 | Supported via release binaries |
+| Linux glibc x64/arm64 | Supported |
 | Linux musl (Alpine) | Supported via `kunai-linux-*-musl` release binaries |
-| FreeBSD / BSD | Not published — use npm/bun/source |
+| macOS x64/arm64 (Apple Silicon) | Beta |
+| Windows x64 | Beta |
+| Windows ARM64 | Experimental |
+| FreeBSD / BSD | Not published — use npm/bun/source (contributor-oriented) |
 | Code signing / notarization | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 Override the download mirror for air-gapped or future CDN hosting:

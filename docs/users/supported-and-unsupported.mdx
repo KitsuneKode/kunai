@@ -16,11 +16,11 @@ Use this codegen-backed table as the single product posture source. Narrative se
 
 ## CLI and install channels
 
-Install paths are documented once on [Getting started](/docs/users/getting-started) and [Install and update](/docs/users/install-and-update). In beta:
+Install paths are documented once on [Getting started](/docs/users/getting-started) and [Install and update](/docs/users/install-and-update). In 0.3.0:
 
-- **Bun global** — primary tested JS install (`bun install -g @kitsunekode/kunai`)
-- **Binary installers** — embed Bun; you still need `mpv`
-- **Source checkout** — for contributors (`bun run link:global`)
+- **Native binary** (`install.sh` / `install.ps1`) — preferred; Bun runtime embedded, you do not need Bun
+- **Bun / npm global** — secondary; npm **requires Bun** on `PATH`
+- **Source checkout** — contributor-oriented (`bun run link:global`)
 
 ## Providers
 
@@ -48,7 +48,8 @@ Provider availability can change without notice. Fallback chains and recovery ar
 | Network (online playback) | **Yes** for streaming | Use offline library for local files |
 | yt-dlp | No (online only) | Downloads disabled; online playback unaffected |
 | ffprobe | No | Offline duration validation skipped |
-| chafa / Kitty graphics | No | Poster previews degraded or hidden |
+| chafa | No | Optional richer posters; built-in half-block fallback remains |
+| Kitty graphics | No | Best quality when available; otherwise half-block |
 
 ## Downloads and offline
 
@@ -76,15 +77,16 @@ See [Reliability and privacy](/docs/users/reliability-and-privacy).
 
 ## Platform support
 
-| Platform | Playback | Binary install | Notes |
+| Platform | Playback | Binary install | Status |
 | --- | --- | --- | --- |
-| Linux (glibc) | mpv | `install.sh` | x64 and arm64 |
-| Linux (musl/Alpine) | mpv | musl binaries | |
-| macOS | mpv | `install.sh` | x64 and Apple Silicon; Gatekeeper may block unsigned binary |
-| Windows | mpv | `install.ps1` | x64 and arm64; SmartScreen may warn |
-| FreeBSD / BSD | Source only | Not published | |
+| Linux (glibc) | mpv | `install.sh` | Supported (x64 and arm64) |
+| Linux (musl/Alpine) | mpv | musl binaries | Supported |
+| macOS | mpv | `install.sh` | Beta (x64 and Apple Silicon; Gatekeeper may block unsigned binary) |
+| Windows x64 | mpv | `install.ps1` | Beta (SmartScreen may warn) |
+| Windows ARM64 | mpv | `install.ps1` | Experimental |
+| FreeBSD / BSD | Source only | Not published | Unsupported binary |
 
-Poster previews: Kitty/chafa on Linux, chafa on macOS, limited on Windows.
+Poster previews: Kitty when available, otherwise built-in half-block; `chafa` is optional.
 
 More: [Platforms](/docs/users/platforms).
 

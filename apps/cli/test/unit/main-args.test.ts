@@ -9,7 +9,7 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
-  expect(help).toContain("Register the Linux kunai:// URL handler");
+  expect(help).toContain("Register the Linux-only kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
   expect(help).toContain("kunai doctor");
@@ -18,6 +18,10 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("kunai rollback --list");
   expect(help).toContain("kunai rollback --to <ver>");
   expect(help).toContain("kunai rollback --dry-run");
+  expect(help).toContain("kunai install");
+  expect(help).toContain("kunai upgrade");
+  expect(help).toContain("kunai upgrade --check");
+  expect(help).toContain("kunai uninstall");
 });
 
 test("parseArgs treats --json as a known maintenance flag", () => {

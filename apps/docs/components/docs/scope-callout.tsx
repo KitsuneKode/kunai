@@ -16,13 +16,12 @@ const copy: Record<
     title: "Beta scope (read this first)",
     body: (
       <>
-        Kunai is a terminal-first CLI during beta. Canonical install is{" "}
-        <code>bun install -g @kitsunekode/kunai</code> plus <code>kunai --setup</code>. Release
-        binaries (<code>install.sh</code> / <code>install.ps1</code>) remain available and embed Bun
-        if you prefer not to install Bun separately. You still need <strong>mpv</strong> for
-        playback. Kunai does not host media - it resolves streams from third-party providers on your
-        machine and hands playback to mpv. Provider availability changes; recovery commands exist
-        because drift is expected.
+        Kunai is a terminal-first CLI during beta. Preferred install is <code>install.sh</code> /{" "}
+        <code>install.ps1</code> (self-contained binary — Bun runtime embedded; you do not need
+        Bun). Bun/npm globals are secondary; npm requires Bun on <code>PATH</code>. You still need{" "}
+        <strong>mpv</strong> for playback — setup and browsing work without it. Kunai does not host
+        media - it resolves streams from third-party providers on your machine and hands playback to
+        mpv. Provider availability changes; recovery commands exist because drift is expected.
       </>
     ),
   },

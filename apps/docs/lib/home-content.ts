@@ -80,7 +80,7 @@ export const homeStartCards: readonly HomeLink[] = [
   {
     title: "Getting started",
     href: "/docs/users/getting-started",
-    description: "Install Bun and mpv, run setup, and launch your first playback session.",
+    description: "Install Kunai and mpv, run setup, and launch your first playback session.",
   },
   {
     title: "What you can do",

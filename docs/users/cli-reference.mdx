@@ -17,13 +17,30 @@ on the [Feature tour](/docs/users/feature-tour).
 
 | Command | When to use |
 | --- | --- |
-| `bun install -g @kitsunekode/kunai` | Install the published CLI (Bun required during beta) |
+| `curl … \| bash` (`install.sh`) | Preferred end-user install (binary; no Bun required) |
+| `npm install -g @kitsunekode/kunai` | npm channel (requires Bun on `PATH`) |
+| `bun install -g @kitsunekode/kunai` | Bun global channel |
 | `kunai` | Open the interactive shell |
 | `kunai -S "Title"` | Bootstrap with a search query |
 | `kunai -i 438631 -t movie` | Open a known TMDB id (non-anime) |
 | `kunai -a -S "Anime"` | Anime mode with bootstrap search |
 
-From a repo clone, use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
+From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
+
+## Lifecycle maintenance
+
+| Command | What it does |
+| --- | --- |
+| `kunai install` | Install or reinstall (binary default) |
+| `kunai upgrade` | Primary channel-aware update |
+| `kunai upgrade --check` | Report whether an update is available |
+| `kunai rollback` | Roll back to the previous verified local version |
+| `kunai rollback --list` | List local verified rollback candidates |
+| `kunai rollback --to <ver>` | Roll back to an explicit verified version |
+| `kunai doctor` | Read-only install health (PATH, ownership) |
+| `kunai doctor --json` | Same report as JSON |
+| `kunai uninstall` | Ownership-aware removal |
+| `kunai uninstall --purge` | Also delete config/history/cache |
 
 ## Launch flows
 
@@ -35,16 +52,19 @@ From a repo clone, use `bun run dev -- <flags>` so Bun forwards argv to the CLI.
 6. **History first** — `--history`: watch history picker at startup.
 7. **Offline library first** — `--offline`: completed downloads only (same intent as `/library`).
 8. **Discover / calendar / random** — `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
-9. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers OS handler.
+9. **Share link handoff** — `--open <kunai://url>`: trusted launch without protocol confirmation; `--install-protocol-handler` registers the **Linux-only** OS handler.
 
 ## Share links
 
 | Flag / command | What it does |
 | --- | --- |
 | `kunai --open "kunai://play?..."` | Resolve and play a shared catalog link |
-| `kunai --install-protocol-handler` | Register `kunai://` with the OS (optional) |
+| `kunai --install-protocol-handler` | Register `kunai://` with the OS (**Linux-only**) |
 | `/share` | Copy link for current playback context |
 | `/watch` | Open link from clipboard |
+| `/up-next` | Current playback order |
+| `/downloads` | Download queue overlay |
+| `/library` | Offline library |
 
 More: [Share links](/docs/users/share-links).
 

@@ -103,6 +103,8 @@ Live registry — same table as [Providers](/docs/users/providers#active-provide
 | Context | Keys | Action |
 | --- | --- | --- |
 | Anywhere | `/` | Open command palette |
+| Browse results | `Tab` | Cycle browse filters / content kind |
+| Browse results | `Shift+F` | Open filters |
 | Browse results | `Enter` | Open or play selected result |
 | Browse results | `Shift+Enter` / `i` | Open title details |
 | Browse results | `Ctrl+F` | Focus filters |
@@ -130,13 +132,14 @@ See [Diagnostics and reporting](/docs/users/diagnostics-and-reporting) for the u
 
 ## Platform support
 
-Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) are **beta supported**. They embed the Bun runtime — you do not need Bun installed to run them. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update).
+Release binaries via `install.sh` (Linux/macOS) and `install.ps1` (Windows) embed the Bun runtime — you do not need Bun installed to run them. **Linux is supported**; macOS and Windows x64 are **beta**; Windows ARM64 is **experimental**. Unsigned binaries may trigger SmartScreen or Gatekeeper on first run; see [Install and update](/docs/users/install-and-update). Keep installs current with `kunai upgrade`.
 
 | Platform | Install | Playback | Downloads | Poster previews |
 | --- | --- | --- | --- | --- |
-| Linux | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | Kitty / chafa |
-| macOS | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | chafa |
-| Windows | `install.ps1` or bun/npm global | mpv | yt-dlp | chafa (limited) |
+| Linux (supported) | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | Kitty / half-block (`chafa` optional) |
+| macOS (beta) | `install.sh` or bun/npm global | mpv | yt-dlp + ffprobe | half-block (`chafa` optional) |
+| Windows x64 (beta) | `install.ps1` or bun/npm global | mpv | yt-dlp | half-block (`chafa` optional) |
+| Windows ARM64 (experimental) | `install.ps1` | mpv | yt-dlp | half-block (`chafa` optional) |
 
 ## Storage architecture
 

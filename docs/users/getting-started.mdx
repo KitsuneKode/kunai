@@ -15,31 +15,23 @@ Kunai is a terminal-first media shell. You search for a title, pick what to watc
 
 <QuickStartSteps />
 
-## Other install methods
-
-The steps above use Bun global + `kunai --setup`. Use these tabs only when you need a different channel.
-
-<Tabs items={["Binary", "npm global", "Source checkout"]}>
-<Tab value="Binary">
-
-Linux / macOS:
+The preferred path installs a self-contained binary — you do not need Bun. Confirm the install, check `mpv`, run setup, then search:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+mpv --version
 kunai --setup
 kunai -S "Dune"
 ```
 
-Windows (PowerShell):
+`-S` opens search results. Select a title, pick an episode when prompted, wait for provider resolution, then confirm the committed `mpv` startup. If `mpv` is missing, setup and browsing stay available — only playback handoff is blocked.
 
-```powershell
-irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
-kunai --setup
-```
+## Other install methods
 
-Release binaries embed Bun. You still need `mpv` for playback. Details: [Install and update](/docs/users/install-and-update).
+Use these tabs only when you need a different channel. Source checkout is contributor-oriented.
 
-</Tab>
+<Tabs items={["npm global", "Bun global", "Source checkout"]}>
 <Tab value="npm global">
 
 ```sh
@@ -47,7 +39,15 @@ npm install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-npm global installs may work, but Bun is what the project tests most often during beta.
+npm global installs **require Bun** on your `PATH` (the published package starts with `#!/usr/bin/env bun`). Postinstall writes ownership into `install.json` so `kunai upgrade` / `kunai uninstall` route correctly. Diagnose PATH and ownership with `kunai doctor`.
+
+</Tab>
+<Tab value="Bun global">
+
+```sh
+bun install -g @kitsunekode/kunai
+kunai --setup
+```
 
 </Tab>
 <Tab value="Source checkout">
@@ -60,7 +60,7 @@ bun run link:global
 kunai --setup
 ```
 
-Use `bun run dev -- <flags>` when you need to forward argv without a global link.
+Use `bun run dev -- <flags>` when you need to forward argv without a global link. Prefer this path for contributors debugging providers or docs — not for day-to-day watching.
 
 </Tab>
 </Tabs>
@@ -112,12 +112,15 @@ Press `/` to open the command palette. High-signal commands for a first week:
 | Command | Purpose |
 | --- | --- |
 | `/history` | Recent watch progress |
+| `/up-next` | Current playback order |
 | `/downloads` | Queued, running, and failed download jobs |
 | `/library` or `/offline` | Playable completed downloads |
 | `/diagnostics` | Runtime state and recent evidence |
-| `/update` | Manual version check with install-method guidance |
+| `/update` | Manual version check (`kunai upgrade` is the primary update path) |
 | `/recover` | Refresh the current stream after failure evidence |
 | `/fallback` | Try the next compatible provider |
+
+Browse mode uses `Tab` to cycle content filters; `Shift+F` opens the public filter surface when available.
 
 ## When playback fails
 

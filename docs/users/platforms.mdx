@@ -3,45 +3,59 @@ title: Platforms
 description: Platform-specific install, playback, opening, protocol, and troubleshooting notes.
 ---
 
-Kunai is Bun-first and terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews use Kitty graphics or `chafa` depending on terminal capabilities.
+Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews use Kitty graphics when available, otherwise a built-in half-block fallback — `chafa` is optional for richer output.
 
 **Who this is for:** anyone choosing an install path or optional tools for their OS.
 
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.
 
 <Callout type="info" title="Optional tools stay optional">
-Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths.
+Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths. Half-block posters work without `chafa`.
 </Callout>
+
+## Support posture (0.3.0)
+
+| Platform | Status |
+| --- | --- |
+| Linux (glibc/musl, x64/arm64) | Supported |
+| macOS x64/arm64 | Beta |
+| Windows x64 | Beta |
+| Windows ARM64 | Experimental |
+
+`kunai://` protocol registration is **Linux-only** in 0.3.0. macOS/Windows can still use `kunai --open` without OS handler registration.
 
 <Tabs items={["Linux", "macOS", "Windows", "Source checkout"]}>
 <Tab value="Linux">
 
-Recommended install (bundles Bun):
+Recommended install (self-contained binary — Bun runtime embedded; you do not need Bun installed):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+kunai --version
+mpv --version
 kunai --setup
 ```
 
-Package install alternative:
+Package install alternative (requires Bun):
 
 ```sh
 bun install -g @kitsunekode/kunai
+# or: npm install -g @kitsunekode/kunai
 kunai --setup
 ```
 
 Recommended optional tools:
 
-- `mpv` — playback engine (required for watching)
+- `mpv` — playback engine (required for watching; setup/browsing work without it)
 - `yt-dlp` — offline download jobs
 - `ffprobe` — optional validation of completed artifacts
-- `chafa` — poster previews outside Kitty-compatible terminals
+- `chafa` — optional richer poster previews (half-block works without it)
 - `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
 
 </Tab>
 <Tab value="macOS">
 
-Recommended install:
+Recommended install (beta binaries):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
@@ -55,12 +69,12 @@ bun install -g @kitsunekode/kunai
 kunai --setup
 ```
 
-Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs.
+Install `mpv` and optional download tools through Homebrew or your preferred package manager. Kunai uses `open` for browser and folder handoffs. Protocol registration is Linux-only — use `kunai --open` for share links.
 
 </Tab>
 <Tab value="Windows">
 
-Recommended install (PowerShell):
+Recommended install (PowerShell; x64 beta, ARM64 experimental):
 
 ```powershell
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
@@ -69,10 +83,12 @@ kunai --setup
 
 Kunai runs where a capable terminal and **mpv** are available. Windows Terminal is the most predictable surface.
 
-Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation.
+Kunai uses `cmd /c start` for browser handoffs such as `/docs` and `/report-issue`. If an opener is missing, the shell should keep running and explain the limitation. Protocol registration is Linux-only — use `kunai --open` for share links.
 
 </Tab>
 <Tab value="Source checkout">
+
+Contributor-oriented:
 
 ```sh
 bun install
@@ -81,7 +97,7 @@ bun run dev -- -S "Dune"
 bun run dev -- -a -S "Attack on Titan"
 ```
 
-Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions.
+Source checkouts are the best path for debugging provider changes, playback recovery, and documentation contributions — not the preferred end-user install.
 
 </Tab>
 </Tabs>
@@ -91,8 +107,9 @@ Source checkouts are the best path for debugging provider changes, playback reco
 - If an opener is missing, Kunai keeps running and leaves you in the current shell context.
 - Provider and Discord live smokes are **manual** release checks — not background activity triggered by normal use.
 - Episode numbers are **1-based** in the UI; providers adapt internally.
+- Discord Rich Presence uses local Unix-socket IPC on Linux/macOS and a named pipe on Windows.
 
 ## Related
 
-- [Install and update](/docs/users/install-and-update) for global package, installer script, and `/update` behavior
+- [Install and update](/docs/users/install-and-update) for global package, installer script, and `kunai upgrade` behavior
 - [Getting started](/docs/users/getting-started) for the first-session checklist

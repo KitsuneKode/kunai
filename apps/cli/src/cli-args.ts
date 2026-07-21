@@ -74,7 +74,7 @@ mpv
 PATHS & INTEGRATION
       --download-path <dir>  Override the download directory
       --open <url>           Open a trusted kunai:// share link
-      --install-protocol-handler  Register the Linux kunai:// URL handler
+      --install-protocol-handler  Register the Linux-only kunai:// URL handler
       --handoff-url <url>    Internal: open a kunai:// deep link
       --dry-run              Print what would happen, change nothing
 
@@ -88,16 +88,16 @@ DIAGNOSTICS
 
 MAINTENANCE
   kunai install                Install or reinstall Kunai (binary default)
-  kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
-  kunai doctor                 Read-only install health report
-  kunai doctor --json          Print the same report as JSON
+  kunai upgrade                Update to the latest release (channel-aware)
+  kunai upgrade --check        Report whether an update is available
   kunai rollback               Roll back to the previous verified local version
   kunai rollback --list        List local verified rollback candidates
   kunai rollback --to <ver>    Roll back to an explicit local verified version
   kunai rollback --dry-run     Show the planned rollback without changing state
-  kunai upgrade              Update to the latest release (channel-aware)
-  kunai upgrade --check      Report whether an update is available
-  kunai uninstall            Remove kunai (add --purge to also delete user data)
+  kunai doctor                 Read-only install health report (PATH, ownership)
+  kunai doctor --json          Print the same report as JSON
+  kunai uninstall              Remove kunai (add --purge to also delete user data)
+  kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
 
 Inside the app, press / for the command palette and ? for keyboard help.
 `;
