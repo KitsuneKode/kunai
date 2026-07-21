@@ -153,13 +153,21 @@ export class PlaybackResolveWorkService {
   async prefetch(
     input: Omit<PlaybackResolveInput, "prefetchedStream">,
     request: Omit<PlaybackResolveWorkRequest, "intentKind"> & { readonly intentKind?: "prefetch" },
-  ): Promise<StreamInfo | null> {
+  ): Promise<{
+    readonly stream: StreamInfo;
+    readonly providerId: string;
+    readonly cacheProvenance: PlaybackResolveCoordinatorOutput["cacheProvenance"];
+  } | null> {
     const output = await this.resolve(input, {
       budgetLane: request.budgetLane,
       intentKind: request.intentKind ?? "prefetch",
     });
     if (!output.stream) return null;
-    return { ...output.stream, cacheProvenance: output.cacheProvenance };
+    return {
+      stream: { ...output.stream, cacheProvenance: output.cacheProvenance },
+      providerId: output.providerId,
+      cacheProvenance: output.cacheProvenance,
+    };
   }
 
   private waitForConsumer(

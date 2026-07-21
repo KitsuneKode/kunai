@@ -22,6 +22,8 @@ export type EpisodePrefetchBundle = {
   readonly stream: StreamInfo;
   /** When true, subtitle selection already ran during prefetch. */
   readonly prepared: boolean;
+  /** Provider that actually produced the stream (may differ from target.providerId after fallback). */
+  readonly resolvedProviderId: string;
 };
 
 export type EpisodePrefetchWaitOutcome = "ready" | "completed" | "timed-out" | "none";

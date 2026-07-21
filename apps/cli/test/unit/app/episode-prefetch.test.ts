@@ -57,10 +57,22 @@ test("cancel clears ready bundle", async () => {
   expect(handle.takeReadyFor(target)).toBeNull();
 });
 
-function createBundle() {
+test("prefetch bundle preserves resolved provider identity through consume", async () => {
+  const handle = new EpisodePrefetchHandle();
+  const bundle = createBundle({ resolvedProviderId: "rivestream" });
+
+  handle.schedule(target, async () => bundle);
+  await Promise.resolve();
+
+  expect(handle.takeReadyFor(target)?.resolvedProviderId).toBe("rivestream");
+});
+
+function createBundle(overrides?: Partial<EpisodePrefetchBundle>): EpisodePrefetchBundle {
   return {
     target,
     stream: { url: "https://cdn.example/ep2.mp4", headers: {}, timestamp: 1 },
     prepared: true,
+    resolvedProviderId: target.providerId,
+    ...overrides,
   };
 }

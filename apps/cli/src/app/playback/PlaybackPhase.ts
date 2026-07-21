@@ -64,6 +64,7 @@ import {
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
+import { resolvePlaybackProviderHandoff } from "@/app/playback/playback-provider-handoff";
 import {
   promoteSoftFallbackAfterEngage,
   resolveStreamProviderId,
@@ -1257,11 +1258,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
 
           if (consumedBundle) {
+            resolvedProviderId = consumedBundle.resolvedProviderId;
             logger.info("Using prefetched stream for episode", {
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
               prepared: prefetchWasPrepared,
+              resolvedProviderId,
             });
             diagnosticsService.record({
               ...playbackCorrelation,
@@ -1274,6 +1277,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
                 prepared: prefetchWasPrepared,
+                resolvedProviderId,
               },
             });
           }
@@ -1736,6 +1740,31 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             return { status: "success", value: "back_to_results" };
           }
 
+          if (stream && streamProvenance !== "local") {
+            const hop = decideSoftFallbackOnResolve({
+              configuredProviderId: currentProvider.metadata.id,
+              resolvedProviderId,
+            });
+            if (hop.kind === "session-soft-hop" && run.sessionSoftProviderId !== hop.providerId) {
+              logger.info("Resolved stream with fallback provider", {
+                from: currentProvider.metadata.id,
+                fallback: hop.providerId,
+              });
+              run.sessionSoftProviderId = hop.providerId;
+              this.playbackLedger?.alignProvider(hop.providerId);
+              const fallbackName =
+                providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
+              this.updatePlaybackFeedback(context, {
+                note: `Using ${fallbackName} for this session. /provider to switch back, then /recompute.`,
+              });
+            }
+          }
+
+          const providerHandoff = resolvePlaybackProviderHandoff({
+            configuredProviderId: currentProvider.metadata.id,
+            successfulProviderId: resolvedProviderId,
+          });
+
           stream = applyPreferredStreamSelection(
             stream,
             getPreferredStreamSelection(currentProvider.metadata.id, currentEpisode),
@@ -1772,7 +1801,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                providerId: container.stateManager.getState().provider,
+                providerId: providerHandoff.successfulProviderId,
               },
               run: () =>
                 this.retryTimingInBackground(
@@ -1782,6 +1811,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   effectiveTiming,
                   playbackTimingByEpisode,
                   stateManager.getState().mode === "anime",
+                  providerHandoff.successfulProviderId,
                 ),
             });
           }
@@ -1827,11 +1857,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const buildNextPrefetchTarget = (): EpisodePrefetchTarget | null => {
             const nextEp = episodeAvailability.nextEpisode;
             if (!nextEp) return null;
-            const prefetchMetadata = providerRegistry.get(
-              run.sessionSoftProviderId ?? stateManager.getState().provider,
-            );
-            if (!prefetchMetadata) return null;
-            return buildPrefetchTarget(nextEp, prefetchMetadata.metadata.id);
+            const prefetchProviderId = providerHandoff.nextEpisodeProviderId;
+            if (!providerRegistry.get(prefetchProviderId)) return null;
+            return buildPrefetchTarget(nextEp, prefetchProviderId);
           };
           const handoffNextEpisodePrefetch = async (
             target: EpisodePrefetchTarget,
@@ -1893,6 +1921,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                       nextSeason: nextEp.season,
                       nextEpisode: nextEp.episode,
                       providerId: prefetchMetadata.metadata.id,
+                      resolvedProviderId: bundle.resolvedProviderId,
                       prepared: bundle.prepared,
                     },
                   });
@@ -1931,9 +1960,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               return;
             }
             const nextEp = episodeAvailability.nextEpisode;
-            const prefetchMetadata = providerRegistry.get(
-              run.sessionSoftProviderId ?? stateManager.getState().provider,
-            );
+            const prefetchProviderId = providerHandoff.nextEpisodeProviderId;
+            const prefetchMetadata = providerRegistry.get(prefetchProviderId);
             if (nextEp && prefetchMetadata) {
               await selectionCoordinator.hydrate(prefetchMetadata.metadata.id, nextEp);
             }
@@ -2001,7 +2029,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               startIntent.suppressResumePrompt,
               playbackCorrelation,
               (stage) => recordStartupMark(stage, preparedStream),
-              run.sessionSoftProviderId ?? resolvedProviderId,
+              providerHandoff.successfulProviderId,
               playbackIterationAbort.signal,
               () => {
                 queueAttempt?.acknowledgeStarted();
@@ -2203,9 +2231,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             result.suspectedDeadStream === true ||
             didPlaybackFailToStart(result);
           if (shouldInvalidateStreamCache) {
-            const invalidateProviderId = consumedBundle
-              ? (consumedBundle.target.providerId ?? resolvedProviderId)
-              : resolvedProviderId;
+            const invalidateProviderId = providerHandoff.successfulProviderId;
             const selectedResolveStream = preparedStream.providerResolveResult?.streams.find(
               (candidate) =>
                 candidate.id === preparedStream.providerResolveResult?.selectedStreamId,
@@ -3153,10 +3179,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     timingRef?: { current: PlaybackTimingMetadata | null },
     cache?: Map<string, PlaybackTimingMetadata | null>,
     isAnime?: boolean,
+    providerIdOverride?: string,
   ): Promise<void> {
     return (async () => {
       const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
-      const providerId = container.stateManager.getState().provider;
+      const providerId = providerIdOverride ?? container.stateManager.getState().provider;
       const timing = await timingAggregator.resolve(
         title,
         episode,
@@ -3259,19 +3286,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       startupPriority: config.startupPriority,
       subtitlePreference: playbackSubtitlePreference(profileCtx),
     };
+    const resolvedProviderId = stream.providerId;
 
     if (isInteractiveSubtitle) {
-      return { target, stream, prepared: false };
+      return { target, stream: stream.stream, prepared: false, resolvedProviderId };
     }
 
     const preparedStream = await this.preparePlaybackStream(
-      stream,
+      stream.stream,
       input.title,
       input.nextEpisode,
       context,
     );
 
-    return { target, stream: preparedStream, prepared: true };
+    return { target, stream: preparedStream, prepared: true, resolvedProviderId };
   }
 
   private async preparePlaybackStream(
@@ -3374,7 +3402,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     suppressResumePrompt = false,
     correlation?: DiagnosticCorrelation,
     onStartupMark?: (stage: PlaybackStartupStage) => void,
-    historyProviderId?: string,
+    successfulProviderId?: string,
     playbackIterationSignal?: AbortSignal,
     onConfirmedPlaybackStart?: () => void,
   ): Promise<PlaybackResult> {
@@ -3405,16 +3433,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       playbackIterationSignal,
     });
 
+    const playbackProviderId = successfulProviderId ?? stateManager.getState().provider;
     const presenceBase = () => ({
       mode: stateManager.getState().mode,
       title,
       episode,
-      providerId: stateManager.getState().provider,
+      providerId: playbackProviderId,
       stream,
       startedAtMs: Date.now(),
     });
 
-    const ledgerProviderId = historyProviderId ?? stateManager.getState().provider;
+    const ledgerProviderId = playbackProviderId;
     const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
       providerId: ledgerProviderId,
     });
@@ -3464,7 +3493,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           title.type === "series"
             ? { season: episode.season, episode: episode.episode }
             : undefined,
-        providerId: stateManager.getState().provider,
+        providerId: playbackProviderId,
       },
       playOptions: {
         abortSignal: context.signal,

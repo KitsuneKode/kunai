@@ -97,6 +97,42 @@ describe("PlaybackResolveWorkService", () => {
     expect(completed[0]).toMatchObject({ outcome: "resolved", intents: ["playback"] });
   });
 
+  test("prefetch returns successful provider identity with the stream", async () => {
+    const service = new PlaybackResolveWorkService({
+      resolve: async () => ({
+        ...output,
+        providerId: "rivestream",
+        cacheProvenance: "fresh",
+      }),
+    });
+
+    const result = await service.prefetch(baseInput(), { budgetLane: "near-need" });
+
+    expect(result).toEqual({
+      stream: {
+        url: "https://example.invalid/stream.m3u8",
+        headers: {},
+        timestamp: output.stream!.timestamp,
+        cacheProvenance: "fresh",
+      },
+      providerId: "rivestream",
+      cacheProvenance: "fresh",
+    });
+  });
+
+  test("prefetch returns null when resolve yields no stream", async () => {
+    const service = new PlaybackResolveWorkService({
+      resolve: async () => ({
+        ...output,
+        stream: null,
+        providerId: "vidking",
+        cacheProvenance: "fresh",
+      }),
+    });
+
+    expect(await service.prefetch(baseInput(), { budgetLane: "near-need" })).toBeNull();
+  });
+
   test("detaches an aborted prefetch consumer without aborting joined foreground work", async () => {
     const prefetchController = new AbortController();
     let physicalSignal: AbortSignal | undefined;
