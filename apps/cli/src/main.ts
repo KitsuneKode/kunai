@@ -884,11 +884,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
+  // Missing mpv no longer aborts startup — setup and non-playback surfaces stay
+  // usable. PlaybackPhase gates dynamically before provider/history work.
   if (!capabilitySnapshot.mpv) {
-    console.error("\nmpv is required for playback. Install mpv and rerun Kunai.");
-    await disposeContainer(container);
-    if (process.stdin.isTTY) process.stdin.unref();
-    process.exit(1);
+    container.diagnosticsService.record({
+      category: "session",
+      operation: "startup.capability.mpv-missing",
+      message: "mpv missing at startup — shell will mount; playback remains gated",
+      context: {
+        issues: capabilitySnapshot.issues
+          .filter((issue) => issue.id === "mpv-missing")
+          .map((issue) => issue.message),
+      },
+    });
   }
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;

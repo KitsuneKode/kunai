@@ -1,12 +1,29 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildMpvMissingProblem,
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
   toErrorScenario,
 } from "@/domain/playback/playback-problem";
 
 describe("playback problem model", () => {
+  test("maps missing mpv to a blocking playback dependency problem", () => {
+    const problem = buildMpvMissingProblem({
+      remediationSummary: "Install mpv to enable playback.",
+      commands: ["sudo apt install mpv"],
+    });
+
+    expect(problem).toMatchObject({
+      stage: "mpv",
+      severity: "blocking",
+      cause: "mpv-missing",
+      recommendedAction: "settings",
+    });
+    expect(problem.userMessage).toContain("apt install mpv");
+    expect(toErrorScenario(problem)).toBeUndefined();
+  });
+
   test("maps runtime dependency failures to blocking diagnostics", () => {
     const problem = buildProviderResolveProblem({
       attempts: [{ failure: { code: "RUNTIME_MISSING", message: "runtime dependency missing" } }],

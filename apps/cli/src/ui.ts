@@ -85,14 +85,16 @@ export async function checkDeps(
       "Arch:   sudo pacman -S mpv",
       "Debian: sudo apt install mpv",
       "macOS:  brew install mpv",
+      "Windows: winget install --id mpv.net -e",
     ] as const;
     issues.push({
       id: "mpv-missing",
-      severity: "fatal",
-      message: "mpv not found — required for playback.",
+      // Missing mpv blocks playback only — setup and non-playback shell still mount.
+      severity: "degraded",
+      message: "mpv not found — required for playback (shell still available).",
       remediation,
     });
-    if (!silent) console.error("mpv not found — required for playback.");
+    if (!silent) console.error("mpv not found — required for playback (shell still available).");
   }
 
   if (!ytDlp) {

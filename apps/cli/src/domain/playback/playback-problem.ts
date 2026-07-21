@@ -36,6 +36,21 @@ export interface PlaybackProblem {
   readonly diagnosticId?: string;
 }
 
+export function buildMpvMissingProblem(input: {
+  readonly remediationSummary: string;
+  readonly commands: readonly string[];
+}): PlaybackProblem {
+  const commandHint = input.commands[0] ?? "Install mpv";
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "mpv-missing",
+    userMessage: `mpv is required for playback. ${input.remediationSummary} Try: ${commandHint}`,
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
 export function buildProviderResolveProblem({
   attempts,
 }: {

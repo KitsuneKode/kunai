@@ -35,6 +35,7 @@ import {
   createDeadStreamUrlLedger,
   playbackDeadStreamScopeKey,
 } from "@/app/playback/playback-dead-stream-ledger";
+import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
@@ -556,6 +557,33 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const queueAttempt = title.queuePlaybackIntent
       ? createQueuePlaybackAttempt(container.queueService, title.queuePlaybackIntent)
       : null;
+
+    const dependencyGate = await gatePlaybackDependencies({ player });
+    if (!dependencyGate.ok) {
+      diagnosticsService.record({
+        category: "playback",
+        operation: "playback.dependency.gate",
+        message: dependencyGate.problem.userMessage,
+        context: {
+          dependency: dependencyGate.dependency,
+          cause: dependencyGate.problem.cause,
+          stage: dependencyGate.problem.stage,
+          severity: dependencyGate.problem.severity,
+          recommendedAction: dependencyGate.problem.recommendedAction,
+          remediation: dependencyGate.remediation,
+          titleId: title.id,
+        },
+      });
+      stateManager.dispatch({
+        type: "SET_PLAYBACK_PROBLEM",
+        problem: dependencyGate.problem,
+      });
+      this.updatePlaybackFeedback(context, {
+        detail: "Playback unavailable",
+        note: dependencyGate.problem.userMessage,
+      });
+      return { status: "success", value: "back_to_results" };
+    }
 
     try {
       // Episode selection (for series)

@@ -30,6 +30,9 @@ const SLIDE_ORDER: Slide[] = [
   "tips",
 ];
 
+/** Step counter + indicator + padding above each slide body. */
+const SETUP_CHROME_ROWS = 5;
+
 export type SetupFlowResult = "completed" | "skipped";
 
 export interface SetupPrefs {
@@ -218,8 +221,9 @@ function SystemSlide({
       status: snapshot.mpv ? "ok" : "missing",
       detail: snapshot.mpv
         ? "Playback engine ready"
-        : "Required for playback — install to continue",
-      install: "brew install mpv  ·  pacman -S mpv  ·  apt install mpv",
+        : "Required for playback — continue setup and install later",
+      install:
+        "brew install mpv  ·  pacman -S mpv  ·  apt install mpv  ·  winget install --id mpv.net -e",
       fatal: true,
     },
     {
@@ -281,7 +285,7 @@ function SystemSlide({
         text="System check"
         sub={
           hasFatal
-            ? "mpv is required — install it then relaunch. Or continue and set it up later."
+            ? "mpv is required for playback — install it when ready, or continue setup now."
             : "Everything you need is accounted for."
         }
       />
@@ -605,7 +609,7 @@ function WizStepCounter({ current, total }: { readonly current: number; readonly
 
 // ─── Main SetupShell component ────────────────────────────────────────────────
 
-function SetupShell({
+export function SetupShell({
   snapshot,
   finish,
 }: {
@@ -728,14 +732,20 @@ function SetupShell({
           <StepIndicator total={SLIDE_ORDER.length} current={slideIdx} />
         </Box>
 
-        {slide === "welcome" ? <WelcomeSlide width={cols} rows={rows - 2} /> : null}
+        {slide === "welcome" ? (
+          <WelcomeSlide width={cols} rows={Math.max(8, rows - SETUP_CHROME_ROWS)} />
+        ) : null}
         {slide === "system" ? (
-          <SystemSlide width={cols} rows={rows - 2} snapshot={snapshot} />
+          <SystemSlide
+            width={cols}
+            rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
+            snapshot={snapshot}
+          />
         ) : null}
         {slide === "prefs-audio" ? (
           <PickerSlide
             width={cols}
-            rows={rows - 2}
+            rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
             title="Audio preference"
             sub="Which audio track should Kunai prefer when multiple options exist?"
             options={AUDIO_OPTS}
@@ -746,7 +756,7 @@ function SetupShell({
         {slide === "prefs-subtitle" ? (
           <PickerSlide
             width={cols}
-            rows={rows - 2}
+            rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
             title="Subtitle preference"
             sub="Default subtitle language — you can always change per-episode."
             options={SUBTITLE_OPTS}
@@ -757,15 +767,21 @@ function SetupShell({
         {slide === "downloads" ? (
           <DownloadsSlide
             width={cols}
-            rows={rows - 2}
+            rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
             ytDlpReady={snapshot.ytDlp}
             selectedIndex={downloadsIdx}
           />
         ) : null}
         {slide === "telemetry" ? (
-          <TelemetrySlide width={cols} rows={rows - 2} selectedIndex={telemetryIdx} />
+          <TelemetrySlide
+            width={cols}
+            rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
+            selectedIndex={telemetryIdx}
+          />
         ) : null}
-        {slide === "tips" ? <TipsSlide width={cols} rows={rows - 2} /> : null}
+        {slide === "tips" ? (
+          <TipsSlide width={cols} rows={Math.max(8, rows - SETUP_CHROME_ROWS)} />
+        ) : null}
       </Box>
     </ViewportResizeGate>
   );
