@@ -32,6 +32,8 @@ export interface PlaybackTimingAggregatorOptions {
 export interface PlaybackTimingFetchContext extends PlaybackTimingAggregatorOptions {
   /** Active provider when timing is resolved (e.g. `allanime` for AllAnime GraphQL `malId`). */
   readonly providerId?: string;
+  /** Content mode from the aggregator — gates proven TMDB identity for IntroDB. */
+  readonly mode?: TimingContentMode;
   readonly onSourceOutcome?: (outcome: PlaybackTimingSourceOutcome) => void;
   /** Caller signal — used to distinguish timeout vs cancelled when a child aborts. */
   readonly parentSignal?: AbortSignal;

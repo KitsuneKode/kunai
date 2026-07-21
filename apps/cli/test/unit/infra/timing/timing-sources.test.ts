@@ -61,6 +61,32 @@ test("IntroDbTimingSource reports identity-missing without a TMDB-shaped id", as
   expect(detailed.failureClass).toBe("identity-missing");
 });
 
+test("IntroDbTimingSource rejects bare numeric anime ids without proven TMDB", async () => {
+  let fetched = false;
+  globalThis.fetch = (async () => {
+    fetched = true;
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  const title = {
+    id: "154587",
+    type: "series" as const,
+    name: "AniList Bare Numeric",
+  };
+
+  expect(IntroDbTimingSource.canHandle(title, "anime")).toBe(false);
+
+  const detailed = await IntroDbTimingSource.fetchDetailed!({
+    title,
+    episode: { season: 1, episode: 1 },
+    context: { mode: "anime" },
+  });
+
+  expect(fetched).toBe(false);
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("identity-missing");
+});
+
 test("IntroDbTimingSource classifies HTTP 404 as not-found", async () => {
   globalThis.fetch = (async () =>
     new Response("missing", { status: 404 })) as unknown as typeof fetch;

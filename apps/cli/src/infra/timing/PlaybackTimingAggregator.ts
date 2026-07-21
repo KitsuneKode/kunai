@@ -45,6 +45,7 @@ export class PlaybackTimingAggregator {
 
     const resolveContext: PlaybackTimingFetchContext = {
       ...context,
+      mode,
       parentSignal: signal,
     };
 

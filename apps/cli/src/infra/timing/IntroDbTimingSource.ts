@@ -1,3 +1,4 @@
+import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import type { EpisodeInfo, PlaybackTimingMetadata, TitleInfo } from "@/domain/types";
 import { fetchPlaybackTimingMetadataDetailed } from "@/introdb";
 
@@ -8,23 +9,11 @@ import type {
   TimingContentMode,
 } from "./PlaybackTimingSource";
 
-/** IntroDB `tmdb_id` must be a TMDB id; anime provider opaque ids would 404 or waste calls. */
-function isLikelyTmdbNumericId(id: string): boolean {
-  return /^\d{1,12}$/.test(id);
-}
-
-function resolveIntroDbTmdbId(title: TitleInfo): string {
-  return title.externalIds?.tmdbId ?? title.id;
-}
-
 export const IntroDbTimingSource: PlaybackTimingSource = {
   name: "introdb",
 
   canHandle(title: TitleInfo, mode: TimingContentMode): boolean {
-    if (mode === "anime") {
-      return Boolean(title.externalIds?.tmdbId) || isLikelyTmdbNumericId(title.id);
-    }
-    return true;
+    return resolveProvenNumericTmdbId(title, mode) !== null;
   },
 
   async fetch(opts: {
@@ -44,7 +33,14 @@ export const IntroDbTimingSource: PlaybackTimingSource = {
     context?: PlaybackTimingFetchContext;
   }): Promise<PlaybackTimingSourceFetchResult> {
     const { title, episode, signal, context } = opts;
-    const tmdbId = resolveIntroDbTmdbId(title);
+    // Default series: bare numeric title.id remains valid for non-anime callers
+    // that invoke fetchDetailed without an aggregator mode.
+    const mode: TimingContentMode = context?.mode ?? "series";
+    const tmdbId = resolveProvenNumericTmdbId(title, mode);
+    if (!tmdbId) {
+      return { metadata: null, failureClass: "identity-missing" };
+    }
+
     return fetchPlaybackTimingMetadataDetailed({
       tmdbId,
       type: title.type,
