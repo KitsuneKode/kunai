@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { IntroDbTimingSource } from "@/infra/timing";
+import { AniSkipTimingSource, IntroDbTimingSource } from "@/infra/timing";
 
 const originalFetch = globalThis.fetch;
 
@@ -45,4 +45,64 @@ test("IntroDbTimingSource uses provider-native TMDB id for anime titles", async 
   expect(calls[0]).toContain("tmdb_id=999");
   expect(calls[0]).toContain("season=1");
   expect(calls[0]).toContain("episode=7");
+});
+
+test("IntroDbTimingSource reports identity-missing without a TMDB-shaped id", async () => {
+  const detailed = await IntroDbTimingSource.fetchDetailed!({
+    title: {
+      id: "allanime-opaque-id",
+      type: "series",
+      name: "No TMDB",
+    },
+    episode: { season: 1, episode: 1 },
+  });
+
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("identity-missing");
+});
+
+test("IntroDbTimingSource classifies HTTP 404 as not-found", async () => {
+  globalThis.fetch = (async () =>
+    new Response("missing", { status: 404 })) as unknown as typeof fetch;
+
+  const detailed = await IntroDbTimingSource.fetchDetailed!({
+    title: { id: "42", type: "series", name: "Gone" },
+    episode: { season: 1, episode: 1 },
+  });
+
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("not-found");
+});
+
+test("IntroDbTimingSource classifies offline DNS failures", async () => {
+  globalThis.fetch = (async () => {
+    throw new TypeError("fetch failed: getaddrinfo ENOTFOUND api.theintrodb.org");
+  }) as unknown as typeof fetch;
+
+  const detailed = await IntroDbTimingSource.fetchDetailed!({
+    title: { id: "42", type: "series", name: "Offline" },
+    episode: { season: 1, episode: 1 },
+  });
+
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("offline");
+});
+
+test("AniSkipTimingSource reports identity-missing when MAL cannot be resolved", async () => {
+  globalThis.fetch = (async () => {
+    throw new Error("should not fetch AniSkip without MAL");
+  }) as unknown as typeof fetch;
+
+  const detailed = await AniSkipTimingSource.fetchDetailed!({
+    title: {
+      id: "opaque-show",
+      type: "series",
+      name: "",
+    },
+    episode: { season: 1, episode: 1 },
+    context: { providerId: "unknown-provider" },
+  });
+
+  expect(detailed.metadata).toBeNull();
+  expect(detailed.failureClass).toBe("identity-missing");
 });

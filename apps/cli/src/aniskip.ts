@@ -1,4 +1,9 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import {
+  classifyTimingHttpStatus,
+  classifyTimingThrownError,
+  type PlaybackTimingSourceFetchResult,
+} from "@/infra/timing/PlaybackTimingSource";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import type { ProviderExternalIds } from "@kunai/types";
 
@@ -282,6 +287,21 @@ export async function fetchAniSkipTimingMetadata(opts: {
   /** From `PlaybackTimingFetchContext` — drives AllAnime-native MAL resolution. */
   providerId?: string;
 }): Promise<PlaybackTimingMetadata | null> {
+  const detailed = await fetchAniSkipTimingMetadataDetailed(opts);
+  return detailed.metadata;
+}
+
+export async function fetchAniSkipTimingMetadataDetailed(opts: {
+  anilistId: string;
+  externalIds?: ProviderExternalIds;
+  titleName?: string;
+  titleYear?: string;
+  episode: number;
+  episodeLength?: number;
+  signal?: AbortSignal;
+  parentSignal?: AbortSignal;
+  providerId?: string;
+}): Promise<PlaybackTimingSourceFetchResult> {
   const {
     anilistId,
     externalIds,
@@ -290,18 +310,27 @@ export async function fetchAniSkipTimingMetadata(opts: {
     episode,
     episodeLength,
     signal,
+    parentSignal,
     providerId,
   } = opts;
 
-  const malId = await resolveMalIdForAniSkip({
-    catalogTitleId: anilistId,
-    externalIds,
-    titleName,
-    titleYear,
-    providerId,
-    signal,
-  });
-  if (!malId) return null;
+  let malId: number | null;
+  try {
+    malId = await resolveMalIdForAniSkip({
+      catalogTitleId: anilistId,
+      externalIds,
+      titleName,
+      titleYear,
+      providerId,
+      signal,
+    });
+  } catch (error) {
+    return {
+      metadata: null,
+      failureClass: classifyTimingThrownError(error, { parentSignal }),
+    };
+  }
+  if (!malId) return { metadata: null, failureClass: "identity-missing" };
 
   // api.aniskip.com only accepts `op` and `ed` (including `recap` returns HTTP 400 for the whole request).
   const types = ["op", "ed"] as const;
@@ -313,10 +342,17 @@ export async function fetchAniSkipTimingMetadata(opts: {
       signal: signal ?? AbortSignal.timeout(5_000),
       headers: { accept: "application/json" },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return {
+        metadata: null,
+        failureClass: classifyTimingHttpStatus(res.status),
+      };
+    }
 
     const data = (await res.json()) as AniSkipResponse;
-    if (!data.found || !data.results?.length) return null;
+    if (!data.found || !data.results?.length) {
+      return { metadata: null, failureClass: "not-found" };
+    }
 
     const intro: PlaybackTimingSegment[] = [];
     const recap: PlaybackTimingSegment[] = [];
@@ -335,17 +371,25 @@ export async function fetchAniSkipTimingMetadata(opts: {
       else if (field === "credits") credits.push(seg);
     }
 
-    if (!intro.length && !recap.length && !credits.length && !preview.length) return null;
+    if (!intro.length && !recap.length && !credits.length && !preview.length) {
+      return { metadata: null, failureClass: "not-found" };
+    }
 
     return {
-      tmdbId: anilistId,
-      type: "series",
-      intro,
-      recap,
-      credits,
-      preview,
+      metadata: {
+        tmdbId: anilistId,
+        type: "series",
+        intro,
+        recap,
+        credits,
+        preview,
+      },
+      failureClass: null,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      metadata: null,
+      failureClass: classifyTimingThrownError(error, { parentSignal }),
+    };
   }
 }

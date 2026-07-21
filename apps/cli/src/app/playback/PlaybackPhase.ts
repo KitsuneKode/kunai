@@ -185,6 +185,8 @@ import {
   IntroDbTimingSource,
   mergeTimingMetadata,
   PlaybackTimingAggregator,
+  type PlaybackTimingOutcomeClass,
+  type PlaybackTimingSourceOutcome,
 } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
@@ -197,6 +199,7 @@ import {
   buildPlaybackDiagnosticEvent,
   buildRecoveryDiagnosticEvent,
   buildSubtitleDiagnosticEvent,
+  type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import {
@@ -216,6 +219,81 @@ export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 export { playbackStartupStageForPlayerEvent };
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
+
+function playbackTimingCacheKey(
+  title: TitleInfo,
+  episode: EpisodeInfo,
+  providerId?: string,
+): string {
+  const providerPart = providerId ?? "";
+  if (title.type === "movie") return `movie:${title.id}:${providerPart}`;
+  return `series:${title.id}:${episode.season}:${episode.episode}:${providerPart}`;
+}
+
+function mapTimingOutcomeToDiagnosticFailure(
+  failureClass: PlaybackTimingOutcomeClass,
+): DiagnosticFailureClass | undefined {
+  switch (failureClass) {
+    case "timeout":
+      return "timeout";
+    case "offline":
+      return "offline";
+    case "http-error":
+      return "http";
+    case "not-found":
+    case "identity-missing":
+      return "not-found";
+    case "cancelled":
+      return "cancelled";
+    case "not-applicable":
+      return undefined;
+  }
+}
+
+function recordTimingSourceDiagnostic(
+  diagnostics: PhaseContext["container"]["diagnosticsService"],
+  input: {
+    readonly outcome: PlaybackTimingSourceOutcome;
+    readonly titleId: string;
+    readonly season?: number;
+    readonly episode?: number;
+    readonly providerId?: string;
+  },
+): void {
+  const { outcome } = input;
+  const failureClass = outcome.failureClass
+    ? mapTimingOutcomeToDiagnosticFailure(outcome.failureClass)
+    : undefined;
+  diagnostics.record(
+    buildPlaybackDiagnosticEvent({
+      operation: "playback.timing.source",
+      stage: outcome.source,
+      status: outcome.failureClass
+        ? outcome.failureClass === "cancelled"
+          ? "cancelled"
+          : outcome.failureClass === "timeout"
+            ? "timed-out"
+            : outcome.failureClass === "not-applicable"
+              ? "skipped"
+              : "failed"
+        : "succeeded",
+      severity: outcome.failureClass ? "recoverable" : "healthy",
+      durationMs: outcome.durationMs,
+      failureClass,
+      message: outcome.failureClass
+        ? `Timing source ${outcome.source}: ${outcome.failureClass}`
+        : `Timing source ${outcome.source}: ok`,
+      providerId: input.providerId,
+      titleId: input.titleId,
+      season: input.season,
+      episode: input.episode,
+      subject: {
+        source: outcome.source,
+        outcomeClass: outcome.failureClass,
+      },
+    }),
+  );
+}
 
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
@@ -1029,14 +1107,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           // Kick off timing fetch in parallel with everything else — IntroDB is a
           // lightweight API call and should resolve well before stream resolution.
+          // Uses the configured provider for the warm path; after resolve we re-key
+          // on the successful provider when they differ.
           recordStartupMark("timing-fetch-started");
+          const configuredTimingProviderId = currentProvider?.metadata.id;
           const timingFetch = this.getPlaybackTimingMetadata(
             title,
             currentEpisode,
             playbackTimingByEpisode,
             resolveController.signal,
             stateManager.getState().mode === "anime",
-            currentProvider?.metadata.id,
+            configuredTimingProviderId,
+            container.diagnosticsService,
           );
 
           const watchedEntries = historyRepository.listByTitleIdentity(historyTitleLookup);
@@ -1774,7 +1856,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // If IntroDB timed out and returned null, schedule a background retry that
           // injects timing into the running player once it arrives.
           recordStartupMark("timing-wait-started", stream);
-          const fetchedPlaybackTiming = run.localEpisodeTiming ?? (await timingFetch);
+          const successfulTimingProviderId = providerHandoff.successfulProviderId;
+          const fetchedPlaybackTiming =
+            run.localEpisodeTiming ??
+            (successfulTimingProviderId === configuredTimingProviderId
+              ? await timingFetch
+              : await this.getPlaybackTimingMetadata(
+                  title,
+                  currentEpisode,
+                  playbackTimingByEpisode,
+                  resolveController.signal,
+                  stateManager.getState().mode === "anime",
+                  successfulTimingProviderId,
+                  container.diagnosticsService,
+                ));
           run.localEpisodeTiming = null;
           recordStartupMark("timing-ready", stream);
           const playbackTiming = mergeTimingMetadata(
@@ -1782,10 +1877,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             extractProviderNativeTiming(stream, title),
           );
           if (playbackTiming) {
-            const timingCacheKey =
-              title.type === "movie"
-                ? `movie:${title.id}`
-                : `series:${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
+            const timingCacheKey = playbackTimingCacheKey(
+              title,
+              currentEpisode,
+              successfulTimingProviderId,
+            );
             playbackTimingByEpisode.set(timingCacheKey, playbackTiming);
           }
           // effectiveTiming.current tracks the best timing we have — updated in-place
@@ -1801,7 +1897,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                providerId: providerHandoff.successfulProviderId,
+                providerId: successfulTimingProviderId,
               },
               run: () =>
                 this.retryTimingInBackground(
@@ -1811,7 +1907,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   effectiveTiming,
                   playbackTimingByEpisode,
                   stateManager.getState().mode === "anime",
-                  providerHandoff.successfulProviderId,
+                  successfulTimingProviderId,
                 ),
             });
           }
@@ -3189,16 +3285,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         episode,
         mode,
         AbortSignal.timeout(10_000),
-        { providerId },
+        {
+          providerId,
+          onSourceOutcome: (outcome) =>
+            recordTimingSourceDiagnostic(container.diagnosticsService, {
+              outcome,
+              titleId: title.id,
+              season: episode.season,
+              episode: episode.episode,
+              providerId,
+            }),
+        },
       );
       if (timing) {
         if (timingRef) timingRef.current = timing;
         if (cache) {
-          const cacheKey =
-            title.type === "movie"
-              ? `movie:${title.id}`
-              : `series:${title.id}:${episode.season}:${episode.episode}`;
-          cache.set(cacheKey, timing);
+          cache.set(playbackTimingCacheKey(title, episode, providerId), timing);
         }
         container.playerControl.updateCurrentPlaybackTiming(timing, "background-retry");
       }
@@ -3212,18 +3314,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     signal?: AbortSignal,
     isAnime?: boolean,
     providerId?: string,
+    diagnostics?: PhaseContext["container"]["diagnosticsService"],
   ) {
-    const cacheKey =
-      title.type === "movie"
-        ? `movie:${title.id}`
-        : `series:${title.id}:${episode.season}:${episode.episode}`;
+    const cacheKey = playbackTimingCacheKey(title, episode, providerId);
 
     if (cache.has(cacheKey)) {
       return cache.get(cacheKey) ?? null;
     }
 
     const mode = isAnime ? "anime" : title.type === "movie" ? "movie" : "series";
-    const timing = await timingAggregator.resolve(title, episode, mode, signal, { providerId });
+    const timing = await timingAggregator.resolve(title, episode, mode, signal, {
+      providerId,
+      onSourceOutcome: diagnostics
+        ? (outcome) =>
+            recordTimingSourceDiagnostic(diagnostics, {
+              outcome,
+              titleId: title.id,
+              season: episode.season,
+              episode: episode.episode,
+              providerId,
+            })
+        : undefined,
+    });
     cache.set(cacheKey, timing);
     return timing;
   }
