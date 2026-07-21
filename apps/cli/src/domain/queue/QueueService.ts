@@ -7,9 +7,15 @@ import type {
 
 import type { ListService } from "../lists/ListService";
 import type { MediaItemIdentity } from "../media/media-item-identity";
+import {
+  queuePlaybackIntentFromEntry,
+  type QueuePlaybackFailureContext,
+  type QueuePlaybackIntent,
+} from "./queue-playback-intent";
 import { planMediaQueuePlacement } from "./QueuePlanner";
 
 export type { QueueEntry, QueueEntryInput };
+export type { QueuePlaybackFailureContext, QueuePlaybackIntent };
 
 export type QueueStatus = {
   readonly unplayedCount: number;
@@ -54,6 +60,35 @@ export class QueueService {
     return this.repo.peekNext(this.sessionId);
   }
 
+  /**
+   * Claim an exact pending row for playback handoff.
+   * Compare-and-set via storage; does not mark played until acknowledgePlaybackStarted.
+   */
+  beginPlayback(
+    id: string,
+    source: QueuePlaybackIntent["source"],
+    at = new Date().toISOString(),
+  ): QueuePlaybackIntent | undefined {
+    const entry = this.repo.getById(id);
+    if (!entry || entry.sessionId !== this.sessionId) return undefined;
+    if (!this.repo.markInFlight(id, this.sessionId, at)) return undefined;
+    return queuePlaybackIntentFromEntry(entry, source);
+  }
+
+  /** Confirm playback-started for the exact claimed intent. */
+  acknowledgePlaybackStarted(intent: QueuePlaybackIntent, at = new Date().toISOString()): boolean {
+    return this.repo.acknowledgePlaybackStarted(intent.queueEntryId, this.sessionId, at);
+  }
+
+  /** Pre-start failure: restore the exact claimed row and retain failure context. */
+  rollbackBeforeStart(intent: QueuePlaybackIntent, failure: QueuePlaybackFailureContext): boolean {
+    return this.repo.restoreInFlightToPending(intent.queueEntryId, this.sessionId, failure);
+  }
+
+  /**
+   * @deprecated Head-based consumption. Prefer beginPlayback(id) with exact queue identity.
+   * Retained until PlaybackPhase auto-next migrates (S3 Task 4).
+   */
   advance(): QueueEntry | undefined {
     const current = this.repo.peekNext(this.sessionId);
     if (current) {

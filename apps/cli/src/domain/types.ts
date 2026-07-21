@@ -15,6 +15,7 @@ import type {
 } from "@kunai/types";
 
 import type { CalendarItem } from "./calendar/calendar-item";
+import type { QueuePlaybackIntent } from "./queue/queue-playback-intent";
 
 export type { SharedResolveTrace };
 export type { CalendarItem };
@@ -28,6 +29,7 @@ export type {
   ProviderMediaInventory,
   SelectedMediaTrackState,
 } from "./media/media-track-model";
+export type { QueuePlaybackIntent };
 
 export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
@@ -70,11 +72,15 @@ export interface TitleInfo {
   readonly isAnime?: boolean;
   readonly episodeCount?: number;
   readonly launchSource?: "search" | "history" | "continue";
+  /** Exact queue handoff identity when playback was claimed from the Up Next queue. */
+  readonly queuePlaybackIntent?: QueuePlaybackIntent;
 }
 
 export interface EpisodeInfo {
   readonly season: number;
   readonly episode: number;
+  /** Absolute anime episode identity when season/episode mapping is unavailable or secondary. */
+  readonly absoluteEpisode?: number;
   readonly name?: string;
   readonly airDate?: string;
   readonly overview?: string;

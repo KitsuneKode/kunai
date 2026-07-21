@@ -1,3 +1,5 @@
+import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
+import { queuePlaybackIntentFromEntry } from "@/domain/queue/queue-playback-intent";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { historyContentType } from "@/services/continuation/history-progress";
 import type { HistoryProgress, QueueEntry } from "@kunai/storage";
@@ -47,14 +49,23 @@ export function episodeInfoFromMediaItemIdentity(item: MediaItemIdentity): Episo
   return {
     season: item.season ?? 1,
     episode: item.episode ?? item.absoluteEpisode ?? 1,
+    absoluteEpisode: item.absoluteEpisode,
   };
 }
 
-export function titleInfoFromQueueEntry(entry: QueueEntry): TitleInfo {
+export function titleInfoFromQueueEntry(
+  entry: QueueEntry,
+  sourceOrIntent: QueuePlaybackIntent["source"] | QueuePlaybackIntent = "queue",
+): TitleInfo {
+  const queuePlaybackIntent =
+    typeof sourceOrIntent === "string"
+      ? queuePlaybackIntentFromEntry(entry, sourceOrIntent)
+      : sourceOrIntent;
   return {
     id: entry.titleId,
     type: entry.mediaKind === "movie" ? "movie" : "series",
     name: entry.title,
+    queuePlaybackIntent,
   };
 }
 
@@ -70,5 +81,6 @@ export function episodeInfoFromQueueEntry(entry: QueueEntry): EpisodeInfo | unde
   return {
     season: entry.season ?? 1,
     episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    absoluteEpisode: entry.absoluteEpisode,
   };
 }

@@ -3,6 +3,76 @@ import { expect, test } from "bun:test";
 import { QueueService } from "@/domain/queue/QueueService";
 import { openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
 
+test("beginPlayback claims requested row, not head", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
+  });
+  const enqueue = (titleId: string) =>
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "anime",
+      titleId,
+      absoluteEpisode: titleId === "selected" ? 13 : 1,
+      source: "manual",
+      sessionId: "s",
+    });
+  const first = enqueue("first");
+  const selected = enqueue("selected");
+  const service = new QueueService(repo, "s");
+
+  expect(service.beginPlayback(selected.id, "queue")?.queueEntryId).toBe(selected.id);
+  expect(repo.getById(first.id)?.status).toBe("pending");
+  expect(repo.getById(selected.id)?.status).toBe("in-flight");
+
+  db.close();
+});
+
+test("acknowledgePlaybackStarted and rollbackBeforeStart use exact intent id", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
+  });
+  const entry = repo.enqueue({
+    title: "Anime",
+    mediaKind: "anime",
+    titleId: "anilist:1",
+    absoluteEpisode: 7,
+    queuePosition: 0,
+    source: "manual",
+    sessionId: "s",
+  });
+  const service = new QueueService(repo, "s");
+  const intent = service.beginPlayback(entry.id, "post-play", "2026-07-20T10:00:00.000Z");
+  expect(intent?.absoluteEpisode).toBe(7);
+
+  expect(
+    service.rollbackBeforeStart(intent!, {
+      code: "mpv-launch-failed",
+      stage: "player-launch",
+      at: "2026-07-20T10:01:00.000Z",
+    }),
+  ).toBe(true);
+  expect(repo.getById(entry.id)?.status).toBe("pending");
+  expect(repo.getById(entry.id)?.queuePosition).toBe(0);
+
+  const claimed = service.beginPlayback(entry.id, "queue", "2026-07-20T10:02:00.000Z");
+  expect(service.acknowledgePlaybackStarted(claimed!, "2026-07-20T10:03:00.000Z")).toBe(true);
+  expect(repo.getById(entry.id)?.status).toBe("played");
+
+  db.close();
+});
+
 test("QueueService restores a recoverable queue into the current session explicitly", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");
