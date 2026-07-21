@@ -172,4 +172,23 @@ describe("version lock inspection", () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  test("young corrupt lock is inspect-stale and immediately reclaimable", async () => {
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "3.1.4.lock");
+    await writeFile(lockPath, "{not-valid-json\n");
+
+    const inspection = await inspectVersionLock(layout, "3.1.4");
+    expect(inspection).toMatchObject({
+      status: "stale",
+      content: null,
+    });
+    expect(existsSync(lockPath)).toBe(true);
+
+    const acquire = await tryAcquireVersionLock(layout, "3.1.4");
+    expect(acquire.acquired).toBe(true);
+    if (acquire.acquired) await acquire.release();
+
+    await rm(root, { recursive: true, force: true });
+  });
 });

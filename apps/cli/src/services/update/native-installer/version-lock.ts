@@ -15,8 +15,6 @@ export type LockAcquireResult =
   | { readonly acquired: true; readonly release: () => Promise<void> }
   | { readonly acquired: false; readonly holderPid?: number };
 
-const LOCK_STALE_MS = 7 * 24 * 60 * 60 * 1000;
-
 export type VersionLockInspection =
   | { readonly status: "missing" }
   | { readonly status: "active"; readonly content: VersionLockContent }
@@ -46,20 +44,16 @@ export async function readLockContent(path: string): Promise<VersionLockContent 
 }
 
 /**
- * Alive holders are never stale by age. Age only applies to unreadable lock
- * files (or missing PID metadata) as a reclaim fallback.
+ * Alive holders are never stale. Dead-PID and unreadable/invalid lock files
+ * are immediately reclaimable (aligned with inspectVersionLock "stale").
  */
 async function isLockStale(path: string): Promise<boolean> {
   const content = await readLockContent(path);
   if (content) {
     return !isProcessAlive(content.pid);
   }
-  try {
-    const stat = await Bun.file(path).stat();
-    return Date.now() - stat.mtimeMs > LOCK_STALE_MS;
-  } catch {
-    return true;
-  }
+  // Unreadable/invalid: reclaim immediately (matches inspect "stale").
+  return true;
 }
 
 /** Read-only lock inspection — never deletes or reclaims lock files. */
