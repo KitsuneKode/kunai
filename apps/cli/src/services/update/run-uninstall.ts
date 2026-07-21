@@ -52,6 +52,8 @@ export type RunUninstallOptions = {
   readonly layout?: InstallLayoutPaths;
   readonly platform?: NodeJS.Platform;
   readonly preservePaths?: readonly string[];
+  /** Test seam for package-manager delegation. */
+  readonly execImpl?: (command: readonly string[]) => Promise<number>;
 };
 
 /**
@@ -72,11 +74,16 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   if (plan.kind === "manual") {
     console.log(plan.message);
   } else if (plan.kind === "exec") {
-    const code = await Bun.spawn(plan.command, { stdout: "inherit", stderr: "inherit" }).exited;
+    const execImpl =
+      opts.execImpl ??
+      ((command: readonly string[]) =>
+        Bun.spawn([...command], { stdout: "inherit", stderr: "inherit" }).exited);
+    const code = await execImpl(plan.command);
     if (code !== 0) {
       console.error(`Package manager uninstall exited with code ${code}.`);
       return code;
     }
+    await rm(join(layout.configDir, "install.json"), { force: true });
     if (opts.purge) {
       await purgeUserRoots(layout, opts.preservePaths);
     } else {

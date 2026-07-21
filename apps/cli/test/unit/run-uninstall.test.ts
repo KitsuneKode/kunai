@@ -65,6 +65,75 @@ test("unknown channel plans manual guidance", () => {
   expect(p.kind).toBe("manual");
 });
 
+test("runUninstall removes the manifest after package-manager uninstall succeeds", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-package-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    configDir: join(root, "config"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+  await mkdir(layout.configDir, { recursive: true });
+  await writeInstallManifest(
+    {
+      method: "npm-global",
+      activeVersion: "1.0.0",
+      launcherPath: layout.launcherPath,
+      downloadBaseUrl: "https://registry.npmjs.org",
+    },
+    layout.configDir,
+  );
+  const configJson = join(layout.configDir, "config.json");
+  await writeFile(configJson, "{}\n");
+
+  const commands: string[][] = [];
+  const code = await runUninstall({
+    purge: false,
+    layout,
+    execImpl: async (command) => {
+      commands.push([...command]);
+      return 0;
+    },
+  });
+
+  expect(code).toBe(0);
+  expect(commands).toEqual([["npm", "uninstall", "-g", "@kitsunekode/kunai"]]);
+  expect(existsSync(join(layout.configDir, "install.json"))).toBe(false);
+  expect(existsSync(configJson)).toBe(true);
+});
+
+test("runUninstall retains the manifest when package-manager uninstall fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-package-failure-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    configDir: join(root, "config"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+  await writeInstallManifest(
+    {
+      method: "npm-global",
+      activeVersion: "1.0.0",
+      launcherPath: layout.launcherPath,
+      downloadBaseUrl: "https://registry.npmjs.org",
+    },
+    layout.configDir,
+  );
+
+  const code = await runUninstall({
+    purge: false,
+    layout,
+    execImpl: async () => 7,
+  });
+
+  expect(code).toBe(7);
+  expect(existsSync(join(layout.configDir, "install.json"))).toBe(true);
+});
+
 test("runUninstall native path preserves config/history/cache/downloads by default", async () => {
   const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-"));
   made.push(root);

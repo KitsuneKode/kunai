@@ -20,8 +20,6 @@ import packageJson from "../../package.json" with { type: "json" };
 // script sets it. The default suite (`bun run test`) skips it.
 
 const CLI_ROOT = join(import.meta.dirname, "../..");
-const POSTINSTALL_ARTIFACT = join(CLI_ROOT, "dist/postinstall.js");
-const NPM_BUNDLE_ARTIFACT = join(CLI_ROOT, "dist/kunai.js");
 
 const RUN_INSTALL = process.env.KUNAI_NPM_GLOBAL_INSTALL === "1";
 
@@ -45,13 +43,11 @@ describeInstall("npm global install lifecycle", () => {
   }
 
   beforeAll(async () => {
-    // The tarball packs whatever is in dist/. Ensure a fresh release build so the
-    // bundled postinstall artifact exists before packing.
-    if (!existsSync(POSTINSTALL_ARTIFACT) || !existsSync(NPM_BUNDLE_ARTIFACT)) {
-      const build = spawnSync("bun", ["run", "build"], { cwd: CLI_ROOT, encoding: "utf8" });
-      if (build.status !== 0) {
-        throw new Error(`[npm-global-install] build failed:\n${build.stdout}\n${build.stderr}`);
-      }
+    // The tarball packs whatever is in dist/. Always rebuild so this lifecycle
+    // test exercises the current source rather than a stale bundle from a prior run.
+    const build = spawnSync("bun", ["run", "build"], { cwd: CLI_ROOT, encoding: "utf8" });
+    if (build.status !== 0) {
+      throw new Error(`[npm-global-install] build failed:\n${build.stdout}\n${build.stderr}`);
     }
 
     workDir = await mkdtemp(join(tmpdir(), "kunai-npm-global-"));
