@@ -558,34 +558,36 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       ? createQueuePlaybackAttempt(container.queueService, title.queuePlaybackIntent)
       : null;
 
-    const dependencyGate = await gatePlaybackDependencies({ player });
-    if (!dependencyGate.ok) {
-      diagnosticsService.record({
-        category: "playback",
-        operation: "playback.dependency.gate",
-        message: dependencyGate.problem.userMessage,
-        context: {
-          dependency: dependencyGate.dependency,
-          cause: dependencyGate.problem.cause,
-          stage: dependencyGate.problem.stage,
-          severity: dependencyGate.problem.severity,
-          recommendedAction: dependencyGate.problem.recommendedAction,
-          remediation: dependencyGate.remediation,
-          titleId: title.id,
-        },
-      });
-      stateManager.dispatch({
-        type: "SET_PLAYBACK_PROBLEM",
-        problem: dependencyGate.problem,
-      });
-      this.updatePlaybackFeedback(context, {
-        detail: "Playback unavailable",
-        note: dependencyGate.problem.userMessage,
-      });
-      return { status: "success", value: "back_to_results" };
-    }
-
     try {
+      // Gate before episode/provider/history work so finally still rolls back
+      // unacknowledged queue claims when mpv (or other deps) are missing.
+      const dependencyGate = await gatePlaybackDependencies({ player });
+      if (!dependencyGate.ok) {
+        diagnosticsService.record({
+          category: "playback",
+          operation: "playback.dependency.gate",
+          message: dependencyGate.problem.userMessage,
+          context: {
+            dependency: dependencyGate.dependency,
+            cause: dependencyGate.problem.cause,
+            stage: dependencyGate.problem.stage,
+            severity: dependencyGate.problem.severity,
+            recommendedAction: dependencyGate.problem.recommendedAction,
+            remediation: dependencyGate.remediation,
+            titleId: title.id,
+          },
+        });
+        stateManager.dispatch({
+          type: "SET_PLAYBACK_PROBLEM",
+          problem: dependencyGate.problem,
+        });
+        this.updatePlaybackFeedback(context, {
+          detail: "Playback unavailable",
+          note: dependencyGate.problem.userMessage,
+        });
+        return { status: "success", value: "back_to_results" };
+      }
+
       // Episode selection (for series)
       queueAttempt?.setStage("episode-selection");
       let episode: EpisodeInfo | undefined;

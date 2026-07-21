@@ -6,6 +6,8 @@ import {
 } from "@/app/playback/playback-dependency-gate";
 import { PlaybackPhase } from "@/app/playback/PlaybackPhase";
 import type { PhaseContext } from "@/app/session/Phase";
+import { QueueService } from "@/domain/queue/QueueService";
+import { openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
 
 describe("buildMpvRemediation", () => {
   test("linux guidance prefers apt", () => {
@@ -189,5 +191,121 @@ describe("PlaybackPhase mpv dependency boundary", () => {
           event.message?.toLowerCase().includes("mpv") === true,
       ),
     ).toBe(true);
+  });
+
+  test("claimed queue intent + missing mpv rolls back to pending and sets playback problem", async () => {
+    const db = openKunaiDatabase(":memory:");
+    runMigrations(db, "data");
+    const repo = new QueueRepository(db);
+    repo.createQueueSession({
+      id: "s",
+      status: "active",
+      createdAt: "2026-07-21T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+    });
+    const queueService = new QueueService(repo, "s");
+    const entry = queueService.enqueue({
+      title: "Demo",
+      mediaKind: "anime",
+      titleId: "anilist:1",
+      absoluteEpisode: 1,
+      source: "manual",
+    });
+    const intent = queueService.beginPlayback(entry.id, "queue", "2026-07-21T12:00:00.000Z");
+    expect(intent).toBeDefined();
+    expect(repo.getById(entry.id)?.status).toBe("in-flight");
+
+    const dispatches: Array<{ type: string; problem?: { cause?: string } }> = [];
+    const context = {
+      signal: new AbortController().signal,
+      container: {
+        providerRegistry: {
+          get: () => {
+            throw new Error("provider must stay untouched");
+          },
+        },
+        stateManager: {
+          getState: () => ({
+            provider: "allanime",
+            mode: "anime",
+            autoplaySessionPaused: false,
+            stopAfterCurrent: false,
+            providerSwitchSeq: 0,
+            currentTitle: null,
+            currentEpisode: null,
+            videoMeta: null,
+          }),
+          dispatch: (event: { type: string; problem?: { cause?: string } }) => {
+            dispatches.push(event);
+          },
+          subscribe: () => () => {},
+        },
+        logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
+        historyRepository: {
+          getLatestForTitleIdentity: () => null,
+          getResumeOffer: () => null,
+        },
+        config: {
+          autoNext: false,
+          quitNearEndThresholdMode: "default",
+          provider: "allanime",
+          animeProvider: "allanime",
+        },
+        cacheStore: {},
+        diagnosticsService: { record: () => {} },
+        playerControl: {
+          getActive: () => null,
+          consumeLastAction: () => null,
+          setActive: () => {},
+        },
+        player: {
+          isAvailable: async () => false,
+          releasePersistentSession: async () => {},
+          killActiveMpvProcessesSync: () => {},
+          beginShutdown: () => {},
+        },
+        workControl: { setActive: () => {} },
+        episodePlaybackSelection: {
+          get: () => null,
+          set: async () => {},
+        },
+        titlePlaybackSource: {
+          get: () => null,
+          set: async () => {},
+        },
+        queueService,
+        providerHealth: { get: () => null },
+        presence: {
+          updatePlayback: async () => {},
+          clearPlayback: async () => {},
+        },
+        playbackHistoryLedgerFactory: () => ({
+          start: () => {
+            throw new Error("history must stay untouched");
+          },
+        }),
+      },
+    } as unknown as PhaseContext;
+
+    const result = await new PlaybackPhase().execute(
+      {
+        id: "anilist:1",
+        type: "series",
+        name: "Demo",
+        isAnime: true,
+        queuePlaybackIntent: intent!,
+      },
+      context,
+    );
+
+    expect(result).toEqual({ status: "success", value: "back_to_results" });
+    expect(repo.getById(entry.id)?.status).toBe("pending");
+    expect(
+      dispatches.some(
+        (event) => event.type === "SET_PLAYBACK_PROBLEM" && event.problem?.cause === "mpv-missing",
+      ),
+    ).toBe(true);
+
+    db.close();
   });
 });
