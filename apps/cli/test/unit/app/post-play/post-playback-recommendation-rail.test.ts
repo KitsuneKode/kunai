@@ -88,6 +88,53 @@ describe("PostPlaybackRecommendationRail", () => {
     expect(rail.attempted).toBe(true);
   });
 
+  it("upgrades a timed-out block load in the background without a second fetch", async () => {
+    const { container } = makeContainer();
+    let resolveLoad: ((items: readonly PostPlaybackRecommendationItem[]) => void) | undefined;
+    let loadCalls = 0;
+    let notified = 0;
+    const rail = new PostPlaybackRecommendationRail({
+      container,
+      title: TITLE,
+      budgetMs: 50,
+      load: () => {
+        loadCalls += 1;
+        return new Promise<readonly PostPlaybackRecommendationItem[]>((resolve) => {
+          resolveLoad = resolve;
+        });
+      },
+      sleep: async () => {},
+    });
+    rail.subscribe(() => {
+      notified += 1;
+    });
+
+    const first = await rail.resolveRailItems({
+      mode: "series",
+      prefetchedItems: null,
+      autoContinueIntoRecommendationPossible: true,
+    });
+    expect(first).toEqual([]);
+    expect(rail.attempted).toBe(true);
+    expect(rail.loadedItems).toBeNull();
+    expect(loadCalls).toBe(1);
+
+    resolveLoad?.([item("late1"), item("late2")]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(notified).toBe(1);
+    expect(rail.loadedItems?.map((i) => i.id)).toEqual(["late1", "late2"]);
+
+    const second = await rail.resolveRailItems({
+      mode: "series",
+      prefetchedItems: null,
+      autoContinueIntoRecommendationPossible: true,
+    });
+    expect(second.map((i) => i.id)).toEqual(["late1", "late2"]);
+    expect(loadCalls).toBe(1);
+  });
+
   it("loads in the background and surfaces the items on a later iteration", async () => {
     const { container } = makeContainer();
     let resolveLoad: ((items: readonly PostPlaybackRecommendationItem[]) => void) | undefined;

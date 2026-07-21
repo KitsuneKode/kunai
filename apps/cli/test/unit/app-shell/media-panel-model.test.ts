@@ -268,4 +268,17 @@ describe("buildMediaPanel — video", () => {
     );
     expect(model.facts).toContainEqual({ label: "live", value: "● live", tone: "success" });
   });
+
+  test("badges channel contentShape distinctly from video", () => {
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "video",
+        title: "Example Channel",
+        videoMeta: { channelTitle: "Example Channel", contentShape: "channel" },
+        nextEpisodeLabel: "#2 · Upload",
+      }),
+    );
+    expect(model.kindBadge).toBe("channel");
+    expect(model.miniCards[0]?.meta).toBe("channel");
+  });
 });

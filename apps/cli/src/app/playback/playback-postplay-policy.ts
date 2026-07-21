@@ -69,3 +69,25 @@ export function canAutoContinueIntoRecommendation(input: {
     input.autoplayRecommendationsEnabled
   );
 }
+
+/** True when a recommendation id is safe to auto-play in youtube shell mode. */
+export function isYoutubeSafeRecommendationId(id: string | undefined): boolean {
+  const trimmed = id?.trim() ?? "";
+  return (
+    trimmed.startsWith("youtube:") ||
+    trimmed.startsWith("youtube-playlist:") ||
+    trimmed.startsWith("youtube-channel:")
+  );
+}
+
+/**
+ * Final gate before auto-continuing into a recommendation. YouTube mode must
+ * only advance into youtube catalog ids (never TMDB leftovers).
+ */
+export function canAdvanceIntoRecommendation(input: {
+  readonly shellMode: string;
+  readonly recommendationId: string | undefined;
+}): boolean {
+  if (input.shellMode !== "youtube") return Boolean(input.recommendationId?.trim());
+  return isYoutubeSafeRecommendationId(input.recommendationId);
+}

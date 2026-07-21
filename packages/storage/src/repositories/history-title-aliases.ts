@@ -14,6 +14,8 @@ export type HistoryTitleAliasNs =
   | "tmdb"
   | "imdb"
   | "youtube"
+  | "youtube-channel"
+  | "youtube-playlist"
   | `provider:${string}`;
 
 export interface HistoryTitleAliasInput {
@@ -103,6 +105,10 @@ export function externalIdsToAliases(
   if (externalIds.tmdbId) aliases.push({ ns: "tmdb", id: externalIds.tmdbId });
   if (externalIds.imdbId) aliases.push({ ns: "imdb", id: externalIds.imdbId });
   if (externalIds.youtubeId) aliases.push({ ns: "youtube", id: externalIds.youtubeId });
+  if (externalIds.youtubeChannelId)
+    aliases.push({ ns: "youtube-channel", id: externalIds.youtubeChannelId });
+  if (externalIds.youtubePlaylistId)
+    aliases.push({ ns: "youtube-playlist", id: externalIds.youtubePlaylistId });
   for (const [providerId, nativeId] of Object.entries(externalIds.providerNativeIds ?? {})) {
     if (!nativeId?.trim()) continue;
     aliases.push({ ns: `provider:${providerId}`, id: nativeId.trim() });

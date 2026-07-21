@@ -3,6 +3,13 @@ import type { ImageCapability } from "@/image";
 import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
 
+import {
+  clearKittyPlacementRegistry,
+  registerKittyPlacement,
+  releaseKittySlot,
+  setKittyPlacementDeleteFn,
+  type KittyPlacementSlot,
+} from "./kitty-placement-registry";
 import type { PosterResult } from "./poster-types";
 
 type ChafaSpawnOptions = {
@@ -54,9 +61,15 @@ export function deleteKittyImage(imageId: number): void {
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
+setKittyPlacementDeleteFn(deleteKittyImage);
+
 export function deleteAllTerminalImages(): void {
-  if (!canRenderKitty()) return;
+  if (!canRenderKitty()) {
+    clearKittyPlacementRegistry();
+    return;
+  }
   process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
+  clearKittyPlacementRegistry();
 }
 
 const DIACRITICS: readonly number[] = [
@@ -141,12 +154,34 @@ async function uploadKitty(
   }
 }
 
-async function renderKitty(data: ArrayBuffer, rows: number, cols: number): Promise<PosterResult> {
+async function renderKitty(
+  data: ArrayBuffer,
+  rows: number,
+  cols: number,
+  placementSlot?: KittyPlacementSlot,
+  signal?: AbortSignal,
+): Promise<PosterResult> {
   if (data.byteLength === 0) return { kind: "none" };
+  if (signal?.aborted) return { kind: "none" };
   const png = await ensurePngBytes(new Uint8Array(data));
-  if (!png) return { kind: "none" };
+  if (signal?.aborted) return { kind: "none" };
+  if (!png) {
+    // JPEG/WebP without ImageMagick: fall back to chafa and release any prior
+    // Kitty for this slot so the old image does not ghost under the text.
+    debugImage("kitty PNG conversion failed; falling back to chafa symbols");
+    if (placementSlot) releaseKittySlot(placementSlot);
+    return await renderChafaSymbols(data, rows, cols);
+  }
   const imageId = allocId();
   await uploadKitty(png, imageId, rows, cols);
+  if (signal?.aborted) {
+    // Upload finished after cancel — delete the orphan so it cannot clobber a winner.
+    deleteKittyImage(imageId);
+    return { kind: "none" };
+  }
+  if (placementSlot) {
+    registerKittyPlacement(placementSlot, imageId);
+  }
   return {
     kind: "kitty",
     placeholder: buildPlaceholder(imageId, rows, cols),
@@ -219,9 +254,19 @@ export async function renderPoster(
     cols,
     allowKitty = true,
     inkEmbedded = false,
-  }: { rows: number; cols: number; allowKitty?: boolean; inkEmbedded?: boolean },
+    placementSlot,
+    signal,
+  }: {
+    rows: number;
+    cols: number;
+    allowKitty?: boolean;
+    inkEmbedded?: boolean;
+    placementSlot?: KittyPlacementSlot;
+    signal?: AbortSignal;
+  },
 ): Promise<PosterResult> {
   try {
+    if (signal?.aborted) return { kind: "none" };
     if (inkEmbedded) {
       return await renderChafaSymbols(data, rows, cols);
     }
@@ -229,13 +274,15 @@ export async function renderPoster(
     const capability = resolveAppShellPosterCapability(runtime.detectImageCapability());
     if (!capability.available || capability.renderer === "none") return { kind: "none" };
     if (capability.renderer === "kitty-native") {
-      return await renderKitty(data, rows, cols);
+      return await renderKitty(data, rows, cols, placementSlot, signal);
     }
     return await renderChafaSymbols(data, rows, cols);
   } catch {
     return { kind: "none" };
   }
 }
+
+export type { KittyPlacementSlot };
 
 type PosterFallbackColor = "amber" | "teal" | "purple" | "pink";
 const POSTER_COLORS: readonly PosterFallbackColor[] = ["amber", "teal", "purple", "pink"];

@@ -41,6 +41,8 @@ Recommendations use TMDB surfaces on demand:
 - trending
 - recency-weighted genre affinity from local history
 
+**YouTube mode** uses a separate native path (`YoutubeRecommendationService`): Invidious related videos, same-channel uploads, history channel affinity, then Invidious trending. It never falls through to TMDB discover for post-play rails.
+
 Calendar uses catalog schedule services on demand:
 
 - AniList releasing-today for anime mode
@@ -99,7 +101,7 @@ flow.
 - Add stronger visual verification for discover, calendar, and random loading/layout at small and wide terminal sizes.
 - Keep refining the discover companion treatment inside browse so recommendations, calendar entries, and random picks feel native.
 - Evaluate whether explicit cache age text is needed for discover/calendar SWR results.
-- Extend anime recommendation quality later through catalog identity work; do not add a provider-specific recommendation path.
+- YouTube mode uses a native recommendation path (Invidious related + same-channel + history channel affinity); keep refining mix weights and trending region.
 
 ## Related
 

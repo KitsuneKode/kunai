@@ -1061,6 +1061,7 @@ export function BrowseShell<T>({
       // hook only needs a tiny guard rather than re-debouncing on top of it.
       debounceMs: 16,
       variant: "detail",
+      placementSlot: "browse-preview",
     },
   );
   const mappedPosterState = mapPosterPreviewState({

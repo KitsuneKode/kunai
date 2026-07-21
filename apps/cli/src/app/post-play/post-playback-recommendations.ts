@@ -1,8 +1,8 @@
-import type { PlaybackRecommendationRailItem } from "@/app-shell/types";
 import { buildDiscoverSections } from "@/app/discover/discover-sections";
 import { loadDiscoveryList } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { loadYoutubeRecommendations } from "@/services/youtube/YoutubeRecommendationService";
 
 export interface PostPlaybackRecommendationItem {
   readonly id: string;
@@ -14,11 +14,16 @@ export interface PostPlaybackRecommendationItem {
   readonly overview?: string;
   readonly posterPath?: string | null;
   readonly episodeCount?: number;
+  readonly externalIds?: SearchResult["externalIds"];
+  readonly channelId?: string;
+  readonly channelTitle?: string;
+  readonly contentShape?: SearchResult["contentShape"];
 }
 
+/** Map post-play items into the shell rail shape (structurally compatible). */
 export function postPlaybackRecommendationItemsToRailItems(
   items: readonly PostPlaybackRecommendationItem[],
-): readonly PlaybackRecommendationRailItem[] {
+): readonly PostPlaybackRecommendationItem[] {
   return items.map((item) => ({
     id: item.id,
     title: item.title,
@@ -29,6 +34,10 @@ export function postPlaybackRecommendationItemsToRailItems(
     ...(item.overview ? { overview: item.overview } : {}),
     ...(item.posterPath !== undefined ? { posterPath: item.posterPath } : {}),
     ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
+    ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+    ...(item.channelId ? { channelId: item.channelId } : {}),
+    ...(item.channelTitle ? { channelTitle: item.channelTitle } : {}),
+    ...(item.contentShape ? { contentShape: item.contentShape } : {}),
   }));
 }
 
@@ -94,6 +103,8 @@ type RecommendationRailContainer = Pick<
 export class PostPlaybackRecommendationRail {
   private loaded: readonly PostPlaybackRecommendationItem[] | null = null;
   private inFlight = false;
+  /** True after any block/background load is started (including timed-out block). */
+  private loadStarted = false;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -109,7 +120,7 @@ export class PostPlaybackRecommendationRail {
 
   /** True once a live load has been attempted this post-play session. */
   get attempted(): boolean {
-    return this.loaded !== null;
+    return this.loadStarted;
   }
 
   /** Cached background/block load result, if any. */
@@ -168,20 +179,51 @@ export class PostPlaybackRecommendationRail {
     const loadMode = resolvePostPlaybackRecommendationLoadMode({
       seedCount: railItems.length,
       railEnabled: container.config.recommendationRailEnabled,
-      alreadyAttempted: this.loaded !== null,
+      alreadyAttempted: this.loadStarted,
       autoContinueIntoRecommendationPossible: input.autoContinueIntoRecommendationPossible,
     });
 
     if (loadMode === "block") {
+      this.loadStarted = true;
       const loadStartedAtMs = now();
       let timedOut = false;
-      this.loaded = await Promise.race([
-        load(input.mode),
-        sleep(budgetMs).then(() => {
-          timedOut = true;
-          return [] as readonly PostPlaybackRecommendationItem[];
-        }),
-      ]).catch(() => [] as readonly PostPlaybackRecommendationItem[]);
+      const loadPromise = load(input.mode).catch(
+        () => [] as readonly PostPlaybackRecommendationItem[],
+      );
+      const raced = await Promise.race([
+        loadPromise.then((items) => ({ timedOut: false as const, items })),
+        sleep(budgetMs).then(() => ({
+          timedOut: true as const,
+          items: [] as readonly PostPlaybackRecommendationItem[],
+        })),
+      ]);
+      timedOut = raced.timedOut;
+      if (timedOut) {
+        // Do not lock loaded=[] — keep the in-flight load and upgrade in background
+        // so multi-hop YouTube Invidious fetches can still fill the rail.
+        if (!this.inFlight) {
+          this.inFlight = true;
+          void loadPromise.then((items) => {
+            this.loaded = items;
+            this.inFlight = false;
+            this.notifyLoaded();
+            container.diagnosticsService.record({
+              category: "playback",
+              operation: "post-playback.recommendations.background",
+              message: "Post-playback recommendations finished after block timeout",
+              context: {
+                titleId: title.id,
+                mode: input.mode,
+                itemCount: items.length,
+                elapsedMs: now() - loadStartedAtMs,
+              },
+            });
+            return items;
+          });
+        }
+      } else {
+        this.loaded = raced.items;
+      }
       container.diagnosticsService.record({
         category: "playback",
         operation: "post-playback.recommendations.load",
@@ -189,18 +231,20 @@ export class PostPlaybackRecommendationRail {
         context: {
           titleId: title.id,
           mode: input.mode,
-          itemCount: this.loaded.length,
+          itemCount: this.loaded?.length ?? 0,
           elapsedMs: now() - loadStartedAtMs,
           timedOut,
         },
       });
     } else if (loadMode === "background" && !this.inFlight) {
+      this.loadStarted = true;
       this.inFlight = true;
       const loadStartedAtMs = now();
       void load(input.mode)
         .catch(() => [] as readonly PostPlaybackRecommendationItem[])
         .then((items) => {
           this.loaded = items;
+          this.inFlight = false;
           this.notifyLoaded();
           container.diagnosticsService.record({
             category: "playback",
@@ -250,6 +294,13 @@ export async function loadPostPlaybackRecommendationItems(
     return dedupeRecommendationItems(prefetchedItems, title.name);
   }
 
+  if (mode === "youtube") {
+    const historySeeds = container.historyRepository.listLatestByTitle(40).slice(0, 20);
+    return loadYoutubeRecommendations({ title, historySeeds })
+      .then((items) => dedupeRecommendationItems(items, title.name))
+      .catch(() => []);
+  }
+
   if (mode !== "anime" && isTmdbLikeId(title.id)) {
     const direct = await container.recommendationService
       .getForTitle(title.id, title.type)
@@ -296,6 +347,10 @@ function dedupeRecommendationItems(
       overview: item.overview,
       posterPath: item.posterPath,
       ...(item.episodeCount ? { episodeCount: item.episodeCount } : {}),
+      ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+      ...(item.channelId ? { channelId: item.channelId } : {}),
+      ...(item.channelTitle ? { channelTitle: item.channelTitle } : {}),
+      ...(item.contentShape ? { contentShape: item.contentShape } : {}),
     });
     if (out.length >= 8) break;
   }

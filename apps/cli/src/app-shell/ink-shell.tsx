@@ -1314,6 +1314,7 @@ function ListShell<T>({
     // `settledOption` already absorbs the rapid-navigation burst; the hook only
     // needs a tiny guard on top rather than re-debouncing.
     debounceMs: 16,
+    placementSlot: "browse-preview",
   });
   // Suppress the heavy chafa block while navigating (the companion shares output
   // lines with the shifting list, so Ink re-emits it every keystroke). Kitty

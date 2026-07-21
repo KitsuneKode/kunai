@@ -135,6 +135,9 @@ export function mergeBackfillExternalIds(
     tmdbId: existing?.tmdbId ?? incoming.tmdbId,
     imdbId: existing?.imdbId ?? incoming.imdbId,
     malId: existing?.malId ?? incoming.malId,
+    youtubeId: existing?.youtubeId ?? incoming.youtubeId,
+    youtubeChannelId: existing?.youtubeChannelId ?? incoming.youtubeChannelId,
+    youtubePlaylistId: existing?.youtubePlaylistId ?? incoming.youtubePlaylistId,
     providerNativeIds: {
       ...existing?.providerNativeIds,
       ...incoming.providerNativeIds,
@@ -184,6 +187,9 @@ export function resolveProviderTitleIdentity(
     tmdbId: resolvedTmdbId,
     imdbId,
     malId,
+    youtubeId: externalIds?.youtubeId,
+    youtubeChannelId: externalIds?.youtubeChannelId,
+    youtubePlaylistId: externalIds?.youtubePlaylistId,
     providerNativeIds: externalIds?.providerNativeIds,
   });
 
@@ -202,20 +208,17 @@ export function resolveProviderTitleIdentity(
 
 function compactExternalIds(externalIds: ProviderExternalIds): ProviderExternalIds | undefined {
   const providerNativeIds = compactProviderNativeIds(externalIds.providerNativeIds);
-  const compact = {
-    anilistId: externalIds.anilistId || undefined,
-    tmdbId: externalIds.tmdbId || undefined,
-    imdbId: externalIds.imdbId || undefined,
-    malId: externalIds.malId || undefined,
+  const compact: ProviderExternalIds = {
+    ...(externalIds.anilistId ? { anilistId: externalIds.anilistId } : {}),
+    ...(externalIds.tmdbId ? { tmdbId: externalIds.tmdbId } : {}),
+    ...(externalIds.imdbId ? { imdbId: externalIds.imdbId } : {}),
+    ...(externalIds.malId ? { malId: externalIds.malId } : {}),
+    ...(externalIds.youtubeId ? { youtubeId: externalIds.youtubeId } : {}),
+    ...(externalIds.youtubeChannelId ? { youtubeChannelId: externalIds.youtubeChannelId } : {}),
+    ...(externalIds.youtubePlaylistId ? { youtubePlaylistId: externalIds.youtubePlaylistId } : {}),
     ...(providerNativeIds ? { providerNativeIds } : {}),
   };
-  return compact.anilistId ||
-    compact.tmdbId ||
-    compact.imdbId ||
-    compact.malId ||
-    compact.providerNativeIds
-    ? compact
-    : undefined;
+  return Object.keys(compact).length > 0 ? compact : undefined;
 }
 
 function compactProviderNativeIds(

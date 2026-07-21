@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import React from "react";
 
+import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import { palette } from "../shell-theme";
 import { usePosterPreview } from "../use-poster-preview";
 
@@ -16,16 +17,12 @@ function initialsOf(title: string): string {
 }
 
 /**
- * Compact text-mode poster tile for list rows and cards. Renders a chafa preview
- * inside Ink (`inkEmbedded`) only when `enabled` — typically the settled/focused
- * row — so scrolling a list never spawns one chafa fetch per visible row;
- * unfocused rows fall back to cheap title initials. Callers that navigate rapidly
- * (calendar) should keep `enabled` false while `navigating` so intermediate
- * selection changes never arm the debounce. `preserveTerminalImages`
- * keeps a tile render from wiping a coexisting Kitty hero placement.
+ * Compact poster tile for list rows and cards.
  *
- * This consolidates the per-shell mini-poster components (queue, notifications,
- * calendar, post-play) so the selection-only fetch policy lives in one place.
+ * Default: chafa symbols inside Ink (`inkEmbedded`) so scrolling never claims
+ * Kitty placements. Pass `allowKitty` + `placementSlot` for post-play discovery
+ * multi-image Kitty budgets — then inkEmbedded is off and siblings coexist via
+ * the placement registry.
  */
 export function MiniPosterTile({
   url,
@@ -35,6 +32,9 @@ export function MiniPosterTile({
   cols = 4,
   debounceMs = 160,
   placeholderColor = palette.dim,
+  allowKitty = false,
+  placementSlot,
+  square = false,
 }: {
   readonly url?: string;
   readonly title: string;
@@ -43,14 +43,24 @@ export function MiniPosterTile({
   readonly cols?: number;
   readonly debounceMs?: number;
   readonly placeholderColor?: string;
+  /** When true with placementSlot, use Kitty-native instead of chafa. */
+  readonly allowKitty?: boolean;
+  readonly placementSlot?: KittyPlacementSlot;
+  /** Prefer square aspect (channel avatars): cols ≈ rows. */
+  readonly square?: boolean;
 }) {
+  const tileCols = square ? Math.max(2, Math.min(cols, rows + 1)) : cols;
+  const tileRows = square ? Math.max(2, Math.min(rows, tileCols)) : rows;
+  const useKitty = allowKitty && Boolean(placementSlot);
   const { poster, posterState } = usePosterPreview(url, {
-    rows,
-    cols,
+    rows: tileRows,
+    cols: tileCols,
     enabled: enabled && Boolean(url),
     variant: "preview",
-    inkEmbedded: true,
-    preserveTerminalImages: true,
+    inkEmbedded: !useKitty,
+    allowKitty: useKitty,
+    preserveTerminalImages: !useKitty,
+    placementSlot: useKitty ? placementSlot : undefined,
     debounceMs,
   });
 

@@ -48,7 +48,10 @@ import {
   preparePostPlaybackSurface,
   teardownPlaybackForPostPlayExit,
 } from "@/app/playback/playback-post-play-lifecycle";
-import { canAutoContinueIntoRecommendation } from "@/app/playback/playback-postplay-policy";
+import {
+  canAutoContinueIntoRecommendation,
+  canAdvanceIntoRecommendation,
+} from "@/app/playback/playback-postplay-policy";
 import {
   playbackAudioPreference,
   playbackQualityPreference,
@@ -135,6 +138,7 @@ import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
+import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
 import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
   didPlaybackReachCompletionThreshold,
@@ -1922,7 +1926,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
             if (
               container.config.recommendationRailEnabled &&
-              prefetchedRecommendationItems === null
+              prefetchedRecommendationItems === null &&
+              stateManager.getState().mode !== "youtube" &&
+              !title.id.startsWith("youtube")
             ) {
               container.backgroundWorkScheduler.enqueue({
                 id: `recommendation-prefetch:${title.type}:${title.id}`,
@@ -2042,7 +2048,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               id: title.id,
               kind: persistedKind,
               title: title.name,
-              externalIds: title.externalIds,
+              externalIds: enrichExternalIdsWithVideoMeta(
+                title.externalIds,
+                stateManager.getState().videoMeta,
+              ),
             };
             if (decision.isDidNotStart) {
               const existingProgress = container.historyRepository.getProgressForTitleIdentity(
@@ -2851,7 +2860,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const recommendationRail = new PostPlaybackRecommendationRail({
             container,
             title,
-            budgetMs: 250,
+            budgetMs: stateManager.getState().mode === "youtube" ? 2_500 : 250,
           });
           const autoContinueIntoRecommendationPossible = canAutoContinueIntoRecommendation({
             sessionMode: run.playbackSession.mode,
@@ -2929,7 +2938,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               };
             }
             this.updatePlaybackFeedback(context, { detail: null, note: null });
-          } else if (playlistAutoNext?.kind === "recommendation") {
+          } else if (
+            playlistAutoNext?.kind === "recommendation" &&
+            canAdvanceIntoRecommendation({
+              shellMode: stateManager.getState().mode,
+              recommendationId: playlistAutoNext.item.titleId,
+            })
+          ) {
             const topRecAdvance = playlistAutoNext.item;
             const recCountdown = await runAutoplayAdvanceCountdown({
               seconds: 5,
@@ -2953,6 +2968,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                     name: topRecAdvance.title,
                     type: topRec?.type === "movie" ? "movie" : "series",
                     posterUrl: topRec?.posterPath ?? undefined,
+                    ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
                   },
                   mode: stateManager.getState().mode,
                 },
@@ -3375,7 +3391,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           id: title.id,
           kind: persistedKind,
           title: title.name,
-          externalIds: title.externalIds,
+          externalIds: enrichExternalIdsWithVideoMeta(
+            title.externalIds,
+            stateManager.getState().videoMeta,
+          ),
         },
         episode:
           title.type === "series"

@@ -15,6 +15,17 @@ export async function loadRandomResults(
 ): Promise<DiscoverResultBundle> {
   const mode = container.stateManager.getState().mode;
   const random = options.random ?? Math.random;
+
+  // YouTube: never mix TMDB discover into the tray — trending + surprise only.
+  if (mode === "youtube") {
+    const [trending, surprise] = await Promise.all([
+      loadDiscoveryList(mode, options.signal).catch((): SearchResult[] => []),
+      loadSurpriseList(mode, options.signal, { random }).catch((): SearchResult[] => []),
+    ]);
+    const pool = buildStratifiedRandomPool(trending, [], surprise, random);
+    return buildRandomResultBundle(pool, options);
+  }
+
   const [trending, lightDiscover, surprise] = await Promise.all([
     loadDiscoveryList(mode, options.signal).catch((): SearchResult[] => []),
     loadDiscoverResults(container, { light: true }),

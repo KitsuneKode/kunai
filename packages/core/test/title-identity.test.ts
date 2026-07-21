@@ -206,3 +206,16 @@ test("mergeBackfillExternalIds preserves existing catalog ids", () => {
   expect(merged?.anilistId).toBe("20431");
   expect(merged?.providerNativeIds).toEqual({ miruro: "20431", allanime: "opaque-1" });
 });
+
+test("mergeBackfillExternalIds preserves youtube channel and video ids", () => {
+  const merged = mergeBackfillExternalIds(
+    { youtubeId: "abc", youtubeChannelId: "UCold" },
+    { youtubeId: "xyz", youtubeChannelId: "UCnew", youtubePlaylistId: "PL1" },
+  );
+
+  expect(merged).toEqual({
+    youtubeId: "abc",
+    youtubeChannelId: "UCold",
+    youtubePlaylistId: "PL1",
+  });
+});

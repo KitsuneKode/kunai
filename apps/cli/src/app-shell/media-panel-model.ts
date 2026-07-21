@@ -313,6 +313,8 @@ function buildMoviePanel(ctx: MediaPanelContext): MediaPanelModel {
 function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   const meta = ctx.videoMeta ?? undefined;
   const views = formatViewCount(meta?.viewCount);
+  const isChannel = meta?.contentShape === "channel";
+  const isPlaylist = meta?.contentShape === "playlist";
   const secondary = meta?.channelTitle || undefined;
 
   const facts: MediaPanelFact[] = [];
@@ -337,19 +339,19 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   }
   const nextLabel = ctx.nextEpisodeLabel ?? ctx.queueNextLabel;
   if (nextLabel) {
-    const isPlaylist = meta?.contentShape === "playlist" || meta?.contentShape === "channel";
+    const shaped = isPlaylist || isChannel;
     miniCards.push({
       kind: "next",
       section: "up next",
       label: nextLabel,
-      meta: isPlaylist ? "playlist" : "related",
+      meta: shaped ? (isChannel ? "channel" : "playlist") : "related",
       thumbUrl: ctx.nextEpisodeThumbUrl,
     });
   }
 
   return {
     kind: "video",
-    kindBadge: "video",
+    kindBadge: isChannel ? "channel" : isPlaylist ? "playlist" : "video",
     posterUrl: ctx.posterUrl,
     title: ctx.title,
     secondary,

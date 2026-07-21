@@ -5,7 +5,11 @@ import {
   toYoutubePlaylistCatalogId,
   toYoutubeVideoCatalogId,
 } from "./ids";
-import type { InvidiousSearchItem, InvidiousSearchVideo } from "./invidious-client";
+import type {
+  InvidiousRecommendedVideo,
+  InvidiousSearchItem,
+  InvidiousSearchVideo,
+} from "./invidious-client";
 import { extractPipedVideoId, type PipedSearchItem } from "./piped-client";
 
 function pickInvidiousThumbnail(
@@ -18,6 +22,8 @@ function pickInvidiousThumbnail(
     thumbnails[thumbnails.length - 1];
   return preferred?.url ?? null;
 }
+
+export { pickInvidiousThumbnail };
 
 function publishedYearFromEpochSeconds(epochSeconds?: number): string | undefined {
   if (!epochSeconds || !Number.isFinite(epochSeconds)) return undefined;
@@ -123,6 +129,7 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
   const videoId = extractPipedVideoId(item);
   if (!videoId || !item.title) return null;
   const uploadedMs = item.uploaded && item.uploaded > 0 ? item.uploaded : undefined;
+  const channelId = extractPipedChannelId(item.uploaderUrl);
   return {
     id: toYoutubeVideoCatalogId(videoId),
     type: "movie",
@@ -133,11 +140,15 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
     metadataSource: "Piped",
     durationSeconds: item.duration,
     channelTitle: item.uploaderName,
+    channelId: channelId ?? undefined,
     viewCount: item.views,
     publishedAt: uploadedMs ? new Date(uploadedMs).toISOString() : undefined,
     liveStatus: "none",
     contentShape: "video",
-    externalIds: { youtubeId: videoId },
+    externalIds: {
+      youtubeId: videoId,
+      ...(channelId ? { youtubeChannelId: channelId } : {}),
+    },
     artwork: {
       posterUrl: item.thumbnail,
       thumbnailUrl: item.thumbnail,
@@ -145,11 +156,72 @@ export function mapPipedSearchItem(item: PipedSearchItem): ProviderSearchResult 
   };
 }
 
+/** Extract a channel id from Piped `uploaderUrl` paths like `/channel/UCxxx`. */
+export function extractPipedChannelId(uploaderUrl: string | undefined): string | null {
+  if (!uploaderUrl?.trim()) return null;
+  // Only canonical /channel/UC… ids — vanity /c/Name is not an Invidious channel id.
+  const match = uploaderUrl.trim().match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
+  return match?.[1] ?? null;
+}
+
 export function mapInvidiousSearchResults(
   items: readonly InvidiousSearchItem[],
 ): readonly ProviderSearchResult[] {
   return items
     .map((item) => mapInvidiousSearchItem(item))
+    .filter((item): item is ProviderSearchResult => item !== null);
+}
+
+/** Map a related/recommended video stub from `/api/v1/videos/{id}`. */
+export function mapInvidiousRecommendedVideo(
+  item: InvidiousRecommendedVideo,
+): ProviderSearchResult | null {
+  const videoId = item.videoId?.trim();
+  const title = item.title?.trim();
+  if (!videoId || !title) return null;
+  const poster = pickInvidiousThumbnail(item.videoThumbnails);
+  return {
+    id: toYoutubeVideoCatalogId(videoId),
+    type: "movie",
+    title,
+    year: publishedYearFromEpochSeconds(item.published),
+    overview: "",
+    posterPath: poster,
+    metadataSource: "Invidious",
+    durationSeconds: item.lengthSeconds,
+    channelTitle: item.author,
+    channelId: item.authorId,
+    viewCount: item.viewCount,
+    publishedAt: publishedAtFromEpochSeconds(item.published),
+    liveStatus: "none",
+    contentShape: "video",
+    externalIds: {
+      youtubeId: videoId,
+      ...(item.authorId ? { youtubeChannelId: item.authorId } : {}),
+    },
+    artwork: poster
+      ? {
+          posterUrl: poster,
+          thumbnailUrl: poster,
+        }
+      : undefined,
+  };
+}
+
+export function mapInvidiousRecommendedVideos(
+  items: readonly InvidiousRecommendedVideo[] | undefined,
+): readonly ProviderSearchResult[] {
+  return (items ?? [])
+    .map((item) => mapInvidiousRecommendedVideo(item))
+    .filter((item): item is ProviderSearchResult => item !== null);
+}
+
+/** Trending endpoint returns video objects (same shape as search videos). */
+export function mapInvidiousTrendingVideos(
+  items: readonly InvidiousSearchVideo[],
+): readonly ProviderSearchResult[] {
+  return items
+    .map((item) => mapInvidiousSearchItem({ ...item, type: "video" }))
     .filter((item): item is ProviderSearchResult => item !== null);
 }
 

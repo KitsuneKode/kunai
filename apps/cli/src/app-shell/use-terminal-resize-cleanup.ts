@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 
-import { clearRenderedPosterImages } from "./image-pane";
+import { undisplayPlacementsKeepCache } from "./image-pane";
 import { useShellDimensions } from "./use-viewport-policy";
 
 /**
  * Clears Kitty/Ghostty poster placements when the terminal settles to new
- * dimensions. Does not evict the poster fetch cache — avoids refetch storms.
+ * dimensions. Keeps source bytes + chafa text cache warm; drops Kitty cache
+ * entries so dead imageIds are not resurrected after d=A.
  */
 export function useTerminalResizeCleanup(): void {
   const { cols, rows } = useShellDimensions();
@@ -16,6 +17,6 @@ export function useTerminalResizeCleanup(): void {
       return;
     }
     settledRef.current = { cols, rows };
-    clearRenderedPosterImages();
+    undisplayPlacementsKeepCache();
   }, [cols, rows]);
 }

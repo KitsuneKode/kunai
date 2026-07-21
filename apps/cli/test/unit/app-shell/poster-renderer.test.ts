@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { clearKittyPlacementRegistry } from "@/app-shell/kitty-placement-registry";
 import {
   __testing as rendererTesting,
   hashTitleToColor,
@@ -45,6 +46,7 @@ afterEach(() => {
   rendererTesting.runtime.which = originalRuntime.which;
   rendererTesting.runtime.spawn = originalRuntime.spawn;
   process.stdout.write = originalStdoutWrite;
+  clearKittyPlacementRegistry();
 });
 
 describe("app-shell poster renderer", () => {
@@ -101,6 +103,58 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("none");
     const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
     expect(result).toEqual({ kind: "none" });
+  });
+
+  test("falls back to chafa symbols when Kitty PNG conversion is unavailable", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    rendererTesting.runtime.which = (command: string) =>
+      command === "chafa" ? "/usr/bin/chafa" : null;
+    rendererTesting.runtime.spawn = () =>
+      ({
+        stdout: new Response("JPEG_FALLBACK\n").body,
+        stderr: new Response("").body,
+        exited: Promise.resolve(0),
+      }) as unknown as Bun.Subprocess;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+
+    // Minimal JPEG SOI marker — ensurePngBytes cannot convert without magick.
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).buffer;
+    const result = await renderPoster(jpeg, {
+      rows: 3,
+      cols: 6,
+      allowKitty: true,
+      placementSlot: "postplay-hero",
+    });
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") {
+      expect(result.placeholder).toBe("JPEG_FALLBACK");
+    }
+  });
+
+  test("registers placement slot without emitting global delete", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    const writes: string[] = [];
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return true;
+    }) as typeof process.stdout.write;
+
+    const first = await renderPoster(pngBytes(), {
+      rows: 4,
+      cols: 8,
+      allowKitty: true,
+      placementSlot: "postplay-hero",
+    });
+    const second = await renderPoster(pngBytes(), {
+      rows: 4,
+      cols: 8,
+      allowKitty: true,
+      placementSlot: "postplay-discovery-0",
+    });
+    expect(first.kind).toBe("kitty");
+    expect(second.kind).toBe("kitty");
+    expect(writes.join("")).not.toContain("d=A");
+    expect(writes.join("")).toContain("a=T,f=100");
   });
 });
 

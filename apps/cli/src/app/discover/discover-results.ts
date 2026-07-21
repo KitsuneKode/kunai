@@ -1,9 +1,13 @@
 import type { Container } from "@/container";
-import type { SearchResult } from "@/domain/types";
+import type { SearchResult, TitleInfo } from "@/domain/types";
 import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
+import {
+  loadYoutubeRecommendations,
+  loadYoutubeTrending,
+} from "@/services/youtube/YoutubeRecommendationService";
 
 import { buildDiscoverSections } from "./discover-sections";
 import { clearDiscoveryListCache } from "./discovery-lists";
@@ -30,8 +34,12 @@ export async function loadDiscoverResults(
     await container.recommendationService.clearCache();
     clearDiscoveryListCache();
   }
-  const sections = await buildDiscoverSections(container, { light: options?.light });
   const mode = container.stateManager.getState().mode;
+  if (mode === "youtube") {
+    return loadYoutubeDiscoverResults(container, options);
+  }
+
+  const sections = await buildDiscoverSections(container, { light: options?.light });
   const discoverMode = container.config.discoverMode;
   const itemLimit = Math.max(6, Math.min(80, container.config.discoverItemLimit || 24));
   const flatten: SearchResult[] = [];
@@ -56,6 +64,52 @@ export async function loadDiscoverResults(
     if (flatten.length >= itemLimit) break;
   }
 
+  return finalizeDiscoverResults(container, flatten, discoverMode, mode);
+}
+
+async function loadYoutubeDiscoverResults(
+  container: Pick<
+    Container,
+    "historyRepository" | "config" | "resultEnrichmentService" | "stateManager"
+  >,
+  options?: { light?: boolean },
+): Promise<DiscoverResultBundle> {
+  const itemLimit = Math.max(6, Math.min(80, container.config.discoverItemLimit || 24));
+  const historySeeds = container.historyRepository.listLatestByTitle(40).slice(0, 20);
+  const seedRow = historySeeds.find(
+    (row) =>
+      row.mediaKind === "video" ||
+      row.providerId === "youtube" ||
+      Boolean(row.externalIds?.youtubeId || row.externalIds?.youtubeChannelId),
+  );
+
+  let items: readonly SearchResult[] = [];
+  if (seedRow && !options?.light) {
+    const title = {
+      id: seedRow.titleId,
+      name: seedRow.title,
+      type: "movie",
+      externalIds: seedRow.externalIds,
+    } as TitleInfo;
+    items = await loadYoutubeRecommendations({ title, historySeeds }).catch(() => []);
+  }
+  if (items.length === 0) {
+    items = await loadYoutubeTrending().catch(() => []);
+  }
+
+  const flatten = items.slice(0, itemLimit).map((item) => ({
+    ...item,
+    metadataSource: [item.metadataSource, "YouTube recommendations"].filter(Boolean).join(" · "),
+  }));
+  return finalizeDiscoverResults(container, flatten, container.config.discoverMode, "youtube");
+}
+
+async function finalizeDiscoverResults(
+  container: Pick<Container, "resultEnrichmentService">,
+  flatten: readonly SearchResult[],
+  discoverMode: "auto" | "unified" | "anime-only" | "series-only",
+  mode: import("@/domain/types").ShellMode,
+): Promise<DiscoverResultBundle> {
   const enrichments = await container.resultEnrichmentService
     .enrichResults(flatten)
     .catch(() => new Map<string, ResultEnrichment>());
@@ -68,9 +122,11 @@ export async function loadDiscoverResults(
         ? `${flatten.length} recommendation picks · ${discoverModeLabel}`
         : "No recommendation picks yet",
     emptyMessage:
-      discoverMode === "anime-only" || (discoverMode === "auto" && mode === "anime")
-        ? "No anime recommendations right now. Finish a few episodes, then retry /recommendation."
-        : "No recommendations right now. Finish something from history, then retry /recommendation.",
+      mode === "youtube"
+        ? "No YouTube recommendations right now. Watch something, then retry /recommendation."
+        : discoverMode === "anime-only" || (discoverMode === "auto" && mode === "anime")
+          ? "No anime recommendations right now. Finish a few episodes, then retry /recommendation."
+          : "No recommendations right now. Finish something from history, then retry /recommendation.",
   };
 }
 
@@ -96,6 +152,7 @@ function shouldIncludeItem(
   shellMode: import("@/domain/types").ShellMode,
   item: SearchResult,
 ): boolean {
+  // YouTube discover uses a dedicated loader; this filter is for TMDB/AniList sections.
   if (shellMode === "youtube") return false;
   if (discoverMode === "unified") return true;
   if (discoverMode === "anime-only") return item.type === "series";

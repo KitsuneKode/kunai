@@ -37,18 +37,25 @@ function evictSourceCacheEntry(key: string): void {
 
 export async function fetchPosterSource(
   url: string | undefined,
-  { cols = 18, variant = "preview" }: { cols?: number; variant?: "preview" | "detail" } = {},
+  {
+    cols = 18,
+    variant = "preview",
+    signal,
+  }: { cols?: number; variant?: "preview" | "detail"; signal?: AbortSignal } = {},
 ): Promise<PosterSourceEntry | null> {
   if (!url) return null;
+  if (signal?.aborted) return null;
   const resolved = resolvePosterUrl(url, { cols, variant });
   const cached = sourceCache.get(resolved);
   if (cached) return cached;
 
+  // Don't join an aborted-capable leader — same rule as fetchPoster.
   const inflight = sourceInflight.get(resolved);
-  if (inflight) return inflight;
+  if (inflight && !signal) return inflight;
 
   const task = (async (): Promise<PosterSourceEntry | null> => {
     try {
+      if (signal?.aborted) return null;
       if (isLocalImagePath(resolved)) {
         const file = Bun.file(resolved);
         if (!(await file.exists())) return null;
@@ -56,6 +63,7 @@ export async function fetchPosterSource(
           url: resolved,
           data: await file.arrayBuffer(),
         } satisfies PosterSourceEntry;
+        if (signal?.aborted) return null;
         if (sourceCache.size >= MAX_SOURCE_CACHE) {
           const first = sourceCache.keys().next().value;
           if (first) evictSourceCacheEntry(first);
@@ -63,14 +71,18 @@ export async function fetchPosterSource(
         sourceCache.set(resolved, entry);
         return entry;
       }
+      const timeout = AbortSignal.timeout(5000);
+      const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
       const res = await observeOnlineIfBound("poster-error", () =>
-        fetch(resolved, { signal: AbortSignal.timeout(5000) }),
+        fetch(resolved, { signal: fetchSignal }),
       );
+      if (signal?.aborted) return null;
       if (!res.ok) return null;
       const entry = {
         url: resolved,
         data: await res.arrayBuffer(),
       } satisfies PosterSourceEntry;
+      if (signal?.aborted) return null;
       if (sourceCache.size >= MAX_SOURCE_CACHE) {
         const first = sourceCache.keys().next().value;
         if (first) evictSourceCacheEntry(first);

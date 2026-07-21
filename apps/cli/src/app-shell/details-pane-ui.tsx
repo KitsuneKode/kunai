@@ -156,6 +156,7 @@ export function DetailsPaneUI({
     enabled: Boolean(primary.posterPath),
     debounceMs: 90,
     variant: "detail",
+    placementSlot: "details-primary",
   });
   const seriesState = secondary?.seriesState ?? null;
   const seriesStateColor = seriesState ? SERIES_STATE_COLORS[seriesState] : palette.dim;
@@ -300,6 +301,7 @@ function DetailPosterSlot({
     enabled: Boolean(posterUrl),
     debounceMs: 90,
     variant: "detail",
+    placementSlot: "details-secondary",
   });
 
   if (poster.kind !== "none") {

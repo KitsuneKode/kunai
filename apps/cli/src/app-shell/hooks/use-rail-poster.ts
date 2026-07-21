@@ -37,6 +37,7 @@ export function useRailPoster(
     enabled: (opts.enabled ?? true) && Boolean(settledUrl),
     variant: opts.variant,
     allowKitty: opts.allowKitty,
+    placementSlot: "browse-preview",
     // The settled url already absorbs the navigation burst.
     debounceMs: 16,
   });

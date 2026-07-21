@@ -1,5 +1,6 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
+import { loadYoutubeTrending } from "@/services/youtube/YoutubeRecommendationService";
 const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -22,8 +23,10 @@ export type CatalogSurpriseLoadOptions = {
 export type CatalogDiscoveryLoaders = {
   readonly anime: CatalogDiscoveryLoader;
   readonly tmdb: CatalogDiscoveryLoader;
+  readonly youtube?: CatalogDiscoveryLoader;
   readonly animeSurprise?: CatalogSurpriseLoader;
   readonly tmdbSurprise?: CatalogSurpriseLoader;
+  readonly youtubeSurprise?: CatalogSurpriseLoader;
 };
 
 export class CatalogDiscoveryService {
@@ -53,7 +56,12 @@ export class CatalogDiscoveryService {
     const inflight = this.inflight.get(key);
     if (inflight) return [...(await inflight)];
 
-    const loader = mode === "anime" ? this.loaders.anime : this.loaders.tmdb;
+    const loader =
+      mode === "anime"
+        ? this.loaders.anime
+        : mode === "youtube"
+          ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
+          : this.loaders.tmdb;
     const task = loader(signal).then((results) => {
       this.cache.set(key, {
         expiresAt: this.now() + DISCOVERY_CACHE_TTL_MS,
@@ -86,7 +94,9 @@ export class CatalogDiscoveryService {
     const loader =
       mode === "anime"
         ? (this.loaders.animeSurprise ?? loadAnimeSurpriseList)
-        : (this.loaders.tmdbSurprise ?? loadTmdbSurpriseList);
+        : mode === "youtube"
+          ? (this.loaders.youtubeSurprise ?? loadYoutubeSurpriseList)
+          : (this.loaders.tmdbSurprise ?? loadTmdbSurpriseList);
     const task = loader(options, signal).then((results) => {
       this.cache.set(key, {
         expiresAt: this.now() + SURPRISE_CACHE_TTL_MS,
@@ -107,6 +117,19 @@ export function createCatalogDiscoveryService(
   loaders?: CatalogDiscoveryLoaders,
 ): CatalogDiscoveryService {
   return new CatalogDiscoveryService(loaders);
+}
+
+async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
+  const results = await loadYoutubeTrending(signal);
+  return [...results].slice(0, 12);
+}
+
+async function loadYoutubeSurpriseList(
+  _options: CatalogSurpriseLoadOptions,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  // YouTube has no TMDB-style surprise pool — trending is the native spin source.
+  return loadYoutubeDiscoveryList(signal);
 }
 
 async function loadTmdbDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {

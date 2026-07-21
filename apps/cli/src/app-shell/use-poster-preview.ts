@@ -1,6 +1,11 @@
 import { startTransition, useEffect, useReducer, useRef } from "react";
 
-import { fetchPoster, undisplayRenderedPosterImages } from "./image-pane";
+import {
+  fetchPoster,
+  releasePosterPlacement,
+  undisplayRenderedPosterImages,
+  type KittyPlacementSlot,
+} from "./image-pane";
 import type { PosterResult, PosterState } from "./poster-types";
 
 type PosterPreviewState = {
@@ -42,6 +47,22 @@ function posterPreviewReducer(
   }
 }
 
+/**
+ * Release this hook's Kitty placement without wiping sibling slots.
+ * Falls back to global wipe only when no placementSlot is bound.
+ */
+function releaseOwnedPlacement(
+  placementSlot: KittyPlacementSlot | undefined,
+  preserveTerminalImages: boolean,
+): void {
+  if (preserveTerminalImages) return;
+  if (placementSlot) {
+    releasePosterPlacement(placementSlot);
+    return;
+  }
+  undisplayRenderedPosterImages();
+}
+
 export function usePosterPreview(
   url: string | undefined,
   {
@@ -53,6 +74,7 @@ export function usePosterPreview(
     allowKitty = true,
     inkEmbedded = false,
     preserveTerminalImages = false,
+    placementSlot,
   }: {
     rows: number;
     cols: number;
@@ -61,7 +83,10 @@ export function usePosterPreview(
     variant?: "preview" | "detail";
     allowKitty?: boolean;
     inkEmbedded?: boolean;
+    /** When true, never delete Kitty placements (chafa mini-tiles alongside a hero). */
     preserveTerminalImages?: boolean;
+    /** Named Kitty slot — per-fetch cleanup deletes only this slot. */
+    placementSlot?: KittyPlacementSlot;
   },
 ): { poster: PosterResult; posterState: PosterState } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
@@ -80,16 +105,31 @@ export function usePosterPreview(
     previousGeometry.current = { rows, cols };
 
     if (!url || !enabled) {
-      if (!preserveTerminalImages) undisplayRenderedPosterImages();
+      releaseOwnedPlacement(placementSlot, preserveTerminalImages);
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
     }
 
+    // Chafa / denied-Kitty paths must still drop a prior Kitty for this slot so
+    // a sibling (hero) can own the budget without a ghost rail image.
+    if (placementSlot && (inkEmbedded || !allowKitty) && !preserveTerminalImages) {
+      releasePosterPlacement(placementSlot);
+    }
+
     // A Kitty placement is anchored to terminal cells. Keep the previous image while
-    // changing titles, but clear it immediately when its geometry becomes invalid.
-    if (geometryChanged && !preserveTerminalImages) undisplayRenderedPosterImages();
+    // changing titles, but clear this slot immediately when its geometry becomes invalid.
+    // Geometry changes on a slotted preview only release this slot; unslotted previews
+    // still use a global wipe because placeholders may misalign everywhere after resize.
+    if (geometryChanged) {
+      if (placementSlot && !preserveTerminalImages) {
+        releasePosterPlacement(placementSlot);
+      } else if (!preserveTerminalImages && !placementSlot) {
+        undisplayRenderedPosterImages();
+      }
+    }
 
     let cancelled = false;
+    const abort = new AbortController();
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleRetryIfFirstFailure = () => {
       if (retryAttempted.current === url) return;
@@ -104,17 +144,26 @@ export function usePosterPreview(
     // fetch was about to be cancelled by the next keystroke.
     const timer = setTimeout(() => {
       if (cancelled) return;
-      if (!preserveTerminalImages) undisplayRenderedPosterImages();
+      // Do NOT global-wipe before fetch. Slot registration replaces the previous
+      // imageId for this slot; siblings keep their placements.
       dispatch({ type: "loading" });
-      fetchPoster(url, { rows, cols, variant, allowKitty, inkEmbedded })
+      fetchPoster(url, {
+        rows,
+        cols,
+        variant,
+        allowKitty,
+        inkEmbedded,
+        placementSlot,
+        signal: abort.signal,
+      })
         .then((result) => {
-          if (cancelled) return undefined;
+          if (cancelled || abort.signal.aborted) return undefined;
           if (result.kind === "none") scheduleRetryIfFirstFailure();
           startTransition(() => dispatch({ type: "resolved", result }));
           return undefined;
         })
         .catch(() => {
-          if (cancelled) return;
+          if (cancelled || abort.signal.aborted) return;
           scheduleRetryIfFirstFailure();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
         });
@@ -122,10 +171,11 @@ export function usePosterPreview(
 
     return () => {
       cancelled = true;
+      abort.abort();
       clearTimeout(timer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
-      // Do not call clearRenderedPosterImages here — the incoming effect's fetch
-      // clears just before rendering its result, preserving the old image during load.
+      // Do not release the slot here — the incoming effect's fetch registers a
+      // replacement imageId (or the disable path releases explicitly).
     };
   }, [
     allowKitty,
@@ -133,6 +183,7 @@ export function usePosterPreview(
     debounceMs,
     enabled,
     inkEmbedded,
+    placementSlot,
     preserveTerminalImages,
     retryToken,
     rows,

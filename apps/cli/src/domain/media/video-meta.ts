@@ -10,6 +10,7 @@
 // =============================================================================
 
 import type { SearchResult, VideoMeta } from "@/domain/types";
+import type { ProviderExternalIds } from "@kunai/types";
 
 /**
  * Extract a {@link VideoMeta} snapshot from a search result when it carries any
@@ -37,5 +38,22 @@ export function videoMetaFromSearchResult(result: SearchResult): VideoMeta | nul
     liveStatus: result.liveStatus,
     premium: result.premium,
     paid: result.paid,
+  };
+}
+
+/**
+ * Fold session VideoMeta channel id into history externalIds so affinity seeds
+ * survive after watch (TitleInfo alone often lacks youtubeChannelId).
+ */
+export function enrichExternalIdsWithVideoMeta(
+  externalIds: ProviderExternalIds | undefined,
+  videoMeta: VideoMeta | null | undefined,
+): ProviderExternalIds | undefined {
+  const channelId = videoMeta?.channelId?.trim();
+  if (!channelId) return externalIds;
+  if (externalIds?.youtubeChannelId === channelId) return externalIds;
+  return {
+    ...externalIds,
+    youtubeChannelId: externalIds?.youtubeChannelId ?? channelId,
   };
 }

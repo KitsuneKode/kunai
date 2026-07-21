@@ -180,6 +180,7 @@ export function OverlayPanel({
       enabled: overlay.type === "episode-picker" && Boolean(settledPickerImageUrl),
       // `settledPickerImageUrl` already absorbs the navigation burst.
       debounceMs: 16,
+      placementSlot: "overlay-picker",
     },
   );
   // Suppress the heavy chafa block while navigating; Kitty (out-of-band) stays.

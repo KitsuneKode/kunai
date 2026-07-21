@@ -188,6 +188,10 @@ export type PlaybackRecommendationRailItem = {
   readonly overview?: string;
   readonly posterPath?: string | null;
   readonly episodeCount?: number;
+  readonly externalIds?: import("@/domain/types").SearchResult["externalIds"];
+  readonly channelId?: string;
+  readonly channelTitle?: string;
+  readonly contentShape?: import("@/domain/types").SearchResult["contentShape"];
 };
 
 export type LoadingShellStage =

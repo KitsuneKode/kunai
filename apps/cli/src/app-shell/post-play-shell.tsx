@@ -163,12 +163,22 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
 
 // ── Discovery cards ───────────────────────────────────────────────────────────
 
+const DISCOVERY_KITTY_SLOTS = [
+  "postplay-discovery-0",
+  "postplay-discovery-1",
+  "postplay-discovery-2",
+] as const;
+
 function DiscoveryCard({
   card,
   width,
+  kittySlot,
+  allowKitty,
 }: {
   readonly card: PostPlayDiscoveryCard;
   readonly width: number;
+  readonly kittySlot?: (typeof DISCOVERY_KITTY_SLOTS)[number];
+  readonly allowKitty?: boolean;
 }) {
   const titleWidth = Math.max(8, width - 4);
   const reasonWidth = Math.max(4, width - 4);
@@ -189,6 +199,8 @@ function DiscoveryCard({
           cols={posterCols}
           rows={3}
           enabled={Boolean(card.posterUrl)}
+          allowKitty={allowKitty}
+          placementSlot={kittySlot}
         />
       </Box>
       <Text color={palette.accent} bold>
@@ -208,10 +220,12 @@ function DiscoveryCards({
   cards,
   width,
   layout,
+  allowKitty,
 }: {
   readonly cards: readonly PostPlayDiscoveryCard[];
   readonly width: number;
   readonly layout: "list" | "cards";
+  readonly allowKitty?: boolean;
 }) {
   if (cards.length === 0) return null;
   if (layout === "cards") {
@@ -221,7 +235,16 @@ function DiscoveryCards({
       <Box flexDirection="row" marginTop={1} flexWrap="nowrap">
         {cards.map((card, index) => (
           <Box key={card.id} marginRight={index === cards.length - 1 ? 0 : gap}>
-            <DiscoveryCard card={card} width={cardWidth} />
+            <DiscoveryCard
+              card={card}
+              width={cardWidth}
+              allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
+              kittySlot={
+                allowKitty && index < DISCOVERY_KITTY_SLOTS.length
+                  ? DISCOVERY_KITTY_SLOTS[index]
+                  : undefined
+              }
+            />
           </Box>
         ))}
       </Box>
@@ -229,7 +252,7 @@ function DiscoveryCards({
   }
   return (
     <Box flexDirection="column" marginTop={1}>
-      {cards.map((card) => (
+      {cards.map((card, index) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
           <Box width={5}>
             <MiniPosterTile
@@ -238,6 +261,12 @@ function DiscoveryCards({
               cols={4}
               rows={2}
               enabled={Boolean(card.posterUrl)}
+              allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
+              placementSlot={
+                allowKitty && index < DISCOVERY_KITTY_SLOTS.length
+                  ? DISCOVERY_KITTY_SLOTS[index]
+                  : undefined
+              }
             />
           </Box>
           <Text color={palette.accent} bold>
@@ -292,6 +321,7 @@ function NextUpHeroCard({
     cols: posterCols,
     enabled: Boolean(artworkUrl),
     variant: "preview",
+    placementSlot: "postplay-hero",
   });
   // The auto-next countdown ticks on the mpv loading overlay and is cleared
   // before this menu ever mounts, so the hero only advertises the manual
@@ -512,6 +542,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
                 cards={view.discovery}
                 width={bodyWidth}
                 layout={isWide ? "cards" : "list"}
+                allowKitty={isWide}
               />
             </>
           ) : null}
@@ -552,7 +583,15 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
 
         {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-        {showRail ? <MediaPanel model={railModel} railWidth={railWidth} /> : null}
+        {/* Prefer hero Kitty when next-up exists; otherwise rail owns the primary slot. */}
+        {showRail ? (
+          <MediaPanel
+            model={railModel}
+            railWidth={railWidth}
+            placementSlot="postplay-rail"
+            allowKitty={!view.nextUpHero}
+          />
+        ) : null}
       </Box>
     </ViewportResizeGate>
   );

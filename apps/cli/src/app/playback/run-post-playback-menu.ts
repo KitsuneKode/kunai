@@ -13,6 +13,7 @@ import { buildEpisodeNavigationTransitionContext } from "@/app/playback/playback
 import type { PlaybackIteration } from "@/app/playback/playback-iteration";
 import type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 import {
+  canAdvanceIntoRecommendation,
   canAutoContinueIntoRecommendation,
   canResumePlayback as resolveCanResumePlayback,
   isNearEndVoluntaryQuit,
@@ -329,7 +330,13 @@ export async function runPostPlaybackMenu(
           autoplayRecommendations: container.config.autoplayRecommendations,
         })
       : null;
-    if (recommendationAutoNext?.kind === "recommendation") {
+    if (
+      recommendationAutoNext?.kind === "recommendation" &&
+      canAdvanceIntoRecommendation({
+        shellMode: mode,
+        recommendationId: recommendationAutoNext.item.titleId,
+      })
+    ) {
       const topRecAdvance = recommendationAutoNext.item;
       const recCountdown = await runAutoplayAdvanceCountdown({
         seconds: 5,
@@ -352,6 +359,7 @@ export async function runPostPlaybackMenu(
               name: topRecAdvance.title,
               type: topRec?.type === "movie" ? "movie" : "series",
               posterUrl: topRec?.posterPath ?? undefined,
+              ...(topRec?.externalIds ? { externalIds: topRec.externalIds } : {}),
             },
             mode,
           },

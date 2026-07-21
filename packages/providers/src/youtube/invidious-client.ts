@@ -93,10 +93,56 @@ export async function invidiousGetChannelVideos(
 ): Promise<{
   readonly author?: string;
   readonly authorId?: string;
+  readonly authorThumbnails?: readonly {
+    readonly quality?: string;
+    readonly url?: string;
+  }[];
   readonly latestVideos?: readonly InvidiousPlaylistVideo[];
   readonly videos?: readonly InvidiousPlaylistVideo[];
 }> {
   return requestInvidiousJson(`/api/v1/channels/${encodeURIComponent(channelId)}`, options);
+}
+
+/** Full video payload including related/recommended videos for post-play rails. */
+export type InvidiousVideoDetails = {
+  readonly type?: string;
+  readonly title?: string;
+  readonly videoId?: string;
+  readonly author?: string;
+  readonly authorId?: string;
+  readonly description?: string;
+  readonly viewCount?: number;
+  readonly published?: number;
+  readonly lengthSeconds?: number;
+  readonly liveNow?: boolean;
+  readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
+  readonly recommendedVideos?: readonly InvidiousRecommendedVideo[];
+};
+
+export type InvidiousRecommendedVideo = {
+  readonly videoId?: string;
+  readonly title?: string;
+  readonly author?: string;
+  readonly authorId?: string;
+  readonly lengthSeconds?: number;
+  readonly viewCount?: number;
+  readonly published?: number;
+  readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
+};
+
+export async function invidiousGetVideo(
+  videoId: string,
+  options: InvidiousClientOptions = {},
+): Promise<InvidiousVideoDetails> {
+  return requestInvidiousJson(`/api/v1/videos/${encodeURIComponent(videoId)}`, options);
+}
+
+export async function invidiousGetTrending(
+  options: InvidiousClientOptions & { readonly region?: string } = {},
+): Promise<readonly InvidiousSearchVideo[]> {
+  const params = new URLSearchParams({ type: "default" });
+  if (options.region?.trim()) params.set("region", options.region.trim());
+  return requestInvidiousJson(`/api/v1/trending?${params.toString()}`, options);
 }
 
 async function requestInvidiousJson<T>(

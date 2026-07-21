@@ -69,10 +69,8 @@ afterEach(() => {
 });
 
 describe("app-shell image pane cache", () => {
-  test("undisplaying a poster keeps its rendered cache resident for back navigation", async () => {
-    let fetchCalls = 0;
+  test("undisplaying Kitty posters drops cache so the next visit re-uploads", async () => {
     setFetchMock(async () => {
-      fetchCalls += 1;
       const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
       return new Response(png, { status: 200 });
     });
@@ -80,11 +78,48 @@ describe("app-shell image pane cache", () => {
     paneTesting.runtime.detectImageCapability = () => cap("kitty-native");
     posterRendererTesting.runtime.detectImageCapability = () => cap("kitty-native");
 
-    const first = await fetchPoster("/cached.jpg", { rows: 4, cols: 8 });
+    const first = await fetchPoster("/cached.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
     undisplayRenderedPosterImages();
-    const revisited = await fetchPoster("/cached.jpg", { rows: 4, cols: 8 });
+    const revisited = await fetchPoster("/cached.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
 
     expect(first.kind).toBe("kitty");
+    expect(revisited.kind).toBe("kitty");
+    // Source bytes may stay warm; Kitty placements must get a fresh imageId after d=A.
+    if (first.kind === "kitty" && revisited.kind === "kitty") {
+      expect(revisited.imageId).not.toBe(first.imageId);
+    }
+  });
+
+  test("chafa text cache survives undisplay for back navigation", async () => {
+    let fetchCalls = 0;
+    setFetchMock(async () => {
+      fetchCalls += 1;
+      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      return new Response(png, { status: 200 });
+    });
+    paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
+    posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
+    posterRendererTesting.runtime.spawn = () =>
+      ({
+        stdout: new Response("ASCII_PREVIEW\n").body,
+        stderr: new Response("").body,
+        exited: Promise.resolve(0),
+      }) as unknown as Bun.Subprocess;
+
+    const first = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+    undisplayRenderedPosterImages();
+    const revisited = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+
+    expect(first.kind).toBe("text");
     expect(revisited).toEqual(first);
     expect(fetchCalls).toBe(1);
   });

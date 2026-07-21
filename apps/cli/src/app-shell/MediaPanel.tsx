@@ -5,8 +5,8 @@
 //   poster → header (title + badge + secondary) → ── details ── facts
 //          → ── synopsis ── → ── prev/up next ── mini-cards → progress
 //
-// Single Kitty-image budget (the poster); mini-card thumbnails use chafa
-// MiniPosterTile. Empty poster/thumb slots show the ❀ petal placeholder rather
+// Single named Kitty slot for the poster (placement registry); mini-card thumbnails
+// use chafa MiniPosterTile. Empty poster/thumb slots show the ❀ petal placeholder rather
 // than initials or blank space. Sections use light rose-dim ── label ── rules
 // instead of one long left border.
 // =============================================================================
@@ -47,18 +47,30 @@ function PosterSlot({
   url,
   width,
   active,
+  placementSlot,
+  allowKitty = true,
 }: {
   readonly url?: string;
   readonly width: number;
   readonly active: boolean;
+  readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
+  /** When false, render chafa inside Ink so a sibling owns the Kitty budget. */
+  readonly allowKitty?: boolean;
 }) {
   const innerCols = Math.max(10, width - 2);
+  const useKitty = allowKitty;
+  // When Kitty is denied for this panel, still bind the slot so disable/cleanup
+  // releases any prior Kitty placement instead of ghosting under chafa.
   const { poster } = usePosterPreview(url, {
     rows: 12,
     cols: innerCols,
     enabled: Boolean(url),
     variant: "detail",
     debounceMs: 120,
+    allowKitty: useKitty,
+    inkEmbedded: !useKitty,
+    preserveTerminalImages: false,
+    placementSlot,
   });
   return (
     <Box width={width} minHeight={13} justifyContent="center" alignItems="center">
@@ -139,11 +151,17 @@ export const MediaPanel = React.memo(function MediaPanel({
   model,
   railWidth,
   active = true,
+  placementSlot,
+  allowKitty = true,
 }: {
   readonly model: MediaPanelModel;
   readonly railWidth: number;
   /** Viewport visibility — pauses petal animation when off-screen. */
   readonly active?: boolean;
+  /** Required named slot — callers must pass postplay-rail / playing-rail explicitly. */
+  readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
+  /** Prefer hero Kitty on post-play when next-up owns the primary slot. */
+  readonly allowKitty?: boolean;
 }) {
   const innerWidth = Math.max(12, railWidth - 3);
   const synopsisLines = model.synopsis
@@ -161,7 +179,13 @@ export const MediaPanel = React.memo(function MediaPanel({
       borderRight={false}
       borderBottom={false}
     >
-      <PosterSlot url={model.posterUrl} width={innerWidth} active={active} />
+      <PosterSlot
+        url={model.posterUrl}
+        width={innerWidth}
+        active={active}
+        placementSlot={placementSlot}
+        allowKitty={allowKitty}
+      />
 
       {/* Header: badge + title + secondary line */}
       <Box marginTop={1}>

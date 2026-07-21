@@ -91,6 +91,17 @@ test("externalIdsToAliases maps the full external id bag including provider nati
   expect(externalIdsToAliases(undefined)).toEqual([]);
 });
 
+test("externalIdsToAliases indexes youtube channel and playlist ids", () => {
+  const aliases = externalIdsToAliases({
+    youtubeId: "vid1",
+    youtubeChannelId: "UCchannel",
+    youtubePlaylistId: "PLlist",
+  });
+  expect(aliases).toContainEqual({ ns: "youtube", id: "vid1" });
+  expect(aliases).toContainEqual({ ns: "youtube-channel", id: "UCchannel" });
+  expect(aliases).toContainEqual({ ns: "youtube-playlist", id: "PLlist" });
+});
+
 test("HistoryRepository.upsertProgress writes alias rows for every known external id", async () => {
   const { HistoryRepository } = await import("../src/index");
   const db = migratedDataDb();

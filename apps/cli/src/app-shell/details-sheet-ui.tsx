@@ -17,6 +17,7 @@ function SheetPoster({ url, title }: { readonly url?: string; readonly title: st
     enabled: Boolean(url),
     debounceMs: 90,
     variant: "detail",
+    placementSlot: "details-sheet",
   });
   if (poster.kind !== "none") {
     return (

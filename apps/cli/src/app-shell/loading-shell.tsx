@@ -700,6 +700,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                   model={playingPanelModel}
                   railWidth={sidePanelWidth}
                   active={timerPolicy.animate && !timerPolicy.freezeWhenOffscreen}
+                  placementSlot="playing-rail"
                 />
               ) : null}
             </Box>
@@ -860,7 +861,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                 ) : null}
               </Box>
               {showSidePanel ? (
-                <MediaPanel model={playingPanelModel} railWidth={sidePanelWidth} />
+                <MediaPanel
+                  model={playingPanelModel}
+                  railWidth={sidePanelWidth}
+                  placementSlot="playing-rail"
+                />
               ) : null}
             </Box>
           )}

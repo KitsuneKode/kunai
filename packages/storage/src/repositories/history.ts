@@ -593,6 +593,15 @@ function parseExternalIds(value: string | null): ProviderExternalIds | undefined
       ...(typeof parsed.tmdbId === "string" && parsed.tmdbId ? { tmdbId: parsed.tmdbId } : {}),
       ...(typeof parsed.imdbId === "string" && parsed.imdbId ? { imdbId: parsed.imdbId } : {}),
       ...(typeof parsed.malId === "string" && parsed.malId ? { malId: parsed.malId } : {}),
+      ...(typeof parsed.youtubeId === "string" && parsed.youtubeId
+        ? { youtubeId: parsed.youtubeId }
+        : {}),
+      ...(typeof parsed.youtubeChannelId === "string" && parsed.youtubeChannelId
+        ? { youtubeChannelId: parsed.youtubeChannelId }
+        : {}),
+      ...(typeof parsed.youtubePlaylistId === "string" && parsed.youtubePlaylistId
+        ? { youtubePlaylistId: parsed.youtubePlaylistId }
+        : {}),
       ...(providerNativeIds ? { providerNativeIds } : {}),
     };
     return Object.keys(externalIds).length > 0 ? externalIds : undefined;

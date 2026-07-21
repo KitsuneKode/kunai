@@ -2,6 +2,13 @@ import { detectImageCapability } from "@/image";
 import { useEffect, useRef } from "react";
 
 import { recordPosterFetch } from "./diagnostics/render-trace";
+import {
+  getKittyPlacement,
+  releaseKittyImageId,
+  releaseKittySlot,
+  setKittyPlacementEvictFn,
+  type KittyPlacementSlot,
+} from "./kitty-placement-registry";
 import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
 import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import type { PosterResult } from "./poster-types";
@@ -18,13 +25,47 @@ const runtime = {
   detectImageCapability,
 };
 
+function evictKittyCacheEntries(imageId: number): void {
+  for (const [key, value] of posterCache) {
+    if (value.kind === "kitty" && value.imageId === imageId) {
+      posterCache.delete(key);
+    }
+  }
+}
+
+setKittyPlacementEvictFn(evictKittyCacheEntries);
+
+function dropAllKittyCacheEntries(): void {
+  for (const [key, value] of posterCache) {
+    if (value.kind === "kitty") {
+      posterCache.delete(key);
+    }
+  }
+}
+
 export function deleteAllKittyImages(): void {
   clearRenderedPosterImages();
   clearPosterSourceCache();
 }
 
+/** Global wipe — surface exit / resize only. Prefer releasePosterPlacement for slots. */
 export function undisplayRenderedPosterImages(): void {
   deleteAllTerminalImages();
+  dropAllKittyCacheEntries();
+}
+
+/** Drop only this slot's Kitty placement; siblings stay on screen. */
+export function releasePosterPlacement(slot: KittyPlacementSlot): void {
+  releaseKittySlot(slot);
+}
+
+/**
+ * Clear terminal Kitty placements but keep source bytes and chafa text cache.
+ * Kitty cache entries are dropped so the next fetch re-uploads (d=A invalidated them).
+ */
+export function undisplayPlacementsKeepCache(): void {
+  deleteAllTerminalImages();
+  dropAllKittyCacheEntries();
 }
 
 export function clearRenderedPosterImages(): void {
@@ -69,11 +110,14 @@ export function usePlaybackPosterSurfaceCleanup(
   }, [phase]);
 }
 
-/** Clears Kitty placements when a short-lived poster surface mounts or unmounts (post-play). */
+/**
+ * Short-lived poster surfaces (post-play): on mount, clear placements only so
+ * cached PNG/chafa bytes stay warm; on unmount, full clear including caches.
+ */
 export function usePosterSurfaceBoundaryCleanup(active: boolean): void {
   useEffect(() => {
     if (!active) return undefined;
-    clearRenderedPosterImages();
+    undisplayPlacementsKeepCache();
     return () => {
       clearRenderedPosterImages();
     };
@@ -87,7 +131,7 @@ export const __testing = {
 function evictPosterCacheEntry(key: string): void {
   const cached = posterCache.get(key);
   if (cached?.kind === "kitty") {
-    deleteKittyImage(cached.imageId);
+    releaseKittyImageId(cached.imageId);
   }
   posterCache.delete(key);
 }
@@ -100,6 +144,8 @@ export async function fetchPoster(
     variant = "preview",
     allowKitty = true,
     inkEmbedded = false,
+    placementSlot,
+    signal,
   }: {
     rows: number;
     cols: number;
@@ -107,9 +153,12 @@ export async function fetchPoster(
     allowKitty?: boolean;
     /** Chafa symbols inside Ink — does not claim Kitty placements. */
     inkEmbedded?: boolean;
+    placementSlot?: KittyPlacementSlot;
+    signal?: AbortSignal;
   },
 ): Promise<PosterResult> {
   if (!url) return { kind: "none" };
+  if (signal?.aborted) return { kind: "none" };
   if (!inkEmbedded && !allowKitty) return { kind: "none" };
   const capability = runtime.detectImageCapability();
   if (!inkEmbedded && (!capability.available || capability.renderer === "none")) {
@@ -117,17 +166,34 @@ export async function fetchPoster(
   }
   const resolved = resolvePosterUrl(url, { cols, variant });
   const rendererKey = inkEmbedded ? "ink-embedded" : capability.renderer;
-  const key = `${resolved}:${rows}x${cols}:${rendererKey}`;
+  // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
+  const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
+  const key = `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}`;
 
   const cached = posterCache.get(key);
   if (cached) {
-    recordPosterFetch({ cacheHit: true, renderer: rendererKey });
-    return cached;
+    // Slotted Kitty cache is only valid while the registry still owns that imageId.
+    // Per-slot deletes / d=A otherwise leave dead ids that look like hits.
+    // Unslotted Kitty entries are dropped wholesale on global wipe, so a remaining
+    // cache hit is still live for this process.
+    if (cached.kind === "kitty" && placementSlot) {
+      const liveId = getKittyPlacement(placementSlot);
+      if (liveId !== cached.imageId) {
+        posterCache.delete(key);
+      } else {
+        recordPosterFetch({ cacheHit: true, renderer: rendererKey });
+        return cached;
+      }
+    } else {
+      recordPosterFetch({ cacheHit: true, renderer: rendererKey });
+      return cached;
+    }
   }
 
+  // Never join an in-flight task when this caller has an AbortSignal — the leader
+  // may abort to `{ kind: "none" }` and blank a remount that should still render.
   const inflight = posterInflight.get(key);
-  if (inflight) {
-    // Deduped against an in-flight render — no new subprocess is spawned.
+  if (inflight && !signal) {
     recordPosterFetch({ cacheHit: true, renderer: rendererKey });
     return inflight;
   }
@@ -136,13 +202,24 @@ export async function fetchPoster(
   const task = (async (): Promise<PosterResult> => {
     let result: PosterResult;
     try {
-      const source = await fetchPosterSource(resolved, { cols, variant });
+      if (signal?.aborted) return { kind: "none" };
+      const source = await fetchPosterSource(resolved, { cols, variant, signal });
+      if (signal?.aborted) return { kind: "none" };
       result = source
-        ? await renderPoster(source.data, { rows, cols, allowKitty, inkEmbedded })
+        ? await renderPoster(source.data, {
+            rows,
+            cols,
+            allowKitty,
+            inkEmbedded,
+            placementSlot,
+            signal,
+          })
         : { kind: "none" };
     } catch {
       result = { kind: "none" };
     }
+
+    if (signal?.aborted) return { kind: "none" };
 
     if (posterCache.size >= MAX_CACHE) {
       const first = posterCache.keys().next().value;
@@ -165,3 +242,6 @@ export async function fetchPoster(
 
 export { resolvePosterUrl } from "./poster-source-cache";
 export type { PosterResult } from "./poster-types";
+export type { KittyPlacementSlot } from "./kitty-placement-registry";
+
+export { deleteKittyImage };
