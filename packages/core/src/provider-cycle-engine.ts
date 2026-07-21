@@ -11,6 +11,8 @@ import type {
   ProviderTraceEvent,
 } from "@kunai/types";
 
+import { isOfflineNetworkFailure } from "./provider-failure-classifier";
+
 export interface ProviderCycleEngineOptions {
   readonly maxAttemptsPerCandidate?: number;
   readonly candidateTimeoutMs?: number;
@@ -450,16 +452,10 @@ export function isAbortError(error: unknown): boolean {
 }
 
 function isNetworkOfflineMessage(message: string): boolean {
-  return (
-    message.includes("enotfound") ||
-    message.includes("eai_again") ||
-    message.includes("network is unreachable") ||
-    message.includes("network unreachable") ||
-    message.includes("internet disconnected") ||
-    message.includes("offline") ||
-    message.includes("failed to resolve") ||
-    message.includes("could not resolve host")
-  );
+  return isOfflineNetworkFailure({
+    code: "network-error",
+    message,
+  });
 }
 
 function createCycleTraceEvent(

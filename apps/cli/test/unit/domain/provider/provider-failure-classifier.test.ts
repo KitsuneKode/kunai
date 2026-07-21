@@ -65,4 +65,34 @@ describe("ProviderFailureClassifier", () => {
       fallbackPolicy: "auto-fallback",
     });
   });
+
+  test("HTTP 503 remains provider-local network failure", () => {
+    expect(
+      classifyProviderFailure({
+        providerId: "vidking",
+        code: "network-error",
+        message: "HTTP 503 Service Unavailable",
+        retryable: true,
+        status: 503,
+      }),
+    ).toMatchObject({
+      failureClass: "network",
+      fallbackPolicy: "auto-fallback",
+    });
+  });
+
+  test("ENOTFOUND classifies as offline with no-fallback", () => {
+    expect(
+      classifyProviderFailure({
+        providerId: "vidking",
+        code: "network-error",
+        message: "getaddrinfo ENOTFOUND api.example.test",
+        retryable: true,
+      }),
+    ).toMatchObject({
+      failureClass: "offline",
+      fallbackPolicy: "no-fallback",
+      retryable: false,
+    });
+  });
 });

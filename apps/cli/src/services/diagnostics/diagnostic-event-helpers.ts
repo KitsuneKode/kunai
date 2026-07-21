@@ -36,6 +36,7 @@ export type DiagnosticFailureClass =
   | "cancelled"
   | "storage"
   | "ipc"
+  | "offline"
   | "unknown";
 
 export type DiagnosticCorrelation = {
@@ -228,6 +229,8 @@ export function mapFailureToRecommendedAction(
     case "not-found":
     case "rate-limited":
       return "fallback-provider";
+    case "offline":
+      return "retry";
     case "dependency":
       return "check-dependency";
     case "storage":

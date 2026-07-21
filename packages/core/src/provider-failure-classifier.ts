@@ -1,10 +1,28 @@
 import type {
   ClassifiableProviderFailure,
+  ProviderFailure,
   ProviderFailureClassification,
   ProviderFailureClass,
   ProviderFallbackPolicy,
   ResolveErrorCode,
 } from "@kunai/types";
+
+/** Reliable global-offline signatures only — not timeout, reset, HTTP, parse, or empty. */
+const OFFLINE_NETWORK_PATTERNS = [
+  "enotfound",
+  "eai_again",
+  "enetunreach",
+  "network is unreachable",
+  "err_internet_disconnected",
+  "err_name_not_resolved",
+] as const;
+
+export function isOfflineNetworkFailure(
+  failure: Pick<ProviderFailure, "code" | "message">,
+): boolean {
+  const message = failure.message.toLowerCase();
+  return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
 
 export function classifyProviderFailure(failure: unknown): ProviderFailureClassification {
   const normalized = normalizeProviderFailure(failure);
@@ -14,7 +32,10 @@ export function classifyProviderFailure(failure: unknown): ProviderFailureClassi
   return {
     failureClass,
     fallbackPolicy,
-    retryable: normalized.retryable ?? fallbackPolicy === "auto-fallback",
+    retryable:
+      failureClass === "offline"
+        ? false
+        : (normalized.retryable ?? fallbackPolicy === "auto-fallback"),
     userSummary: buildProviderFailureUserSummary(normalized.providerId, failureClass),
     developerDetail: buildProviderFailureDeveloperDetail(normalized),
   };
@@ -67,6 +88,16 @@ function normalizeProviderFailure(failure: unknown): ClassifiableProviderFailure
 }
 
 function classifyProviderFailureClass(failure: ClassifiableProviderFailure): ProviderFailureClass {
+  if (
+    typeof failure.message === "string" &&
+    isOfflineNetworkFailure({
+      code: (failure.code as ProviderFailure["code"]) ?? "unknown",
+      message: failure.message,
+    })
+  ) {
+    return "offline";
+  }
+
   const code = failure.code;
   if (code === "timeout") return "timeout";
   if (code === "network-error" || code === "provider-unavailable") return "network";
@@ -119,6 +150,8 @@ function buildProviderFailureUserSummary(
       return `${prefix}is taking longer than expected.`;
     case "network":
       return `${prefix}had a network issue.`;
+    case "offline":
+      return "Kunai cannot reach the network right now.";
     case "rate-limited":
       return `${prefix}is rate limiting requests.`;
     case "provider-empty":

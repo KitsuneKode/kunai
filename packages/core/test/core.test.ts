@@ -983,29 +983,29 @@ test("ProviderEngine observes fallback after primary exhaustion", async () => {
 test("ProviderEngine falls back to the next provider after provider-local network failure", async () => {
   let primaryAttempts = 0;
   let fallbackAttempts = 0;
-  const offlineProvider: CoreProviderModule = {
-    providerId: "offline",
+  const flakyProvider: CoreProviderModule = {
+    providerId: "flaky",
     manifest: defineProviderManifest({
       ...vidkingManifest,
-      id: "offline",
-      displayName: "Offline Provider",
+      id: "flaky",
+      displayName: "Flaky Provider",
     }),
     async resolve(input, context) {
       primaryAttempts += 1;
       const failure = {
-        providerId: "offline" as const,
+        providerId: "flaky" as const,
         code: "network-error" as const,
-        message: "getaddrinfo ENOTFOUND api.example.test",
+        message: "HTTP 503 Service Unavailable",
         retryable: true,
         at: context.now(),
       };
       return {
         status: "exhausted",
-        providerId: "offline",
+        providerId: "flaky",
         streams: [],
         subtitles: [],
         trace: {
-          id: "trace:offline",
+          id: "trace:flaky",
           startedAt: context.now(),
           title: input.title,
           cacheHit: false,
@@ -1053,6 +1053,80 @@ test("ProviderEngine falls back to the next provider after provider-local networ
     },
   };
   const engine = createProviderEngine({
+    modules: [flakyProvider, fallbackProvider],
+    maxAttempts: 3,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["flaky", "fallback"],
+  );
+
+  expect(resolved.result).not.toBeNull();
+  expect(resolved.providerId).toBe("fallback");
+  expect(primaryAttempts).toBe(3);
+  expect(fallbackAttempts).toBe(1);
+  expect(resolved.attempts[0]?.failure).toMatchObject({
+    code: "network-error",
+    message: "HTTP 503 Service Unavailable",
+  });
+});
+
+test("ProviderEngine stops cross-provider fallback on reliable offline signatures", async () => {
+  let primaryAttempts = 0;
+  let fallbackAttempts = 0;
+  const offlineProvider: CoreProviderModule = {
+    providerId: "offline",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "offline",
+      displayName: "Offline Provider",
+    }),
+    async resolve(input, context) {
+      primaryAttempts += 1;
+      const failure = {
+        providerId: "offline" as const,
+        code: "network-error" as const,
+        message: "getaddrinfo ENOTFOUND api.example.test",
+        retryable: true,
+        at: context.now(),
+      };
+      return {
+        status: "exhausted",
+        providerId: "offline",
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "trace:offline",
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [failure],
+        },
+        failures: [failure],
+      };
+    },
+  };
+  const fallbackProvider: CoreProviderModule = {
+    providerId: "fallback",
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "fallback",
+      displayName: "Fallback Provider",
+    }),
+    async resolve() {
+      fallbackAttempts += 1;
+      throw new Error("should not be called");
+    },
+  };
+  const engine = createProviderEngine({
     modules: [offlineProvider, fallbackProvider],
     maxAttempts: 3,
     retryDelayMs: 0,
@@ -1068,10 +1142,11 @@ test("ProviderEngine falls back to the next provider after provider-local networ
     ["offline", "fallback"],
   );
 
-  expect(resolved.result).not.toBeNull();
-  expect(resolved.providerId).toBe("fallback");
+  expect(resolved.result).toBeNull();
+  expect(resolved.providerId).toBeNull();
   expect(primaryAttempts).toBe(1);
-  expect(fallbackAttempts).toBe(1);
+  expect(fallbackAttempts).toBe(0);
+  expect(resolved.attempts).toHaveLength(1);
   expect(resolved.attempts[0]?.failure).toMatchObject({
     code: "network-error",
     message: "getaddrinfo ENOTFOUND api.example.test",

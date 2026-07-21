@@ -12,6 +12,7 @@ import type {
 } from "@kunai/types";
 import { isProviderResolveResultResolved } from "@kunai/types";
 
+import { isOfflineNetworkFailure } from "./provider-failure-classifier";
 import { resolveProviderIdAlias } from "./provider-id-aliases";
 import type { CoreProviderModule } from "./provider-sdk";
 import { createProviderRuntimeContext } from "./provider-sdk";
@@ -301,6 +302,12 @@ export class ProviderEngine {
             : {}),
         });
 
+        // Reliable offline evidence stops cross-provider fallback before any
+        // fallback-started event — further providers cannot succeed either.
+        if (isOfflineNetworkFailure(failure)) {
+          break;
+        }
+
         const nextProviderId = candidateIds[index + 1];
         if (nextProviderId) {
           observer?.({
@@ -469,12 +476,6 @@ function createTimeoutResolveResult({
   };
 }
 
-export function isOfflineNetworkFailure(failure: ProviderFailure): boolean {
-  if (failure.code !== "network-error") return false;
-  const message = failure.message.toLowerCase();
-  return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
-}
-
 function failureFromResolveError(
   error: unknown,
   providerId: ProviderId,
@@ -496,15 +497,6 @@ function elapsedMs(startedAt: string, finishedAt: string): number {
   if (!Number.isFinite(started) || !Number.isFinite(finished)) return 0;
   return Math.max(0, finished - started);
 }
-
-const OFFLINE_NETWORK_PATTERNS = [
-  "enotfound",
-  "eai_again",
-  "enetunreach",
-  "network is unreachable",
-  "err_internet_disconnected",
-  "err_name_not_resolved",
-];
 
 function resolveFetchPort(
   fetchPort: ProviderFetchPort | ProviderFetchPortFactory | undefined,

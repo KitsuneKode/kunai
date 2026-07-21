@@ -663,6 +663,7 @@ export function isProviderResolveResultExhausted(
 export type ProviderFailureClass =
   | "timeout"
   | "network"
+  | "offline"
   | "rate-limited"
   | "provider-empty"
   | "provider-parse"
