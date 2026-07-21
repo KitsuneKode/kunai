@@ -93,6 +93,7 @@
     "build:binaries": "turbo run build:binaries --filter=@kitsunekode/kunai",
     "build:binary:host": "bun run --cwd apps/cli build:binary:host",
     "build:binary:host:test": "bun run --cwd apps/cli build:binary:host:test",
+    "test:binary:smoke": "bun run --cwd apps/cli test:binary:smoke",
     "verify:binary:host": "bun run --cwd apps/cli verify:binary:host",
     "build:all": "turbo run build",
     "build:docs": "turbo run build --filter=@kunai/docs",

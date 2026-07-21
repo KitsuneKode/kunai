@@ -701,6 +701,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     requireYtDlp: args.youtube || configJson.defaultMode === "youtube",
   });
 
+  const { loadCompiledSmokeProviderOverride } =
+    await import("./container/compiled-smoke-provider-override");
+  const providerModulesOverride = await loadCompiledSmokeProviderOverride();
+
   // Bootstrap the DI container
   const container = await createContainer({
     debug: args.debug,
@@ -710,9 +714,21 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
+    providerModulesOverride,
   });
   globalContainer = container;
   const { logger, config, stateManager } = container;
+
+  // Compiled-binary smoke runner: deterministic fake-provider / fake-mpv scenarios.
+  // Opt-in only — requires KUNAI_COMPILED_SMOKE=1 + absolute fixture path (above) and a scenario id.
+  if (process.env.KUNAI_COMPILED_SMOKE === "1" && process.env.KUNAI_COMPILED_SMOKE_SCENARIO) {
+    const { runCompiledSmoke } = await import("./app/compiled-smoke/run-compiled-smoke");
+    const code = await runCompiledSmoke(container);
+    await disposeContainer(container);
+    globalContainer = null;
+    if (process.stdin.isTTY) process.stdin.unref();
+    process.exit(code);
+  }
   // `--zen` / `-m,--minimal` are transient session overrides: flip the in-memory
   // config so the minimal/single-column layout renders, without persisting to the
   // user's config file (update() mutates memory only; save() is never called here).

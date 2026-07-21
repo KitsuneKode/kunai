@@ -54,6 +54,7 @@
     "test:file": "bun test",
     "test:unit": "bun test test/unit",
     "test:integration": "bun test test/integration",
+    "test:binary:smoke": "KUNAI_BINARY_SMOKE=1 bun test test/integration/compiled-binary-smoke.test.ts",
     "test:npm-global-install": "KUNAI_NPM_GLOBAL_INSTALL=1 bun test test/integration/npm-global-install.test.ts",
     "test:installer:docker": "bash test/docker/native-installer/run-local.sh",
     "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",

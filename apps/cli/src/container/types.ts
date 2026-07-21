@@ -1,5 +1,5 @@
 import type { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
-import type { ProviderEngine } from "@kunai/core";
+import type { CoreProviderModule, ProviderEngine } from "@kunai/core";
 import type {
   CalendarArchiveRepository,
   FollowedTitleRepository,
@@ -207,4 +207,9 @@ export interface ContainerOptions {
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;
+  /**
+   * Test-only provider module override (compiled binary smokes).
+   * Production startup never sets this; prefer `loadCompiledSmokeProviderOverride`.
+   */
+  providerModulesOverride?: readonly CoreProviderModule[];
 }

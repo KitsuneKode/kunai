@@ -2,6 +2,7 @@ import {
   createProviderEngine,
   isVideasyFamilyProvider,
   orderProviderModulesByPriority,
+  type CoreProviderModule,
   type ProviderEngine,
 } from "@kunai/core";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
@@ -25,22 +26,9 @@ export type ProviderBootstrap = {
   readonly playbackResolveWork: PlaybackResolveWorkService;
 };
 
-export async function bootstrapProviders(
-  persistence: PersistenceBootstrap,
-): Promise<ProviderBootstrap> {
-  const {
-    config,
-    endpointHealth,
-    titleBridgePort,
-    cacheStore,
-    providerHealth,
-    sourceInventory,
-    titleProviderHealth,
-    titlePlaybackSource,
-    diagnosticsService,
-  } = persistence;
-
-  const providerPriority = createProviderPrioritySnapshot(config);
+async function loadProductionProviderModules(
+  providerPriority: ReturnType<typeof createProviderPrioritySnapshot>,
+): Promise<readonly CoreProviderModule[]> {
   const [
     { videasyProviderModule },
     { vidlinkProviderModule },
@@ -57,9 +45,7 @@ export async function bootstrapProviders(
     import("@kunai/providers/youtube"),
   ]);
 
-  applyYoutubeProviderConfig(config.getRaw(), persistence.cacheDb);
-
-  const providerModules = orderProviderModulesByPriority(
+  return orderProviderModulesByPriority(
     [
       videasyProviderModule,
       vidlinkProviderModule,
@@ -70,6 +56,30 @@ export async function bootstrapProviders(
     ],
     providerPriority,
   );
+}
+
+export async function bootstrapProviders(
+  persistence: PersistenceBootstrap,
+  providerModulesOverride?: readonly CoreProviderModule[],
+): Promise<ProviderBootstrap> {
+  const {
+    config,
+    endpointHealth,
+    titleBridgePort,
+    cacheStore,
+    providerHealth,
+    sourceInventory,
+    titleProviderHealth,
+    titlePlaybackSource,
+    diagnosticsService,
+  } = persistence;
+
+  const providerPriority = createProviderPrioritySnapshot(config);
+  applyYoutubeProviderConfig(config.getRaw(), persistence.cacheDb);
+
+  const providerModules = providerModulesOverride
+    ? orderProviderModulesByPriority([...providerModulesOverride], providerPriority)
+    : await loadProductionProviderModules(providerPriority);
   const relayRegistry = buildProviderRelayRegistry(providerModules);
   const createProviderFetchPort = (providerId: (typeof providerModules)[number]["providerId"]) =>
     createRelayFetchPort({

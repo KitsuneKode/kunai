@@ -12,7 +12,7 @@ import type { Container, ContainerOptions } from "./types";
 export async function createContainer(options?: ContainerOptions): Promise<Container> {
   const core = bootstrapCoreInfra(options);
   const persistence = await bootstrapPersistence(options, core);
-  const providers = await bootstrapProviders(persistence);
+  const providers = await bootstrapProviders(persistence, options?.providerModulesOverride);
   const disposeHandles: ContainerDisposeHandles = {
     dataDb: persistence.dataDb,
     cacheDb: persistence.cacheDb,
