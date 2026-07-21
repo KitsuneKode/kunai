@@ -358,6 +358,10 @@ jobs:
           KUNAI_INSTALLER_DOCKER: "1"
         run: bash apps/cli/test/docker/native-installer/run-local.sh --skip-build --skip-image-build
 
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: installer-docker-readme
+
       - name: README quick-start commands (fixture-assets)
         run: >-
           bun run verify:readme:commands --

@@ -2,9 +2,11 @@
  * README quick-start extraction + fixture-assets execution harness.
  *
  * Parses the canonical Quick Start Install bash block (order + text must match
- * README). Fixture mode substitutes only the release download endpoint via
- * KUNAI_DL_BASE / KUNAI_RELEASES_API; the install script itself is served from
- * the same local fixture HTTP root so CI stays offline-friendly.
+ * README). Fixture mode executes the extracted command strings for
+ * version/mpv/setup/search. The only documented command rewrite is appending
+ * non-interactive install.sh flags (`bash -s -- --yes --skip-deps --version`);
+ * release download endpoints are substituted via KUNAI_DL_BASE /
+ * KUNAI_RELEASES_API + a curl shim for raw.githubusercontent.com install.sh.
  */
 
 import { spawnSync } from "node:child_process";
@@ -317,14 +319,16 @@ async function runShell(
 }
 
 /**
- * Run a Kunai TUI command under `script(1)` so Ink gets a PTY.
+ * Run an extracted README shell command under `script(1)` so Ink gets a PTY.
  * Ready = process still alive after settleMs (UI mounted and waiting for input).
  * Ink often does not echo into util-linux `script` typescripts on this host, so
  * we do not require transcript text matches.
+ *
+ * `command` must be the extracted README text (e.g. `kunai --setup`); PATH from
+ * the isolated profile resolves `kunai` / `mpv`.
  */
-async function runKunaiUnderPty(options: {
-  readonly kunaiBin: string;
-  readonly args: readonly string[];
+async function runCommandUnderPty(options: {
+  readonly command: string;
   readonly env: NodeJS.ProcessEnv;
   readonly settleMs?: number;
   readonly timeoutMs?: number;
@@ -332,9 +336,7 @@ async function runKunaiUnderPty(options: {
 }): Promise<CommandResult & { readonly ready: boolean }> {
   const settleMs = options.settleMs ?? 2500;
   const timeoutMs = options.timeoutMs ?? 30_000;
-  const quotedArgs = options.args.map((a) => shellQuote(a)).join(" ");
-  const cliCommand = `${shellQuote(options.kunaiBin)} ${quotedArgs}`;
-  const proc = Bun.spawn(["script", "-qec", cliCommand, options.transcriptPath], {
+  const proc = Bun.spawn(["script", "-qec", options.command, options.transcriptPath], {
     env: options.env,
     stdin: "ignore",
     stdout: "ignore",
@@ -380,11 +382,6 @@ async function runKunaiUnderPty(options: {
     stderr: "",
     ready,
   };
-}
-
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export type VerifyReadmeCommandsInput = {
@@ -448,10 +445,10 @@ export async function verifyReadmeCommands(
       KUNAI_RELEASES_API: `${server.baseUrl}/releases/latest.json`,
     });
 
-    // Exact README install shape (curl|bash). Fixture curl shim rewrites the
-    // raw.githubusercontent URL; bash -s receives --yes --skip-deps --version
-    // so optional OS package prompts stay offline/non-interactive.
-    const installPipeline = CANONICAL_INSTALL.replace(
+    // Exact README install shape (curl|bash). Only documented rewrite: append
+    // non-interactive fixture flags via `bash -s -- …` (endpoint substitution is
+    // env/shim only). Reported command text stays the exact README curl|bash line.
+    const installPipeline = commands[0]!.replace(
       /\| bash\s*$/,
       `| bash -s -- --yes --skip-deps --version ${version}`,
     );
@@ -473,22 +470,22 @@ export async function verifyReadmeCommands(
       );
     }
 
-    // kunai --version
-    const versionResult = await runShell(JSON.stringify(kunaiBin) + " --version", installEnv);
+    // Execute extracted README text (not hardcoded argv). PATH resolves `kunai`.
+    const versionCmd = commands[1]!;
+    const versionResult = await runShell(versionCmd, installEnv);
     const versionOk =
       versionResult.exitCode === 0 && /kunai\s+\d+\.\d+\.\d+/i.test(versionResult.stdout);
     results.push({
       id: "version",
-      command: commands[1]!,
+      command: versionCmd,
       exitCode: versionResult.exitCode,
       passed: versionOk,
     });
 
-    // Prove setup without mpv (PATH has no mpv shim yet).
+    // Harness probe (not a README line): setup still mounts when mpv is absent.
     const setupNoMpvTranscript = join(profile.root, "setup-no-mpv.log");
-    const setupNoMpv = await runKunaiUnderPty({
-      kunaiBin,
-      args: ["--setup"],
+    const setupNoMpv = await runCommandUnderPty({
+      command: "kunai --setup",
       env: installEnv,
       settleMs: 2500,
       timeoutMs: 30_000,
@@ -496,31 +493,32 @@ export async function verifyReadmeCommands(
     });
     const setupWithoutMpvOk = setupNoMpv.ready;
 
-    // mpv --version with fake mpv on PATH
+    // mpv --version with fake mpv on PATH — extracted README text.
     const fakeMpvPath = installFakeMpv(profile.shimDir);
     const withMpvEnv = profileEnv(profile, {
       KUNAI_DL_BASE: server.baseUrl,
       KUNAI_RELEASES_API: `${server.baseUrl}/releases/latest.json`,
     });
-    const mpvResult = await runShell("mpv --version", withMpvEnv);
+    const mpvCmd = commands[2]!;
+    const mpvResult = await runShell(mpvCmd, withMpvEnv);
     const mpvOk = mpvResult.exitCode === 0 && /mpv/i.test(mpvResult.stdout);
     results.push({
       id: "mpv-version",
-      command: commands[2]!,
+      command: mpvCmd,
       exitCode: mpvResult.exitCode,
       passed: mpvOk,
     });
 
-    // README kunai --setup (with fake mpv available)
+    // README kunai --setup (extracted text) with fake mpv available.
     const setupTranscript = join(profile.root, "setup.log");
     // Reset onboarding so --setup actually runs.
     writeFileSync(
       join(profile.configDir, "config.json"),
       `${JSON.stringify({ onboardingVersion: 0, downloadOnboardingDismissed: false })}\n`,
     );
-    const setupResult = await runKunaiUnderPty({
-      kunaiBin,
-      args: ["--setup"],
+    const setupCmd = commands[3]!;
+    const setupResult = await runCommandUnderPty({
+      command: setupCmd,
       env: withMpvEnv,
       settleMs: 2500,
       timeoutMs: 30_000,
@@ -529,32 +527,34 @@ export async function verifyReadmeCommands(
     const setupOk = setupWithoutMpvOk && setupResult.ready;
     results.push({
       id: "setup",
-      command: commands[3]!,
+      command: setupCmd,
       exitCode: setupResult.exitCode,
       passed: setupOk,
     });
 
-    // First search — shell must mount under PTY; fake mpv is on PATH.
+    // First search — execute extracted README text under PTY; fake mpv on PATH.
     writeFileSync(
       join(profile.configDir, "config.json"),
       `${JSON.stringify({ onboardingVersion: 2, downloadOnboardingDismissed: true })}\n`,
     );
     const searchTranscript = join(profile.root, "search.log");
-    const searchResult = await runKunaiUnderPty({
-      kunaiBin,
-      args: ["-S", "Dune"],
+    const searchCmd = commands[4]!;
+    const searchResult = await runCommandUnderPty({
+      command: searchCmd,
       env: withMpvEnv,
       settleMs: 3500,
       timeoutMs: 45_000,
       transcriptPath: searchTranscript,
     });
-    // Full provider→mpv IPC handoff is Task 6. Here we prove the README search
-    // command boots in the fixture profile with fake mpv on PATH, after setup
-    // without mpv already succeeded.
-    const fakeMpvOnPath = existsSync(fakeMpvPath);
+    // Task 5 scope: README search command boots in the fixture profile with fake
+    // mpv resolvable on PATH (after setup-without-mpv already succeeded).
+    // Fixture-provider reach and fake-mpv IPC / invocation evidence are Task 6.
+    const whichMpv = await runShell("command -v mpv", withMpvEnv);
+    const fakeMpvOnPath =
+      whichMpv.exitCode === 0 && whichMpv.stdout.trim() === fakeMpvPath && existsSync(fakeMpvPath);
     results.push({
       id: "first-search",
-      command: commands[4]!,
+      command: searchCmd,
       exitCode: searchResult.exitCode,
       passed: searchResult.ready && fakeMpvOnPath && setupWithoutMpvOk,
     });
