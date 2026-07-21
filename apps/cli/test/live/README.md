@@ -17,8 +17,33 @@ bun run test:live:youtube
 bun run test:live:matrix
 bun run test:live:matrix anime
 bun run test:live:matrix videasy
+KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
 KUNAI_LIVE_DISCORD_PRESENCE=1 bun run test:live:discord
 ```
+
+### Default-route release signoff
+
+Release confirmation needs current evidence for the **default** movie / series / anime routes
+(`ReleaseProviderSignoff`), not the full provider matrix.
+
+```sh
+# skipped JSON (no network) unless opt-in is set
+bun run test:live:release-signoff
+
+# live run + optional redacted artifact (gitignored under artifacts/)
+KUNAI_LIVE_RELEASE_SIGNOFF=1 \
+  KUNAI_MATRIX_ARTIFACT="$PWD/artifacts/release-provider-signoff.json" \
+  bun run test:live:release-signoff
+```
+
+Stable fixtures: Dune (`438631`) via videasy, Dutton Ranch S01E01 (`299167`) via videasy,
+Kimetsu no Yaiba S01E01 (`SJms742bSTrcyJZay`) via allanime. Evidence keeps
+`configuredProvider` and `successfulProvider` separate, never embeds stream URLs / tokens /
+cookies / home paths, and is only acceptable within 24 hours of final approval when every
+lane is resolved and reachable.
+
+GitHub Actions: dispatch `.github/workflows/provider-matrix.yml` with `mode=release-signoff`
+to upload `release-provider-signoff-<run_id>`. Do not commit timestamped evidence JSON.
 
 ### Videasy live smoke (functional + order + performance)
 

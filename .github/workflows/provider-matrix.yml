@@ -3,14 +3,24 @@ name: Provider matrix (opt-in live)
 # Non-blocking release evidence. Never required by PR CI.
 # Stores a redacted matrix JSON artifact with healthy / provider-drift /
 # environment-network / harness-failure classifications.
+# Optional mode `release-signoff` writes ReleaseProviderSignoff schema evidence
+# for default movie/series/anime routes (artifact: release-provider-signoff.json).
 
 on:
   workflow_dispatch:
     inputs:
       providers:
-        description: "Space-separated provider ids or media lanes (empty = full matrix)"
+        description: "Space-separated provider ids or media lanes (empty = full matrix; ignored for release-signoff)"
         required: false
         default: ""
+      mode:
+        description: "matrix = serial provider matrix; release-signoff = default-route ReleaseProviderSignoff"
+        required: false
+        default: "matrix"
+        type: choice
+        options:
+          - matrix
+          - release-signoff
   schedule:
     # Weekly Monday 06:15 UTC — sparse on purpose.
     - cron: "15 6 * * 1"
@@ -40,6 +50,7 @@ jobs:
 
       - name: Run serial provider matrix
         id: matrix
+        if: ${{ github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff' }}
         working-directory: apps/cli
         env:
           KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/provider-matrix.json
@@ -58,8 +69,23 @@ jobs:
           # Always succeed the step so the artifact uploads; matrix volatility is evidence, not a gate.
           exit 0
 
+      - name: Run default-route release signoff
+        id: release_signoff
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}
+        working-directory: apps/cli
+        env:
+          KUNAI_LIVE_RELEASE_SIGNOFF: "1"
+          KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/release-provider-signoff.json
+        run: |
+          set +e
+          bun run test:live:release-signoff
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          # Always succeed the step so the artifact uploads; live volatility is evidence, not a PR gate.
+          exit 0
+
       - name: Summarize matrix classifications
-        if: always()
+        if: ${{ always() && (github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff') }}
         run: |
           node <<'NODE'
           const fs = require("node:fs");
@@ -88,11 +114,49 @@ jobs:
         env:
           KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/provider-matrix.json
 
+      - name: Summarize release signoff routes
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = process.env.KUNAI_MATRIX_ARTIFACT || "artifacts/release-provider-signoff.json";
+          if (!fs.existsSync(path)) {
+            console.log("No release signoff artifact written.");
+            process.exit(0);
+          }
+          const report = JSON.parse(fs.readFileSync(path, "utf8"));
+          const lines = [
+            `### Release provider signoff`,
+            ``,
+            `Generated: \`${report.generatedAt}\``,
+            `Version: \`${report.version}\``,
+            `Commit: \`${report.commitSha}\``,
+            ``,
+            `| Lane | Configured | Successful | Resolved | Reachable | Failure | Duration |`,
+            `| --- | --- | --- | --- | --- | --- | --- |`,
+            ...(report.routes ?? []).map((row) =>
+              `| ${row.lane} | ${row.configuredProvider} | ${row.successfulProvider ?? "—"} | ${row.resolved} | ${row.streamReachable} | ${row.failureClass ?? "—"} | ${row.durationMs}ms |`,
+            ),
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          NODE
+        env:
+          KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/release-provider-signoff.json
+
       - name: Upload redacted matrix artifact
-        if: always()
+        if: ${{ always() && (github.event_name == 'schedule' || github.event.inputs.mode != 'release-signoff') }}
         uses: actions/upload-artifact@v4
         with:
           name: provider-matrix-${{ github.run_id }}
           path: artifacts/provider-matrix.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload release provider signoff artifact
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release-signoff' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provider-signoff-${{ github.run_id }}
+          path: artifacts/release-provider-signoff.json
           if-no-files-found: warn
           retention-days: 14

@@ -37,20 +37,19 @@ const MATRIX = [
 ];
 
 const appRoot = fileURLToPath(new URL("../..", import.meta.url));
-const requested = new Set(process.argv.slice(2).map((arg) => arg.toLowerCase()));
-const selected =
-  requested.size > 0
-    ? MATRIX.filter((entry) => requested.has(entry.provider) || requested.has(entry.media))
-    : MATRIX;
 
-if (selected.length === 0) {
+// Default movie/series/anime release evidence uses ReleaseProviderSignoff
+// (apps/cli/test/live/release-provider-signoff.smoke.ts), not this full matrix.
+// Opt-in: KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
+// Workflow: provider-matrix.yml mode=release-signoff → release-provider-signoff-<run_id>
+if (process.argv.slice(2).some((arg) => arg.toLowerCase() === "release-signoff")) {
   console.error(
     JSON.stringify(
       {
         ok: false,
         stage: "matrix-selection",
-        requested: [...requested],
-        available: MATRIX.map((entry) => entry.provider),
+        error:
+          "Use bun run test:live:release-signoff (KUNAI_LIVE_RELEASE_SIGNOFF=1) for default-route ReleaseProviderSignoff evidence",
       },
       null,
       2,
@@ -58,44 +57,68 @@ if (selected.length === 0) {
   );
   process.exitCode = 1;
 } else {
-  const results = [];
-  for (const entry of selected) results.push(await runMatrixEntry(entry));
+  const requested = new Set(process.argv.slice(2).map((arg) => arg.toLowerCase()));
+  const selected =
+    requested.size > 0
+      ? MATRIX.filter((entry) => requested.has(entry.provider) || requested.has(entry.media))
+      : MATRIX;
 
-  const failed = results.filter((result) => !result.ok);
-  const byClass = {
-    healthy: results.filter((result) => result.healthClass === "healthy").length,
-    "provider-drift": results.filter((result) => result.healthClass === "provider-drift").length,
-    "environment-network": results.filter((result) => result.healthClass === "environment-network")
-      .length,
-    "harness-failure": results.filter((result) => result.healthClass === "harness-failure").length,
-  };
-  const report = {
-    ok: failed.length === 0,
-    generatedAt: new Date().toISOString(),
-    selectedProviders: selected.map((entry) => entry.provider),
-    summary: {
-      total: results.length,
-      passed: results.length - failed.length,
-      failed: failed.length,
-      byClass,
-    },
-    results,
-  };
-  console.log(JSON.stringify(report, null, 2));
-
-  const artifactPath = process.env.KUNAI_MATRIX_ARTIFACT?.trim();
-  if (artifactPath) {
-    const { mkdir, writeFile } = await import("node:fs/promises");
-    const { dirname, resolve } = await import("node:path");
-    const absoluteArtifactPath = resolve(artifactPath);
-    await mkdir(dirname(absoluteArtifactPath), { recursive: true });
-    await writeFile(
-      absoluteArtifactPath,
-      `${JSON.stringify(redactMatrixReport(report), null, 2)}\n`,
+  if (selected.length === 0) {
+    console.error(
+      JSON.stringify(
+        {
+          ok: false,
+          stage: "matrix-selection",
+          requested: [...requested],
+          available: MATRIX.map((entry) => entry.provider),
+        },
+        null,
+        2,
+      ),
     );
-  }
+    process.exitCode = 1;
+  } else {
+    const results = [];
+    for (const entry of selected) results.push(await runMatrixEntry(entry));
 
-  if (failed.length > 0) process.exitCode = 1;
+    const failed = results.filter((result) => !result.ok);
+    const byClass = {
+      healthy: results.filter((result) => result.healthClass === "healthy").length,
+      "provider-drift": results.filter((result) => result.healthClass === "provider-drift").length,
+      "environment-network": results.filter(
+        (result) => result.healthClass === "environment-network",
+      ).length,
+      "harness-failure": results.filter((result) => result.healthClass === "harness-failure")
+        .length,
+    };
+    const report = {
+      ok: failed.length === 0,
+      generatedAt: new Date().toISOString(),
+      selectedProviders: selected.map((entry) => entry.provider),
+      summary: {
+        total: results.length,
+        passed: results.length - failed.length,
+        failed: failed.length,
+        byClass,
+      },
+      results,
+    };
+    console.log(JSON.stringify(report, null, 2));
+
+    const artifactPath = process.env.KUNAI_MATRIX_ARTIFACT?.trim();
+    if (artifactPath) {
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { dirname, resolve } = await import("node:path");
+      const absoluteArtifactPath = resolve(artifactPath);
+      await mkdir(dirname(absoluteArtifactPath), { recursive: true });
+      await writeFile(
+        absoluteArtifactPath,
+        `${JSON.stringify(redactMatrixReport(report), null, 2)}\n`,
+      );
+    }
+
+    if (failed.length > 0) process.exitCode = 1;
+  }
 }
 
 async function runMatrixEntry(entry) {
@@ -156,6 +179,9 @@ async function runMatrixEntry(entry) {
  * - provider-drift: upstream contract/route failure while the harness ran
  * - environment-network: timeout, connect, DNS/TLS, or WAF-shaped blocks
  * - harness-failure: unparseable smoke output or matrix deadline without provider JSON
+ *
+ * ReleaseProviderSignoff.failureClass reuses provider-drift / environment-network /
+ * harness-failure (null when the default route is resolved and reachable).
  */
 function classifyProviderHealth(result, { timedOut, harness }) {
   if (result.ok) return "healthy";

@@ -62,6 +62,7 @@
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",
     "test:live:miruro": "bun -e \"await import('./test/live/miruro-demonslayer.smoke.ts')\"",
     "test:live:matrix": "node test/live/provider-matrix.smoke.mjs",
+    "test:live:release-signoff": "bun -e \"await import('./test/live/release-provider-signoff.smoke.ts')\"",
     "test:live:youtube": "bun -e \"await import('./test/live/youtube.smoke.ts')\"",
     "test:live:providers": "bun run test:live:videasy && bun run test:live:rivestream && bun run test:live:allanime && bun run test:live:miruro && bun run test:live:youtube",
     "test:live:rivestream": "bun -e \"await import('./test/live/rivestream-breakingbad.smoke.ts')\"",
