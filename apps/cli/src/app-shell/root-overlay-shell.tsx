@@ -668,6 +668,7 @@ export function RootOverlayShell({
         entries.length === 0 ? 0 : Math.min(current, entries.length - 1),
       );
       onRedraw();
+      return undefined;
     });
     requestBrowseIdleContextRefresh();
   }, [onRedraw, reloadHistoryOverlay]);

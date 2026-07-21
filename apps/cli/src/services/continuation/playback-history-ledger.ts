@@ -100,9 +100,10 @@ export class PlaybackHistoryLedger {
     const bumpLastWatched = input.bumpLastWatched ?? true;
     const existing = this.historyRepository.getProgress(this.context.title, this.context.episode);
     const isDnsFinalize = input.positionSeconds <= 0 && input.durationSeconds > 0;
+    const existingResumeSeconds = existing?.positionSeconds ?? 0;
     const positionSeconds =
-      bumpLastWatched === false && isDnsFinalize && (existing?.positionSeconds ?? 0) > 0
-        ? existing!.positionSeconds
+      bumpLastWatched === false && isDnsFinalize && existingResumeSeconds > 0
+        ? existingResumeSeconds
         : input.positionSeconds;
     const lastWatchedAt = bumpLastWatched
       ? now

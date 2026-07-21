@@ -77,7 +77,7 @@ describe("install method detection", () => {
         cwd,
         entrypoint: "C:\\Users\\k\\src\\kunai\\apps\\cli\\src\\main.ts",
         platform: "win32",
-        fileExists: (path) => sourceFiles.has(path),
+        fileExists: (candidate) => sourceFiles.has(candidate),
       }).kind,
     ).toBe("source");
   });

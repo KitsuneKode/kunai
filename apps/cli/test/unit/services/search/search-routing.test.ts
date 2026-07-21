@@ -653,6 +653,62 @@ describe("searchTitles", () => {
     expect(result.evidence.unsupported).not.toContain("type playlist");
   });
 
+  test("does not apply YouTube content shapes on a TMDB catalog search", async () => {
+    const searchRegistry = createSearchRegistry({
+      providerResults: [
+        {
+          id: "tmdb-a",
+          type: "series",
+          title: "Office A",
+          year: "2024",
+          overview: "",
+          posterPath: null,
+        },
+        {
+          id: "tmdb-b",
+          type: "series",
+          title: "Office B",
+          year: "2024",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+    });
+    const providerRegistry: any = {
+      get: () => ({
+        metadata: {
+          id: "vidking",
+          name: "VidKing",
+          description: "",
+          recommended: true,
+          isAnimeProvider: false,
+          domain: "vidking.net",
+        },
+      }),
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "office",
+        mode: "series",
+        filters: { type: "playlist" },
+      }),
+      {
+        mode: "series",
+        providerId: "vidking",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    // A YouTube-only shape cannot narrow a TMDB catalog — rows are kept and the
+    // token is reported as unsupported instead of silently emptying the list.
+    expect(result.results.map((r) => r.id)).toEqual(["tmdb-a", "tmdb-b"]);
+    expect(result.evidence.unsupported).toContain("type playlist");
+    expect(result.evidence.local).not.toContain("type playlist");
+  });
+
   test("bootstrap helper keeps structured filters on the intent path", () => {
     const engine = createSearchIntentEngine().fromText("mob mode:anime year:2024 rating:7", {
       currentMode: "series",

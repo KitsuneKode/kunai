@@ -4,6 +4,7 @@ import {
   getLastFilterStateKey,
   nextBrowseEscFilterLayer,
   removeFilterTokenFromQuery,
+  shouldResearchAfterFilterChange,
   stripStructuredFiltersFromQuery,
 } from "@/app-shell/browse-filter-chips";
 import {
@@ -79,5 +80,47 @@ describe("browse filter chips", () => {
       minRating: 8,
     });
     expect(getLastFilterStateKey(state)).toBe("minRating");
+  });
+
+  describe("shouldResearchAfterFilterChange", () => {
+    test("re-searches even when the current list is empty (over-filtered)", () => {
+      expect(
+        shouldResearchAfterFilterChange({
+          searchState: "ready",
+          lastSearchedQuery: "mob downloaded:true",
+          nextQuery: "mob",
+        }),
+      ).toBe(true);
+    });
+
+    test("re-searches from an error state so a bad filter can be peeled", () => {
+      expect(
+        shouldResearchAfterFilterChange({
+          searchState: "error",
+          lastSearchedQuery: "mob type:playlist",
+          nextQuery: "mob",
+        }),
+      ).toBe(true);
+    });
+
+    test("does not re-search when no prior search was run", () => {
+      expect(
+        shouldResearchAfterFilterChange({
+          searchState: "idle",
+          lastSearchedQuery: "",
+          nextQuery: "mob",
+        }),
+      ).toBe(false);
+    });
+
+    test("does not re-search when clearing empties the query entirely", () => {
+      expect(
+        shouldResearchAfterFilterChange({
+          searchState: "ready",
+          lastSearchedQuery: "mode:anime",
+          nextQuery: "   ",
+        }),
+      ).toBe(false);
+    });
   });
 });

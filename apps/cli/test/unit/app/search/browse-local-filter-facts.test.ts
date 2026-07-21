@@ -66,6 +66,7 @@ describe("library filter facts", () => {
     const facts = buildLocalFilterFacts({
       result: {
         type: "series",
+        year: "2024",
       },
       historyEntry: {
         titleId: "t1",

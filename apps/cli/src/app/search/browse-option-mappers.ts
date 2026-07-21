@@ -139,7 +139,11 @@ export function toBrowseResultOption(
       : result.liveStatus === "upcoming"
         ? "Upcoming"
         : undefined,
-    result.episodeCount ? `${result.episodeCount} episodes` : undefined,
+    result.episodeCount
+      ? result.contentShape === "channel"
+        ? `${result.episodeCount} videos`
+        : `${result.episodeCount} episodes`
+      : undefined,
     formatAnimeAvailability(result),
     formatRating(result.rating),
     ...enrichmentBadges.map((badge) => badge.label),

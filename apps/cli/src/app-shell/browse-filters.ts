@@ -74,20 +74,42 @@ export function applyBrowseResultFilters<T>(
   options: readonly BrowseShellOption<T>[],
   filters: BrowseResultFilters,
 ): readonly BrowseShellOption<T>[] {
+  // A local filter can only narrow honestly when the loaded rows actually carry
+  // the fact it needs. When none do, we skip that dimension and keep the rows
+  // (the badge stays "unsupported") instead of silently emptying the list.
+  const canApplyType = filters.type !== "all" && canApplyTypeFilterAtBrowse(options, filters.type);
+  const canApplyDownloaded =
+    typeof filters.downloaded === "boolean" &&
+    options.some((option) => option.localFilterFacts?.downloaded !== undefined);
+  const canApplyWatched =
+    Boolean(filters.watched) &&
+    options.some((option) => option.localFilterFacts?.watched !== undefined);
+  const canApplyRelease =
+    Boolean(filters.release) &&
+    options.some((option) => option.localFilterFacts?.release !== undefined);
+
   return options.filter((option) => {
-    if (filters.type !== "all" && !getOptionTypeFilterMatch(option, filters.type)) return false;
-    if (filters.year && !option.previewMeta?.includes(filters.year)) return false;
+    if (canApplyType && !getOptionTypeFilterMatch(option, filters.type)) return false;
+    if (filters.state.year !== undefined && !matchesOptionYear(option, filters.state.year)) {
+      return false;
+    }
     if (filters.provider && !matchesProviderFilter(option, filters.provider)) return false;
     if (
-      typeof filters.downloaded === "boolean" &&
-      !matchesLibraryDownloadedFilter(option.localFilterFacts, filters.downloaded)
+      canApplyDownloaded &&
+      !matchesLibraryDownloadedFilter(option.localFilterFacts, filters.downloaded as boolean)
     ) {
       return false;
     }
-    if (filters.watched && !matchesLibraryWatchedFilter(option.localFilterFacts, filters.watched)) {
+    if (
+      canApplyWatched &&
+      !matchesLibraryWatchedFilter(option.localFilterFacts, filters.watched as WatchFilter)
+    ) {
       return false;
     }
-    if (filters.release && !matchesLibraryReleaseFilter(option.localFilterFacts, filters.release)) {
+    if (
+      canApplyRelease &&
+      !matchesLibraryReleaseFilter(option.localFilterFacts, filters.release as ReleaseFilter)
+    ) {
       return false;
     }
     if (typeof filters.minRating === "number") {
@@ -96,6 +118,19 @@ export function applyBrowseResultFilters<T>(
     }
     return true;
   });
+}
+
+function canApplyTypeFilterAtBrowse<T>(
+  options: readonly BrowseShellOption<T>[],
+  wanted: BrowseResultTypeFilter,
+): boolean {
+  if (wanted === "all") return true;
+  if (wanted === "video" || wanted === "playlist" || wanted === "channel") {
+    return options.some((option) => option.localFilterFacts?.contentShape !== undefined);
+  }
+  return options.some(
+    (option) => option.localFilterFacts?.mediaType !== undefined || getLegacyPreviewType(option),
+  );
 }
 
 export function describeBrowseResultFilters(filters: BrowseResultFilters): readonly string[] {
@@ -218,6 +253,27 @@ function getOptionTypeFilterMatch<T>(
     return (facts?.mediaType ?? getLegacyPreviewType(option)) === wanted;
   }
   return true;
+}
+
+function matchesOptionYear<T>(
+  option: BrowseShellOption<T>,
+  filter: NonNullable<FilterState["year"]>,
+): boolean {
+  const optionYear = getOptionYear(option);
+  if (optionYear === null) return false;
+  if (typeof filter === "number") return optionYear === filter;
+  if (typeof filter.from === "number" && optionYear < filter.from) return false;
+  if (typeof filter.to === "number" && optionYear > filter.to) return false;
+  return true;
+}
+
+function getOptionYear<T>(option: BrowseShellOption<T>): number | null {
+  const factYear = option.localFilterFacts?.year;
+  if (typeof factYear === "number" && Number.isFinite(factYear)) return factYear;
+  for (const meta of option.previewMeta ?? []) {
+    if (/^\d{4}$/.test(meta)) return Number.parseInt(meta, 10);
+  }
+  return null;
 }
 
 function getLegacyPreviewType<T>(option: BrowseShellOption<T>): "movie" | "series" | undefined {

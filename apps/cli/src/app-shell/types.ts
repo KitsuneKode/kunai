@@ -306,6 +306,8 @@ export type BrowseLocalFilterFacts = {
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;
   readonly release?: ReleaseFilter;
+  /** Release/air year parsed from the catalog result, for year: filter apply. */
+  readonly year?: number;
 };
 
 export type BrowseShellOption<T> = {
@@ -336,6 +338,8 @@ export type BrowseShellSearchResponse<T> = {
   upstreamFilterBadges?: readonly string[];
   localFilterBadges?: readonly string[];
   unsupportedFilterBadges?: readonly string[];
+  /** Calm parser corrections/warnings surfaced in the shell (e.g. type:anime alias). */
+  warnings?: readonly string[];
   revalidate?: Promise<BrowseShellSearchResponse<T>>;
 };
 

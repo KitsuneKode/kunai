@@ -190,4 +190,51 @@ describe("browse filters", () => {
     );
     expect(filtered.map((o) => o.value)).toEqual(["p"]);
   });
+
+  test("keeps rows when a library filter's fact is absent on every row", () => {
+    const options: readonly BrowseShellOption<string>[] = [
+      {
+        value: "a",
+        label: "A",
+        previewMeta: ["Series"],
+        localFilterFacts: { mediaType: "series" },
+      },
+      { value: "b", label: "B", previewMeta: ["Movie"], localFilterFacts: { mediaType: "movie" } },
+    ];
+    // No row carries a `downloaded` fact — the filter dimension is skipped so the
+    // list is kept intact (the honest "unsupported" badge is surfaced elsewhere)
+    // rather than silently emptied.
+    expect(
+      applyBrowseResultFilters(options, parseBrowseFilterQuery("downloaded:true").filters).map(
+        (o) => o.value,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+
+  test("does not empty a TMDB list when a YouTube content shape is typed", () => {
+    const options: readonly BrowseShellOption<string>[] = [
+      {
+        value: "a",
+        label: "A",
+        previewMeta: ["Series"],
+        localFilterFacts: { mediaType: "series" },
+      },
+      { value: "b", label: "B", previewMeta: ["Movie"], localFilterFacts: { mediaType: "movie" } },
+    ];
+    expect(
+      applyBrowseResultFilters(options, parseBrowseFilterQuery("type:playlist").filters).map(
+        (o) => o.value,
+      ),
+    ).toEqual(["a", "b"]);
+  });
+
+  test("applies a year range against option year facts", () => {
+    const filtered = applyBrowseResultFilters(
+      OPTIONS,
+      parseBrowseFilterQuery("type:series year:2007..2016").filters,
+    );
+    // Breaking Bad (2008) and Better Call Saul (2015) fall inside 2007..2016;
+    // Frieren (2023) and Solo Leveling (2024) are outside.
+    expect(filtered.map((o) => o.value)).toEqual(["breaking-bad", "better-call-saul"]);
+  });
 });

@@ -53,9 +53,10 @@ export function buildPlaybackRecoveryViewModel(
       detail: state.fallbackProviderName
         ? `Try ${state.fallbackProviderName}`
         : "Try another compatible provider",
-      shortcut: footerKeyFromBinding(
-        KEYBINDINGS.find((binding) => binding.id === "player-fallback")!,
-      ),
+      shortcut: (() => {
+        const binding = KEYBINDINGS.find((entry) => entry.id === "player-fallback");
+        return binding ? footerKeyFromBinding(binding) : "⇧F";
+      })(),
       tone: "warning",
     });
   }

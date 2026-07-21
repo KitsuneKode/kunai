@@ -250,7 +250,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "browse-filter",
     chord: { input: "f", ctrl: true },
     label: "Narrow loaded results",
-    hintLabel: "filter",
+    hintLabel: "narrow",
     scope: "browse",
     group: "While browsing",
   },

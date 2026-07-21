@@ -9,6 +9,22 @@ export type StructuredFilterChip = {
   readonly label: string;
 };
 
+/**
+ * A filter chip was cleared or peeled. Re-run the search when a prior search
+ * exists so the user is never stranded — critically, this must still fire when
+ * the current list is EMPTY (e.g. over-filtered to nothing), otherwise clearing
+ * the offending chip would leave the user stuck on an empty result surface.
+ */
+export function shouldResearchAfterFilterChange(input: {
+  readonly searchState: "idle" | "loading" | "ready" | "error";
+  readonly lastSearchedQuery: string;
+  readonly nextQuery: string;
+}): boolean {
+  if (input.searchState !== "ready" && input.searchState !== "error") return false;
+  if (input.lastSearchedQuery.trim().length === 0) return false;
+  return input.nextQuery.trim().length > 0;
+}
+
 export function nextBrowseEscFilterLayer(input: {
   readonly narrowOpenOrFocused: boolean;
   readonly resultFilterNonEmpty: boolean;

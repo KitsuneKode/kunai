@@ -28,6 +28,7 @@ import {
   getStructuredFilterChips,
   nextBrowseEscFilterLayer,
   removeFilterTokenFromQuery,
+  shouldResearchAfterFilterChange,
   stripStructuredFiltersFromQuery,
 } from "./browse-filter-chips";
 import {
@@ -188,6 +189,7 @@ export function BrowseShell<T>({
   queryDraft,
   initialResults,
   initialResultSubtitle,
+  initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
   placeholder,
@@ -213,6 +215,7 @@ export function BrowseShell<T>({
   queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
+  initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
@@ -290,6 +293,7 @@ export function BrowseShell<T>({
   );
   const [showIdleLoadingHint, setShowIdleLoadingHint] = useState(false);
   const [activeFilterBadges, setActiveFilterBadges] = useState<readonly string[]>([]);
+  const [searchWarnings, setSearchWarnings] = useState<readonly string[]>(initialWarnings ?? []);
   const [resultFilter, setResultFilter] = useState("");
   const [filterModeOpen, setFilterModeOpen] = useState(false);
   // Focus zones: query (text) → list (bare hotkeys) → filter (local narrow) → idle.
@@ -450,6 +454,7 @@ export function BrowseShell<T>({
     setEmptyMessage("Search for a title — or try /trending to see what's popular");
     setResultSubtitle("");
     setActiveFilterBadges([]);
+    setSearchWarnings([]);
     setResultFilter("");
     setFilterModeOpen(false);
     setFocusZone("query");
@@ -523,6 +528,7 @@ export function BrowseShell<T>({
             : (response.emptyMessage ?? "No results found."),
         );
         setActiveFilterBadges(activeBadges);
+        setSearchWarnings(response.warnings ?? []);
         setSearchState("ready");
         setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
@@ -543,15 +549,11 @@ export function BrowseShell<T>({
     (key: FilterStateKey) => {
       const nextQuery = removeFilterTokenFromQuery(query, key);
       setQuery(nextQuery);
-      const shouldRefresh =
-        (searchState === "ready" || searchState === "error") &&
-        lastSearchedQuery.trim().length > 0 &&
-        options.length > 0;
-      if (shouldRefresh) {
+      if (shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery })) {
         void runSearch(nextQuery);
       }
     },
-    [lastSearchedQuery, options.length, query, runSearch, searchState, setQuery],
+    [lastSearchedQuery, query, runSearch, searchState, setQuery],
   );
 
   const handleQuerySubmit = useCallback(() => {
@@ -573,6 +575,7 @@ export function BrowseShell<T>({
     setSelectedIndex(0);
     setResultSubtitle("");
     setActiveFilterBadges([]);
+    setSearchWarnings([]);
     setFocusZone("query");
     resetCalendar();
 
@@ -615,6 +618,7 @@ export function BrowseShell<T>({
     setSelectedIndex(0);
     setResultSubtitle("");
     setActiveFilterBadges([]);
+    setSearchWarnings([]);
     setFocusZone("query");
     resetCalendar();
 
@@ -1485,9 +1489,9 @@ export function BrowseShell<T>({
       if (escLayer === "chips") {
         const plainQuery = stripStructuredFiltersFromQuery(query);
         setQuery(plainQuery);
-        const shouldRefresh =
-          searchState === "ready" && options.length > 0 && plainQuery.trim().length > 0;
-        if (shouldRefresh) {
+        if (
+          shouldResearchAfterFilterChange({ searchState, lastSearchedQuery, nextQuery: plainQuery })
+        ) {
           void runSearch(plainQuery);
         }
         dispatchFocusZone({ type: "focus-query" });
@@ -1661,6 +1665,13 @@ export function BrowseShell<T>({
                 <Text color={palette.muted}>{filter}</Text>
                 <Text color={palette.accentSoft}>{"─".repeat(filter.length)}</Text>
               </Box>
+            ))}
+          </Box>
+        ) : null}
+        {searchWarnings.length > 0 && !ultraCompact ? (
+          <Box marginTop={activeFilterBadges.length > 0 ? 0 : 1} flexDirection="column">
+            {searchWarnings.map((warning) => (
+              <Text key={warning} color={palette.warn}>{`⚠ ${warning}`}</Text>
             ))}
           </Box>
         ) : null}
@@ -2160,6 +2171,7 @@ export function openBrowseShell<T>({
   queryDraft: sharedQueryDraft,
   initialResults,
   initialResultSubtitle,
+  initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
   placeholder,
@@ -2182,6 +2194,7 @@ export function openBrowseShell<T>({
   queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
+  initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
   placeholder: string;
@@ -2213,6 +2226,7 @@ export function openBrowseShell<T>({
         queryDraft={queryDraft}
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
+        initialWarnings={initialWarnings}
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}
         placeholder={placeholder}

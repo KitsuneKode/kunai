@@ -122,12 +122,15 @@ export async function searchTitles(
             ? normalized
             : await enrichAnimeSearchResultsWithAniList(query, normalized, context.signal);
 
+        // Apply the same local-filter pipeline every other provider path uses so
+        // the returned evidence can never claim a filter that was not applied.
+        const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
         return {
-          results: enriched,
+          results: applyLocalSearchFilters(enriched, intent, evidence),
           sourceId: provider.metadata.id,
           sourceName: provider.metadata.name,
           strategy: "provider-native",
-          evidence: classifySearchEvidence(intent, provider.metadata.id, context.mode),
+          evidence,
         };
       }
     }
@@ -273,9 +276,18 @@ function getUpstreamFilterKeys(
 }
 
 function getLocalFilterKeys(intent: SearchIntent, sourceId: string): readonly string[] {
+  // YouTube content shapes (video/playlist/channel) only mean something on a
+  // YouTube catalog. On a TMDB/AniList catalog they cannot be applied, so they
+  // must never be claimed as local (that would empty the list dishonestly).
+  const catalogType =
+    sourceId === "tmdb" || sourceId === "anilist"
+      ? isContentShapeType(intent.filters.type)
+        ? undefined
+        : intent.filters.type
+      : intent.filters.type;
   if (sourceId === "tmdb" && intent.query.trim().length > 0) {
     return [
-      intent.filters.type ? "type" : null,
+      catalogType ? "type" : null,
       typeof intent.filters.minRating === "number" ? "rating" : null,
       intent.filters.year ? "year" : null,
       intent.sort === "rating" || intent.sort === "popular" || intent.sort === "recent"
@@ -302,6 +314,11 @@ function getUnsupportedFilterKeys(intent: SearchIntent, sourceId: string): reado
     sourceId === "tmdb" && intent.query.trim().length > 0 && filters.genres?.length
       ? "genre"
       : null,
+    // A YouTube content shape typed against a TMDB/AniList catalog cannot be
+    // honored — report it as unsupported rather than silently emptying results.
+    (sourceId === "tmdb" || sourceId === "anilist") && isContentShapeType(filters.type)
+      ? "type"
+      : null,
     filters.provider ? "provider" : null,
     filters.audio ? "audio" : null,
     filters.subtitles ? "subtitles" : null,
@@ -321,12 +338,15 @@ function applyLocalSearchFilters(
   let filtered = results;
   if (localKeys.has("type") && intent.filters.type && intent.filters.type !== "all") {
     const type = intent.filters.type;
-    filtered = filtered.filter((result) => {
-      if (type === "video" || type === "playlist" || type === "channel") {
-        return result.contentShape === type;
+    if (isContentShapeType(type)) {
+      // Only narrow by content shape when the result set actually carries shape
+      // facts; otherwise skip the dimension instead of emptying every row.
+      if (results.some((result) => typeof result.contentShape === "string")) {
+        filtered = filtered.filter((result) => result.contentShape === type);
       }
-      return result.type === type;
-    });
+    } else {
+      filtered = filtered.filter((result) => result.type === type);
+    }
   }
   if (localKeys.has("rating") && typeof intent.filters.minRating === "number") {
     const minRating = intent.filters.minRating;
@@ -341,6 +361,10 @@ function applyLocalSearchFilters(
     filtered = [...filtered].sort((left, right) => compareResultsBySort(left, right, intent.sort));
   }
   return filtered;
+}
+
+function isContentShapeType(type: SearchIntent["filters"]["type"]): boolean {
+  return type === "video" || type === "playlist" || type === "channel";
 }
 
 function matchesYear(year: string, filter: SearchIntentFilters["year"]): boolean {

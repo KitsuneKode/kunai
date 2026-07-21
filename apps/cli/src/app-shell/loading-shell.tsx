@@ -40,9 +40,10 @@ const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 // Matches getLoadingDisclosure's `showDiagnostics`/`showElapsed` gate: the
 // runtime health line only becomes visible once the diagnostics strip reveals.
 const LOADING_DIAGNOSTICS_REVEAL_SECONDS = 5;
-const PLAYER_FALLBACK_KEY = footerKeyFromBinding(
-  KEYBINDINGS.find((binding) => binding.id === "player-fallback")!,
-);
+const PLAYER_FALLBACK_BINDING = KEYBINDINGS.find((binding) => binding.id === "player-fallback");
+const PLAYER_FALLBACK_KEY = PLAYER_FALLBACK_BINDING
+  ? footerKeyFromBinding(PLAYER_FALLBACK_BINDING)
+  : "⇧F";
 
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
