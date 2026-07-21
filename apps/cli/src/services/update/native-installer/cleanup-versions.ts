@@ -101,6 +101,8 @@ export async function cleanupOldVersions(
 
   await cleanupOrphanStaging(layout);
   await cleanupTempInstallFiles(layout);
+  const { cleanupAbandonedTransactions } = await import("./transaction");
+  await cleanupAbandonedTransactions(layout).catch(() => {});
 }
 
 async function cleanupOrphanStaging(layout: InstallLayoutPaths): Promise<void> {

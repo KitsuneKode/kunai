@@ -16,6 +16,7 @@ export type InstallLayoutPaths = {
   readonly configDir: string;
   readonly versionsDir: string;
   readonly locksDir: string;
+  readonly transactionsDir: string;
   readonly stagingRoot: string;
   readonly launcherPath: string;
   readonly binaryFileName: string;
@@ -67,6 +68,7 @@ export function getInstallLayoutPaths(
     configDir,
     versionsDir: join(dataDir, "versions"),
     locksDir: join(dataDir, "locks"),
+    transactionsDir: join(dataDir, "transactions"),
     stagingRoot: join(cacheDir, "staging"),
     launcherPath: overrides.launcherPath ?? defaultLauncherPath(platform),
     binaryFileName: binaryFileName(platform),
@@ -98,6 +100,26 @@ export function lockFilePath(
 ): string {
   const canonical = requireCanonicalVersion(version);
   return join(layout.locksDir, `${canonical}.lock`);
+}
+
+/** Per-version metadata sidecar: `{dataDir}/versions/{semver}/version.json`. */
+export function versionMetadataPath(
+  layout: Pick<InstallLayoutPaths, "versionsDir">,
+  version: string,
+): string {
+  const canonical = requireCanonicalVersion(version);
+  return join(layout.versionsDir, canonical, "version.json");
+}
+
+/** Install transaction record: `{dataDir}/transactions/{id}.json`. */
+export function transactionFilePath(
+  layout: Pick<InstallLayoutPaths, "transactionsDir">,
+  id: string,
+): string {
+  if (!/^[A-Za-z0-9._-]+$/.test(id)) {
+    throw new Error(`Invalid install transaction id: ${id}`);
+  }
+  return join(layout.transactionsDir, `${id}.json`);
 }
 
 /** True when `execPath` lives under the versioned store. */

@@ -20,6 +20,7 @@ describe("install layout paths", () => {
 
     expect(layout.versionsDir).toBe("/data/kunai/versions");
     expect(layout.locksDir).toBe("/data/kunai/locks");
+    expect(layout.transactionsDir).toBe("/data/kunai/transactions");
     expect(layout.stagingRoot).toBe("/cache/kunai/staging");
     expect(versionBinaryPath(layout, "1.2.3")).toBe("/data/kunai/versions/1.2.3/kunai");
     expect(lockFilePath(layout, "1.2.3")).toBe("/data/kunai/locks/1.2.3.lock");

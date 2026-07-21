@@ -17,6 +17,15 @@ export type LockAcquireResult =
 
 const LOCK_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
+export type VersionLockInspection =
+  | { readonly status: "missing" }
+  | { readonly status: "active"; readonly content: VersionLockContent }
+  | {
+      readonly status: "stale";
+      readonly content: VersionLockContent | null;
+      readonly detail: string;
+    };
+
 function isProcessAlive(pid: number): boolean {
   if (pid <= 0) return false;
   try {
@@ -36,12 +45,14 @@ export async function readLockContent(path: string): Promise<VersionLockContent 
   }
 }
 
+/**
+ * Alive holders are never stale by age. Age only applies to unreadable lock
+ * files (or missing PID metadata) as a reclaim fallback.
+ */
 async function isLockStale(path: string): Promise<boolean> {
   const content = await readLockContent(path);
   if (content) {
-    if (!isProcessAlive(content.pid)) return true;
-    const age = Date.now() - Date.parse(content.acquiredAt);
-    return age > LOCK_STALE_MS;
+    return !isProcessAlive(content.pid);
   }
   try {
     const stat = await Bun.file(path).stat();
@@ -49,6 +60,32 @@ async function isLockStale(path: string): Promise<boolean> {
   } catch {
     return true;
   }
+}
+
+/** Read-only lock inspection — never deletes or reclaims lock files. */
+export async function inspectVersionLock(
+  layout: Pick<InstallLayoutPaths, "locksDir">,
+  version: string,
+): Promise<VersionLockInspection> {
+  const path = lockFilePath(layout, version);
+  if (!existsSync(path)) return { status: "missing" };
+
+  const content = await readLockContent(path);
+  if (content && isProcessAlive(content.pid)) {
+    return { status: "active", content };
+  }
+  if (content) {
+    return {
+      status: "stale",
+      content,
+      detail: `Lock holder pid ${content.pid} is not running`,
+    };
+  }
+  return {
+    status: "stale",
+    content: null,
+    detail: "Lock file is unreadable or missing required fields",
+  };
 }
 
 /**
