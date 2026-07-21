@@ -14,12 +14,24 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
   expect(help).toContain("kunai doctor");
   expect(help).toContain("kunai doctor --json");
+  expect(help).toContain("kunai rollback");
+  expect(help).toContain("kunai rollback --list");
+  expect(help).toContain("kunai rollback --to <ver>");
+  expect(help).toContain("kunai rollback --dry-run");
 });
 
 test("parseArgs treats --json as a known maintenance flag", () => {
   const args = parseArgs(["--json"]);
   // Doctor is routed in runCli before parseArgs; --json must not warn as unknown.
   expect(args).toBeDefined();
+});
+
+test("parseArgs treats rollback maintenance flags as known", () => {
+  const listed = parseArgs(["--list"]);
+  const toVersion = parseArgs(["--to", "1.2.3"]);
+  // Rollback is routed in runCli before parseArgs; flags must not warn as unknown.
+  expect(listed).toBeDefined();
+  expect(toVersion).toBeDefined();
 });
 
 test("parseArgs supports --youtube launch mode", () => {

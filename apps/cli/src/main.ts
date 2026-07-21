@@ -553,14 +553,27 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
-  // `kunai upgrade` / `kunai uninstall` / `kunai doctor` — channel-aware maintenance.
-  // Handled before the shell boots so they can run standalone (binary self-replace).
+  // `kunai upgrade` / `kunai uninstall` / `kunai doctor` / `kunai rollback` —
+  // channel-aware maintenance. Handled before the shell boots so they can run
+  // standalone (binary self-replace).
   if (argv[0] === "doctor") {
     const { runDoctor } = await import("./services/update/run-doctor");
     process.exit(
       await runDoctor({
         json: argv.includes("--json"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
+      }),
+    );
+  }
+  if (argv[0] === "rollback") {
+    const { runRollback } = await import("./services/update/run-rollback");
+    const toIdx = argv.indexOf("--to");
+    const toArg = toIdx >= 0 ? argv[toIdx + 1] : undefined;
+    process.exit(
+      await runRollback({
+        list: argv.includes("--list"),
+        dryRun: argv.includes("--dry-run"),
+        ...(toArg !== undefined ? { to: toArg } : {}),
       }),
     );
   }

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { readInstallManifest } from "../install-manifest";
 import { compareCanonicalVersions, parseCanonicalVersion } from "../version";
 import {
   getInstallLayoutPaths,
@@ -84,6 +85,15 @@ export async function cleanupOldVersions(
     }
   } catch {
     // ignore
+  }
+
+  // Protect active + previous (explicit rollback candidate) from retention deletion.
+  const manifest = await readInstallManifest(layout.configDir).catch(() => null);
+  if (manifest?.activeVersion && parseCanonicalVersion(manifest.activeVersion)) {
+    protectedPaths.add(versionBinaryPath(layout, manifest.activeVersion));
+  }
+  if (manifest?.previousVersion && parseCanonicalVersion(manifest.previousVersion)) {
+    protectedPaths.add(versionBinaryPath(layout, manifest.previousVersion));
   }
 
   const versions = await listVersionDirs(layout.versionsDir);

@@ -55,6 +55,16 @@ export {
   type DoctorFinding,
   type DoctorReport,
 } from "./doctor";
+export {
+  listRollbackCandidates,
+  planRollback,
+  executeRollback,
+  type RollbackCandidate,
+  type RollbackPlanResult,
+  type RollbackExecuteResult,
+  type RollbackOptions,
+  type RollbackRefuseCode,
+} from "./rollback";
 export { isMuslEnvironment, isMuslEnvironmentSync } from "./musl";
 export {
   verifyStoredVersion,
