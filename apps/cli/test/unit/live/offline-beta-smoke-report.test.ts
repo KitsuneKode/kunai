@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildOfflineBetaSmokeReport,
   OFFLINE_BETA_SMOKE_REQUIRED_CHECKS,
+  redactVolatileText,
   type OfflineBetaSmokeCheck,
   type OfflineBetaSmokeCheckId,
 } from "../../live/offline-beta-smoke-report";
@@ -35,5 +36,15 @@ describe("offline beta smoke report", () => {
     expect(() =>
       buildOfflineBetaSmokeReport(ALL_PASSING_CHECKS.slice(0, -1), "/tmp/profile"),
     ).toThrow();
+  });
+
+  test("error-path redaction strips fixture URLs and temp paths", () => {
+    const synthetic =
+      "download failed for https://cdn.example/fixture.mp4 under /tmp/kunai-live-offline-beta-abc/downloads";
+    const redacted = redactVolatileText(synthetic);
+    expect(redacted).not.toMatch(/https?:\/\/cdn\.example/i);
+    expect(redacted).toContain("https://REDACTED");
+    expect(redacted).not.toContain("/tmp/kunai-live-offline-beta-abc");
+    expect(redacted).toContain("/tmp/REDACTED");
   });
 });

@@ -77,3 +77,10 @@ export function buildOfflineBetaSmokeSkippedReport(reason: string): {
     reason,
   };
 }
+
+/** Strip fixture URLs and temp paths before printing smoke JSON (parity with provider-matrix). */
+export function redactVolatileText(value: string): string {
+  return value
+    .replace(/https?:\/\/[^\s"']+/gi, "https://REDACTED")
+    .replace(/\/tmp\/[^\s"']+/gi, "/tmp/REDACTED");
+}

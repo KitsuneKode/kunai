@@ -7,6 +7,7 @@ import type { PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/typ
 import {
   buildOfflineBetaSmokeReport,
   buildOfflineBetaSmokeSkippedReport,
+  redactVolatileText,
   type OfflineBetaSmokeCheck,
 } from "./offline-beta-smoke-report";
 
@@ -231,7 +232,7 @@ try {
   checks.push({
     id: "restart-recovery",
     ok:
-      recovered != null &&
+      recovered !== null &&
       (recovered.status === "queued" ||
         recovered.status === "completed" ||
         recovered.status === "completed-with-notes"),
@@ -319,12 +320,13 @@ try {
   printJson(report);
   exitCode = report.ok ? 0 : 1;
 } catch (error) {
+  const rawMessage = error instanceof Error ? error.message : "offline beta smoke failed";
   printJson({
     ok: false,
     skipped: false,
-    profileRoot: profile.rootDir,
+    profileRoot: redactVolatileText(profile.rootDir),
     checks,
-    error: error instanceof Error ? error.message : "offline beta smoke failed",
+    error: redactVolatileText(rawMessage),
   });
   exitCode = 1;
 }
