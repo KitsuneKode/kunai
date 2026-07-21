@@ -79,8 +79,11 @@ If `kunai` is missing or shadowed after install, diagnose PATH and ownership:
 ```bash
 kunai doctor
 kunai doctor --json
-command -v -a kunai          # Linux/macOS/WSL: list every kunai on PATH
+type -a kunai                # bash: list every kunai on PATH
+# or: which -a kunai
+# zsh: whence -a kunai  (also which -a / type -a)
 # PowerShell: Get-Command kunai -All
+kunai install --force        # redownload/reverify; pin with: kunai install --force X.Y.Z
 kunai rollback --list        # verified local versions only
 kunai uninstall              # ownership-aware; use npm uninstall -g for npm channel
 ```

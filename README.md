@@ -226,7 +226,8 @@ kunai --setup
 | FreeBSD / other BSD                           | **Unsupported** binary              |
 
 Installer health: `kunai doctor` / `kunai doctor --json`. List PATH shadows with
-`command -v -a kunai` (Unix/WSL) or `Get-Command kunai -All` (Windows PowerShell).
+`type -a kunai` / `which -a kunai` (bash), `whence -a kunai` (zsh), or
+`Get-Command kunai -All` (Windows PowerShell).
 See [docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues).
 
 ### What you need up front
@@ -563,11 +564,12 @@ in-shell when a newer version is published. Package-manager reinstall and source
 
 **`kunai` missing, shadowed, or install ownership wrong?**
 Run `kunai doctor` (or `kunai doctor --json`). List every binary with
-`command -v -a kunai` / `Get-Command kunai -All`. Rollback with
-`kunai rollback --list` / `kunai rollback`. Uninstall only via the owning channel
-(`kunai uninstall`, or `npm uninstall -g` for npm). Checksums/404s → pin a
-version or re-verify `SHA256SUMS`. Unsigned beta binaries may need SmartScreen
-unblock or macOS quarantine removal.
+`type -a` / `which -a` (bash), `whence -a` (zsh), or `Get-Command kunai -All`
+(PowerShell). Rollback with `kunai rollback --list` / `kunai rollback`. Uninstall
+only via the owning channel (`kunai uninstall`, or `npm uninstall -g` for npm).
+Checksums/404s → `kunai install --force` / pin a version or re-verify
+`SHA256SUMS`. Unsigned beta binaries may need SmartScreen unblock or macOS
+quarantine removal.
 
 **YouTube age-restricted / members content?**
 Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in

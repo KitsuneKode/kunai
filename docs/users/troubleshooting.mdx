@@ -237,8 +237,13 @@ More: [Share links](/docs/users/share-links).
 1. List every `kunai` on PATH (shadowing is the most common failure):
 
    ```sh
-   # Linux / macOS / WSL
-   command -v -a kunai
+   # bash
+   type -a kunai
+   # or: which -a kunai
+
+   # zsh
+   whence -a kunai
+   # or: which -a kunai / type -a kunai
    ```
 
    ```powershell
@@ -257,7 +262,7 @@ More: [Share links](/docs/users/share-links).
 
 3. **Ownership mismatch:** use the owner channel. Binary installs → `kunai upgrade` / `kunai uninstall`. npm → `npm uninstall -g @kitsunekode/kunai` or ownership-aware `kunai uninstall`. Do not delete a package-manager install with a raw `rm` of another channel's launcher.
 
-4. **Checksum / 404 on install or upgrade:** confirm the release tag exists and `SHA256SUMS` matches. Retry with `kunai upgrade --force` or pin an explicit version (`install.sh … --version X.Y.Z`). A 404 usually means the asset for your target (for example musl vs glibc) is missing — check [Platforms](/docs/users/platforms).
+4. **Checksum / 404 on install or upgrade:** confirm the release tag exists and `SHA256SUMS` matches. Retry with `kunai install --force` or pin an explicit version (`kunai install --force X.Y.Z` / `install.sh … --version X.Y.Z`). A 404 usually means the asset for your target (for example musl vs glibc) is missing — check [Platforms](/docs/users/platforms).
 
 5. **Rollback** to a previously verified local version (does not re-download):
 
@@ -269,7 +274,7 @@ More: [Share links](/docs/users/share-links).
 
 6. **Unsigned binaries (beta):** Windows SmartScreen → `Unblock-File` on `kunai.exe`; macOS Gatekeeper → `xattr -dr com.apple.quarantine` on the install path; Linux → verify against `SHA256SUMS`. Details: [Unsigned binaries](/docs/users/install-and-update#unsigned-binaries-beta).
 
-7. **PATH shadowing:** put the intended install directory first (`~/.local/bin` on Unix, `%LOCALAPPDATA%\kunai\bin` on Windows). Remove or rename earlier shadowed copies. Re-check with `command -v -a kunai` / `Get-Command kunai -All`, then `kunai doctor`.
+7. **PATH shadowing:** put the intended install directory first (`~/.local/bin` on Unix, `%LOCALAPPDATA%\kunai\bin` on Windows). Remove or rename earlier shadowed copies. Re-check with `type -a` / `which -a` (bash), `whence -a` (zsh), or `Get-Command kunai -All` (PowerShell), then `kunai doctor`.
 
 8. Keep Windows-native and WSL installs separate — different PATH, mpv, and data roots. See [Platforms](/docs/users/platforms).
 
