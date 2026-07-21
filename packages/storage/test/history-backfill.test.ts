@@ -181,3 +181,110 @@ test("backfillTitleMetadata merges provider native ids without clobbering catalo
     providerNativeIds: { miruro: "20431", allanime: "bxCKTnota29uSRnZw" },
   });
 });
+
+test("listByTitleIdentity finds bare TMDB id and tmdb: prefixed id as one unit", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: {
+      id: "tmdb:13916",
+      kind: "series",
+      title: "Death Note",
+      externalIds: { tmdbId: "13916" },
+    },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 90,
+  });
+
+  const viaBare = r.listByTitleIdentity({
+    id: "13916",
+    kind: "series",
+    title: "Death Note",
+    externalIds: { tmdbId: "13916" },
+  });
+  const viaPrefixed = r.listByTitleIdentity({
+    id: "tmdb:13916",
+    kind: "series",
+    title: "Death Note",
+    externalIds: { tmdbId: "13916" },
+  });
+
+  expect(viaBare).toHaveLength(1);
+  expect(viaPrefixed).toHaveLength(1);
+  expect(viaBare[0]?.positionSeconds).toBe(90);
+  expect(viaPrefixed[0]?.titleId).toBe("tmdb:13916");
+});
+
+test("listByTitleIdentity resolves opaque provider alias to canonical title rows", () => {
+  const r = repo();
+  r.upsertProgress({
+    title: {
+      id: "bxCKTnota29uSRnZw",
+      kind: "anime",
+      title: "Hozuki's Coolheadedness",
+      externalIds: { anilistId: "20431" },
+    },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 200,
+    providerId: "allanime",
+  });
+
+  const rows = r.listByTitleIdentity({
+    id: "bxCKTnota29uSRnZw",
+    kind: "anime",
+    title: "Hozuki's Coolheadedness",
+    externalIds: {
+      anilistId: "20431",
+      providerNativeIds: { allanime: "bxCKTnota29uSRnZw" },
+    },
+  });
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.titleId).toBe("20431");
+  expect(rows[0]?.episode).toBe(2);
+});
+
+test("getProgressForTitleIdentity returns exact S1E4 and never inherits S1E3", () => {
+  const r = repo();
+  const title = {
+    id: "tmdb:100",
+    kind: "series" as const,
+    title: "Demo",
+    externalIds: { tmdbId: "100" },
+  };
+  r.upsertProgress({
+    title,
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 400,
+    durationSeconds: 1400,
+    completed: false,
+  });
+
+  expect(r.getProgressForTitleIdentity(title, { season: 1, episode: 4 })).toBeUndefined();
+  expect(r.getProgressForTitleIdentity(title, { season: 1, episode: 3 })?.positionSeconds).toBe(
+    400,
+  );
+  // Title-level latest is allowed only when no episode is specified.
+  expect(r.getProgressForTitleIdentity(title)?.positionSeconds).toBe(400);
+});
+
+test("getProgressForTitleIdentity keeps absolute E13 distinct from S2E1 without absolute identity", () => {
+  const r = repo();
+  const title = {
+    id: "1535",
+    kind: "anime" as const,
+    title: "Death Note",
+    externalIds: { anilistId: "1535" },
+  };
+  r.upsertProgress({
+    title,
+    episode: { absoluteEpisode: 13 },
+    positionSeconds: 555,
+    durationSeconds: 1400,
+    completed: false,
+  });
+
+  expect(
+    r.getProgressForTitleIdentity(title, { season: 2, episode: 1 })?.positionSeconds,
+  ).toBeUndefined();
+  expect(r.getProgressForTitleIdentity(title, { absoluteEpisode: 13 })?.positionSeconds).toBe(555);
+});

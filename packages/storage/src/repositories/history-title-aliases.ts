@@ -67,6 +67,18 @@ export class HistoryTitleAliasRepository {
     return row?.title_id ?? undefined;
   }
 
+  /** Resolve any alias row that points this raw id at a canonical title_id. */
+  lookupTitleIdByAliasId(id: string): string | undefined {
+    const trimmed = id.trim();
+    if (!trimmed) return undefined;
+    const row = this.db
+      .query<Pick<HistoryTitleAliasRow, "title_id">, [string]>(
+        "SELECT title_id FROM history_title_aliases WHERE alias_id = ? LIMIT 1",
+      )
+      .get(trimmed);
+    return row?.title_id ?? undefined;
+  }
+
   listByTitleId(titleId: string): readonly HistoryTitleAlias[] {
     return this.db
       .query<HistoryTitleAliasRow, [string]>(

@@ -5,7 +5,7 @@
 // engine. Reads local data only and never triggers a network fetch.
 // =============================================================================
 
-import type { HistoryProgress, HistoryRepository } from "@kunai/storage";
+import type { HistoryProgress, HistoryRepository, HistoryTitleLookup } from "@kunai/storage";
 
 import {
   groupLatestByTitle,
@@ -99,8 +99,15 @@ export class ContinueWatchingService {
   }
 
   /** Continuation decision for a single title, anchored on its most-recent episode. */
-  projectTitle(titleId: string, signals: ContinuationSignals = {}): ContinuationDecision {
-    const rows = this.historyRepository.listByTitle(titleId);
+  projectTitle(
+    title: string | HistoryTitleLookup,
+    signals: ContinuationSignals = {},
+  ): ContinuationDecision {
+    const rows =
+      typeof title === "string"
+        ? this.historyRepository.listByTitle(title)
+        : this.historyRepository.listByTitleIdentity(title);
+    const titleId = typeof title === "string" ? title : (rows[0]?.titleId ?? title.id);
     return projectContinuation({ titleId, rows, ...signals });
   }
 
@@ -124,8 +131,10 @@ export class ContinueWatchingService {
   }
 
   /** Every stored episode row for a title (for episode-picker progress dots). */
-  episodeProgress(titleId: string): readonly HistoryProgress[] {
-    return this.historyRepository.listByTitle(titleId);
+  episodeProgress(title: string | HistoryTitleLookup): readonly HistoryProgress[] {
+    return typeof title === "string"
+      ? this.historyRepository.listByTitle(title)
+      : this.historyRepository.listByTitleIdentity(title);
   }
 
   private toViewDecision(

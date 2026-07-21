@@ -485,12 +485,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       // here; the series path applies it via the resolver, the movie path inline below.
       // A title is either movie or series, so the two paths never double-apply it.
       const bootstrapStartSeconds = consumeShareBootstrapStartSeconds();
+      const historyTitleLookup = {
+        id: title.id,
+        kind: classifyPersistedKind(title, stateManager.getState().mode),
+        title: title.name,
+        externalIds: enrichExternalIdsWithVideoMeta(
+          title.externalIds,
+          stateManager.getState().videoMeta,
+        ),
+      };
       const resolveTargetResumeSeconds = createBootstrapResumeResolver({
         sharedStartSeconds: bootstrapStartSeconds,
         resumeFromHistory: (target: EpisodeInfo) =>
           resumeSecondsFromHistoryForEpisode(
             historyRepository,
-            title.id,
+            historyTitleLookup,
             target,
             config.quitNearEndThresholdMode,
           ),
@@ -1029,7 +1038,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             currentProvider?.metadata.id,
           );
 
-          const watchedEntries = historyRepository.listByTitle(title.id);
+          const watchedEntries = historyRepository.listByTitleIdentity(historyTitleLookup);
           const playbackMode = stateManager.getState().mode;
           const isAnimePlayback = playbackMode === "anime";
           const episodeLoadCache = new Map<
@@ -2055,6 +2064,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 ? {
                     season: currentEpisode.season,
                     episode: currentEpisode.episode,
+                    ...(currentEpisode.absoluteEpisode !== undefined
+                      ? { absoluteEpisode: currentEpisode.absoluteEpisode }
+                      : {}),
                   }
                 : undefined;
             const titleIdentity = {

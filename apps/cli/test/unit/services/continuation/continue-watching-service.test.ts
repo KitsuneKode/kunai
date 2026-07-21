@@ -224,3 +224,31 @@ test("episodeProgress returns every stored episode for the title", () => {
   const service = new ContinueWatchingService(repo);
   expect(service.episodeProgress("tmdb:1").length).toBe(3);
 });
+
+test("projectTitle via HistoryTitleLookup resolves bare TMDB id to tmdb: rows", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: {
+      id: "tmdb:42",
+      kind: "series",
+      title: "Demo",
+      externalIds: { tmdbId: "42" },
+    },
+    episode: { season: 1, episode: 4 },
+    positionSeconds: 250,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-05-03T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.projectTitle({
+    id: "42",
+    kind: "series",
+    title: "Demo",
+    externalIds: { tmdbId: "42" },
+  });
+
+  expect(decision.state).toBe("resume");
+  expect(decision).toMatchObject({ titleId: "tmdb:42", episode: 4, positionSeconds: 250 });
+});

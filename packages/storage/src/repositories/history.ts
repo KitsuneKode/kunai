@@ -49,6 +49,14 @@ export interface HistoryProgress {
   readonly createdAt: string;
 }
 
+/** Canonical title lookup for history reads (resume, continue, episode progress). */
+export interface HistoryTitleLookup {
+  readonly id: string;
+  readonly kind: MediaKind;
+  readonly title: string;
+  readonly externalIds?: ProviderExternalIds;
+}
+
 interface HistoryProgressRow {
   readonly key: string;
   readonly title_id: string;
@@ -298,30 +306,41 @@ export class HistoryRepository {
 
   /**
    * Resolve the latest history row for a title identity. Tries the canonical catalog
-   * id first, then falls back to the raw session id for legacy opaque rows.
+   * id first, then alias-mapped ids, then the raw session id for legacy opaque rows.
    */
   getLatestForTitleIdentity(
     title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
   ): HistoryProgress | undefined {
-    const canonicalId = resolveHistoryLookupTitleId(title);
-    const canonical = this.getLatestForTitle(canonicalId);
-    if (canonical) return canonical;
-    if (canonicalId !== title.id) {
-      return this.getLatestForTitle(title.id);
+    for (const titleId of this.collectLookupTitleIds(title)) {
+      const latest = this.getLatestForTitle(titleId);
+      if (latest) return latest;
     }
     return undefined;
   }
 
+  /**
+   * Exact episode progress for a title identity.
+   * When `episode` is provided, only that exact history key is considered (never a
+   * sibling episode). When omitted, returns title-level latest progress.
+   */
   getProgressForTitleIdentity(
-    title: Pick<TitleIdentity, "id" | "kind" | "title" | "externalIds">,
+    title: HistoryTitleLookup | Pick<TitleIdentity, "id" | "kind" | "title" | "externalIds">,
     episode?: EpisodeIdentity,
   ): HistoryProgress | undefined {
-    const canonicalId = resolveHistoryLookupTitleId(title);
-    const canonicalTitle: TitleIdentity = { ...title, id: canonicalId };
-    const progress = this.getProgress(canonicalTitle, episode);
-    if (progress) return progress;
-    if (canonicalId !== title.id) {
-      return this.getProgress(title, episode);
+    const lookup: HistoryTitleLookup = {
+      id: title.id,
+      kind: title.kind,
+      title: title.title,
+      externalIds: title.externalIds,
+    };
+
+    if (episode === undefined) {
+      return this.getLatestForTitleIdentity(lookup);
+    }
+
+    for (const titleId of this.collectLookupTitleIds(lookup)) {
+      const progress = this.getProgress({ ...lookup, id: titleId }, episode);
+      if (progress) return progress;
     }
     return undefined;
   }
@@ -427,6 +446,84 @@ export class HistoryRepository {
       )
       .all(titleId, limit)
       .map(mapHistoryRow);
+  }
+
+  /**
+   * List every episode row for a title after resolving canonical id, aliases, and
+   * legacy raw id forms (bare TMDB ↔ `tmdb:` prefix, provider opaque ids, etc.).
+   */
+  listByTitleIdentity(title: HistoryTitleLookup, limit = 500): readonly HistoryProgress[] {
+    const titleIds = this.collectLookupTitleIds(title);
+    if (titleIds.length === 0) return [];
+    if (titleIds.length === 1) {
+      return this.listByTitle(titleIds[0]!, limit);
+    }
+
+    const placeholders = titleIds.map(() => "?").join(", ");
+    return this.db
+      .query<HistoryProgressRow, (string | number)[]>(
+        `
+          SELECT * FROM history_progress
+          WHERE title_id IN (${placeholders})
+          ORDER BY
+            COALESCE(season, 0) ASC,
+            COALESCE(episode, 0) ASC,
+            COALESCE(absolute_episode, 0) ASC,
+            updated_at DESC
+          LIMIT ?
+        `,
+      )
+      .all(...titleIds, limit)
+      .map(mapHistoryRow);
+  }
+
+  /**
+   * Candidate title_ids for a lookup, in preference order:
+   * canonical catalog id → alias-mapped ids → bare/prefixed TMDB variants → legacy raw id.
+   */
+  private collectLookupTitleIds(
+    title: Pick<TitleIdentity, "id" | "kind" | "externalIds">,
+  ): readonly string[] {
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+    const add = (id: string | undefined) => {
+      const trimmed = id?.trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      ordered.push(trimmed);
+    };
+
+    add(resolveHistoryLookupTitleId(title));
+
+    for (const alias of externalIdsToAliases(title.externalIds)) {
+      add(this.titleAliases.lookupTitleId(alias.ns, alias.id));
+    }
+
+    if (title.id.startsWith("tmdb:")) {
+      const bare = title.id.slice("tmdb:".length);
+      add(this.titleAliases.lookupTitleId("tmdb", bare));
+      add(bare);
+    } else if ((title.kind === "movie" || title.kind === "series") && /^\d+$/.test(title.id)) {
+      add(this.titleAliases.lookupTitleId("tmdb", title.id));
+      add(`tmdb:${title.id}`);
+    }
+
+    if (title.kind === "anime" && /^\d+$/.test(title.id)) {
+      add(this.titleAliases.lookupTitleId("anilist", title.id));
+      add(this.titleAliases.lookupTitleId("mal", title.id));
+    }
+
+    const tmdbId = title.externalIds?.tmdbId?.trim();
+    if (tmdbId) {
+      add(this.titleAliases.lookupTitleId("tmdb", tmdbId));
+      add(tmdbId);
+      add(`tmdb:${tmdbId}`);
+    }
+
+    add(this.titleAliases.lookupTitleIdByAliasId(title.id));
+    add(title.id);
+
+    return ordered;
   }
 
   listAllProgress(): readonly HistoryProgress[] {
