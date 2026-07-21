@@ -27,6 +27,21 @@ export async function atomicWriteBinary(targetPath: string, bytes: Uint8Array): 
 }
 
 /**
+ * Atomically install a staged file into `targetPath` via same-dir copy + rename.
+ * Leaves the source in place (caller owns staging cleanup).
+ */
+export async function atomicInstallBinaryFromFile(
+  sourcePath: string,
+  targetPath: string,
+): Promise<void> {
+  await mkdir(dirname(targetPath), { recursive: true });
+  const tmp = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
+  await copyFile(sourcePath, tmp);
+  await chmod(tmp, 0o755).catch(() => {});
+  await rename(tmp, targetPath);
+}
+
+/**
  * Point the user-facing launcher at the versioned binary.
  * Unix: symlink. Windows: copy with rename-aside for running exe.
  */

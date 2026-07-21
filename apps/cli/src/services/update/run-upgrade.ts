@@ -8,7 +8,6 @@ import { migrateFlatInstall } from "./native-installer/migrate-flat-install";
 import { isMuslEnvironmentSync } from "./native-installer/musl";
 import { detectPlatform } from "./platform-assets";
 import { resolveLatestVersion } from "./resolve-latest-version";
-import { pickChecksum, selfReplace } from "./self-replace";
 import { planUpgrade } from "./upgrade-planner";
 
 const DEFAULT_DL_BASE = "https://github.com/KitsuneKode/kunai/releases";
@@ -88,7 +87,7 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   }
 
   // Binary channel: migrate flat installs, then use versioned native installer.
-  if (channel === "binary") {
+  if (channel === "binary" || plan.kind === "self-replace") {
     await migrateFlatInstall({ manifest, currentVersion: opts.currentVersion });
     const result = await installLatest({ version: latest, dlBase, force: true });
     if (result.status === "installed") {
@@ -107,36 +106,9 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
     return 1;
   }
 
-  // Fallback: in-place self-replace for unknown binary-like paths.
-  const [binRes, sumRes] = await Promise.all([fetch(plan.downloadUrl), fetch(plan.checksumUrl)]);
-  if (!binRes.ok || !sumRes.ok) {
-    console.error(
-      `Download failed (binary ${binRes.status}, checksums ${sumRes.status}). Try \`--method npm\` or retry.`,
-    );
-    return 1;
-  }
-  const expected = pickChecksum(await sumRes.text(), plan.assetName);
-  if (!expected) {
-    console.error(`No checksum entry for ${plan.assetName}; aborting.`);
-    return 1;
-  }
-  try {
-    await selfReplace({
-      binPath,
-      bytes: new Uint8Array(await binRes.arrayBuffer()),
-      expectedSha256: expected,
-    });
-  } catch (err) {
-    console.error(`Update failed: ${(err as Error).message}`);
-    return 1;
-  }
-  const { writeInstallManifest } = await import("./install-manifest");
-  await writeInstallManifest({
-    method: "binary",
-    activeVersion: latest,
-    launcherPath: binPath,
-    downloadBaseUrl: dlBase,
-  });
-  console.log(`Updated to ${latest}.`);
+  // Unknown ownership: guidance only — never a second in-place installer.
+  console.log(
+    "Unknown install ownership. Reinstall with `kunai install`, or update via your package manager (`npm`/`bun`).",
+  );
   return 0;
 }

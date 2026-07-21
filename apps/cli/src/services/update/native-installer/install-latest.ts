@@ -1,13 +1,24 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { readInstallManifest, writeInstallManifest } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
-import { detectPlatform, releaseAssetName, type PlatformLibc } from "../platform-assets";
+import {
+  detectPlatform,
+  releaseAssetName,
+  resolveReleaseBinaryTarget,
+  type PlatformLibc,
+} from "../platform-assets";
 import { pickChecksum, verifyChecksum } from "../self-replace";
 import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
 import { cleanupOldVersions } from "./cleanup-versions";
+import {
+  DEFAULT_BINARY_DOWNLOAD_POLICY,
+  DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+  downloadToFile,
+  type FetchLike,
+} from "./download";
 import {
   DEFAULT_DL_BASE,
   getInstallLayoutPaths,
@@ -15,9 +26,11 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { atomicWriteBinary, updateLauncher } from "./launcher";
+import { atomicInstallBinaryFromFile, updateLauncher } from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
+import { beginInstallTransaction, finishInstallTransaction } from "./transaction";
 import { withVersionLock } from "./version-lock";
+import { writeInstalledVersionMetadata } from "./version-metadata";
 
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
@@ -30,7 +43,7 @@ export type InstallLatestOptions = {
   readonly force?: boolean;
   readonly dlBase?: string;
   readonly layout?: InstallLayoutPaths;
-  readonly fetchImpl?: typeof fetch;
+  readonly fetchImpl?: FetchLike;
   readonly libc?: PlatformLibc;
 };
 
@@ -58,7 +71,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const resolved =
     options.version && options.version !== "latest"
       ? normalizeRequestedVersion(options.version)
-      : parseCanonicalVersion((await fetchLatestVersion(fetchImpl)) ?? "");
+      : parseCanonicalVersion((await fetchLatestVersion(fetchImpl as typeof fetch)) ?? "");
   if (!resolved) {
     return { status: "failed", error: "Could not resolve target version." };
   }
@@ -70,6 +83,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
   const libc = options.libc ?? (os === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu");
   const assetName = releaseAssetName(os, arch, libc);
+  const releaseTarget = resolveReleaseBinaryTarget(os, arch, libc);
   const tag = `v${resolved}`;
   const downloadUrl = `${dlBase}/download/${tag}/${assetName}`;
   const checksumUrl = `${dlBase}/download/${tag}/SHA256SUMS`;
@@ -79,64 +93,109 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
     return { status: "up-to-date", version: resolved };
   }
 
-  const result = await withVersionLock(layout, resolved, async () => {
-    const [binRes, sumRes] = await Promise.all([fetchImpl(downloadUrl), fetchImpl(checksumUrl)]);
-    if (!binRes.ok || !sumRes.ok) {
-      throw new Error(`Download failed (binary ${binRes.status}, checksums ${sumRes.status})`);
-    }
+  try {
+    const result = await withVersionLock(layout, resolved, async () => {
+      const staging = join(
+        stagingDirForVersion(layout, resolved),
+        `txn-${process.pid}-${Date.now()}`,
+      );
+      await mkdir(staging, { recursive: true });
 
-    const bytes = new Uint8Array(await binRes.arrayBuffer());
-    const expected = pickChecksum(await sumRes.text(), assetName);
-    if (!expected) {
-      throw new Error(`No checksum entry for ${assetName}`);
-    }
+      const transaction = await beginInstallTransaction(layout, {
+        kind:
+          manifest?.activeVersion && manifest.activeVersion !== resolved ? "upgrade" : "install",
+        version: resolved,
+        stagingDir: staging,
+      });
 
-    const { createHash } = await import("node:crypto");
-    const actual = createHash("sha256").update(bytes).digest("hex");
-    if (!verifyChecksum(actual, expected)) {
-      throw new Error(`Checksum mismatch for ${assetName}`);
-    }
+      const stagedBinary = join(staging, assetName);
+      const stagedChecksums = join(staging, "SHA256SUMS");
 
-    const staging = stagingDirForVersion(layout, resolved);
-    await mkdir(staging, { recursive: true });
-    const stagedPath = join(staging, assetName);
-    await writeFile(stagedPath, bytes);
+      try {
+        await downloadToFile({
+          url: checksumUrl,
+          destinationPath: stagedChecksums,
+          fetchImpl,
+          policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+        });
+        const sumsText = await readFile(stagedChecksums, "utf8");
+        const expected = pickChecksum(sumsText, assetName);
+        if (!expected) {
+          throw new Error(`No checksum entry for ${assetName}`);
+        }
 
-    await mkdir(dirname(versionPath), { recursive: true });
-    await atomicWriteBinary(versionPath, bytes);
-    await rm(staging, { recursive: true, force: true }).catch(() => {});
+        const downloaded = await downloadToFile({
+          url: downloadUrl,
+          destinationPath: stagedBinary,
+          fetchImpl,
+          policy: DEFAULT_BINARY_DOWNLOAD_POLICY,
+        });
 
-    const launcherPath = manifest?.launcherPath ?? layout.launcherPath;
-    await updateLauncher({
-      launcherPath,
-      versionPath,
+        if (!verifyChecksum(downloaded.sha256, expected)) {
+          throw new Error(`Checksum mismatch for ${assetName}`);
+        }
+
+        await mkdir(dirname(versionPath), { recursive: true });
+        await atomicInstallBinaryFromFile(stagedBinary, versionPath);
+
+        await writeInstalledVersionMetadata(layout, {
+          schemaVersion: 1,
+          version: resolved,
+          target: releaseTarget?.id ?? `${os}-${arch}`,
+          artifactName: assetName,
+          artifactSha256: downloaded.sha256,
+          sizeBytes: downloaded.sizeBytes,
+          sourceUrl: downloadUrl,
+          verification: "release-checksum",
+          installedAt: new Date().toISOString(),
+        });
+
+        const launcherPath = manifest?.launcherPath ?? layout.launcherPath;
+        await updateLauncher({
+          launcherPath,
+          versionPath,
+        });
+
+        await writeInstallManifest(
+          {
+            method: "binary",
+            activeVersion: resolved,
+            launcherPath,
+            versionedPath: versionPath,
+            downloadBaseUrl: dlBase,
+            target: releaseTarget?.id ?? `${os}-${arch}`,
+            artifactSha256: downloaded.sha256,
+            ...(manifest?.activeVersion && manifest.activeVersion !== resolved
+              ? { previousVersion: manifest.activeVersion }
+              : {}),
+          },
+          layout.configDir,
+        );
+
+        await finishInstallTransaction(layout, transaction.id);
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
+
+        void cleanupOldVersions(layout);
+
+        return { status: "installed" as const, version: resolved, versionPath };
+      } catch (error) {
+        await finishInstallTransaction(layout, transaction.id).catch(() => {});
+        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        throw error;
+      }
     });
 
-    await writeInstallManifest(
-      {
-        method: "binary",
-        activeVersion: resolved,
-        launcherPath,
-        versionedPath: versionPath,
-        downloadBaseUrl: dlBase,
-        ...(manifest?.activeVersion && manifest.activeVersion !== resolved
-          ? { previousVersion: manifest.activeVersion }
-          : {}),
-        artifactSha256: actual,
-      },
-      layout.configDir,
-    );
+    if (result === null) {
+      return { status: "skipped", reason: "lock-contention" };
+    }
 
-    void cleanupOldVersions(layout);
-
-    return { status: "installed" as const, version: resolved, versionPath };
-  });
-
-  if (result === null) {
-    return { status: "skipped", reason: "lock-contention" };
+    return result;
+  } catch (error) {
+    return {
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
-
-  return result;
 }
 
 export type SetupMessage = {

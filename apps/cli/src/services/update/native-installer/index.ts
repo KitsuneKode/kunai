@@ -17,7 +17,22 @@ export {
   type InstallLatestResult,
   type SetupMessage,
 } from "./install-latest";
-export { atomicWriteBinary, updateLauncher, removeLauncherIfVersioned } from "./launcher";
+export {
+  atomicWriteBinary,
+  atomicInstallBinaryFromFile,
+  updateLauncher,
+  removeLauncherIfVersioned,
+} from "./launcher";
+export {
+  downloadToFile,
+  DEFAULT_BINARY_DOWNLOAD_POLICY,
+  DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
+  DownloadError,
+  isRetryableDownloadError,
+  type DownloadPolicy,
+  type DownloadResult,
+  type FetchLike,
+} from "./download";
 export {
   withVersionLock,
   tryAcquireVersionLock,
