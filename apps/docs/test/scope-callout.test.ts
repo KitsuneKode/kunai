@@ -28,7 +28,7 @@ describe("docs scope callouts", () => {
       path.resolve(DOCS_APP_ROOT, "../../docs/users/share-links.mdx"),
       "utf-8",
     );
-    expect(shareLinks).toContain('title="Protocol handler is optional"');
+    expect(shareLinks).toContain('title="Protocol handler is Linux-only"');
     expect(shareLinks).toContain("kunai --install-protocol-handler");
   });
 });

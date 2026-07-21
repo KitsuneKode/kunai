@@ -4,12 +4,13 @@ import { codeMetadata } from "../lib/code-metadata";
 import { docNavEntries, homeSectionsFromNav } from "../lib/doc-navigation";
 import { homeFlow, homeHero, homeHighlights, homeStartCards } from "../lib/home-content";
 import { featuredCommands } from "../lib/home-presenters";
+import { PREFERRED_INSTALL } from "../lib/install-commands";
 
 describe("docs home content", () => {
   test("keeps install and getting-started entry points visible", () => {
     expect(homeHero.primaryCta.href).toBe("/docs/users/getting-started");
     expect(homeHero.secondaryCta.href).toBe("/docs");
-    expect(homeHero.installCommands).toContain("bun install -g @kitsunekode/kunai");
+    expect(homeHero.installCommands).toContain(PREFERRED_INSTALL);
 
     const startHrefs = homeStartCards.map((card) => card.href);
     expect(startHrefs).toContain("/docs/users/getting-started");
