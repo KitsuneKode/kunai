@@ -119,7 +119,7 @@ test("QueueRepository: restore moves recoverable queue items into the current se
     "2026-05-17T00:21:00.000Z",
   );
 
-  expect(restored).toBe(1);
+  expect(restored).toHaveLength(1);
   expect(repo.getUnplayed("current-session")).toHaveLength(1);
   expect(repo.getQueueSession("previous-session")?.status).toBe("closed");
 

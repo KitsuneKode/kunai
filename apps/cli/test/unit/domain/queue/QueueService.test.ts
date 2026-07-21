@@ -103,7 +103,8 @@ test("QueueService restores a recoverable queue into the current session explici
   const service = new QueueService(repo, "current-session");
 
   expect(service.listRecoverableSessions()[0]?.id).toBe("old-session");
-  expect(service.restoreRecoverableSession("old-session")).toBe(1);
+  const restored = service.restoreRecoverableSession("old-session");
+  expect(restored.restoredIds).toHaveLength(1);
   expect(service.getUnplayed()[0]?.titleId).toBe("tmdb:1");
   expect(repo.getQueueSession("old-session")?.status).toBe("closed");
   expect(service.peekNext()?.playedAt).toBeUndefined();
@@ -336,9 +337,78 @@ test("QueueService restore only moves pending items and never autoplays them", (
 
   const service = new QueueService(repo, "current-session");
 
-  expect(service.restoreRecoverableSession("old-session")).toBe(1);
+  const restored = service.restoreRecoverableSession("old-session");
+  expect(restored.restoredIds).toHaveLength(1);
   expect(service.getAll().map((item) => item.titleId)).toEqual(["tmdb:pending"]);
   expect(service.peekNext()?.status).toBe("pending");
+
+  db.close();
+});
+
+test("QueueService restore inserts a contiguous block between current played and pending", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "old-session",
+    status: "recoverable",
+    createdAt: "2026-05-17T00:00:00.000Z",
+    updatedAt: "2026-05-17T00:10:00.000Z",
+  });
+  repo.createQueueSession({
+    id: "current-session",
+    status: "active",
+    createdAt: "2026-05-17T00:20:00.000Z",
+    updatedAt: "2026-05-17T00:20:00.000Z",
+  });
+  const playedCurrent = repo.enqueue({
+    title: "played-current",
+    mediaKind: "series",
+    titleId: "played-current",
+    source: "manual",
+    sessionId: "current-session",
+  });
+  repo.markPlayed(playedCurrent.id);
+  repo.enqueue({
+    title: "current-a",
+    mediaKind: "series",
+    titleId: "current-a",
+    source: "manual",
+    sessionId: "current-session",
+  });
+  repo.enqueue({
+    title: "current-b",
+    mediaKind: "series",
+    titleId: "current-b",
+    source: "manual",
+    sessionId: "current-session",
+  });
+  repo.enqueue({
+    title: "restored-a",
+    mediaKind: "series",
+    titleId: "restored-a",
+    source: "watchlist",
+    sessionId: "old-session",
+  });
+  repo.enqueue({
+    title: "restored-b",
+    mediaKind: "series",
+    titleId: "restored-b",
+    source: "watchlist",
+    sessionId: "old-session",
+  });
+
+  const service = new QueueService(repo, "current-session");
+  const restored = service.restoreRecoverableSession("old-session");
+
+  expect(restored.restoredIds).toHaveLength(2);
+  expect(service.getAll().map((item) => item.titleId)).toEqual([
+    "played-current",
+    "restored-a",
+    "restored-b",
+    "current-a",
+    "current-b",
+  ]);
 
   db.close();
 });

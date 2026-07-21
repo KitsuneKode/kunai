@@ -110,3 +110,34 @@ test("queue transitions update session last_activity_at", () => {
   );
   expect(repo.getQueueSession("session")?.lastActivityAt).toBe("2026-07-20T10:15:00.000Z");
 });
+
+test("restore resets in-flight, places contiguous block, and returns restored ids", () => {
+  const repo = createRepo();
+  repo.createQueueSession({
+    id: "old",
+    status: "recoverable",
+    createdAt: "2026-07-19T00:00:00.000Z",
+    updatedAt: "2026-07-19T01:00:00.000Z",
+  });
+  const playedCurrent = enqueue(repo, "session", "played-current");
+  repo.markPlayed(playedCurrent.id);
+  enqueue(repo, "session", "current-a");
+  enqueue(repo, "session", "current-b");
+  const restoredA = enqueue(repo, "old", "restored-a");
+  const restoredB = enqueue(repo, "old", "restored-b");
+  expect(repo.markInFlight(restoredA.id, "old", "2026-07-19T00:55:00.000Z")).toBe(true);
+
+  const restoredIds = repo.restoreQueueSession("old", "session", NOW);
+
+  expect(restoredIds).toEqual([restoredA.id, restoredB.id]);
+  expect(repo.getById(restoredA.id)?.status).toBe("pending");
+  expect(repo.getById(restoredA.id)?.inFlightAt).toBeUndefined();
+  expect(repo.getAll("session").map((row) => row.titleId)).toEqual([
+    "anilist:played-current",
+    "anilist:restored-a",
+    "anilist:restored-b",
+    "anilist:current-a",
+    "anilist:current-b",
+  ]);
+  expect(repo.getQueueSession("old")?.status).toBe("closed");
+});

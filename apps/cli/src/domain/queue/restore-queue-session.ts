@@ -2,12 +2,9 @@
 // restore-queue-session.ts — the single path for bringing a recoverable queue
 // session back into the current one.
 //
-// Restoring the *list* is not enough to resume: the episode that was actually
-// playing when the last session ended was already dequeued when it started, so
-// a plain reparent hands back everything except the one thing the user most
-// wants. We re-derive that head from history rather than writing it at
-// shutdown, because history is checkpointed continuously while mpv runs and so
-// survives a SIGKILL that never reaches the shutdown coordinator.
+// Prefer queue-owned in-flight identity. Legacy history inference is only a
+// fallback when no in-flight row exists, and then only to promote an entry that
+// already belongs to the restored session — never to invent a new queue row.
 // =============================================================================
 
 import type { QueueEntry } from "@kunai/storage";
@@ -41,63 +38,73 @@ export type QueueRestoreResult = {
 export type RestoreQueueSessionDeps = {
   readonly queue: Pick<
     QueueService,
-    "restoreRecoverableSession" | "getAll" | "enqueue" | "moveToTop" | "peekNext" | "getSession"
+    "restoreRecoverableSession" | "getAll" | "moveToTop" | "peekNext" | "getSession"
   >;
   readonly readHistory: () => readonly HistoryProgress[];
+};
+
+type EpisodeIdentity = {
+  readonly titleId: string;
+  readonly season?: number;
+  readonly episode?: number;
+  readonly absoluteEpisode?: number;
 };
 
 function isResumable(progress: HistoryProgress): boolean {
   return !isFinished(progress) && progress.positionSeconds >= RESUME_MIN_POSITION_SECONDS;
 }
 
-/** Identity for "the queue already contains this exact episode". */
-function episodeKey(item: {
-  readonly titleId: string;
-  readonly season?: number;
-  readonly episode?: number;
-}): string {
-  return `${item.titleId}:${item.season ?? 1}:${item.episode ?? 0}`;
+/** Exact media identity, including absolute anime episode when present. */
+function sameEpisodeIdentity(left: EpisodeIdentity, right: EpisodeIdentity): boolean {
+  if (left.titleId !== right.titleId) return false;
+  if (left.absoluteEpisode !== undefined || right.absoluteEpisode !== undefined) {
+    return left.absoluteEpisode === right.absoluteEpisode;
+  }
+  return (left.season ?? 1) === (right.season ?? 1) && (left.episode ?? 0) === (right.episode ?? 0);
+}
+
+function withinSessionWindow(
+  historyUpdatedAt: string,
+  sessionCreatedAt: string,
+  sessionLastActivityAt: string,
+): boolean {
+  const historyAt = Date.parse(historyUpdatedAt);
+  const createdAt = Date.parse(sessionCreatedAt);
+  const lastActivityAt = Date.parse(sessionLastActivityAt);
+  if (Number.isNaN(historyAt) || Number.isNaN(createdAt) || Number.isNaN(lastActivityAt)) {
+    return false;
+  }
+  return historyAt >= createdAt && historyAt <= lastActivityAt + RESUME_SESSION_GRACE_MS;
 }
 
 export function restoreQueueSessionWithResume(
   deps: RestoreQueueSessionDeps,
   sourceSessionId: string,
 ): QueueRestoreResult {
-  // Read the session's last activity before restoring — the restore closes it.
-  const sessionLastActivity = Date.parse(deps.queue.getSession(sourceSessionId)?.updatedAt ?? "");
+  // Read session bounds and in-flight identity before restore closes the session.
+  const session = deps.queue.getSession(sourceSessionId);
+  const { restoredIds, previousInFlightId } = deps.queue.restoreRecoverableSession(sourceSessionId);
+  if (restoredIds.length <= 0) return { restoredCount: 0, resumeHead: undefined };
 
-  const restoredCount = deps.queue.restoreRecoverableSession(sourceSessionId);
-  if (restoredCount <= 0) return { restoredCount: 0, resumeHead: undefined };
+  const restoredIdSet = new Set(restoredIds);
+  const restoredEntries = deps.queue.getAll().filter((entry) => restoredIdSet.has(entry.id));
 
-  // Anything watched after this queue stopped belongs to a later session and was
-  // never part of it — without this bound, a movie watched in between would be
-  // promoted to the head of a queue it has nothing to do with.
-  const resumeCutoff = Number.isNaN(sessionLastActivity)
-    ? undefined
-    : sessionLastActivity + RESUME_SESSION_GRACE_MS;
-
-  const mostRecentInProgress = [...deps.readHistory()]
-    .filter(isResumable)
-    .filter((row) => resumeCutoff === undefined || (Date.parse(row.updatedAt) || 0) <= resumeCutoff)
-    .sort(
-      (left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0),
-    )[0];
-  if (!mostRecentInProgress) return { restoredCount, resumeHead: undefined };
-
-  const alreadyQueued = new Set(deps.queue.getAll().map(episodeKey));
-  if (alreadyQueued.has(episodeKey(mostRecentInProgress))) {
-    return { restoredCount, resumeHead: undefined };
+  let resumeHead: QueueEntry | undefined;
+  if (previousInFlightId) {
+    resumeHead = restoredEntries.find((entry) => entry.id === previousInFlightId);
+  } else if (session) {
+    const lastActivityAt = session.lastActivityAt ?? session.updatedAt;
+    const mostRecentMatch = [...deps.readHistory()]
+      .filter(isResumable)
+      .filter((row) => withinSessionWindow(row.updatedAt, session.createdAt, lastActivityAt))
+      .sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0))
+      .map((row) => restoredEntries.find((entry) => sameEpisodeIdentity(entry, row)))
+      .find((entry): entry is QueueEntry => entry !== undefined);
+    resumeHead = mostRecentMatch;
   }
 
-  const resumeHead = deps.queue.enqueue({
-    title: mostRecentInProgress.title,
-    mediaKind: mostRecentInProgress.mediaKind,
-    titleId: mostRecentInProgress.titleId,
-    season: mostRecentInProgress.season,
-    episode: mostRecentInProgress.episode,
-    absoluteEpisode: mostRecentInProgress.absoluteEpisode,
-    source: "resume",
-  });
-  deps.queue.moveToTop(resumeHead.id);
-  return { restoredCount, resumeHead };
+  if (resumeHead) {
+    deps.queue.moveToTop(resumeHead.id);
+  }
+  return { restoredCount: restoredIds.length, resumeHead };
 }

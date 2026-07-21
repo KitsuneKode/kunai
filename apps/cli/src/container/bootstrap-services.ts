@@ -256,12 +256,15 @@ export function bootstrapServices(input: {
     diagnostics: diagnosticsService,
   });
   const startupAt = new Date().toISOString();
+  // Crash/stale active sessions (including in-flight rows) become recoverable
+  // before this process owns a fresh active session.
   queueRepository.markActiveQueueSessionsRecoverable(sessionId, startupAt);
   queueRepository.createQueueSession({
     id: sessionId,
     status: "active",
     createdAt: startupAt,
     updatedAt: startupAt,
+    lastActivityAt: startupAt,
   });
   notificationService.deleteByKind("queue-recovery");
   const latestRecoverableSession = queueRepository.listRecoverableQueueSessions()[0];
@@ -272,7 +275,8 @@ export function bootstrapServices(input: {
           type: "queue-recoverable" as const,
           queueSessionId: latestRecoverableSession.id,
           itemCount: latestRecoverableSession.itemCount,
-          updatedAt: latestRecoverableSession.updatedAt,
+          // Prefer last real queue activity so restore windowing stays honest.
+          updatedAt: latestRecoverableSession.lastActivityAt ?? latestRecoverableSession.updatedAt,
         },
       ],
       startupAt,

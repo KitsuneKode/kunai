@@ -425,8 +425,12 @@ export class QueueRepository {
     sourceSessionId: string,
     targetSessionId: string,
     restoredAt: string,
-  ): number {
+  ): string[] {
     const restore = this.db.transaction(() => {
+      const currentEntries = this.getAll(targetSessionId);
+      const currentPlayed = currentEntries.filter((entry) => entry.status === "played");
+      const currentPending = currentEntries.filter((entry) => entry.status !== "played");
+
       // Reset in-flight rows back to pending so restored work is claimable again.
       this.db
         .query(
@@ -436,7 +440,17 @@ export class QueueRepository {
              AND status = 'in-flight'`,
         )
         .run(sourceSessionId);
-      const result = this.db
+
+      const restoredEntries = this.getAll(sourceSessionId).filter(
+        (entry) => entry.status === "pending",
+      );
+      const restoredIds = restoredEntries.map((entry) => entry.id);
+      if (restoredIds.length === 0) {
+        this.closeQueueSession(sourceSessionId, restoredAt);
+        return restoredIds;
+      }
+
+      this.db
         .query(
           `UPDATE playlist_queue
            SET session_id = ?
@@ -444,8 +458,14 @@ export class QueueRepository {
              AND status = 'pending'`,
         )
         .run(targetSessionId, sourceSessionId);
+
+      this.setQueuePositions([
+        ...currentPlayed.map((entry) => entry.id),
+        ...restoredIds,
+        ...currentPending.map((entry) => entry.id),
+      ]);
       this.closeQueueSession(sourceSessionId, restoredAt);
-      return result.changes;
+      return restoredIds;
     });
     return restore();
   }

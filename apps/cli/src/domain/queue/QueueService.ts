@@ -232,8 +232,19 @@ export class QueueService {
     return "closed";
   }
 
-  restoreRecoverableSession(sourceSessionId: string): number {
-    return this.repo.restoreQueueSession(sourceSessionId, this.sessionId, new Date().toISOString());
+  restoreRecoverableSession(sourceSessionId: string): {
+    readonly restoredIds: string[];
+    readonly previousInFlightId?: string;
+  } {
+    const previousInFlightId = this.repo
+      .getAll(sourceSessionId)
+      .find((entry) => entry.status === "in-flight")?.id;
+    const restoredIds = this.repo.restoreQueueSession(
+      sourceSessionId,
+      this.sessionId,
+      new Date().toISOString(),
+    );
+    return { restoredIds, previousInFlightId };
   }
 
   refillFromWatchlist(listService: ListService): number {

@@ -5,6 +5,9 @@
 // queue-recovery notification action) route through here so they cannot drift
 // apart — the notification path used to be the only one that named its target
 // session explicitly.
+//
+// Domain restore prefers queue-owned in-flight identity, then promotes an exact
+// history match among restored rows. It never invents a new queue entry.
 // =============================================================================
 
 import type { Container } from "@/container";
