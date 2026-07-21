@@ -65,6 +65,7 @@
     "test:live:providers": "bun run test:live:videasy && bun run test:live:rivestream && bun run test:live:allanime && bun run test:live:miruro && bun run test:live:youtube",
     "test:live:rivestream": "bun -e \"await import('./test/live/rivestream-breakingbad.smoke.ts')\"",
     "test:live:relay-allanime": "bun -e \"await import('./test/live/relay-allanime.smoke.ts')\"",
+    "test:live:offline-beta": "bun -e \"await import('./test/live/offline-beta.smoke.ts')\"",
     "test:live:videasy": "bun test/live/videasy-bloodhounds.smoke.ts",
     "test:live:videasy:suite": "KUNAI_VIDEASY_LIVE_SUITE=1 bun test/live/videasy-bloodhounds.smoke.ts",
     "test:live:vidking": "bun run test:live:videasy",

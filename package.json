@@ -82,6 +82,7 @@
     "test:live:providers": "bun run --cwd apps/cli test:live:providers",
     "test:live:rivestream": "bun run --cwd apps/cli test:live:rivestream",
     "test:live:relay-allanime": "bun run --cwd apps/cli test:live:relay-allanime",
+    "test:live:offline-beta": "bun run --cwd apps/cli test:live:offline-beta",
     "test:live:videasy": "bun run --cwd apps/cli test:live:videasy",
     "test:live:videasy:suite": "bun run --cwd apps/cli test:live:videasy:suite",
     "test:live:vidking": "bun run --cwd apps/cli test:live:videasy",
