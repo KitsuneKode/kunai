@@ -67,6 +67,51 @@ function Get-NormalizedVersion([string]$Value) {
   return $trimmed
 }
 
+function Resolve-InstalledPackageVersion {
+  if (Test-Cmd 'kunai') {
+    try {
+      $out = (& kunai --version 2>$null | Select-Object -First 1)
+      if ($out -match '^kunai\s+(\d+\.\d+\.\d+)') {
+        return (Get-NormalizedVersion $Matches[1])
+      }
+    }
+    catch { }
+  }
+  if (Test-Cmd 'npm') {
+    try {
+      $root = (& npm root -g 2>$null | Select-Object -First 1)
+      if ($root) {
+        $pkgJson = Join-Path $root (Join-Path $Package 'package.json')
+        if (Test-Path -LiteralPath $pkgJson) {
+          $pkg = Get-Content -LiteralPath $pkgJson -Raw | ConvertFrom-Json
+          if ($pkg.version) { return (Get-NormalizedVersion ([string]$pkg.version)) }
+        }
+      }
+    }
+    catch { }
+  }
+  $srcPkg = Join-Path (Join-Path $env:LOCALAPPDATA 'kunai\src') 'package.json'
+  if ($env:KUNAI_SOURCE_DIR) {
+    $srcPkg = Join-Path $env:KUNAI_SOURCE_DIR 'package.json'
+  }
+  if (Test-Path -LiteralPath $srcPkg) {
+    try {
+      $pkg = Get-Content -LiteralPath $srcPkg -Raw | ConvertFrom-Json
+      if ($pkg.version) { return (Get-NormalizedVersion ([string]$pkg.version)) }
+    }
+    catch { }
+  }
+  throw 'Could not resolve installed Kunai version after package install. Expected kunai --version or package.json metadata with major.minor.patch.'
+}
+
+function Complete-PackageActiveVersion([string]$Resolved) {
+  if ($DryRun) {
+    if ($Resolved -eq 'latest') { return 'dry-run' }
+    return $Resolved
+  }
+  return (Resolve-InstalledPackageVersion)
+}
+
 function Get-IsoNow {
   return (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
@@ -650,6 +695,7 @@ switch ($Method) {
     else {
       Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
     }
+    $resolved = Complete-PackageActiveVersion $resolved
     Write-Manifest 'npm-global' $resolved 'kunai'
   }
   'bun' {
@@ -661,12 +707,13 @@ switch ($Method) {
     else {
       Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
     }
+    $resolved = Complete-PackageActiveVersion $resolved
     Write-Manifest 'bun-global' $resolved 'kunai'
   }
   'source' {
     Install-Bun
     $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
-    $src = Join-Path $env:LOCALAPPDATA 'kunai\src'
+    $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
     Invoke-Step "git clone Kunai into $src" {
       if (Test-Path (Join-Path $src '.git')) { & git -C $src pull --ff-only }
       else { & git clone --depth 1 'https://github.com/KitsuneKode/kunai.git' $src }
@@ -674,6 +721,7 @@ switch ($Method) {
       & bun install; & bun run build; & bun run link:global
       Pop-Location
     }
+    $resolved = Complete-PackageActiveVersion $resolved
     Write-Manifest 'source' $resolved 'kunai'
   }
 }

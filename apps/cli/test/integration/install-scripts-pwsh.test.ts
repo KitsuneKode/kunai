@@ -492,6 +492,44 @@ describeWindows("install.ps1 PATH diagnostics", () => {
   });
 });
 
+describePwsh("install.ps1 package activeVersion", () => {
+  test("npm method resolves activeVersion from kunai --version, never latest", () => {
+    const sandbox = createInstallerSandbox("install-ps1-npm-version");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "npm");
+      installCommandShim(shimDir, "bun");
+      installCommandShim(
+        shimDir,
+        "kunai",
+        process.platform === "win32"
+          ? "@echo off\r\necho kunai 4.5.6 (npm-global)\r\n"
+          : '#!/bin/sh\necho "kunai 4.5.6 (npm-global)"\n',
+      );
+
+      const env: NodeJS.ProcessEnv = { ...sandbox.env };
+      const inheritedPath =
+        Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+      for (const key of Object.keys(env)) {
+        if (key.toLowerCase() === "path") delete env[key];
+      }
+      env.Path = `${shimDir}${delimiter}${inheritedPath}`;
+
+      const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
+      expect(result.status).toBe(0);
+      const manifest = JSON.parse(
+        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+      ) as { activeVersion: string; method: string };
+      expect(manifest.method).toBe("npm-global");
+      expect(manifest.activeVersion).toBe("4.5.6");
+      expect(manifest.activeVersion).not.toBe("latest");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
 if (!pwshAvailable()) {
   describe("install.ps1 (pwsh unavailable locally)", () => {
     test("skips PowerShell installer coverage — CI Windows/Ubuntu pwsh job required", () => {

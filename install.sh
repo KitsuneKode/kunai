@@ -158,6 +158,58 @@ json_escape() {
 	printf '%s' "$s"
 }
 
+# Resolve canonical activeVersion after npm/bun/source install.
+# Prefer `kunai --version`, then package.json metadata. Never returns "latest".
+resolve_installed_package_version() {
+	local out ver root pkg_json
+	if have kunai; then
+		out="$(kunai --version 2>/dev/null || true)"
+		ver="$(printf '%s\n' "$out" | head -1 |
+			sed -n 's/^kunai[[:space:]]\{1,\}\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
+		if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
+			printf '%s\n' "$ver"
+			return 0
+		fi
+	fi
+	if have npm; then
+		root="$(npm root -g 2>/dev/null || true)"
+		pkg_json="${root:+$root/$KUNAI_PACKAGE/package.json}"
+		if [[ -n "${pkg_json:-}" && -f "$pkg_json" ]]; then
+			ver="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg_json" | head -1)"
+			if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
+				printf '%s\n' "$ver"
+				return 0
+			fi
+		fi
+	fi
+	if [[ -f "$SOURCE_DIR/package.json" ]]; then
+		ver="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SOURCE_DIR/package.json" | head -1)"
+		if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
+			printf '%s\n' "$ver"
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# After package install (or dry-run), produce a canonical activeVersion for the manifest.
+finalize_package_active_version() {
+	local resolved="$1"
+	if [[ "$DRY" == 1 ]]; then
+		if [[ "$resolved" == latest ]]; then
+			printf '%s\n' "dry-run"
+		else
+			printf '%s\n' "$resolved"
+		fi
+		return 0
+	fi
+	resolve_installed_package_version || {
+		err "Could not resolve installed Kunai version after package install."
+		err "Expected \`kunai --version\` or package.json metadata with major.minor.patch."
+		return 1
+	}
+}
+
 resolve_published_version() {
 	if [[ "$DRY" == 1 ]]; then
 		if [[ "$VERSION" != latest ]]; then
@@ -214,7 +266,7 @@ is_retryable_http_status() {
 # Uses --connect-timeout, remaining --max-time, --speed-time/--speed-limit, --max-filesize.
 bounded_download() {
 	local url="$1" dest="$2" max_bytes="$3" label="${4:-download}"
-	local attempt=1 code remaining started elapsed delay_ms
+	local attempt=1 code curl_rc remaining started elapsed delay_ms
 	started="$(date +%s)"
 
 	while [[ "$attempt" -le "$DOWNLOAD_MAX_ATTEMPTS" ]]; do
@@ -225,6 +277,10 @@ bounded_download() {
 			return 1
 		fi
 		rm -f "$dest"
+		code="000"
+		curl_rc=0
+		# Capture curl exit: --max-filesize (63) can leave a partial with HTTP 200
+		# when Transfer-Encoding is chunked / Content-Length is absent.
 		code="$(
 			curl -sS -L \
 				--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
@@ -235,9 +291,25 @@ bounded_download() {
 				-A "kunai-installer" \
 				-o "$dest" \
 				-w "%{http_code}" \
-				"$url" || true
-		)"
-		# curl may leave empty/partial on failure; treat 2xx with non-empty as success.
+				"$url"
+		)" || curl_rc=$?
+		if [[ "$curl_rc" -ne 0 ]]; then
+			rm -f "$dest"
+			if [[ "$attempt" -ge "$DOWNLOAD_MAX_ATTEMPTS" ]]; then
+				err "Download failed for $label (network, stall, size limit, or timeout)."
+				return 1
+			fi
+			delay_ms=$((DOWNLOAD_RETRY_BASE_MS * attempt))
+			info "Retrying $label (attempt $((attempt + 1))/$DOWNLOAD_MAX_ATTEMPTS) after curl exit $curl_rc..."
+			if have python3; then
+				python3 -c "import time; time.sleep(${delay_ms}/1000.0)" 2>/dev/null || sleep 1
+			else
+				sleep 1
+			fi
+			attempt=$((attempt + 1))
+			continue
+		fi
+		# curl exited 0 — trust HTTP status + non-empty body.
 		if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
 			if [[ -s "$dest" ]]; then
 				return 0
@@ -672,6 +744,7 @@ install_npm() {
 	else
 		run npm install -g "${KUNAI_PACKAGE}@${resolved}"
 	fi
+	resolved="$(finalize_package_active_version "$resolved")" || exit 1
 	write_manifest npm-global "${resolved}" "$(command -v kunai || echo kunai)"
 	have kunai && path_hint "$(dirname "$(command -v kunai)")"
 }
@@ -693,6 +766,7 @@ install_bun() {
 	else
 		run bun install -g "${KUNAI_PACKAGE}@${resolved}"
 	fi
+	resolved="$(finalize_package_active_version "$resolved")" || exit 1
 	write_manifest bun-global "${resolved}" "$(command -v kunai || echo kunai)"
 	have kunai && path_hint "$(dirname "$(command -v kunai)")"
 }
@@ -737,6 +811,7 @@ install_source() {
 	else
 		(cd "$SOURCE_DIR" && bun install && bun run build && bun run link:global)
 	fi
+	resolved="$(finalize_package_active_version "$resolved")" || exit 1
 	write_manifest source "$resolved" "$(command -v kunai || echo kunai)"
 }
 

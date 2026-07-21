@@ -376,6 +376,51 @@ describe("install.sh lifecycle contract", () => {
     }
   });
 
+  test("rejects oversized streamed body when curl exits non-zero (no Content-Length)", async () => {
+    // Without Content-Length, curl --max-filesize can leave a partial file with HTTP 200
+    // and exit 63. bounded_download must honor curl exit and delete the partial.
+    const asset = hostInstallShAsset();
+    const oversized = "x".repeat(4096);
+    const sandbox = createInstallerSandbox("install-sh-oversize-chunked");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: {
+            body: oversized,
+            // ReadableStream response omits Content-Length → TE chunked.
+            chunkDelayMs: 0,
+            chunkSize: 256,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"a".repeat(64)}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_BYTES: "1024",
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toMatch(
+            /size|filesize|too large|max|Download failed|network, stall|curl exit/i,
+          );
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          if (existsSync(join(sandbox.cacheDir, "staging"))) {
+            const { readdirSync } = await import("node:fs");
+            const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
+              recursive: true,
+            }) as string[];
+            expect(leftover.filter((e) => String(e).includes(asset))).toEqual([]);
+          }
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("rejects stalled download and removes staging partials", async () => {
     const asset = hostInstallShAsset();
     const sandbox = createInstallerSandbox("install-sh-stall");
@@ -470,6 +515,59 @@ describe("install.sh lifecycle contract", () => {
           expect(existsSync(oldBinary)).toBe(true);
         },
       );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
+describe("install.sh package activeVersion", () => {
+  test("npm method resolves activeVersion from kunai --version, never latest", () => {
+    const sandbox = createInstallerSandbox("install-sh-npm-version");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "npm", "#!/bin/sh\nexit 0\n");
+      installCommandShim(shimDir, "bun", "#!/bin/sh\nexit 0\n");
+      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 4.5.6 (npm-global)"\n');
+
+      const result = runInstallSh(["--method", "npm", "--yes", "--skip-deps"], {
+        ...sandbox.env,
+        PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+      });
+
+      expect(result.status).toBe(0);
+      const manifest = JSON.parse(
+        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+      ) as { activeVersion: string; method: string };
+      expect(manifest.method).toBe("npm-global");
+      expect(manifest.activeVersion).toBe("4.5.6");
+      expect(manifest.activeVersion).not.toBe("latest");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("bun method resolves activeVersion from kunai --version, never latest", () => {
+    const sandbox = createInstallerSandbox("install-sh-bun-version");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "bun", "#!/bin/sh\nexit 0\n");
+      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 7.8.9 (bun-global)"\n');
+
+      const result = runInstallSh(["--method", "bun", "--yes", "--skip-deps"], {
+        ...sandbox.env,
+        PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+      });
+
+      expect(result.status).toBe(0);
+      const manifest = JSON.parse(
+        readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+      ) as { activeVersion: string; method: string };
+      expect(manifest.method).toBe("bun-global");
+      expect(manifest.activeVersion).toBe("7.8.9");
+      expect(manifest.activeVersion).not.toBe("latest");
     } finally {
       sandbox.cleanup();
     }
