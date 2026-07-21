@@ -1,6 +1,17 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  readlink,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 /** Retry rename to absorb transient AV/Defender locks (mainly Windows). */
 async function renameWithRetry(from: string, to: string, attempts = 5): Promise<void> {
@@ -82,36 +93,81 @@ export async function updateLauncher(input: {
   await rename(tmpLink, input.launcherPath);
 }
 
+export type LauncherOwnership = "managed" | "unmanaged" | "missing";
+
 /**
- * Remove launcher only when it points into the versioned store (safe unlink).
+ * Determine whether the launcher path is installer-owned.
+ * Unix: symlink whose target lives under versionsDir.
+ * Windows: file whose sha256 matches expectedSha256 (never size alone).
  */
-export async function removeLauncherIfVersioned(input: {
+export async function inspectLauncherOwnership(input: {
   readonly launcherPath: string;
   readonly versionsDir: string;
-}): Promise<boolean> {
-  if (!existsSync(input.launcherPath)) return false;
+  readonly expectedSha256?: string;
+  readonly platform?: NodeJS.Platform;
+}): Promise<LauncherOwnership> {
+  if (!existsSync(input.launcherPath)) return "missing";
 
-  if (process.platform === "win32") {
-    const normalized = input.launcherPath.replaceAll("\\", "/");
-    const versions = input.versionsDir.replaceAll("\\", "/");
-    if (!normalized.toLowerCase().includes(versions.toLowerCase())) {
-      // Windows launcher is a copy; remove if versions dir exists
-      await rm(input.launcherPath, { force: true });
-      return true;
+  const platform = input.platform ?? process.platform;
+  const versions = input.versionsDir.replaceAll("\\", "/");
+
+  if (platform === "win32") {
+    const expected = input.expectedSha256?.toLowerCase();
+    if (!expected || !/^[a-f0-9]{64}$/.test(expected)) return "unmanaged";
+    try {
+      const bytes = new Uint8Array(await Bun.file(input.launcherPath).arrayBuffer());
+      const actual = createHash("sha256").update(bytes).digest("hex");
+      return actual === expected ? "managed" : "unmanaged";
+    } catch {
+      return "unmanaged";
     }
-    await rm(input.launcherPath, { force: true });
-    return true;
   }
 
   try {
     const target = await readlink(input.launcherPath);
-    const versions = input.versionsDir.replaceAll("\\", "/");
-    if (target.replaceAll("\\", "/").includes(versions)) {
-      await rm(input.launcherPath, { force: true });
-      return true;
+    const normalizedTarget = target.replaceAll("\\", "/");
+    if (normalizedTarget.includes(`${versions}/`) || normalizedTarget === versions) {
+      return "managed";
     }
+    return "unmanaged";
   } catch {
-    // not a symlink
+    return "unmanaged";
   }
-  return false;
+}
+
+/** Remove Windows rename-aside leftovers owned by launcher activation (`*.old.<ts>`). */
+export async function removeLauncherCopyAsides(launcherPath: string): Promise<string[]> {
+  const dir = dirname(launcherPath);
+  const prefix = `${basename(launcherPath)}.old.`;
+  if (!existsSync(dir)) return [];
+
+  const removed: string[] = [];
+  for (const entry of await readdir(dir).catch(() => [] as string[])) {
+    if (!entry.startsWith(prefix)) continue;
+    const full = join(dir, entry);
+    try {
+      await rm(full, { force: true });
+      removed.push(full);
+    } catch {
+      // best-effort
+    }
+  }
+  return removed;
+}
+
+/**
+ * Remove launcher only when it is installer-owned (safe unlink).
+ * Windows requires expectedSha256 checksum match.
+ */
+export async function removeLauncherIfVersioned(input: {
+  readonly launcherPath: string;
+  readonly versionsDir: string;
+  readonly expectedSha256?: string;
+  readonly platform?: NodeJS.Platform;
+}): Promise<boolean> {
+  const ownership = await inspectLauncherOwnership(input);
+  if (ownership !== "managed") return false;
+
+  await rm(input.launcherPath, { force: true });
+  return true;
 }

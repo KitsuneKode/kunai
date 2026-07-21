@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 import { parseCanonicalVersion } from "../version";
 import { getInstallLayoutPaths, lockFilePath, type InstallLayoutPaths } from "./install-layout";
@@ -193,6 +194,13 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
   if (!existsSync(layout.locksDir)) return;
   const { readdir } = await import("node:fs/promises");
   for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
+    if (entry === LIFECYCLE_LOCK_NAME) {
+      const path = join(layout.locksDir, LIFECYCLE_LOCK_NAME);
+      if (await isLockStale(path)) {
+        await rm(path, { force: true }).catch(() => {});
+      }
+      continue;
+    }
     const version = parseCanonicalVersion(entry.replace(/\.lock$/, ""));
     if (!version) continue;
     const path = lockFilePath(layout, version);
@@ -200,4 +208,81 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
       await rm(path, { force: true }).catch(() => {});
     }
   }
+}
+
+const LIFECYCLE_LOCK_NAME = "lifecycle.lock";
+const LIFECYCLE_LOCK_VERSION = "0.0.0";
+
+export function lifecycleLockPath(layout: Pick<InstallLayoutPaths, "locksDir">): string {
+  return join(layout.locksDir, LIFECYCLE_LOCK_NAME);
+}
+
+/** True when any per-version lock is held by a live process. Never treats force as license to delete. */
+export async function hasActiveVersionLocks(
+  layout: Pick<InstallLayoutPaths, "locksDir">,
+): Promise<boolean> {
+  if (!existsSync(layout.locksDir)) return false;
+  const { readdir } = await import("node:fs/promises");
+  for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
+    if (entry === LIFECYCLE_LOCK_NAME) continue;
+    const version = parseCanonicalVersion(entry.replace(/\.lock$/, ""));
+    if (!version) continue;
+    const inspection = await inspectVersionLock(layout, version);
+    if (inspection.status === "active") return true;
+  }
+  return false;
+}
+
+/**
+ * Exclusive lifecycle lock for uninstall (and similar whole-install mutations).
+ * Refuses when any live per-version lock exists — `--force` never deletes those.
+ * Stale version/lifecycle locks may be reclaimed first.
+ */
+export async function tryAcquireLifecycleLock(
+  layout: InstallLayoutPaths,
+  options: { readonly force?: boolean; readonly execPath?: string } = {},
+): Promise<LockAcquireResult> {
+  await mkdir(layout.locksDir, { recursive: true });
+
+  // Force may reclaim stale residue, but never a live lock.
+  if (options.force) {
+    await cleanupStaleLocks(layout);
+  }
+
+  if (await hasActiveVersionLocks(layout)) {
+    return { acquired: false };
+  }
+
+  const path = lifecycleLockPath(layout);
+  if (existsSync(path) && !(await isLockStale(path))) {
+    const existing = await readLockContent(path);
+    return { acquired: false, holderPid: existing?.pid };
+  }
+  if (existsSync(path)) {
+    await rm(path, { force: true }).catch(() => {});
+  }
+
+  const content: VersionLockContent = {
+    pid: process.pid,
+    version: LIFECYCLE_LOCK_VERSION,
+    execPath: options.execPath ?? process.execPath,
+    acquiredAt: new Date().toISOString(),
+  };
+
+  try {
+    await writeFile(path, `${JSON.stringify(content)}\n`, { flag: "wx" });
+  } catch {
+    const existing = await readLockContent(path);
+    return { acquired: false, holderPid: existing?.pid };
+  }
+
+  return {
+    acquired: true,
+    release: async () => {
+      const current = await readLockContent(path);
+      if (current?.pid === process.pid) {
+        await rm(path, { force: true }).catch(() => {});
+      }
+    },
+  };
 }

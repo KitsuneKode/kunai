@@ -21,7 +21,10 @@ export {
   atomicWriteBinary,
   atomicInstallBinaryFromFile,
   updateLauncher,
+  inspectLauncherOwnership,
+  removeLauncherCopyAsides,
   removeLauncherIfVersioned,
+  type LauncherOwnership,
 } from "./launcher";
 export {
   downloadToFile,
@@ -36,6 +39,9 @@ export {
 export {
   withVersionLock,
   tryAcquireVersionLock,
+  tryAcquireLifecycleLock,
+  hasActiveVersionLocks,
+  lifecycleLockPath,
   lockCurrentVersion,
   releaseCurrentVersionLock,
   cleanupStaleLocks,
@@ -65,6 +71,11 @@ export {
   type RollbackOptions,
   type RollbackRefuseCode,
 } from "./rollback";
+export {
+  nativeUninstall,
+  type NativeUninstallOptions,
+  type NativeUninstallResult,
+} from "./native-uninstall";
 export { isMuslEnvironment, isMuslEnvironmentSync } from "./musl";
 export {
   verifyStoredVersion,
