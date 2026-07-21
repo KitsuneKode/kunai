@@ -58,12 +58,16 @@ jobs:
               - 'apps/cli/test/integration/install-scripts.test.ts'
               - 'apps/cli/test/integration/install-scripts-pwsh.test.ts'
               - 'apps/cli/test/integration/helpers/installer-script-harness.ts'
+              - 'apps/cli/test/integration/helpers/readme-command-harness.ts'
+              - 'apps/cli/test/integration/readme-commands.test.ts'
               - 'scripts/release-asset-contract.ts'
               - 'scripts/verify-github-release-assets.ts'
+              - 'scripts/verify-readme-commands.ts'
               - 'apps/cli/test/integration/native-installer-docker.test.ts'
               - 'test/install/**'
               - 'install.sh'
               - 'install.ps1'
+              - 'README.md'
               - 'packages/**'
               - 'package.json'
               - '.github/workflows/ci.yml'
@@ -353,6 +357,13 @@ jobs:
         env:
           KUNAI_INSTALLER_DOCKER: "1"
         run: bash apps/cli/test/docker/native-installer/run-local.sh --skip-build --skip-image-build
+
+      - name: README quick-start commands (fixture-assets)
+        run: >-
+          bun run verify:readme:commands --
+          --mode fixture-assets
+          --version 0.3.0
+          --binary apps/cli/dist/bin/kunai-linux-x64
 
   installer-scenarios:
     name: Installer ownership scenarios

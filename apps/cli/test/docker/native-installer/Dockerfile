@@ -5,12 +5,12 @@
 
 FROM debian:bookworm-slim AS glibc
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bash curl ca-certificates python3 coreutils \
+  && apt-get install -y --no-install-recommends bash curl ca-certificates python3 coreutils util-linux \
   && rm -rf /var/lib/apt/lists/*
 ENV KUNAI_TEST_HOME=/tmp/kunai-home
 WORKDIR /work
 
 FROM alpine:3.20 AS musl
-RUN apk add --no-cache bash curl ca-certificates python3 coreutils
+RUN apk add --no-cache bash curl ca-certificates python3 coreutils util-linux
 ENV KUNAI_TEST_HOME=/tmp/kunai-home
 WORKDIR /work

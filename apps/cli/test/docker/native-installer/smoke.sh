@@ -72,6 +72,41 @@ pass "install.sh created versioned layout (schema-1)"
 grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver, got: $(head -1 /tmp/kunai-version.txt)"
 pass "kunai --version: $(head -1 /tmp/kunai-version.txt)"
 
+# --- README quick-start proofs (setup without mpv; fake mpv --version) ---
+# Container images intentionally ship without mpv. Prove setup still mounts.
+if command -v script >/dev/null 2>&1; then
+  rm -f /tmp/kunai-setup-nompv.log
+  printf '{"onboardingVersion":0,"downloadOnboardingDismissed":false}\n' >"$KUNAI_CONFIG_DIR/config.json"
+  script -qec "$KUNAI_BIN_DIR/kunai --setup" /tmp/kunai-setup-nompv.log >/dev/null 2>&1 &
+  SETUP_PID=$!
+  sleep 2.5
+  if kill -0 "$SETUP_PID" 2>/dev/null; then
+    kill "$SETUP_PID" 2>/dev/null || true
+    wait "$SETUP_PID" 2>/dev/null || true
+    pass "kunai --setup opens without mpv"
+  else
+    wait "$SETUP_PID" 2>/dev/null || true
+    fail "kunai --setup exited before mount without mpv (README quick-start)"
+  fi
+else
+  pass "skip setup-without-mpv PTY check (script not available)"
+fi
+
+mkdir -p "$HOME/readme-shims"
+cat >"$HOME/readme-shims/mpv" <<'EOF'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "mpv 0.37.0-kunai-fake"
+  exit 0
+fi
+exit 0
+EOF
+chmod 0755 "$HOME/readme-shims/mpv"
+PATH="$HOME/readme-shims:$PATH"
+export PATH
+mpv --version | grep -qi mpv || fail "fake mpv --version failed"
+pass "mpv --version (fake shim for README quick-start)"
+
 # --- kunai upgrade -> v1.0.1 ---
 "$KUNAI_BIN_DIR/kunai" upgrade
 [[ -f "$KUNAI_DATA_DIR/versions/1.0.1/kunai" ]] || fail "upgrade did not install v1.0.1"

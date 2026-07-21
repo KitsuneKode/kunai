@@ -104,6 +104,7 @@
     "verify:build-pipeline": "bun run scripts/verify-build-pipeline.ts",
     "verify:build-pipeline:pr": "bun run scripts/verify-build-pipeline.ts --pr",
     "verify:build-pipeline:all-targets": "bun run scripts/verify-build-pipeline.ts --all-targets",
+    "verify:readme:commands": "bun run scripts/verify-readme-commands.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
     "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts && bun run release:notes",
