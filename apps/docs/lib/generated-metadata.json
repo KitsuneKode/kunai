@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-21T05:51:44.433Z",
+  "syncedAt": "2026-07-21T06:03:48.951Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "661a6a78",
-  "cliSourceFingerprint": "e6b7ef050c009511b5b2d70531938263464de56cdc7f1b560e319f20bcc0ae4f",
-  "docsContentFingerprint": "f39671443a692c294aac2034f43f8c85997631c05c65782db3a654972de587e5",
+  "cliSourceRevision": "5a37d999",
+  "cliSourceFingerprint": "e33b6fa79cdd43cf46a7a8611f9dba8e7e408aedeccc3955fd7a46e82965b359",
+  "docsContentFingerprint": "cb8591840ff66f767af922c0c951b0380ea6d96054354bf2bb2dc03bf565e9b5",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -874,5 +874,367 @@
   "runtimeBaseline": {
     "bun": "1.3.9",
     "mpv": "0.38+"
-  }
+  },
+  "shortcuts": [
+    {
+      "id": "command-palette",
+      "scope": "global",
+      "group": "Global",
+      "keys": "/",
+      "label": "Open command palette",
+      "tier": "core",
+      "order": 10
+    },
+    {
+      "id": "help",
+      "scope": "global",
+      "group": "Global",
+      "keys": "?",
+      "label": "Show this help",
+      "tier": "core",
+      "order": 20
+    },
+    {
+      "id": "back",
+      "scope": "global",
+      "group": "Global",
+      "keys": "Esc",
+      "label": "Back · close panel · clear filter",
+      "tier": "core",
+      "order": 30
+    },
+    {
+      "id": "browse-mode",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "Tab",
+      "label": "Cycle catalog mode (series / anime / YouTube)",
+      "tier": "core",
+      "order": 40
+    },
+    {
+      "id": "browse-open",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "Enter",
+      "label": "Open the highlighted title",
+      "tier": "core",
+      "order": 50
+    },
+    {
+      "id": "player-fallback",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "⇧F",
+      "label": "Switch to another provider (fallback)",
+      "tier": "core",
+      "order": 60
+    },
+    {
+      "id": "title-control-menu",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "m",
+      "label": "Open title control menu",
+      "tier": "core",
+      "order": 70
+    },
+    {
+      "id": "player-next",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "n / N",
+      "label": "Next episode",
+      "tier": "core",
+      "order": 80
+    },
+    {
+      "id": "player-previous",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "p / P",
+      "label": "Previous episode",
+      "tier": "core",
+      "order": 90
+    },
+    {
+      "id": "quit",
+      "scope": "global",
+      "group": "Global",
+      "keys": "⌃C",
+      "label": "Quit",
+      "tier": "core",
+      "order": 100
+    },
+    {
+      "id": "browse-details",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "i",
+      "label": "Show title details",
+      "tier": "surface",
+      "order": 200
+    },
+    {
+      "id": "browse-details-ctrl",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⌃O",
+      "label": "Show title details",
+      "tier": "surface",
+      "order": 210
+    },
+    {
+      "id": "browse-download",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⌃D / d",
+      "label": "Download the highlighted title",
+      "tier": "surface",
+      "order": 220
+    },
+    {
+      "id": "browse-queue",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "q",
+      "label": "Add the highlighted title to Up Next",
+      "tier": "surface",
+      "order": 230
+    },
+    {
+      "id": "browse-watchlist",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "w",
+      "label": "Add the highlighted title to Watchlist",
+      "tier": "surface",
+      "order": 240
+    },
+    {
+      "id": "browse-follow",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⇧W",
+      "label": "Follow releases for the highlighted title",
+      "tier": "surface",
+      "order": 250
+    },
+    {
+      "id": "browse-trending",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⌃T",
+      "label": "Reload trending results",
+      "tier": "surface",
+      "order": 260
+    },
+    {
+      "id": "browse-filter",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⌃F",
+      "label": "Narrow loaded results",
+      "tier": "surface",
+      "order": 270
+    },
+    {
+      "id": "browse-title-control-menu",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "m",
+      "label": "Open starting-point menu for the highlighted title (same as Enter)",
+      "tier": "surface",
+      "order": 280
+    },
+    {
+      "id": "queue-open",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "⇧Q",
+      "label": "Open Up Next",
+      "tier": "surface",
+      "order": 290
+    },
+    {
+      "id": "player-stop",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "q",
+      "label": "Stop playback",
+      "tier": "surface",
+      "order": 310
+    },
+    {
+      "id": "player-source",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "o",
+      "label": "Choose source",
+      "tier": "surface",
+      "order": 320
+    },
+    {
+      "id": "player-episode",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "e",
+      "label": "Choose episode",
+      "tier": "surface",
+      "order": 330
+    },
+    {
+      "id": "player-skip",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "b",
+      "label": "Skip intro / recap / credits (when offered)",
+      "tier": "surface",
+      "order": 340
+    },
+    {
+      "id": "player-reload-subtitles",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "s",
+      "label": "Reload subtitles",
+      "tier": "surface",
+      "order": 345
+    },
+    {
+      "id": "player-return-search",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "⇧S",
+      "label": "Return to search",
+      "tier": "surface",
+      "order": 350
+    },
+    {
+      "id": "player-autoplay",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "a",
+      "label": "Toggle autoplay",
+      "tier": "surface",
+      "order": 360
+    },
+    {
+      "id": "player-autoskip",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "u",
+      "label": "Toggle autoskip",
+      "tier": "surface",
+      "order": 370
+    },
+    {
+      "id": "player-stop-after-current",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "x",
+      "label": "Stop after current episode",
+      "tier": "surface",
+      "order": 380
+    },
+    {
+      "id": "player-diagnostics",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "d",
+      "label": "Open diagnostics",
+      "tier": "surface",
+      "order": 390
+    },
+    {
+      "id": "player-quality",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "k / K",
+      "label": "Choose quality (in the terminal; v in mpv)",
+      "tier": "surface",
+      "order": 400
+    },
+    {
+      "id": "player-refresh",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "⌃R",
+      "label": "Refresh the stream (same episode)",
+      "tier": "surface",
+      "order": 410
+    },
+    {
+      "id": "player-resume-seek",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "Alt+R",
+      "label": "Resume to your saved position",
+      "tier": "surface",
+      "order": 420
+    },
+    {
+      "id": "post-continue",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "n",
+      "label": "Continue / next",
+      "tier": "surface",
+      "order": 500
+    },
+    {
+      "id": "post-replay",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "r",
+      "label": "Replay this episode",
+      "tier": "surface",
+      "order": 510
+    },
+    {
+      "id": "post-search",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "s",
+      "label": "Search for something else",
+      "tier": "surface",
+      "order": 520
+    },
+    {
+      "id": "post-fallback",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "⇧F",
+      "label": "Switch to another provider (fallback)",
+      "tier": "surface",
+      "order": 530
+    },
+    {
+      "id": "post-source",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "o",
+      "label": "Choose source",
+      "tier": "surface",
+      "order": 540
+    },
+    {
+      "id": "post-episode",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "e",
+      "label": "Choose episode",
+      "tier": "surface",
+      "order": 550
+    },
+    {
+      "id": "post-title-control-menu",
+      "scope": "postPlayback",
+      "group": "After playback",
+      "keys": "m",
+      "label": "Open title control menu",
+      "tier": "surface",
+      "order": 560
+    }
+  ]
 }

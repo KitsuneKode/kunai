@@ -37,6 +37,16 @@ export type RuntimeBaselineMetadata = {
   readonly mpv: string;
 };
 
+export type PublicShortcutMetadata = {
+  readonly id: string;
+  readonly scope: string;
+  readonly group: string;
+  readonly keys: string;
+  readonly label: string;
+  readonly tier: "core" | "surface";
+  readonly order: number;
+};
+
 export type CodeMetadata = {
   readonly syncedAt: string;
   readonly version: string;
@@ -52,6 +62,7 @@ export type CodeMetadata = {
   readonly cliOptions: readonly CliOptionMetadata[];
   readonly featureStatus: readonly FeatureStatusMetadata[];
   readonly runtimeBaseline: RuntimeBaselineMetadata;
+  readonly shortcuts: readonly PublicShortcutMetadata[];
 };
 
 export const codeMetadata = generated as CodeMetadata;

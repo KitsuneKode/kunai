@@ -14,6 +14,7 @@ import {
   helpSections,
   helpSectionsForScope,
   matchBinding,
+  publicShortcutMetadata,
 } from "@/app-shell/keybindings";
 
 test("formatChord renders printable, named, and modified chords", () => {
@@ -199,4 +200,74 @@ test("buildFooterActionsFromBindings can wire browse actions from the registry",
     "⌃O:details:details",
     "⌃D / d:download:download",
   ]);
+});
+
+test("publicShortcutMetadata only includes opted-in non-helpOnly bindings with order/tier", () => {
+  const publicRows = publicShortcutMetadata();
+  expect(publicRows.length).toBeGreaterThan(0);
+  expect(publicRows.length).toBeLessThan(KEYBINDINGS.length);
+
+  const byId = new Map(KEYBINDINGS.map((binding) => [binding.id, binding]));
+  const seenOrder = new Set<number>();
+  const seenScopeChord = new Map<string, string>();
+
+  for (const row of publicRows) {
+    const binding = byId.get(row.id);
+    expect(binding).toBeDefined();
+    expect(binding!.helpOnly).toBeFalsy();
+    expect(binding!.docs).toBeDefined();
+    expect(binding!.docs!.tier).toBe(row.tier);
+    expect(binding!.docs!.order).toBe(row.order);
+    expect(row.keys).toBe(bindingKeys(binding!));
+    expect(seenOrder.has(row.order)).toBe(false);
+    seenOrder.add(row.order);
+
+    const chordKey = `${row.scope}::${formatChord(binding!.chord)}`;
+    expect(
+      seenScopeChord.get(chordKey),
+      `public chord collision ${chordKey} (${seenScopeChord.get(chordKey)} vs ${row.id})`,
+    ).toBeUndefined();
+    seenScopeChord.set(chordKey, row.id);
+  }
+
+  expect([...publicRows].map((row) => row.order)).toEqual(
+    [...publicRows].map((row) => row.order).sort((a, b) => a - b),
+  );
+});
+
+test("public shortcuts lock Tab browse mode, Shift+F fallback, and one playback m", () => {
+  const publicRows = publicShortcutMetadata();
+  const browseMode = publicRows.find((row) => row.id === "browse-mode");
+  expect(browseMode?.keys).toBe("Tab");
+  expect(browseMode?.tier).toBe("core");
+  expect(browseMode?.label.toLowerCase()).toContain("catalog mode");
+
+  const fallback = publicRows.find((row) => row.id === "player-fallback");
+  expect(fallback?.keys).toBe("⇧F");
+  expect(fallback?.tier).toBe("core");
+
+  const livePlayerF = KEYBINDINGS.filter(
+    (binding) =>
+      binding.scope === "player" && !binding.helpOnly && binding.chord.input?.toLowerCase() === "f",
+  );
+  expect(livePlayerF.map((binding) => binding.id)).toEqual(["player-fallback"]);
+  expect(livePlayerF[0]?.chord.shift).toBe(true);
+  expect(
+    KEYBINDINGS.some(
+      (binding) =>
+        binding.scope === "player" &&
+        !binding.helpOnly &&
+        binding.chord.input?.toLowerCase() === "f" &&
+        !binding.chord.shift,
+    ),
+  ).toBe(false);
+
+  const livePlayerM = KEYBINDINGS.filter(
+    (binding) =>
+      binding.scope === "player" && !binding.helpOnly && binding.chord.input?.toLowerCase() === "m",
+  );
+  expect(livePlayerM.map((binding) => binding.id)).toEqual(["title-control-menu"]);
+  expect(publicRows.find((row) => row.id === "title-control-menu")?.label).toBe(
+    "Open title control menu",
+  );
 });

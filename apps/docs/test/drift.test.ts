@@ -31,6 +31,13 @@ function listDocFiles(dir: string): string[] {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Published fumadocs surfaces only — skip plans/specs and local scratch.
+      if (
+        (entry.name === "superpowers" || entry.name === "installer-reference") &&
+        path.basename(dir) === "docs"
+      ) {
+        continue;
+      }
       files.push(...listDocFiles(fullPath));
       continue;
     }
@@ -197,6 +204,24 @@ describe("docs codegen drift", () => {
     );
     expect(content).toContain("<FeatureStatusTable />");
     expect(content).not.toMatch(/\| Terminal shell \(Ink\) \| \*\*Shipped\*\*/);
+  });
+
+  test("commands-and-shortcuts uses ShortcutTable from generated registry metadata", () => {
+    const content = fs.readFileSync(
+      path.join(DOCS_ROOT, "users/commands-and-shortcuts.mdx"),
+      "utf-8",
+    );
+    expect(content).toContain("<ShortcutTable />");
+    expect(codeMetadata.shortcuts.length).toBeGreaterThan(0);
+    expect(
+      codeMetadata.shortcuts.every((row) => row.tier === "core" || row.tier === "surface"),
+    ).toBe(true);
+    expect(
+      codeMetadata.shortcuts.some((row) => row.id === "browse-mode" && row.keys === "Tab"),
+    ).toBe(true);
+    expect(
+      codeMetadata.shortcuts.some((row) => row.id === "player-fallback" && row.keys === "⇧F"),
+    ).toBe(true);
   });
 
   test("home content avoids hardcoded provider or command counts", () => {

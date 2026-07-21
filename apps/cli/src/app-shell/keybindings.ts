@@ -41,6 +41,20 @@ export type KeyChord = {
   readonly meta?: boolean;
 };
 
+/**
+ * Deliberately reduced public shortcut row for generated docs / README core lists.
+ * Only bindings that opt in via {@link KeyBinding.docs} appear here.
+ */
+export interface PublicShortcutMetadata {
+  readonly id: string;
+  readonly scope: KeyScope;
+  readonly group: string;
+  readonly keys: string;
+  readonly label: string;
+  readonly tier: "core" | "surface";
+  readonly order: number;
+}
+
 export type KeyBinding = {
   readonly id: string;
   readonly chord: KeyChord;
@@ -62,6 +76,14 @@ export type KeyBinding = {
   readonly helpOnly?: boolean;
   /** Optional slash-command id for palette / footer / help parity. */
   readonly commandId?: AppCommandId;
+  /**
+   * Opt-in public docs inclusion. Omit to keep the binding out of generated
+   * shortcut tables / README core lists. Must not be set on helpOnly bindings.
+   */
+  readonly docs?: {
+    readonly tier: "core" | "surface";
+    readonly order: number;
+  };
 };
 
 export type KeyHint = {
@@ -98,6 +120,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "global",
     group: "Global",
     footerPriority: 20,
+    docs: { tier: "core", order: 10 },
   },
   {
     id: "help",
@@ -108,6 +131,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "Global",
     footerPriority: 40,
     commandId: "help",
+    docs: { tier: "core", order: 20 },
   },
   {
     id: "back",
@@ -117,6 +141,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "global",
     group: "Global",
     footerPriority: 30,
+    docs: { tier: "core", order: 30 },
   },
   {
     id: "quit",
@@ -126,6 +151,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "global",
     group: "Global",
     footerPriority: 50,
+    docs: { tier: "core", order: 100 },
   },
 
   // ── Editing — handled by the line editor; documented here, not matched ──
@@ -174,6 +200,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     footerPriority: 10,
+    docs: { tier: "core", order: 50 },
   },
   {
     id: "browse-mode",
@@ -183,6 +210,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     footerPriority: 15,
+    docs: { tier: "core", order: 40 },
   },
   {
     id: "browse-details",
@@ -191,6 +219,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "details",
     scope: "browse",
     group: "While browsing",
+    docs: { tier: "surface", order: 200 },
   },
   {
     id: "browse-details-ctrl",
@@ -200,6 +229,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "details",
     scope: "browse",
     group: "While browsing",
+    docs: { tier: "surface", order: 210 },
   },
   {
     id: "browse-download",
@@ -209,6 +239,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "download",
     scope: "browse",
     group: "While browsing",
+    docs: { tier: "surface", order: 220 },
   },
   {
     id: "browse-queue",
@@ -218,6 +249,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     commandId: "playlist-add",
+    docs: { tier: "surface", order: 230 },
   },
   {
     id: "browse-watchlist",
@@ -227,6 +259,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     commandId: "bookmark",
+    docs: { tier: "surface", order: 240 },
   },
   {
     id: "browse-follow",
@@ -237,6 +270,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     commandId: "follow",
+    docs: { tier: "surface", order: 250 },
   },
   {
     id: "browse-trending",
@@ -245,6 +279,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "trending",
     scope: "browse",
     group: "While browsing",
+    docs: { tier: "surface", order: 260 },
   },
   {
     id: "browse-filter",
@@ -253,6 +288,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "narrow",
     scope: "browse",
     group: "While browsing",
+    docs: { tier: "surface", order: 270 },
   },
   {
     id: "browse-title-control-menu",
@@ -262,6 +298,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "browse",
     group: "While browsing",
     footerPriority: 18,
+    docs: { tier: "surface", order: 280 },
   },
   {
     id: "browse-title-control-menu-shift",
@@ -294,6 +331,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 5,
+    docs: { tier: "surface", order: 310 },
   },
   {
     id: "player-next",
@@ -304,6 +342,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 10,
+    docs: { tier: "core", order: 80 },
   },
   {
     id: "player-previous",
@@ -314,6 +353,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 15,
+    docs: { tier: "core", order: 90 },
   },
   {
     id: "player-fallback",
@@ -325,6 +365,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 20,
+    docs: { tier: "core", order: 60 },
   },
   {
     id: "player-source",
@@ -334,6 +375,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 25,
+    docs: { tier: "surface", order: 320 },
   },
   {
     id: "player-episode",
@@ -343,6 +385,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 30,
+    docs: { tier: "surface", order: 330 },
   },
   {
     id: "player-skip",
@@ -350,6 +393,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Skip intro / recap / credits (when offered)",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 340 },
   },
   {
     id: "player-reload-subtitles",
@@ -357,6 +401,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Reload subtitles",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 345 },
   },
   {
     id: "player-return-search",
@@ -365,6 +410,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Return to search",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 350 },
   },
   {
     id: "player-autoplay",
@@ -374,6 +420,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 35,
+    docs: { tier: "surface", order: 360 },
   },
   {
     id: "player-autoskip",
@@ -383,6 +430,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 40,
+    docs: { tier: "surface", order: 370 },
   },
   {
     id: "player-stop-after-current",
@@ -392,6 +440,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 45,
+    docs: { tier: "surface", order: 380 },
   },
   {
     id: "title-control-menu",
@@ -401,6 +450,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "player",
     group: "In the player",
     footerPriority: 28,
+    docs: { tier: "core", order: 70 },
   },
   {
     id: "player-memory",
@@ -417,6 +467,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Open diagnostics",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 390 },
   },
   {
     id: "player-quality",
@@ -426,6 +477,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "quality",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 400 },
   },
   {
     id: "player-refresh",
@@ -433,6 +485,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Refresh the stream (same episode)",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 410 },
   },
   {
     id: "player-resume-seek",
@@ -441,6 +494,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     label: "Resume to your saved position",
     scope: "player",
     group: "In the player",
+    docs: { tier: "surface", order: 420 },
   },
 
   // ── Post-play — terminal footer ──
@@ -452,6 +506,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 10,
+    docs: { tier: "surface", order: 500 },
   },
   {
     id: "post-quit",
@@ -469,6 +524,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 15,
+    docs: { tier: "surface", order: 510 },
   },
   {
     id: "post-search",
@@ -477,6 +533,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "search",
     scope: "postPlayback",
     group: "After playback",
+    docs: { tier: "surface", order: 520 },
   },
   {
     id: "post-history",
@@ -499,6 +556,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "fallback",
     scope: "postPlayback",
     group: "After playback",
+    docs: { tier: "surface", order: 530 },
   },
   {
     id: "post-source",
@@ -507,6 +565,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "source",
     scope: "postPlayback",
     group: "After playback",
+    docs: { tier: "surface", order: 540 },
   },
   {
     id: "post-diagnostics",
@@ -523,6 +582,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     hintLabel: "episodes",
     scope: "postPlayback",
     group: "After playback",
+    docs: { tier: "surface", order: 550 },
   },
   {
     id: "post-title-control-menu",
@@ -532,6 +592,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     scope: "postPlayback",
     group: "After playback",
     footerPriority: 12,
+    docs: { tier: "surface", order: 560 },
   },
   {
     id: "post-play-recommendation",
@@ -554,6 +615,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "While browsing",
     footerPriority: 45,
     commandId: "up-next",
+    docs: { tier: "surface", order: 290 },
   },
   {
     id: "queue-play",
@@ -890,6 +952,24 @@ function formatPrintable(input: string, hasModifier: boolean): string {
 /** Rendered key label for a binding — its display override, else its formatted chord. */
 export function bindingKeys(binding: KeyBinding): string {
   return binding.display ?? formatChord(binding.chord);
+}
+
+/**
+ * Deliberately reduced public shortcut list for docs codegen.
+ * Sorted by explicit docs.order; only non-helpOnly opted-in bindings.
+ */
+export function publicShortcutMetadata(): readonly PublicShortcutMetadata[] {
+  return KEYBINDINGS.filter((binding) => binding.docs !== undefined)
+    .map((binding) => ({
+      id: binding.id,
+      scope: binding.scope,
+      group: binding.group,
+      keys: bindingKeys(binding),
+      label: binding.label,
+      tier: binding.docs!.tier,
+      order: binding.docs!.order,
+    }))
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
 function matchChord(chord: KeyChord, input: string, key: LineEditorKey): boolean {

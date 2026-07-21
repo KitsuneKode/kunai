@@ -41,17 +41,20 @@ visibly different.
 
 ## Browse And Search
 
-| Key       | Action                                                                            |
-| --------- | --------------------------------------------------------------------------------- |
-| `Enter`   | Open selected result                                                              |
-| `↑` / `↓` | Move selection                                                                    |
-| `Tab`     | Switch series/anime mode                                                          |
-| `/`       | Open command palette                                                              |
-| `q`       | Add selected result to Up Next when the result list, not text input, owns focus   |
-| `w`       | Add selected result to Watchlist when the result list, not text input, owns focus |
-| `Shift+W` | Follow selected title when the result list, not text input, owns focus            |
-| `Shift+Q` | Open Up Next when the result list, not text input, owns focus                     |
-| `Esc`     | Clear/back depending on focused state                                             |
+| Key        | Action                                                                            |
+| ---------- | --------------------------------------------------------------------------------- |
+| `Enter`    | Open selected result                                                              |
+| `↑` / `↓`  | Move selection                                                                    |
+| `Tab`      | Cycle catalog mode (series / anime / YouTube)                                     |
+| `/`        | Open command palette                                                              |
+| `m`        | Open starting-point menu for the highlighted title (same as Enter)                |
+| `q`        | Add selected result to Up Next when the result list, not text input, owns focus   |
+| `w`        | Add selected result to Watchlist when the result list, not text input, owns focus |
+| `Shift+W`  | Follow selected title when the result list, not text input, owns focus            |
+| `Shift+Q`  | Open Up Next when the result list, not text input, owns focus                     |
+| `Ctrl+F`   | Narrow loaded results only (local text filter)                                    |
+| `/filters` | Open guided search facets                                                         |
+| `Esc`      | Clear/back depending on focused state                                             |
 
 Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
 
@@ -68,20 +71,24 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | `a`         | Pause/resume autoplay for the current chain                                          |
 | `u`         | Pause/resume autoskip for the current title/session                                  |
 | `e`         | Open episode picker without changing episode until selection is confirmed            |
-| `k`         | Open combined stream picker without changing stream until selection is confirmed     |
+| `k`         | Open quality picker in the terminal (mpv itself may still use `v`)                   |
 | `o`         | Open source picker without changing source until selection is confirmed              |
-| `v`         | Open quality picker without changing quality until selection is confirmed            |
-| `f`         | Try fallback provider when available                                                 |
-| `/provider` | Open provider picker without changing provider until selection is confirmed          |
-| `r`         | Recover current playback                                                             |
+| `Shift+F`   | Try fallback provider when available (bare `f` is intentionally unbound)             |
+| `/provider` | Open provider picker without changing provider until a row is confirmed              |
+| `Ctrl+R`    | Refresh / recover the current stream                                                 |
 | `s`         | Reload subtitles                                                                     |
 | `b`         | Manually skip the currently offered timing segment                                   |
-| `m`         | Temporarily show runtime memory/health panel                                         |
+| `m`         | Open title control menu                                                              |
+| `/memory`   | Toggle the temporary memory/health panel                                             |
 | `x`         | Toggle stop-after-current when available                                             |
 
 `Shift+S` is intentionally uppercase because lowercase `s` reloads subtitles
 during active playback. Lowercase `g` is not used for this action because `g`
 already opens settings in the playback loading/resolving shell.
+
+Public docs consume a deliberately reduced subset via `publicShortcutMetadata()`
+in `apps/cli/src/app-shell/keybindings.ts`. Prefer that generated table and in-app
+`?` over copying chords into README.
 
 ## Playback Loading And Resolving
 
@@ -95,6 +102,9 @@ already opens settings in the playback loading/resolving shell.
 | `?`   | Help                                                             |
 | `Esc` | Cancel when the loading state is cancellable                     |
 
+Loading-shell fallback may still accept a bare `f` while resolving; active
+playback uses `Shift+F` only.
+
 ## Post-Playback
 
 | Key         | Action                                                             |
@@ -107,11 +117,10 @@ already opens settings in the playback loading/resolving shell.
 | `e`         | Episode picker                                                     |
 | `k`         | Streams                                                            |
 | `o`         | Source                                                             |
-| `v`         | Quality                                                            |
-| `f`         | Fallback provider                                                  |
+| `Shift+F`   | Fallback provider                                                  |
 | `/provider` | Provider picker                                                    |
 | `a`         | Toggle autoplay                                                    |
-| `d`         | Download current episode                                           |
+| `d`         | Diagnostics                                                        |
 | `i`         | Recommendation pick actions, when the rail is visible              |
 | `1-3`       | Recommendation pick actions, when the rail is visible              |
 | `?`         | Help                                                               |

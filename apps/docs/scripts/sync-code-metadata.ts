@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { publicShortcutMetadata } from "../../cli/src/app-shell/keybindings.ts";
 import {
   computeCliSourceFingerprint,
   computeDocsContentFingerprint,
@@ -267,6 +268,16 @@ type RuntimeBaseline = {
   readonly mpv: string;
 };
 
+type ShortcutMetadata = {
+  readonly id: string;
+  readonly scope: string;
+  readonly group: string;
+  readonly keys: string;
+  readonly label: string;
+  readonly tier: "core" | "surface";
+  readonly order: number;
+};
+
 function parseFeatureStatusYaml(content: string): FeatureStatusEntry[] {
   const features: FeatureStatusEntry[] = [];
   const allowed = new Set(["shipped", "beta", "planned"]);
@@ -326,6 +337,18 @@ function syncRuntimeBaseline(): RuntimeBaseline {
   };
 }
 
+function syncShortcuts(): ShortcutMetadata[] {
+  return publicShortcutMetadata().map((row) => ({
+    id: row.id,
+    scope: row.scope,
+    group: row.group,
+    keys: row.keys,
+    label: row.label,
+    tier: row.tier,
+    order: row.order,
+  }));
+}
+
 function readPackageVersion(): string {
   const pkgPath = path.join(ROOT_DIR, "apps/cli/package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { version?: string };
@@ -339,6 +362,7 @@ export function buildMetadata(): Record<string, unknown> {
   const version = readPackageVersion();
   const featureStatus = syncFeatureStatus();
   const runtimeBaseline = syncRuntimeBaseline();
+  const shortcuts = syncShortcuts();
 
   return {
     syncedAt: new Date().toISOString(),
@@ -355,6 +379,7 @@ export function buildMetadata(): Record<string, unknown> {
     cliOptions,
     featureStatus,
     runtimeBaseline,
+    shortcuts,
   };
 }
 

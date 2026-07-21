@@ -41,8 +41,12 @@ function listDocContentFiles(docsRoot: string): string[] {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        // Never fingerprint local installer-reference scratch copies.
-        if (entry.name === "installer-reference" && path.basename(dir) === "docs") {
+        // Never fingerprint local installer-reference scratch copies or
+        // non-published superpowers plans/specs (fumadocs only ships users/developer).
+        if (
+          (entry.name === "installer-reference" || entry.name === "superpowers") &&
+          path.basename(dir) === "docs"
+        ) {
           continue;
         }
         walk(fullPath);
@@ -94,6 +98,7 @@ export function computeCliSourceFingerprint(root = DEFAULT_ROOT): string {
     "apps/cli/src/container/bootstrap-providers.ts",
     "apps/cli/src/domain/session/command-registry.ts",
     "apps/cli/src/cli-args.ts",
+    "apps/cli/src/app-shell/keybindings.ts",
   ];
 
   for (const rel of cliFiles) {

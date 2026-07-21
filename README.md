@@ -245,7 +245,7 @@ kunai --setup
 kunai --debug
 ```
 
-Inside the shell, press `m` to cycle series -> anime -> YouTube. Use `/youtube`
+Inside the shell, press `Tab` to cycle series -> anime -> YouTube. Use `/youtube`
 or `/yt` to jump directly to YouTube mode; `/series` and `/anime` switch back.
 YouTube search may work without `yt-dlp`, but playback and downloads will ask
 you to install it instead of failing as a generic provider error.
@@ -253,56 +253,31 @@ you to install it instead of failing as a generic provider error.
 ### Inside the shell
 
 Every screen has a context-sensitive footer showing the keys available right
-there. The ones you'll reach for most:
+there. Core shortcuts only (generated from the keybinding registry):
 
 ```text
 /                 Command palette (from anywhere)
-Tab               Cycle browse filters / content kind
-Shift+F           Open filters (browse)
-Enter             Search, open, confirm
-Esc               Close, clear, go back
-↑↓                Navigate results, episodes, options
-m                 Cycle series / anime / YouTube mode
-Ctrl+T            Reload trending recommendations
-Ctrl+D            Download selected result (from browse)
+?                 Help overlay (full live chords)
+Tab               Cycle catalog mode (series / anime / YouTube)
+Enter             Open the highlighted title
+Esc               Back · close panel · clear filter
+⇧F                Switch provider (fallback) during playback
+m                 Title control menu during playback
+n / p             Next / previous episode
+Ctrl+C            Quit
 ```
+
+For the fuller stable set, see
+[Commands and shortcuts](docs/users/commands-and-shortcuts.mdx)
+or press `?` in the shell. Filters open with `/filters`, not a bare `Shift+F`.
 
 ---
 
 ## Key Bindings
 
-### During search / browse
-
-| Key           | Action                                                           |
-| ------------- | ---------------------------------------------------------------- |
-| `/`           | Open command palette                                             |
-| `Enter`       | Open selected result                                             |
-| `Esc`         | Clear query / go back                                            |
-| `↑↓`          | Navigate results                                                 |
-| `m`           | Cycle series / anime / YouTube mode                              |
-| `Ctrl+T`      | Reload trending                                                  |
-| `Ctrl+D`      | Download selected result                                         |
-| Type a filter | Narrow provider, season, subtitle, history, and settings pickers |
-
-### During playback
-
-| Key      | Action                                     |
-| -------- | ------------------------------------------ |
-| `q`      | Stop playback, return to controls          |
-| `n`      | Next episode                               |
-| `p`      | Previous episode                           |
-| `r`      | Recover current stream                     |
-| `f`      | Try next compatible provider               |
-| `d`      | Queue download of current episode          |
-| `k`      | Source / quality picker                    |
-| `o`      | Switch provider                            |
-| `e`      | Episode picker                             |
-| `s`      | Reload / switch subtitles                  |
-| `b`      | Skip intro, recap, or credits              |
-| `a`      | Toggle autoplay on/off                     |
-| `u`      | Toggle autoskip on/off                     |
-| `x`      | Stop after current episode                 |
-| `Ctrl+R` | Manual resume prompt (when history exists) |
+Public shortcut docs are generated from the registry. Prefer the
+[commands and shortcuts](docs/users/commands-and-shortcuts.mdx)
+page or in-app `?` over duplicating chords here.
 
 ### Command palette (`/`)
 

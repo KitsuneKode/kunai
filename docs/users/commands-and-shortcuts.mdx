@@ -7,6 +7,10 @@ Kunai keeps the command palette context-aware. Press `/` in the shell to open th
 available actions for the current screen. During playback, the same actions stay
 available without losing the playing context.
 
+Press `?` in the shell for the full live help overlay. The table below is a
+deliberately reduced public reference generated from the keybinding registry.
+
+
 ## Personal Media Vocabulary
 
 - **Watchlist** — built-in watch-later list (`/watchlist`, `/wl`)
@@ -51,8 +55,6 @@ remain available by typing them directly even when they are not on the default b
   audio, hardsub, and subtitle facts.
 - `/source` and `/quality` jump straight to those picker sections when they have
   switchable alternatives.
-- `m` reveals the temporary memory strip during playback. It is hidden by
-  default to keep normal watching uncluttered.
 - `/pick-episode`, `/next`, `/previous`, and `/next-season` navigate episodes
   only when the target exists.
 - `/download` queues the selected or active item for offline use after the
@@ -68,25 +70,14 @@ context. Close the overlay to return where you were.
 
 ## Stable Hotkeys
 
-| Context | Keys | Action |
-| --- | --- | --- |
-| Anywhere in shell | `/` | Open context-aware command palette |
-| Browse results | `Enter` | Open or play selected result |
-| Browse results | `Shift+Enter` or `i` | Open title details |
-| Browse results | `q` | Add selected result to Up Next when the list owns focus |
-| Browse results | `w` | Add selected result to Watchlist when the list owns focus |
-| Browse results | `Shift+W` | Follow selected title when the list owns focus |
-| Browse results | `Shift+Q` | Open Up Next when the list owns focus |
-| Browse results | `Ctrl+F` | Narrow loaded results only (local text filter) |
-| Browse results | `Ctrl+T` | Refresh trending |
-| Browse results | `Ctrl+D` | Queue selected result for download |
-| Browse / pickers | `Esc` | Clear, close, or go back |
-| Playback | `r` | Recover current stream |
-| Playback | `f` | Try next compatible provider |
-| Playback | `d` | Queue current item for download |
-| Playback | `k` | Open tracks/source/quality selection |
-| Playback | `n` / `p` | Next / previous episode when available |
-| Playback | `a` / `u` | Toggle autoplay / autoskip for this session |
+<ShortcutTable />
+
+Locked chords worth calling out:
+
+- `Tab` cycles browse catalog mode (series / anime / YouTube).
+- Provider fallback during playback is `⇧F` (`Shift+F`). Bare `f` is not bound.
+- During playback, live `m` opens the title control menu. The memory panel is
+  `/memory`, not a competing bare-key binding.
 
 ## Reporting Problems
 
