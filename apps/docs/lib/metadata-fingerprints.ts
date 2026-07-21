@@ -4,12 +4,47 @@ import path from "node:path";
 
 const DEFAULT_ROOT = path.resolve(import.meta.dir, "../../..");
 
+/** Local Claude Code reference copies — must never be tracked in git. */
+export const INSTALLER_REFERENCE_PREFIX = "docs/installer-reference/" as const;
+
+/**
+ * Public surfaces the 0.3.0 release-doc contract reads.
+ * Keep this list focused on user-facing truth; do not include installer-reference.
+ */
+export const PUBLIC_TRUTH_SURFACES = [
+  "README.md",
+  "apps/cli/README.md",
+  "apps/cli/src/cli-args.ts",
+  "apps/docs/components/docs/quick-start-steps.tsx",
+  "apps/docs/lib/home-content.ts",
+  "apps/docs/lib/install-commands.ts",
+  "docs/users/getting-started.mdx",
+  "docs/users/install-and-update.mdx",
+  "docs/users/supported-and-unsupported.mdx",
+  "docs/users/platforms.mdx",
+  "docs/users/share-links.mdx",
+  "docs/users/customization.mdx",
+  "docs/users/feature-tour.mdx",
+  "docs/users/cli-reference.mdx",
+] as const;
+
+export function readPublicTruthSurface(
+  relPath: (typeof PUBLIC_TRUTH_SURFACES)[number],
+  root = DEFAULT_ROOT,
+): string {
+  return fs.readFileSync(path.join(root, relPath), "utf-8");
+}
+
 function listDocContentFiles(docsRoot: string): string[] {
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
+        // Never fingerprint local installer-reference scratch copies.
+        if (entry.name === "installer-reference" && path.basename(dir) === "docs") {
+          continue;
+        }
         walk(fullPath);
         continue;
       }
