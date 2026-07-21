@@ -23,7 +23,7 @@ test("IntroDbTimingSource uses provider-native TMDB id for anime titles", async 
         headers: { "content-type": "application/json" },
       },
     );
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   const title = {
     id: "allanime-opaque-id",
@@ -66,7 +66,7 @@ test("IntroDbTimingSource rejects bare numeric anime ids without proven TMDB", a
   globalThis.fetch = (async () => {
     fetched = true;
     return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 
   const title = {
     id: "154587",

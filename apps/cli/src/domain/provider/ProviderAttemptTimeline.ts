@@ -1,3 +1,7 @@
+import type { ProviderFailureClass } from "@kunai/types";
+
+export type { ProviderFailureClass };
+
 export type ProviderAttemptReason = "primary" | "retry" | "fallback" | "manual";
 
 export type ProviderTimelineStatus =
@@ -7,22 +11,6 @@ export type ProviderTimelineStatus =
   | "resolved"
   | "recovered"
   | "failed";
-
-export type ProviderFailureClass =
-  | "timeout"
-  | "network"
-  | "rate-limited"
-  | "provider-empty"
-  | "provider-parse"
-  | "expired-stream"
-  | "unsupported-title"
-  | "missing-input"
-  | "user-cancelled"
-  | "runtime-missing"
-  | "blocked"
-  | "sub-dub-mismatch"
-  | "title-episode-gap"
-  | "unknown";
 
 export type ProviderAttemptTimelineEvent =
   | {
