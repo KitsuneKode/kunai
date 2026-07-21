@@ -10,6 +10,11 @@ import {
 
 export { buildPickerActionContext };
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
+import {
+  buildExternalOpenFallback,
+  formatExternalOpenFallbackNote,
+  noteForExternalOpenFailure,
+} from "@/app-shell/external-open-fallback";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
@@ -528,7 +533,7 @@ export async function openOfflineLibraryGroupPicker(
       if (!reveal.ok) {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          note: `Could not open folder: ${reveal.stderr ?? "system helper failed"}`,
+          note: noteForExternalOpenFailure(reveal),
         });
       }
       continue;
@@ -736,13 +741,37 @@ async function openStaticInfoShell({
 }
 
 async function openIssueUrl(
+  container: Container,
   url = "https://github.com/kitsunekode/kunai/issues/new/choose",
+  options?: { readonly bundlePath?: string },
 ): Promise<void> {
-  await openExternalUrlAndWait(url);
+  const result = await openExternalUrlAndWait(url);
+  if (result.ok) return;
+  const fallback = buildExternalOpenFallback({
+    result,
+    bundlePath: options?.bundlePath,
+  });
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: formatExternalOpenFallbackNote(fallback),
+  });
+  await openStaticInfoShell({
+    title: "Could not open GitHub",
+    subtitle: fallback.explanation,
+    lines: fallback.copyTargets.map((target, index) => ({
+      label: index === 0 ? "Issue URL (copy)" : "Diagnostics bundle (copy)",
+      detail: target,
+    })),
+  });
 }
 
-async function openDocsUrl(url = defaultKunaiDocsUrl()): Promise<void> {
-  await openExternalUrlAndWait(url);
+async function openDocsUrl(container: Container, url = defaultKunaiDocsUrl()): Promise<void> {
+  const result = await openExternalUrlAndWait(url);
+  if (result.ok) return;
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: noteForExternalOpenFailure(result),
+  });
 }
 
 export type ShellWorkflowResult =
@@ -788,8 +817,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   library: (c) => handleLibraryOverlay(c, "library"),
   menu: (c) => handleTitleControlMenu(c),
   help: (c) => handleStaticOverlay(c, "help"),
-  docs: async () => {
-    await openDocsUrl();
+  docs: async (c) => {
+    await openDocsUrl(c);
     return "handled";
   },
   about: (c) => handleStaticOverlay(c, "about"),
@@ -1317,10 +1346,10 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
         },
       }),
     );
-    await openIssueUrl(draft.issueUrl);
+    await openIssueUrl(container, draft.issueUrl, { bundlePath: written.path });
     return "handled";
   }
-  await openIssueUrl();
+  await openIssueUrl(container);
   return "handled";
 }
 

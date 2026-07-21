@@ -12,6 +12,7 @@ import {
 import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
+import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import type { BrowseIdleContext, BrowseShellOption } from "@/app-shell/types";
@@ -500,12 +501,29 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   });
                   return true;
                 },
-                openInBrowser: async (target) => openExternalUrl(target),
+                openInBrowser: async (target) => {
+                  const opened = await openExternalUrl(target);
+                  if (!opened.ok) {
+                    stateManager.dispatch({
+                      type: "SET_PLAYBACK_FEEDBACK",
+                      note: noteForExternalOpenFailure(opened),
+                    });
+                  }
+                },
               },
               url,
             );
           },
-          onOpenLink: (url) => openExternalUrl(url),
+          onOpenLink: (url) => {
+            void openExternalUrl(url).then((opened) => {
+              if (!opened.ok) {
+                stateManager.dispatch({
+                  type: "SET_PLAYBACK_FEEDBACK",
+                  note: noteForExternalOpenFailure(opened),
+                });
+              }
+            });
+          },
           onSearch: async (query) => {
             ensureSessionProviderMatchesLane(stateManager, providerRegistry);
             const searchIntent = createSearchIntentEngine().fromText(query, {

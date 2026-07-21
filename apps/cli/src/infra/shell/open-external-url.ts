@@ -1,4 +1,12 @@
-const DISABLE_EXTERNAL_URL_ENV = "KUNAI_DISABLE_EXTERNAL_URL";
+import {
+  defaultExternalOpenRuntime,
+  isExternalOpenDisabled,
+  openExternal,
+  type ExternalOpenResult,
+  type ExternalOpenRuntime,
+} from "@/infra/os/external-open";
+
+export type { ExternalOpenResult, ExternalOpenRuntime };
 
 /** Default docs target when `KUNAI_DOCS_URL` is unset. Override in prod via env. */
 export function defaultKunaiDocsUrl(): string {
@@ -7,48 +15,25 @@ export function defaultKunaiDocsUrl(): string {
 
 /** True when external browser/file openers must not run (tests, CI, headless). */
 export function isExternalUrlOpeningDisabled(): boolean {
-  const flag = process.env[DISABLE_EXTERNAL_URL_ENV];
-  return flag === "1" || flag === "true";
-}
-
-async function spawnExternalUrl(url: string): Promise<boolean> {
-  if (!url || isExternalUrlOpeningDisabled()) {
-    return false;
-  }
-
-  const commands: readonly [string, readonly string[]][] = [
-    ["xdg-open", [url]],
-    ["open", [url]],
-    ["cmd", ["/c", "start", "", url]],
-  ];
-
-  for (const [command, args] of commands) {
-    if (!Bun.which(command)) continue;
-    try {
-      const proc = Bun.spawn([command, ...args], {
-        stdout: "ignore",
-        stderr: "ignore",
-        stdin: "ignore",
-      });
-      if ((await proc.exited) === 0) return true;
-    } catch {
-      // try next opener
-    }
-  }
-
-  return false;
+  return isExternalOpenDisabled();
 }
 
 /**
- * Open a URL in the user's default browser, best-effort across platforms.
- * No-ops when `KUNAI_DISABLE_EXTERNAL_URL=1` (set automatically in test preload).
+ * Open a URL in the user's default browser with a platform-correct opener.
+ * Returns a typed result; never throws on spawn/`exited` failures.
+ * No-ops with `reason: "disabled"` when `KUNAI_DISABLE_EXTERNAL_URL=1`.
  */
-export function openExternalUrl(url: string): void {
-  if (!url || isExternalUrlOpeningDisabled()) return;
-  void spawnExternalUrl(url);
+export async function openExternalUrl(
+  url: string,
+  runtime: ExternalOpenRuntime = defaultExternalOpenRuntime,
+): Promise<ExternalOpenResult> {
+  return openExternal({ kind: "url", url }, runtime);
 }
 
-/** Awaitable opener for workflow commands that need to finish before returning. */
-export async function openExternalUrlAndWait(url: string): Promise<boolean> {
-  return spawnExternalUrl(url);
+/** Awaitable opener alias for workflow commands that need the typed result. */
+export async function openExternalUrlAndWait(
+  url: string,
+  runtime: ExternalOpenRuntime = defaultExternalOpenRuntime,
+): Promise<ExternalOpenResult> {
+  return openExternalUrl(url, runtime);
 }

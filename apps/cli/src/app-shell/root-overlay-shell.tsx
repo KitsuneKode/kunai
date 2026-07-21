@@ -1,3 +1,4 @@
+import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
 import {
@@ -1106,8 +1107,13 @@ export function RootOverlayShell({
         },
       }),
       appUpdate: {
-        openReleasePage: (latestVersion) =>
-          openExternalUrlAndWait(appReleasePageUrl(latestVersion)),
+        openReleasePage: async (latestVersion) => {
+          const url = appReleasePageUrl(latestVersion);
+          const opened = await openExternalUrlAndWait(url);
+          if (opened.ok) return true;
+          setOverlayStatus(noteForExternalOpenFailure(opened));
+          return false;
+        },
       },
       notifications: {
         dismiss: (key) => container.notificationService.archive(key),
