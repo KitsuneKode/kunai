@@ -59,9 +59,12 @@ export function projectContinuationSurface(
     return { state: "empty", historyBucket: "completed", actionLabel: "Open" };
   }
 
+  // History maps may key rows by catalog id while `entry.titleId` differs
+  // (native/provider id). Project under the lookup key so the engine does not
+  // drop the only supplied row and empty the Continue/History surface.
   const engine = projectContinuation({
     titleId: input.titleId,
-    rows: [entry],
+    rows: [{ ...entry, titleId: input.titleId }],
     nextRelease: input.nextRelease,
     releaseProgress: input.releaseProgress,
     offline: input.offline,

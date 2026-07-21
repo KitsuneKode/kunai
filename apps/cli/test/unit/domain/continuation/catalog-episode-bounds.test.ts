@@ -53,13 +53,15 @@ describe("reconcileContinueHistory with catalog bounds", () => {
     expect(decision).toMatchObject({ kind: "up-to-date" });
   });
 
-  test("still advances when the catalog has a later episode", () => {
+  test("does not optimistic-advance from catalog bounds alone", () => {
+    // Task 8: reconcile stays up-to-date without release/offline evidence.
+    // catalogBounds no longer fabricates E+1 for Continue/History.
     const decision = reconcileContinueHistory({
       titleId: "native-1",
       entries: [["native-1", history({ episode: 8, completed: true })]],
       catalogBounds: catalogBoundsFromEpisodeCount(1, 12),
     });
 
-    expect(decision).toMatchObject({ kind: "new-episode", episode: 9 });
+    expect(decision).toMatchObject({ kind: "up-to-date" });
   });
 });
