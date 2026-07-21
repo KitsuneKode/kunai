@@ -6,8 +6,10 @@ import { join } from "node:path";
 
 import {
   DEFAULT_BINARY_DOWNLOAD_POLICY,
+  DownloadError,
   downloadToFile,
   isRetryableDownloadError,
+  writeAllBytes,
 } from "@/services/update/native-installer/download";
 
 const made: string[] = [];
@@ -94,6 +96,7 @@ describe("downloadToFile", () => {
     expect(result.sizeBytes).toBe(bytes.byteLength);
     expect(result.path).toBe(path);
     expect(await Bun.file(path).text()).toBe("hello-kunai");
+    expect(Bun.file(path).size).toBe(result.sizeBytes);
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -335,6 +338,35 @@ describe("downloadToFile", () => {
   });
 });
 
+describe("writeAllBytes", () => {
+  test("retries until injectable short writer drains the buffer", async () => {
+    const source = new TextEncoder().encode("abcdef");
+    const sink: number[] = [];
+    let calls = 0;
+
+    await writeAllBytes(async (chunk, offset, length) => {
+      calls += 1;
+      // Simulate FileHandle short writes of 1–2 bytes.
+      const n = Math.min(2, length);
+      for (let i = 0; i < n; i += 1) sink.push(chunk[offset + i]!);
+      return n;
+    }, source);
+
+    expect(calls).toBe(3);
+    expect(new TextDecoder().decode(Uint8Array.from(sink))).toBe("abcdef");
+  });
+
+  test("zero-byte write fails as DOWNLOAD_INCOMPLETE", async () => {
+    try {
+      await writeAllBytes(async () => 0, new TextEncoder().encode("x"));
+      expect.unreachable("expected DOWNLOAD_INCOMPLETE");
+    } catch (error) {
+      expect(error).toBeInstanceOf(DownloadError);
+      expect((error as DownloadError).code).toBe("DOWNLOAD_INCOMPLETE");
+    }
+  });
+});
+
 describe("isRetryableDownloadError", () => {
   test("classifies retryable vs terminal failures", () => {
     expect(
@@ -356,5 +388,8 @@ describe("isRetryableDownloadError", () => {
     expect(
       isRetryableDownloadError(Object.assign(new Error("x"), { code: "DOWNLOAD_EMPTY" })),
     ).toBe(false);
+    expect(
+      isRetryableDownloadError(Object.assign(new Error("x"), { code: "DOWNLOAD_INCOMPLETE" })),
+    ).toBe(true);
   });
 });

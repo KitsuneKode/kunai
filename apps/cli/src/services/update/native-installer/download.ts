@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, open, rm } from "node:fs/promises";
+import { mkdir, open, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 export interface DownloadPolicy {
@@ -40,6 +40,7 @@ export type DownloadErrorCode =
   | "DOWNLOAD_DEADLINE"
   | "DOWNLOAD_SIZE"
   | "DOWNLOAD_EMPTY"
+  | "DOWNLOAD_INCOMPLETE"
   | "DOWNLOAD_INVALID_BODY"
   | "DOWNLOAD_ABORTED"
   | "DOWNLOAD_NETWORK";
@@ -69,7 +70,13 @@ export function isRetryableDownloadError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const value = error as { code?: unknown; status?: unknown; retryable?: unknown };
   if (typeof value.retryable === "boolean") return value.retryable;
-  if (value.code === "DOWNLOAD_STALL" || value.code === "DOWNLOAD_NETWORK") return true;
+  if (
+    value.code === "DOWNLOAD_STALL" ||
+    value.code === "DOWNLOAD_NETWORK" ||
+    value.code === "DOWNLOAD_INCOMPLETE"
+  ) {
+    return true;
+  }
   if (value.code === "DOWNLOAD_DEADLINE" || value.code === "DOWNLOAD_ABORTED") return false;
   if (value.code === "DOWNLOAD_SIZE" || value.code === "DOWNLOAD_EMPTY") return false;
   if (value.code === "DOWNLOAD_INVALID_BODY") return false;
@@ -192,6 +199,32 @@ async function cleanupPartial(path: string): Promise<void> {
   await rm(path, { force: true }).catch(() => {});
 }
 
+/**
+ * Writer that accepts a slice of `chunk` and returns how many bytes were written.
+ * Used so unit tests can simulate short writes from FileHandle.write.
+ */
+export type ChunkWriter = (chunk: Uint8Array, offset: number, length: number) => Promise<number>;
+
+/**
+ * Loop until every byte is accepted. FileHandle.write may short-write; hashing
+ * the network buffer then trusting a partial disk flush would activate a
+ * truncated binary — callers must also assert on-disk size after close.
+ */
+export async function writeAllBytes(write: ChunkWriter, bytes: Uint8Array): Promise<void> {
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const bytesWritten = await write(bytes, offset, bytes.byteLength - offset);
+    if (bytesWritten <= 0) {
+      throw new DownloadError(
+        "DOWNLOAD_INCOMPLETE",
+        "Disk write returned zero bytes before buffer was fully flushed",
+        { retryable: true },
+      );
+    }
+    offset += bytesWritten;
+  }
+}
+
 async function streamResponseToFile(input: {
   readonly response: Response;
   readonly destinationPath: string;
@@ -255,7 +288,10 @@ async function streamResponseToFile(input: {
       }
       hash.update(bytes);
       stall.reset();
-      await handle.write(bytes);
+      await writeAllBytes(async (chunk, offset, length) => {
+        const result = await handle.write(chunk, offset, length);
+        return result.bytesWritten;
+      }, bytes);
     }
   } catch (error) {
     await reader.cancel().catch(() => {});
@@ -292,6 +328,18 @@ async function streamResponseToFile(input: {
   if (sizeBytes === 0) {
     await cleanupPartial(input.destinationPath);
     throw new DownloadError("DOWNLOAD_EMPTY", "Downloaded zero bytes", { retryable: false });
+  }
+
+  // Defense in depth: never trust the in-memory hash unless the on-disk size
+  // matches what we streamed (guards against any missed short-write path).
+  const onDisk = await stat(input.destinationPath);
+  if (onDisk.size !== sizeBytes) {
+    await cleanupPartial(input.destinationPath);
+    throw new DownloadError(
+      "DOWNLOAD_INCOMPLETE",
+      `On-disk size ${onDisk.size} does not match streamed size ${sizeBytes}`,
+      { retryable: true },
+    );
   }
 
   return { sizeBytes, sha256: hash.digest("hex") };
