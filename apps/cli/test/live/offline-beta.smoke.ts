@@ -233,6 +233,7 @@ try {
     id: "restart-recovery",
     ok:
       recovered !== null &&
+      recovered !== undefined &&
       (recovered.status === "queued" ||
         recovered.status === "completed" ||
         recovered.status === "completed-with-notes"),

@@ -53,26 +53,34 @@ const CANONICAL_INSTALL =
   "curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash";
 
 /**
- * Extract the canonical Quick Start Install bash commands from README markdown.
- * Prefers the `### Install` section under Quick Start; falls back to the first
- * bash fence that contains the native install curl line.
+ * Extract the canonical Quick Start journey from README markdown.
+ * The installer lives under `### Install Kunai`; the four post-install probes
+ * live under `### Verify`. Legacy single-fence copies remain supported.
  */
 export function extractReadmeQuickStart(readme: string): readonly string[] {
-  const installSection = readme.match(
-    /## Quick Start[\s\S]*?### Install([\s\S]*?)(?=\n### |\n## |$)/,
-  );
-  const searchIn = installSection?.[1] ?? readme;
+  const quickStart = readme.match(/## Quick Start\n([\s\S]*?)(?=\n## |$)/);
+  const quickStartBody = quickStart?.[1] ?? readme;
+  const installSection = quickStartBody.match(/### Install(?: Kunai)?([\s\S]*?)(?=\n### |\n## |$)/);
+  const searchIn = installSection?.[1] ?? quickStartBody;
   const fenceMatch = searchIn.match(/```bash\n([\s\S]*?)```/);
   if (!fenceMatch) {
-    throw new Error("extractReadmeQuickStart: no ```bash fence found in Quick Start Install");
+    throw new Error("extractReadmeQuickStart: no ```bash fence found in Quick Start installer");
   }
-  const body = fenceMatch[1]!;
-  if (!body.includes(CANONICAL_INSTALL)) {
+  const installBody = fenceMatch[1];
+  if (installBody === undefined) {
+    throw new Error("extractReadmeQuickStart: malformed Quick Start installer bash fence");
+  }
+  if (!installBody.includes(CANONICAL_INSTALL)) {
     throw new Error(
-      "extractReadmeQuickStart: Install bash fence does not contain the canonical curl|bash install",
+      "extractReadmeQuickStart: installer bash fence does not contain the canonical curl|bash install",
     );
   }
-  const lines = body
+
+  const verifySection = quickStartBody.match(/### Verify([\s\S]*?)(?=\n### |\n## |$)/);
+  const verifyFence = verifySection?.[1]?.match(/```bash\n([\s\S]*?)```/);
+  const verifyBody = verifyFence?.[1];
+  const lines = [installBody, ...(verifyBody === undefined ? [] : [verifyBody])]
+    .join("\n")
     .split("\n")
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0 && !line.trimStart().startsWith("#"));
@@ -281,6 +289,18 @@ type CommandResult = {
   readonly stderr: string;
 };
 
+function requiredCommand(
+  commands: readonly string[],
+  index: number,
+  id: ReadmeQuickStartId,
+): string {
+  const command = commands[index];
+  if (command === undefined) {
+    throw new Error(`missing README quick-start command ${id} at index ${index}`);
+  }
+  return command;
+}
+
 async function runShell(
   command: string,
   env: NodeJS.ProcessEnv,
@@ -408,6 +428,11 @@ export async function verifyReadmeCommands(
       `expected ${README_QUICK_START_IDS.length} quick-start commands, got ${commands.length}: ${JSON.stringify(commands)}`,
     );
   }
+  const installCommand = requiredCommand(commands, 0, "install");
+  const versionCmd = requiredCommand(commands, 1, "version");
+  const mpvCmd = requiredCommand(commands, 2, "mpv-version");
+  const setupCmd = requiredCommand(commands, 3, "setup");
+  const searchCmd = requiredCommand(commands, 4, "first-search");
 
   const commitSha = input.commitSha ?? commitShaShort(repoRoot);
   const version = input.version.replace(/^v/, "");
@@ -448,7 +473,7 @@ export async function verifyReadmeCommands(
     // Exact README install shape (curl|bash). Only documented rewrite: append
     // non-interactive fixture flags via `bash -s -- …` (endpoint substitution is
     // env/shim only). Reported command text stays the exact README curl|bash line.
-    const installPipeline = commands[0]!.replace(
+    const installPipeline = installCommand.replace(
       /\| bash\s*$/,
       `| bash -s -- --yes --skip-deps --version ${version}`,
     );
@@ -460,7 +485,7 @@ export async function verifyReadmeCommands(
       existsSync(join(profile.configDir, "install.json"));
     results.push({
       id: "install",
-      command: commands[0]!,
+      command: installCommand,
       exitCode: installResult.exitCode,
       passed: installPassed,
     });
@@ -471,7 +496,6 @@ export async function verifyReadmeCommands(
     }
 
     // Execute extracted README text (not hardcoded argv). PATH resolves `kunai`.
-    const versionCmd = commands[1]!;
     const versionResult = await runShell(versionCmd, installEnv);
     const versionOk =
       versionResult.exitCode === 0 && /kunai\s+\d+\.\d+\.\d+/i.test(versionResult.stdout);
@@ -499,7 +523,6 @@ export async function verifyReadmeCommands(
       KUNAI_DL_BASE: server.baseUrl,
       KUNAI_RELEASES_API: `${server.baseUrl}/releases/latest.json`,
     });
-    const mpvCmd = commands[2]!;
     const mpvResult = await runShell(mpvCmd, withMpvEnv);
     const mpvOk = mpvResult.exitCode === 0 && /mpv/i.test(mpvResult.stdout);
     results.push({
@@ -516,7 +539,6 @@ export async function verifyReadmeCommands(
       join(profile.configDir, "config.json"),
       `${JSON.stringify({ onboardingVersion: 0, downloadOnboardingDismissed: false })}\n`,
     );
-    const setupCmd = commands[3]!;
     const setupResult = await runCommandUnderPty({
       command: setupCmd,
       env: withMpvEnv,
@@ -538,7 +560,6 @@ export async function verifyReadmeCommands(
       `${JSON.stringify({ onboardingVersion: 2, downloadOnboardingDismissed: true })}\n`,
     );
     const searchTranscript = join(profile.root, "search.log");
-    const searchCmd = commands[4]!;
     const searchResult = await runCommandUnderPty({
       command: searchCmd,
       env: withMpvEnv,

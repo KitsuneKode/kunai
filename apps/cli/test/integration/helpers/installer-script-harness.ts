@@ -49,8 +49,9 @@ function buildResponse(route: ReleaseFixtureRoute): Response {
   const status = route.status ?? 200;
   const headers = route.headers ? { ...route.headers } : undefined;
   const bytes = toBytes(route.body);
+  const chunkDelayMs = route.chunkDelayMs;
 
-  if (route.chunkDelayMs !== undefined && route.chunkDelayMs >= 0) {
+  if (chunkDelayMs !== undefined && chunkDelayMs >= 0) {
     const chunkSize = Math.max(1, route.chunkSize ?? 1);
     let offset = 0;
     const body = new ReadableStream<Uint8Array>({
@@ -59,8 +60,8 @@ function buildResponse(route: ReleaseFixtureRoute): Response {
           controller.close();
           return;
         }
-        if (offset > 0 && route.chunkDelayMs! > 0) {
-          await Bun.sleep(route.chunkDelayMs!);
+        if (offset > 0 && chunkDelayMs > 0) {
+          await Bun.sleep(chunkDelayMs);
         }
         const end = Math.min(offset + chunkSize, bytes.byteLength);
         controller.enqueue(bytes.subarray(offset, end));

@@ -32,8 +32,8 @@ export function parsePublishedVersionTag(value: string | undefined): CanonicalVe
   while ((match = re.exec(value)) !== null) {
     const start = match.index;
     const end = start + match[0].length;
-    const before = start > 0 ? value[start - 1]! : "";
-    const after = end < value.length ? value[end]! : "";
+    const before = value.charAt(start - 1);
+    const after = value.charAt(end);
 
     // Prerelease/build on this X.Y.Z — never harvest a later numeric fragment.
     if (after === "-" || after === "+") {

@@ -22,7 +22,9 @@ export const IntroDbTimingSource: PlaybackTimingSource = {
     signal?: AbortSignal;
     context?: PlaybackTimingFetchContext;
   }): Promise<PlaybackTimingMetadata | null> {
-    const detailed = await IntroDbTimingSource.fetchDetailed!(opts);
+    const fetchDetailed = IntroDbTimingSource.fetchDetailed;
+    if (!fetchDetailed) return null;
+    const detailed = await fetchDetailed(opts);
     return detailed.metadata;
   },
 

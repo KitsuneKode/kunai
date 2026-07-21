@@ -21,7 +21,9 @@ export const AniSkipTimingSource: PlaybackTimingSource = {
     signal?: AbortSignal;
     context?: PlaybackTimingFetchContext;
   }): Promise<PlaybackTimingMetadata | null> {
-    const detailed = await AniSkipTimingSource.fetchDetailed!(opts);
+    const fetchDetailed = AniSkipTimingSource.fetchDetailed;
+    if (!fetchDetailed) return null;
+    const detailed = await fetchDetailed(opts);
     return detailed.metadata;
   },
 

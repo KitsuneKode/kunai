@@ -454,9 +454,10 @@ export class HistoryRepository {
    */
   listByTitleIdentity(title: HistoryTitleLookup, limit = 500): readonly HistoryProgress[] {
     const titleIds = this.collectLookupTitleIds(title);
-    if (titleIds.length === 0) return [];
+    const firstTitleId = titleIds[0];
+    if (firstTitleId === undefined) return [];
     if (titleIds.length === 1) {
-      return this.listByTitle(titleIds[0]!, limit);
+      return this.listByTitle(firstTitleId, limit);
     }
 
     const placeholders = titleIds.map(() => "?").join(", ");

@@ -959,17 +959,21 @@ export function bindingKeys(binding: KeyBinding): string {
  * Sorted by explicit docs.order; only non-helpOnly opted-in bindings.
  */
 export function publicShortcutMetadata(): readonly PublicShortcutMetadata[] {
-  return KEYBINDINGS.filter((binding) => binding.docs !== undefined)
-    .map((binding) => ({
-      id: binding.id,
-      scope: binding.scope,
-      group: binding.group,
-      keys: bindingKeys(binding),
-      label: binding.label,
-      tier: binding.docs!.tier,
-      order: binding.docs!.order,
-    }))
-    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return KEYBINDINGS.flatMap((binding) => {
+    const docs = binding.docs;
+    if (!docs) return [];
+    return [
+      {
+        id: binding.id,
+        scope: binding.scope,
+        group: binding.group,
+        keys: bindingKeys(binding),
+        label: binding.label,
+        tier: docs.tier,
+        order: docs.order,
+      },
+    ];
+  }).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
 function matchChord(chord: KeyChord, input: string, key: LineEditorKey): boolean {

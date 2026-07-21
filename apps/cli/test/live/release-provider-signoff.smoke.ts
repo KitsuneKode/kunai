@@ -141,7 +141,7 @@ async function resolveRoute(
     streamUrl = resolved.stream?.url ?? null;
     streamHeaders = resolved.stream?.headers;
     successfulProvider =
-      resolved.stream?.url != null
+      resolved.stream?.url !== undefined && resolved.stream.url !== null
         ? (resolved.result.providerId ??
           resolved.result.trace.selectedProviderId ??
           fixture.configuredProvider)

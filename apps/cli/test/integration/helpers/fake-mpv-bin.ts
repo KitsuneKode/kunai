@@ -163,11 +163,9 @@ async function serveIpc(socketPath: string, mode: Mode, initialUrl: string | nul
 
         if (!lifecycleStarted && activeSocket) {
           lifecycleStarted = true;
-          void runPlaybackLifecycle(activeSocket, mode, currentUrl).then(() => {
-            if (mode === "normal") {
-              // stay alive until quit so persistent sessions can loadfile
-            }
-          });
+          // Persistent sessions intentionally stay alive after the initial
+          // lifecycle so a later loadfile command can start another one.
+          void runPlaybackLifecycle(activeSocket, mode, currentUrl);
         }
       },
       close() {
@@ -181,7 +179,8 @@ async function serveIpc(socketPath: string, mode: Mode, initialUrl: string | nul
 
   appendEvidence({ type: "ipc-listen", socketPath, mode });
 
-  while (!quitRequested) {
+  while (true) {
+    if (quitRequested) break;
     await Bun.sleep(50);
     if (mode === "fail-pre-loaded" && lifecycleStarted) {
       await Bun.sleep(100);

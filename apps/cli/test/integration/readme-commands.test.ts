@@ -7,7 +7,7 @@ import { extractReadmeQuickStart, README_QUICK_START_IDS } from "./helpers/readm
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
 const README_PATH = join(REPO_ROOT, "README.md");
 
-/** Canonical Quick Start Install sequence — must match README order/text. */
+/** Canonical Quick Start journey — installer followed by Verify commands. */
 const EXPECTED_QUICK_START = [
   "curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash",
   "kunai --version",
@@ -26,10 +26,10 @@ describe("README quick-start extraction", () => {
 
   test("fails when Install block order or text drifts", () => {
     const readme = readFileSync(README_PATH, "utf8");
-    // Drift the Quick Start Install fence specifically (not only the hero copy).
+    // Drift the Quick Start Verify fence specifically (not only the hero copy).
     const drifted = readme.replace(
-      /### Install([\s\S]*?)kunai -S "Dune"/,
-      '### Install$1kunai -S "Frieren"',
+      /### Verify([\s\S]*?)kunai -S "Dune"/,
+      '### Verify$1kunai -S "Frieren"',
     );
     const commands = extractReadmeQuickStart(drifted);
     expect([...commands]).not.toEqual([...EXPECTED_QUICK_START]);
@@ -51,15 +51,10 @@ describe("README quick-start extraction", () => {
     expect(() => extractReadmeQuickStart(broken)).toThrow(/canonical curl\|bash install/);
   });
 
-  test("hero and Quick Start Install blocks stay aligned", () => {
+  test("hero preserves the canonical installer and first journey", () => {
     const readme = readFileSync(README_PATH, "utf8");
-    const heroFence = readme.match(/```bash\n([\s\S]*?)```/);
-    expect(heroFence).not.toBeNull();
-    const heroLines = heroFence![1]!
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter((line) => line.length > 0 && !line.trimStart().startsWith("#"));
-    expect(heroLines).toEqual([...EXPECTED_QUICK_START]);
-    expect([...extractReadmeQuickStart(readme)]).toEqual(heroLines);
+    const hero = readme.match(/<div align="center">([\s\S]*?)<\/div>/)?.[1];
+    expect(hero).toContain(EXPECTED_QUICK_START[0]);
+    expect(hero).toContain('kunai --setup && kunai -S "Dune"');
   });
 });
