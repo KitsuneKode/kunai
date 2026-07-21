@@ -3,6 +3,7 @@ import { copyFile, mkdir, rename } from "node:fs/promises";
 
 import type { InstallManifest } from "../install-manifest";
 import { writeInstallManifest } from "../install-manifest";
+import { parseCanonicalVersion } from "../version";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -38,8 +39,8 @@ export async function migrateFlatInstall(input: {
   const sourcePath = existsSync(execPath) && !execPath.endsWith(".js") ? execPath : binPath;
   if (!existsSync(sourcePath)) return { migrated: false };
 
-  const version = manifest?.version ?? input.currentVersion;
-  if (!/^\d+\.\d+\.\d+/.test(version)) return { migrated: false };
+  const version = parseCanonicalVersion(manifest?.version ?? input.currentVersion);
+  if (!version) return { migrated: false };
 
   const targetPath = versionBinaryPath(layout, version);
   if (existsSync(targetPath) && manifest?.layout === "versioned") {

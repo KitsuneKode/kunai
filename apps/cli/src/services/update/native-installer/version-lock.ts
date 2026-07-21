@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 
+import { parseCanonicalVersion } from "../version";
 import { getInstallLayoutPaths, lockFilePath, type InstallLayoutPaths } from "./install-layout";
 
 export type VersionLockContent = {
@@ -161,7 +162,9 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
   if (!existsSync(layout.locksDir)) return;
   const { readdir } = await import("node:fs/promises");
   for (const entry of await readdir(layout.locksDir).catch(() => [] as string[])) {
-    const path = lockFilePath(layout, entry.replace(/\.lock$/, ""));
+    const version = parseCanonicalVersion(entry.replace(/\.lock$/, ""));
+    if (!version) continue;
+    const path = lockFilePath(layout, version);
     if (await isLockStale(path)) {
       await rm(path, { force: true }).catch(() => {});
     }

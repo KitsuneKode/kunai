@@ -1,3 +1,5 @@
+import { parsePublishedVersionTag } from "./version";
+
 const DEFAULT_RELEASES_API = "https://api.github.com/repos/KitsuneKode/kunai/releases/latest";
 
 export function resolveReleasesApiUrl(): string {
@@ -5,14 +7,12 @@ export function resolveReleasesApiUrl(): string {
 }
 
 /**
- * Extract a `major.minor.patch` from a GitHub tag. Robust to both our binary
- * release tag (`v1.2.3`) and a changesets package tag (`@kitsunekode/kunai@1.2.3`),
- * so the upgrade check keeps working regardless of which release is "latest".
+ * Extract a strict `major.minor.patch` from a GitHub tag. Robust to both our
+ * binary release tag (`v1.2.3`) and a changesets package tag
+ * (`@kitsunekode/kunai@1.2.3`). Rejects prerelease, build, and leading-zero forms.
  */
 export function parseVersionFromTag(tag: string | undefined): string | null {
-  if (!tag) return null;
-  const match = tag.match(/(\d+\.\d+\.\d+)/);
-  return match?.[1] ?? null;
+  return parsePublishedVersionTag(tag);
 }
 
 /**

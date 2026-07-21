@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import { compareCanonicalVersions, parseCanonicalVersion } from "../version";
 import {
   getInstallLayoutPaths,
   parseVersionFromExecPath,
@@ -11,17 +12,11 @@ import {
 } from "./install-layout";
 import { readLockContent, tryAcquireVersionLock } from "./version-lock";
 
-function parseSemver(version: string): [number, number, number] {
-  const parts = version.split(".").map((n) => Number.parseInt(n, 10));
-  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
-}
-
 function compareSemverDesc(a: string, b: string): number {
-  const [am, an, ap] = parseSemver(a);
-  const [bm, bn, bp] = parseSemver(b);
-  if (bm !== am) return bm - am;
-  if (bn !== an) return bn - an;
-  return bp - ap;
+  const left = parseCanonicalVersion(a);
+  const right = parseCanonicalVersion(b);
+  if (!left || !right) return 0;
+  return compareCanonicalVersions(right, left);
 }
 
 async function listVersionDirs(versionsDir: string): Promise<string[]> {
@@ -29,9 +24,14 @@ async function listVersionDirs(versionsDir: string): Promise<string[]> {
   const entries = await readdir(versionsDir).catch(() => [] as string[]);
   const versions: string[] = [];
   for (const entry of entries) {
-    if (!/^\d+\.\d+\.\d+/.test(entry)) continue;
-    const binPath = join(versionsDir, entry, process.platform === "win32" ? "kunai.exe" : "kunai");
-    if (existsSync(binPath)) versions.push(entry);
+    const canonical = parseCanonicalVersion(entry);
+    if (!canonical) continue;
+    const binPath = join(
+      versionsDir,
+      canonical,
+      process.platform === "win32" ? "kunai.exe" : "kunai",
+    );
+    if (existsSync(binPath)) versions.push(canonical);
   }
   return versions.sort(compareSemverDesc);
 }
@@ -122,7 +122,9 @@ async function cleanupOrphanStaging(layout: InstallLayoutPaths): Promise<void> {
 async function cleanupTempInstallFiles(layout: InstallLayoutPaths): Promise<void> {
   if (!existsSync(layout.versionsDir)) return;
   for (const version of await readdir(layout.versionsDir).catch(() => [] as string[])) {
-    const dir = join(layout.versionsDir, version);
+    const canonical = parseCanonicalVersion(version);
+    if (!canonical) continue;
+    const dir = join(layout.versionsDir, canonical);
     for (const entry of await readdir(dir).catch(() => [] as string[])) {
       if (entry.includes(".tmp.")) {
         await rm(join(dir, entry), { force: true }).catch(() => {});

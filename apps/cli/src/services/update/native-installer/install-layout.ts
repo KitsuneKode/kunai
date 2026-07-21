@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
+import { parseCanonicalVersion, type CanonicalVersion } from "../version";
+
 /** Number of versioned binaries to retain beyond protected versions. */
 export const VERSION_RETENTION_COUNT = 2;
 
@@ -18,6 +20,14 @@ export type InstallLayoutPaths = {
   readonly launcherPath: string;
   readonly binaryFileName: string;
 };
+
+function requireCanonicalVersion(version: string): CanonicalVersion {
+  const parsed = parseCanonicalVersion(version);
+  if (!parsed) {
+    throw new Error(`Invalid install version for path: ${version}`);
+  }
+  return parsed;
+}
 
 function defaultLauncherPath(platform: NodeJS.Platform = process.platform): string {
   if (platform === "win32") {
@@ -68,7 +78,8 @@ export function versionBinaryPath(
   layout: Pick<InstallLayoutPaths, "versionsDir" | "binaryFileName">,
   version: string,
 ): string {
-  return join(layout.versionsDir, version, layout.binaryFileName);
+  const canonical = requireCanonicalVersion(version);
+  return join(layout.versionsDir, canonical, layout.binaryFileName);
 }
 
 /** Staging directory for a download: `{cacheDir}/staging/{semver}/`. */
@@ -76,7 +87,8 @@ export function stagingDirForVersion(
   layout: Pick<InstallLayoutPaths, "stagingRoot">,
   version: string,
 ): string {
-  return join(layout.stagingRoot, version);
+  const canonical = requireCanonicalVersion(version);
+  return join(layout.stagingRoot, canonical);
 }
 
 /** Lock file for a version install: `{dataDir}/locks/{semver}.lock`. */
@@ -84,7 +96,8 @@ export function lockFilePath(
   layout: Pick<InstallLayoutPaths, "locksDir">,
   version: string,
 ): string {
-  return join(layout.locksDir, `${version}.lock`);
+  const canonical = requireCanonicalVersion(version);
+  return join(layout.locksDir, `${canonical}.lock`);
 }
 
 /** True when `execPath` lives under the versioned store. */
@@ -97,16 +110,16 @@ export function isVersionedExecPath(
   return normalized.includes(`${versions}/`);
 }
 
-/** Extract semver from a versioned exec path, or null. */
+/** Extract strict semver from a versioned exec path, or null. */
 export function parseVersionFromExecPath(
   execPath: string,
   layout: Pick<InstallLayoutPaths, "versionsDir"> = getInstallLayoutPaths(),
-): string | null {
+): CanonicalVersion | null {
   const normalized = execPath.replaceAll("\\", "/");
   const versions = layout.versionsDir.replaceAll("\\", "/");
   const idx = normalized.indexOf(`${versions}/`);
   if (idx === -1) return null;
   const rest = normalized.slice(idx + versions.length + 1);
   const segment = rest.split("/")[0];
-  return segment && /^\d+\.\d+\.\d+/.test(segment) ? segment : null;
+  return segment ? parseCanonicalVersion(segment) : null;
 }

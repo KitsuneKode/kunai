@@ -14,6 +14,12 @@ test("parseVersionFromTag handles v-prefixed and changesets package tags", () =>
   expect(parseVersionFromTag("nightly")).toBeNull();
 });
 
+test("parseVersionFromTag rejects leading zeros and prerelease tags", () => {
+  expect(parseVersionFromTag("v01.2.3")).toBeNull();
+  expect(parseVersionFromTag("v1.2.3-beta")).toBeNull();
+  expect(parseVersionFromTag("1.2.3+build")).toBeNull();
+});
+
 function fakeFetch(status: number, body: unknown): typeof fetch {
   return (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
 }

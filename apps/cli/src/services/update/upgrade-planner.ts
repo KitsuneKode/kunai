@@ -5,6 +5,7 @@ import {
   type PlatformLibc,
   type PlatformOs,
 } from "./platform-assets";
+import { compareCanonicalVersions, parseCanonicalVersion } from "./version";
 
 /**
  * Pure decision logic for `kunai upgrade`: given the install channel and version
@@ -40,17 +41,13 @@ export type UpgradePlan =
 
 const PKG = "@kitsunekode/kunai";
 
-/** Semver-ish compare limited to the `major.minor.patch` Kunai uses. */
+/** Strict `major.minor.patch` compare; invalid current still upgrades, invalid latest does not. */
 function isNewer(latest: string, current: string): boolean {
-  if (!/^\d+\.\d+\.\d+/.test(current)) return true;
-  const a = latest.split(".").map((n) => Number.parseInt(n, 10));
-  const b = current.split(".").map((n) => Number.parseInt(n, 10));
-  for (let i = 0; i < 3; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x !== y) return x > y;
-  }
-  return false;
+  const latestParsed = parseCanonicalVersion(latest);
+  if (!latestParsed) return false;
+  const currentParsed = parseCanonicalVersion(current);
+  if (!currentParsed) return true;
+  return compareCanonicalVersions(latestParsed, currentParsed) > 0;
 }
 
 export { releaseAssetName as assetNameFor };

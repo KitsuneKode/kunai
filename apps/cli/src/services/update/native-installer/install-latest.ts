@@ -6,6 +6,7 @@ import { readInstallManifest, writeInstallManifest } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import { detectPlatform, releaseAssetName, type PlatformLibc } from "../platform-assets";
 import { pickChecksum, verifyChecksum } from "../self-replace";
+import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
 import { cleanupOldVersions } from "./cleanup-versions";
 import {
   DEFAULT_DL_BASE,
@@ -56,8 +57,8 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
   const resolved =
     options.version && options.version !== "latest"
-      ? options.version.replace(/^v/, "")
-      : await fetchLatestVersion(fetchImpl);
+      ? normalizeRequestedVersion(options.version)
+      : parseCanonicalVersion((await fetchLatestVersion(fetchImpl)) ?? "");
   if (!resolved) {
     return { status: "failed", error: "Could not resolve target version." };
   }

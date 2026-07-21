@@ -36,4 +36,19 @@ describe("install layout paths", () => {
     expect(parseVersionFromExecPath(execPath, layout)).toBe("2.0.1");
     expect(parseVersionFromExecPath("/usr/bin/kunai", layout)).toBeNull();
   });
+
+  test("rejects path-like and non-strict versions before join", () => {
+    const layout = getInstallLayoutPaths({
+      dataDir: "/data/kunai",
+      cacheDir: "/cache/kunai",
+      configDir: "/config/kunai",
+      platform: "linux",
+    });
+    expect(() => versionBinaryPath(layout, "../1.2.3")).toThrow(/Invalid install version/);
+    expect(() => lockFilePath(layout, "1.2.3-beta")).toThrow(/Invalid install version/);
+    expect(() => versionBinaryPath(layout, "01.2.3")).toThrow(/Invalid install version/);
+    expect(
+      parseVersionFromExecPath(join(layout.versionsDir, "1.2.3-beta", "kunai"), layout),
+    ).toBeNull();
+  });
 });
