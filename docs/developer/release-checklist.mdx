@@ -5,7 +5,9 @@ description: Steps to ship a Kunai CLI release with matching documentation metad
 
 Use this checklist when cutting a CLI release. Docs build stays separate from the binary, but reference tables should match the shipped CLI.
 
-## Before tagging
+Full release mechanics (version PR, candidate artifacts, protected promotion, metadata recovery) live in [RELEASING.md](https://github.com/KitsuneKode/kunai/blob/main/RELEASING.md) and [PACKAGING.md](https://github.com/KitsuneKode/kunai/blob/main/PACKAGING.md).
+
+## Before the version PR
 
 <Steps>
 <Step>
@@ -14,6 +16,16 @@ Use this checklist when cutting a CLI release. Docs build stays separate from th
 ```sh
 bun run ci
 ```
+
+</Step>
+<Step>
+### Add a changeset for `@kitsunekode/kunai`
+
+```sh
+bun run changeset
+```
+
+Merge the feature PR. Push to `main` opens or updates the Changesets version PR only — it does **not** publish.
 
 </Step>
 <Step>
@@ -33,7 +45,7 @@ Confirm `cliSourceRevision` and fingerprints updated in the committed JSON.
 ```sh
 bun run --cwd apps/docs scripts/check-codegen-freshness.ts
 bun run --cwd apps/docs test
-bun run --cwd apps/docs build
+bun run --cwd apps/docs build:app
 ```
 
 </Step>
@@ -45,15 +57,33 @@ Check `docs/promotion-manifest.yaml` for agent docs that need promotion into `do
 </Step>
 </Steps>
 
+## After the version PR merges
+
+Confirm staged release metadata (schema v2):
+
+- `.release/kunai-vX.Y.Z.json` has `status: "staged"` and `publishedAt: null`
+- Public docs latest remains the newest **published** release (for example 0.2.5 while 0.2.6 is staged under Upcoming, not history)
+
+## Promote with workflow_dispatch
+
+1. Actions → **Release** → Run workflow with the **exact** version matching `apps/cli/package.json`.
+2. Wait for the **candidate** job: CI, binaries, `bun run release:pack` → preserved `kunai-npm.tgz` + 8 binaries + `SHA256SUMS`.
+3. Approve the protected environment `release-production`.
+4. **publish** downloads preserved artifacts (no rebuild), `bun publish` of the tarball, draft GitHub release, verify, then promote to public latest.
+5. **metadata** runs `set-release-status.ts … published` and pushes the narrow `.release` JSON update.
+
+If the metadata push fails under branch protection, recover manually with a contents-write PAT (see RELEASING.md) — do not re-publish npm solely to fix metadata.
+
 ## Release artifacts
 
-- CHANGELOG entry via changesets
-- `.release/kunai-v*.json` artifact for GitHub release body
+- CHANGELOG entry via changesets (version PR)
+- Staged `.release/kunai-v*.json` / `.md` until promotion
+- Nine GitHub assets after publish (8 binaries + `SHA256SUMS`)
 - `bun run release:notes:check` when available
 
 ## After release
 
-- Verify `/releases` on the docs site shows the new tag
+- Verify `/releases` shows the new tag as **published** latest (staged-only versions stay under Upcoming)
 - Optional local Lighthouse: `bun run --cwd apps/docs lighthouse:docs`
 
 See [Docs maintenance](/docs/developer/docs-maintenance) for the L0–L4 truth model.
