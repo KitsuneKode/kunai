@@ -140,6 +140,7 @@ import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
+import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
@@ -3782,15 +3783,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   }): void {
     const iterationSignal = playbackIterationSignal ?? context.signal;
     const { stateManager, diagnosticsService, logger } = context.container;
+    const mode = stateManager.getState().mode;
     const requestedSubLang = playbackSubtitlePreference({
-      mode: stateManager.getState().mode,
+      mode,
       title,
       config: context.container.config,
     });
+    const provenTmdbId = resolveProvenNumericTmdbId(title, mode);
     const lookupDecision = shouldAttemptLateSubtitleLookup({
       stream,
       requestedSubLang,
-      hasTitleId: Boolean(title.id),
+      hasTmdbId: provenTmdbId !== null,
     });
     if (!lookupDecision.attempt) {
       if (
@@ -3804,21 +3807,30 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             status: "skipped",
             severity: "degraded",
             recommendedAction: "none",
-            message: "Late subtitle lookup skipped",
+            message:
+              lookupDecision.reason === "tmdb-id-missing"
+                ? "Late subtitle lookup skipped (TMDB identity missing)"
+                : "Late subtitle lookup skipped",
             titleId: title.id,
             season: episode.season,
             episode: episode.episode,
             context: {
-              titleId: title.id,
               requestedSubLang,
               reason: lookupDecision.reason,
               availableTracks: lookupDecision.availableTracks,
+              // Redact: never report bare anime/AniList catalog ids as TMDB ids.
+              ...(lookupDecision.reason === "tmdb-id-missing"
+                ? { tmdbId: "<missing>" }
+                : { titleId: title.id }),
             },
           }),
         );
       }
       return;
     }
+
+    const tmdbId = provenTmdbId;
+    if (!tmdbId) return;
 
     const inflightKey = `${title.id}:${episode.season}:${episode.episode}:${requestedSubLang}`;
     if (PlaybackPhase.lateSubtitleInflight.has(inflightKey)) {
@@ -3862,14 +3874,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     void (async () => {
       try {
         const result = await resolveSubtitlesByTmdbId({
-          tmdbId: title.id,
+          tmdbId,
           type: title.type,
           season: title.type === "series" ? episode.season : undefined,
           episode: title.type === "series" ? episode.episode : undefined,
           preferredLang: requestedSubLang,
+          signal: iterationSignal,
         });
 
-        if (iterationSignal.aborted) return;
+        if (iterationSignal.aborted || result.outcome === "cancelled") return;
         if (result.list.length === 0) {
           diagnosticsService.record(
             buildSubtitleDiagnosticEvent({
@@ -3886,6 +3899,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 titleId: title.id,
                 requestedSubLang,
                 failed: result.failed,
+                outcome: result.outcome,
               },
             }),
           );

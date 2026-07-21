@@ -21,7 +21,7 @@ export type LateSubtitleLookupDecision = {
   attempt: boolean;
   reason:
     | "disabled"
-    | "title-missing"
+    | "tmdb-id-missing"
     | "attached"
     | "inventory-satisfied"
     | "hardsub-satisfied"
@@ -32,18 +32,18 @@ export type LateSubtitleLookupDecision = {
 export function shouldAttemptLateSubtitleLookup({
   stream,
   requestedSubLang,
-  hasTitleId,
+  hasTmdbId,
 }: {
   stream: StreamInfo;
   requestedSubLang: string;
-  hasTitleId: boolean;
+  hasTmdbId: boolean;
 }): LateSubtitleLookupDecision {
   const availableTracks = stream.subtitleList?.length ?? 0;
   if (isSubtitlePreferenceDisabled(requestedSubLang)) {
     return { attempt: false, reason: "disabled", availableTracks };
   }
-  if (!hasTitleId) {
-    return { attempt: false, reason: "title-missing", availableTracks };
+  if (!hasTmdbId) {
+    return { attempt: false, reason: "tmdb-id-missing", availableTracks };
   }
   if (hardSubSatisfiesSubtitlePreference(stream, requestedSubLang)) {
     return { attempt: false, reason: "hardsub-satisfied", availableTracks };

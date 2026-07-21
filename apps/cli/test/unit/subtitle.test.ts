@@ -234,6 +234,28 @@ describe("fetchSubtitlesFromWyzie", () => {
     expect(result.list).toHaveLength(2);
     expect(result.selected).toBe("https://sub.wyzie.io/c/demo/id/2?format=srt");
   });
+
+  test("aborts on playback-iteration cancellation without retrying", async () => {
+    let attempts = 0;
+    const controller = new AbortController();
+    globalThis.fetch = mock(async () => {
+      attempts += 1;
+      controller.abort();
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }) as unknown as typeof fetch;
+
+    const result = await fetchSubtitlesFromWyzie(
+      "https://sub.wyzie.io/search?id=209867&key=wyzie-secret&season=1&episode=1",
+      "en",
+      undefined,
+      { signal: controller.signal },
+    );
+
+    expect(attempts).toBe(1);
+    expect(result.list).toEqual([]);
+    expect(result.selected).toBeNull();
+    expect(result.outcome).toBe("cancelled");
+  });
 });
 
 describe("resolveSubtitlesByTmdbId", () => {

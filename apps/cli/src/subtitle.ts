@@ -2,6 +2,7 @@
 // embedded API key. We capture the request URL, then fetch it ourselves so we
 // control language selection instead of relying on what the player auto-picks.
 
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg, dbgErr } from "@/logger";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { looksLikeHiSubtitle } from "@kunai/providers";
@@ -211,11 +212,26 @@ export function mergeSubtitleTracks<T extends { url: string }>(
   return order.map((key) => merged.get(key)).filter((track): track is T => track !== undefined);
 }
 
+export type WyzieFetchOutcome = "ok" | "empty" | "failed" | "cancelled";
+
+export type WyzieFetchResult = {
+  list: SubtitleEntry[];
+  selected: string | null;
+  failed: boolean;
+  outcome: WyzieFetchOutcome;
+};
+
 export async function fetchSubtitlesFromWyzie(
   searchUrl: string,
   preferredLang: string,
   requestHeaders?: Record<string, string>,
-): Promise<{ list: SubtitleEntry[]; selected: string | null; failed: boolean }> {
+  options?: { signal?: AbortSignal },
+): Promise<WyzieFetchResult> {
+  const parentSignal = options?.signal;
+  if (parentSignal?.aborted) {
+    return { list: [], selected: null, failed: false, outcome: "cancelled" };
+  }
+
   const headers = buildWyzieHeaders(requestHeaders);
   dbg("subtitle", "fetch wyzie subtitles", {
     preferredLang,
@@ -224,10 +240,14 @@ export async function fetchSubtitlesFromWyzie(
   });
 
   for (const timeoutMs of [8_000, 12_000]) {
+    if (parentSignal?.aborted) {
+      return { list: [], selected: null, failed: false, outcome: "cancelled" };
+    }
+
     try {
       const res = await observeOnlineIfBound("subtitle-error", () =>
         fetch(searchUrl, {
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: withTimeoutSignal(parentSignal, timeoutMs),
           headers,
         }),
       );
@@ -249,7 +269,7 @@ export async function fetchSubtitlesFromWyzie(
           url: redactWyzieKey(searchUrl),
           timeoutMs,
         });
-        return { list: [], selected: null, failed: false };
+        return { list: [], selected: null, failed: false, outcome: "empty" };
       }
 
       const ranked = rankSubtitleCandidates(list, { preferredLang });
@@ -265,16 +285,24 @@ export async function fetchSubtitlesFromWyzie(
         timeoutMs,
       });
 
-      return { list, selected: pick?.url ?? null, failed: false };
+      return { list, selected: pick?.url ?? null, failed: false, outcome: "ok" };
     } catch (error) {
+      if (parentSignal?.aborted) {
+        dbg("subtitle", "wyzie fetch cancelled", {
+          preferredLang,
+          url: redactWyzieKey(searchUrl),
+          timeoutMs,
+        });
+        return { list: [], selected: null, failed: false, outcome: "cancelled" };
+      }
       dbgErr("subtitle", "wyzie fetch attempt failed", { error, timeoutMs });
       if (timeoutMs === 12_000) {
-        return { list: [], selected: null, failed: true };
+        return { list: [], selected: null, failed: true, outcome: "failed" };
       }
     }
   }
 
-  return { list: [], selected: null, failed: true };
+  return { list: [], selected: null, failed: true, outcome: "failed" };
 }
 
 function buildWyzieHeaders(requestHeaders?: Record<string, string>): Record<string, string> {
@@ -518,8 +546,9 @@ export async function resolveSubtitlesByTmdbId(opts: {
   season?: number;
   episode?: number;
   preferredLang: string;
-}): Promise<{ list: SubtitleEntry[]; selected: string | null; failed: boolean }> {
-  const { tmdbId, type, season, episode, preferredLang } = opts;
+  signal?: AbortSignal;
+}): Promise<WyzieFetchResult> {
+  const { tmdbId, type, season, episode, preferredLang, signal } = opts;
 
   try {
     const params = new URLSearchParams({ id: tmdbId, key: WYZIE_KEY });
@@ -544,13 +573,21 @@ export async function resolveSubtitlesByTmdbId(opts: {
       url: redactWyzieKey(url),
     });
 
-    return await fetchSubtitlesFromWyzie(url, preferredLang, {
-      referer: "https://www.vidking.net/",
-      origin: "https://www.vidking.net",
-      "accept-language": "en-US,en;q=0.9",
-    });
+    return await fetchSubtitlesFromWyzie(
+      url,
+      preferredLang,
+      {
+        referer: "https://www.vidking.net/",
+        origin: "https://www.vidking.net",
+        "accept-language": "en-US,en;q=0.9",
+      },
+      { signal },
+    );
   } catch (error) {
+    if (signal?.aborted) {
+      return { list: [], selected: null, failed: false, outcome: "cancelled" };
+    }
     dbgErr("subtitle", "active wyzie fetch failed", error);
-    return { list: [], selected: null, failed: true };
+    return { list: [], selected: null, failed: true, outcome: "failed" };
   }
 }

@@ -213,7 +213,7 @@ describe("shouldAttemptLateSubtitleLookup", () => {
           subtitleList: [{ url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" }],
         },
         requestedSubLang: "en",
-        hasTitleId: true,
+        hasTmdbId: true,
       }).attempt,
     ).toBe(true);
   });
@@ -226,7 +226,7 @@ describe("shouldAttemptLateSubtitleLookup", () => {
         subtitleList: [{ url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" }],
       },
       requestedSubLang: "fr",
-      hasTitleId: true,
+      hasTmdbId: true,
     });
 
     expect(decision.attempt).toBe(true);
@@ -242,8 +242,23 @@ describe("shouldAttemptLateSubtitleLookup", () => {
           subtitle: "https://cdn.example/en.vtt",
         },
         requestedSubLang: "en",
-        hasTitleId: true,
+        hasTmdbId: true,
       }).attempt,
     ).toBe(false);
+  });
+
+  test("skips late lookup without a proven TMDB id", () => {
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: undefined,
+        subtitleList: undefined,
+      },
+      requestedSubLang: "en",
+      hasTmdbId: false,
+    });
+
+    expect(decision.attempt).toBe(false);
+    expect(decision.reason).toBe("tmdb-id-missing");
   });
 });
