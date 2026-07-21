@@ -129,7 +129,7 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { resolveRootQueueSelection } from "./root-queue-bridge";
+import { resolveQueueRowPlaySelection, resolveRootQueueSelection } from "./root-queue-bridge";
 import { resolveHelpScope, type RootOwnedOverlay } from "./root-shell-state";
 import { runRootWorkflowSafely } from "./root-workflow-dispatch";
 import { EPISODE_PICKER_SWITCH_SEASON } from "./session-picker";
@@ -1402,18 +1402,13 @@ export function RootOverlayShell({
       const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
       const row = sel >= 0 ? queueRows[sel] : undefined;
       if (key.return && row) {
-        const entry = container.queueService.getAll().find((candidate) => candidate.id === row.id);
-        if (entry) {
-          resolveRootQueueSelection({
-            kind: "play",
-            titleId: entry.titleId,
-            title: entry.title,
-            mediaKind: entry.mediaKind,
-            season: entry.season,
-            episode: entry.episode,
-          });
-          container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-        }
+        // Claim exact row before handoff; failed CAS keeps the overlay open.
+        resolveQueueRowPlaySelection(
+          container.queueService,
+          row.id,
+          resolveRootQueueSelection,
+          () => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" }),
+        );
         return;
       }
       if (input === "J" && row) {

@@ -47,7 +47,6 @@ import {
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
-  episodeInfoFromQueueEntry,
   mediaItemFromSearchResult,
   titleInfoFromQueueEntry,
 } from "@/domain/media/media-item-adapters";
@@ -82,6 +81,11 @@ export type SearchPhaseInput = {
   deferAnimeProviderMapping?: boolean;
 };
 
+import {
+  claimQueuePlaybackLaunch,
+  episodeInfoFromQueuePlaybackLaunch,
+  titleInfoFromQueuePlaybackLaunch,
+} from "@/app-shell/root-queue-bridge";
 import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids";
 
 export { SEARCH_BROWSE_COMMAND_IDS };
@@ -823,9 +827,17 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               logger.info("Queue-next idle row requested with an empty queue");
               continue;
             }
-            const title = titleInfoFromQueueEntry(next);
+            // Claim the exact peeked row — do not re-peek after claim.
+            const launch = claimQueuePlaybackLaunch(container.queueService, next.id, "queue");
+            if (!launch) {
+              logger.info("Queue-next claim failed; leaving row pending for retry", {
+                queueEntryId: next.id,
+              });
+              continue;
+            }
+            const title = titleInfoFromQueuePlaybackLaunch(launch);
             stateManager.dispatch({ type: "SELECT_TITLE", title });
-            const episode = episodeInfoFromQueueEntry(next);
+            const episode = episodeInfoFromQueuePlaybackLaunch(launch);
             if (episode) {
               stateManager.dispatch({ type: "SELECT_EPISODE", episode });
             }

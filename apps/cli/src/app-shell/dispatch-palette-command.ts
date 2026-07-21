@@ -15,7 +15,11 @@ import {
   openNotificationsOverlay,
   openRootOwnedOverlay,
 } from "./root-overlay-bridge";
-import { waitForRootQueueSelection } from "./root-queue-bridge";
+import {
+  episodeInfoFromQueuePlaybackLaunch,
+  titleInfoFromQueuePlaybackLaunch,
+  waitForRootQueueSelection,
+} from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 
 export type PaletteCommandSurface = "browse" | "playback" | "overlay";
@@ -165,17 +169,11 @@ async function openRootQueueSelection(container: Container): Promise<PaletteComm
   await openRootOwnedOverlay(container, { type: "queue" });
   const selection = await selectionPromise;
   if (!selection) return "handled";
+  // selection.intent is the beginPlayback return value — do not rebuild/reattach.
   return {
     type: "history-entry",
-    title: {
-      id: selection.titleId,
-      type: selection.mediaKind === "movie" ? "movie" : "series",
-      name: selection.title,
-    },
-    episode:
-      selection.season !== undefined && selection.episode !== undefined
-        ? { season: selection.season, episode: selection.episode }
-        : undefined,
+    title: titleInfoFromQueuePlaybackLaunch(selection),
+    episode: episodeInfoFromQueuePlaybackLaunch(selection),
   };
 }
 
