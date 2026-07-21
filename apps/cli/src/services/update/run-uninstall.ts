@@ -55,11 +55,11 @@ export function planUninstall(input: {
  */
 export async function runUninstall(opts: { purge: boolean }): Promise<number> {
   const manifest = await readInstallManifest();
-  const channel: InstallMethodKind = manifest?.channel ?? "unknown";
+  const channel: InstallMethodKind = manifest?.method ?? "unknown";
   const plan = planUninstall({
     channel,
-    binPath: manifest?.binPath ?? process.execPath,
-    layout: manifest?.layout,
+    binPath: manifest?.launcherPath ?? process.execPath,
+    layout: manifest?.versionedPath ? "versioned" : undefined,
   });
 
   if (plan.kind === "manual") {

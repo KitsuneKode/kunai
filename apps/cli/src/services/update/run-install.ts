@@ -1,8 +1,22 @@
+import packageJson from "../../../package.json" with { type: "json" };
 import { writeInstallManifest } from "./install-manifest";
 import { checkInstall, getInstallDiagnostics, installLatest } from "./native-installer";
 import { DEFAULT_DL_BASE } from "./native-installer/install-layout";
+import { normalizeRequestedVersion } from "./version";
 
 const PKG = "@kitsunekode/kunai";
+
+function resolveInstallVersion(positional: string | undefined): string {
+  if (positional && positional !== "latest") {
+    const parsed = normalizeRequestedVersion(positional);
+    if (parsed) return parsed;
+  }
+  const fromPackage = normalizeRequestedVersion(packageJson.version);
+  if (fromPackage) return fromPackage;
+  throw new Error(
+    `Could not resolve a stable install version from ${positional ?? packageJson.version}`,
+  );
+}
 
 export type RunInstallArgv = readonly string[];
 
@@ -66,10 +80,10 @@ export async function runInstall(argv: RunInstallArgv): Promise<number> {
     const code = await proc.exited;
     if (code !== 0) return code;
     await writeInstallManifest({
-      channel: "npm-global",
-      version: positional ?? "latest",
-      binPath: Bun.which("kunai") ?? "kunai",
-      dlBase: DEFAULT_DL_BASE,
+      method: "npm-global",
+      activeVersion: resolveInstallVersion(positional),
+      launcherPath: Bun.which("kunai") ?? "kunai",
+      downloadBaseUrl: DEFAULT_DL_BASE,
     });
     return 0;
   }
@@ -82,10 +96,10 @@ export async function runInstall(argv: RunInstallArgv): Promise<number> {
     const code = await proc.exited;
     if (code !== 0) return code;
     await writeInstallManifest({
-      channel: "bun-global",
-      version: positional ?? "latest",
-      binPath: Bun.which("kunai") ?? "kunai",
-      dlBase: DEFAULT_DL_BASE,
+      method: "bun-global",
+      activeVersion: resolveInstallVersion(positional),
+      launcherPath: Bun.which("kunai") ?? "kunai",
+      downloadBaseUrl: DEFAULT_DL_BASE,
     });
     return 0;
   }

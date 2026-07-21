@@ -400,7 +400,7 @@ export function bootstrapServices(input: {
     installMethod: detectedInstall,
     fetchLatestVersion: async () => {
       const manifest = await readInstallManifest();
-      const channel = manifest?.channel ?? detectedInstall.kind;
+      const channel = manifest?.method ?? detectedInstall.kind;
       const version = await resolveLatestVersion(channel);
       if (!version) throw new Error("Could not resolve latest version");
       return version;

@@ -28,22 +28,22 @@ export async function migrateFlatInstall(input: {
   const execPath = input.execPath ?? process.execPath;
   const manifest = input.manifest;
 
-  if (manifest?.layout === "versioned" && manifest.versionPath) {
+  if (manifest?.versionedPath) {
     return { migrated: false };
   }
 
-  const channel = manifest?.channel;
-  if (channel && channel !== "binary") return { migrated: false };
+  const method = manifest?.method;
+  if (method && method !== "binary") return { migrated: false };
 
-  const binPath = manifest?.binPath ?? layout.launcherPath;
+  const binPath = manifest?.launcherPath ?? layout.launcherPath;
   const sourcePath = existsSync(execPath) && !execPath.endsWith(".js") ? execPath : binPath;
   if (!existsSync(sourcePath)) return { migrated: false };
 
-  const version = parseCanonicalVersion(manifest?.version ?? input.currentVersion);
+  const version = parseCanonicalVersion(manifest?.activeVersion ?? input.currentVersion);
   if (!version) return { migrated: false };
 
   const targetPath = versionBinaryPath(layout, version);
-  if (existsSync(targetPath) && manifest?.layout === "versioned") {
+  if (existsSync(targetPath) && manifest?.versionedPath) {
     return { migrated: false };
   }
 
@@ -62,15 +62,18 @@ export async function migrateFlatInstall(input: {
 
   await updateLauncher({ launcherPath: layout.launcherPath, versionPath: targetPath });
 
-  const dlBase = manifest?.dlBase ?? "https://github.com/KitsuneKode/kunai/releases";
-  await writeInstallManifest({
-    channel: "binary",
-    version,
-    binPath: layout.launcherPath,
-    versionPath: targetPath,
-    dlBase,
-    layout: "versioned",
-  });
+  const downloadBaseUrl =
+    manifest?.downloadBaseUrl ?? "https://github.com/KitsuneKode/kunai/releases";
+  await writeInstallManifest(
+    {
+      method: "binary",
+      activeVersion: version,
+      launcherPath: layout.launcherPath,
+      versionedPath: targetPath,
+      downloadBaseUrl,
+    },
+    layout.configDir,
+  );
 
   return { migrated: true, versionPath: targetPath };
 }

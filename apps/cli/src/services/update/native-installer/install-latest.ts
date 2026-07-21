@@ -52,7 +52,7 @@ export function installLatest(options: InstallLatestOptions = {}): Promise<Insta
 async function installLatestImpl(options: InstallLatestOptions): Promise<InstallLatestResult> {
   const layout = options.layout ?? getInstallLayoutPaths();
   const manifest = await readInstallManifest(layout.configDir);
-  const dlBase = options.dlBase ?? manifest?.dlBase ?? DEFAULT_DL_BASE;
+  const dlBase = options.dlBase ?? manifest?.downloadBaseUrl ?? DEFAULT_DL_BASE;
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const resolved =
@@ -75,7 +75,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const checksumUrl = `${dlBase}/download/${tag}/SHA256SUMS`;
   const versionPath = versionBinaryPath(layout, resolved);
 
-  if (!options.force && existsSync(versionPath) && manifest?.version === resolved) {
+  if (!options.force && existsSync(versionPath) && manifest?.activeVersion === resolved) {
     return { status: "up-to-date", version: resolved };
   }
 
@@ -106,19 +106,26 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
     await atomicWriteBinary(versionPath, bytes);
     await rm(staging, { recursive: true, force: true }).catch(() => {});
 
+    const launcherPath = manifest?.launcherPath ?? layout.launcherPath;
     await updateLauncher({
-      launcherPath: manifest?.binPath ?? layout.launcherPath,
+      launcherPath,
       versionPath,
     });
 
-    await writeInstallManifest({
-      channel: "binary",
-      version: resolved,
-      binPath: manifest?.binPath ?? layout.launcherPath,
-      versionPath,
-      dlBase,
-      layout: "versioned",
-    });
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: resolved,
+        launcherPath,
+        versionedPath: versionPath,
+        downloadBaseUrl: dlBase,
+        ...(manifest?.activeVersion && manifest.activeVersion !== resolved
+          ? { previousVersion: manifest.activeVersion }
+          : {}),
+        artifactSha256: actual,
+      },
+      layout.configDir,
+    );
 
     void cleanupOldVersions(layout);
 

@@ -34,8 +34,8 @@ if (!existsSync(binPath) && !existsSync(join(globalNpmPrefix() ?? "", "bin", "ku
 }
 
 await writeInstallManifest({
-  channel: "npm-global",
-  version: packageJson.version,
-  binPath: existsSync(binPath) ? binPath : join(globalNpmPrefix() ?? "", "bin", "kunai"),
-  dlBase: "https://github.com/KitsuneKode/kunai/releases",
+  method: "npm-global",
+  activeVersion: packageJson.version,
+  launcherPath: existsSync(binPath) ? binPath : join(globalNpmPrefix() ?? "", "bin", "kunai"),
+  downloadBaseUrl: "https://github.com/KitsuneKode/kunai/releases",
 });

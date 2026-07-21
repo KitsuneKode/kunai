@@ -1445,7 +1445,7 @@ async function openUpdateShell(container: Container): Promise<void> {
   const { readInstallManifest } = await import("@/services/update/install-manifest");
 
   const manifest = await readInstallManifest();
-  const channel = manifest?.channel ?? "unknown";
+  const channel = manifest?.method ?? "unknown";
   const config = container.config.getRaw();
 
   const updateCheck = await container.updateService.checkForUpdate({ force: true });

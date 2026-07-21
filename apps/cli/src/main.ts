@@ -587,7 +587,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       await import("./services/update/native-installer");
     const { readInstallManifest } = await import("./services/update/install-manifest");
     const manifest = await readInstallManifest();
-    if (manifest?.channel === "binary" || manifest?.layout === "versioned") {
+    if (manifest?.method === "binary" || manifest?.versionedPath) {
       await lockCurrentVersion().catch(() => {});
       void cleanupOldVersions().catch(() => {});
     }
@@ -788,7 +788,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const { readInstallManifest } = await import("./services/update/install-manifest");
       const { detectInstallMethod } = await import("./services/update/install-method");
       const manifest = await readInstallManifest();
-      const channel = manifest?.channel ?? detectInstallMethod({ fileExists: existsSync }).kind;
+      const channel = manifest?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
       const rawConfig = container.config.getRaw();
 
       if (channel === "binary" && rawConfig.autoApplyBinaryUpdates) {

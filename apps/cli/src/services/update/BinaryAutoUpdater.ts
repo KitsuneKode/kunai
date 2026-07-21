@@ -41,7 +41,7 @@ export class BinaryAutoUpdater {
     }
 
     const manifest = await readInstallManifest();
-    if (manifest?.channel !== "binary" && manifest?.layout !== "versioned") {
+    if (manifest?.method !== "binary" && !manifest?.versionedPath) {
       return { status: "disabled" };
     }
 
@@ -118,9 +118,9 @@ export class BinaryAutoUpdater {
 /** True when manifest version is newer than the running process (restart needed). */
 export async function getPendingRestartVersion(currentVersion: string): Promise<string | null> {
   const manifest = await readInstallManifest();
-  if (!manifest?.version || manifest.channel !== "binary") return null;
-  if (compareVersions(manifest.version, normalizeVersion(currentVersion)) > 0) {
-    return manifest.version;
+  if (!manifest?.activeVersion || manifest.method !== "binary") return null;
+  if (compareVersions(manifest.activeVersion, normalizeVersion(currentVersion)) > 0) {
+    return manifest.activeVersion;
   }
   return null;
 }

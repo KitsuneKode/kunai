@@ -117,8 +117,8 @@ describeInstall("npm global install lifecycle", () => {
 
     // The postinstall hook registered the install manifest.
     expect(await Bun.file(join(configHome, "kunai/install.json")).json()).toMatchObject({
-      channel: "npm-global",
-      version: packageJson.version,
+      method: "npm-global",
+      activeVersion: packageJson.version,
     });
 
     // `kunai upgrade --check` runs and routes through the npm channel (manifest

@@ -55,25 +55,21 @@ export async function getInstallDiagnostics(
     });
   }
 
-  if (manifest && manifest.channel !== detected.kind && detected.kind !== "unknown") {
+  if (manifest && manifest.method !== detected.kind && detected.kind !== "unknown") {
     messages.push({
       level: "warn",
       code: "manifest-mismatch",
-      message: `install.json says ${manifest.channel} but runtime looks like ${detected.kind}.`,
+      message: `install.json says ${manifest.method} but runtime looks like ${detected.kind}.`,
     });
   }
 
-  if (manifest?.channel === "binary") {
-    const layout = getInstallLayoutPaths({ launcherPath: manifest.binPath, platform });
-    if (
-      manifest.layout === "versioned" &&
-      manifest.versionPath &&
-      !fileExists(manifest.versionPath)
-    ) {
+  if (manifest?.method === "binary") {
+    const layout = getInstallLayoutPaths({ launcherPath: manifest.launcherPath, platform });
+    if (manifest.versionedPath && !fileExists(manifest.versionedPath)) {
       messages.push({
         level: "error",
         code: "missing-version-binary",
-        message: `Versioned binary missing at ${manifest.versionPath}. Run kunai upgrade.`,
+        message: `Versioned binary missing at ${manifest.versionedPath}. Run kunai upgrade.`,
       });
     }
     if (!fileExists(layout.launcherPath)) {
@@ -94,19 +90,19 @@ export async function getInstallDiagnostics(
   }
 
   if (
-    manifest?.channel === "binary" &&
+    manifest?.method === "binary" &&
     pathWinner &&
-    !pathsMatch(pathWinner.path, manifest.binPath, platform) &&
-    pathCandidates.some((candidate) => pathsMatch(candidate.path, manifest.binPath, platform))
+    !pathsMatch(pathWinner.path, manifest.launcherPath, platform) &&
+    pathCandidates.some((candidate) => pathsMatch(candidate.path, manifest.launcherPath, platform))
   ) {
     messages.push({
       level: "warn",
       code: "launcher-shadowed",
-      message: `Native launcher ${manifest.binPath} is shadowed by ${pathWinner.path}.`,
+      message: `Native launcher ${manifest.launcherPath} is shadowed by ${pathWinner.path}.`,
     });
   }
 
-  if (manifest?.channel === "binary" && detected.kind === "npm-global") {
+  if (manifest?.method === "binary" && detected.kind === "npm-global") {
     messages.push({
       level: "warn",
       code: "stale-npm-global",
@@ -119,7 +115,7 @@ export async function getInstallDiagnostics(
       level: "info",
       code: "ok",
       message: manifest
-        ? `Install OK (${manifest.channel}, v${manifest.version}).`
+        ? `Install OK (${manifest.method}, v${manifest.activeVersion}).`
         : `Install detected as ${detected.label}.`,
     });
   }

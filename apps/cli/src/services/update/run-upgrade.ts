@@ -26,9 +26,9 @@ export type RunUpgradeOptions = {
  */
 export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   const manifest = await readInstallManifest();
-  const channel = manifest?.channel ?? detectInstallMethod({ fileExists: existsSync }).kind;
-  const binPath = manifest?.binPath ?? process.execPath;
-  const dlBase = manifest?.dlBase ?? DEFAULT_DL_BASE;
+  const channel = manifest?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
+  const binPath = manifest?.launcherPath ?? process.execPath;
+  const dlBase = manifest?.downloadBaseUrl ?? DEFAULT_DL_BASE;
 
   if (opts.checkOnly) {
     const diagnostics = await getInstallDiagnostics();
@@ -75,7 +75,14 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
     const code = await proc.exited;
     if (code === 0) {
       const { writeInstallManifest } = await import("./install-manifest");
-      await writeInstallManifest({ channel, version: latest, binPath, dlBase });
+      if (channel === "npm-global" || channel === "bun-global" || channel === "source") {
+        await writeInstallManifest({
+          method: channel,
+          activeVersion: latest,
+          launcherPath: binPath,
+          downloadBaseUrl: dlBase,
+        });
+      }
     }
     return code;
   }
@@ -124,7 +131,12 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
     return 1;
   }
   const { writeInstallManifest } = await import("./install-manifest");
-  await writeInstallManifest({ channel, version: latest, binPath, dlBase, layout: "flat" });
+  await writeInstallManifest({
+    method: "binary",
+    activeVersion: latest,
+    launcherPath: binPath,
+    downloadBaseUrl: dlBase,
+  });
   console.log(`Updated to ${latest}.`);
   return 0;
 }

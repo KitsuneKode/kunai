@@ -4,11 +4,15 @@ import type { InstallManifest } from "@/services/update/install-manifest";
 import { getInstallDiagnostics } from "@/services/update/native-installer/install-diagnostic";
 
 const binaryManifest: InstallManifest = {
-  channel: "binary",
-  version: "0.3.0",
-  binPath: "/home/k/.local/bin/kunai",
-  dlBase: "https://example.test/releases",
+  schemaVersion: 1,
+  method: "binary",
+  activeVersion: "0.3.0",
+  preferredChannel: "stable",
+  launcherPath: "/home/k/.local/bin/kunai",
+  managedPaths: [],
+  downloadBaseUrl: "https://example.test/releases",
   installedAt: "2026-07-20T00:00:00.000Z",
+  updatedAt: "2026-07-20T00:00:00.000Z",
 };
 
 describe("getInstallDiagnostics", () => {
