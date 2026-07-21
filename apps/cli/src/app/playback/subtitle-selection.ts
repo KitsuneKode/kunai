@@ -1,7 +1,7 @@
 import { isSubtitlePreferenceDisabled } from "@/domain/media/media-preferences";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
-import { langMatches, selectSubtitle } from "@/subtitle";
+import { langMatches, selectAutomaticSubtitle } from "@/subtitle";
 import type { SubtitleEntry } from "@/subtitle";
 
 export type SubtitleDecision = {
@@ -106,17 +106,15 @@ export async function choosePlaybackSubtitle({
 
   if (stream.subtitleList?.length) {
     const tracks = stream.subtitleList as unknown as SubtitleEntry[];
-    const pick = selectSubtitle(tracks, subLang);
+    const pick = selectAutomaticSubtitle(tracks, subLang);
     return {
-      subtitle: pick?.url ?? stream.subtitle ?? null,
+      subtitle: pick?.url ?? null,
       reason:
         pick?.url && pick.url === stream.subtitle
           ? "provider-default"
           : pick
             ? "auto-selected"
-            : stream.subtitle
-              ? "provider-default"
-              : "no-tracks",
+            : "no-tracks",
       availableTracks: stream.subtitleList.length,
     };
   }

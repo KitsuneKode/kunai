@@ -1,5 +1,5 @@
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
-import { selectSubtitle } from "@/subtitle";
+import { selectAutomaticSubtitle } from "@/subtitle";
 import {
   looksLikeHiSubtitle,
   normalizeIsoLanguageCode,
@@ -47,7 +47,9 @@ export function providerResolveResultToStreamInfo(
 
   const subtitleList = result.subtitles.map(subtitleCandidateToTrack);
   const pickedSubtitle =
-    subtitlePreference === "none" ? null : selectSubtitle(subtitleList, subtitlePreference);
+    subtitlePreference === "none"
+      ? null
+      : selectAutomaticSubtitle(subtitleList as never, subtitlePreference);
 
   const subtitleSource = resolveSubtitleSource(result.subtitles, subtitleList);
 

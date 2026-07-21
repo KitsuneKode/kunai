@@ -77,6 +77,44 @@ describe("provider result adapter", () => {
     expect(stream?.deferredLocator).toBe("allmanga-ak:test-locator");
     expect(stream?.url).not.toContain("https://ak-video.example");
   });
+
+  test("keeps full subtitle inventory but only attaches configured or English fallback", () => {
+    const result = makeResolveResult({
+      subtitles: [
+        makeSubtitleCandidate({
+          id: "subtitle:ar",
+          url: "https://subs.example/ar.vtt",
+          language: "ar",
+          label: "Arabic",
+        }),
+        makeSubtitleCandidate({
+          id: "subtitle:en",
+          url: "https://subs.example/en.vtt",
+          language: "en",
+          label: "English",
+        }),
+      ],
+    });
+
+    const frenchOnly = providerResolveResultToStreamInfo({
+      result: {
+        ...result,
+        subtitles: [result.subtitles[0]!],
+      },
+      title: "Arabic Only",
+      subtitlePreference: "fr",
+    });
+    expect(frenchOnly?.subtitle).toBeUndefined();
+    expect(frenchOnly?.subtitleList).toHaveLength(1);
+
+    const withFallback = providerResolveResultToStreamInfo({
+      result,
+      title: "Arabic + English",
+      subtitlePreference: "fr",
+    });
+    expect(withFallback?.subtitle).toBe("https://subs.example/en.vtt");
+    expect(withFallback?.subtitleList).toHaveLength(2);
+  });
 });
 
 function makeSubtitleCandidate(overrides: Partial<SubtitleCandidate> = {}): SubtitleCandidate {

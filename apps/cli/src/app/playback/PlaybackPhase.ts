@@ -210,7 +210,7 @@ import {
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectSubtitle } from "@/subtitle";
+import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectAutomaticSubtitle } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
 
@@ -3896,7 +3896,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           stream.subtitleList,
           result.list as unknown as SubtitleTrack[],
         );
-        const selected = selectSubtitle(mergedSubtitleList as never, requestedSubLang);
+        const selected = selectAutomaticSubtitle(mergedSubtitleList as never, requestedSubLang);
         const selectedUrl = selected?.url ?? result.selected ?? null;
         if (!selectedUrl) {
           diagnosticsService.record(

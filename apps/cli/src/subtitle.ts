@@ -137,6 +137,53 @@ export function selectSubtitle(
   return ranked[0]?.entry ?? null;
 }
 
+/**
+ * Automatic playback attachment: only preferred language, then configured
+ * English fallback (unless disabled). Unrelated inventory stays available for
+ * interactive picking / late lookup but is never auto-attached.
+ */
+export function selectAutomaticSubtitle(
+  list: readonly SubtitleEntry[],
+  preferredLang: string,
+  options?: {
+    readonly fallbackLang?: string | null;
+    readonly sourcePreference?: SubtitleSourcePreference;
+    readonly accessibilityPreference?: SubtitleAccessibilityPreference;
+  },
+): SubtitleEntry | null {
+  const { fallbackLang = "en", sourcePreference, accessibilityPreference } = options ?? {};
+  const effectiveFallback =
+    typeof fallbackLang === "string" && fallbackLang.trim().length > 0 ? fallbackLang.trim() : null;
+
+  const automaticCandidates = list.filter((entry) =>
+    entryMatchesAutomaticLanguage(entry, preferredLang, effectiveFallback),
+  );
+  if (automaticCandidates.length === 0) return null;
+
+  return selectSubtitle([...automaticCandidates], preferredLang, {
+    sourcePreference,
+    accessibilityPreference,
+    fallbackLang: effectiveFallback ?? undefined,
+  });
+}
+
+function entryMatchesAutomaticLanguage(
+  entry: SubtitleEntry,
+  preferredLang: string,
+  fallbackLang: string | null,
+): boolean {
+  const hints = subtitleHints(entry);
+  if (hints.some((hint) => langMatches(hint, preferredLang))) return true;
+  if (
+    fallbackLang &&
+    !langMatches(preferredLang, fallbackLang) &&
+    hints.some((hint) => langMatches(hint, fallbackLang))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function mergeSubtitleTracks<T extends { url: string }>(
   primary: readonly T[] | undefined,
   secondary: readonly T[] | undefined,
@@ -206,14 +253,14 @@ export async function fetchSubtitlesFromWyzie(
       }
 
       const ranked = rankSubtitleCandidates(list, { preferredLang });
-      const pick = ranked[0]?.entry ?? null;
+      const pick = selectAutomaticSubtitle(list, preferredLang);
 
       dbg("subtitle", "wyzie selected subtitle", {
         preferredLang,
         selectedLanguage: pick?.language ?? null,
         selectedDisplay: pick?.display ?? null,
-        selectedScore: ranked[0]?.score ?? null,
-        selectedReasons: ranked[0]?.reasons ?? [],
+        selectedScore: ranked.find((row) => row.entry.url === pick?.url)?.score ?? null,
+        selectedReasons: ranked.find((row) => row.entry.url === pick?.url)?.reasons ?? [],
         total: list.length,
         timeoutMs,
       });

@@ -40,6 +40,40 @@ describe("choosePlaybackSubtitle", () => {
     expect(result.reason).toBe("auto-selected");
   });
 
+  test("does not attach unrelated inventory languages for automatic selection", async () => {
+    const result = await choosePlaybackSubtitle({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: "https://cdn.example/ar.vtt",
+        subtitleList: [{ url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" }],
+      },
+      subLang: "fr",
+      pickSubtitle: async () => null,
+    });
+
+    expect(result.subtitle).toBeNull();
+    expect(result.reason).toBe("no-tracks");
+    expect(result.availableTracks).toBe(1);
+  });
+
+  test("English fallback is still attached when configured language is missing", async () => {
+    const result = await choosePlaybackSubtitle({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: undefined,
+        subtitleList: [
+          { url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" },
+          { url: "https://cdn.example/en.vtt", language: "en", display: "English" },
+        ],
+      },
+      subLang: "fr",
+      pickSubtitle: async () => null,
+    });
+
+    expect(result.subtitle).toBe("https://cdn.example/en.vtt");
+    expect(result.reason).toBe("auto-selected");
+  });
+
   test("prefers the configured language from subtitle inventory over a stale provider default", async () => {
     const result = await choosePlaybackSubtitle({
       stream: {
@@ -182,6 +216,22 @@ describe("shouldAttemptLateSubtitleLookup", () => {
         hasTitleId: true,
       }).attempt,
     ).toBe(true);
+  });
+
+  test("unrelated inventory still allows late lookup when nothing was auto-attached", () => {
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: undefined,
+        subtitleList: [{ url: "https://cdn.example/ar.vtt", language: "ar", display: "Arabic" }],
+      },
+      requestedSubLang: "fr",
+      hasTitleId: true,
+    });
+
+    expect(decision.attempt).toBe(true);
+    expect(decision.reason).toBe("needs-lookup");
+    expect(decision.availableTracks).toBe(1);
   });
 
   test("skips Wyzie when provider inventory already satisfies the configured subtitle", () => {

@@ -6,8 +6,25 @@ import {
   parseWyzieSubtitleList,
   rankSubtitleCandidates,
   resolveSubtitlesByTmdbId,
+  selectAutomaticSubtitle,
   selectSubtitle,
 } from "@/subtitle";
+
+const ARABIC = {
+  id: "ar",
+  url: "https://sub.wyzie.io/c/demo/id/ar?format=srt",
+  language: "ar",
+  display: "Arabic",
+  release: "Demo",
+};
+
+const ENGLISH = {
+  id: "en",
+  url: "https://sub.wyzie.io/c/demo/id/en?format=srt",
+  language: "en",
+  display: "English",
+  release: "Demo",
+};
 
 const originalFetch = globalThis.fetch;
 
@@ -52,6 +69,24 @@ describe("parseWyzieSubtitleList", () => {
       sourceName: "opensubtitles",
       isHearingImpaired: true,
     });
+  });
+});
+
+describe("selectAutomaticSubtitle", () => {
+  test("automatic selection rejects unrelated languages", () => {
+    expect(selectAutomaticSubtitle([ARABIC], "fr")).toBeNull();
+  });
+
+  test("English fallback remains allowed", () => {
+    expect(selectAutomaticSubtitle([ARABIC, ENGLISH], "fr")?.language).toBe("en");
+  });
+
+  test("prefers the configured language over English fallback", () => {
+    expect(selectAutomaticSubtitle([ARABIC, ENGLISH], "ar")?.language).toBe("ar");
+  });
+
+  test("null fallbackLang disables English fallback", () => {
+    expect(selectAutomaticSubtitle([ENGLISH], "fr", { fallbackLang: null })).toBeNull();
   });
 });
 
