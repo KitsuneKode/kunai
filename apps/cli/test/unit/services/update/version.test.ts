@@ -43,6 +43,12 @@ describe("parsePublishedVersionTag", () => {
     expect(parsePublishedVersionTag("v01.2.3")).toBeNull();
     expect(parsePublishedVersionTag("v1.2.3-beta")).toBeNull();
   });
+
+  test("rejects prerelease/build without harvesting later numeric fragments", () => {
+    expect(parsePublishedVersionTag("v1.2.3-rc.1.0.0")).toBeNull();
+    expect(parsePublishedVersionTag("1.0.0-0.3.7")).toBeNull();
+    expect(parsePublishedVersionTag("v1.2.3+build.1.2.3")).toBeNull();
+  });
 });
 
 describe("compareCanonicalVersions", () => {

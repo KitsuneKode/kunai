@@ -35,12 +35,18 @@ export function parsePublishedVersionTag(value: string | undefined): CanonicalVe
     const before = start > 0 ? value[start - 1]! : "";
     const after = end < value.length ? value[end]! : "";
 
+    // Prerelease/build on this X.Y.Z — never harvest a later numeric fragment.
+    if (after === "-" || after === "+") {
+      return null;
+    }
+
     // Allow a single leading `v`/`V`; reject digits/letters glued on either side.
+    // Alphanumeric glue may precede a later clean tag (e.g. fragments before `@pkg@1.2.3`).
     if (before && before !== "v" && before !== "V" && /[0-9A-Za-z]/.test(before)) {
       continue;
     }
-    // Reject prerelease/build or continuation (`-beta`, `+build`, `.4`, trailing digit).
-    if (after && /[0-9A-Za-z.+-]/.test(after)) {
+    // Reject continuation (`.4`, trailing digit/letter glued).
+    if (after && /[0-9A-Za-z.]/.test(after)) {
       continue;
     }
 
