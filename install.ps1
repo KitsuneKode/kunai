@@ -19,6 +19,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Net.Http
 
 $DlBase = if ($env:KUNAI_DL_BASE) { $env:KUNAI_DL_BASE } else { 'https://github.com/KitsuneKode/kunai/releases' }
 $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { 'https://api.github.com/repos/KitsuneKode/kunai/releases/latest' }
@@ -26,12 +27,49 @@ $Package = '@kitsunekode/kunai'
 $BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
 $DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
 $ConfigDir = if ($env:KUNAI_CONFIG_DIR) { $env:KUNAI_CONFIG_DIR } else { Join-Path $env:APPDATA 'kunai' }
+$CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'
+$LocksDir = Join-Path $DataDir 'locks'
+$TransactionsDir = Join-Path $DataDir 'transactions'
+$StagingRoot = Join-Path $CacheDir 'staging'
+
+# Bounded download policy (mirrors DEFAULT_BINARY_DOWNLOAD_POLICY).
+$DownloadConnectTimeoutSec = if ($env:KUNAI_DOWNLOAD_CONNECT_TIMEOUT) { [int]$env:KUNAI_DOWNLOAD_CONNECT_TIMEOUT } else { 15 }
+$DownloadTotalSeconds = if ($env:KUNAI_DOWNLOAD_TOTAL_SECONDS) { [int]$env:KUNAI_DOWNLOAD_TOTAL_SECONDS } else { 300 }
+$DownloadStallMs = if ($env:KUNAI_DOWNLOAD_STALL_MS) { [int]$env:KUNAI_DOWNLOAD_STALL_MS } else { 30000 }
+$DownloadMaxBytes = if ($env:KUNAI_DOWNLOAD_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_MAX_BYTES } else { 268435456 }
+$DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
+$DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
+$DownloadRetryBaseMs = if ($env:KUNAI_DOWNLOAD_RETRY_BASE_MS) { [int]$env:KUNAI_DOWNLOAD_RETRY_BASE_MS } else { 1000 }
+
+function Write-Utf8File([string]$Path, [string]$Content) {
+  $encoding = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($Path, $Content, $encoding)
+}
 
 function Write-Info($m) { Write-Host "-> $m" }
 function Write-Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+
+function Test-CanonicalVersion([string]$Value) {
+  return [bool]($Value -match '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
+}
+
+function Get-NormalizedVersion([string]$Value) {
+  $trimmed = $Value.Trim()
+  if ($trimmed.StartsWith('v') -or $trimmed.StartsWith('V')) {
+    $trimmed = $trimmed.Substring(1)
+  }
+  if (-not (Test-CanonicalVersion $trimmed)) {
+    throw "Invalid version: $Value (expected exact major.minor.patch)."
+  }
+  return $trimmed
+}
+
+function Get-IsoNow {
+  return (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+}
 
 function Get-WindowsArch {
   if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) {
@@ -48,27 +86,299 @@ function Get-ReleaseAssetName {
 
 function Resolve-PublishedVersion {
   if ($DryRun -and $Version -eq 'latest') { return 'dry-run' }
-  if ($Version -ne 'latest') { return $Version }
+  if ($Version -ne 'latest') { return (Get-NormalizedVersion $Version) }
   $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' }
   $tag = [string]$release.tag_name
-  if ($tag -match '(\d+\.\d+\.\d+)') { return $Matches[1] }
-  throw 'Could not resolve the latest release version. Try -Version X.Y.Z or -Method npm.'
+  return (Get-NormalizedVersion $tag)
 }
 
-function Write-Manifest([string]$Channel, [string]$Ver, [string]$Bin, [string]$VersionPath = '', [string]$Layout = '') {
-  if ($DryRun) { Write-Info "[dry-run] would write manifest ($Channel)"; return }
-  New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
-  $manifest = [ordered]@{
-    channel     = $Channel
-    version     = $Ver
-    binPath     = $Bin
-    dlBase      = $DlBase
-    installedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+function Test-RetryableHttpStatus([int]$Status) {
+  return ($Status -eq 408 -or $Status -eq 429 -or $Status -ge 500)
+}
+
+function Invoke-BoundedDownload {
+  param(
+    [Parameter(Mandatory = $true)][string]$Url,
+    [Parameter(Mandatory = $true)][string]$DestinationPath,
+    [Parameter(Mandatory = $true)][long]$MaxBytes,
+    [string]$Label = 'download'
+  )
+
+  $started = [DateTime]::UtcNow
+  $attempt = 1
+  while ($attempt -le $DownloadMaxAttempts) {
+    $elapsed = ([DateTime]::UtcNow - $started).TotalSeconds
+    $remainingSec = [Math]::Max(0, $DownloadTotalSeconds - [int][Math]::Floor($elapsed))
+    if ($remainingSec -le 0) {
+      throw "Download total deadline exceeded for $Label."
+    }
+
+    if (Test-Path -LiteralPath $DestinationPath) {
+      Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+    }
+
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds([Math]::Max($remainingSec, 1))
+    $cts = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds([Math]::Max($remainingSec, 1)))
+
+    try {
+      $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $Url)
+      $request.Headers.TryAddWithoutValidation('User-Agent', 'kunai-installer') | Out-Null
+      $response = $client.SendAsync(
+        $request,
+        [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead,
+        $cts.Token
+      ).GetAwaiter().GetResult()
+
+      $status = [int]$response.StatusCode
+      if ($status -lt 200 -or $status -ge 300) {
+        if ((Test-RetryableHttpStatus $status) -and $attempt -lt $DownloadMaxAttempts) {
+          Write-Info "Retrying $Label (attempt $($attempt + 1)/$DownloadMaxAttempts) after HTTP $status..."
+          Start-Sleep -Milliseconds ($DownloadRetryBaseMs * $attempt)
+          $attempt++
+          continue
+        }
+        throw "Download failed for $Label with HTTP $status."
+      }
+
+      if ($null -ne $response.Content.Headers.ContentLength -and $response.Content.Headers.ContentLength -gt $MaxBytes) {
+        throw "Download for $Label exceeds max size ($($response.Content.Headers.ContentLength) > $MaxBytes)."
+      }
+
+      $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+      $outStream = [System.IO.File]::Open(
+        $DestinationPath,
+        [System.IO.FileMode]::Create,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None
+      )
+      try {
+        $buffer = New-Object byte[] 8192
+        $total = [long]0
+        $lastProgress = [DateTime]::UtcNow
+        while ($true) {
+          $readTask = $stream.ReadAsync($buffer, 0, $buffer.Length, $cts.Token)
+          if (-not $readTask.Wait($DownloadStallMs, $cts.Token)) {
+            throw "Download stalled for $Label (no progress within ${DownloadStallMs}ms)."
+          }
+          $read = $readTask.Result
+          if ($read -le 0) { break }
+          $total += $read
+          if ($total -gt $MaxBytes) {
+            throw "Download for $Label exceeds max size ($total > $MaxBytes)."
+          }
+          $outStream.Write($buffer, 0, $read)
+          $lastProgress = [DateTime]::UtcNow
+          if (([DateTime]::UtcNow - $lastProgress).TotalMilliseconds -gt $DownloadStallMs) {
+            throw "Download stalled for $Label."
+          }
+        }
+        if ($total -le 0) {
+          throw "Downloaded asset $Label is empty; the release is incomplete."
+        }
+        return
+      }
+      finally {
+        $outStream.Dispose()
+        $stream.Dispose()
+        $response.Dispose()
+      }
+    }
+    catch {
+      if (Test-Path -LiteralPath $DestinationPath) {
+        Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+      }
+      $msg = $_.Exception.Message
+      $retryable = $msg -match 'stall|timeout|network|temporarily|HTTP 5|HTTP 408|HTTP 429' -or
+        ($_.Exception -is [System.Net.Http.HttpRequestException])
+      if ($retryable -and $attempt -lt $DownloadMaxAttempts -and $msg -notmatch 'empty|exceeds max size|HTTP 404|HTTP 4[0-9][0-9]') {
+        if ($msg -match 'HTTP (4\d\d)' -and -not (Test-RetryableHttpStatus ([int]$Matches[1]))) {
+          throw
+        }
+        Write-Info "Retrying $Label (attempt $($attempt + 1)/$DownloadMaxAttempts)..."
+        Start-Sleep -Milliseconds ($DownloadRetryBaseMs * $attempt)
+        $attempt++
+        continue
+      }
+      throw
+    }
+    finally {
+      $cts.Dispose()
+      $client.Dispose()
+      $handler.Dispose()
+    }
   }
-  if ($VersionPath) { $manifest.versionPath = $VersionPath }
-  if ($Layout) { $manifest.layout = $Layout }
-  $manifest | ConvertTo-Json | Set-Content -Path (Join-Path $ConfigDir 'install.json') -Encoding utf8
-  Write-Info "Recorded install method ($Channel)."
+  throw "Download failed for $Label after $DownloadMaxAttempts attempts."
+}
+
+function Write-Manifest(
+  [string]$MethodName,
+  [string]$Ver,
+  [string]$Launcher,
+  [string]$VersionPath = '',
+  [string]$Target = '',
+  [string]$Sha256 = '',
+  [string]$PreviousVersion = ''
+) {
+  if ($DryRun) { Write-Info "[dry-run] would write schema-1 manifest ($MethodName)"; return }
+  New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  $manifestPath = Join-Path $ConfigDir 'install.json'
+  $now = Get-IsoNow
+  $installedAt = $now
+  if (Test-Path -LiteralPath $manifestPath) {
+    try {
+      $existing = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+      if ($existing.installedAt) { $installedAt = [string]$existing.installedAt }
+    }
+    catch { }
+  }
+
+  $managedPaths = @()
+  if ($MethodName -eq 'binary') {
+    $managedPaths = @($DataDir, $CacheDir)
+  }
+
+  $manifest = [ordered]@{
+    schemaVersion     = 1
+    method            = $MethodName
+    activeVersion     = $Ver
+    preferredChannel  = 'stable'
+    launcherPath      = $Launcher
+    managedPaths      = $managedPaths
+    downloadBaseUrl   = $DlBase
+    installedAt       = $installedAt
+    updatedAt         = $now
+  }
+  if ($VersionPath) { $manifest.versionedPath = $VersionPath }
+  if ($PreviousVersion) { $manifest.previousVersion = $PreviousVersion }
+  if ($Target) { $manifest.target = $Target }
+  if ($Sha256) { $manifest.artifactSha256 = $Sha256 }
+
+  $tmp = "$manifestPath.tmp-$PID"
+  Write-Utf8File $tmp (($manifest | ConvertTo-Json -Depth 6) + "`n")
+  Move-Item -Force -Path $tmp -Destination $manifestPath
+  Write-Info "Recorded install method ($MethodName)."
+}
+
+function Write-VersionMetadata {
+  param(
+    [string]$Ver,
+    [string]$Target,
+    [string]$ArtifactName,
+    [string]$Sha256,
+    [long]$SizeBytes,
+    [string]$SourceUrl,
+    [string]$Path
+  )
+  $meta = [ordered]@{
+    schemaVersion   = 1
+    version         = $Ver
+    target          = $Target
+    artifactName    = $ArtifactName
+    artifactSha256  = $Sha256.ToLowerInvariant()
+    sizeBytes       = $SizeBytes
+    sourceUrl       = $SourceUrl
+    verification    = 'release-checksum'
+    installedAt     = (Get-IsoNow)
+  }
+  $tmp = "$Path.tmp-$PID"
+  New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
+  Write-Utf8File $tmp (($meta | ConvertTo-Json -Depth 4) + "`n")
+  Move-Item -Force -Path $tmp -Destination $Path
+}
+
+function Acquire-VersionLock([string]$Ver, [string]$LockPath) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $LockPath) | Out-Null
+  if (Test-Path -LiteralPath $LockPath) {
+    try {
+      $existing = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
+      $holder = [int]$existing.pid
+      if ($holder -gt 0) {
+        try {
+          Get-Process -Id $holder -ErrorAction Stop | Out-Null
+          throw "Install lock held by pid $holder for version $Ver"
+        }
+        catch [System.Management.Automation.ProcessCommandException] { }
+        catch {
+          if ($_.Exception.Message -match 'held by pid') { throw }
+        }
+      }
+    }
+    catch {
+      if ($_.Exception.Message -match 'held by pid') { throw }
+    }
+    Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+  }
+  $content = @{
+    pid        = $PID
+    version    = $Ver
+    execPath   = 'install.ps1'
+    acquiredAt = (Get-IsoNow)
+  }
+  Write-Utf8File $LockPath (($content | ConvertTo-Json -Compress) + "`n")
+}
+
+function Release-VersionLock([string]$LockPath) {
+  if (-not (Test-Path -LiteralPath $LockPath)) { return }
+  try {
+    $existing = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
+    if ([int]$existing.pid -eq $PID) {
+      Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+  catch {
+    Remove-Item -LiteralPath $LockPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Begin-InstallTransaction([string]$Id, [string]$Kind, [string]$Ver, [string]$Staging, [string]$Path) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $Path) | Out-Null
+  $record = [ordered]@{
+    schemaVersion = 1
+    id            = $Id
+    kind          = $Kind
+    pid           = $PID
+    version       = $Ver
+    stagingDir    = $Staging
+    startedAt     = (Get-IsoNow)
+  }
+  Write-Utf8File $Path (($record | ConvertTo-Json -Depth 4) + "`n")
+}
+
+function Finish-InstallTransaction([string]$Path) {
+  if (Test-Path -LiteralPath $Path) {
+    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Update-Launcher([string]$VersionPath, [string]$LauncherPath) {
+  New-Item -ItemType Directory -Force -Path (Split-Path $LauncherPath) | Out-Null
+  if (Test-Path -LiteralPath $LauncherPath) {
+    $aside = "$LauncherPath.old.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    try {
+      Move-Item -Force -Path $LauncherPath -Destination $aside
+    }
+    catch {
+      Remove-Item -LiteralPath $LauncherPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+  Copy-Item -Force -Path $VersionPath -Destination $LauncherPath
+  Unblock-File -Path $LauncherPath -ErrorAction SilentlyContinue
+}
+
+function Get-PreviousActiveVersion {
+  $manifestPath = Join-Path $ConfigDir 'install.json'
+  if (-not (Test-Path -LiteralPath $manifestPath)) { return $null }
+  try {
+    $existing = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $ver = $null
+    if ($existing.activeVersion) { $ver = [string]$existing.activeVersion }
+    elseif ($existing.version) { $ver = [string]$existing.version }
+    if ($ver -and (Test-CanonicalVersion $ver)) { return $ver }
+  }
+  catch { }
+  return $null
 }
 
 function Broadcast-EnvironmentChange {
@@ -198,23 +508,54 @@ function Install-OptionalDeps {
 }
 
 function Install-Binary {
+  if ($Version -ne 'latest') {
+    $null = Get-NormalizedVersion $Version
+  }
+
   $arch = Get-WindowsArch
   $asset = Get-ReleaseAssetName -Arch $arch
   $resolved = Resolve-PublishedVersion
-  $base = if ($Version -eq 'latest') { "$DlBase/latest/download" } else { "$DlBase/download/v$Version" }
+  $base = if ($Version -eq 'latest') { "$DlBase/latest/download" } else { "$DlBase/download/v$resolved" }
   $versionPath = Join-Path (Join-Path $VersionsDir $resolved) 'kunai.exe'
+  $target = "windows-$arch"
+  $url = "$base/$asset"
+  $sumsUrl = "$base/SHA256SUMS"
 
   Write-Info "Downloading $asset (v$resolved) ..."
   if ($DryRun) {
-    Write-Info "[dry-run] would download, verify SHA256, install to $versionPath and $BinPath"
+    Write-Info "[dry-run] would download (bounded HttpClient), verify SHA256, install to $versionPath and $BinPath"
+    Write-Manifest 'binary' $resolved $BinPath $versionPath $target
+    return
   }
-  else {
-    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-    New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
-    $tmp = Join-Path $BinDir '.kunai-new.exe'
+
+  $previous = Get-PreviousActiveVersion
+  $kind = if ($previous -and $previous -ne $resolved) { 'upgrade' } else { 'install' }
+  $staging = Join-Path (Join-Path $StagingRoot $resolved) ("txn-$PID-" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+  $txnId = ("{0:x}-{1}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(), $PID)
+  $txnPath = Join-Path $TransactionsDir "$txnId.json"
+  $lockPath = Join-Path $LocksDir "$resolved.lock"
+  $stagedBin = Join-Path $staging $asset
+  $stagedSums = Join-Path $staging 'SHA256SUMS'
+  $metadataPath = Join-Path (Join-Path $VersionsDir $resolved) 'version.json'
+
+  $cleanupDone = $false
+  try {
+    Acquire-VersionLock $resolved $lockPath
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+    Begin-InstallTransaction $txnId $kind $resolved $staging $txnPath
+
     try {
-      Invoke-WebRequest -Uri "$base/$asset" -OutFile $tmp -UseBasicParsing
-      $sums = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
+      Invoke-BoundedDownload -Url $sumsUrl -DestinationPath $stagedSums -MaxBytes $DownloadChecksumMaxBytes -Label 'SHA256SUMS'
+    }
+    catch {
+      Write-Warn "Download failed for SHA256SUMS."
+      Write-Warn 'Try: -Method npm | -Method bun | -Method source'
+      Write-Warn 'Or pin a version: -Version X.Y.Z'
+      throw
+    }
+
+    try {
+      Invoke-BoundedDownload -Url $url -DestinationPath $stagedBin -MaxBytes $DownloadMaxBytes -Label $asset
     }
     catch {
       Write-Warn "Download failed for $asset."
@@ -222,31 +563,60 @@ function Install-Binary {
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
-    if ((Get-Item -Path $tmp).Length -eq 0) {
-      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+
+    if ((Get-Item -LiteralPath $stagedBin).Length -eq 0) {
       throw "Downloaded asset $asset is empty; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
     }
 
-    $want = ($sums -split "`n" |
-      Where-Object { $_ -match "\s$([regex]::Escape($asset))$" }) -replace '\s.*', ''
+    $sumsText = Get-Content -LiteralPath $stagedSums -Raw
+    $want = ($sumsText -split "`n" |
+      Where-Object { $_ -match "\s$([regex]::Escape($asset))\s*$" }) -replace '\s.*', ''
+    $want = ([string]$want).Trim().ToLowerInvariant()
 
     if ([string]::IsNullOrEmpty($want)) {
-      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
       throw "SHA256SUMS has no entry for $asset; the release is incomplete. Try -Method npm, -Method bun, or -Method source."
     }
 
-    $got = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash.ToLower()
+    $got = (Get-FileHash -Path $stagedBin -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($want -ne $got) {
-      Remove-Item $tmp -Force -ErrorAction SilentlyContinue
       throw "Checksum mismatch for $asset (expected '$want', got '$got')."
     }
-    Unblock-File -Path $tmp
-    Move-Item -Force -Path $tmp -Destination $versionPath
-    Copy-Item -Force -Path $versionPath -Destination $BinPath
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
+    $versionTmp = "$versionPath.tmp.$PID"
+    Copy-Item -Force -Path $stagedBin -Destination $versionTmp
+    Unblock-File -Path $versionTmp -ErrorAction SilentlyContinue
+    Move-Item -Force -Path $versionTmp -Destination $versionPath
+
+    $sizeBytes = [long](Get-Item -LiteralPath $versionPath).Length
+    Write-VersionMetadata -Ver $resolved -Target $target -ArtifactName $asset -Sha256 $got `
+      -SizeBytes $sizeBytes -SourceUrl $url -Path $metadataPath
+
+    Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath
+
+    $prevArg = ''
+    if ($previous -and $previous -ne $resolved) { $prevArg = $previous }
+    Write-Manifest 'binary' $resolved $BinPath $versionPath $target $got $prevArg
+
+    Finish-InstallTransaction $txnPath
+    Release-VersionLock $lockPath
+    if (Test-Path -LiteralPath $staging) {
+      Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $cleanupDone = $true
+  }
+  catch {
+    if (-not $cleanupDone) {
+      Finish-InstallTransaction $txnPath
+      Release-VersionLock $lockPath
+      if (Test-Path -LiteralPath $staging) {
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+      }
+    }
+    throw
   }
 
   Add-UserPath $BinDir
-  Write-Manifest 'binary' $resolved $BinPath $versionPath 'versioned'
   Write-KunaiPathDiagnostic $BinPath
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
 }
@@ -262,22 +632,40 @@ function Invoke-Step([string]$Description, [scriptblock]$Action) {
   if ($DryRun) { Write-Info "[dry-run] $Description" } else { & $Action }
 }
 
+# Reject non-canonical pinned versions before any install side effects.
+if ($Version -ne 'latest') {
+  $null = Get-NormalizedVersion $Version
+}
+
 Write-Host 'Kunai installer' -ForegroundColor Cyan
 
 switch ($Method) {
   'binary' { Install-Binary }
   'npm' {
     Install-Bun
-    Invoke-Step "npm install -g $Package" { & npm install -g $Package }
-    Write-Manifest 'npm-global' (Resolve-PublishedVersion) 'kunai'
+    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
+    if ($resolved -eq 'latest') {
+      Invoke-Step "npm install -g $Package" { & npm install -g $Package }
+    }
+    else {
+      Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
+    }
+    Write-Manifest 'npm-global' $resolved 'kunai'
   }
   'bun' {
     Install-Bun
-    Invoke-Step "bun install -g $Package" { & bun install -g $Package }
-    Write-Manifest 'bun-global' (Resolve-PublishedVersion) 'kunai'
+    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
+    if ($resolved -eq 'latest') {
+      Invoke-Step "bun install -g $Package" { & bun install -g $Package }
+    }
+    else {
+      Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
+    }
+    Write-Manifest 'bun-global' $resolved 'kunai'
   }
   'source' {
     Install-Bun
+    $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
     $src = Join-Path $env:LOCALAPPDATA 'kunai\src'
     Invoke-Step "git clone Kunai into $src" {
       if (Test-Path (Join-Path $src '.git')) { & git -C $src pull --ff-only }
@@ -286,7 +674,7 @@ switch ($Method) {
       & bun install; & bun run build; & bun run link:global
       Pop-Location
     }
-    Write-Manifest 'source' (Resolve-PublishedVersion) 'kunai'
+    Write-Manifest 'source' $resolved 'kunai'
   }
 }
 

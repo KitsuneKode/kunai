@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
@@ -191,7 +191,8 @@ describe("install.sh release asset failures", () => {
           KUNAI_DL_BASE: baseUrl,
         });
         expect(result.status).not.toBe(0);
-        expect(result.stderr).toContain(asset);
+        // Checksum is fetched first (parity with installLatest); 404 may name SHA256SUMS or asset.
+        expect(result.stderr).toMatch(new RegExp(`${asset}|SHA256SUMS`));
         expect(result.stderr).toContain("--method npm");
         expect(result.stderr).toContain("--method bun");
         expect(result.stderr).toContain("--method source");
@@ -225,6 +226,248 @@ describe("install.sh release asset failures", () => {
           expect(result.status).toBe(0);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
           expect(result.stdout).toContain(`PATH winner: ${join(sandbox.binDir, "kunai")}`);
+
+          const manifest = JSON.parse(
+            readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+          ) as Record<string, unknown>;
+          expect(manifest.schemaVersion).toBe(1);
+          expect(manifest.method).toBe("binary");
+          expect(manifest.activeVersion).toBe("9.8.7");
+          expect(manifest.preferredChannel).toBe("stable");
+          expect(manifest.launcherPath).toBe(join(sandbox.binDir, "kunai"));
+          expect(manifest.versionedPath).toBe(join(sandbox.dataDir, "versions", "9.8.7", "kunai"));
+          expect(manifest.downloadBaseUrl).toBe(baseUrl);
+          expect(manifest.artifactSha256).toBe(digest);
+          expect(Array.isArray(manifest.managedPaths)).toBe(true);
+          expect(manifest.managedPaths).toContain(sandbox.dataDir);
+          expect(manifest.managedPaths).toContain(sandbox.cacheDir);
+          expect(typeof manifest.installedAt).toBe("string");
+          expect(typeof manifest.updatedAt).toBe("string");
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          expect(existsSync(join(sandbox.dataDir, "locks"))).toBe(true);
+          expect(existsSync(join(sandbox.dataDir, "transactions"))).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
+describe("install.sh lifecycle contract", () => {
+  test.each(["../1.2.3", "1.2.3-beta", "01.2.3", "1.2", "v1.2.3-rc.1"])(
+    "rejects invalid version %s before creating directories",
+    (version) => {
+      const sandbox = createInstallerSandbox(
+        `install-sh-badver-${version.replace(/[^\w.-]/g, "_")}`,
+      );
+      try {
+        const result = runInstallSh(["--yes", "--skip-deps", "--version", version], sandbox.env);
+        expect(result.status).not.toBe(0);
+        expect(`${result.stderr}${result.stdout}`).toMatch(/invalid|version/i);
+        expect(existsSync(sandbox.binDir)).toBe(false);
+        expect(existsSync(sandbox.dataDir)).toBe(false);
+        expect(existsSync(sandbox.configDir)).toBe(false);
+        expect(existsSync(sandbox.cacheDir)).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
+  test("retries 503 then succeeds", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#! /bin/sh\necho kunai-retry\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-503");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: {
+            body,
+            failuresBeforeSuccess: 1,
+            failureStatus: 503,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${digest}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status).toBe(0);
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("does not retry 404", async () => {
+    const asset = hostInstallShAsset();
+    const sandbox = createInstallerSandbox("install-sh-404-noretry");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: {
+            body: "gone",
+            status: 404,
+            failuresBeforeSuccess: 0,
+          },
+        },
+        async (baseUrl) => {
+          const started = Date.now();
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_RETRY_BASE_MS: "200",
+          });
+          expect(result.status).not.toBe(0);
+          expect(Date.now() - started).toBeLessThan(5_000);
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects oversized download via max-filesize", async () => {
+    const asset = hostInstallShAsset();
+    const oversized = "x".repeat(4096);
+    const sandbox = createInstallerSandbox("install-sh-oversize");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: {
+            body: oversized,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"a".repeat(64)}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_MAX_BYTES: "1024",
+          });
+          expect(result.status).not.toBe(0);
+          expect(`${result.stderr}${result.stdout}`).toMatch(
+            /size|filesize|too large|max|Download failed|network, stall/i,
+          );
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          // Staging txn dirs must be cleaned on failure.
+          if (existsSync(join(sandbox.cacheDir, "staging"))) {
+            const { readdirSync } = await import("node:fs");
+            const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
+              recursive: true,
+            }) as string[];
+            expect(leftover.filter((e) => String(e).includes(asset))).toEqual([]);
+          }
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("rejects stalled download and removes staging partials", async () => {
+    const asset = hostInstallShAsset();
+    const sandbox = createInstallerSandbox("install-sh-stall");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: {
+            body: "abcdefghijklmnopqrstuvwxyz",
+            chunkDelayMs: 800,
+            chunkSize: 1,
+          },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"b".repeat(64)}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_DOWNLOAD_SPEED_TIME: "1",
+            KUNAI_DOWNLOAD_SPEED_LIMIT: "1000",
+            KUNAI_DOWNLOAD_TOTAL_SECONDS: "5",
+            KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
+          });
+          expect(result.status).not.toBe(0);
+          expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
+          // Staging txn dirs must be cleaned; empty staging root is ok.
+          if (existsSync(join(sandbox.cacheDir, "staging"))) {
+            const { readdirSync } = await import("node:fs");
+            const leftover = readdirSync(join(sandbox.cacheDir, "staging"), {
+              recursive: true,
+            }) as string[];
+            expect(leftover.filter((e) => e.includes(asset) || e.endsWith("kunai"))).toEqual([]);
+          }
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("preserves old launcher and manifest when a new install fails", async () => {
+    const asset = hostInstallShAsset();
+    const sandbox = createInstallerSandbox("install-sh-preserve");
+    mkdirSync(sandbox.binDir, { recursive: true });
+    mkdirSync(sandbox.configDir, { recursive: true });
+    mkdirSync(join(sandbox.dataDir, "versions", "1.0.0"), { recursive: true });
+    const oldBinary = join(sandbox.dataDir, "versions", "1.0.0", "kunai");
+    const launcher = join(sandbox.binDir, "kunai");
+    writeFileSync(oldBinary, "#!/bin/sh\necho old\n", { mode: 0o755 });
+    writeFileSync(launcher, "", { mode: 0o755 });
+    // Symlink-like: write a tiny script launcher standing in for the old install.
+    writeFileSync(launcher, "#!/bin/sh\nexec echo old-launcher\n", { mode: 0o755 });
+    const oldManifest = {
+      schemaVersion: 1,
+      method: "binary",
+      activeVersion: "1.0.0",
+      preferredChannel: "stable",
+      launcherPath: launcher,
+      versionedPath: oldBinary,
+      managedPaths: [sandbox.dataDir, sandbox.cacheDir],
+      downloadBaseUrl: "https://example.test/releases",
+      installedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      artifactSha256: "c".repeat(64),
+    };
+    writeFileSync(
+      join(sandbox.configDir, "install.json"),
+      `${JSON.stringify(oldManifest, null, 2)}\n`,
+    );
+    const beforeManifest = readFileSync(join(sandbox.configDir, "install.json"), "utf8");
+    const beforeLauncher = readFileSync(launcher);
+
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body: "bad-payload" },
+          "/download/v9.8.7/SHA256SUMS": {
+            body: `${"d".repeat(64)}  ${asset}\n`,
+          },
+        },
+        async (baseUrl) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status).not.toBe(0);
+          expect(readFileSync(join(sandbox.configDir, "install.json"), "utf8")).toBe(
+            beforeManifest,
+          );
+          expect(readFileSync(launcher)).toEqual(beforeLauncher);
+          expect(existsSync(oldBinary)).toBe(true);
         },
       );
     } finally {

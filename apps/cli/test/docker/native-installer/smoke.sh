@@ -12,6 +12,7 @@ export HOME="${KUNAI_TEST_HOME:-/tmp/kunai-home}"
 export KUNAI_BIN_DIR="$HOME/.local/bin"
 export KUNAI_CONFIG_DIR="$HOME/.config/kunai"
 export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
+export KUNAI_CACHE_DIR="$HOME/.cache/kunai"
 export KUNAI_DL_BASE="${KUNAI_DL_BASE:-http://127.0.0.1:9876}"
 export KUNAI_RELEASES_API="${KUNAI_RELEASES_API:-http://127.0.0.1:9876/releases/latest.json}"
 
@@ -33,7 +34,7 @@ fail() { printf '✗ %s\n' "$*" >&2; exit 1; }
 
 # Wipe any prior run inside this isolated HOME only.
 rm -rf "$HOME"
-mkdir -p "$KUNAI_BIN_DIR" "$KUNAI_CONFIG_DIR" "$KUNAI_DATA_DIR"
+mkdir -p "$KUNAI_BIN_DIR" "$KUNAI_CONFIG_DIR" "$KUNAI_DATA_DIR" "$KUNAI_CACHE_DIR"
 
 if [[ ! -d "$FIXTURE/download/v1.0.0" ]]; then
   fail "fixture missing at $FIXTURE (run prepare-fixture.sh on the host first)"
@@ -59,10 +60,13 @@ bash "$REPO/install.sh" --method binary --version 1.0.0 --yes --skip-deps
 
 [[ -L "$KUNAI_BIN_DIR/kunai" ]] || fail "launcher symlink missing"
 [[ -f "$KUNAI_DATA_DIR/versions/1.0.0/kunai" ]] || fail "versioned binary missing"
-# install.sh still writes legacy shape until Task 8; assert bootstrap fields only here.
-grep -q '"layout": "versioned"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json layout"
-grep -q '"versionPath"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json versionPath"
-pass "install.sh created versioned layout (legacy bootstrap)"
+[[ -f "$KUNAI_DATA_DIR/versions/1.0.0/version.json" ]] || fail "version metadata missing"
+grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*1' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json missing schemaVersion"
+grep -qE '"method"[[:space:]]*:[[:space:]]*"binary"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json method not binary"
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json activeVersion"
+grep -q '"versionedPath"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json versionedPath"
+grep -qE '"preferredChannel"[[:space:]]*:[[:space:]]*"stable"' "$KUNAI_CONFIG_DIR/install.json" || fail "install.json preferredChannel"
+pass "install.sh created versioned layout (schema-1)"
 
 "$KUNAI_BIN_DIR/kunai" --version >/tmp/kunai-version.txt
 grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver, got: $(head -1 /tmp/kunai-version.txt)"
@@ -71,9 +75,10 @@ pass "kunai --version: $(head -1 /tmp/kunai-version.txt)"
 # --- kunai upgrade -> v1.0.1 ---
 "$KUNAI_BIN_DIR/kunai" upgrade
 [[ -f "$KUNAI_DATA_DIR/versions/1.0.1/kunai" ]] || fail "upgrade did not install v1.0.1"
-grep -q '"schemaVersion": 1' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing schemaVersion"
-grep -q '"method": "binary"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest method not binary"
-grep -q '"activeVersion": "1.0.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest not updated to activeVersion 1.0.1"
+grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*1' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing schemaVersion"
+grep -qE '"method"[[:space:]]*:[[:space:]]*"binary"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest method not binary"
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest not updated to activeVersion 1.0.1"
+grep -qE '"previousVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing previousVersion 1.0.0"
 grep -q '"versionedPath"' "$KUNAI_CONFIG_DIR/install.json" || fail "manifest missing versionedPath"
 launcher_target="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
 [[ "$launcher_target" == *"/versions/1.0.1/kunai" ]] || fail "launcher not pointing at 1.0.1 ($launcher_target)"
@@ -82,12 +87,70 @@ pass "kunai upgrade moved launcher to v1.0.1"
 "$KUNAI_BIN_DIR/kunai" upgrade --check >/tmp/kunai-check.txt
 pass "kunai upgrade --check ran"
 
-# --- kunai uninstall ---
+# --- kunai doctor --json (read-only) ---
+"$KUNAI_BIN_DIR/kunai" doctor --json >/tmp/kunai-doctor.json
+grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*1' /tmp/kunai-doctor.json || fail "doctor JSON missing schemaVersion"
+grep -q '"manifest"' /tmp/kunai-doctor.json || fail "doctor JSON missing manifest"
+# Doctor must not mutate install state.
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "doctor mutated activeVersion"
+pass "kunai doctor --json"
+
+# --- kunai rollback list / dry-run / default ---
+"$KUNAI_BIN_DIR/kunai" rollback --list >/tmp/kunai-rollback-list.txt
+grep -qE '"version"[[:space:]]*:[[:space:]]*"1\.0\.0"' /tmp/kunai-rollback-list.txt ||
+  fail "rollback --list missing 1.0.0 candidate"
+pass "kunai rollback --list"
+
+"$KUNAI_BIN_DIR/kunai" rollback --dry-run >/tmp/kunai-rollback-dry.txt
+grep -qi 'dry-run' /tmp/kunai-rollback-dry.txt || fail "rollback --dry-run missing dry-run marker"
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "dry-run mutated activeVersion"
+pass "kunai rollback --dry-run"
+
+"$KUNAI_BIN_DIR/kunai" rollback
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" || fail "default rollback did not restore 1.0.0"
+launcher_target="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
+[[ "$launcher_target" == *"/versions/1.0.0/kunai" ]] || fail "launcher not pointing at 1.0.0 after rollback ($launcher_target)"
+pass "kunai rollback (default) restored v1.0.0"
+
+# Upgrade again so explicit --to has a non-active target, then roll back explicitly.
+"$KUNAI_BIN_DIR/kunai" upgrade
+"$KUNAI_BIN_DIR/kunai" rollback --to 1.0.0
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" || fail "explicit rollback --to 1.0.0 failed"
+pass "kunai rollback --to 1.0.0"
+
+# Bring install back to latest retained for uninstall coverage.
+"$KUNAI_BIN_DIR/kunai" upgrade
+grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" || fail "re-upgrade to 1.0.1 failed"
+
+# --- Seed user data + owned residue, then uninstall ---
+mkdir -p "$KUNAI_CACHE_DIR/staging/9.9.9" "$KUNAI_DATA_DIR/locks" "$KUNAI_DATA_DIR/transactions"
+mkdir -p "$KUNAI_DATA_DIR/downloads" "$HOME/external-downloads"
+printf '{"theme":"sakura"}\n' >"$KUNAI_CONFIG_DIR/config.json"
+printf 'history-db\n' >"$KUNAI_DATA_DIR/kunai-data.sqlite"
+printf 'offline\n' >"$KUNAI_DATA_DIR/downloads/ep1.mkv"
+printf 'external\n' >"$HOME/external-downloads/movie.mkv"
+printf 'partial\n' >"$KUNAI_CACHE_DIR/staging/9.9.9/partial.bin"
+printf '{"pid":2147483646,"version":"9.9.9","execPath":"/tmp/dead","acquiredAt":"2020-01-01T00:00:00.000Z"}\n' \
+  >"$KUNAI_DATA_DIR/locks/9.9.9.lock"
+printf '{"schemaVersion":1,"id":"abandoned-txn","kind":"upgrade","pid":2147483646,"version":"9.9.9","stagingDir":"%s","startedAt":"2020-01-01T00:00:00.000Z"}\n' \
+  "$KUNAI_CACHE_DIR/staging/9.9.9" >"$KUNAI_DATA_DIR/transactions/abandoned-txn.json"
+printf 'aside\n' >"$KUNAI_BIN_DIR/kunai.old.1710000000000"
+pass "seeded user data and owned residue"
+
 "$KUNAI_BIN_DIR/kunai" uninstall
 [[ ! -e "$KUNAI_BIN_DIR/kunai" ]] || fail "launcher still present after uninstall"
+[[ ! -e "$KUNAI_BIN_DIR/kunai.old.1710000000000" ]] || fail "launcher aside still present after uninstall"
 [[ ! -d "$KUNAI_DATA_DIR/versions" ]] || fail "versions dir still present after uninstall"
+[[ ! -d "$KUNAI_CACHE_DIR/staging" ]] || fail "staging dir still present after uninstall"
+[[ ! -d "$KUNAI_DATA_DIR/transactions" ]] || fail "transactions dir still present after uninstall"
+[[ ! -d "$KUNAI_DATA_DIR/locks" ]] || fail "locks dir still present after uninstall"
 [[ ! -f "$KUNAI_CONFIG_DIR/install.json" ]] || fail "install.json still present after uninstall"
-pass "kunai uninstall removed binary install"
+
+[[ -f "$KUNAI_CONFIG_DIR/config.json" ]] || fail "user config.json was removed"
+[[ -f "$KUNAI_DATA_DIR/kunai-data.sqlite" ]] || fail "user history db was removed"
+[[ -f "$KUNAI_DATA_DIR/downloads/ep1.mkv" ]] || fail "user downloads were removed"
+[[ -f "$HOME/external-downloads/movie.mkv" ]] || fail "external download was removed"
+pass "kunai uninstall removed owned state and preserved user data"
 
 # Config dir may remain (no --purge); ensure we did not touch anything outside HOME.
 [[ "$HOME" == /tmp/kunai-home* ]] || fail "unexpected HOME=$HOME"

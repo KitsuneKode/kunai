@@ -7,33 +7,100 @@ export function createInstallerSandbox(name: string) {
   const binDir = join(root, "bin");
   const dataDir = join(root, "data");
   const configDir = join(root, "config");
+  const cacheDir = join(root, "cache");
   return {
     root,
     binDir,
     dataDir,
     configDir,
+    cacheDir,
     env: {
       ...process.env,
       KUNAI_BIN_DIR: binDir,
       KUNAI_DATA_DIR: dataDir,
       KUNAI_CONFIG_DIR: configDir,
+      KUNAI_CACHE_DIR: cacheDir,
     } as NodeJS.ProcessEnv,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
 
+/** Route definition for the local release fixture HTTP server. */
+export type ReleaseFixtureRoute = {
+  readonly body?: string | Uint8Array;
+  readonly status?: number;
+  readonly headers?: Record<string, string>;
+  /** Respond with failureStatus this many times, then serve body/status/headers. */
+  readonly failuresBeforeSuccess?: number;
+  readonly failureStatus?: number;
+  /** Stream body in chunks with this delay between chunks (ms). */
+  readonly chunkDelayMs?: number;
+  /** Chunk size in bytes when chunkDelayMs is set (default 1). */
+  readonly chunkSize?: number;
+};
+
+function toBytes(body: string | Uint8Array | undefined): Uint8Array {
+  if (body === undefined) return new Uint8Array();
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  return body;
+}
+
+function buildResponse(route: ReleaseFixtureRoute): Response {
+  const status = route.status ?? 200;
+  const headers = route.headers ? { ...route.headers } : undefined;
+  const bytes = toBytes(route.body);
+
+  if (route.chunkDelayMs !== undefined && route.chunkDelayMs >= 0) {
+    const chunkSize = Math.max(1, route.chunkSize ?? 1);
+    let offset = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        if (offset >= bytes.byteLength) {
+          controller.close();
+          return;
+        }
+        if (offset > 0 && route.chunkDelayMs! > 0) {
+          await Bun.sleep(route.chunkDelayMs!);
+        }
+        const end = Math.min(offset + chunkSize, bytes.byteLength);
+        controller.enqueue(bytes.subarray(offset, end));
+        offset = end;
+      },
+    });
+    return new Response(body, { status, headers });
+  }
+
+  return new Response(bytes, { status, headers });
+}
+
 export async function withReleaseFixture(
-  routes: Readonly<Record<string, { readonly body: string; readonly status?: number }>>,
+  routes: Readonly<Record<string, ReleaseFixtureRoute>>,
   run: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
+  const hitCounts = new Map<string, number>();
+
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
-      const route = routes[new URL(request.url).pathname];
-      return route
-        ? new Response(route.body, { status: route.status ?? 200 })
-        : new Response("not found", { status: 404 });
+      const pathname = new URL(request.url).pathname;
+      const route = routes[pathname];
+      if (!route) {
+        return new Response("not found", { status: 404 });
+      }
+
+      const hits = (hitCounts.get(pathname) ?? 0) + 1;
+      hitCounts.set(pathname, hits);
+
+      const failures = route.failuresBeforeSuccess ?? 0;
+      if (failures > 0 && hits <= failures) {
+        return new Response("temporary failure", {
+          status: route.failureStatus ?? 503,
+          headers: route.headers,
+        });
+      }
+
+      return buildResponse(route);
     },
   });
   try {
