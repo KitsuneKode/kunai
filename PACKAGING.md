@@ -39,7 +39,8 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 
 ## Publication (protected)
 
-- [ ] Approve GitHub environment `release-production` only after candidate artifacts look correct
+- [ ] Confirmation gate green (`bun run release:confirmation:check`) with fresh provider signoff evidence
+- [ ] Approve GitHub environment `release-production` only after confirmation evidence looks correct
 - [ ] Publish job downloads preserved artifacts and runs `bun publish .release-candidate/kunai-npm.tgz --access public`
 - [ ] Draft GitHub release verified (`--expect-draft`) before `gh release edit … --draft=false --latest`
 - [ ] Metadata job (or recovery) marks `.release/kunai-vX.Y.Z.json` `published` via `set-release-status.ts`

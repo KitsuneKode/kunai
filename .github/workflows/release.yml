@@ -28,6 +28,7 @@ on:
       - "scripts/generate-release-notes.ts"
       - "scripts/release-binary-checksums.ts"
       - "scripts/release-guard.ts"
+      - "scripts/release-confirmation-gate.ts"
       - "scripts/set-release-status.ts"
       - "scripts/sync-root-changelog.ts"
       - "CHANGELOG.md"
@@ -35,6 +36,10 @@ on:
     inputs:
       version:
         description: Exact @kitsunekode/kunai version to build and publish (e.g. 0.3.0)
+        required: true
+        type: string
+      provider_signoff_run_id:
+        description: GitHub Actions run id that produced release-provider-signoff-<id> evidence
         required: true
         type: string
 
@@ -184,12 +189,97 @@ jobs:
           path: .candidate-upload/*
 
   # ---------------------------------------------------------------------------
+  # Confirmation gate: deterministic candidate + fresh provider evidence.
+  # Stops before protected publication; never publishes.
+  # ---------------------------------------------------------------------------
+  confirmation:
+    name: Release confirmation gate
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ needs.candidate.outputs.version }}
+      tag: ${{ needs.candidate.outputs.tag }}
+      binary_artifact: ${{ steps.gate.outputs.binary_artifact }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-confirmation
+          skip-turbo-cache: "true"
+
+      - name: Download candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          path: .release-download
+
+      - name: Stage binaries for confirmation
+        run: |
+          set -euo pipefail
+          mkdir -p apps/cli/dist/bin
+          cp .release-download/kunai-linux-x64 \
+            .release-download/kunai-linux-arm64 \
+            .release-download/kunai-linux-x64-musl \
+            .release-download/kunai-linux-arm64-musl \
+            .release-download/kunai-darwin-x64 \
+            .release-download/kunai-darwin-arm64 \
+            .release-download/kunai-windows-x64.exe \
+            .release-download/kunai-windows-arm64.exe \
+            .release-download/SHA256SUMS \
+            apps/cli/dist/bin/
+
+      - name: Download provider signoff evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVIDER_SIGNOFF_RUN_ID: ${{ inputs.provider_signoff_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh run download "${PROVIDER_SIGNOFF_RUN_ID}" \
+            --repo "${{ github.repository }}" \
+            --name "release-provider-signoff-${PROVIDER_SIGNOFF_RUN_ID}" \
+            --dir artifacts
+          test -f artifacts/release-provider-signoff.json
+
+      - name: Run confirmation gate
+        id: gate
+        env:
+          PROVIDER_SIGNOFF_RUN_ID: ${{ inputs.provider_signoff_run_id }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          ARTIFACT_NAME="${CANDIDATE_ARTIFACT}-${VERSION}"
+          bun run release:confirmation:check -- \
+            --version "${VERSION}" \
+            --commit "${{ github.sha }}" \
+            --provider-evidence artifacts/release-provider-signoff.json \
+            --provider-signoff-run-id "${PROVIDER_SIGNOFF_RUN_ID}" \
+            --binary-dir apps/cli/dist/bin \
+            --binary-artifact-name "${ARTIFACT_NAME}" \
+            | tee artifacts/release-confirmation.json
+          echo "binary_artifact=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload confirmation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-confirmation-${{ needs.candidate.outputs.version }}
+          retention-days: 14
+          if-no-files-found: error
+          path: artifacts/release-confirmation.json
+
+  # ---------------------------------------------------------------------------
   # Protected publication: download preserved artifacts; never rebuild.
   # Declares environment only — do not configure/approve during implementation.
   # ---------------------------------------------------------------------------
   publish:
     name: Publish preserved artifacts
-    needs: candidate
+    needs: confirmation
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -198,8 +288,8 @@ jobs:
       contents: write
       id-token: write
     outputs:
-      version: ${{ needs.candidate.outputs.version }}
-      tag: ${{ needs.candidate.outputs.tag }}
+      version: ${{ needs.confirmation.outputs.version }}
+      tag: ${{ needs.confirmation.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v5
@@ -219,7 +309,7 @@ jobs:
       - name: Download candidate artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}
           path: .release-download
 
       - name: Stage preserved binaries and tarball
@@ -244,7 +334,7 @@ jobs:
         run: |
           bun run scripts/verify-release-artifact-directory.ts \
             apps/cli/dist/bin \
-            --expected-version "${{ needs.candidate.outputs.version }}"
+            --expected-version "${{ needs.confirmation.outputs.version }}"
 
       - name: Publish preserved npm tarball
         run: bun publish .release-candidate/kunai-npm.tgz --access public
@@ -254,7 +344,7 @@ jobs:
       - name: Verify npm package
         run: |
           set -euo pipefail
-          VERSION="${{ needs.candidate.outputs.version }}"
+          VERSION="${{ needs.confirmation.outputs.version }}"
           for _ in 1 2 3 4 5 6 7 8 9 10; do
             if npm view "@kitsunekode/kunai@${VERSION}" version; then
               exit 0
@@ -267,18 +357,18 @@ jobs:
       - name: Create canonical tag
         run: |
           set -euo pipefail
-          TAG="${{ needs.candidate.outputs.tag }}"
+          TAG="${{ needs.confirmation.outputs.tag }}"
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin "refs/tags/${TAG}"
 
       - name: Create draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.candidate.outputs.tag }}
-          name: ${{ needs.candidate.outputs.tag }}
+          tag_name: ${{ needs.confirmation.outputs.tag }}
+          name: ${{ needs.confirmation.outputs.tag }}
           draft: true
           make_latest: false
-          body_path: .release/kunai-${{ needs.candidate.outputs.tag }}.md
+          body_path: .release/kunai-${{ needs.confirmation.outputs.tag }}.md
           fail_on_unmatched_files: true
           files: |
             apps/cli/dist/bin/kunai-linux-x64
@@ -296,23 +386,23 @@ jobs:
       - name: Verify draft release assets
         run: |
           bun run scripts/verify-github-release-assets.ts \
-            "${{ needs.candidate.outputs.tag }}" \
+            "${{ needs.confirmation.outputs.tag }}" \
             --expect-draft \
-            --expected-version "${{ needs.candidate.outputs.version }}"
+            --expected-version "${{ needs.confirmation.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Promote draft to public latest
         run: |
-          gh release edit "${{ needs.candidate.outputs.tag }}" --draft=false --latest
+          gh release edit "${{ needs.confirmation.outputs.tag }}" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify public release assets
         run: |
           bun run scripts/verify-github-release-assets.ts \
-            "${{ needs.candidate.outputs.tag }}" \
-            --expected-version "${{ needs.candidate.outputs.version }}"
+            "${{ needs.confirmation.outputs.tag }}" \
+            --expected-version "${{ needs.confirmation.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

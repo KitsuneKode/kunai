@@ -22,7 +22,7 @@ This repo uses Changesets + Turborepo for versioning, changelogs, and release no
 4. Open a PR. The **Release Guard** workflow runs `bun run guard` and fails on version/changelog drift.
 5. Merge to `main`. The **Release** workflow opens or updates a version PR only — it never publishes on push.
 6. Review and merge the version PR (`chore: version packages`). That commit bumps `apps/cli/package.json`, both changelogs, and regenerates staged `.release/kunai-vX.Y.Z.{md,json}` artifacts.
-7. Manually dispatch **Release** with the exact version string (must match `apps/cli/package.json`), approve `release-production`, and let candidate → publish → metadata complete.
+7. Manually dispatch **Release** with the exact version string (must match `apps/cli/package.json`) and the provider signoff run id, wait for **confirmation**, approve `release-production`, and let candidate → confirmation → publish → metadata complete.
 
 **Never hand-edit** `apps/cli/package.json` `version` or `apps/cli/src/main.ts` for releases. Runtime version (`KUNAI_VERSION`) is derived from `package.json` at build time.
 
@@ -98,7 +98,7 @@ After the version PR merges, expect:
 
 ### 2. Manual dispatch → build preserved candidate
 
-Actions → **Release** → **Run workflow** → set `version` to the exact semver (e.g. `0.3.0`).
+Actions → **Release** → **Run workflow** → set `version` to the exact semver (e.g. `0.3.0`) and `provider_signoff_run_id` to the Actions run that uploaded `release-provider-signoff-<id>`.
 
 Job **`candidate`** (no publish):
 
@@ -115,9 +115,24 @@ mkdir -p .release-candidate && ROOT="$PWD" && \
   (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "$ROOT/.release-candidate/kunai-npm.tgz")
 ```
 
-### 3. Protected publication (no rebuild)
+### 3. Confirmation gate (still no publish)
 
-Job **`publish`** declares `environment: release-production`. After approval it:
+Job **`confirmation`** needs `candidate`. It downloads the preserved candidate binaries, pulls the provider signoff artifact from `provider_signoff_run_id`, and runs:
+
+```sh
+bun run release:confirmation:check -- \
+  --version <version> \
+  --commit <sha> \
+  --provider-evidence artifacts/release-provider-signoff.json \
+  --provider-signoff-run-id <run_id> \
+  --binary-dir apps/cli/dist/bin
+```
+
+Expected machine-readable `ready-for-confirmation` JSON. Nothing has been published yet.
+
+### 4. Protected publication (no rebuild)
+
+Job **`publish`** needs `confirmation` and declares `environment: release-production`. After approval it:
 
 1. Downloads the preserved candidate artifact (does **not** rebuild or re-pack)
 2. Reverifies binaries against the expected version
@@ -129,7 +144,7 @@ Job **`publish`** declares `environment: release-production`. After approval it:
 8. Promotes: `gh release edit <tag> --draft=false --latest`
 9. Verifies the public release assets again
 
-### 4. Metadata after public verification
+### 5. Metadata after public verification
 
 Job **`metadata`** runs only after publish succeeds:
 

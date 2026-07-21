@@ -66,11 +66,12 @@ Confirm staged release metadata (schema v2):
 
 ## Promote with workflow_dispatch
 
-1. Actions → **Release** → Run workflow with the **exact** version matching `apps/cli/package.json`.
+1. Actions → **Release** → Run workflow with the **exact** version matching `apps/cli/package.json` and the `provider_signoff_run_id` for current default-route evidence.
 2. Wait for the **candidate** job: CI, binaries, `bun run release:pack` → preserved `kunai-npm.tgz` + 8 binaries + `SHA256SUMS`.
-3. Approve the protected environment `release-production`.
-4. **publish** downloads preserved artifacts (no rebuild), `bun publish` of the tarball, draft GitHub release, verify, then promote to public latest.
-5. **metadata** runs `set-release-status.ts … published` and pushes the narrow `.release` JSON update.
+3. Wait for the **confirmation** job (`release:confirmation:check`) to emit ready-for-confirmation evidence.
+4. Approve the protected environment `release-production`.
+5. **publish** downloads preserved artifacts (no rebuild), `bun publish` of the tarball, draft GitHub release, verify, then promote to public latest.
+6. **metadata** runs `set-release-status.ts … published` and pushes the narrow `.release` JSON update.
 
 If the metadata push fails under branch protection, recover manually with a contents-write PAT (see RELEASING.md) — do not re-publish npm solely to fix metadata.
 

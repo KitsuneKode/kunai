@@ -187,6 +187,7 @@ describe("release workflow candidate-before-publication contract", () => {
 
   test("protected publication declares release-production environment", () => {
     const pub = publish();
+    expect(pub).toMatch(/needs:\s*confirmation/);
     expect(pub).toMatch(/environment:\s*release-production/);
   });
 });
