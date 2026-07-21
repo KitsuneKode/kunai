@@ -521,6 +521,23 @@ export const dataMigrations: readonly Migration[] = [
         ON history_title_aliases(title_id);
     `,
   },
+  {
+    id: "026_data_queue_playback_lifecycle",
+    database: "data",
+    sql: `
+      ALTER TABLE playlist_queue ADD COLUMN in_flight_at TEXT;
+      ALTER TABLE playlist_queue ADD COLUMN last_failure_json TEXT;
+      ALTER TABLE playback_queue_sessions ADD COLUMN last_activity_at TEXT;
+      UPDATE playback_queue_sessions SET last_activity_at = updated_at
+      WHERE last_activity_at IS NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_playlist_queue_lifecycle_position
+        ON playlist_queue(session_id, status, queue_position ASC, added_at ASC);
+
+      CREATE INDEX IF NOT EXISTS idx_playback_queue_sessions_recoverable_activity
+        ON playback_queue_sessions(status, last_activity_at DESC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

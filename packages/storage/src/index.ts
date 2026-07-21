@@ -127,6 +127,7 @@ export type {
   QueueEntry,
   QueueEntryInput,
   QueueItemStatus,
+  QueuePlaybackFailureRecord,
   QueueSessionInput,
   QueueSessionRecord,
   QueueSessionStatus,

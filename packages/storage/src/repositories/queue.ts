@@ -1,5 +1,20 @@
 import type { KunaiDatabase } from "../sqlite";
 
+export type QueueItemStatus = "pending" | "in-flight" | "played" | "skipped" | "failed";
+
+export interface QueuePlaybackFailureRecord {
+  readonly code:
+    | "search-cancelled"
+    | "episode-cancelled"
+    | "provider-exhausted"
+    | "mpv-launch-failed"
+    | "playback-aborted"
+    | "handoff-failed";
+  readonly stage: "handoff" | "episode-selection" | "provider-resolution" | "player-launch";
+  readonly at: string;
+  readonly detail?: string;
+}
+
 export interface QueueEntry {
   readonly id: string;
   readonly title: string;
@@ -16,10 +31,11 @@ export interface QueueEntry {
   readonly status: QueueItemStatus;
   readonly queuePosition?: number;
   readonly completedAt?: string;
+  readonly inFlightAt?: string;
+  readonly lastFailure?: QueuePlaybackFailureRecord;
 }
 
 export type QueueSessionStatus = "active" | "recoverable" | "closed" | "expired";
-export type QueueItemStatus = "pending" | "played" | "skipped" | "failed";
 
 export interface QueueSessionInput {
   readonly id: string;
@@ -27,6 +43,7 @@ export interface QueueSessionInput {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly closedAt?: string;
+  readonly lastActivityAt?: string;
 }
 
 export interface QueueSessionRecord extends QueueSessionInput {
@@ -62,6 +79,8 @@ interface QueueEntryRow {
   readonly status?: QueueItemStatus;
   readonly queue_position?: number | null;
   readonly completed_at?: string | null;
+  readonly in_flight_at?: string | null;
+  readonly last_failure_json?: string | null;
 }
 
 interface QueueSessionRow {
@@ -70,7 +89,56 @@ interface QueueSessionRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly closed_at: string | null;
+  readonly last_activity_at?: string | null;
   readonly item_count: number;
+}
+
+const FAILURE_CODES = new Set<QueuePlaybackFailureRecord["code"]>([
+  "search-cancelled",
+  "episode-cancelled",
+  "provider-exhausted",
+  "mpv-launch-failed",
+  "playback-aborted",
+  "handoff-failed",
+]);
+
+const FAILURE_STAGES = new Set<QueuePlaybackFailureRecord["stage"]>([
+  "handoff",
+  "episode-selection",
+  "provider-resolution",
+  "player-launch",
+]);
+
+function parseFailureRecord(
+  raw: string | null | undefined,
+): QueuePlaybackFailureRecord | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const record = parsed as Record<string, unknown>;
+    if (
+      typeof record.code !== "string" ||
+      !FAILURE_CODES.has(record.code as QueuePlaybackFailureRecord["code"])
+    ) {
+      return undefined;
+    }
+    if (
+      typeof record.stage !== "string" ||
+      !FAILURE_STAGES.has(record.stage as QueuePlaybackFailureRecord["stage"])
+    ) {
+      return undefined;
+    }
+    if (typeof record.at !== "string") return undefined;
+    return {
+      code: record.code as QueuePlaybackFailureRecord["code"],
+      stage: record.stage as QueuePlaybackFailureRecord["stage"],
+      at: record.at,
+      ...(typeof record.detail === "string" ? { detail: record.detail } : {}),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function mapQueueRow(row: QueueEntryRow): QueueEntry {
@@ -90,6 +158,8 @@ function mapQueueRow(row: QueueEntryRow): QueueEntry {
     status: row.status ?? (row.played_at ? "played" : "pending"),
     queuePosition: row.queue_position ?? undefined,
     completedAt: row.completed_at ?? undefined,
+    inFlightAt: row.in_flight_at ?? undefined,
+    lastFailure: parseFailureRecord(row.last_failure_json),
   };
 }
 
@@ -100,6 +170,7 @@ function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     closedAt: row.closed_at ?? undefined,
+    lastActivityAt: row.last_activity_at ?? undefined,
     itemCount: row.item_count,
   };
 }
@@ -133,11 +204,20 @@ export class QueueRepository {
         input.queuePosition ?? null,
       );
 
+    this.touchSessionActivity(input.sessionId, now);
+
     const row = this.db
       .query<QueueEntryRow, [string]>("SELECT * FROM playlist_queue WHERE id = ?")
       .get(id);
     if (!row) throw new Error(`Playlist item not found after insert: ${id}`);
     return mapQueueRow(row);
+  }
+
+  getById(id: string): QueueEntry | undefined {
+    const row = this.db
+      .query<QueueEntryRow, [string]>("SELECT * FROM playlist_queue WHERE id = ?")
+      .get(id);
+    return row ? mapQueueRow(row) : undefined;
   }
 
   getAll(sessionId: string): QueueEntry[] {
@@ -148,6 +228,10 @@ export class QueueRepository {
       )
       .all(sessionId)
       .map(mapQueueRow);
+  }
+
+  getAllForSession(sessionId: string): QueueEntry[] {
+    return this.getAll(sessionId);
   }
 
   getUnplayed(sessionId: string): QueueEntry[] {
@@ -177,6 +261,61 @@ export class QueueRepository {
         "UPDATE playlist_queue SET played_at = ?, status = 'played', completed_at = ? WHERE id = ?",
       )
       .run(now, now, id);
+  }
+
+  /**
+   * Claim a pending row for playback handoff.
+   * Compare-and-set: only succeeds when id+session are pending.
+   */
+  markInFlight(id: string, sessionId: string, at: string): boolean {
+    const result = this.db
+      .query(
+        `UPDATE playlist_queue
+         SET status = 'in-flight', in_flight_at = ?, last_failure_json = NULL
+         WHERE id = ? AND session_id = ? AND status = 'pending'`,
+      )
+      .run(at, id, sessionId);
+    if (result.changes === 0) return false;
+    this.touchSessionActivity(sessionId, at);
+    return true;
+  }
+
+  /**
+   * Acknowledge confirmed playback startup (`playback-started`).
+   * Compare-and-set: only the exact in-flight row transitions to played.
+   */
+  acknowledgePlaybackStarted(id: string, sessionId: string, at: string): boolean {
+    const result = this.db
+      .query(
+        `UPDATE playlist_queue
+         SET status = 'played', played_at = ?, completed_at = ?
+         WHERE id = ? AND session_id = ? AND status = 'in-flight'`,
+      )
+      .run(at, at, id, sessionId);
+    if (result.changes === 0) return false;
+    this.touchSessionActivity(sessionId, at);
+    return true;
+  }
+
+  /**
+   * Pre-start failure: restore the exact in-flight row to pending with failure context.
+   * Preserves queue_position so the item stays in place.
+   */
+  restoreInFlightToPending(
+    id: string,
+    sessionId: string,
+    failure: QueuePlaybackFailureRecord,
+  ): boolean {
+    const result = this.db
+      .query(
+        `UPDATE playlist_queue
+         SET status = 'pending', in_flight_at = NULL, last_failure_json = ?
+         WHERE id = ? AND session_id = ? AND status = 'in-flight'`,
+      )
+      .run(JSON.stringify(failure), id, sessionId);
+    if (result.changes === 0) return false;
+    this.touchSessionActivity(sessionId, failure.at);
+    return true;
   }
 
   remove(id: string): void {
@@ -216,13 +355,21 @@ export class QueueRepository {
   }
 
   createQueueSession(input: QueueSessionInput): QueueSessionRecord {
+    const lastActivityAt = input.lastActivityAt ?? input.updatedAt;
     this.db
       .query(
         `INSERT OR REPLACE INTO playback_queue_sessions
-           (id, status, created_at, updated_at, closed_at)
-         VALUES (?, ?, ?, ?, ?)`,
+           (id, status, created_at, updated_at, closed_at, last_activity_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(input.id, input.status, input.createdAt, input.updatedAt, input.closedAt ?? null);
+      .run(
+        input.id,
+        input.status,
+        input.createdAt,
+        input.updatedAt,
+        input.closedAt ?? null,
+        lastActivityAt,
+      );
     const record = this.getQueueSession(input.id);
     if (!record) throw new Error(`Queue session not found after insert: ${input.id}`);
     return record;
@@ -233,7 +380,7 @@ export class QueueRepository {
       .query<QueueSessionRow, [string]>(
         `SELECT s.*, COUNT(q.id) AS item_count
          FROM playback_queue_sessions s
-         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status = 'pending'
+         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status IN ('pending', 'in-flight')
          WHERE s.id = ?
          GROUP BY s.id`,
       )
@@ -259,7 +406,7 @@ export class QueueRepository {
            AND EXISTS (
              SELECT 1 FROM playlist_queue q
              WHERE q.session_id = playback_queue_sessions.id
-               AND q.status = 'pending'
+               AND q.status IN ('pending', 'in-flight')
            )`,
       )
       .run(updatedAt, exceptSessionId);
@@ -280,6 +427,15 @@ export class QueueRepository {
     restoredAt: string,
   ): number {
     const restore = this.db.transaction(() => {
+      // Reset in-flight rows back to pending so restored work is claimable again.
+      this.db
+        .query(
+          `UPDATE playlist_queue
+           SET status = 'pending', in_flight_at = NULL
+           WHERE session_id = ?
+             AND status = 'in-flight'`,
+        )
+        .run(sourceSessionId);
       const result = this.db
         .query(
           `UPDATE playlist_queue
@@ -299,14 +455,24 @@ export class QueueRepository {
       .query<QueueSessionRow, [number]>(
         `SELECT s.*, COUNT(q.id) AS item_count
          FROM playback_queue_sessions s
-         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status = 'pending'
+         LEFT JOIN playlist_queue q ON q.session_id = s.id AND q.status IN ('pending', 'in-flight')
          WHERE s.status = 'recoverable'
          GROUP BY s.id
          HAVING item_count > 0
-         ORDER BY s.updated_at DESC
+         ORDER BY COALESCE(s.last_activity_at, s.updated_at) DESC
          LIMIT ?`,
       )
       .all(limit)
       .map(mapQueueSessionRow);
+  }
+
+  private touchSessionActivity(sessionId: string, at: string): void {
+    this.db
+      .query(
+        `UPDATE playback_queue_sessions
+         SET last_activity_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(at, at, sessionId);
   }
 }
