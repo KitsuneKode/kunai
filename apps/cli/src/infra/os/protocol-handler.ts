@@ -60,7 +60,7 @@ export function buildProtocolHandlerInstallPlan({
       writes: [],
       commands: [],
       notes: [
-        "Automatic kunai:// registration is currently Linux-only in source installs.",
+        "Automatic kunai:// registration is implemented on Linux only.",
         "macOS and Windows should be handled by a packaged installer so the OS owns the protocol association.",
         "Every kunai:// launch still opens Kunai with local confirmation before playback or download starts.",
       ],

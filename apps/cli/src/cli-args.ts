@@ -74,7 +74,7 @@ mpv
 PATHS & INTEGRATION
       --download-path <dir>  Override the download directory
       --open <url>           Open a trusted kunai:// share link
-      --install-protocol-handler  Register the kunai:// URL handler
+      --install-protocol-handler  Register the Linux kunai:// URL handler
       --handoff-url <url>    Internal: open a kunai:// deep link
       --dry-run              Print what would happen, change nothing
 

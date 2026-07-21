@@ -43,6 +43,14 @@ test("buildProtocolHandlerInstallPlan describes inspectable dry-run steps", () =
   expect(plan.notes.join(" ")).toContain("local confirmation");
 });
 
+test.each(["darwin", "win32"] as const)("registration is unavailable on %s", (platform) => {
+  const plan = buildProtocolHandlerInstallPlan({ platform });
+  expect(plan.supported).toBe(false);
+  expect(plan.writes).toEqual([]);
+  expect(plan.commands).toEqual([]);
+  expect(plan.notes.join(" ")).toContain("implemented on Linux only");
+});
+
 test("buildProtocolHandlerInstallPlan gives manual guidance for unsupported platforms", () => {
   const plan = buildProtocolHandlerInstallPlan({
     platform: "darwin",

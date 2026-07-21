@@ -607,9 +607,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (args.installProtocolHandler) {
     const { buildProtocolHandlerInstallPlan, installKunaiProtocolHandler } =
       await import("./infra/os/protocol-handler");
+    const plan = buildProtocolHandlerInstallPlan();
     if (args.dryRun) {
-      const plan = buildProtocolHandlerInstallPlan();
       console.log(JSON.stringify(plan, null, 2));
+      return;
+    }
+    if (!plan.supported) {
+      for (const note of plan.notes) {
+        console.error(note);
+      }
+      process.exitCode = 1;
       return;
     }
     const paths = await installKunaiProtocolHandler();

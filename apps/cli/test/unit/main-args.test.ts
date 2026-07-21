@@ -9,6 +9,7 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
+  expect(help).toContain("Register the Linux kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
 });
