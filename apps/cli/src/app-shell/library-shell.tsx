@@ -65,9 +65,8 @@ export function LibraryShell({
   initialView?: TabId;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
-  const [downloadsEnabledOverride, setDownloadsEnabledOverride] = useState<boolean | null>(null);
   const [downloadJobCount, setDownloadJobCount] = useState(0);
-  const downloadsEnabled = downloadsEnabledOverride ?? container.config.downloadsEnabled;
+  const downloadsEnabled = container.config.downloadsEnabled;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
 
   useEffect(() => {
@@ -83,31 +82,8 @@ export function LibraryShell({
     });
   }, [container]);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onClose();
-      return;
-    }
-    if (key.tab) {
-      setTab((prev) => (prev === "library" ? "queue" : "library"));
-      return;
-    }
-    if (input === "1" || input === "l") {
-      setTab("library");
-      return;
-    }
-    if (input === "2") {
-      setTab("queue");
-      return;
-    }
-    if (input === "d" || input === "D") {
-      const next = !downloadsEnabled;
-      setDownloadsEnabledOverride(next);
-      void container.config.update({ downloadsEnabled: next });
-      void container.config.save();
-      return;
-    }
-  });
+  // Input ownership is structural: only the mounted child surface owns keys.
+  // LibraryShell itself does not register useInput.
 
   if (viewport.tooSmall) {
     return (
@@ -140,7 +116,11 @@ export function LibraryShell({
             showSelectionHints={false}
           />
         ) : (
-          <LibraryTab container={container} />
+          <LibraryTab
+            container={container}
+            onClose={onClose}
+            onNavigateToQueue={() => setTab("queue")}
+          />
         )}
       </Box>
       <Box marginTop={1} flexDirection="column">
@@ -174,7 +154,15 @@ export function LibraryShell({
 
 type LibraryView = "titles" | "title-detail";
 
-function LibraryTab({ container }: { container: Container }) {
+function LibraryTab({
+  container,
+  onClose,
+  onNavigateToQueue,
+}: {
+  container: Container;
+  onClose: () => void;
+  onNavigateToQueue: () => void;
+}) {
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
   const [entries, setEntries] = useState<
@@ -187,6 +175,7 @@ function LibraryTab({ container }: { container: Container }) {
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
+  const titlesActive = libraryView === "titles";
 
   useEffect(() => {
     let cancelled = false;
@@ -262,103 +251,114 @@ function LibraryTab({ container }: { container: Container }) {
     })();
   };
 
-  useInput((input, key) => {
-    if (libraryView === "title-detail") return;
-    if (loading || !entries) return;
-    if (key.backspace || input === "\b") {
-      setFilterQuery((query) => query.slice(0, -1));
-      return;
-    }
-    if (input === "\u001b") return;
-    if (
-      input.length === 1 &&
-      !key.ctrl &&
-      !key.meta &&
-      !key.return &&
-      !key.escape &&
-      !key.upArrow &&
-      !key.downArrow &&
-      !key.tab &&
-      input !== "x" &&
-      input !== "X" &&
-      input !== "p" &&
-      input !== "P"
-    ) {
-      setFilterQuery((query) => query + input);
-      return;
-    }
-    if (totalRows === 0) return;
-    // Esc cancels an armed delete-confirm first (web-routing back: undo the
-    // pending state before leaving the surface). Only when nothing is armed does
-    // esc fall through to the root overlay, which closes the Library.
-    if (key.escape && confirmDeleteKey) {
-      setConfirmDeleteKey(null);
-      return;
-    }
-    if (key.upArrow) {
-      setConfirmDeleteKey(null);
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setConfirmDeleteKey(null);
-      setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
-      return;
-    }
-    if (input === "x" || key.delete) {
-      if (!selectedOfflineGroup) return;
-      if (confirmDeleteKey === selectedOfflineGroup.key) {
+  useInput(
+    (input, key) => {
+      // Esc cancels an armed delete-confirm first (web-routing back: undo the
+      // pending state before leaving the surface). Only when nothing is armed does
+      // esc close the Library overlay.
+      if (key.escape) {
+        if (confirmDeleteKey) {
+          setConfirmDeleteKey(null);
+          return;
+        }
+        onClose();
+        return;
+      }
+      if (key.tab || input === "2") {
+        onNavigateToQueue();
+        return;
+      }
+      if (loading || !entries) return;
+      if (key.backspace || input === "\b") {
+        setFilterQuery((query) => query.slice(0, -1));
+        return;
+      }
+      if (input === "\u001b") return;
+      if (
+        input.length === 1 &&
+        !key.ctrl &&
+        !key.meta &&
+        !key.return &&
+        !key.escape &&
+        !key.upArrow &&
+        !key.downArrow &&
+        !key.tab &&
+        input !== "x" &&
+        input !== "X" &&
+        input !== "p" &&
+        input !== "P"
+      ) {
+        setFilterQuery((query) => query + input);
+        return;
+      }
+      if (totalRows === 0) return;
+      if (key.upArrow) {
         setConfirmDeleteKey(null);
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setConfirmDeleteKey(null);
+        setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
+        return;
+      }
+      if (input === "x" || key.delete) {
+        if (!selectedOfflineGroup) return;
+        if (confirmDeleteKey === selectedOfflineGroup.key) {
+          setConfirmDeleteKey(null);
+          const groupEntryIds: string[] = [];
+          for (const entry of entries) {
+            if (entry.job.titleId === selectedOfflineGroup.titleId)
+              groupEntryIds.push(entry.job.id);
+          }
+          for (const jobId of groupEntryIds) {
+            container.downloadService.deleteJob(jobId, { deleteArtifact: true });
+          }
+          setEntries((prev) =>
+            prev ? prev.filter((e) => e.job.titleId !== selectedOfflineGroup.titleId) : null,
+          );
+        } else {
+          setConfirmDeleteKey(selectedOfflineGroup.key);
+        }
+        return;
+      }
+      if (input === "p" || input === "P") {
+        if (!selectedOfflineGroup) return;
         const groupEntryIds: string[] = [];
         for (const entry of entries) {
           if (entry.job.titleId === selectedOfflineGroup.titleId) groupEntryIds.push(entry.job.id);
         }
-        for (const jobId of groupEntryIds) {
-          container.downloadService.deleteJob(jobId, { deleteArtifact: true });
-        }
-        setEntries((prev) =>
-          prev ? prev.filter((e) => e.job.titleId !== selectedOfflineGroup.titleId) : null,
-        );
-      } else {
-        setConfirmDeleteKey(selectedOfflineGroup.key);
+        const protectedSet = new Set(container.config.protectedDownloadJobIds);
+        const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
+        void (async () => {
+          const updated = new Set(container.config.protectedDownloadJobIds);
+          for (const jobId of groupEntryIds) {
+            if (allProtected) updated.delete(jobId);
+            else updated.add(jobId);
+          }
+          await container.config.update({ protectedDownloadJobIds: [...updated] });
+          await container.config.save();
+        })();
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: allProtected
+            ? `Removed cleanup protection: ${selectedOfflineGroup.titleName}`
+            : `Protected from cleanup: ${selectedOfflineGroup.titleName}`,
+        });
+        return;
       }
-      return;
-    }
-    if (input === "p" || input === "P") {
-      if (!selectedOfflineGroup) return;
-      const groupEntryIds: string[] = [];
-      for (const entry of entries) {
-        if (entry.job.titleId === selectedOfflineGroup.titleId) groupEntryIds.push(entry.job.id);
+      if (key.return) {
+        if (!selectedOfflineGroup) return;
+        setDetailGroup(selectedOfflineGroup);
+        setLibraryView("title-detail");
+        return;
       }
-      const protectedSet = new Set(container.config.protectedDownloadJobIds);
-      const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
-      void (async () => {
-        const updated = new Set(container.config.protectedDownloadJobIds);
-        for (const jobId of groupEntryIds) {
-          if (allProtected) updated.delete(jobId);
-          else updated.add(jobId);
-        }
-        await container.config.update({ protectedDownloadJobIds: [...updated] });
-        await container.config.save();
-      })();
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: allProtected
-          ? `Removed cleanup protection: ${selectedOfflineGroup.titleName}`
-          : `Protected from cleanup: ${selectedOfflineGroup.titleName}`,
-      });
-      return;
-    }
-    if (key.return) {
-      if (!selectedOfflineGroup) return;
-      setDetailGroup(selectedOfflineGroup);
-      setLibraryView("title-detail");
-      return;
-    }
-    if (confirmDeleteKey !== null) {
-      setConfirmDeleteKey(null);
-    }
-  });
+      if (confirmDeleteKey !== null) {
+        setConfirmDeleteKey(null);
+      }
+    },
+    { isActive: titlesActive },
+  );
 
   const railPosterUrl =
     libraryView === "titles" && selectedOfflineGroup
@@ -435,6 +435,7 @@ function LibraryTab({ container }: { container: Container }) {
           setLibraryView("titles");
           setDetailGroup(null);
         }}
+        onNavigateToQueue={onNavigateToQueue}
         onEntriesChanged={refreshEntries}
       />
     );

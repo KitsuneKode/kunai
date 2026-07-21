@@ -47,12 +47,14 @@ export function LibraryTitleDetail({
   group,
   entries,
   onBack,
+  onNavigateToQueue,
   onEntriesChanged,
 }: {
   readonly container: Container;
   readonly group: OfflineLibraryShelfGroup;
   readonly entries: readonly OfflineLibraryEntry[];
   readonly onBack: () => void;
+  readonly onNavigateToQueue?: () => void;
   readonly onEntriesChanged: () => void;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
@@ -168,63 +170,70 @@ export function LibraryTitleDetail({
     enabled: showRail,
   });
 
-  useInput((input, key) => {
-    if (busy || totalRows === 0) return;
-    if (key.escape) {
-      onBack();
-      return;
-    }
-    if (key.upArrow) {
-      setSelectedIndex((prev) => Math.max(0, prev - 1));
-      return;
-    }
-    if (key.downArrow) {
-      setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
-      return;
-    }
-    if (!key.return || !selectedRow) return;
-
-    void (async () => {
-      setBusy(true);
-      try {
-        if (selectedRow.kind === "episode") {
-          const job = selectedRow.entry.job;
-          if (job.status !== "completed" && job.status !== "completed-with-notes") {
-            return;
-          }
-          const playable = await container.offlineLibraryService.getPlayableSource(job.id);
-          if (playable.status !== "ready") {
-            container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: `Offline file unavailable (${playable.status}). Try integrity check.`,
-            });
-            return;
-          }
-          await requestUnifiedOfflinePlayback(container, job.id);
-          return;
-        }
-
-        const result = await routeOfflineLibraryGroupAction(container, entries, {
-          type: selectedRow.id as
-            | "search-online"
-            | "download-more"
-            | "check-integrity"
-            | "repair-missing"
-            | "toggle-continuation"
-            | "delete-group",
-        });
-        if (result === "exit") {
-          onBack();
-          return;
-        }
-        if (result === "refresh") {
-          onEntriesChanged();
-        }
-      } finally {
-        setBusy(false);
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onBack();
+        return;
       }
-    })();
-  });
+      if (key.tab || input === "2") {
+        onNavigateToQueue?.();
+        return;
+      }
+      if (busy || totalRows === 0) return;
+      if (key.upArrow) {
+        setSelectedIndex((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
+        return;
+      }
+      if (!key.return || !selectedRow) return;
+
+      void (async () => {
+        setBusy(true);
+        try {
+          if (selectedRow.kind === "episode") {
+            const job = selectedRow.entry.job;
+            if (job.status !== "completed" && job.status !== "completed-with-notes") {
+              return;
+            }
+            const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+            if (playable.status !== "ready") {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: `Offline file unavailable (${playable.status}). Try integrity check.`,
+              });
+              return;
+            }
+            await requestUnifiedOfflinePlayback(container, job.id);
+            return;
+          }
+
+          const result = await routeOfflineLibraryGroupAction(container, entries, {
+            type: selectedRow.id as
+              | "search-online"
+              | "download-more"
+              | "check-integrity"
+              | "repair-missing"
+              | "toggle-continuation"
+              | "delete-group",
+          });
+          if (result === "exit") {
+            onBack();
+            return;
+          }
+          if (result === "refresh") {
+            onEntriesChanged();
+          }
+        } finally {
+          setBusy(false);
+        }
+      })();
+    },
+    { isActive: true },
+  );
 
   const list = (
     <Box flexDirection="column" flexGrow={1}>

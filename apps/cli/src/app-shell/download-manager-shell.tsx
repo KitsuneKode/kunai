@@ -210,107 +210,110 @@ export function DownloadManagerContent({
     }
   }, [allJobs.length, selectedIndex]);
 
-  useInput((input, key) => {
-    if (key.escape) {
-      onClose();
-      return;
-    }
-    if (input === "l" && onNavigateToLibrary) {
-      onNavigateToLibrary();
-      return;
-    }
-    if (input.toLowerCase() === "a") {
-      if (repairSweepRunning) return;
-      const repairableCount = failedJobs.filter((job) => job.status === "repairable").length;
-      if (repairableCount === 0) return;
-      setRepairSweepRunning(true);
-      setRepairSweepStatus(
-        `Repairing ${repairableCount} sidecar${repairableCount === 1 ? "" : "s"}...`,
-      );
-      void container.downloadService
-        .repairRepairableSidecars()
-        .then((summary) => {
-          setRepairSweepStatus(
-            summary.checked === 0
-              ? "No repairable sidecars found"
-              : `Repair sweep: ${summary.repaired} repaired, ${summary.stillRepairable} still pending, ${summary.failed} failed`,
-          );
-          refresh();
-          return undefined;
-        })
-        .catch((error: unknown) => {
-          const message = error instanceof Error ? error.message : String(error);
-          setRepairSweepStatus(`Repair sweep failed: ${message}`);
-        })
-        .finally(() => {
-          setRepairSweepRunning(false);
-        });
-      return;
-    }
-    if (key.upArrow) {
-      if (allJobs.length === 0) return;
-      setConfirmingDeleteIndex(null);
-      setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
-      return;
-    }
-    if (key.downArrow) {
-      if (allJobs.length === 0) return;
-      setConfirmingDeleteIndex(null);
-      setSelectedIndex((current) => (current + 1) % allJobs.length);
-      return;
-    }
-    if (input === "x" || key.delete) {
-      const job = allJobs[selectedIndex];
-      if (!job) return;
-      if (job.status === "running") {
-        void container.downloadService.abort(job.id);
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        onClose();
         return;
       }
-      if (confirmingDeleteIndex === selectedIndex) {
-        setConfirmingDeleteIndex(null);
-        const deleteArtifact =
-          job.status === "failed" ||
-          job.status === "repairable" ||
-          job.status === "completed" ||
-          job.status === "completed-with-notes";
-        void container.downloadService.deleteJob(job.id, { deleteArtifact });
+      if ((key.tab || input === "1" || input === "l") && onNavigateToLibrary) {
+        onNavigateToLibrary();
         return;
       }
-      setConfirmingDeleteIndex(selectedIndex);
-      return;
-    }
-    if (confirmingDeleteIndex !== null) {
-      setConfirmingDeleteIndex(null);
-    }
-    if (input === "r" || key.return) {
-      const job = allJobs[selectedIndex];
-      if (!job) return;
-
-      if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
-        void import("@/app/offline/offline-playback-launch").then(
-          ({ requestUnifiedOfflinePlayback }) => requestUnifiedOfflinePlayback(container, job.id),
+      if (input.toLowerCase() === "a") {
+        if (repairSweepRunning) return;
+        const repairableCount = failedJobs.filter((job) => job.status === "repairable").length;
+        if (repairableCount === 0) return;
+        setRepairSweepRunning(true);
+        setRepairSweepStatus(
+          `Repairing ${repairableCount} sidecar${repairableCount === 1 ? "" : "s"}...`,
         );
-        return;
-      }
-
-      if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
         void container.downloadService
-          .retry(job.id)
-          .then(() => {
+          .repairRepairableSidecars()
+          .then((summary) => {
+            setRepairSweepStatus(
+              summary.checked === 0
+                ? "No repairable sidecars found"
+                : `Repair sweep: ${summary.repaired} repaired, ${summary.stillRepairable} still pending, ${summary.failed} failed`,
+            );
             refresh();
-            if (job.status !== "repairable") {
-              void container.downloadService.processQueue();
-            }
             return undefined;
           })
           .catch((error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
-            setRepairSweepStatus(`Retry failed: ${message}`);
+            setRepairSweepStatus(`Repair sweep failed: ${message}`);
+          })
+          .finally(() => {
+            setRepairSweepRunning(false);
           });
+        return;
       }
-      return;
-    }
-  });
+      if (key.upArrow) {
+        if (allJobs.length === 0) return;
+        setConfirmingDeleteIndex(null);
+        setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
+        return;
+      }
+      if (key.downArrow) {
+        if (allJobs.length === 0) return;
+        setConfirmingDeleteIndex(null);
+        setSelectedIndex((current) => (current + 1) % allJobs.length);
+        return;
+      }
+      if (input === "x" || key.delete) {
+        const job = allJobs[selectedIndex];
+        if (!job) return;
+        if (job.status === "running") {
+          void container.downloadService.abort(job.id);
+          return;
+        }
+        if (confirmingDeleteIndex === selectedIndex) {
+          setConfirmingDeleteIndex(null);
+          const deleteArtifact =
+            job.status === "failed" ||
+            job.status === "repairable" ||
+            job.status === "completed" ||
+            job.status === "completed-with-notes";
+          void container.downloadService.deleteJob(job.id, { deleteArtifact });
+          return;
+        }
+        setConfirmingDeleteIndex(selectedIndex);
+        return;
+      }
+      if (confirmingDeleteIndex !== null) {
+        setConfirmingDeleteIndex(null);
+      }
+      if (input === "r" || key.return) {
+        const job = allJobs[selectedIndex];
+        if (!job) return;
+
+        if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
+          void import("@/app/offline/offline-playback-launch").then(
+            ({ requestUnifiedOfflinePlayback }) => requestUnifiedOfflinePlayback(container, job.id),
+          );
+          return;
+        }
+
+        if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
+          void container.downloadService
+            .retry(job.id)
+            .then(() => {
+              refresh();
+              if (job.status !== "repairable") {
+                void container.downloadService.processQueue();
+              }
+              return undefined;
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              setRepairSweepStatus(`Retry failed: ${message}`);
+            });
+        }
+        return;
+      }
+    },
+    { isActive: true },
+  );
 
   const { tooSmall, minColumns, minRows } = viewport;
   const shellWidth = viewport.columns ?? 80;
