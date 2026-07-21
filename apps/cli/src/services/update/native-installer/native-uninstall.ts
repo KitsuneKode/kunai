@@ -211,8 +211,10 @@ export async function nativeUninstall(
     }
 
     // 4. Optional purge of user roots (never external/custom download dirs).
+    //    Skip purge entirely on partial lifecycle failure so install.json and
+    //    user roots survive (purge of configDir would otherwise wipe the manifest).
     const preserveSet = new Set(options.preservePaths ?? []);
-    if (options.purge) {
+    if (options.purge && !lifecyclePartial) {
       for (const root of [layout.configDir, layout.dataDir, layout.cacheDir]) {
         if (preserveSet.has(root)) {
           preserved.push(root);

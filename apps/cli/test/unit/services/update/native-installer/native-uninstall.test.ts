@@ -325,4 +325,40 @@ describe("nativeUninstall refusal", () => {
     expect(existsSync(join(layout.configDir, "install.json"))).toBe(true);
     expect(result.failed.some((f) => f.path === layout.versionsDir)).toBe(true);
   });
+
+  test("partial failure with purge:true still keeps manifest and user roots", async () => {
+    const { root, layout } = await makeRoot();
+    await seedManagedUnixInstall(layout);
+    const user = await seedUserData(layout, root);
+
+    const originalRm = rm;
+    const rmSpy = async (path: Parameters<typeof rm>[0], options?: Parameters<typeof rm>[1]) => {
+      if (typeof path === "string" && path === layout.versionsDir) {
+        throw new Error("simulated versions removal failure");
+      }
+      return originalRm(path, options);
+    };
+
+    const result = await nativeUninstall({
+      layout,
+      platform: "linux",
+      purge: true,
+      rmImpl: rmSpy,
+    });
+
+    expect(result.status).toBe("partial");
+    expect(existsSync(join(layout.configDir, "install.json"))).toBe(true);
+    expect(existsSync(layout.configDir)).toBe(true);
+    expect(existsSync(layout.dataDir)).toBe(true);
+    expect(existsSync(layout.cacheDir)).toBe(true);
+    expect(existsSync(user.configJson)).toBe(true);
+    expect(existsSync(user.historyDb)).toBe(true);
+    expect(existsSync(user.cacheDb)).toBe(true);
+    expect(result.preserved).toContain(layout.configDir);
+    expect(result.preserved).toContain(layout.dataDir);
+    expect(result.preserved).toContain(layout.cacheDir);
+    expect(result.removed).not.toContain(layout.configDir);
+    expect(result.removed).not.toContain(layout.dataDir);
+    expect(result.removed).not.toContain(layout.cacheDir);
+  });
 });
