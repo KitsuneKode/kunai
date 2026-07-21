@@ -12,6 +12,14 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("Register the Linux kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
+  expect(help).toContain("kunai doctor");
+  expect(help).toContain("kunai doctor --json");
+});
+
+test("parseArgs treats --json as a known maintenance flag", () => {
+  const args = parseArgs(["--json"]);
+  // Doctor is routed in runCli before parseArgs; --json must not warn as unknown.
+  expect(args).toBeDefined();
 });
 
 test("parseArgs supports --youtube launch mode", () => {

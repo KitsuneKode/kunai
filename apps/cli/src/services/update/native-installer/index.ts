@@ -47,6 +47,14 @@ export {
 export { cleanupOldVersions } from "./cleanup-versions";
 export { migrateFlatInstall, type MigrateFlatResult } from "./migrate-flat-install";
 export { getInstallDiagnostics, type InstallDiagnostic } from "./install-diagnostic";
+export {
+  buildDoctorReport,
+  formatDoctorReportText,
+  observePathProvenance,
+  type BuildDoctorReportInput,
+  type DoctorFinding,
+  type DoctorReport,
+} from "./doctor";
 export { isMuslEnvironment, isMuslEnvironmentSync } from "./musl";
 export {
   verifyStoredVersion,

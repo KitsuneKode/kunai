@@ -553,8 +553,17 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
-  // `kunai upgrade` / `kunai uninstall` — channel-aware maintenance subcommands.
+  // `kunai upgrade` / `kunai uninstall` / `kunai doctor` — channel-aware maintenance.
   // Handled before the shell boots so they can run standalone (binary self-replace).
+  if (argv[0] === "doctor") {
+    const { runDoctor } = await import("./services/update/run-doctor");
+    process.exit(
+      await runDoctor({
+        json: argv.includes("--json"),
+        runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
+      }),
+    );
+  }
   if (argv[0] === "upgrade") {
     const { runUpgrade } = await import("./services/update/run-upgrade");
     const checkOnly = argv.includes("--check");

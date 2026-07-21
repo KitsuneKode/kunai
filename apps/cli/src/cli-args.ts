@@ -89,6 +89,8 @@ DIAGNOSTICS
 MAINTENANCE
   kunai install                Install or reinstall Kunai (binary default)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
+  kunai doctor                 Read-only install health report
+  kunai doctor --json          Print the same report as JSON
   kunai upgrade              Update to the latest release (channel-aware)
   kunai upgrade --check      Report whether an update is available
   kunai uninstall            Remove kunai (add --purge to also delete user data)
@@ -99,7 +101,7 @@ Inside the app, press / for the command palette and ? for keyboard help.
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options surface a
-// warning instead of being silently dropped. Includes `--check`/`--purge` (read
+// warning instead of being silently dropped. Includes `--check`/`--purge`/`--json` (read
 // by runCli, not here) to avoid false "unknown option" warnings.
 const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "-S",
@@ -147,6 +149,7 @@ const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--version",
   "--purge",
   "--check",
+  "--json",
 ]);
 
 const VALUE_FLAGS: ReadonlySet<string> = new Set([

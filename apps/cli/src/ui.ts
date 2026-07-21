@@ -66,11 +66,13 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
   await Bun.write(NOTICE_FILE, JSON.stringify(state, null, 2));
 }
 
-export async function checkDeps(
-  appVersion = "0.1.0",
-  options: { silent?: boolean; requireYtDlp?: boolean } = {},
+/**
+ * Read-only dependency/capability probe. Never persists notice state.
+ * Prefer this for doctor and other inspection-only callers.
+ */
+export async function probeCapabilities(
+  options: { requireYtDlp?: boolean } = {},
 ): Promise<CapabilitySnapshot> {
-  const silent = options.silent ?? false;
   const requireYtDlp = options.requireYtDlp ?? false;
   const issues: CapabilityIssue[] = [];
   const mpv = Boolean(Bun.which("mpv"));
@@ -81,20 +83,18 @@ export async function checkDeps(
   const image = detectImageCapability();
 
   if (!mpv) {
-    const remediation = [
-      "Arch:   sudo pacman -S mpv",
-      "Debian: sudo apt install mpv",
-      "macOS:  brew install mpv",
-      "Windows: winget install --id mpv.net -e",
-    ] as const;
     issues.push({
       id: "mpv-missing",
       // Missing mpv blocks playback only — setup and non-playback shell still mount.
       severity: "degraded",
       message: "mpv not found — required for playback (shell still available).",
-      remediation,
+      remediation: [
+        "Arch:   sudo pacman -S mpv",
+        "Debian: sudo apt install mpv",
+        "macOS:  brew install mpv",
+        "Windows: winget install --id mpv.net -e",
+      ],
     });
-    if (!silent) console.error("mpv not found — required for playback (shell still available).");
   }
 
   if (!ytDlp) {
@@ -145,7 +145,7 @@ export async function checkDeps(
     });
   }
 
-  const snapshot: CapabilitySnapshot = {
+  return {
     mpv,
     ffprobe,
     ytDlp,
@@ -154,6 +154,19 @@ export async function checkDeps(
     image,
     issues,
   };
+}
+
+export async function checkDeps(
+  appVersion = "0.1.0",
+  options: { silent?: boolean; requireYtDlp?: boolean } = {},
+): Promise<CapabilitySnapshot> {
+  const silent = options.silent ?? false;
+  const snapshot = await probeCapabilities({ requireYtDlp: options.requireYtDlp });
+
+  if (!snapshot.mpv && !silent) {
+    console.error("mpv not found — required for playback (shell still available).");
+  }
+
   const fingerprint = capabilityFingerprint(snapshot);
   const previous = await loadCapabilityNoticeState();
   const shouldShowRemediation =
