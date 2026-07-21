@@ -43,3 +43,17 @@ test("clear removes the checkpoint and invalidates pending unregisters", () => {
   active.flush();
   expect(checkpoints).toEqual(["second"]);
 });
+
+test("PlaybackPhase-style owned unregister only clears its own registration", () => {
+  const checkpoints: string[] = [];
+  const active = new ActivePlaybackCheckpoint();
+  // Rejected short session owns this registration and must tear it down
+  // without wiping a later playback's checkpoint (do not use clear()).
+  const releaseOwned = active.register(() => checkpoints.push("rejected"));
+  const keepAlive = active.register(() => checkpoints.push("live"));
+  releaseOwned();
+  active.flush();
+  keepAlive();
+  active.flush();
+  expect(checkpoints).toEqual(["live"]);
+});

@@ -3348,8 +3348,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     };
   }
 
+  /**
+   * Rejected / aborted / skipped-history sessions must not survive coordinated
+   * shutdown flush. Clears ledger state and unregisters only this phase's
+   * active checkpoint (registration-scoped — never `clear()`, which would wipe
+   * a newer playback's callback).
+   */
   private releasePlaybackLedgerWithoutPersist(): void {
-    this.playbackLedger?.abandon();
+    this.playbackLedger?.discard();
     this.playbackLedger = null;
     this.unregisterActiveCheckpoint?.();
     this.unregisterActiveCheckpoint = null;

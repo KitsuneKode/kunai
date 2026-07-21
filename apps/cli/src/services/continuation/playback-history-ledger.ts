@@ -128,9 +128,23 @@ export class PlaybackHistoryLedger {
     this.context = null;
   }
 
-  /** Drop ledger state without persisting — used when history save is skipped or aborted. */
-  abandon(): void {
+  /**
+   * Drop ledger state without persisting — used when history save is skipped,
+   * aborted, or rejected (short / DNS sessions). Idempotent. After discard,
+   * registered shutdown checkpoints must not write history.
+   */
+  discard(): void {
     this.context = null;
+    this.lastPositionSeconds = 0;
+    this.engagedSeconds = 0;
+    this.paused = false;
+    this.lastCheckpointAt = 0;
+    this.durationSeconds = 0;
+  }
+
+  /** @deprecated Prefer {@link discard}. */
+  abandon(): void {
+    this.discard();
   }
 
   checkpoint(): void {
