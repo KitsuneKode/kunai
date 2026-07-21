@@ -18,20 +18,21 @@ why the overlap is temporary.
 
 ## Ownership
 
-| Area                          | Owns                                                                                                         | Must not own                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| `packages/types`              | Serializable contracts crossing package, storage, and provider boundaries                                    | UI state, app policy, provider quirks       |
-| `packages/schemas`            | Runtime validation for untrusted or persisted data                                                           | Business decisions                          |
-| `packages/core`               | Provider SDK contracts, resolver primitives, cache-key policy, fallback abstractions, trace models           | Ink UI, mpv IPC, history writes             |
-| `packages/providers`          | Provider-specific source extraction, mirror/source retry, decryption, language/source evidence               | Global fallback UX, history, app settings   |
-| `packages/relay`              | Provider RPC relay validation, host allowlists, client fetch-port adapter, relay server shared handler       | Provider scraping logic, app settings UI    |
-| `packages/storage`            | SQLite paths, migrations, repositories, TTL helpers                                                          | UI behavior, provider scraping              |
-| `apps/cli/src/services`       | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration | Ink rendering, raw mpv sockets              |
-| `apps/cli/src/app`            | Session phases, playback/search policy, user-intent semantics, history decisions                             | Provider internals, terminal drawing        |
-| `apps/cli/src/infra`          | mpv, IPC, process, filesystem, terminal/runtime mechanics                                                    | User-facing playback policy                 |
-| `apps/cli/src/app-shell`      | Ink components, overlays, footer, command palette, picker rendering                                          | Stream resolution, provider fallback policy |
-| `archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                      | Active beta runtime imports                 |
-| `apps/experiments`            | Provider research and scratchpads                                                                            | Production runtime behavior                 |
+| Area                          | Owns                                                                                                              | Must not own                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `packages/types`              | Serializable contracts crossing package, storage, and provider boundaries                                         | UI state, app policy, provider quirks       |
+| `packages/schemas`            | Runtime validation for untrusted or persisted data                                                                | Business decisions                          |
+| `packages/core`               | Provider SDK contracts, resolver primitives, cache-key policy, fallback abstractions, trace models                | Ink UI, mpv IPC, history writes             |
+| `packages/providers`          | Provider-specific source extraction, mirror/source retry, decryption, language/source evidence                    | Global fallback UX, history, app settings   |
+| `packages/relay`              | Provider RPC relay validation, host allowlists, client fetch-port adapter, relay server shared handler            | Provider scraping logic, app settings UI    |
+| `packages/storage`            | SQLite paths, migrations, repositories, TTL helpers                                                               | UI behavior, provider scraping              |
+| `apps/cli/src/services`       | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration      | Ink rendering, raw mpv sockets              |
+| `apps/cli/src/app`            | Session phases, playback/search policy, user-intent semantics, history decisions, queue claim/ack/rollback policy | Provider internals, terminal drawing        |
+| `apps/cli/src/domain/queue`   | Queue playback intents, restore-with-resume, planner placement, `QueueService` adapters over storage              | Ink rendering, mpv launch, provider resolve |
+| `apps/cli/src/infra`          | mpv, IPC, process, filesystem, terminal/runtime mechanics; emits `playback-started` (ack boundary)                | User-facing playback policy                 |
+| `apps/cli/src/app-shell`      | Ink components, overlays, footer, command palette, picker rendering; exact-ID queue play bridge                   | Stream resolution, provider fallback policy |
+| `archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                           | Active beta runtime imports                 |
+| `apps/experiments`            | Provider research and scratchpads                                                                                 | Production runtime behavior                 |
 
 ## Naming And Placement Rules
 
@@ -165,6 +166,19 @@ When removing legacy:
    something.
 4. Delete it when it no longer informs provider parity or migration.
 
+## Queue acknowledgement ownership
+
+- **Storage** owns compare-and-set transitions (`markInFlight`,
+  `acknowledgePlaybackStarted`, `restoreInFlightToPending`) and crash restore
+  placement. It must not import CLI domain types.
+- **Domain (`QueueService` / restore)** owns exact-ID claim intents and
+  recoverable-session restore order (in-flight identity first).
+- **App (PlaybackPhase / `createQueuePlaybackAttempt`)** owns when to claim,
+  acknowledge (only on `playback-started`), and rollback before start.
+- **Infra (player)** emits lifecycle events; it must not mark queue rows played.
+- **App-shell** may claim via `beginPlayback(exactId)` for manual / post-play
+  play actions, then hand the intent to app playback — never mark played itself.
+
 ## Related Docs
 
 - Runtime architecture: [architecture.md](./architecture.md)
@@ -174,3 +188,4 @@ When removing legacy:
 - Provider contracts: [providers.md](./providers.md)
 - Source inventory contract: [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)
 - Testing strategy: [testing-strategy.md](./testing-strategy.md)
+- Up Next product rules: [features/queue.md](./features/queue.md)

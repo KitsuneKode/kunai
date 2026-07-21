@@ -79,7 +79,7 @@ test("failed compare-and-set leaves overlay open (no resolve, no close)", () => 
 
 test("Enter path resolves bridge with claimed intent then closes overlay", () => {
   const { db, service, selected } = setupQueue();
-  const resolve = mock(() => {});
+  const resolve = mock((_value: { title: string; intent: { queueEntryId: string } }) => {});
   const closeOverlay = mock(() => {});
 
   const outcome = resolveQueueRowPlaySelection(service, selected.id, resolve, closeOverlay);

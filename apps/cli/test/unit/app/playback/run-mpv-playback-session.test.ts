@@ -55,6 +55,10 @@ async function runWithPlayerEvents(
       return FINISHED;
     },
     releasePersistentSession: async () => undefined,
+    killActiveMpvProcessesSync: () => undefined,
+    beginShutdown: () => undefined,
+    isAvailable: async () => true,
+    playLocal: async () => FINISHED,
   };
 
   return runMpvPlaybackSession({

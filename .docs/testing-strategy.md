@@ -215,8 +215,21 @@ Best target for:
 - setup blocker to install-flow transitions
 - overlay stack behavior
 - playback handoff state transitions
+- queue claim → fake-player `playback-started` ack → rollback / crash restore
 
 Keep these few and high-signal.
+
+**Queue playback lifecycle** (`apps/cli/test/integration/queue-playback-lifecycle.test.ts`):
+
+- Uses a deterministic fake `PlayerService` plus the Ink `render-capture` harness
+- No live providers
+- Proves: manual claim/ack, auto-next exact ID + absolute anime identity, failed
+  launch rollback (same row/position), crash leaves `in-flight` recoverable,
+  restart restores that row first, shell returns to Up Next after playback
+
+```sh
+bun run --cwd apps/cli test:integration -- test/integration/queue-playback-lifecycle.test.ts
+```
 
 #### Native installer Docker smoke
 

@@ -132,6 +132,29 @@ This parity policy only applies to the concrete AllAnime / AllManga-style API cl
 
 ## Playback and Recovery
 
+### Queue playback lifecycle
+
+Up Next / playlist queue consumption is a compare-and-set state machine owned by
+storage (`packages/storage` queue repository) and applied by domain/app adapters
+(`QueueService`, `createQueuePlaybackAttempt`, PlaybackPhase):
+
+- Lifecycle is exactly `pending → in-flight → played` (plus `skipped` / `failed`
+  for non-playback exits).
+- Only confirmed `playback-started` acknowledges a claimed row. Process spawn and
+  IPC connection are insufficient.
+- Every handoff carries the exact queue entry ID and absolute anime episode
+  identity when present; auto-next and post-play must not substitute a reordered
+  head.
+- Pre-start failure restores the same row and position with failure context.
+- Crash / handled shutdown leaves `in-flight` work recoverable; restart restore
+  prefers that exact row as the resume head and never autoplays.
+- Finished content without authoritative release evidence is up to date — do not
+  fabricate a next episode from catalog bounds alone.
+
+Contract proof (fake-player / render-capture, no live providers):
+`apps/cli/test/integration/queue-playback-lifecycle.test.ts`. Product vocabulary:
+[.docs/features/queue.md](./features/queue.md).
+
 ### Provider resolve flow
 
 Production resolution is browserless by default:
