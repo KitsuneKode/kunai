@@ -17,8 +17,29 @@ const youtubeResult: SearchResult = {
   externalIds: { youtubeId: "dQw4w9WgXcQ" },
 };
 
+const baseRow: SearchResult = {
+  id: "row-1",
+  type: "series",
+  title: "Generic Title",
+  year: "2024",
+  overview: "",
+  posterPath: null,
+};
+
 test("resolveShellModeForSearchResult routes youtube rows to youtube mode", () => {
   expect(resolveShellModeForSearchResult(youtubeResult, "series")).toBe("youtube");
+});
+
+test("selection follows resolvedLane over prior shell mode", () => {
+  expect(resolveShellModeForSearchResult({ ...baseRow, resolvedLane: "anime" }, "series")).toBe(
+    "anime",
+  );
+});
+
+test("selection follows resolvedLane series over prior anime shell mode", () => {
+  expect(resolveShellModeForSearchResult({ ...baseRow, resolvedLane: "series" }, "anime")).toBe(
+    "series",
+  );
 });
 
 test("applySearchSelectionSessionRouting switches mode and default youtube provider", () => {

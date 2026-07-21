@@ -5,7 +5,7 @@ import {
   type SearchIntentFilters,
 } from "@/domain/search/SearchIntent";
 import { describeSearchIntentFilters } from "@/domain/search/SearchIntentParser";
-import type { SearchResult, ShellMode } from "@/domain/types";
+import type { ProviderLane, SearchResult, ShellMode } from "@/domain/types";
 import { buildVideasyDiscoverPlan } from "@/search";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 
@@ -24,11 +24,12 @@ export type SearchRoutingContext = {
 };
 
 export type SearchRoutingResult = {
-  results: SearchResult[];
-  sourceId: string;
-  sourceName: string;
-  strategy: "provider-native" | "registry";
-  evidence: SearchFilterEvidence;
+  readonly results: SearchResult[];
+  readonly resolvedLane: ProviderLane;
+  readonly sourceId: string;
+  readonly sourceName: string;
+  readonly strategy: "provider-native" | "registry";
+  readonly evidence: SearchFilterEvidence;
 };
 
 export type SearchFilterEvidence = {
@@ -44,6 +45,7 @@ export async function searchTitles(
   const intent = typeof input === "string" ? normalizeSearchInput(input, context.mode) : input;
   const query = intent.query;
   const routing = resolveSearchRouting(intent, context);
+  const resolvedLane = shellModeToProviderLane(routing.mode);
   const provider = context.providerRegistry.get(routing.providerId);
   const advanced = hasAdvancedSearchFilters(intent);
 
@@ -70,7 +72,8 @@ export async function searchTitles(
     );
 
     return {
-      results,
+      results: withResolvedSearchLane(results, resolvedLane),
+      resolvedLane,
       sourceId: provider.metadata.id,
       sourceName: provider.metadata.name,
       strategy: "provider-native",
@@ -90,7 +93,8 @@ export async function searchTitles(
     );
 
     return {
-      results,
+      results: withResolvedSearchLane(results, resolvedLane),
+      resolvedLane,
       sourceId: searchService.metadata.id,
       sourceName: searchService.metadata.name,
       strategy: "registry",
@@ -126,7 +130,11 @@ export async function searchTitles(
         // the returned evidence can never claim a filter that was not applied.
         const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
         return {
-          results: applyLocalSearchFilters(enriched, intent, evidence),
+          results: withResolvedSearchLane(
+            applyLocalSearchFilters(enriched, intent, evidence),
+            resolvedLane,
+          ),
+          resolvedLane,
           sourceId: provider.metadata.id,
           sourceName: provider.metadata.name,
           strategy: "provider-native",
@@ -148,12 +156,20 @@ export async function searchTitles(
   );
 
   return {
-    results,
+    results: withResolvedSearchLane(results, resolvedLane),
+    resolvedLane,
     sourceId: searchService.metadata.id,
     sourceName: searchService.metadata.name,
     strategy: "registry",
     evidence,
   };
+}
+
+function withResolvedSearchLane(
+  results: readonly SearchResult[],
+  resolvedLane: ProviderLane,
+): SearchResult[] {
+  return results.map((result) => ({ ...result, resolvedLane }));
 }
 
 function resolveSearchRouting(

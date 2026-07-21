@@ -181,6 +181,8 @@ export interface SearchResult {
   readonly premium?: boolean;
   readonly paid?: boolean;
   readonly contentShape?: YouTubeContentShape;
+  /** Lane that produced this row at the search-routing boundary (selection prefers this over shell mode). */
+  readonly resolvedLane?: ProviderLane;
 }
 
 export type TitleAliasKind = "english" | "romaji" | "native" | "provider" | "synonym";

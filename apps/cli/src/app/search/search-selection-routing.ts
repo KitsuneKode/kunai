@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { providerLaneToShellMode } from "@/domain/provider-lane";
 import type { SearchResult, ShellMode } from "@/domain/types";
 
 function isYoutubeSearchResult(result: SearchResult): boolean {
@@ -10,11 +11,12 @@ function isYoutubeSearchResult(result: SearchResult): boolean {
   );
 }
 
-/** Provider routing mode for a browse/search pick — calendar rows override session mode. */
+/** Provider routing mode for a browse/search pick — stamped lane overrides session mode. */
 export function resolveShellModeForSearchResult(
   result: SearchResult,
   fallbackMode: ShellMode,
 ): ShellMode {
+  if (result.resolvedLane) return providerLaneToShellMode(result.resolvedLane);
   if (isYoutubeSearchResult(result)) return "youtube";
   const calendarKind = result.calendar?.contentKind;
   if (calendarKind === "anime") return "anime";

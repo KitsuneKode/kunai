@@ -47,6 +47,7 @@ describe("searchTitles", () => {
 
     expect(result.strategy).toBe("provider-native");
     expect(result.sourceId).toBe("allanime");
+    expect(result.resolvedLane).toBe("anime");
     expect(result.results).toEqual([
       {
         id: "anime-1",
@@ -58,6 +59,7 @@ describe("searchTitles", () => {
         rating: null,
         popularity: null,
         episodeCount: 12,
+        resolvedLane: "anime",
       },
     ]);
   });
@@ -332,6 +334,122 @@ describe("searchTitles", () => {
     expect(result.sourceId).toBe("anilist");
     expect(result.results[0]?.id).toBe("anilist-cross-mode");
     expect(result.evidence.upstream).toEqual(["mode anime", "genre action", "sort popular"]);
+  });
+
+  test("anime results retain the routed anime lane without isAnime", async () => {
+    const searchRegistry = createSearchRegistry({
+      animeResults: [
+        {
+          id: "anilist-lane",
+          type: "series",
+          title: "Lane Anime",
+          year: "2025",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+    });
+
+    const providerRegistry: any = {
+      get: (id: string) => ({
+        metadata: {
+          id,
+          name: id,
+          description: "",
+          recommended: true,
+          isAnimeProvider: id === "allanime",
+          domain: `${id}.test`,
+        },
+      }),
+      getDefault: (isAnime: boolean) => ({
+        metadata: {
+          id: isAnime ? "allanime" : "vidking",
+          name: isAnime ? "AllAnime" : "VidKing",
+          description: "",
+          recommended: true,
+          isAnimeProvider: isAnime,
+          domain: isAnime ? "allanime.day" : "vidking.net",
+        },
+      }),
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "",
+        mode: "anime",
+        filters: { genres: ["action"] },
+        sort: "popular",
+      }),
+      {
+        mode: "series",
+        providerId: "vidking",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    expect(result.resolvedLane).toBe("anime");
+    expect(result.results[0]?.resolvedLane).toBe("anime");
+    expect(result.results[0]?.isAnime).toBeUndefined();
+  });
+
+  test("series results retain the routed series lane without isAnime", async () => {
+    const searchRegistry = createSearchRegistry({
+      providerResults: [
+        {
+          id: "tmdb-lane",
+          type: "series",
+          title: "Lane Series",
+          year: "2024",
+          overview: "",
+          posterPath: null,
+        },
+      ],
+    });
+
+    const providerRegistry: any = {
+      get: (id: string) => ({
+        metadata: {
+          id,
+          name: id,
+          description: "",
+          recommended: true,
+          isAnimeProvider: id === "allanime",
+          domain: `${id}.test`,
+        },
+      }),
+      getDefault: (isAnime: boolean) => ({
+        metadata: {
+          id: isAnime ? "allanime" : "vidking",
+          name: isAnime ? "AllAnime" : "VidKing",
+          description: "",
+          recommended: true,
+          isAnimeProvider: isAnime,
+          domain: isAnime ? "allanime.day" : "vidking.net",
+        },
+      }),
+    };
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "",
+        mode: "series",
+        filters: { genres: ["drama"] },
+        sort: "popular",
+      }),
+      {
+        mode: "anime",
+        providerId: "allanime",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: searchRegistry as any,
+        providerRegistry,
+      },
+    );
+
+    expect(result.resolvedLane).toBe("series");
+    expect(result.results[0]?.resolvedLane).toBe("series");
+    expect(result.results[0]?.isAnime).toBeUndefined();
   });
 
   test("keeps advanced youtube searches on the youtube provider instead of registry fallback", async () => {
