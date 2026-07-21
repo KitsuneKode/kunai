@@ -1,6 +1,17 @@
----
-"@kitsunekode/kunai": minor
----
+# Kunai 0.3.0
+
+Show posters on every terminal, including Windows.
+
+- New half-block renderer decodes JPEG/PNG in process and paints two pixels per
+  cell with truecolour SGR, so posters no longer require `chafa` — which is
+  effectively never installed on Windows, where posters previously never
+  appeared at all.
+- Windows Terminal no longer auto-selects sixel: support only landed in 1.22 and
+  the environment reports no version, so an older build rendered raw escape
+  bytes. `KUNAI_IMAGE_PROTOCOL=sixel` still forces it.
+- Poster cache moved onto the shared OS cache root (`getKunaiPaths`) instead of a
+  hand-rolled `$HOME/.cache`, which is not a location Windows has.
+- `KUNAI_IMAGE_PROTOCOL=half-block` forces the new renderer anywhere.
 
 Playback reliability, calendar navigation, and shell responsiveness.
 
@@ -13,3 +24,11 @@ Playback reliability, calendar navigation, and shell responsiveness.
 - Miruro resolves against the working mirrors only; Videasy reorders its first-phase servers and segment-probes HLS before attesting reachability.
 - Search shows a query-aware loading skeleton, post-play artwork retries after a transient fetch failure, and quitting no longer pauses autoplay.
 - Provider fallback moves to a deliberate `Shift+F` chord so a stray keypress cannot switch providers mid-session.
+
+Harden installers and release asset completion checks.
+
+- `install.sh` / `install.ps1` `--dry-run` / `-DryRun` compute paths without creating directories.
+- Empty or incomplete release assets fail with specific messages and npm / Bun / source / pinned-version recovery guidance.
+- GitHub Releases require all eight binaries plus `SHA256SUMS` (`fail_on_unmatched_files`, post-upload contract assertion).
+
+Ship the npm postinstall registration hook in the published tarball and verify a clean global install, update check, and package-manager uninstall.
