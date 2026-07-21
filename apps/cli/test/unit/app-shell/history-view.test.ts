@@ -133,14 +133,9 @@ const viewFor = (
     context,
   });
 
-// Honest model: a finished episode with NO authoritative schedule signal is treated
-// as caught-up → Completed. We do NOT fabricate a phantom next episode (the old bug
-// that flooded "New episodes" and emptied "Completed").
-test("finished series EPISODE with no schedule data → continue, never falsely Completed", () => {
-  // Finishing S2E3 with no aired-total/release evidence cannot prove the whole
-  // series is done. The old model dropped it into Completed (the reported bug:
-  // a mid-watch series mislabeled as finished). It now stays in Continue and out
-  // of New episodes (no fabrication).
+// Honest model: a finished episode with NO authoritative schedule signal is
+// up to date → Completed. We do NOT fabricate a phantom next episode.
+test("finished series EPISODE with no schedule data → completed, never fabricated next", () => {
   const finishedSeries = progress({
     titleId: "tmdb:1",
     season: 2,
@@ -150,8 +145,8 @@ test("finished series EPISODE with no schedule data → continue, never falsely 
     completed: true,
   });
 
-  expect(viewFor(finishedSeries, "continue").flatRows.map((r) => r.titleId)).toContain("tmdb:1");
-  expect(viewFor(finishedSeries, "completed").state).toBe("empty");
+  expect(viewFor(finishedSeries, "completed").flatRows.map((r) => r.titleId)).toContain("tmdb:1");
+  expect(viewFor(finishedSeries, "continue").state).toBe("empty");
   expect(viewFor(finishedSeries, "new-episodes").state).toBe("empty");
 });
 

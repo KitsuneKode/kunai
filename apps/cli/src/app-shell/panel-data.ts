@@ -1,17 +1,14 @@
 import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
-  classifyHistoryBucket,
   type HistoryBucket,
   type HistoryReleaseSignal,
 } from "@/domain/continuation/history-bucket";
-import {
-  reconcileContinueHistory,
-  type ContinueHistoryRelease,
-} from "@/domain/continuation/history-reconciliation";
+import { type ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
+import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import {
   historyContentType,
   formatTimestamp,
@@ -433,25 +430,76 @@ export type HistoryPickerOptionsContext = {
 };
 
 /**
- * Single authority for which /history tab a title belongs in. Decides off the
- * honest release status via {@link classifyHistoryBucket}, never the optimistic
- * reconcile fallback. Used by both the Continue/Completed/New tabs and the hoisted
- * "Continue Watching" section so they can never disagree.
+ * Shared Continue/History surface input from a history picker context row.
+ */
+export function continuationSurfaceInputForHistoryRow(
+  id: string,
+  entry: HistoryProgress,
+  context: HistoryPickerOptionsContext = {},
+): Parameters<typeof projectContinuationSurface>[0] {
+  const projection = context.projections?.get(id);
+  const nextRelease = context.nextReleases?.get(id) ?? null;
+  return {
+    titleId: id,
+    entry,
+    nextRelease:
+      nextRelease &&
+      typeof nextRelease.season === "number" &&
+      typeof nextRelease.episode === "number"
+        ? {
+            season: nextRelease.season,
+            episode: nextRelease.episode,
+            released: nextRelease.status === "released",
+            availableAt: nextRelease.releaseAt ?? undefined,
+          }
+        : projection?.kind === "next-released"
+          ? {
+              season: projection.season,
+              episode: projection.episode,
+              released: true,
+            }
+          : projection?.kind === "new-episodes" &&
+              projection.primaryAction &&
+              "season" in projection.primaryAction
+            ? {
+                season: projection.primaryAction.season,
+                episode: projection.primaryAction.episode,
+                released: true,
+              }
+            : null,
+    releaseProgress: projection?.kind === "new-episodes" ? { newEpisodeCount: 1 } : null,
+    offline:
+      projection?.kind === "offline-ready"
+        ? {
+            enrolled: true,
+            readyNextEpisodes: [
+              {
+                season: projection.season,
+                episode: projection.episode,
+                jobId:
+                  projection.primaryAction?.kind === "play-local"
+                    ? projection.primaryAction.jobId
+                    : undefined,
+              },
+            ],
+          }
+        : null,
+    releaseSignal: context.releaseSignals?.get(id) ?? null,
+    catalogBounds: context.catalogBounds?.get(id) ?? null,
+  };
+}
+
+/**
+ * Single authority for which /history tab a title belongs in. Routes through
+ * {@link projectContinuationSurface} so Continue and History never disagree.
  */
 export function historyBucketFor(
   id: string,
   entry: HistoryProgress,
   context: HistoryPickerOptionsContext = {},
 ): HistoryBucket {
-  const projection = context.projections?.get(id);
-  const hasKnownNextToPlay =
-    projection?.kind === "offline-ready" || projection?.kind === "next-released";
-  return classifyHistoryBucket({
-    entry,
-    release: context.releaseSignals?.get(id) ?? null,
-    hasKnownNextToPlay,
-    catalogBounds: context.catalogBounds?.get(id) ?? null,
-  });
+  return projectContinuationSurface(continuationSurfaceInputForHistoryRow(id, entry, context))
+    .historyBucket;
 }
 
 function formatSeriesEpisode(season: number, episode: number): string {
@@ -485,26 +533,19 @@ function buildHistoryOptionRow(
       posterTitle: displayEntry.title,
     };
   }
-  const decision = reconcileContinueHistory({
-    titleId: id,
-    entries: [[id, entry]],
-    nextRelease: context.nextReleases?.get(id) ?? null,
-    catalogBounds: context.catalogBounds?.get(id) ?? null,
-  });
-  // Gate the legacy reconcile's "new-episode" through the authoritative bucket so a
-  // finished/caught-up title (or one with missing/stale release data) never shows a
-  // fabricated "new" badge — the bucket classifier is conservative where reconcile is
-  // optimistic. Without this, completed shows render "new" (the reported bug).
+  const surface = projectContinuationSurface(
+    continuationSurfaceInputForHistoryRow(id, entry, context),
+  );
   const isNewEpisodeRow =
-    decision.kind === "new-episode" && historyBucketFor(id, entry, context) === "new-episodes";
+    surface.state === "new-episodes" && surface.historyBucket === "new-episodes";
   const isContinueNextRow =
-    decision.kind === "new-episode" &&
-    typeof decision.episode === "number" &&
-    historyBucketFor(id, entry, context) === "continue";
+    (surface.state === "next" || surface.state === "new-episodes") &&
+    typeof surface.target?.episode === "number" &&
+    surface.historyBucket === "continue";
   if (isNewEpisodeRow || isContinueNextRow) {
     const nextEpisode =
-      typeof decision.episode === "number"
-        ? formatSeriesEpisode(decision.season ?? entrySeason, decision.episode)
+      typeof surface.target?.episode === "number"
+        ? formatSeriesEpisode(surface.target.season ?? entrySeason, surface.target.episode)
         : episode;
     const completedEpisode =
       historyContentType(displayEntry) === "series"

@@ -62,10 +62,9 @@ describe("ResultEnrichmentService", () => {
 
     const enrichments = await service.enrichResults([result()]);
 
-    // A finished series episode with no schedule data optimistically offers the next
-    // episode (Netflix model) rather than declaring the title "watched".
+    // Finished without release evidence is up to date — do not fabricate E+1.
     expect(enrichments.get("series:title-1")?.badges).toEqual([
-      { label: "new S01E02", tone: "info" },
+      { label: "watched", tone: "success" },
       { label: "downloaded", tone: "success" },
     ]);
   });

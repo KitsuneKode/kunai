@@ -48,8 +48,8 @@ describe("history reconciliation", () => {
 
   test("does NOT resume an older abandoned episode when the most-recent is finished", () => {
     // Netflix/Crunchyroll anchor rule: decide off the most-recent episode, never
-    // scan back to an older unfinished one. The most-recent (E6) is finished, so with
-    // no schedule data we optimistically advance to E7 — crucially NOT resuming E5.
+    // scan back to an older unfinished one. The most-recent (E6) is finished, and
+    // without release evidence we stay up to date — crucially NOT resuming E5.
     const decision = reconcileContinueHistory({
       titleId: "tmdb:1",
       entries: [
@@ -67,10 +67,9 @@ describe("history reconciliation", () => {
     });
 
     expect(decision).toMatchObject({
-      kind: "new-episode",
+      kind: "up-to-date",
       titleId: "tmdb:1",
-      episode: 7,
-      previousCompleted: expect.objectContaining({ episode: 6, completed: true }),
+      entry: expect.objectContaining({ episode: 6, completed: true }),
     });
   });
 
@@ -115,22 +114,16 @@ describe("history reconciliation", () => {
     });
   });
 
-  test("optimistically offers the next episode for a finished series with no schedule data", () => {
-    // Netflix/Crunchyroll: finishing S2E3 of an ongoing series should keep offering
-    // S2E4, not declare the whole series complete, when we have no release data.
+  test("finished series without release evidence is up to date, not optimistic E+1", () => {
     const decision = reconcileContinueHistory({
       titleId: "tmdb:1",
       entries: [["tmdb:1", history({ season: 2, episode: 3, completed: true })]],
     });
 
-    expect(decision).toEqual({
-      kind: "new-episode",
+    expect(decision).toMatchObject({
+      kind: "up-to-date",
       titleId: "tmdb:1",
-      titleName: "Demo",
-      season: 2,
-      episode: 4,
-      previousCompleted: expect.objectContaining({ season: 2, episode: 3 }),
-      releaseAt: null,
+      entry: expect.objectContaining({ season: 2, episode: 3 }),
     });
   });
 

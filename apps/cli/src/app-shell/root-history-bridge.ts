@@ -1,12 +1,10 @@
-import {
-  reconcileContinueHistory,
-  type ContinueHistoryRelease,
-} from "@/domain/continuation/history-reconciliation";
+import { type ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import {
   resolveContinueSourceAction,
   type ContinueSourcePreference,
 } from "@/services/continuation/continuation-source";
+import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type {
   HistoryProgress,
@@ -63,29 +61,44 @@ export function describeHistoryReturnLoopDetail(input: {
     return "caught up · release unknown";
   }
 
-  const decision = reconcileContinueHistory({
+  const nextRelease =
+    input.nextRelease &&
+    typeof input.nextRelease.season === "number" &&
+    typeof input.nextRelease.episode === "number"
+      ? {
+          season: input.nextRelease.season,
+          episode: input.nextRelease.episode,
+          released: input.nextRelease.status === "released",
+          availableAt: input.nextRelease.releaseAt ?? undefined,
+        }
+      : null;
+
+  const surface = projectContinuationSurface({
     titleId: "history-row",
-    entries: [["history-row", input.entry]],
-    nextRelease: input.nextRelease ?? null,
+    entry: input.entry,
+    nextRelease,
   });
 
-  if (decision.kind === "new-episode" && typeof decision.episode === "number") {
+  if (
+    (surface.state === "next" || surface.state === "new-episodes") &&
+    typeof surface.target?.episode === "number"
+  ) {
     const previousEpisode =
       historyContentType(input.entry) === "series"
         ? (input.entry.episode ?? input.entry.absoluteEpisode ?? 1)
         : 0;
     const newSince =
       historyContentType(input.entry) === "series"
-        ? formatNewSinceEpisodeLabel(previousEpisode, decision.episode)
+        ? formatNewSinceEpisodeLabel(previousEpisode, surface.target.episode)
         : null;
     return newSince ? `${newSince} · open next aired episode` : "new episode ready";
   }
 
-  if (decision.kind === "resume") {
+  if (surface.state === "resume") {
     return "resume where you left off";
   }
 
-  if (decision.kind === "up-to-date") {
+  if (surface.state === "up-to-date" || surface.state === "upcoming") {
     if (input.nextRelease?.status === "upcoming" && input.nextRelease.releaseAt) {
       return `caught up · next airs ${formatShortReleaseDate(input.nextRelease.releaseAt)}`;
     }
@@ -139,17 +152,29 @@ export function buildRootHistorySelection(
     };
   }
   if (historyContentType(selection.entry) !== "series") return selection;
-  const decision = reconcileContinueHistory({
+  const next = nextReleases?.get(selection.titleId) ?? null;
+  const surface = projectContinuationSurface({
     titleId: selection.titleId,
-    entries: [[selection.titleId, selection.entry]],
-    nextRelease: nextReleases?.get(selection.titleId) ?? null,
+    entry: selection.entry,
+    nextRelease:
+      next && typeof next.season === "number" && typeof next.episode === "number"
+        ? {
+            season: next.season,
+            episode: next.episode,
+            released: next.status === "released",
+            availableAt: next.releaseAt ?? undefined,
+          }
+        : null,
   });
-  if (decision.kind === "new-episode" && typeof decision.episode === "number") {
+  if (
+    (surface.state === "next" || surface.state === "new-episodes") &&
+    typeof surface.target?.episode === "number"
+  ) {
     return {
       ...selection,
       targetEpisode: {
-        season: decision.season ?? selection.entry.season ?? 1,
-        episode: decision.episode,
+        season: surface.target.season ?? selection.entry.season ?? 1,
+        episode: surface.target.episode,
         reason: "new-episode",
       },
     };

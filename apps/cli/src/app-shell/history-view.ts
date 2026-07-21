@@ -4,13 +4,13 @@
 // Design authority: .design/cli/surfaces/stats-history-library.md
 // =============================================================================
 
-import { reconcileContinueHistory } from "@/domain/continuation/history-reconciliation";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { fuzzyMatch, rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import {
   hasDualContinueSources,
   resumeLabelForProjection,
 } from "@/services/continuation/continuation-source";
+import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import {
   correctedHistoryMediaKind,
   historyContentType,
@@ -20,6 +20,7 @@ import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
 import {
   buildHistoryPickerOptions,
+  continuationSurfaceInputForHistoryRow,
   groupHistoryByRecency,
   historyBucketFor,
   type HistoryPickerOptionsContext,
@@ -211,18 +212,12 @@ function deriveResumeAction(
   if (historyContentType(entry) === "movie") {
     return isFinished(entry) ? "Restart" : "Resume";
   }
-  const decision = reconcileContinueHistory({
-    titleId,
-    entries: [[titleId, entry]],
-    nextRelease: context.nextReleases?.get(titleId) ?? null,
-    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
-  });
-  if (decision.kind === "new-episode") {
-    const bucket = historyBucketFor(titleId, entry, context);
-    if (bucket === "continue" || bucket === "new-episodes") return "Play next";
-  }
-  const bucket = historyBucketFor(titleId, entry, context);
-  return resumeLabelForProjection(context.projections?.get(titleId), bucket);
+
+  const surface = projectContinuationSurface(
+    continuationSurfaceInputForHistoryRow(titleId, entry, context),
+  );
+  if (surface.actionLabel !== "Open") return surface.actionLabel;
+  return resumeLabelForProjection(context.projections?.get(titleId), surface.historyBucket);
 }
 
 function shellOptionToHistoryRow(
@@ -239,17 +234,13 @@ function shellOptionToHistoryRow(
   const recencyLabel = detailParts[detailParts.length - 1] ?? "";
   const progress = option.historyProgress ?? null;
   const projection = context.projections?.get(titleId);
-  const bucket = historyBucketFor(titleId, entry, context);
-  const decision = reconcileContinueHistory({
-    titleId,
-    entries: [[titleId, entry]],
-    nextRelease: context.nextReleases?.get(titleId) ?? null,
-    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
-  });
+  const surface = projectContinuationSurface(
+    continuationSurfaceInputForHistoryRow(titleId, entry, context),
+  );
   const hasContinueNext =
-    decision.kind === "new-episode" &&
-    typeof decision.episode === "number" &&
-    bucket === "continue";
+    (surface.state === "next" || surface.state === "new-episodes") &&
+    typeof surface.target?.episode === "number" &&
+    surface.historyBucket === "continue";
   const statusLabel =
     projection?.badge ??
     option.badge ??
@@ -260,7 +251,7 @@ function shellOptionToHistoryRow(
         : progress
           ? `${progress.percentage}%`
           : (detailParts[0] ?? ""));
-  const isNewEpisode = decision.kind === "new-episode" && bucket === "new-episodes";
+  const isNewEpisode = surface.state === "new-episodes" && surface.historyBucket === "new-episodes";
   let statusColor = semanticToneColor(option.tone);
   if (isNewEpisode) statusColor = palette.ok;
   if (hasContinueNext) statusColor = palette.accentDeep;
@@ -335,12 +326,9 @@ function buildHistoryPreviewRailModel(
   context: HistoryPickerOptionsContext,
   posterState: PreviewPosterState = "none",
 ): PreviewRailModel {
-  const decision = reconcileContinueHistory({
-    titleId,
-    entries: [[titleId, entry]],
-    nextRelease: context.nextReleases?.get(titleId) ?? null,
-    catalogBounds: context.catalogBounds?.get(titleId) ?? null,
-  });
+  const surface = projectContinuationSurface(
+    continuationSurfaceInputForHistoryRow(titleId, entry, context),
+  );
   const returnLoopDetail = describeHistoryReturnLoopDetail({
     entry,
     nextRelease: context.nextReleases?.get(titleId) ?? null,
@@ -352,10 +340,13 @@ function buildHistoryPreviewRailModel(
   });
   const watchedAt = new Date(entry.updatedAt).toLocaleDateString();
   const newSince =
-    decision.kind === "new-episode" &&
+    (surface.state === "next" || surface.state === "new-episodes") &&
     historyContentType(entry) === "series" &&
-    typeof decision.episode === "number"
-      ? formatNewSinceEpisodeLabel(entry.episode ?? entry.absoluteEpisode ?? 1, decision.episode)
+    typeof surface.target?.episode === "number"
+      ? formatNewSinceEpisodeLabel(
+          entry.episode ?? entry.absoluteEpisode ?? 1,
+          surface.target.episode,
+        )
       : null;
 
   const facts: PreviewRailModel["facts"][number][] = [

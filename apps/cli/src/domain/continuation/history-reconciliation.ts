@@ -1,8 +1,4 @@
-import {
-  anchorEpisodeRef,
-  optimisticNextEpisodeWithinBounds,
-  type CatalogEpisodeBounds,
-} from "@/domain/continuation/catalog-episode-bounds";
+import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import type { CatalogReleaseStatus } from "@/services/catalog/CatalogScheduleService";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@kunai/storage";
@@ -11,8 +7,8 @@ export type ContinueHistoryRelease = {
   readonly season?: number;
   readonly episode?: number;
   // "caught-up" is an authoritative "you've seen the latest aired episode, nothing
-  // new" signal — distinct from "unknown" (no data). Collapsing it to "unknown"
-  // used to trip the optimistic fallback below and fabricate a phantom new episode.
+  // new" signal — distinct from "unknown" (no data). Without authoritative release
+  // evidence we stay up to date rather than fabricating a phantom next episode.
   readonly status: CatalogReleaseStatus | "caught-up";
   readonly releaseAt: string | null;
 };
@@ -76,39 +72,10 @@ export function reconcileContinueHistory(input: {
     };
   }
 
-  // Netflix/Crunchyroll optimistic continuation: a finished SERIES episode with no
-  // authoritative schedule signal (no release data, or a non-committal "unknown"
-  // status) is assumed to have a next episode — keep offering "play next" instead of
-  // declaring the whole series complete after a single finished episode. A positive
-  // "upcoming" (next airs later) or "released" (already caught up) signal is trusted
-  // and falls through to up-to-date. If the optimistic next episode does not actually
-  // exist, the downstream episode resolution degrades to a manual pick.
-  const hasAuthoritativeRelease =
-    input.nextRelease?.status === "upcoming" ||
-    input.nextRelease?.status === "released" ||
-    input.nextRelease?.status === "caught-up";
-  if (historyContentType(latest) === "series" && !hasAuthoritativeRelease) {
-    const anchor = anchorEpisodeRef(latest);
-    const next = optimisticNextEpisodeWithinBounds(anchor, input.catalogBounds);
-    if (!next) {
-      return {
-        kind: "up-to-date",
-        titleId: input.titleId,
-        entry: latest,
-        nextRelease: input.nextRelease ?? undefined,
-      };
-    }
-    return {
-      kind: "new-episode",
-      titleId: input.titleId,
-      titleName: latest.title,
-      season: next.season,
-      episode: next.episode,
-      previousCompleted: latest,
-      releaseAt: null,
-    };
-  }
-
+  // Conservative policy: finished content without a confirmed released-next signal
+  // is up to date. Do not fabricate an unverified E+1 for visible Continue/History.
+  // `catalogBounds` remains accepted for call-site compatibility; end-of-catalog
+  // gating lives in classifyHistoryBucket / surface policy.
   return {
     kind: "up-to-date",
     titleId: input.titleId,

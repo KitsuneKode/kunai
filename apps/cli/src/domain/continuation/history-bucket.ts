@@ -18,8 +18,8 @@
 //     (a backlog you simply haven't watched yet)           → continue
 //   • Finished series + a known, ready next to play
 //     (downloaded / confirmed released next)               → continue
-//   • Finished series + caught-up / upcoming / unknown
-//     (nothing new to watch right now)                     → completed
+//   • Finished series + caught-up / upcoming / no evidence
+//     (nothing confirmed to watch right now)               → completed
 // =============================================================================
 
 import {
@@ -106,8 +106,13 @@ export function classifyHistoryBucket(input: {
     return "completed";
   }
 
-  // No completion evidence at all (unknown / missing release data, no aired total):
-  // a finished EPISODE must NOT masquerade as a finished SERIES. Keep it in continue
-  // rather than mislabeling a half-watched series "Completed" (the reported bug).
-  return "continue";
+  // Known aired total and not series-completed → still behind; keep watching.
+  // (Finishing ep 8 of 24 aired must not drop into Completed.)
+  if (typeof release?.latestAiredEpisode === "number" && release.latestAiredEpisode > 0) {
+    return "continue";
+  }
+
+  // No authoritative release evidence: treat as up to date / completed rather than
+  // fabricating an optimistic next episode into Continue.
+  return "completed";
 }

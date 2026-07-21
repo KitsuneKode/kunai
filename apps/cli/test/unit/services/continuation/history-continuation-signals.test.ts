@@ -22,15 +22,15 @@ function entry(over: Partial<HistoryProgress> & { titleId: string }): HistoryPro
   };
 }
 
-test("continuationSignalsForHistoryEntry supplies optimistic next episode without release cache", () => {
+test("continuationSignalsForHistoryEntry does not fabricate next without release cache", () => {
   const signals = continuationSignalsForHistoryEntry({
     titleId: "native-1",
     entry: entry({ titleId: "native-1" }),
     nextRelease: null,
   });
 
-  expect(signals.releaseProgress).toEqual({ newEpisodeCount: 1 });
-  expect(signals.nextRelease).toMatchObject({ season: 1, episode: 9, released: true });
+  expect(signals.releaseProgress).toBeNull();
+  expect(signals.nextRelease).toBeNull();
 });
 
 test("continuationSignalsForHistoryEntry skips optimistic next when catalog is complete", () => {
