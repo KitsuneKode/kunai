@@ -88,6 +88,101 @@ describe("distribution release-asset contract", () => {
   });
 });
 
+/** Extract a top-level GitHub Actions job block (`  jobId:`) from workflow YAML. */
+function extractWorkflowJob(yaml: string, jobId: string): string {
+  const header = new RegExp(`^  ${jobId}:\\s*$`, "m");
+  const match = header.exec(yaml);
+  if (!match || match.index === undefined) {
+    throw new Error(`job "${jobId}" not found in workflow`);
+  }
+  const start = match.index;
+  const after = yaml.slice(start + match[0].length);
+  const nextJob = /^  [A-Za-z0-9_-]+:\s*$/m.exec(after);
+  const end = nextJob ? start + match[0].length + (nextJob.index ?? 0) : yaml.length;
+  return yaml.slice(start, end);
+}
+
+describe("release workflow candidate-before-publication contract", () => {
+  const release = readFileSync(join(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
+  const versionPr = () => extractWorkflowJob(release, "version-pr");
+  const candidate = () => extractWorkflowJob(release, "candidate");
+  const publish = () => extractWorkflowJob(release, "publish");
+  const metadata = () => extractWorkflowJob(release, "metadata");
+
+  test("push flow has no publish command", () => {
+    expect(release).toMatch(/workflow_dispatch:/);
+    expect(release).toMatch(/inputs:[\s\S]*version:/);
+    const pushJob = versionPr();
+    expect(pushJob).toMatch(/if:\s*github\.event_name\s*==\s*'push'/);
+    expect(pushJob).toContain("changesets/action");
+    expect(pushJob).not.toMatch(/^\s*publish:\s*/m);
+    expect(pushJob).not.toContain("bun publish");
+    expect(pushJob).not.toContain("changeset publish");
+    expect(pushJob).not.toContain("bun run release");
+  });
+
+  test("binaries build before npm publish", () => {
+    const cand = candidate();
+    const pub = publish();
+    expect(cand).toContain("build:binaries");
+    expect(cand).not.toContain("bun publish");
+    expect(pub).toMatch(/bun publish/);
+    const binaryBuildIdx = release.indexOf("build:binaries");
+    const npmPublishIdx = release.search(/bun publish/);
+    expect(binaryBuildIdx).toBeGreaterThanOrEqual(0);
+    expect(npmPublishIdx).toBeGreaterThan(binaryBuildIdx);
+  });
+
+  test("candidate artifacts upload before publication", () => {
+    const cand = candidate();
+    const pub = publish();
+    expect(cand).toContain("upload-artifact");
+    expect(cand).toMatch(/bun pm pack|release:pack/);
+    expect(pub).toContain("download-artifact");
+    expect(release.indexOf("upload-artifact")).toBeLessThan(release.indexOf("download-artifact"));
+  });
+
+  test("publication downloads the preserved tarball/binaries", () => {
+    const pub = publish();
+    expect(pub).toContain("download-artifact");
+    expect(pub).toMatch(/kunai-npm\.tgz|\.tgz/);
+    expect(pub).not.toContain("build:binaries");
+    expect(pub).not.toContain("bun pm pack");
+    expect(pub).not.toContain("bun run build");
+  });
+
+  test("GitHub release starts as draft", () => {
+    const pub = publish();
+    expect(pub).toMatch(/draft:\s*true/);
+    expect(pub).toContain("softprops/action-gh-release");
+  });
+
+  test("draft verification precedes public promotion", () => {
+    const pub = publish();
+    const draftVerify = pub.search(/--expect-draft/);
+    const promote = pub.search(/--draft=false|--latest|make_latest:\s*true/);
+    expect(draftVerify).toBeGreaterThanOrEqual(0);
+    expect(promote).toBeGreaterThan(draftVerify);
+    expect(pub.indexOf("verify-github-release-assets.ts")).toBeGreaterThanOrEqual(0);
+  });
+
+  test("metadata publication follows public verification", () => {
+    const meta = metadata();
+    expect(meta).toMatch(/needs:\s*publish/);
+    expect(meta).toContain("set-release-status.ts");
+    expect(meta).toMatch(/published/);
+    // Compare the metadata job's status update against public promotion in publish.
+    expect(
+      release.indexOf("set-release-status.ts", release.indexOf("  metadata:")),
+    ).toBeGreaterThan(release.search(/--draft=false|--latest|make_latest:\s*true/));
+  });
+
+  test("protected publication declares release-production environment", () => {
+    const pub = publish();
+    expect(pub).toMatch(/environment:\s*release-production/);
+  });
+});
+
 describe("verifyReleaseArtifactDirectory", () => {
   test("accepts a fixture with eight checksum rows and matching hashes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));

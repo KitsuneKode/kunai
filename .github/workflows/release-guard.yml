@@ -4,6 +4,10 @@ name: Release Guard
 # but on every PR that touches apps/cli/**, .changeset/**, or the release
 # pipeline. Catches hand-bumps, missed changesets, and changelog drift
 # *before* merge so the release workflow can stay simple and trusted.
+#
+# Publication is not part of this guard. Push-to-main Release only opens the
+# Changesets version PR; candidate build + protected publish are
+# workflow_dispatch only (see release.yml).
 
 on:
   pull_request:
@@ -24,6 +28,7 @@ on:
       - "scripts/release-changelog.ts"
       - "scripts/generate-release-notes.ts"
       - "scripts/release-guard.ts"
+      - "scripts/set-release-status.ts"
       - "scripts/sync-root-changelog.ts"
   push:
     branches: [main]
@@ -38,6 +43,7 @@ on:
       - "scripts/release-changelog.ts"
       - "scripts/generate-release-notes.ts"
       - "scripts/release-guard.ts"
+      - "scripts/set-release-status.ts"
       - "scripts/sync-root-changelog.ts"
 
 concurrency:

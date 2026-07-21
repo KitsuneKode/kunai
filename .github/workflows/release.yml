@@ -4,6 +4,11 @@ name: Release
 # Other workspace packages (@kunai/*) are internal-only and never get published,
 # so we deliberately do not run the version/publish pipeline on docs/formatting
 # or internal-package-only changes.
+#
+# Event split (Release Truth):
+# - push to main → open/update the Changesets version PR only (no publish).
+# - workflow_dispatch(version) → build preserved candidate artifacts, then
+#   publish them behind the protected `release-production` environment.
 on:
   push:
     branches: [main]
@@ -23,12 +28,18 @@ on:
       - "scripts/generate-release-notes.ts"
       - "scripts/release-binary-checksums.ts"
       - "scripts/release-guard.ts"
+      - "scripts/set-release-status.ts"
       - "scripts/sync-root-changelog.ts"
       - "CHANGELOG.md"
   workflow_dispatch:
+    inputs:
+      version:
+        description: Exact @kitsunekode/kunai version to build and publish (e.g. 0.3.0)
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
 permissions:
@@ -40,14 +51,18 @@ env:
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_SCM_BASE: ""
+  CANDIDATE_ARTIFACT: kunai-release-candidate
+  NPM_TARBALL_NAME: kunai-npm.tgz
 
 jobs:
-  release:
-    name: Version PR / Publish
+  # ---------------------------------------------------------------------------
+  # Push to main: version PR only. Never publishes npm or creates GitHub releases.
+  # ---------------------------------------------------------------------------
+  version-pr:
+    name: Open or update version PR
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    outputs:
-      published: ${{ steps.changesets.outputs.published }}
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v5
@@ -56,7 +71,37 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
-          turbo-cache-prefix: release
+          turbo-cache-prefix: release-version-pr
+
+      - name: Create or update version PR
+        uses: changesets/action@v1
+        with:
+          version: bun run version:packages
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Manual dispatch: build + verify + preserve candidate artifacts (no publish).
+  # ---------------------------------------------------------------------------
+  candidate:
+    name: Build release candidate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-candidate
 
       - uses: actions/setup-node@v6
         with:
@@ -65,7 +110,20 @@ jobs:
       - name: Update npm
         run: npm install -g npm@latest
 
-      - name: Verify
+      - name: Check dispatch version matches package.json
+        id: ver
+        run: |
+          set -euo pipefail
+          EXPECTED="${{ inputs.version }}"
+          ACTUAL="$(bun -e 'console.log(require("./apps/cli/package.json").version)')"
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::version mismatch: workflow_dispatch=${EXPECTED} package.json=${ACTUAL}"
+            exit 1
+          fi
+          echo "version=${ACTUAL}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${ACTUAL}" >> "$GITHUB_OUTPUT"
+
+      - name: Full CI
         run: bun run ci
 
       - name: Build
@@ -74,34 +132,74 @@ jobs:
       - name: Package check
         run: bun run pkg:check
 
+      - name: Real npm global install
+        run: bun run test:npm-global-install
+
       - name: Release guard
         run: bun run guard
 
       - name: Release notes guard
         run: bun run release:notes:check
 
-      - name: Create release PR or publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: bun run version:packages
-          publish: bun run release
-          title: "chore: version packages"
-          commit: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build all release binaries
+        run: bunx turbo run build:binaries --filter=@kitsunekode/kunai -- --jobs 2
 
-  # Cross-platform standalone binaries, built once per published version so npm
-  # and the binaries always ship in lockstep (Spec A §2.3). Gated on an actual
-  # publish so it never runs for the version PR.
-  binaries:
-    name: Build & upload release binaries
-    needs: release
-    if: needs.release.outputs.published == 'true'
+      - name: Verify release binaries
+        run: bash apps/cli/scripts/verify-release-binaries.sh
+
+      - name: Local artifact verification
+        run: |
+          bun run scripts/verify-release-artifact-directory.ts \
+            apps/cli/dist/bin \
+            --expected-version "${{ steps.ver.outputs.version }}"
+
+      - name: Compiled binary smoke
+        run: KUNAI_BINARY_SMOKE=1 bun run --cwd apps/cli test:file -- test/integration/compiled-binary-smoke.test.ts
+
+      - name: Create preserved npm tarball
+        run: bun run release:pack
+
+      - name: Stage candidate upload directory
+        run: |
+          set -euo pipefail
+          mkdir -p .candidate-upload
+          cp ".release-candidate/${NPM_TARBALL_NAME}" .candidate-upload/
+          cp apps/cli/dist/bin/kunai-linux-x64 \
+            apps/cli/dist/bin/kunai-linux-arm64 \
+            apps/cli/dist/bin/kunai-linux-x64-musl \
+            apps/cli/dist/bin/kunai-linux-arm64-musl \
+            apps/cli/dist/bin/kunai-darwin-x64 \
+            apps/cli/dist/bin/kunai-darwin-arm64 \
+            apps/cli/dist/bin/kunai-windows-x64.exe \
+            apps/cli/dist/bin/kunai-windows-arm64.exe \
+            apps/cli/dist/bin/SHA256SUMS \
+            .candidate-upload/
+
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}
+          retention-days: 14
+          if-no-files-found: error
+          path: .candidate-upload/*
+
+  # ---------------------------------------------------------------------------
+  # Protected publication: download preserved artifacts; never rebuild.
+  # Declares environment only — do not configure/approve during implementation.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish preserved artifacts
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: release-production
     permissions:
       contents: write
+      id-token: write
+    outputs:
+      version: ${{ needs.candidate.outputs.version }}
+      tag: ${{ needs.candidate.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v5
@@ -110,30 +208,77 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
-          turbo-cache-prefix: release-binaries
+          turbo-cache-prefix: release-publish
+          skip-turbo-cache: "true"
 
-      - name: Build binaries
-        run: bunx turbo run build:binaries --filter=@kitsunekode/kunai -- --jobs 2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
 
-      - name: Verify release binaries
-        run: bash apps/cli/scripts/verify-release-binaries.sh
+      - name: Download candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          path: .release-download
 
-      - name: Resolve published version
-        id: ver
-        run: echo "tag=v$(bun -e 'console.log(require(\"./apps/cli/package.json\").version)')" >> "$GITHUB_OUTPUT"
+      - name: Stage preserved binaries and tarball
+        run: |
+          set -euo pipefail
+          mkdir -p apps/cli/dist/bin .release-candidate
+          cp .release-download/kunai-linux-x64 \
+            .release-download/kunai-linux-arm64 \
+            .release-download/kunai-linux-x64-musl \
+            .release-download/kunai-linux-arm64-musl \
+            .release-download/kunai-darwin-x64 \
+            .release-download/kunai-darwin-arm64 \
+            .release-download/kunai-windows-x64.exe \
+            .release-download/kunai-windows-arm64.exe \
+            .release-download/SHA256SUMS \
+            apps/cli/dist/bin/
+          cp .release-download/kunai-npm.tgz .release-candidate/kunai-npm.tgz
+          test -f .release-candidate/kunai-npm.tgz
+          test -f apps/cli/dist/bin/SHA256SUMS
 
-      - name: Release notes guard (binary upload)
-        run: test -f ".release/kunai-${{ steps.ver.outputs.tag }}.md"
+      - name: Reverify preserved binaries
+        run: |
+          bun run scripts/verify-release-artifact-directory.ts \
+            apps/cli/dist/bin \
+            --expected-version "${{ needs.candidate.outputs.version }}"
 
-      # Publishes a release tagged `v<version>` and marks it latest, so the
-      # download contract (`releases/latest/download/<asset>` and
-      # `releases/download/v<version>/<asset>`) resolves to these binaries.
-      - name: Upload binaries to GitHub Release
+      - name: Publish preserved npm tarball
+        run: bun publish .release-candidate/kunai-npm.tgz --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+
+      - name: Verify npm package
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if npm view "@kitsunekode/kunai@${VERSION}" version; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::npm view @kitsunekode/kunai@${VERSION} failed after retries"
+          exit 1
+
+      - name: Create canonical tag
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.candidate.outputs.tag }}"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "refs/tags/${TAG}"
+
+      - name: Create draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          make_latest: true
-          body_path: .release/kunai-${{ steps.ver.outputs.tag }}.md
+          tag_name: ${{ needs.candidate.outputs.tag }}
+          name: ${{ needs.candidate.outputs.tag }}
+          draft: true
+          make_latest: false
+          body_path: .release/kunai-${{ needs.candidate.outputs.tag }}.md
           fail_on_unmatched_files: true
           files: |
             apps/cli/dist/bin/kunai-linux-x64
@@ -148,7 +293,80 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Assert published release assets
-        run: bun run scripts/verify-github-release-assets.ts "${{ steps.ver.outputs.tag }}"
+      - name: Verify draft release assets
+        run: |
+          bun run scripts/verify-github-release-assets.ts \
+            "${{ needs.candidate.outputs.tag }}" \
+            --expect-draft \
+            --expected-version "${{ needs.candidate.outputs.version }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote draft to public latest
+        run: |
+          gh release edit "${{ needs.candidate.outputs.tag }}" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify public release assets
+        run: |
+          bun run scripts/verify-github-release-assets.ts \
+            "${{ needs.candidate.outputs.tag }}" \
+            --expected-version "${{ needs.candidate.outputs.version }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Post-release: mark .release metadata published after public verification.
+  # ---------------------------------------------------------------------------
+  metadata:
+    name: Publish release metadata
+    needs: publish
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          # Push a narrow metadata commit back to the dispatch ref (no force).
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-metadata
+          skip-turbo-cache: "true"
+
+      - name: Mark release metadata published
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.publish.outputs.version }}"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          bun run scripts/set-release-status.ts "${VERSION}" published "${PUBLISHED_AT}"
+
+      - name: Release artifact unit tests
+        run: |
+          bun run --cwd apps/cli test:file -- \
+            test/unit/scripts/release-artifact.test.ts \
+            test/unit/scripts/generate-release-notes.test.ts
+
+      - name: Release notes guard
+        run: bun run release:notes:check
+
+      - name: Commit and push metadata update
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.publish.outputs.version }}"
+          ARTIFACT=".release/kunai-v${VERSION}.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${ARTIFACT}"
+          if git diff --cached --quiet; then
+            echo "No metadata changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(release): mark v${VERSION} published"
+          git push
