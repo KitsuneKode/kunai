@@ -17,6 +17,8 @@ STOP conditions, and update your row below when done.
 > Note: this `plans/` directory (advisor handoff plans) is separate from the repo's
 > own `.plans/` tracker. Plan 017 cleans up `.plans/`; do not conflate the two.
 
+> **Picking this up cold?** Start with [HANDOFF-2026-07-22.md](HANDOFF-2026-07-22.md).
+
 ## Execution order & status
 
 Recommended order groups the work into waves. Within a wave, plans are independent
