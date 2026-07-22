@@ -39,6 +39,10 @@ export type ReleaseFixtureRoute = {
   readonly chunkSize?: number;
 };
 
+export type ReleaseFixtureEvidence = {
+  readonly requests: readonly string[];
+};
+
 function toBytes(body: string | Uint8Array | undefined): Uint8Array {
   if (body === undefined) return new Uint8Array();
   if (typeof body === "string") return new TextEncoder().encode(body);
@@ -76,15 +80,17 @@ function buildResponse(route: ReleaseFixtureRoute): Response {
 
 export async function withReleaseFixture(
   routes: Readonly<Record<string, ReleaseFixtureRoute>>,
-  run: (baseUrl: string) => Promise<void>,
+  run: (baseUrl: string, evidence: ReleaseFixtureEvidence) => Promise<void>,
 ): Promise<void> {
   const hitCounts = new Map<string, number>();
+  const requests: string[] = [];
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const pathname = new URL(request.url).pathname;
+      requests.push(pathname);
       const route = routes[pathname];
       if (!route) {
         return new Response("not found", { status: 404 });
@@ -105,7 +111,9 @@ export async function withReleaseFixture(
     },
   });
   try {
-    await run(`http://127.0.0.1:${server.port}`);
+    await run(`http://127.0.0.1:${server.port}`, {
+      requests,
+    });
   } finally {
     server.stop(true);
   }

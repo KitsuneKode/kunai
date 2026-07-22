@@ -568,11 +568,7 @@ install_binary() {
 		resolved_version="$(resolve_published_version)"
 	fi
 
-	if [[ "$VERSION" == latest && "$DRY" != 1 ]]; then
-		base="$KUNAI_DL_BASE/latest/download"
-	else
-		base="$KUNAI_DL_BASE/download/v$resolved_version"
-	fi
+	base="$KUNAI_DL_BASE/download/v$resolved_version"
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
 

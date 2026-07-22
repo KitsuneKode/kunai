@@ -560,7 +560,7 @@ function Install-Binary {
   $arch = Get-WindowsArch
   $asset = Get-ReleaseAssetName -Arch $arch
   $resolved = Resolve-PublishedVersion
-  $base = if ($Version -eq 'latest') { "$DlBase/latest/download" } else { "$DlBase/download/v$resolved" }
+  $base = "$DlBase/download/v$resolved"
   $versionPath = Join-Path (Join-Path $VersionsDir $resolved) 'kunai.exe'
   $target = "windows-$arch"
   $url = "$base/$asset"

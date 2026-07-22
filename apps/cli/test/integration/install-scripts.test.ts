@@ -128,6 +128,49 @@ describe("install.sh dry-run", () => {
 });
 
 describe("install.sh release asset failures", () => {
+  test("pins a resolved latest binary and checksum to the immutable release URL", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#!/bin/sh\necho kunai-fixture\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-latest-url");
+    try {
+      await withReleaseFixture(
+        {
+          "/releases/latest": {
+            body: JSON.stringify({ tag_name: "v9.8.7" }),
+            headers: { "content-type": "application/json" },
+          },
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallShAsync(["--yes", "--skip-deps"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_RELEASES_API: `${baseUrl}/releases/latest`,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+
+          expect(result.status).toBe(0);
+          expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
+          expect(evidence.requests).toEqual([
+            "/releases/latest",
+            "/download/v9.8.7/SHA256SUMS",
+            `/download/v9.8.7/${asset}`,
+          ]);
+          expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
+
+          const metadata = JSON.parse(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
+          ) as { sourceUrl: string };
+          expect(metadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("rejects an empty downloaded asset", async () => {
     const asset = hostInstallShAsset();
     const sandbox = createInstallerSandbox("install-sh-empty");
@@ -217,13 +260,18 @@ describe("install.sh release asset failures", () => {
             body: `${digest}  ${asset}\n`,
           },
         },
-        async (baseUrl) => {
+        async (baseUrl, evidence) => {
           const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
           });
           expect(result.status).toBe(0);
+          expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
+          expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS",
+            `/download/v9.8.7/${asset}`,
+          ]);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(true);
           expect(result.stdout).toContain(`PATH winner: ${join(sandbox.binDir, "kunai")}`);
 
@@ -244,6 +292,10 @@ describe("install.sh release asset failures", () => {
           expect(typeof manifest.installedAt).toBe("string");
           expect(typeof manifest.updatedAt).toBe("string");
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          const versionMetadata = JSON.parse(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
+          ) as { sourceUrl: string };
+          expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
           expect(existsSync(join(sandbox.dataDir, "locks"))).toBe(true);
           expect(existsSync(join(sandbox.dataDir, "transactions"))).toBe(true);
         },

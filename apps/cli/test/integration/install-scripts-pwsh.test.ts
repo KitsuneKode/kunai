@@ -119,6 +119,48 @@ describePwsh("install.ps1 dry-run", () => {
 });
 
 describePwsh("install.ps1 release asset failures", () => {
+  test("pins a resolved latest binary and checksum to the immutable release URL", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-latest-fixture-payload";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-latest-url");
+    try {
+      await withReleaseFixture(
+        {
+          "/releases/latest": {
+            body: JSON.stringify({ tag_name: "v9.8.7" }),
+            headers: { "content-type": "application/json" },
+          },
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes"], {
+            ...sandbox.env,
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_RELEASES_API: `${baseUrl}/releases/latest`,
+          });
+
+          expect(result.status).toBe(0);
+          expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
+          expect(evidence.requests).toEqual([
+            "/releases/latest",
+            "/download/v9.8.7/SHA256SUMS",
+            `/download/v9.8.7/${asset}`,
+          ]);
+          expect(evidence.requests.some((path) => path.includes("/latest/download"))).toBe(false);
+
+          const metadata = JSON.parse(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
+          ) as { sourceUrl: string };
+          expect(metadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("rejects an empty downloaded asset", async () => {
     const asset = hostWindowsAsset();
     const sandbox = createInstallerSandbox("install-ps1-empty");
@@ -213,12 +255,17 @@ describePwsh("install.ps1 release asset failures", () => {
             body: `${digest}  ${asset}\n`,
           },
         },
-        async (baseUrl) => {
+        async (baseUrl, evidence) => {
           const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
           expect(result.status).toBe(0);
+          expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
+          expect(evidence.requests).toEqual([
+            "/download/v9.8.7/SHA256SUMS",
+            `/download/v9.8.7/${asset}`,
+          ]);
           expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
 
           const manifest = JSON.parse(
@@ -236,6 +283,10 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(manifest.artifactSha256).toBe(digest);
           expect(Array.isArray(manifest.managedPaths)).toBe(true);
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
+          const versionMetadata = JSON.parse(
+            readFileSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"), "utf8"),
+          ) as { sourceUrl: string };
+          expect(versionMetadata.sourceUrl).toBe(`${baseUrl}/download/v9.8.7/${asset}`);
         },
       );
     } finally {
