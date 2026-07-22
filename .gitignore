@@ -83,3 +83,8 @@ stream_cache.json
 .docs/playback-postplay-phase-workbook.html
 .design/cli/*.gif
 artifacts/
+
+# Local-only third-party reference material. Untracked by intent: this repo is
+# public and this directory holds proprietary source that must never be pushed.
+# Ignored (not merely untracked) so a stray `git add -A` cannot stage it.
+docs/installer-reference/
