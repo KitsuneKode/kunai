@@ -60,6 +60,38 @@ unless "Depends on" says otherwise.
 | 017  | Cut the doc/plan surface to a trustworthy core      | P2       | M      | —          | BLOCKED (dead paths fixed; docs and matched plans remain distinct) |
 | 018  | Windows CI leg for the untested mpv named-pipe path | P3       | M      | —          | DONE                                                               |
 
+### Wave 5 — Feature coherence (audit of 2026-07-21, planned against `01ab215b`)
+
+A second audit pass, scoped to a different axis than waves 1–4: not "is it correct"
+but "does the thing we shipped actually do anything". The finding that organizes all
+of it — **Kunai's failure mode is silent no-ops, not crashes.** Flags parsed and
+dropped, settings persisted and ignored, capabilities declared and unread, comments
+asserting guarantees the code does not keep.
+
+| Plan | Title                                                   | Priority | Effort | Depends on | Status |
+| ---- | ------------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| 019  | Make notifications actionable (play from the inbox)     | P1       | M      | 020 (soft) | TODO   |
+| 020  | Fix the silent no-ops users hit daily (7 independent)   | P1       | M      | —          | TODO   |
+| 021  | Make the provider contract enforced, not decorative     | P2       | L      | —          | TODO   |
+| 022  | Shell interaction coherence: help, destructive, filters | P2       | L      | —          | TODO   |
+| 023  | CLI surface honesty: packaging, flags, docs, first run  | P2       | M      | —          | TODO   |
+
+Already landed from this audit (no plan needed):
+
+- **Verification baseline repaired.** 6 unit tests were failing on `main`. The serious
+  one was Bun `mock.module` cross-file pollution: it applies at file-LOAD time and
+  loads all files before running any, so a mock in `services/` corrupted `domain/`,
+  which runs _first_ — an `afterAll` restore cannot save it. Green runs were not
+  trustworthy. 6 other test files use `mock.module` and remain unaudited.
+- **`boundary-imports` guardrail restored.** Six new `app/ -> app-shell/` inversions
+  had appeared past the allowlist, so the gate had been failing and was effectively
+  off. Baselined with dated DEBT comments; the structural move belongs to plan 014.
+- **Contract-conformance suite added**
+  (`apps/cli/test/unit/architecture/contract-conformance.test.ts`) — five gates that
+  fail when a declaration has no reader. This is the ratchet the whole wave hangs off:
+  each plan below deletes its baseline entries as it lands. Verified by mutation.
+- **History YouTube facet** — YouTube rows were filed under Movies.
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 
 ## Dependency notes
