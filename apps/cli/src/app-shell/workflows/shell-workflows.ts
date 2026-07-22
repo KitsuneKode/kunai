@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
@@ -1329,9 +1330,16 @@ async function handleReportIssue(container: Container): Promise<"handled"> {
       filePrefix: "kunai-diagnostics-report-",
       prunePrefixes: ["kunai-diagnostics-report-", "kunai-support-bundle-"],
     });
+    // The form's install-method dropdown is required; prefilling it from the
+    // manifest saves the reporter a guess and keeps triage accurate.
+    const { readInstallManifest } = await import("@/services/update/install-manifest");
+    const { detectInstallMethod } = await import("@/services/update/install-method");
+    const installMethod =
+      (await readInstallManifest())?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
     const draft = buildIssueReportDraft({
       bundle: written.bundle,
       diagnosticsPath: written.fileName,
+      installMethod,
     });
     container.diagnosticsService.record(
       buildUiDiagnosticEvent({
