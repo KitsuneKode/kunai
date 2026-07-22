@@ -2,11 +2,12 @@
 /**
  * Reconcile the nine npm packages in a release candidate with the registry.
  *
- * Platform packages are packed and reconciled in canonical target order. The
- * already-preserved launcher tarball is inspected without repacking and is
- * always reconciled last. Dry run is the default; only `--yes` may publish.
+ * Candidate preparation packs platform packages once. Publication inspects
+ * those preserved tarballs without repacking and reconciles them in canonical
+ * target order, with the already-preserved launcher always last. Dry run is
+ * the default; only `--yes` may publish.
  */
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -61,6 +62,7 @@ export interface BuildLocalPackageCandidatesOptions {
   readonly launcherTarballPath?: string;
   readonly platformDirectory?: string;
   readonly platformTarballDirectory?: string;
+  readonly platformTarballMode?: "pack" | "inspect";
 }
 
 export interface ReconcileNpmPublicationOptions {
@@ -132,6 +134,24 @@ function platformIdFromPackageName(name: string): string {
   return name.slice("@kitsunekode/kunai-".length);
 }
 
+async function inspectTarball(
+  command: CommandPort,
+  tarballPath: string,
+  context: string,
+): Promise<NpmPackMetadata> {
+  await assertNonemptyTarball(tarballPath, context);
+  const request: CommandRequest = {
+    command: "npm",
+    args: ["pack", "--json", "--dry-run", "--ignore-scripts", tarballPath],
+    cwd: ROOT,
+  };
+  const result = await command(request);
+  if (result.exitCode !== 0) {
+    throw commandError(`npm pack inspection for ${context}`, request, result);
+  }
+  return parseNpmPackMetadata(result.stdout, context);
+}
+
 /** Build the complete ordered local candidate set before touching the registry. */
 export async function buildLocalPackageCandidates(
   options: BuildLocalPackageCandidatesOptions,
@@ -140,6 +160,7 @@ export async function buildLocalPackageCandidates(
   const launcherTarballPath = options.launcherTarballPath ?? LAUNCHER_TARBALL_PATH;
   const platformDirectory = options.platformDirectory ?? PLATFORM_DIRECTORY;
   const platformTarballDirectory = options.platformTarballDirectory ?? PLATFORM_TARBALL_DIRECTORY;
+  const platformTarballMode = options.platformTarballMode ?? "pack";
   const manifest = parseJson(await readFile(launcherManifestPath, "utf8"), launcherManifestPath);
   if (
     !isJsonObject(manifest) ||
@@ -149,47 +170,71 @@ export async function buildLocalPackageCandidates(
     throw new Error(`[publish] invalid launcher manifest: ${launcherManifestPath}`);
   }
 
+  if (platformTarballMode === "pack") {
+    await rm(platformTarballDirectory, { recursive: true, force: true });
+  }
   await mkdir(platformTarballDirectory, { recursive: true });
   const candidates: LocalPackageCandidate[] = [];
-  for (const name of PLATFORM_PACKAGE_NAMES) {
-    const id = platformIdFromPackageName(name);
-    const packageDirectory = join(platformDirectory, id);
-    const request: CommandRequest = {
-      command: "npm",
-      args: [
-        "pack",
-        "--json",
-        "--ignore-scripts",
-        "--pack-destination",
-        platformTarballDirectory,
-        packageDirectory,
-      ],
-      cwd: ROOT,
-    };
-    const result = await options.command(request);
-    if (result.exitCode !== 0) throw commandError(`npm pack for ${name}`, request, result);
-    const packed = parseNpmPackMetadata(result.stdout, name);
-    const tarballPath = join(platformTarballDirectory, packed.filename);
-    candidates.push({
-      name: packed.name,
-      version: packed.version,
-      tarballPath,
-      integrity: packed.integrity,
-      role: "platform",
-    });
+  if (platformTarballMode === "pack") {
+    for (const name of PLATFORM_PACKAGE_NAMES) {
+      const id = platformIdFromPackageName(name);
+      const packageDirectory = join(platformDirectory, id);
+      const request: CommandRequest = {
+        command: "npm",
+        args: [
+          "pack",
+          "--json",
+          "--ignore-scripts",
+          "--pack-destination",
+          platformTarballDirectory,
+          packageDirectory,
+        ],
+        cwd: ROOT,
+      };
+      const result = await options.command(request);
+      if (result.exitCode !== 0) throw commandError(`npm pack for ${name}`, request, result);
+      const packed = parseNpmPackMetadata(result.stdout, name);
+      const tarballPath = join(platformTarballDirectory, packed.filename);
+      candidates.push({
+        name: packed.name,
+        version: packed.version,
+        tarballPath,
+        integrity: packed.integrity,
+        role: "platform",
+      });
+    }
+  } else {
+    const tarballNames = (await readdir(platformTarballDirectory))
+      .filter((name) => name.endsWith(".tgz"))
+      .sort();
+    if (tarballNames.length !== PLATFORM_PACKAGE_NAMES.length) {
+      throw new Error(
+        `[publish] expected ${PLATFORM_PACKAGE_NAMES.length} preserved platform tarballs, found ${tarballNames.length}.`,
+      );
+    }
+    const inspected = new Map<string, LocalPackageCandidate>();
+    for (const tarballName of tarballNames) {
+      const tarballPath = join(platformTarballDirectory, tarballName);
+      const packed = await inspectTarball(options.command, tarballPath, tarballName);
+      if (inspected.has(packed.name)) {
+        throw new Error(`[publish] duplicate preserved tarball for ${packed.name}.`);
+      }
+      inspected.set(packed.name, {
+        name: packed.name,
+        version: packed.version,
+        tarballPath,
+        integrity: packed.integrity,
+        role: "platform",
+      });
+    }
+    for (const name of PLATFORM_PACKAGE_NAMES) {
+      const candidate = inspected.get(name);
+      if (!candidate) throw new Error(`[publish] preserved tarball for ${name} is missing.`);
+      candidates.push(candidate);
+    }
   }
 
-  await assertNonemptyTarball(launcherTarballPath, "launcher");
-  const launcherRequest: CommandRequest = {
-    command: "npm",
-    args: ["pack", "--json", "--dry-run", "--ignore-scripts", launcherTarballPath],
-    cwd: ROOT,
-  };
-  const launcherResult = await options.command(launcherRequest);
-  if (launcherResult.exitCode !== 0) {
-    throw commandError("npm pack inspection for launcher", launcherRequest, launcherResult);
-  }
-  const launcher = parseNpmPackMetadata(launcherResult.stdout, "launcher");
+  const launcher = await inspectTarball(options.command, launcherTarballPath, "launcher");
   candidates.push({
     name: launcher.name,
     version: launcher.version,
@@ -443,22 +488,36 @@ export function parsePublishArgs(args: readonly string[]): { readonly confirmed:
 }
 
 export const defaultCommandPort: CommandPort = async (request) => {
-  const process = Bun.spawn([request.command, ...request.args], {
+  // npm's Node launcher can exit before Bun's async pipe reader receives its
+  // small JSON payload. The synchronous Bun primitive preserves that output;
+  // publication is deliberately sequential already.
+  const process = Bun.spawnSync([request.command, ...request.args], {
     cwd: request.cwd ?? ROOT,
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    process.exited,
-    new Response(process.stdout).text(),
-    new Response(process.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
+  return {
+    exitCode: process.exitCode,
+    stdout: process.stdout.toString(),
+    stderr: process.stderr.toString(),
+  };
 };
 
 async function main(): Promise<void> {
-  const { confirmed } = parsePublishArgs(process.argv.slice(2));
-  const candidates = await buildLocalPackageCandidates({ command: defaultCommandPort });
+  const args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === "--prepare") {
+    const candidates = await buildLocalPackageCandidates({
+      command: defaultCommandPort,
+      platformTarballMode: "pack",
+    });
+    console.log(
+      `[publish] prepared ${candidates.length} preserved packages at ${candidates[0]?.version}.`,
+    );
+    return;
+  }
+  const { confirmed } = parsePublishArgs(args);
+  const candidates = await buildLocalPackageCandidates({
+    command: defaultCommandPort,
+    platformTarballMode: "inspect",
+  });
   const registry = createNpmRegistryPort(defaultCommandPort);
   await reconcileNpmPublication({
     candidates,

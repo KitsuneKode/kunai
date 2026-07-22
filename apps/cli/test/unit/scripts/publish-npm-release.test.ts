@@ -157,6 +157,65 @@ describe("local npm publication candidates", () => {
     }
   });
 
+  test("publication inspects preserved platform tarballs without repacking them", async () => {
+    const root = mkdtempSync(join(tmpdir(), "kunai-preserved-candidates-"));
+    const tarballDirectory = join(root, "tarballs");
+    const launcherTarballPath = join(root, "kunai-npm.tgz");
+    const launcherManifestPath = join(root, "package.json");
+    mkdirSync(tarballDirectory, { recursive: true });
+    writeFileSync(launcherTarballPath, "preserved launcher bytes");
+    writeFileSync(
+      launcherManifestPath,
+      JSON.stringify({ name: "@kitsunekode/kunai", version: "1.2.3" }),
+    );
+    for (const id of PLATFORM_IDS) writeFileSync(join(tarballDirectory, `${id}.tgz`), id);
+    const preservedBytes = new Map(
+      PLATFORM_IDS.map((id) => [id, Bun.file(join(tarballDirectory, `${id}.tgz`)).text()]),
+    );
+
+    const commands: string[][] = [];
+    const command: CommandPort = async (request) => {
+      commands.push([request.command, ...request.args]);
+      const source = request.args.at(-1)!;
+      const id = basename(source, ".tgz");
+      const launcher = source === launcherTarballPath;
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify([
+          {
+            name: launcher ? "@kitsunekode/kunai" : `@kitsunekode/kunai-${id}`,
+            version: "1.2.3",
+            integrity: `sha512-${Buffer.from(launcher ? "launcher" : id).toString("base64")}`,
+            filename: basename(source),
+          },
+        ]),
+        stderr: "",
+      };
+    };
+
+    try {
+      const result = await buildLocalPackageCandidates({
+        command,
+        launcherManifestPath,
+        launcherTarballPath,
+        platformTarballDirectory: tarballDirectory,
+        platformTarballMode: "inspect",
+      });
+
+      expect(result).toHaveLength(9);
+      expect(commands).toHaveLength(9);
+      expect(commands.every((invocation) => invocation.includes("--dry-run"))).toBe(true);
+      expect(commands.every((invocation) => !invocation.includes("--pack-destination"))).toBe(true);
+      for (const id of PLATFORM_IDS) {
+        expect(await Bun.file(join(tarballDirectory, `${id}.tgz`)).text()).toBe(
+          await preservedBytes.get(id)!,
+        );
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("validates all candidates before any registry work", async () => {
     const localCandidates = candidates();
     localCandidates[4] = { ...localCandidates[4]!, integrity: "" };

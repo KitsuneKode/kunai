@@ -16,9 +16,11 @@ import {
 // launcher tarball and the host platform tarball in the same command; it must
 // not fill missing optional dependencies from the public registry.
 const CLI_ROOT = join(import.meta.dirname, "../..");
+const REPO_ROOT = join(CLI_ROOT, "../..");
 const NPM_PUBLISH_ROOT = join(CLI_ROOT, "dist/npm");
 const NPM_PLATFORM_ROOT = join(CLI_ROOT, "dist/npm-platform");
 const RUN_INSTALL = process.env.KUNAI_NPM_GLOBAL_INSTALL === "1";
+const USE_PREBUILT_CANDIDATE = process.env.KUNAI_NPM_CANDIDATE_PREBUILT === "1";
 
 describe("npm candidate isolation helpers", () => {
   test("uses the canonical temp prefix rather than a macOS /var alias", () => {
@@ -114,6 +116,16 @@ function hostTarget() {
   return resolveHostReleaseBinaryTarget({ libc });
 }
 
+function preservedPlatformTarball(targetId: string): string {
+  const directory = join(REPO_ROOT, ".release-candidate", "npm-platform");
+  const suffix = `-${targetId}-${packageJson.version}.tgz`;
+  const matches = readdirSync(directory).filter(
+    (entry) => entry.endsWith(suffix) && entry.endsWith(".tgz"),
+  );
+  expect(matches, targetId).toHaveLength(1);
+  return join(directory, matches[0] as string);
+}
+
 const describeInstall = RUN_INSTALL ? describe : describe.skip;
 
 describeInstall("hermetic npm candidate install", () => {
@@ -161,24 +173,32 @@ describeInstall("hermetic npm candidate install", () => {
       npm_config_audit: "false",
     });
 
-    expectCommand("build launcher", "bun", ["run", "build"], {
-      cwd: CLI_ROOT,
-      env: installEnv,
-    });
-    expectCommand("build platform binaries", "bun", ["run", "build:binaries"], {
-      cwd: CLI_ROOT,
-      env: installEnv,
-    });
-    expectCommand("write platform package manifests", "bun", ["run", "build:npm-platform"], {
-      cwd: CLI_ROOT,
-      env: installEnv,
-    });
+    if (USE_PREBUILT_CANDIDATE) {
+      launcherTarball = join(REPO_ROOT, ".release-candidate", "kunai-npm.tgz");
+      expect(existsSync(launcherTarball)).toBe(true);
+      for (const target of RELEASE_BINARY_TARGETS) {
+        platformTarballs.set(target.id, preservedPlatformTarball(target.id));
+      }
+    } else {
+      expectCommand("build launcher", "bun", ["run", "build"], {
+        cwd: CLI_ROOT,
+        env: installEnv,
+      });
+      expectCommand("build platform binaries", "bun", ["run", "build:binaries"], {
+        cwd: CLI_ROOT,
+        env: installEnv,
+      });
+      expectCommand("write platform package manifests", "bun", ["run", "build:npm-platform"], {
+        cwd: CLI_ROOT,
+        env: installEnv,
+      });
 
-    launcherTarball = packDirectory(NPM_PUBLISH_ROOT, join(workDir, "launcher"), installEnv);
-    for (const target of RELEASE_BINARY_TARGETS) {
-      const packageDir = join(NPM_PLATFORM_ROOT, target.id);
-      const tarball = packDirectory(packageDir, join(workDir, "platform", target.id), installEnv);
-      platformTarballs.set(target.id, tarball);
+      launcherTarball = packDirectory(NPM_PUBLISH_ROOT, join(workDir, "launcher"), installEnv);
+      for (const target of RELEASE_BINARY_TARGETS) {
+        const packageDir = join(NPM_PLATFORM_ROOT, target.id);
+        const tarball = packDirectory(packageDir, join(workDir, "platform", target.id), installEnv);
+        platformTarballs.set(target.id, tarball);
+      }
     }
   }, 600_000);
 

@@ -105,8 +105,13 @@ function extractWorkflowJob(yaml: string, jobId: string): string {
 
 describe("release workflow candidate-before-publication contract", () => {
   const release = readFileSync(join(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
+  const publisher = readFileSync(join(REPO_ROOT, "scripts/publish-npm-release.ts"), "utf8");
+  const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
   const versionPr = () => extractWorkflowJob(release, "version-pr");
   const candidate = () => extractWorkflowJob(release, "candidate");
+  const confirmation = () => extractWorkflowJob(release, "confirmation");
   const publish = () => extractWorkflowJob(release, "publish");
   const metadata = () => extractWorkflowJob(release, "metadata");
 
@@ -205,6 +210,61 @@ describe("release workflow candidate-before-publication contract", () => {
     const pub = publish();
     expect(pub).toMatch(/needs:\s*confirmation/);
     expect(pub).toMatch(/environment:\s*release-production/);
+  });
+
+  test("every manual release job is restricted to main", () => {
+    for (const job of [candidate(), confirmation(), publish(), metadata()]) {
+      expect(job).toMatch(
+        /if:\s*github\.event_name\s*==\s*'workflow_dispatch'\s*&&\s*github\.ref\s*==\s*'refs\/heads\/main'/,
+      );
+    }
+  });
+
+  test("candidate creation and publication require the checked out SHA to equal origin/main", () => {
+    for (const job of [candidate(), publish()]) {
+      expect(job).toContain("git fetch --no-tags origin main");
+      expect(job).toContain("git rev-parse HEAD");
+      expect(job).toContain("git rev-parse origin/main");
+    }
+  });
+
+  test("candidate install gate consumes preserved local tarballs after they are created", () => {
+    const cand = candidate();
+    const platformBuild = cand.indexOf("bun run build:npm-platform");
+    const launcherPack = cand.indexOf("bun run release:pack");
+    const candidatePack = cand.indexOf("bun run release:prepare");
+    const installGate = cand.indexOf("bun run test:npm-global-install");
+
+    expect(platformBuild).toBeGreaterThanOrEqual(0);
+    expect(launcherPack).toBeGreaterThanOrEqual(0);
+    expect(candidatePack).toBeGreaterThanOrEqual(0);
+    expect(installGate).toBeGreaterThanOrEqual(0);
+    expect(platformBuild).toBeLessThan(installGate);
+    expect(launcherPack).toBeLessThan(installGate);
+    expect(candidatePack).toBeLessThan(installGate);
+    expect(cand).toContain('KUNAI_NPM_CANDIDATE_PREBUILT: "1"');
+    expect(cand).toContain(".release-candidate/npm-platform");
+  });
+
+  test("trusted publication pins compatible Node and npm and prints both versions", () => {
+    expect(release).toContain('RELEASE_NODE_VERSION: "22.14.0"');
+    expect(release).toContain('RELEASE_NPM_VERSION: "11.5.1"');
+    for (const job of [candidate(), publish()]) {
+      expect(job).toContain("node-version: ${{ env.RELEASE_NODE_VERSION }}");
+      expect(job).toContain("npm@${RELEASE_NPM_VERSION}");
+      expect(job).toContain("node --version");
+      expect(job).toContain("npm --version");
+    }
+  });
+
+  test("protected publish uses npm provenance and OIDC without an npm token", () => {
+    const pub = publish();
+    expect(pub).toMatch(/permissions:[\s\S]*contents:\s*write[\s\S]*id-token:\s*write/);
+    expect(publisher).toMatch(/"publish"[\s\S]*"--access",\s*"public"[\s\S]*"--provenance"/);
+    expect(release).not.toContain("NODE_AUTH_TOKEN");
+    expect(release).not.toContain("bun publish");
+    expect(Object.values(rootPackage.scripts).join("\n")).not.toContain("bun publish");
+    expect(rootPackage.scripts["release:publish-tarball"]).toBeUndefined();
   });
 });
 
