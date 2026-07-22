@@ -1,7 +1,12 @@
 # 019 — Make notifications actionable (play / open details from the inbox)
 
-> **2026-07-22 — the remaining half is fully mapped. Read this box first; it is
-> the hard part of the work and it is done.**
+> **2026-07-22 — DONE (`cc5856fc`). Kept for the reasoning; the fix shipped.**
+>
+> One correction to the map below: "resolving the browse-shell promise from the
+> overlay is not reachable" was **wrong**. `forceCloseRootContent` settles the
+> retained browse session from anywhere and was already used this way by offline
+> playback from `download-manager-shell` and `library-title-detail`. That is the
+> channel all three sites now use.
 >
 > **The defect is not notification-specific.** Overlays opened by the _direct_
 > `OPEN_OVERLAY` route have no channel back to the phase loop, so any result they
