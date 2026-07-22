@@ -3,7 +3,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { isMuslEnvironmentSync } from "../../src/services/update/native-installer/musl";
@@ -20,8 +20,46 @@ const NPM_PUBLISH_ROOT = join(CLI_ROOT, "dist/npm");
 const NPM_PLATFORM_ROOT = join(CLI_ROOT, "dist/npm-platform");
 const RUN_INSTALL = process.env.KUNAI_NPM_GLOBAL_INSTALL === "1";
 
+describe("npm candidate isolation helpers", () => {
+  test("uses the canonical temp prefix rather than a macOS /var alias", () => {
+    const requestedPrefix = "/var/folders/abc/kunai/npm-prefix";
+    const canonicalPrefix = "/private/var/folders/abc/kunai/npm-prefix";
+    const installedBinary = "/private/var/folders/abc/kunai/npm-prefix/bin/kunai";
+
+    expect(isPathWithin(requestedPrefix, installedBinary)).toBe(false);
+    expect(isPathWithin(canonicalPrefix, installedBinary)).toBe(true);
+    expect(
+      isPathWithin(canonicalPrefix, "/private/var/folders/abc/kunai/npm-prefix-other/bin/kunai"),
+    ).toBe(false);
+  });
+
+  test("removes ambient Node module-resolution injection", () => {
+    expect(
+      hermeticNodeEnvironment({
+        NODE_OPTIONS: "--require /tmp/injected.cjs",
+        NODE_PATH: "/tmp/ambient-node-modules",
+        PRESERVED_VALUE: "yes",
+      }),
+    ).toEqual({ PRESERVED_VALUE: "yes", NODE_OPTIONS: undefined, NODE_PATH: undefined });
+  });
+});
+
 function globalNodeModules(prefix: string): string {
   return join(prefix, process.platform === "win32" ? "node_modules" : "lib/node_modules");
+}
+
+function isPathWithin(root: string, candidate: string): boolean {
+  const pathFromRoot = relative(root, candidate);
+  return (
+    pathFromRoot === "" ||
+    (!pathFromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) &&
+      pathFromRoot !== ".." &&
+      !isAbsolute(pathFromRoot))
+  );
+}
+
+function hermeticNodeEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, NODE_OPTIONS: undefined, NODE_PATH: undefined };
 }
 
 type PlatformManifest = {
@@ -76,7 +114,7 @@ function hostTarget() {
   return resolveHostReleaseBinaryTarget({ libc });
 }
 
-const describeInstall = RUN_INSTALL && npmAvailable() ? describe : describe.skip;
+const describeInstall = RUN_INSTALL ? describe : describe.skip;
 
 describeInstall("hermetic npm candidate install", () => {
   let workDir = "";
@@ -87,6 +125,12 @@ describeInstall("hermetic npm candidate install", () => {
   let installEnv: NodeJS.ProcessEnv = process.env;
 
   beforeAll(async () => {
+    if (!npmAvailable()) {
+      throw new Error(
+        "[npm-global-install] npm is required for KUNAI_NPM_GLOBAL_INSTALL=1; install npm and retry.",
+      );
+    }
+
     workDir = await mkdtemp(join(tmpdir(), "kunai-npm-candidate-"));
     const homeDir = join(workDir, "home");
     const packCache = join(workDir, "pack-cache");
@@ -103,7 +147,7 @@ describeInstall("hermetic npm candidate install", () => {
     // The pack cache is isolated too, but installation gets a separate fresh
     // empty cache below. A dead registry makes a regression fail locally rather
     // than accidentally reaching the public registry.
-    installEnv = {
+    installEnv = hermeticNodeEnvironment({
       ...process.env,
       HOME: homeDir,
       XDG_CONFIG_HOME: join(homeDir, ".config"),
@@ -115,7 +159,7 @@ describeInstall("hermetic npm candidate install", () => {
       npm_config_update_notifier: "false",
       npm_config_fund: "false",
       npm_config_audit: "false",
-    };
+    });
 
     expectCommand("build launcher", "bun", ["run", "build"], {
       cwd: CLI_ROOT,
@@ -190,9 +234,15 @@ describeInstall("hermetic npm candidate install", () => {
     expect(install.status).toBe(0);
     expect(existsSync(binPath)).toBe(true);
 
+    // The generated launcher has no vendored native fallback. Clearing Node's
+    // resolution injection means this process can reach its native binary only
+    // through the host platform package installed beneath this temporary prefix.
+    const launchEnv = hermeticNodeEnvironment(installEnv);
+    expect(launchEnv.NODE_PATH).toBeUndefined();
+    expect(launchEnv.NODE_OPTIONS).toBeUndefined();
     const version = spawnSync(binPath, ["--version"], {
       encoding: "utf8",
-      env: installEnv,
+      env: launchEnv,
       shell: process.platform === "win32",
     });
     expect(version.status, commandOutput(version)).toBe(0);
@@ -208,7 +258,8 @@ describeInstall("hermetic npm candidate install", () => {
         process.platform === "win32" ? "kunai.exe" : "kunai",
       ),
     );
-    expect(installedLauncher.startsWith(prefix)).toBe(true);
-    expect(installedBinary.startsWith(prefix)).toBe(true);
+    const canonicalPrefix = realpathSync(prefix);
+    expect(isPathWithin(canonicalPrefix, installedLauncher)).toBe(true);
+    expect(isPathWithin(canonicalPrefix, installedBinary)).toBe(true);
   }, 120_000);
 });
