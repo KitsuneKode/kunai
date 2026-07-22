@@ -78,13 +78,16 @@ asserting guarantees the code does not keep.
 | 022  | Shell interaction coherence: help, destructive, filters | P2       | L      | —          | PARTIAL |
 | 023  | CLI surface honesty: packaging, flags, docs, first run  | P2       | M      | —          | TODO    |
 | 024  | Distribution and update experience (npm, autoupdate)    | P1       | L      | —          | DONE    |
-| 025  | Terminal graphics parity: capability probe + sixel      | P1       | L      | —          | TODO    |
+| 025  | Terminal graphics parity: capability probe + sixel      | P1       | L      | —          | PARTIAL |
 
 **PARTIAL detail.** `021`: stage 3 is complete (episode catalogs are
 language-aware and cache-keyed by audio); stages 1, 2, 4, 5, 6, 7 are untouched.
 `022`: 022.1 (help scope) is done and the overlay-routing rework that 022 called
 DEBT-01 landed with 019; 022.2 (destructive-action confirms), 022.3 (filter key
 capture), 022.4 (error states) and 022.5 (Esc semantics) remain.
+`025`: 025.1 (runtime DA1 + kitty capability probe) and 025.3 (probe result in
+diagnostics and the issue form) are done; 025.2 (native sixel encoder, which
+would drop the chafa dependency) remains.
 
 Already landed from this audit (no plan needed):
 
