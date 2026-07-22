@@ -1,6 +1,8 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
+import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
+import { forceCloseRootContent } from "@/app-shell/root-content-state";
 import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
@@ -21,6 +23,7 @@ import { resolveTitleLaneEligibility } from "@/domain/provider-lane-contract";
 import { restoreQueueSessionWithResume } from "@/domain/queue/restore-queue-session";
 import { rankFuzzyMatches } from "@/domain/session/fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "@/domain/session/SessionState";
+import type { SearchResult } from "@/domain/types";
 import { openExternalUrlAndWait } from "@/infra/shell/open-external-url";
 import { projectionFromViewDecision } from "@/services/continuation/continuation-policy";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
@@ -113,6 +116,7 @@ import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import { buildQueueView } from "./queue-view";
 import {
+  hasPendingRootHistorySelection,
   resolveRootHistorySelection,
   releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
@@ -146,7 +150,7 @@ import {
   type TracksNavState,
 } from "./tracks-panel-nav";
 import { TracksPanelShell } from "./tracks-panel-shell";
-import type { FooterAction, ShellPanelLine } from "./types";
+import type { BrowseShellResult, FooterAction, ShellPanelLine } from "./types";
 import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
@@ -1096,8 +1100,28 @@ export function RootOverlayShell({
         playback: {
           playNow: async (item) => {
             applyMediaItemSessionRouting(container, item);
-            stageNotificationPlaybackIntent(playbackIntentFromMediaItem(item));
+            const intent = playbackIntentFromMediaItem(item);
             container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+
+            // Two routes open this inbox and only one used to consume the
+            // intent, so "Play now" from inside another overlay reported
+            // success and played nothing.
+            //
+            // Settling the retained browse session is the one channel that
+            // reaches the phase loop from inside an overlay (the same one
+            // offline playback uses). It succeeds exactly when browse is still
+            // mounted — the direct OPEN_OVERLAY route. On the palette route
+            // browse has already resolved, so this returns false and the intent
+            // is staged for `openNotificationsOverlay` to take on close. The two
+            // cases are mutually exclusive, so playback can never start twice.
+            const delivered = forceCloseRootContent<BrowseShellResult<SearchResult>>({
+              type: "launch-playback",
+              launch: {
+                title: intent.title,
+                ...(intent.episode ? { episode: intent.episode } : {}),
+              },
+            });
+            if (!delivered) stageNotificationPlaybackIntent(intent);
           },
         },
         details: {
@@ -1441,9 +1465,29 @@ export function RootOverlayShell({
                   }),
               );
             }
+            // Only the palette route awaits this. Opened directly from another
+            // overlay there is no resolver, so the selection used to vanish and
+            // the overlay simply closed. Fall back to the same launch channel
+            // the inbox uses, via the shared resolver so both routes align the
+            // provider lane and record the source decision identically.
+            const awaited = hasPendingRootHistorySelection();
             resolveRootHistorySelection(selection);
             if (selection) {
               container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+              if (!awaited) {
+                void resolveHistorySelectionLaunch(container, selection, "history").then(
+                  (launch) =>
+                    launch
+                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
+                          type: "launch-playback",
+                          launch: {
+                            title: launch.title,
+                            ...(launch.episode ? { episode: launch.episode } : {}),
+                          },
+                        })
+                      : false,
+                );
+              }
             }
           },
         }) === "handled"

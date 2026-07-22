@@ -1,7 +1,9 @@
 import type { Container } from "@/container";
+import type { SearchResult } from "@/domain/types";
 import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 
-import type { ShellAction } from "./types";
+import { forceCloseRootContent } from "./root-content-state";
+import type { BrowseShellResult, ShellAction } from "./types";
 
 type WorkflowModule = typeof import("./workflows");
 
@@ -18,7 +20,18 @@ export async function runRootWorkflowSafely({
 }): Promise<void> {
   try {
     const { runShellWorkflowFromOverlay } = await loadWorkflow();
-    await runShellWorkflowFromOverlay(container, action, { cancelPickerId });
+    const result = await runShellWorkflowFromOverlay(container, action, { cancelPickerId });
+
+    // A workflow that asks to start playing something used to be ignored here:
+    // the result was awaited and dropped, so the workflow reported success and
+    // nothing played. Settle the retained browse session instead — the same
+    // channel offline playback and the inbox use to reach the phase loop.
+    if (typeof result === "object" && result.type === "history-entry") {
+      forceCloseRootContent<BrowseShellResult<SearchResult>>({
+        type: "launch-playback",
+        launch: { title: result.title, ...(result.episode ? { episode: result.episode } : {}) },
+      });
+    }
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Unknown workflow error";
     container.diagnosticsService.record(

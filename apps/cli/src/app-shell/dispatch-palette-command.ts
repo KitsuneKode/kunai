@@ -1,13 +1,7 @@
-import {
-  episodeFromHistorySelection,
-  recordLocalHistorySourceDecision,
-} from "@/app/bootstrap/launch-entry";
-import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import type { Container } from "@/container";
-import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
-import { historyContentType } from "@/services/continuation/history-progress";
 
+import { resolveHistorySelectionLaunch } from "./history-selection-launch";
 import { defaultPaletteWorkflowPort, type PaletteWorkflowPort } from "./palette-workflow-port";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import {
@@ -118,7 +112,6 @@ async function openRootHistorySelection(
   container: Container,
   reason: "continue" | "history",
 ): Promise<PaletteCommandResult> {
-  const { stateManager } = container;
   const selectionPromise = waitForRootHistorySelection();
   await openRootOwnedOverlay(
     container,
@@ -128,39 +121,13 @@ async function openRootHistorySelection(
   );
   const selection = await selectionPromise;
   if (!selection) return "handled";
-  if (selection.localJobId) {
-    const result = await requestUnifiedOfflinePlayback(container, selection.localJobId);
-    if (!result) return "handled";
-    return {
-      type: "history-entry",
-      title: result.launch.title,
-      episode: result.launch.episode,
-    };
-  }
-  const providerMetadata = container.providerRegistry.get(selection.entry.providerId ?? "unknown");
-  if (providerMetadata) {
-    const lane = resolveProviderLaneFromMetadata(providerMetadata.metadata);
-    stateManager.dispatch({
-      type: "SET_MODE",
-      mode: lane,
-      provider: providerMetadata.metadata.id,
-    });
-  } else {
-    stateManager.dispatch({
-      type: "SET_PROVIDER",
-      provider: selection.entry.providerId ?? "unknown",
-    });
-  }
-  await recordLocalHistorySourceDecision(container, selection, reason);
+
+  const launch = await resolveHistorySelectionLaunch(container, selection, reason);
+  if (!launch) return "handled";
   return {
     type: "history-entry",
-    title: {
-      id: selection.titleId,
-      type: historyContentType(selection.entry),
-      name: selection.entry.title,
-      launchSource: reason === "history" ? "history" : "continue",
-    },
-    episode: episodeFromHistorySelection(selection),
+    title: launch.title,
+    episode: launch.episode,
   };
 }
 
