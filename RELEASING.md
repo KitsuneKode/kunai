@@ -7,12 +7,58 @@ This repo uses Changesets + Turborepo for versioning, changelogs, and release no
 ## One-time setup
 
 - Keep `main` as the release branch.
-- Configure npm Trusted Publishing (OIDC) for `@kitsunekode/kunai`:
+- An npm owner must ensure that the complete public package set exists once:
+
+  ```text
+  @kitsunekode/kunai
+  @kitsunekode/kunai-darwin-arm64
+  @kitsunekode/kunai-darwin-x64
+  @kitsunekode/kunai-linux-arm64
+  @kitsunekode/kunai-linux-arm64-musl
+  @kitsunekode/kunai-linux-x64
+  @kitsunekode/kunai-linux-x64-musl
+  @kitsunekode/kunai-windows-arm64
+  @kitsunekode/kunai-windows-x64
+  ```
+
+  npm cannot attach a trusted publisher to a package name that has never been
+  created. If any name is absent, an owner must bootstrap it once before the
+  protected workflow is allowed to publish a real release.
+
+- Configure npm Trusted Publishing (OIDC) separately for **all nine packages**:
   - npm package settings → Trusted publishers
-  - GitHub repository: `kitsunekode/kunai`
-  - Workflow file: `.github/workflows/release.yml`
+  - GitHub repository: `KitsuneKode/kunai`
+  - Workflow path: `.github/workflows/release.yml` (workflow filename `release.yml`)
+  - GitHub environment: `release-production`
 - Configure the GitHub Actions environment `release-production` with required reviewers (publication waits on approval).
-- No long-lived `NPM_TOKEN` is required once Trusted Publishing is enabled. The publish job may still pass `NODE_AUTH_TOKEN` for registry auth compatibility alongside OIDC (`id-token: write`).
+- Do not configure or pass `NPM_TOKEN` / `NODE_AUTH_TOKEN` in the publish job.
+  Trusted publishing authenticates the npm CLI through GitHub OIDC and requires
+  `permissions: id-token: write`.
+
+Before the first protected run, and whenever ownership or trusted-publisher
+settings change, preflight every package at the candidate version:
+
+```sh
+VERSION=0.3.0
+for PACKAGE in \
+  @kitsunekode/kunai \
+  @kitsunekode/kunai-darwin-arm64 \
+  @kitsunekode/kunai-darwin-x64 \
+  @kitsunekode/kunai-linux-arm64 \
+  @kitsunekode/kunai-linux-arm64-musl \
+  @kitsunekode/kunai-linux-x64 \
+  @kitsunekode/kunai-linux-x64-musl \
+  @kitsunekode/kunai-windows-arm64 \
+  @kitsunekode/kunai-windows-x64
+do
+  npm view "${PACKAGE}@${VERSION}" name version dist.integrity --json
+done
+```
+
+An absent candidate version is expected for a new release. An absent package
+name is different: stop before a real release unless an npm owner has created
+that package and configured its trusted publisher. Authentication, permission,
+network, malformed-response, and integrity errors are failures, not absence.
 
 ## Per-change workflow (normal releases)
 
@@ -153,6 +199,22 @@ bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 ```
 
 Then focused release-artifact tests, `release:notes:check`, and a narrow commit/push of `.release/kunai-v<version>.json` (`chore(release): mark vX.Y.Z published`). No force-push.
+
+## npm publication recovery
+
+If publication stops partway through the nine-package set, rerun the same
+Release workflow with the **same version**. The publisher reconciles the
+preserved candidate against npm in canonical order:
+
+- an absent version is published;
+- an existing version with identical npm integrity is verified and skipped;
+- an existing version with different integrity halts the release;
+- all eight platform packages are reconciled before `@kitsunekode/kunai`.
+
+Do not unpublish, overwrite, hand-increment, or rebuild a partial candidate.
+The launcher stays last so users can never resolve it before its exact-version
+platform packages exist. A rerun is safe only with the preserved artifacts from
+the original candidate job.
 
 ## Metadata push recovery
 
