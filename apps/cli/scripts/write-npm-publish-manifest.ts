@@ -17,6 +17,17 @@ const OUTPUT_PATH = join(OUTPUT_DIRECTORY, "package.json");
 export type NpmPublishManifestSource = {
   readonly name: string;
   readonly version: string;
+  readonly description?: string;
+  readonly keywords?: readonly string[];
+  readonly homepage?: string;
+  readonly bugs?: { readonly url?: string };
+  readonly license?: string;
+  readonly author?: unknown;
+  readonly repository?: unknown;
+  readonly publishConfig?: {
+    readonly access?: string;
+    readonly provenance?: boolean;
+  };
 };
 
 /**
@@ -24,16 +35,37 @@ export type NpmPublishManifestSource = {
  * Keep this pure so the package contract is independent of filesystem state.
  */
 export function buildNpmPublishManifest(source: NpmPublishManifestSource) {
+  if (source.license !== "MIT") {
+    throw new Error("[npm-publish-manifest] source package license must be MIT.");
+  }
+  if (source.publishConfig?.access !== "public") {
+    throw new Error("[npm-publish-manifest] source package publishConfig access must be public.");
+  }
+  if (source.publishConfig.provenance !== true) {
+    throw new Error("[npm-publish-manifest] source package must publish with provenance.");
+  }
+
   return {
     name: source.name,
     version: source.version,
+    ...(source.description ? { description: source.description } : {}),
+    ...(source.keywords ? { keywords: source.keywords } : {}),
+    ...(source.homepage ? { homepage: source.homepage } : {}),
+    ...(source.bugs ? { bugs: source.bugs } : {}),
+    license: source.license,
+    ...(source.author ? { author: source.author } : {}),
+    ...(source.repository ? { repository: source.repository } : {}),
     type: "module",
     bin: { kunai: "dist/npm-launcher.mjs" },
-    files: ["dist/npm-launcher.mjs"],
+    files: ["dist/npm-launcher.mjs", "LICENSE"],
     engines: { node: ">=18.17" },
     optionalDependencies: Object.fromEntries(
       RELEASE_BINARY_TARGETS.map((target) => [`@kitsunekode/kunai-${target.id}`, source.version]),
     ),
+    publishConfig: {
+      access: source.publishConfig.access,
+      provenance: source.publishConfig.provenance,
+    },
   };
 }
 

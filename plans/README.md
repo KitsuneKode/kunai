@@ -90,13 +90,13 @@ Execute these in order. Plan 026 establishes the candidate/package contract; 027
 028 can then proceed independently, 029 consumes all three, and 030 documents only
 the behavior that actually landed.
 
-| Plan | Title                                                        | Priority | Effort | Depends on         | Status |
-| ---- | ------------------------------------------------------------ | -------- | ------ | ------------------ | ------ |
-| 026  | Make the npm candidate self-contained and ownership-aware    | P0       | L      | —                  | DONE   |
-| 027  | Make nine-package npm publication synchronized and resumable | P0       | L      | 026                | TODO   |
-| 028  | Make bootstrap and in-CLI installers fail closed             | P0       | M      | 026                | TODO   |
-| 029  | Require release evidence and native platform smokes          | P1       | L      | 026, 027, 028      | TODO   |
-| 030  | Reconcile distribution documentation with shipped routes     | P1       | M      | 026, 027, 028, 029 | TODO   |
+| Plan | Title                                                        | Priority | Effort | Depends on         | Status      |
+| ---- | ------------------------------------------------------------ | -------- | ------ | ------------------ | ----------- |
+| 026  | Make the npm candidate self-contained and ownership-aware    | P0       | L      | —                  | IN PROGRESS |
+| 027  | Make nine-package npm publication synchronized and resumable | P0       | L      | 026                | TODO        |
+| 028  | Make bootstrap and in-CLI installers fail closed             | P0       | M      | 026                | TODO        |
+| 029  | Require release evidence and native platform smokes          | P1       | L      | 026, 027, 028      | TODO        |
+| 030  | Reconcile distribution documentation with shipped routes     | P1       | M      | 026, 027, 028, 029 | TODO        |
 
 **PARTIAL detail.** `021`: stage 3 is complete (episode catalogs are
 language-aware and cache-keyed by audio); stages 1, 2, 4, 5, 6, 7 are untouched.

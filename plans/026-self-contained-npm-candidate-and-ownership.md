@@ -88,9 +88,16 @@ The generated launcher manifest must have this semantic shape:
 {
   "name": "@kitsunekode/kunai",
   "version": "<workspace version>",
+  "description": "<workspace description>",
+  "keywords": ["<workspace keywords>"],
+  "homepage": "<workspace homepage>",
+  "bugs": { "url": "<workspace issue tracker>" },
+  "license": "MIT",
+  "author": "<workspace author>",
+  "repository": { "type": "git", "url": "<workspace repository>" },
   "type": "module",
   "bin": { "kunai": "dist/npm-launcher.mjs" },
-  "files": ["dist/npm-launcher.mjs"],
+  "files": ["dist/npm-launcher.mjs", "LICENSE"],
   "engines": { "node": ">=18.17" },
   "optionalDependencies": {
     "@kitsunekode/kunai-darwin-arm64": "0.3.0",
@@ -101,24 +108,25 @@ The generated launcher manifest must have this semantic shape:
     "@kitsunekode/kunai-linux-x64-musl": "0.3.0",
     "@kitsunekode/kunai-windows-arm64": "0.3.0",
     "@kitsunekode/kunai-windows-x64": "0.3.0"
-  }
+  },
+  "publishConfig": { "access": "public", "provenance": true }
 }
 ```
 
-Here `0.3.0` illustrates the current workspace version; the generator must derive that value rather than hardcode it. The manifest must not contain `dependencies`, `peerDependencies`, `module`, `engines.bun`, or source files.
+Here `0.3.0` illustrates the current workspace version; the generator must derive that value rather than hardcode it. Public discovery and ownership metadata is selected from the workspace manifest, while the license and public/provenance publication policy are validated before generation. The manifest must not contain `dependencies`, `peerDependencies`, `module`, `engines.bun`, lifecycle scripts, or source files. The public tarball contains exactly `package.json`, `dist/npm-launcher.mjs`, and the copied repository `LICENSE`.
 
 ## Tasks
 
 ### Task 1: Lock the publish-manifest contract with failing tests
 
-- [ ] Add assertions to `distribution-contract.test.ts` that the generated package has the exact fields above and every optional dependency equals the root package version.
-- [ ] Extend `verify-npm-pack.ts` assertions so the tarball contains exactly `package.json` and `dist/npm-launcher.mjs` (npm metadata files may be ignored), and rejects forbidden runtime dependencies/entrypoints.
+- [ ] Add pure-function assertions to `distribution-contract.test.ts` that the generated package has the policy-safe fields above and every optional dependency equals the root package version.
+- [ ] Extend `verify-npm-pack.ts` assertions so the tarball contains exactly `package.json`, `dist/npm-launcher.mjs`, and `LICENSE`, and rejects forbidden runtime dependencies, entrypoints, lifecycle scripts, and source files.
 - [ ] Run `bun run --cwd apps/cli test test/unit/scripts/distribution-contract.test.ts`; expect the new assertions to fail before implementation.
 
 ### Task 2: Generate and pack the minimal launcher package
 
 - [ ] Implement `write-npm-publish-manifest.ts` as a pure `buildNpmPublishManifest(source)` function plus a CLI wrapper that writes to `apps/cli/dist/npm/package.json` using `Bun.write`.
-- [ ] Copy `npm-launcher.mjs` to `dist/npm/dist/npm-launcher.mjs`; change root `release:pack` to pack from `apps/cli/dist/npm`, not the workspace directory.
+- [ ] Copy `npm-launcher.mjs` and the repository `LICENSE` to `dist/npm`; change root `release:pack` to pack from `apps/cli/dist/npm`, not the workspace directory.
 - [ ] Add `dist/kunai.mjs` and `dist/npm/**` to `turbo.json` build outputs.
 - [ ] Run `bun run build && bun run release:pack && bun run pkg:check`; expect exit 0 and no registry access.
 - [ ] Commit: `fix(packaging): generate minimal npm launcher package`.

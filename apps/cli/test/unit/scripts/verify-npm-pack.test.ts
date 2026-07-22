@@ -17,6 +17,7 @@ describe("forbiddenNpmPackPath", () => {
   test("allows the launcher and package metadata", () => {
     expect(forbiddenNpmPackPath("dist/npm-launcher.mjs")).toBeNull();
     expect(forbiddenNpmPackPath("package.json")).toBeNull();
+    expect(forbiddenNpmPackPath("LICENSE")).toBeNull();
   });
 
   test("rejects the Bun bundle, which is no longer published", () => {
@@ -39,7 +40,9 @@ describe("forbiddenNpmPackPath", () => {
 
 describe("assertNpmPackContents", () => {
   test("passes only for the minimal launcher package", () => {
-    expect(() => assertNpmPackContents(["package.json", "dist/npm-launcher.mjs"])).not.toThrow();
+    expect(() =>
+      assertNpmPackContents(["package.json", "dist/npm-launcher.mjs", "LICENSE"]),
+    ).not.toThrow();
   });
 
   test("rejects source-package files and compiled binaries", () => {
@@ -47,6 +50,7 @@ describe("assertNpmPackContents", () => {
       assertNpmPackContents([
         "package.json",
         "dist/npm-launcher.mjs",
+        "LICENSE",
         "README.md",
         "dist/bin/kunai-linux-x64",
       ]),
@@ -54,13 +58,21 @@ describe("assertNpmPackContents", () => {
   });
 
   test("requires the launcher, which is the published bin", () => {
-    expect(() => assertNpmPackContents(["package.json"])).toThrow("dist/npm-launcher.mjs");
+    expect(() => assertNpmPackContents(["package.json", "LICENSE"])).toThrow(
+      "dist/npm-launcher.mjs",
+    );
+  });
+
+  test("requires the repository license text", () => {
+    expect(() => assertNpmPackContents(["package.json", "dist/npm-launcher.mjs"])).toThrow(
+      "LICENSE",
+    );
   });
 });
 
 describe("assertNpmPackBudgets", () => {
   test("passes within budget", () => {
-    expect(() => assertNpmPackBudgets(3 * 1024 * 1024, 4 * 1024 * 1024)).not.toThrow();
+    expect(() => assertNpmPackBudgets(16 * 1024, 32 * 1024)).not.toThrow();
   });
 
   test("fails when packed tarball exceeds budget", () => {
@@ -98,6 +110,7 @@ describe("verifyNpmPackDryRun", () => {
   test("accepts a small allowlisted pack listing", () => {
     const stdout = `
 npm notice Tarball Contents
+npm notice 1.1kB LICENSE
 npm notice 6.5kB dist/npm-launcher.mjs
 npm notice 5.6kB package.json
 npm notice Tarball Details
@@ -111,8 +124,10 @@ npm notice unpacked size: 19.4 kB
 describe("assertNpmPublishManifest", () => {
   const minimalManifest = {
     bin: { kunai: "dist/npm-launcher.mjs" },
-    files: ["dist/npm-launcher.mjs"],
+    files: ["dist/npm-launcher.mjs", "LICENSE"],
     engines: { node: ">=18.17" },
+    license: "MIT",
+    publishConfig: { access: "public", provenance: true },
   };
 
   test("accepts the Node-only launcher entrypoints", () => {
@@ -130,6 +145,21 @@ describe("assertNpmPublishManifest", () => {
         bin: { kunai: "dist/kunai.mjs" },
       }),
     ).toThrow(/runtime or peer dependencies/);
+  });
+
+  test("rejects missing release policy and lifecycle scripts", () => {
+    expect(() => assertNpmPublishManifest({ ...minimalManifest, license: undefined })).toThrow(
+      /MIT/,
+    );
+    expect(() =>
+      assertNpmPublishManifest({ ...minimalManifest, publishConfig: undefined }),
+    ).toThrow(/public/);
+    expect(() =>
+      assertNpmPublishManifest({
+        ...minimalManifest,
+        scripts: { postinstall: "node dist/postinstall.js" },
+      }),
+    ).toThrow(/lifecycle/);
   });
 });
 

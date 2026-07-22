@@ -6,8 +6,8 @@ const ROOT = join(import.meta.dirname, "../..");
 const BUILD_SCRIPT = join(ROOT, "scripts/build.ts");
 const BIN = join(ROOT, "dist/kunai.js");
 
-describe("release npm bundle build", () => {
-  test("produces an executable dist/kunai.js via the release build script", async () => {
+describe("CLI distribution build", () => {
+  test("produces the development app bundle and public launcher package", async () => {
     const proc = Bun.spawn(["bun", "run", BUILD_SCRIPT], {
       cwd: ROOT,
       stdout: "pipe",
@@ -21,7 +21,11 @@ describe("release npm bundle build", () => {
 
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("[build] npm release artifact");
+    expect(stdout).toContain("[build] CLI build outputs");
+    expect(stdout).toContain("dist/npm/dist/npm-launcher.mjs (public launcher)");
+    expect(stdout).toContain("dist/npm/LICENSE (public license)");
+    expect(stdout).toContain("dist/npm/package.json (public manifest)");
+    expect(stdout).toContain("dist/kunai.js (development Bun bundle, unpublished)");
     expect(stdout).toContain("dist/kunai.js");
     expect(existsSync(BIN)).toBe(true);
     expect(readFileSync(BIN, "utf8").startsWith("#!/usr/bin/env bun\n")).toBe(true);

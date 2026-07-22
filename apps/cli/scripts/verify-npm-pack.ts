@@ -21,9 +21,15 @@ type NpmPublishManifest = {
   readonly dependencies?: unknown;
   readonly engines?: Record<string, string>;
   readonly files?: string[];
+  readonly license?: string;
   readonly module?: unknown;
   readonly optionalDependencies?: Record<string, string>;
   readonly peerDependencies?: unknown;
+  readonly publishConfig?: {
+    readonly access?: string;
+    readonly provenance?: boolean;
+  };
+  readonly scripts?: unknown;
 };
 
 /** Reject workspace-only metadata before checking the generated tarball. */
@@ -39,11 +45,29 @@ export function assertNpmPublishManifest(manifest: NpmPublishManifest): void {
   if (manifest.engines?.bun !== undefined) {
     throw new Error("[pkg:check] npm publish manifest must not require Bun.");
   }
+  if (manifest.scripts !== undefined) {
+    throw new Error("[pkg:check] npm publish manifest must not contain lifecycle scripts.");
+  }
   if (manifest.bin?.kunai !== "dist/npm-launcher.mjs") {
     throw new Error("[pkg:check] npm publish manifest must use dist/npm-launcher.mjs as its bin.");
   }
-  if (manifest.files?.length !== 1 || manifest.files[0] !== "dist/npm-launcher.mjs") {
-    throw new Error("[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs.");
+  if (
+    manifest.files?.length !== 2 ||
+    manifest.files[0] !== "dist/npm-launcher.mjs" ||
+    manifest.files[1] !== "LICENSE"
+  ) {
+    throw new Error(
+      "[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs and LICENSE.",
+    );
+  }
+  if (manifest.license !== "MIT") {
+    throw new Error("[pkg:check] npm publish manifest license must be MIT.");
+  }
+  if (manifest.publishConfig?.access !== "public") {
+    throw new Error("[pkg:check] npm publish manifest access must be public.");
+  }
+  if (manifest.publishConfig.provenance !== true) {
+    throw new Error("[pkg:check] npm publish manifest must enable provenance.");
   }
 }
 

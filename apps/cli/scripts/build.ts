@@ -4,10 +4,11 @@
 // Order:
 //   1. validate entry
 //   2. clean npm dist artifacts (preserve dist/bin/)
-//   3. Bun.build npm bundle (workspace packages inlined)
+//   3. Bun.build the unpublished development app bundle (workspace packages inlined)
 //   4. metafile guard (no tests/experiments/legacy in graph)
 //   5. optional bundle budget check
-//   6. chmod + size summary (bundle + assets)
+//   6. generate the public Node launcher package (launcher + manifest + license)
+//   7. chmod + size summary
 //
 // Runtime assets (VidKing WASM, mpv Lua bridge) are referenced from source via
 // `import … with { type: "file" }`, so Bun emits them into dist/assets and
@@ -39,6 +40,9 @@ const ENTRY = join(ROOT, CLI_ENTRY);
 const BIN = join(ROOT, NPM_BUNDLE_OUT);
 const LAUNCHER = join(ROOT, NPM_LAUNCHER_OUT);
 const NPM_PUBLISH_LAUNCHER = join(DIST, "npm/dist/npm-launcher.mjs");
+const REPOSITORY_LICENSE = join(ROOT, "../..", "LICENSE");
+const NPM_PUBLISH_LICENSE = join(DIST, "npm/LICENSE");
+const NPM_PUBLISH_MANIFEST = join(DIST, "npm/package.json");
 const ASSETS = join(DIST, "assets");
 
 const clean = process.argv.includes("--clean");
@@ -84,6 +88,7 @@ async function buildNpmLauncher(): Promise<number> {
   await mkdir(join(DIST, "npm/dist"), { recursive: true });
   await cp(source, NPM_PUBLISH_LAUNCHER);
   await chmod(NPM_PUBLISH_LAUNCHER, 0o755);
+  await cp(REPOSITORY_LICENSE, NPM_PUBLISH_LICENSE);
 
   const text = await Bun.file(LAUNCHER).text();
   if (!text.startsWith("#!/usr/bin/env node")) {
@@ -141,18 +146,25 @@ async function main(): Promise<void> {
   await writeNpmPublishManifest();
 
   const bundleBytes = Bun.file(BIN).size;
+  const licenseBytes = Bun.file(NPM_PUBLISH_LICENSE).size;
+  const manifestBytes = Bun.file(NPM_PUBLISH_MANIFEST).size;
   const assetsTotal = await assetBytes();
   const ms = Date.now() - start;
 
   printBuildSizeTable(
     [
-      { label: "dist/kunai.mjs (compat launcher)", bytes: launcherBytes },
-      { label: "dist/npm/dist/npm-launcher.mjs (published bin)", bytes: launcherBytes },
-      { label: "dist/kunai.js (bun bundle, unpublished)", bytes: bundleBytes },
-      { label: "dist/assets/*", bytes: assetsTotal },
-      { label: "dist/ published total", bytes: launcherBytes + assetsTotal },
+      { label: "dist/kunai.mjs (local launcher compatibility)", bytes: launcherBytes },
+      { label: "dist/npm/dist/npm-launcher.mjs (public launcher)", bytes: launcherBytes },
+      { label: "dist/npm/LICENSE (public license)", bytes: licenseBytes },
+      { label: "dist/npm/package.json (public manifest)", bytes: manifestBytes },
+      { label: "dist/kunai.js (development Bun bundle, unpublished)", bytes: bundleBytes },
+      { label: "dist/assets/* (development bundle assets, unpublished)", bytes: assetsTotal },
+      {
+        label: "dist/npm public files total",
+        bytes: launcherBytes + licenseBytes + manifestBytes,
+      },
     ],
-    "npm release artifact",
+    "CLI build outputs",
   );
   console.log(`[build] completed in ${ms}ms`);
 

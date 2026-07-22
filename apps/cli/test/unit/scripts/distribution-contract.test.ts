@@ -1,14 +1,6 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +13,7 @@ import {
 } from "../../../../../scripts/release-asset-contract";
 import { shouldWriteReleaseChecksums } from "../../../../../scripts/release-binary-checksums";
 import { verifyReleaseArtifactDirectory } from "../../../../../scripts/verify-release-artifact-directory";
+import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-manifest";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
 const requiredAssetNames = REQUIRED_RELEASE_ASSET_NAMES;
@@ -220,45 +213,54 @@ describe("release:pack script contract", () => {
     scripts: Record<string, string>;
   };
   const releasePack = rootPackage.scripts["release:pack"] ?? "";
-  const cliPackage = JSON.parse(readFileSync(join(REPO_ROOT, "apps/cli/package.json"), "utf8")) as {
-    version: string;
-  };
-  const npmPublishManifestPath = join(REPO_ROOT, "apps/cli/dist/npm/package.json");
-
-  beforeAll(async () => {
-    const proc = Bun.spawn(["bun", "run", "build"], {
-      cwd: REPO_ROOT,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    expect(exitCode, `build failed\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
-  }, 60_000);
-
-  test("build writes the exact minimal npm publish manifest", () => {
-    expect(existsSync(npmPublishManifestPath)).toBe(true);
-
-    const manifest = JSON.parse(readFileSync(npmPublishManifestPath, "utf8"));
+  test("buildNpmPublishManifest returns the public launcher manifest without filesystem work", () => {
+    const source = {
+      name: "@kitsunekode/kunai",
+      version: "9.8.7",
+      description: "Terminal-first media streaming CLI.",
+      keywords: ["cli", "mpv"],
+      homepage: "https://github.com/KitsuneKode/kunai#readme",
+      bugs: { url: "https://github.com/KitsuneKode/kunai/issues" },
+      license: "MIT",
+      author: "kitsunekode",
+      repository: { type: "git", url: "https://github.com/KitsuneKode/kunai" },
+      publishConfig: { access: "public", provenance: true } as const,
+    };
     const optionalDependencies = Object.fromEntries(
-      RELEASE_BINARY_TARGETS.map((target) => [
-        `@kitsunekode/kunai-${target.id}`,
-        cliPackage.version,
-      ]),
+      RELEASE_BINARY_TARGETS.map((target) => [`@kitsunekode/kunai-${target.id}`, source.version]),
     );
 
-    expect(manifest).toEqual({
-      name: "@kitsunekode/kunai",
-      version: cliPackage.version,
+    expect(buildNpmPublishManifest(source)).toEqual({
+      ...source,
       type: "module",
       bin: { kunai: "dist/npm-launcher.mjs" },
-      files: ["dist/npm-launcher.mjs"],
+      files: ["dist/npm-launcher.mjs", "LICENSE"],
       engines: { node: ">=18.17" },
       optionalDependencies,
     });
+  });
+
+  test("buildNpmPublishManifest rejects non-MIT or non-public source policy", () => {
+    const validSource = {
+      name: "@kitsunekode/kunai",
+      version: "9.8.7",
+      license: "MIT",
+      publishConfig: { access: "public", provenance: true } as const,
+    };
+
+    expect(() => buildNpmPublishManifest({ ...validSource, license: "UNLICENSED" })).toThrow(/MIT/);
+    expect(() =>
+      buildNpmPublishManifest({
+        ...validSource,
+        publishConfig: { access: "restricted", provenance: true },
+      }),
+    ).toThrow(/public/);
+    expect(() =>
+      buildNpmPublishManifest({
+        ...validSource,
+        publishConfig: { access: "public", provenance: false },
+      }),
+    ).toThrow(/provenance/);
   });
 
   test("does not use bun --cwd with pm or combine --destination with --filename", () => {
@@ -274,32 +276,6 @@ describe("release:pack script contract", () => {
     expect(releasePack).toContain(".release-candidate");
     expect(releasePack).toContain("apps/cli/dist/npm");
   });
-
-  test("bun run release:pack writes a non-empty .release-candidate/kunai-npm.tgz", async () => {
-    const tarball = join(REPO_ROOT, ".release-candidate", "kunai-npm.tgz");
-    try {
-      if (existsSync(tarball)) {
-        unlinkSync(tarball);
-      }
-      const proc = Bun.spawn(["bun", "run", "release:pack"], {
-        cwd: REPO_ROOT,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
-      expect(exitCode, `release:pack failed\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
-      expect(existsSync(tarball)).toBe(true);
-      expect(statSync(tarball).size).toBeGreaterThan(0);
-    } finally {
-      if (existsSync(tarball)) {
-        unlinkSync(tarball);
-      }
-    }
-  }, 30_000);
 });
 
 describe("verifyReleaseArtifactDirectory", () => {

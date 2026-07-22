@@ -1,5 +1,7 @@
 // Shared Bun.build configuration for the CLI, used by both:
-//   - scripts/build.ts          (npm bundle → dist/kunai.js)
+//   - scripts/build.ts          (development app bundle → dist/kunai.js, plus
+//                                public package path dist/npm-launcher.mjs staged
+//                                at dist/npm/dist/npm-launcher.mjs)
 //   - scripts/build-binaries.ts (compiled single-file binaries → dist/bin/*)
 //
 // Keeping release stubs, defines, and graph guards in one place avoids drift
@@ -15,9 +17,10 @@ export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 export const CLI_ENTRY = "src/main.ts";
 export const NPM_BUNDLE_OUT = "dist/kunai.js";
 /**
- * The published `bin`. Plain Node ESM, copied verbatim rather than bundled —
- * running it through the Bun bundler is what introduced `bun:` imports and made
- * `npm install -g` produce a CLI that could not start without Bun.
+ * Plain Node ESM launcher source and its local compatibility output. The public
+ * launcher is copied separately to `dist/npm/dist/npm-launcher.mjs`; its exact
+ * optional platform packages carry the compiled binaries. Bundling this file is
+ * what introduced `bun:` imports and made npm installs require a separate Bun.
  */
 export const NPM_LAUNCHER_ENTRY = "scripts/npm-launcher.mjs";
 export const NPM_LAUNCHER_OUT = "dist/kunai.mjs";
@@ -67,7 +70,7 @@ const RELEASE_FORBIDDEN_INPUT_MARKERS: readonly string[] = [
   "/.prototypes/",
 ];
 
-/** Options shared by npm bundles and compiled binaries. */
+/** Options shared by the development app bundle and compiled platform binaries. */
 export function releaseBuildBaseOptions(
   root: string,
 ): Pick<
@@ -88,7 +91,7 @@ export function releaseBuildBaseOptions(
   };
 }
 
-/** Bun.build options for the published npm bundle (dist/kunai.js). */
+/** Bun.build options for the unpublished development app bundle (dist/kunai.js). */
 export function npmBundleBuildOptions(
   root: string,
   options: { readonly minify: boolean },
@@ -194,9 +197,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 /**
  * Soft guard for the bundled JS build (excludes dist/assets).
  *
- * Note this bundle is no longer what npm ships: `files` publishes only the
- * ~7 KiB `dist/kunai.mjs` launcher plus per-platform binaries. So this is now a
- * bloat ratchet on the dev/`start` bundle, not a constraint on install size.
+ * This bundle is no longer what npm ships. The generated public package carries
+ * `dist/npm-launcher.mjs` and `LICENSE`; its exact optional dependencies are
+ * separate platform packages containing compiled binaries. This remains a bloat
+ * ratchet on the dev/`start` bundle, not a constraint on npm install size.
  *
  * Raised from 2_560 when the half-block poster renderer landed: decoding JPEG
  * in process costs ~55 KiB but is what makes posters work on Windows, where
@@ -208,19 +212,23 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  */
 export const NPM_BUNDLE_BUDGET_KB = 2_720;
 
-/** Packed tarball size budget for `npm pack` (excludes gzip; npm reports packed size). */
-export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;
+/** Packed-size ratchet for the public Node launcher manifest, script, and license. */
+export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
 
-/** Unpacked tarball size budget for `npm pack` dry-run contents. */
-export const NPM_PACK_UNPACKED_BUDGET_BYTES = 20 * 1024 * 1024;
+/** Unpacked-size ratchet for the public Node launcher manifest, script, and license. */
+export const NPM_PACK_UNPACKED_BUDGET_BYTES = 64 * 1024;
 
-const NPM_PACK_ALLOWED_PATHS = new Set(["dist/npm-launcher.mjs", "package.json"]);
+const NPM_PACK_ALLOWED_PATHS = new Set(["dist/npm-launcher.mjs", "LICENSE", "package.json"]);
 
 /**
  * Files the published tarball MUST contain. The launcher is `bin`, so shipping
  * without it means `kunai` resolves to nothing on a real install.
  */
-const NPM_PACK_REQUIRED_PATHS: readonly string[] = ["package.json", "dist/npm-launcher.mjs"];
+const NPM_PACK_REQUIRED_PATHS: readonly string[] = [
+  "package.json",
+  "dist/npm-launcher.mjs",
+  "LICENSE",
+];
 
 /** Returns required tarball paths that are missing from the given listing. */
 export function missingRequiredNpmPackPaths(paths: readonly string[]): readonly string[] {
