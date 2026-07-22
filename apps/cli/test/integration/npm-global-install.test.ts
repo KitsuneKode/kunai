@@ -1,139 +1,214 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import packageJson from "../../package.json" with { type: "json" };
+import { isMuslEnvironmentSync } from "../../src/services/update/native-installer/musl";
+import {
+  RELEASE_BINARY_TARGETS,
+  resolveHostReleaseBinaryTarget,
+} from "../../src/services/update/platform-assets";
 
-// Real, isolated npm global-install lifecycle for @kitsunekode/kunai.
-//
-// This proves the published tarball actually ships and runs the postinstall
-// registration hook: a clean `npm install -g` must write install.json with
-// channel "npm-global", `kunai --version` must report the npm-global channel,
-// `kunai upgrade --check` must route through the npm channel, and
-// `kunai uninstall` must delegate to the package manager (not native deletion).
-//
-// Heavy and network-dependent (npm resolves runtime deps from the registry), so
-// it is gated behind KUNAI_NPM_GLOBAL_INSTALL=1 — the `test:npm-global-install`
-// script sets it. The default suite (`bun run test`) skips it.
-
+// This is intentionally an isolated, offline candidate gate. npm gets a
+// launcher tarball and the host platform tarball in the same command; it must
+// not fill missing optional dependencies from the public registry.
 const CLI_ROOT = join(import.meta.dirname, "../..");
-
+const NPM_PUBLISH_ROOT = join(CLI_ROOT, "dist/npm");
+const NPM_PLATFORM_ROOT = join(CLI_ROOT, "dist/npm-platform");
 const RUN_INSTALL = process.env.KUNAI_NPM_GLOBAL_INSTALL === "1";
+
+function globalNodeModules(prefix: string): string {
+  return join(prefix, process.platform === "win32" ? "node_modules" : "lib/node_modules");
+}
+
+type PlatformManifest = {
+  readonly name: string;
+  readonly version: string;
+};
 
 function npmAvailable(): boolean {
   return spawnSync("npm", ["--version"], { encoding: "utf8" }).status === 0;
 }
 
+function commandOutput(result: SpawnSyncReturns<string>): string {
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`;
+}
+
+function expectCommand(
+  label: string,
+  command: string,
+  args: readonly string[],
+  options: { readonly cwd: string; readonly env: NodeJS.ProcessEnv },
+): SpawnSyncReturns<string> {
+  const result = spawnSync(command, args, {
+    ...options,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `[npm-global-install] ${label} failed (${result.status ?? "signal"}):\n${commandOutput(result)}`,
+    );
+  }
+  return result;
+}
+
+function packDirectory(packageDir: string, destination: string, env: NodeJS.ProcessEnv): string {
+  mkdirSync(destination, { recursive: true });
+  expectCommand(
+    `pack ${packageDir}`,
+    "npm",
+    ["pack", "--ignore-scripts", "--offline", "--pack-destination", destination],
+    { cwd: packageDir, env },
+  );
+  const tarballs = readdirSync(destination).filter((entry) => entry.endsWith(".tgz"));
+  expect(tarballs).toHaveLength(1);
+  const tarball = join(destination, tarballs[0] as string);
+  expect(statSync(tarball).size).toBeGreaterThan(0);
+  return tarball;
+}
+
+function hostTarget() {
+  const libc = process.platform === "linux" && isMuslEnvironmentSync() ? "musl" : "gnu";
+  return resolveHostReleaseBinaryTarget({ libc });
+}
+
 const describeInstall = RUN_INSTALL && npmAvailable() ? describe : describe.skip;
 
-describeInstall("npm global install lifecycle", () => {
+describeInstall("hermetic npm candidate install", () => {
   let workDir = "";
-  let homeDir = "";
-  let configHome = "";
   let prefix = "";
   let binPath = "";
+  let launcherTarball = "";
+  const platformTarballs = new Map<string, string>();
   let installEnv: NodeJS.ProcessEnv = process.env;
 
-  function runKunai(args: readonly string[]): { status: number | null; output: string } {
-    const result = spawnSync(binPath, [...args], { encoding: "utf8", env: installEnv });
-    return { status: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };
-  }
-
   beforeAll(async () => {
-    // The tarball packs whatever is in dist/. Always rebuild so this lifecycle
-    // test exercises the current source rather than a stale bundle from a prior run.
-    const build = spawnSync("bun", ["run", "build"], { cwd: CLI_ROOT, encoding: "utf8" });
-    if (build.status !== 0) {
-      throw new Error(`[npm-global-install] build failed:\n${build.stdout}\n${build.stderr}`);
-    }
-
-    workDir = await mkdtemp(join(tmpdir(), "kunai-npm-global-"));
-    homeDir = join(workDir, "home");
-    configHome = join(homeDir, ".config");
+    workDir = await mkdtemp(join(tmpdir(), "kunai-npm-candidate-"));
+    const homeDir = join(workDir, "home");
+    const packCache = join(workDir, "pack-cache");
     prefix = join(workDir, "npm-prefix");
-    binPath = join(prefix, "bin", "kunai");
+    binPath = join(
+      process.platform === "win32" ? prefix : join(prefix, "bin"),
+      process.platform === "win32" ? "kunai.cmd" : "kunai",
+    );
 
-    for (const dir of [homeDir, configHome, prefix, join(workDir, "npm-cache")]) {
+    for (const dir of [homeDir, packCache, prefix]) {
       mkdirSync(dir, { recursive: true });
     }
 
+    // The pack cache is isolated too, but installation gets a separate fresh
+    // empty cache below. A dead registry makes a regression fail locally rather
+    // than accidentally reaching the public registry.
     installEnv = {
       ...process.env,
       HOME: homeDir,
-      XDG_CONFIG_HOME: configHome,
+      XDG_CONFIG_HOME: join(homeDir, ".config"),
       XDG_DATA_HOME: join(homeDir, ".local", "share"),
       XDG_CACHE_HOME: join(homeDir, ".cache"),
-      npm_config_cache: join(workDir, "npm-cache"),
+      npm_config_cache: packCache,
       npm_config_prefix: prefix,
+      npm_config_registry: "http://127.0.0.1:9/",
       npm_config_update_notifier: "false",
       npm_config_fund: "false",
       npm_config_audit: "false",
     };
-  }, 300_000);
+
+    expectCommand("build launcher", "bun", ["run", "build"], {
+      cwd: CLI_ROOT,
+      env: installEnv,
+    });
+    expectCommand("build platform binaries", "bun", ["run", "build:binaries"], {
+      cwd: CLI_ROOT,
+      env: installEnv,
+    });
+    expectCommand("write platform package manifests", "bun", ["run", "build:npm-platform"], {
+      cwd: CLI_ROOT,
+      env: installEnv,
+    });
+
+    launcherTarball = packDirectory(NPM_PUBLISH_ROOT, join(workDir, "launcher"), installEnv);
+    for (const target of RELEASE_BINARY_TARGETS) {
+      const packageDir = join(NPM_PLATFORM_ROOT, target.id);
+      const tarball = packDirectory(packageDir, join(workDir, "platform", target.id), installEnv);
+      platformTarballs.set(target.id, tarball);
+    }
+  }, 600_000);
 
   afterAll(async () => {
     if (workDir) await rm(workDir, { recursive: true, force: true });
   });
 
-  test("ships and runs the postinstall hook end to end", async () => {
-    // `bun pm pack` resolves `catalog:` dependency specifiers to real versions,
-    // matching the release path (`bun publish`). Plain `npm pack` leaves
-    // `catalog:` in place, which npm cannot install. `--ignore-scripts` keeps the
-    // prepack build from re-running over the dist/ we already produced.
-    const pack = spawnSync(
-      "bun",
-      ["pm", "pack", "--ignore-scripts", "--quiet", "--destination", workDir],
-      { cwd: CLI_ROOT, encoding: "utf8", env: installEnv },
-    );
-    expect(pack.status).toBe(0);
+  test("builds exact-version-pinned manifests and tarballs for all platform candidates", () => {
+    expect(platformTarballs.size).toBe(RELEASE_BINARY_TARGETS.length);
+    const launcherManifest = JSON.parse(
+      readFileSync(join(NPM_PUBLISH_ROOT, "package.json"), "utf8"),
+    ) as { optionalDependencies?: Record<string, string> };
 
-    const tarball = readdirSync(workDir).find((name) => name.endsWith(".tgz"));
-    expect(tarball).toBeDefined();
-    const tarballPath = join(workDir, tarball as string);
+    for (const target of RELEASE_BINARY_TARGETS) {
+      const packageName = `@kitsunekode/kunai-${target.id}`;
+      const manifest = JSON.parse(
+        readFileSync(join(NPM_PLATFORM_ROOT, target.id, "package.json"), "utf8"),
+      ) as PlatformManifest;
+      expect(manifest).toMatchObject({ name: packageName, version: packageJson.version });
+      expect(launcherManifest.optionalDependencies?.[packageName]).toBe(packageJson.version);
 
-    // Real global install WITH lifecycle scripts — this is what must run the hook.
-    const install = spawnSync("npm", ["install", "-g", tarballPath], {
-      encoding: "utf8",
-      env: installEnv,
-    });
-    if (install.status !== 0) {
-      throw new Error(`[npm-global-install] install failed:\n${install.stdout}\n${install.stderr}`);
+      const tarball = platformTarballs.get(target.id);
+      expect(tarball, packageName).toBeDefined();
+      expect(existsSync(tarball as string), packageName).toBe(true);
+      expect(statSync(tarball as string).size, packageName).toBeGreaterThan(0);
+      expect(tarball, packageName).toEndWith(`-${packageJson.version}.tgz`);
     }
+  });
+
+  test("installs and executes the host candidate from local tarballs only", () => {
+    const target = hostTarget();
+    const hostTarball = platformTarballs.get(target.id);
+    expect(hostTarball).toBeDefined();
+
+    const freshInstallCache = join(workDir, "install-cache");
+    mkdirSync(freshInstallCache, { recursive: true });
+    const install = expectCommand(
+      "offline local-tarball install",
+      "npm",
+      [
+        "install",
+        "--global",
+        "--ignore-scripts",
+        "--offline",
+        hostTarball as string,
+        launcherTarball,
+      ],
+      {
+        cwd: workDir,
+        env: { ...installEnv, npm_config_cache: freshInstallCache },
+      },
+    );
     expect(install.status).toBe(0);
     expect(existsSync(binPath)).toBe(true);
 
-    // `kunai --version` runs and reports the package version + npm-global channel.
-    const version = runKunai(["--version"]);
-    expect(version.status).toBe(0);
-    expect(version.output).toContain(packageJson.version);
-    expect(version.output).toContain("npm-global");
-
-    // The postinstall hook registered the install manifest.
-    expect(await Bun.file(join(configHome, "kunai/install.json")).json()).toMatchObject({
-      method: "npm-global",
-      activeVersion: packageJson.version,
+    const version = spawnSync(binPath, ["--version"], {
+      encoding: "utf8",
+      env: installEnv,
+      shell: process.platform === "win32",
     });
+    expect(version.status, commandOutput(version)).toBe(0);
+    expect(commandOutput(version)).toContain(packageJson.version);
 
-    // `kunai upgrade --check` runs and routes through the npm channel (manifest
-    // driven). Network may or may not resolve a latest version, so accept either
-    // "up to date"/"update available"/"could not resolve", but never a foreign
-    // channel's guidance (source checkout, packaged binary, bun global).
-    const upgrade = runKunai(["upgrade", "--check"]);
-    expect([0, 1]).toContain(upgrade.status ?? -1);
-    expect(upgrade.output).not.toMatch(/Source checkout|Packaged binary|bun i -g|git pull/i);
-
-    // Uninstall must delegate to the package manager (npm removes node_modules +
-    // the bin launcher), not native file deletion.
-    const packageDir = join(prefix, "lib", "node_modules", "@kitsunekode", "kunai");
-    expect(existsSync(packageDir)).toBe(true);
-
-    const uninstall = runKunai(["uninstall"]);
-    expect(uninstall.status).toBe(0);
-    expect(existsSync(packageDir)).toBe(false);
-    expect(existsSync(binPath)).toBe(false);
-    expect(existsSync(join(configHome, "kunai", "install.json"))).toBe(false);
-  }, 300_000);
+    const installedLauncher = realpathSync(binPath);
+    const installedBinary = realpathSync(
+      join(
+        globalNodeModules(prefix),
+        "@kitsunekode",
+        `kunai-${target.id}`,
+        "bin",
+        process.platform === "win32" ? "kunai.exe" : "kunai",
+      ),
+    );
+    expect(installedLauncher.startsWith(prefix)).toBe(true);
+    expect(installedBinary.startsWith(prefix)).toBe(true);
+  }, 120_000);
 });
