@@ -92,7 +92,8 @@ function Resolve-InstalledPackageVersion([string]$InstallMethod) {
   }
   elseif ($InstallMethod -eq 'bun') {
     $bunRoot = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bun' }
-    $root = Join-Path $bunRoot 'install\global\node_modules'
+    $bunGlobalDir = if ($env:BUN_INSTALL_GLOBAL_DIR) { $env:BUN_INSTALL_GLOBAL_DIR } else { Join-Path $bunRoot 'install\global' }
+    $root = Join-Path $bunGlobalDir 'node_modules'
     $version = Read-KunaiPackageVersion $root
     if ($version) { return $version }
   }

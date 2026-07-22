@@ -581,7 +581,7 @@ describePwsh("install.ps1 package activeVersion", () => {
     }
   });
 
-  test("npm method resolves activeVersion from kunai --version, never latest", () => {
+  test("npm method ignores a stale PATH kunai and records npm-owned metadata", () => {
     const sandbox = createInstallerSandbox("install-ps1-npm-version");
     try {
       const shimDir = join(sandbox.root, "shims");
