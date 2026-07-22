@@ -4,11 +4,18 @@ import { join } from "node:path";
 
 import { REQUIRED_RELEASE_ASSET_NAMES } from "../../../../../scripts/release-asset-contract";
 import {
-  RELEASE_CONFIRMATION_GATES,
+  assertLiveProvidersArtifactBinding,
   evaluateReleaseConfirmation,
+  parseReleaseConfirmationCliArgs,
   type ReleaseConfirmationInput,
-  type ReleaseGateEvidence,
 } from "../../../../../scripts/release-confirmation-gate";
+import {
+  RELEASE_GATE_NAMES,
+  aggregateReleaseGateEvidence,
+  type ReleaseGateArtifact,
+  type ReleaseGateEvidenceDocument,
+  type ReleaseGateName,
+} from "../../../../../scripts/release-gate-evidence";
 import {
   buildReleaseProviderSignoff,
   type ReleaseProviderSignoffRoute,
@@ -16,6 +23,8 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
 const NOW_MS = Date.parse("2026-07-21T12:00:00.000Z");
+const RUN_ID = "1234567890";
+const PROVIDER_RUN_ID = "9876543210";
 
 function baseRoutes(
   overrides: Partial<
@@ -59,10 +68,38 @@ function baseRoutes(
   ];
 }
 
-function passedGates(): ReleaseGateEvidence["gates"] {
-  return Object.fromEntries(
-    RELEASE_CONFIRMATION_GATES.map((gate) => [gate, "passed"]),
-  ) as ReleaseGateEvidence["gates"];
+function gateDocument(
+  gate: ReleaseGateName,
+  version: string,
+  commitSha: string,
+): ReleaseGateEvidenceDocument {
+  return {
+    schemaVersion: 1,
+    gate,
+    status: "passed",
+    version,
+    commitSha,
+    runId: gate === "liveProviders" ? PROVIDER_RUN_ID : RUN_ID,
+    artifactName:
+      gate === "releaseAssets" ? `kunai-release-candidate-${version}` : `${gate}-artifact`,
+    artifactSha256: "a".repeat(64),
+    generatedAt: "2026-07-21T11:00:00.000Z",
+  };
+}
+
+function validatedGateEvidence(version: string, commitSha: string) {
+  const documents = RELEASE_GATE_NAMES.map((gate) => gateDocument(gate, version, commitSha));
+  const artifacts: readonly ReleaseGateArtifact[] = documents.map((document) => ({
+    artifactName: document.artifactName,
+    sha256: document.artifactSha256,
+  }));
+  return aggregateReleaseGateEvidence(documents, artifacts, {
+    version,
+    commitSha,
+    runId: RUN_ID,
+    providerSignoffRunId: PROVIDER_RUN_ID,
+    nowMs: NOW_MS,
+  });
 }
 
 function completeAssets(size = 1) {
@@ -83,14 +120,14 @@ function validInput(overrides: Partial<ReleaseConfirmationInput> = {}): ReleaseC
       version,
       routes: baseRoutes(),
     }),
-    providerSignoffRunId: "9876543210",
+    providerSignoffRunId: PROVIDER_RUN_ID,
     binaryArtifactName: `kunai-release-candidate-${version}`,
     releaseAssets: completeAssets(),
     targetReleaseMetadata: { version, status: "staged", publishedAt: null },
     release026Metadata: { version: "0.2.6", status: "staged", publishedAt: null },
     trackedInstallerReferencePaths: [],
     generatedMetadataFresh: true,
-    declaredGates: passedGates(),
+    gateEvidence: validatedGateEvidence(version, commitSha),
     ...overrides,
   };
 }
@@ -102,9 +139,14 @@ describe("evaluateReleaseConfirmation", () => {
     expect(result.evidence.schemaVersion).toBe(1);
     expect(result.evidence.version).toBe("0.3.0");
     expect(result.evidence.commitSha).toBe("abc123def456");
-    expect(result.evidence.providerSignoffRunId).toBe("9876543210");
+    expect(result.evidence.providerSignoffRunId).toBe(PROVIDER_RUN_ID);
     expect(result.evidence.binaryArtifactName).toBe("kunai-release-candidate-0.3.0");
-    expect(result.evidence.gates).toEqual(passedGates());
+    expect(result.evidence.gates).toEqual(
+      Object.fromEntries(RELEASE_GATE_NAMES.map((gate) => [gate, "passed"])) as Record<
+        ReleaseGateName,
+        "passed"
+      >,
+    );
     expect(Number.isFinite(Date.parse(result.evidence.generatedAt))).toBe(true);
   });
 
@@ -166,31 +208,6 @@ describe("evaluateReleaseConfirmation", () => {
     ).toThrow(/missing.*lane|lane: anime/i);
   });
 
-  test("rejects missing confirmation gate", () => {
-    const gates = { ...passedGates() };
-    delete (gates as { liveProviders?: "passed" }).liveProviders;
-    expect(() =>
-      evaluateReleaseConfirmation(
-        validInput({
-          declaredGates: gates as ReleaseGateEvidence["gates"],
-        }),
-      ),
-    ).toThrow(/missing.*gate|liveProviders/i);
-  });
-
-  test("rejects non-passed confirmation gate", () => {
-    expect(() =>
-      evaluateReleaseConfirmation(
-        validInput({
-          declaredGates: {
-            ...passedGates(),
-            repository: "failed" as "passed",
-          },
-        }),
-      ),
-    ).toThrow(/gate.*repository|repository.*passed/i);
-  });
-
   test("rejects incomplete release assets", () => {
     expect(() =>
       evaluateReleaseConfirmation(
@@ -199,6 +216,14 @@ describe("evaluateReleaseConfirmation", () => {
         }),
       ),
     ).toThrow(/missing/i);
+  });
+
+  test("rejects release-assets evidence for the wrong candidate artifact", () => {
+    expect(() =>
+      evaluateReleaseConfirmation(
+        validInput({ binaryArtifactName: "different-release-candidate" }),
+      ),
+    ).toThrow(/releaseAssets.*artifact|artifact.*releaseAssets/i);
   });
 
   test("rejects non-staged target release metadata", () => {
@@ -243,6 +268,72 @@ describe("evaluateReleaseConfirmation", () => {
     expect(() =>
       evaluateReleaseConfirmation(validInput({ generatedMetadataFresh: false })),
     ).toThrow(/generated|drift|codegen|stale/i);
+  });
+});
+
+describe("release confirmation evidence CLI contract", () => {
+  test("accepts explicit evidence paths, artifact mappings, and workflow run identity", () => {
+    const args = parseReleaseConfirmationCliArgs([
+      "--version",
+      "0.3.0",
+      "--commit",
+      "abc123def456",
+      "--run-id",
+      RUN_ID,
+      "--gate-evidence",
+      "artifacts/gates/repository.json",
+      "--gate-evidence",
+      "artifacts/gates/more",
+      "--gate-artifact",
+      "repository-artifact=artifacts/repository.log",
+      "--provider-evidence",
+      "artifacts/release-provider-signoff.json",
+      "--provider-signoff-run-id",
+      PROVIDER_RUN_ID,
+      "--binary-dir",
+      "apps/cli/dist/bin",
+    ]);
+
+    expect(args.runId).toBe(RUN_ID);
+    expect(args.gateEvidencePaths).toEqual([
+      "artifacts/gates/repository.json",
+      "artifacts/gates/more",
+    ]);
+    expect(args.gateArtifacts).toEqual([
+      { artifactName: "repository-artifact", path: "artifacts/repository.log" },
+    ]);
+  });
+
+  test("binds liveProviders evidence to the provider signoff JSON path", () => {
+    const gateEvidence = validatedGateEvidence("0.3.0", "abc123def456");
+    const liveProvidersEvidence = gateEvidence.documents.find(
+      (document) => document.gate === "liveProviders",
+    );
+    if (!liveProvidersEvidence) throw new Error("test fixture missing liveProviders evidence");
+    const liveProvidersArtifactName = liveProvidersEvidence.artifactName;
+
+    expect(() =>
+      assertLiveProvidersArtifactBinding(
+        gateEvidence,
+        [{ artifactName: liveProvidersArtifactName, path: "/tmp/different.json" }],
+        "/tmp/provider-signoff.json",
+      ),
+    ).toThrow(/liveProviders.*provider signoff/i);
+    expect(() =>
+      assertLiveProvidersArtifactBinding(
+        gateEvidence,
+        [{ artifactName: liveProvidersArtifactName, path: "/tmp/provider-signoff.json" }],
+        "/tmp/provider-signoff.json",
+      ),
+    ).not.toThrow();
+  });
+
+  test("source never manufactures a hardcoded passed-gate map", () => {
+    const source = readFileSync(join(REPO_ROOT, "scripts/release-confirmation-gate.ts"), "utf8");
+
+    expect(source).not.toContain("allPassedGates");
+    expect(source).not.toMatch(/declaredGates\s*:\s*\{/);
+    expect(source).toContain("loadReleaseGateEvidence");
   });
 });
 

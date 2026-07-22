@@ -9,6 +9,9 @@
  *   bun run release:confirmation:check -- \
  *     --version 0.3.0 \
  *     --commit "$(git rev-parse HEAD)" \
+ *     --run-id <run_id> \
+ *     --gate-evidence artifacts/release-gates \
+ *     --gate-artifact <artifact_name>=<artifact_path> \
  *     --provider-evidence artifacts/release-provider-signoff.json \
  *     --provider-signoff-run-id <run_id> \
  *     --binary-dir apps/cli/dist/bin
@@ -16,7 +19,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   assertReleaseProviderSignoffComplete,
@@ -28,35 +31,23 @@ import {
   assertCompleteReleaseAssetSet,
   type ReleaseAssetDescriptor,
 } from "./release-asset-contract";
+import {
+  RELEASE_GATE_NAMES,
+  loadReleaseGateEvidence,
+  type ReleaseGateArtifactPath,
+  type ReleaseGateName,
+  type ValidatedReleaseGateEvidence,
+} from "./release-gate-evidence";
 
-export const RELEASE_CONFIRMATION_GATES = [
-  "repository",
-  "package",
-  "installer",
-  "npmGlobalInstall",
-  "compiledPlayback",
-  "readmeCommands",
-  "liveProviders",
-  "releaseAssets",
-] as const;
-
-export type ReleaseConfirmationGateName = (typeof RELEASE_CONFIRMATION_GATES)[number];
+export const RELEASE_CONFIRMATION_GATES = RELEASE_GATE_NAMES;
+export type ReleaseConfirmationGateName = ReleaseGateName;
 
 export interface ReleaseGateEvidence {
   readonly schemaVersion: 1;
   readonly version: string;
   readonly commitSha: string;
   readonly generatedAt: string;
-  readonly gates: {
-    readonly repository: "passed";
-    readonly package: "passed";
-    readonly installer: "passed";
-    readonly npmGlobalInstall: "passed";
-    readonly compiledPlayback: "passed";
-    readonly readmeCommands: "passed";
-    readonly liveProviders: "passed";
-    readonly releaseAssets: "passed";
-  };
+  readonly gates: Readonly<Record<ReleaseGateName, "passed">>;
   readonly providerSignoffRunId: string;
   readonly binaryArtifactName: string;
 }
@@ -80,7 +71,7 @@ export type ReleaseConfirmationInput = {
   readonly release026Metadata: ReleaseMetadataSnapshot | null;
   readonly trackedInstallerReferencePaths: readonly string[];
   readonly generatedMetadataFresh: boolean;
-  readonly declaredGates: ReleaseGateEvidence["gates"] | Record<string, unknown>;
+  readonly gateEvidence: ValidatedReleaseGateEvidence;
 };
 
 export type ReleaseConfirmationResult = {
@@ -124,14 +115,30 @@ export function evaluateReleaseConfirmation(
       `[release-confirmation] commit SHA mismatch: expected ${input.commitSha}, providerEvidence=${input.providerEvidence.commitSha}`,
     );
   }
-
-  assertDeclaredGates(input.declaredGates);
+  if (input.gateEvidence.version !== input.version) {
+    throw new Error(
+      `[release-confirmation] gate evidence version mismatch: expected ${input.version}, got ${input.gateEvidence.version}`,
+    );
+  }
+  if (input.gateEvidence.commitSha !== input.commitSha) {
+    throw new Error(
+      `[release-confirmation] gate evidence commit SHA mismatch: expected ${input.commitSha}, got ${input.gateEvidence.commitSha}`,
+    );
+  }
+  const releaseAssetsEvidence = input.gateEvidence.documents.find(
+    (document) => document.gate === "releaseAssets",
+  );
+  if (!releaseAssetsEvidence || releaseAssetsEvidence.artifactName !== input.binaryArtifactName) {
+    throw new Error(
+      `[release-confirmation] releaseAssets artifact mismatch: expected ${input.binaryArtifactName}, got ${releaseAssetsEvidence?.artifactName ?? "missing"}`,
+    );
+  }
 
   try {
     assertReleaseProviderSignoffComplete(input.providerEvidence);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`[release-confirmation] ${message}`);
+    throw new Error(`[release-confirmation] ${message}`, { cause: error });
   }
 
   if (!isReleaseProviderSignoffAcceptable(input.providerEvidence, input.nowMs)) {
@@ -144,7 +151,7 @@ export function evaluateReleaseConfirmation(
     assertCompleteReleaseAssetSet(input.releaseAssets);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`[release-confirmation] ${message}`);
+    throw new Error(`[release-confirmation] ${message}`, { cause: error });
   }
 
   if (input.targetReleaseMetadata.version !== input.version) {
@@ -182,25 +189,12 @@ export function evaluateReleaseConfirmation(
     version: input.version,
     commitSha: input.commitSha,
     generatedAt: new Date(input.nowMs).toISOString(),
-    gates: input.declaredGates as ReleaseGateEvidence["gates"],
+    gates: input.gateEvidence.gates,
     providerSignoffRunId: input.providerSignoffRunId,
     binaryArtifactName: input.binaryArtifactName,
   };
 
   return { status: "ready-for-confirmation", evidence };
-}
-
-function assertDeclaredGates(declared: ReleaseConfirmationInput["declaredGates"]): void {
-  for (const gate of RELEASE_CONFIRMATION_GATES) {
-    if (!(gate in declared)) {
-      throw new Error(`[release-confirmation] missing confirmation gate: ${gate}`);
-    }
-    if (declared[gate] !== "passed") {
-      throw new Error(
-        `[release-confirmation] gate ${gate} must be passed (got ${String(declared[gate])})`,
-      );
-    }
-  }
 }
 
 function assert026NotPublic(meta: ReleaseMetadataSnapshot | null): void {
@@ -287,22 +281,12 @@ function readProviderEvidence(path: string): ReleaseProviderSignoff {
   return JSON.parse(readFileSync(path, "utf8")) as ReleaseProviderSignoff;
 }
 
-function allPassedGates(): ReleaseGateEvidence["gates"] {
-  return {
-    repository: "passed",
-    package: "passed",
-    installer: "passed",
-    npmGlobalInstall: "passed",
-    compiledPlayback: "passed",
-    readmeCommands: "passed",
-    liveProviders: "passed",
-    releaseAssets: "passed",
-  };
-}
-
 export type ReleaseConfirmationCliArgs = {
   readonly version: string;
   readonly commitSha: string;
+  readonly runId: string;
+  readonly gateEvidencePaths: readonly string[];
+  readonly gateArtifacts: readonly ReleaseGateArtifactPath[];
   readonly providerEvidencePath: string;
   readonly providerSignoffRunId: string;
   readonly binaryDir: string;
@@ -315,6 +299,9 @@ export function parseReleaseConfirmationCliArgs(
 ): ReleaseConfirmationCliArgs {
   let version: string | undefined;
   let commitSha: string | undefined;
+  let runId: string | undefined;
+  const gateEvidencePaths: string[] = [];
+  const gateArtifacts: ReleaseGateArtifactPath[] = [];
   let providerEvidencePath: string | undefined;
   let providerSignoffRunId: string | undefined;
   let binaryDir: string | undefined;
@@ -322,7 +309,8 @@ export function parseReleaseConfirmationCliArgs(
   let skipGeneratedDriftCheck = false;
 
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (arg === undefined) break;
     const next = () => {
       const value = argv[++i];
       if (!value || value.startsWith("-")) {
@@ -338,6 +326,24 @@ export function parseReleaseConfirmationCliArgs(
       case "--commit":
         commitSha = next();
         break;
+      case "--run-id":
+        runId = next();
+        break;
+      case "--gate-evidence":
+        gateEvidencePaths.push(next());
+        break;
+      case "--gate-artifact": {
+        const mapping = next();
+        const separator = mapping.indexOf("=");
+        if (separator <= 0 || separator === mapping.length - 1) {
+          throw new Error("[release-confirmation] --gate-artifact must use <artifact-name>=<path>");
+        }
+        gateArtifacts.push({
+          artifactName: mapping.slice(0, separator),
+          path: mapping.slice(separator + 1),
+        });
+        break;
+      }
       case "--provider-evidence":
         providerEvidencePath = next();
         break;
@@ -358,15 +364,27 @@ export function parseReleaseConfirmationCliArgs(
     }
   }
 
-  if (!version || !commitSha || !providerEvidencePath || !providerSignoffRunId || !binaryDir) {
+  if (
+    !version ||
+    !commitSha ||
+    !runId ||
+    gateEvidencePaths.length === 0 ||
+    gateArtifacts.length === 0 ||
+    !providerEvidencePath ||
+    !providerSignoffRunId ||
+    !binaryDir
+  ) {
     throw new Error(
-      "[release-confirmation] usage: --version <semver> --commit <sha> --provider-evidence <path> --provider-signoff-run-id <id> --binary-dir <dir> [--binary-artifact-name <name>]",
+      "[release-confirmation] usage: --version <semver> --commit <sha> --run-id <id> --gate-evidence <file-or-dir> --gate-artifact <artifact-name>=<path> --provider-evidence <path> --provider-signoff-run-id <id> --binary-dir <dir> [--binary-artifact-name <name>]",
     );
   }
 
   return {
     version,
     commitSha,
+    runId,
+    gateEvidencePaths,
+    gateArtifacts,
     providerEvidencePath,
     providerSignoffRunId,
     binaryDir,
@@ -375,12 +393,36 @@ export function parseReleaseConfirmationCliArgs(
   };
 }
 
+export function assertLiveProvidersArtifactBinding(
+  gateEvidence: ValidatedReleaseGateEvidence,
+  gateArtifacts: readonly ReleaseGateArtifactPath[],
+  providerEvidencePath: string,
+): void {
+  const liveProvidersEvidence = gateEvidence.documents.find(
+    (document) => document.gate === "liveProviders",
+  );
+  const matchingArtifacts = gateArtifacts.filter(
+    (artifact) => artifact.artifactName === liveProvidersEvidence?.artifactName,
+  );
+  const matchingArtifact = matchingArtifacts[0];
+  if (
+    matchingArtifacts.length !== 1 ||
+    !matchingArtifact ||
+    resolve(matchingArtifact.path) !== resolve(providerEvidencePath)
+  ) {
+    throw new Error(
+      "[release-confirmation] liveProviders evidence must hash the provider signoff JSON passed to --provider-evidence",
+    );
+  }
+}
+
 export function runReleaseConfirmationCheck(
   args: ReleaseConfirmationCliArgs,
   options: { readonly repoRoot?: string; readonly nowMs?: number } = {},
 ): ReleaseConfirmationResult {
   const repoRoot = options.repoRoot ?? REPO_ROOT;
   const nowMs = options.nowMs ?? Date.now();
+  const resolveFromRepo = (path: string) => (path.startsWith("/") ? path : join(repoRoot, path));
   const target = readReleaseMetadata(repoRoot, args.version);
   if (!target) {
     throw new Error(
@@ -388,28 +430,40 @@ export function runReleaseConfirmationCheck(
     );
   }
 
+  const providerEvidencePath = resolveFromRepo(args.providerEvidencePath);
+  const gateArtifacts = args.gateArtifacts.map((artifact) => ({
+    artifactName: artifact.artifactName,
+    path: resolveFromRepo(artifact.path),
+  }));
+  const gateEvidence = loadReleaseGateEvidence(
+    args.gateEvidencePaths.map(resolveFromRepo),
+    gateArtifacts,
+    {
+      version: args.version,
+      commitSha: args.commitSha,
+      runId: args.runId,
+      providerSignoffRunId: args.providerSignoffRunId,
+      nowMs,
+    },
+  );
+  assertLiveProvidersArtifactBinding(gateEvidence, gateArtifacts, providerEvidencePath);
+
   return evaluateReleaseConfirmation({
     version: args.version,
     commitSha: args.commitSha,
     nowMs,
     packageVersion: readPackageVersion(repoRoot),
-    providerEvidence: readProviderEvidence(
-      args.providerEvidencePath.startsWith("/")
-        ? args.providerEvidencePath
-        : join(repoRoot, args.providerEvidencePath),
-    ),
+    providerEvidence: readProviderEvidence(providerEvidencePath),
     providerSignoffRunId: args.providerSignoffRunId,
     binaryArtifactName: args.binaryArtifactName ?? `kunai-release-candidate-${args.version}`,
-    releaseAssets: listBinaryDirAssets(
-      args.binaryDir.startsWith("/") ? args.binaryDir : join(repoRoot, args.binaryDir),
-    ),
+    releaseAssets: listBinaryDirAssets(resolveFromRepo(args.binaryDir)),
     targetReleaseMetadata: target,
     release026Metadata: readReleaseMetadata(repoRoot, "0.2.6"),
     trackedInstallerReferencePaths: listTrackedInstallerReference(repoRoot),
     generatedMetadataFresh: args.skipGeneratedDriftCheck
       ? true
       : checkGeneratedMetadataFresh(repoRoot),
-    declaredGates: allPassedGates(),
+    gateEvidence,
   });
 }
 
