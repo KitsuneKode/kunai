@@ -13,7 +13,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { compareSemver, highestChangelogVersion } from "./release-changelog.ts";
-import { assertExactPlatformVersions } from "./sync-npm-platform-versions.ts";
+import { assertNpmPlatformVersionsSynchronized } from "./sync-npm-platform-versions.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_PKG = join(REPO_ROOT, "apps/cli/package.json");
@@ -58,7 +58,7 @@ export function collectReleaseGuardErrors({
   }
 
   try {
-    assertExactPlatformVersions(packageManifest);
+    assertNpmPlatformVersionsSynchronized(packageManifest);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     errors.push(`apps/cli/package.json platform pins are invalid: ${message}`);

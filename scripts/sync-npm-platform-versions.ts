@@ -73,21 +73,6 @@ function assertExactPlatformPackageSet(optional: JsonObject): void {
   }
 }
 
-/** Fail unless every canonical platform package is pinned to the exact launcher version. */
-export function assertExactPlatformVersions(manifest: unknown): void {
-  const { version, optional } = readManifest(manifest);
-  assertExactPlatformPackageSet(optional);
-
-  const mismatches = PLATFORM_PACKAGE_NAMES.filter((name) => optional[name] !== version);
-  if (mismatches.length > 0) {
-    throw new Error(
-      `platform optionalDependencies must use the exact launcher version ${version}: ${mismatches.join(
-        ", ",
-      )}`,
-    );
-  }
-}
-
 /**
  * Rewrites only the canonical platform pin values. The manifest and nested
  * optionalDependencies insertion order are retained by copying their entries.
@@ -112,6 +97,19 @@ export function synchronizePlatformManifest(manifest: unknown): PlatformVersionS
   };
 }
 
+/** Fail when applying the canonical synchronization transform would change the manifest. */
+export function assertNpmPlatformVersionsSynchronized(
+  manifest: unknown,
+): PlatformVersionSyncResult {
+  const result = synchronizePlatformManifest(manifest);
+  if (result.changed) {
+    throw new Error(
+      "platform package versions are out of sync; run bun run scripts/sync-npm-platform-versions.ts",
+    );
+  }
+  return result;
+}
+
 function readJsonManifest(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, "utf8")) as unknown;
@@ -126,15 +124,11 @@ export function syncNpmPlatformVersions(
   options: SyncNpmPlatformVersionsOptions = {},
 ): PlatformVersionSyncResult {
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST_PATH;
-  const result = synchronizePlatformManifest(readJsonManifest(manifestPath));
+  const manifest = readJsonManifest(manifestPath);
   if (options.check) {
-    if (result.changed) {
-      throw new Error(
-        `platform package versions are out of sync in ${manifestPath}; run bun run scripts/sync-npm-platform-versions.ts`,
-      );
-    }
-    return result;
+    return assertNpmPlatformVersionsSynchronized(manifest);
   }
+  const result = synchronizePlatformManifest(manifest);
   if (result.changed) {
     writeFileSync(manifestPath, `${JSON.stringify(result.manifest, null, 2)}\n`, "utf8");
   }

@@ -46,14 +46,14 @@ describe("npm platform version synchronization", () => {
   });
 
   test("rejects ranges and skew when checking platform pins", async () => {
-    const { assertExactPlatformVersions } = await syncModule();
+    const { assertNpmPlatformVersionsSynchronized } = await syncModule();
     const ranged = validManifest();
     ranged.optionalDependencies["@kitsunekode/kunai-linux-x64"] = "^1.2.3";
     const skewed = validManifest();
     skewed.optionalDependencies["@kitsunekode/kunai-linux-x64"] = "1.2.2";
 
-    expect(() => assertExactPlatformVersions(ranged)).toThrow(/exact|1\.2\.3/);
-    expect(() => assertExactPlatformVersions(skewed)).toThrow(/exact|1\.2\.3/);
+    expect(() => assertNpmPlatformVersionsSynchronized(ranged)).toThrow(/out of sync/i);
+    expect(() => assertNpmPlatformVersionsSynchronized(skewed)).toThrow(/out of sync/i);
   });
 
   test("rewrites only canonical platform pin values to the launcher version", async () => {
@@ -94,10 +94,49 @@ describe("npm platform version synchronization", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  test("normal mode writes stable JSON once and preserves unrelated field order", async () => {
+    const { syncNpmPlatformVersions } = await syncModule();
+    const tempDir = mkdtempSync(join(tmpdir(), "kunai-platform-pins-write-"));
+    const manifestPath = join(tempDir, "package.json");
+    const manifest = validManifest("2.1.0");
+    manifest.optionalDependencies["@kitsunekode/kunai-linux-x64"] = "2.0.0";
+    const source = JSON.stringify({ before: "kept", ...manifest, after: { nested: true } });
+    writeFileSync(manifestPath, source, "utf8");
+
+    try {
+      expect(syncNpmPlatformVersions({ manifestPath }).changed).toBe(true);
+      const firstWrite = readFileSync(manifestPath, "utf8");
+      const written = JSON.parse(firstWrite) as Record<string, unknown>;
+      expect(firstWrite).toBe(`${JSON.stringify(written, null, 2)}\n`);
+      expect(Object.keys(written)).toEqual([
+        "before",
+        "name",
+        "version",
+        "private",
+        "optionalDependencies",
+        "after",
+      ]);
+      expect(written.before).toBe("kept");
+      expect(written.after).toEqual({ nested: true });
+
+      expect(syncNpmPlatformVersions({ manifestPath }).changed).toBe(false);
+      expect(readFileSync(manifestPath, "utf8")).toBe(firstWrite);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("release guard platform pin contract", () => {
-  test("reports exact platform pin drift through the shared assertion", async () => {
+  test("calls the same pure synchronization check used by file check mode", async () => {
+    const guardSource = readFileSync(join(REPO_ROOT, "scripts/release-guard.ts"), "utf8");
+
+    expect(guardSource).toContain("assertNpmPlatformVersionsSynchronized(packageManifest)");
+    expect(guardSource).not.toContain("assertExactPlatformVersions");
+  });
+
+  test("reports exact platform pin drift through the shared check", async () => {
     const { collectReleaseGuardErrors } = await import(GUARD_PATH);
     const manifest = validManifest("1.2.3");
     manifest.optionalDependencies["@kitsunekode/kunai-linux-x64"] = "^1.2.3";
