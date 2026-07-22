@@ -64,8 +64,9 @@ export type RunUninstallOptions = {
 };
 
 /**
- * Channel-aware uninstall. Reads the manifest (falls back to "unknown"), undoes
- * the matching channel, and — only with `purge` — removes user config/data/cache.
+ * Channel-aware uninstall. Reads the manifest (falling back to install-method
+ * detection), undoes the matching channel, and — only with `purge` — removes
+ * user config/data/cache.
  * Returns a process exit code.
  */
 export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
