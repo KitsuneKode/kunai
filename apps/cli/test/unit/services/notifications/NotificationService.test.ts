@@ -68,9 +68,14 @@ test("NotificationService only stores notification actions the root overlay can 
     "2026-05-17T00:01:00.000Z",
   );
 
+  // A new-episode notice must be able to play the episode it announces — the
+  // payload used to offer only queueing, so the inbox could never start playback.
   expect(JSON.parse(service.listActive()[0]?.actionJson ?? "[]")).toEqual([
-    "queue-next",
+    "play-now",
+    "open-details",
+    "add-to-up-next",
     "queue-end",
+    "mute",
     "dismiss",
   ]);
 

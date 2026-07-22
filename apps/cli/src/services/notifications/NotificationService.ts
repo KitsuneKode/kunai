@@ -67,7 +67,12 @@ export class NotificationService {
           : notification.queueSessionId
             ? JSON.stringify({ queueSessionId: notification.queueSessionId })
             : undefined,
-        actionJson: JSON.stringify(defaultNotificationActionIds(notification.kind)),
+        actionJson: JSON.stringify(
+          defaultNotificationActionIds({
+            kind: notification.kind,
+            hasItem: Boolean(notification.item),
+          }),
+        ),
         createdAt: notification.createdAt,
         updatedAt: notification.updatedAt,
       });
@@ -145,9 +150,38 @@ export class NotificationService {
   }
 }
 
-function defaultNotificationActionIds(kind: string): readonly string[] {
-  if (kind === "queue-recovery") return ["restore-queue", "dismiss"];
-  if (kind === "download-failed") return ["retry-download", "dismiss"];
-  if (kind === "app-update") return ["update-app", "dismiss"];
-  return ["queue-next", "queue-end", "dismiss"];
+/**
+ * The actions a notification offers.
+ *
+ * This is the only writer of `actionJson`, and the inbox filters the executable
+ * action catalogue against what is stored here — so an id missing from this
+ * function can never appear, however complete its handler is. It used to key on
+ * kind alone and never emitted `play-now` or `open-details`, which is why a
+ * "new episode" notice could not play the episode it announced and a completed
+ * download could not play the file that had just finished.
+ *
+ * Playback and details are only offered when the notification actually carries a
+ * media identity; otherwise the action would resolve to nothing.
+ */
+export function defaultNotificationActionIds(input: {
+  readonly kind: string;
+  readonly hasItem: boolean;
+}): readonly string[] {
+  if (input.kind === "queue-recovery") return ["restore-queue", "dismiss"];
+  if (input.kind === "app-update") return ["update-app", "dismiss"];
+
+  if (input.kind === "download-failed") {
+    return input.hasItem
+      ? ["retry-download", "open-details", "dismiss"]
+      : ["retry-download", "dismiss"];
+  }
+
+  if (!input.hasItem) return ["dismiss"];
+
+  if (input.kind === "download-complete") {
+    return ["play-now", "open-details", "dismiss"];
+  }
+
+  // new-episode and anything else title-shaped.
+  return ["play-now", "open-details", "add-to-up-next", "queue-end", "mute", "dismiss"];
 }
