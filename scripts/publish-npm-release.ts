@@ -257,23 +257,48 @@ async function validateLocalCandidates(
   }
 }
 
-function npmNotFound(result: CommandResult): boolean {
-  const combined = `${result.stdout}\n${result.stderr}`;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(result.stdout) as unknown;
-  } catch {
+function structuredNpmError(result: CommandResult): JsonObject | null {
+  for (const output of [result.stdout, result.stderr]) {
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(result.stderr) as unknown;
+      parsed = JSON.parse(output) as unknown;
     } catch {
-      parsed = undefined;
+      continue;
     }
+    if (isJsonObject(parsed) && isJsonObject(parsed.error)) return parsed.error;
   }
-  const error = isJsonObject(parsed) && isJsonObject(parsed.error) ? parsed.error : undefined;
-  const jsonE404 = error?.code === "E404";
-  const textE404 = /npm (?:error|ERR!) code E404/i.test(combined);
-  const notFound = /(?:404\s+Not Found|not found|no match found)/i.test(combined);
-  return (jsonE404 || textE404) && notFound;
+  return null;
+}
+
+function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): boolean {
+  const error = structuredNpmError(result);
+  if (
+    error?.code !== "E404" ||
+    typeof error.summary !== "string" ||
+    typeof error.detail !== "string"
+  ) {
+    return false;
+  }
+
+  const summary = error.summary.trim();
+  const detail = error.detail.trim();
+  const structuredMessage = `${summary}\n${detail}`;
+  if (
+    /authentication|authorization|token|credentials?|npm login|configuration|config/i.test(
+      structuredMessage,
+    )
+  ) {
+    return false;
+  }
+
+  const packageSpec = `${candidate.name}@${candidate.version}`;
+  const mentionsPackage = structuredMessage.includes(candidate.name);
+  const missingPackage =
+    /^(?:404\s+)?Not Found(?:\s+-\s+GET\b|$)/i.test(summary) && mentionsPackage;
+  const missingVersion =
+    summary === `No match found for version ${candidate.version}` &&
+    structuredMessage.includes(packageSpec);
+  return missingPackage || missingVersion;
 }
 
 function parseRegistryIntegrity(stdout: string, context: string): string {
@@ -321,7 +346,7 @@ export function createNpmRegistryPort(command: CommandPort): RegistryPort {
     };
     const result = await command(request);
     if (result.exitCode === 0) return result;
-    if (npmNotFound(result)) return null;
+    if (npmNotFound(result, candidate)) return null;
     throw commandError("npm view", request, result);
   }
 

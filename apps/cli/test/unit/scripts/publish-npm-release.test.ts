@@ -168,34 +168,95 @@ describe("local npm publication candidates", () => {
 
 describe("npm registry error classification", () => {
   test("treats only npm E404 not-found output as an absent version", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
     const calls: string[][] = [];
     const registry = createNpmRegistryPort(async (request) => {
       calls.push([request.command, ...request.args]);
       return {
         exitCode: 1,
         stdout: JSON.stringify({
-          error: { code: "E404", summary: "404 Not Found - GET package" },
+          error: {
+            code: "E404",
+            summary:
+              "404 Not Found - GET https://registry.npmjs.org/@kitsunekode%2fkunai-linux-x64",
+            detail: `The requested resource '${packageSpec}' could not be found.`,
+          },
         }),
         stderr: "npm error code E404\nnpm error 404 Not Found",
       };
     });
 
-    expect(await registry.queryIntegrity(candidates()[0]!)).toBeNull();
+    expect(await registry.queryIntegrity(candidate)).toBeNull();
     expect(calls).toEqual([
       ["npm", "view", "@kitsunekode/kunai-linux-x64@1.2.3", "dist.integrity", "--json"],
     ]);
   });
 
   test("accepts npm's E404 no-match wording for a missing exact version", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
     const registry = createNpmRegistryPort(async () => ({
       exitCode: 1,
       stdout: JSON.stringify({
-        error: { code: "E404", summary: "No match found for version 1.2.3" },
+        error: {
+          code: "E404",
+          summary: `No match found for version ${candidate.version}`,
+          detail: `The requested resource '${packageSpec}' could not be found.`,
+        },
       }),
       stderr: "",
     }));
 
-    expect(await registry.queryIntegrity(candidates()[0]!)).toBeNull();
+    expect(await registry.queryIntegrity(candidate)).toBeNull();
+  });
+
+  test("propagates E404 when an authentication-token message contains not found", async () => {
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary: "authentication token not found",
+          detail: "Run npm login to create a token.",
+        },
+      }),
+      stderr: "npm error code E404",
+    }));
+
+    await expect(registry.queryIntegrity(candidates()[0]!)).rejects.toThrow(/npm view/i);
+  });
+
+  test("propagates E404 for an unrelated missing registry resource", async () => {
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary: "404 Not Found - GET https://registry.npmjs.org/unrelated-package",
+          detail: "The requested resource 'unrelated-package@9.9.9' could not be found.",
+        },
+      }),
+      stderr: "npm error code E404",
+    }));
+
+    await expect(registry.queryIntegrity(candidates()[0]!)).rejects.toThrow(/npm view/i);
+  });
+
+  test("propagates E404 with malformed structured error fields", async () => {
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary: ["authentication token not found"],
+          detail: null,
+        },
+      }),
+      stderr: "npm error code E404",
+    }));
+
+    await expect(registry.queryIntegrity(candidates()[0]!)).rejects.toThrow(/npm view/i);
   });
 
   test("propagates auth, permission, timeout, and other registry failures", async () => {
