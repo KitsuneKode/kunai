@@ -13,6 +13,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { compareSemver, highestChangelogVersion } from "./release-changelog.ts";
+import { assertExactPlatformVersions } from "./sync-npm-platform-versions.ts";
 
 const REPO_ROOT = join(import.meta.dirname, "..");
 const CLI_PKG = join(REPO_ROOT, "apps/cli/package.json");
@@ -35,17 +36,34 @@ function listChangesetFiles(): string[] {
   );
 }
 
-function main(): void {
+export interface ReleaseGuardInputs {
+  readonly packageManifest: unknown;
+  readonly cliChangelog: string;
+  readonly rootChangelog: string | null;
+  readonly changesetFiles: readonly string[];
+}
+
+export function collectReleaseGuardErrors({
+  packageManifest,
+  cliChangelog,
+  rootChangelog,
+  changesetFiles,
+}: ReleaseGuardInputs): string[] {
   const errors: string[] = [];
-  const pkg = readJson(CLI_PKG) as { version?: string; name?: string };
+  const pkg = packageManifest as { version?: string; name?: string };
   const cliVersion = pkg.version;
   if (!cliVersion) {
     errors.push(`apps/cli/package.json has no "version" field.`);
-    printAndExit(errors);
-    return;
+    return errors;
   }
 
-  const cliChangelog = readText(CLI_CHANGELOG);
+  try {
+    assertExactPlatformVersions(packageManifest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    errors.push(`apps/cli/package.json platform pins are invalid: ${message}`);
+  }
+
   const cliChangelogTop = highestChangelogVersion(cliChangelog, "## ");
   if (!cliChangelogTop) {
     errors.push(`apps/cli/CHANGELOG.md has no \`## X.Y.Z\` entries.`);
@@ -55,8 +73,7 @@ function main(): void {
     );
   }
 
-  if (existsSync(ROOT_CHANGELOG)) {
-    const rootChangelog = readText(ROOT_CHANGELOG);
+  if (rootChangelog !== null) {
     const rootTop = highestChangelogVersion(rootChangelog, "## v");
     if (!rootTop) {
       errors.push(
@@ -70,14 +87,23 @@ function main(): void {
   }
 
   if (cliChangelogTop && compareSemver(cliVersion, cliChangelogTop) > 0) {
-    const changesets = listChangesetFiles();
-    if (changesets.length === 0) {
+    if (changesetFiles.length === 0) {
       errors.push(
         `apps/cli/package.json (${cliVersion}) is ahead of apps/cli/CHANGELOG.md (${cliChangelogTop}) but no .changeset/*.md exists. Add a changeset describing the bump.`,
       );
     }
   }
 
+  return errors;
+}
+
+function main(): void {
+  const errors = collectReleaseGuardErrors({
+    packageManifest: readJson(CLI_PKG),
+    cliChangelog: readText(CLI_CHANGELOG),
+    rootChangelog: existsSync(ROOT_CHANGELOG) ? readText(ROOT_CHANGELOG) : null,
+    changesetFiles: listChangesetFiles(),
+  });
   printAndExit(errors);
 }
 
@@ -100,4 +126,6 @@ function printAndExit(errors: string[]): void {
   process.exit(1);
 }
 
-main();
+if (import.meta.main) {
+  main();
+}

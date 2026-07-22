@@ -110,7 +110,7 @@
     "verify:readme:commands": "bun run scripts/verify-readme-commands.ts",
     "release:dry-run": "bun run --cwd apps/cli release:dry-run",
     "changeset": "bunx changeset",
-    "version:packages": "bunx changeset version && bun run scripts/sync-root-changelog.ts && bun run release:notes",
+    "version:packages": "bunx changeset version && bun run scripts/sync-npm-platform-versions.ts && bun run scripts/sync-root-changelog.ts && bun run release:notes",
     "release:notes": "bun run scripts/generate-release-notes.ts",
     "release:notes:check": "bun run scripts/generate-release-notes.ts --check",
     "release:confirmation:check": "bun run scripts/release-confirmation-gate.ts",
