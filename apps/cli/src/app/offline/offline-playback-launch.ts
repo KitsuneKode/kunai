@@ -100,7 +100,7 @@ export async function requestUnifiedOfflinePlayback(
   container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 
   const closedBrowse = forceCloseRootContent<BrowseShellResult<SearchResult>>({
-    type: "offline-playback",
+    type: "launch-playback",
     launch,
   });
 

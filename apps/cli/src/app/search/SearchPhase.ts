@@ -687,7 +687,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           return { status: "cancelled" };
         }
 
-        if (outcome.type === "offline-playback") {
+        if (outcome.type === "launch-playback") {
           stateManager.dispatch({ type: "SELECT_TITLE", title: outcome.launch.title });
           if (outcome.launch.episode) {
             stateManager.dispatch({ type: "SELECT_EPISODE", episode: outcome.launch.episode });

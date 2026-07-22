@@ -377,8 +377,15 @@ export type ShellPickerOption<T> = {
 export type BrowseShellResult<T> =
   | { type: "selected"; value: T }
   | { type: "action"; action: ShellAction; value?: T }
+  /**
+   * Leave the browse surface and start playing this exact title/episode.
+   *
+   * Named `offline-playback` until 2026-07-22, which understated it: the phase
+   * handles it by dispatching SELECT_TITLE/SELECT_EPISODE and returning, so it
+   * is the generic launch channel — offline was merely its first caller.
+   */
   | {
-      type: "offline-playback";
+      type: "launch-playback";
       launch: { readonly title: TitleInfo; readonly episode?: EpisodeInfo };
     }
   | { type: "cancelled" };
