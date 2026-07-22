@@ -351,7 +351,11 @@ function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): b
   const missingPackage =
     canonical404PackageName(summary) === candidate.name &&
     (hasExactDetailLine(detail, `'${packageSpec}' is not in this registry.`) ||
-      hasExactDetailLine(detail, `'${candidate.name}' is not in this registry.`));
+      hasExactDetailLine(detail, `'${candidate.name}' is not in this registry.`) ||
+      hasExactDetailLine(
+        detail,
+        `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.`,
+      ));
   const missingVersion =
     summary === `No match found for version ${candidate.version}` &&
     hasExactDetailLine(

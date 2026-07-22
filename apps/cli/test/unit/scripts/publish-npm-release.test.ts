@@ -284,6 +284,27 @@ describe("npm registry error classification", () => {
     expect(await registry.queryIntegrity(candidate)).toBeNull();
   });
 
+  test("accepts npm 11's scoped-package E404 wording for an absent package", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary:
+            "Not Found - GET https://registry.npmjs.org/@kitsunekode%2fkunai-linux-x64 - Not found",
+          detail:
+            `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.\n\n` +
+            "Note that you can also install from a\ntarball, folder, http url, or git url.",
+        },
+      }),
+      stderr: "npm error code E404\nnpm error 404 Not Found",
+    }));
+
+    expect(await registry.queryIntegrity(candidate)).toBeNull();
+  });
+
   test("propagates E404 when an authentication-token message contains not found", async () => {
     const registry = createNpmRegistryPort(async () => ({
       exitCode: 1,
