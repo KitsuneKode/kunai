@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   getInstallLayoutPaths,
   lockFilePath,
   parseVersionFromExecPath,
+  removeStagingAndPruneParents,
   versionBinaryPath,
 } from "@/services/update/native-installer/install-layout";
 import type { CanonicalVersion } from "@/services/update/version";
@@ -52,5 +55,17 @@ describe("install layout paths", () => {
     expect(
       parseVersionFromExecPath(join(layout.versionsDir, "1.2.3-beta", "kunai"), layout),
     ).toBeNull();
+  });
+
+  test("removeStagingAndPruneParents clears empty version and staging roots", async () => {
+    const cacheDir = await mkdtemp(join(tmpdir(), "kunai-staging-prune-"));
+    const stagingRoot = join(cacheDir, "staging");
+    const staging = join(stagingRoot, "1.0.1", "txn-1");
+    await mkdir(staging, { recursive: true });
+    await writeFile(join(staging, "partial.bin"), "x");
+
+    await removeStagingAndPruneParents(staging, stagingRoot);
+
+    expect(await readdir(cacheDir)).toEqual([]);
   });
 });

@@ -57,6 +57,7 @@
     "test:binary:smoke": "KUNAI_BINARY_SMOKE=1 bun test test/integration/compiled-binary-smoke.test.ts",
     "test:npm-global-install": "KUNAI_NPM_GLOBAL_INSTALL=1 bun test test/integration/npm-global-install.test.ts",
     "test:installer:docker": "bash test/docker/native-installer/run-local.sh",
+    "test:installer:docker:scenario": "bash test/docker/native-installer/run-local.sh --scenario",
     "test:installer:ci": "KUNAI_INSTALLER_DOCKER=1 bash test/docker/native-installer/run-local.sh",
     "test:live:allanime": "bun -e \"await import('./test/live/allanime-demonslayer.smoke.ts')\"",
     "test:live:discord": "bun -e \"await import('./test/live/discord-presence.smoke.ts')\"",

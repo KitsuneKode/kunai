@@ -23,7 +23,7 @@ describeDocker("native installer docker smoke", () => {
     // both binaries are already present, or run-local errors out immediately.
     const skipBuild =
       existsSync(GLIBC_BIN) && existsSync(MUSL_BIN) ? ["--skip-build", "--skip-image-build"] : [];
-    const result = spawnSync("bash", [RUN_LOCAL, ...skipBuild], {
+    const result = spawnSync("bash", [RUN_LOCAL, "--scenario", "full-lifecycle", ...skipBuild], {
       cwd: REPO_ROOT,
       encoding: "utf8",
       timeout: 600_000,
@@ -41,5 +41,17 @@ describeDocker("native installer docker smoke", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Native installer smoke (glibc) passed");
     expect(result.stdout).toContain("Native installer smoke (musl) passed");
+    expect(result.stdout).toContain("Scenario full-lifecycle / glibc passed");
+    expect(result.stdout).toContain("Scenario full-lifecycle / musl passed");
   }, 600_000);
+
+  test("lists PR gate scenario cells from the registry", () => {
+    const result = spawnSync("bash", [RUN_LOCAL, "--list-scenarios", "--gate", "pr"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("full-lifecycle\tglibc");
+    expect(result.stdout).toContain("checksum-rejection\tglibc");
+  });
 });

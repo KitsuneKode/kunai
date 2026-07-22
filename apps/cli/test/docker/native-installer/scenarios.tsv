@@ -1,0 +1,11 @@
+# id	variants	gate	description
+# Tab-separated scenario registry for native installer Docker matrix.
+# Comments (#) and blank lines are ignored. Variants: glibc,musl. Gates: pr,nightly.
+full-lifecycle	glibc,musl	pr	Current install-upgrade-doctor-rollback-uninstall smoke
+clean-install	glibc,musl	pr	Fresh pinned native install and schema-1 ownership state
+checksum-rejection	glibc,musl	pr	Corrupt release asset fails without activating partial state
+reinstall-idempotent	glibc,musl	nightly	Installing the active version again remains consistent
+upgrade-rollback	glibc,musl	nightly	Upgrade retention and both rollback paths
+stale-lock-recovery	glibc,musl	nightly	Dead lock and abandoned transaction do not block install
+uninstall-preserves-user-data	glibc,musl	nightly	Owned state removed while user data survives
+custom-xdg-layout	glibc,musl	nightly	All installer state honors explicit XDG roots

@@ -1,0 +1,113 @@
+name: Installer Docker Matrix
+
+on:
+  schedule:
+    # 06:15 UTC daily — full native installer scenario × variant matrix
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: installer-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-registry:
+    name: Validate scenario registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: List and validate registry
+        run: |
+          bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios
+          bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios --gate pr >/dev/null
+          bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios --gate nightly >/dev/null
+
+  build-binaries:
+    name: Build linux binaries
+    needs: validate-registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: installer-matrix-binaries
+      - name: Build linux-x64 + musl
+        run: bun run --cwd apps/cli build:binaries -- --only linux-x64 --only linux-x64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kunai-linux-binaries-matrix
+          retention-days: 1
+          path: |
+            apps/cli/dist/bin/kunai-linux-x64
+            apps/cli/dist/bin/kunai-linux-x64-musl
+            apps/cli/dist/bin/SHA256SUMS
+
+  matrix:
+    name: ${{ matrix.scenario }} / ${{ matrix.variant }}
+    needs: [validate-registry, build-binaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: full-lifecycle
+            variant: glibc
+          - scenario: full-lifecycle
+            variant: musl
+          - scenario: clean-install
+            variant: glibc
+          - scenario: clean-install
+            variant: musl
+          - scenario: checksum-rejection
+            variant: glibc
+          - scenario: checksum-rejection
+            variant: musl
+          - scenario: reinstall-idempotent
+            variant: glibc
+          - scenario: reinstall-idempotent
+            variant: musl
+          - scenario: upgrade-rollback
+            variant: glibc
+          - scenario: upgrade-rollback
+            variant: musl
+          - scenario: stale-lock-recovery
+            variant: glibc
+          - scenario: stale-lock-recovery
+            variant: musl
+          - scenario: uninstall-preserves-user-data
+            variant: glibc
+          - scenario: uninstall-preserves-user-data
+            variant: musl
+          - scenario: custom-xdg-layout
+            variant: glibc
+          - scenario: custom-xdg-layout
+            variant: musl
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download linux binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: kunai-linux-binaries-matrix
+          path: apps/cli/dist/bin
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build smoke image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/cli/test/docker/native-installer
+          file: apps/cli/test/docker/native-installer/Dockerfile
+          target: ${{ matrix.variant }}
+          load: true
+          tags: kunai-installer-smoke:${{ matrix.variant }}
+      - name: Run scenario
+        env:
+          KUNAI_INSTALLER_DOCKER: "1"
+        run: >-
+          bash apps/cli/test/docker/native-installer/run-local.sh
+          --skip-build
+          --skip-image-build
+          --only ${{ matrix.variant }}
+          --scenario ${{ matrix.scenario }}

@@ -1,5 +1,6 @@
+import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -91,6 +92,52 @@ export function stagingDirForVersion(
 ): string {
   const canonical = requireCanonicalVersion(version);
   return join(layout.stagingRoot, canonical);
+}
+
+/**
+ * Remove a txn staging directory and prune empty version/staging parents left
+ * by `mkdir -p` so failed or completed installs leave no operational residue.
+ */
+export async function removeStagingAndPruneParents(
+  stagingPath: string,
+  stagingRoot: string,
+): Promise<void> {
+  await rm(stagingPath, { recursive: true, force: true }).catch(() => {});
+  await pruneEmptyStagingParents(stagingPath, stagingRoot);
+}
+
+/** Normalized for prefix comparison: forward slashes, no trailing separator. */
+function normalizeDirPath(path: string): string {
+  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+/** True when `path` sits inside `root` (and is not `root` itself). */
+export function isInsideStagingRoot(path: string, root: string): boolean {
+  const normalizedRoot = normalizeDirPath(root);
+  const normalizedPath = normalizeDirPath(path);
+  return normalizedPath.startsWith(`${normalizedRoot}/`);
+}
+
+/**
+ * Walk up from `stagingPath` removing now-empty directories, stopping at
+ * `stagingRoot`, then drop the root itself if it too is empty. `rmdir` only
+ * succeeds on empty directories, so a concurrent install's staging tree is
+ * never removed out from under it.
+ */
+export async function pruneEmptyStagingParents(
+  stagingPath: string,
+  stagingRoot: string,
+): Promise<void> {
+  let parent = dirname(stagingPath);
+  while (isInsideStagingRoot(parent, stagingRoot)) {
+    try {
+      await rmdir(parent);
+    } catch {
+      return;
+    }
+    parent = dirname(parent);
+  }
+  await rmdir(stagingRoot).catch(() => {});
 }
 
 /** Lock file for a version install: `{dataDir}/locks/{semver}.lock`. */

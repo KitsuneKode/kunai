@@ -318,6 +318,10 @@ bounded_download() {
 			rm -f "$dest"
 			return 1
 		fi
+		# file:// and some local transports report http_code 000 on success.
+		if [[ "$code" == "000" && -s "$dest" ]]; then
+			return 0
+		fi
 		if [[ "$code" == "000" ]]; then
 			# Transport / stall / size / timeout — retry if attempts remain.
 			if [[ "$attempt" -ge "$DOWNLOAD_MAX_ATTEMPTS" ]]; then
@@ -472,6 +476,29 @@ finish_transaction() {
 	rm -f "$path"
 }
 
+# Remove transaction records whose owning PID is dead, and delete any staging
+# directories those records still point at. Safe to call under a version lock.
+cleanup_abandoned_transactions() {
+	local txn_dir="$DATA_DIR/transactions"
+	[[ -d "$txn_dir" ]] || return 0
+	local path holder staging_dir
+	for path in "$txn_dir"/*.json; do
+		[[ -f "$path" ]] || continue
+		holder="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$path" | head -1)"
+		if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+			continue
+		fi
+		staging_dir="$(sed -n 's/.*"stagingDir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$path" | head -1)"
+		if [[ -n "$staging_dir" && "$staging_dir" == "$CACHE_DIR/staging"* ]]; then
+			rm -rf "$staging_dir" 2>/dev/null || true
+			rmdir "$(dirname "$staging_dir")" 2>/dev/null || true
+		fi
+		rm -f "$path"
+	done
+	rmdir "$CACHE_DIR/staging" 2>/dev/null || true
+	rmdir "$txn_dir" 2>/dev/null || true
+}
+
 activate_launcher() {
 	local version_path="$1" launcher="$2"
 	local tmp_link
@@ -585,10 +612,17 @@ install_binary() {
 		finish_transaction "$txn_path" 2>/dev/null || true
 		release_version_lock "$lock_path" 2>/dev/null || true
 		rm -rf "$staging" 2>/dev/null || true
+		# Prune empty version/staging parents left by mkdir -p.
+		rmdir "$(dirname "$staging")" 2>/dev/null || true
+		rmdir "$CACHE_DIR/staging" 2>/dev/null || true
 	}
 	trap cleanup_install_state EXIT
 
 	acquire_version_lock "$resolved_version" "$lock_path" || exit 1
+	# Under the version lock: reclaim abandoned txn/staging residue for this
+	# version so a crashed prior attempt cannot leave operational leftovers.
+	cleanup_abandoned_transactions
+	rm -rf "$CACHE_DIR/staging/$resolved_version"
 	mkdir -p "$staging"
 	begin_transaction "$txn_id" "$kind" "$resolved_version" "$staging" "$txn_path"
 
@@ -646,6 +680,8 @@ install_binary() {
 	finish_transaction "$txn_path"
 	release_version_lock "$lock_path"
 	rm -rf "$staging"
+	rmdir "$(dirname "$staging")" 2>/dev/null || true
+	rmdir "$CACHE_DIR/staging" 2>/dev/null || true
 	cleanup_done=1
 	trap - EXIT
 

@@ -648,6 +648,14 @@ function Install-Binary {
     if (Test-Path -LiteralPath $staging) {
       Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
     }
+    # Prune empty version/staging parents left by New-Item -Force.
+    $versionStaging = Split-Path -Parent $staging
+    if ((Test-Path -LiteralPath $versionStaging) -and -not (Get-ChildItem -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue)) {
+      Remove-Item -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue
+    }
+    if ((Test-Path -LiteralPath $StagingRoot) -and -not (Get-ChildItem -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue)) {
+      Remove-Item -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue
+    }
     $cleanupDone = $true
   }
   catch {
@@ -656,6 +664,13 @@ function Install-Binary {
       Release-VersionLock $lockPath
       if (Test-Path -LiteralPath $staging) {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      $versionStaging = Split-Path -Parent $staging
+      if ((Test-Path -LiteralPath $versionStaging) -and -not (Get-ChildItem -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $versionStaging -Force -ErrorAction SilentlyContinue
+      }
+      if ((Test-Path -LiteralPath $StagingRoot) -and -not (Get-ChildItem -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $StagingRoot -Force -ErrorAction SilentlyContinue
       }
     }
     throw

@@ -601,21 +601,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     cleanupOldBinary(process.execPath).catch(() => {}),
   );
 
-  // Versioned binary: hold lifetime lock and prune old versions (binary channel).
-  // The acquisition promise is tracked so coordinated shutdown can await it
-  // before releasing — a late lock must never survive the process.
-  lifetimeLockReady = (async () => {
-    const { lockCurrentVersion, cleanupOldVersions } =
-      await import("./services/update/native-installer");
-    const { readInstallManifest } = await import("./services/update/install-manifest");
-    const manifest = await readInstallManifest();
-    if (manifest?.method === "binary" || manifest?.versionedPath) {
-      await lockCurrentVersion().catch(() => {});
-      void cleanupOldVersions().catch(() => {});
-    }
-  })().catch(() => {});
-
-  // Parse CLI arguments
+  // Parse CLI arguments before acquiring the versioned lifetime lock so short
+  // paths (--help / --version / protocol install) never leave lock residue.
   const args = parseArgs(argv);
   if (args.help) {
     process.stdout.write(buildHelpText());
@@ -645,6 +632,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     console.log(`Registered kunai:// protocol handler at ${paths.desktopPath}`);
     return;
   }
+
+  // Versioned binary: hold lifetime lock and prune old versions (binary channel).
+  // The acquisition promise is tracked so coordinated shutdown can await it
+  // before releasing — a late lock must never survive the process.
+  lifetimeLockReady = (async () => {
+    const { lockCurrentVersion, cleanupOldVersions } =
+      await import("./services/update/native-installer");
+    const { readInstallManifest } = await import("./services/update/install-manifest");
+    const manifest = await readInstallManifest();
+    if (manifest?.method === "binary" || manifest?.versionedPath) {
+      await lockCurrentVersion().catch(() => {});
+      void cleanupOldVersions().catch(() => {});
+    }
+  })().catch(() => {});
   let pendingShareLaunch: PendingShareLaunch | null = null;
   if (args.openUrl) {
     const parsed = parseKunaiShareUrl(args.openUrl);

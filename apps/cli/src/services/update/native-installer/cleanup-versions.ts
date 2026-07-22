@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, rm, stat } from "node:fs/promises";
+import { readdir, readlink, rm, rmdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readInstallManifest } from "../install-manifest";
@@ -11,6 +11,7 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { cleanupAbandonedTransactions } from "./transaction";
 import { readLockContent, tryAcquireVersionLock } from "./version-lock";
 
 function compareSemverDesc(a: string, b: string): number {
@@ -74,7 +75,6 @@ export async function cleanupOldVersions(
   }
 
   try {
-    const { readlink } = await import("node:fs/promises");
     if (existsSync(layout.launcherPath) && process.platform !== "win32") {
       try {
         const target = await readlink(layout.launcherPath);
@@ -111,7 +111,6 @@ export async function cleanupOldVersions(
 
   await cleanupOrphanStaging(layout);
   await cleanupTempInstallFiles(layout);
-  const { cleanupAbandonedTransactions } = await import("./transaction");
   await cleanupAbandonedTransactions(layout).catch(() => {});
 }
 
@@ -122,6 +121,11 @@ async function cleanupOrphanStaging(layout: InstallLayoutPaths): Promise<void> {
     const path = join(layout.stagingRoot, entry);
     try {
       const s = await stat(path);
+      // Age is the ONLY safe gate here. `cleanupOldVersions` runs fire-and-forget
+      // and from other processes, and a live install's staging dir is empty between
+      // `mkdir -p` and its first write — deleting empty dirs on sight would race it
+      // away. Successful and failed installs already prune themselves eagerly via
+      // `removeStagingAndPruneParents`, so this pass only reclaims true orphans.
       if (s.mtimeMs < oneHourAgo) {
         await rm(path, { recursive: true, force: true });
       }
@@ -129,6 +133,8 @@ async function cleanupOrphanStaging(layout: InstallLayoutPaths): Promise<void> {
       // ignore
     }
   }
+  // `rmdir` only succeeds when empty, so this cannot disturb an in-flight install.
+  await rmdir(layout.stagingRoot).catch(() => {});
 }
 
 async function cleanupTempInstallFiles(layout: InstallLayoutPaths): Promise<void> {

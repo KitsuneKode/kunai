@@ -1,8 +1,20 @@
 # Installer scenarios
 
-Execution-level tests for `install.sh`. Every other update test in the repo
-mocks the filesystem and network; these actually run the installer and assert
-what ended up on disk and on `PATH`.
+Two complementary harnesses:
+
+| Harness                        | Entry                              | Proves                                            |
+| ------------------------------ | ---------------------------------- | ------------------------------------------------- |
+| **Ownership (this directory)** | `bun run test:installer:scenarios` | PATH / package-manager ownership with stub assets |
+| **Docker native matrix**       | `bun run test:installer:docker`    | Real glibc/musl binaries + full lifecycle         |
+
+See [`apps/cli/test/docker/native-installer/README.md`](../apps/cli/test/docker/native-installer/README.md)
+for the Docker scenario registry (`--scenario`, `--list-scenarios`).
+
+## Ownership scenarios (this directory)
+
+Execution-level tests for `install.sh` ownership policy. Every other update test
+in the repo mocks the filesystem and network; these actually run the installer
+and assert what ended up on disk and on `PATH`.
 
 ```sh
 bun run test:installer:scenarios       # all scenarios (canonical entry point)
@@ -32,15 +44,16 @@ The served asset is a stub script that reports a version, **not a real Kunai
 build**. These scenarios prove install _mechanics_: version resolution, asset
 naming, checksum verification, on-disk layout, and which binary owns `PATH`.
 
-They do not prove the shipped binary runs. That belongs to the E2E playback
-harness (#30). Keep the two honest and separate — a stub passing here is not
-evidence that a release works.
+They do not prove the shipped binary runs. That belongs to the Docker native
+matrix and compiled binary smokes. Keep the two honest and separate — a stub
+passing here is not evidence that a release works.
 
 ## Scenarios
 
-| Scenario            | Covers                                               |
-| ------------------- | ---------------------------------------------------- |
-| `npm-contamination` | npm global install, then native install over the top |
+| Scenario                 | Covers                                               |
+| ------------------------ | ---------------------------------------------------- |
+| `npm-contamination`      | npm global install, then native install over the top |
+| `source-data-separation` | Source checkout vs runtime data/config/cache roots   |
 
 ### npm-contamination
 
@@ -66,6 +79,6 @@ Assert invariants rather than exit codes — the defect above was invisible to
 exit codes, because the installer genuinely succeeded at installing. What was
 wrong was the state it left behind.
 
-Planned next (see `.plans/plan-0.3.0-release-readiness.md#A1`): fresh install,
-upgrade + retention pruning, flat→versioned migration, uninstall, and
-interrupted-upgrade recovery.
+Native binary lifecycle scenarios (checksum rejection, rollback, XDG layout,
+etc.) belong in the Docker matrix under
+`apps/cli/test/docker/native-installer/scenarios.tsv`, not here.

@@ -1,10 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, rmdir } from "node:fs/promises";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 
-import { transactionFilePath, type InstallLayoutPaths } from "./install-layout";
+import {
+  isInsideStagingRoot,
+  removeStagingAndPruneParents,
+  transactionFilePath,
+  type InstallLayoutPaths,
+} from "./install-layout";
 
 export interface InstallTransactionRecord {
   readonly schemaVersion: 1;
@@ -123,15 +128,21 @@ export async function listInstallTransactions(
 
 /** Remove transaction records whose owning PID is no longer alive. */
 export async function cleanupAbandonedTransactions(
-  layout: Pick<InstallLayoutPaths, "transactionsDir">,
+  layout: Pick<InstallLayoutPaths, "transactionsDir" | "stagingRoot">,
 ): Promise<number> {
   if (!existsSync(layout.transactionsDir)) return 0;
   let cleaned = 0;
   for (const record of await listInstallTransactions(layout)) {
     if (isProcessAlive(record.pid)) continue;
+    // Only reclaim staging paths that genuinely live under our staging root — a
+    // record carrying a path from elsewhere must never trigger a recursive rm.
+    if (record.stagingDir && isInsideStagingRoot(record.stagingDir, layout.stagingRoot)) {
+      await removeStagingAndPruneParents(record.stagingDir, layout.stagingRoot);
+    }
     await finishInstallTransaction(layout, record.id);
     cleaned += 1;
   }
+  await rmdir(layout.transactionsDir).catch(() => {});
   return cleaned;
 }
 

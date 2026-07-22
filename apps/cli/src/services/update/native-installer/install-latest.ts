@@ -22,13 +22,18 @@ import {
 import {
   DEFAULT_DL_BASE,
   getInstallLayoutPaths,
+  removeStagingAndPruneParents,
   stagingDirForVersion,
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
 import { atomicInstallBinaryFromFile, updateLauncher } from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
-import { beginInstallTransaction, finishInstallTransaction } from "./transaction";
+import {
+  beginInstallTransaction,
+  cleanupAbandonedTransactions,
+  finishInstallTransaction,
+} from "./transaction";
 import { withVersionLock } from "./version-lock";
 import { writeInstalledVersionMetadata } from "./version-metadata";
 
@@ -95,6 +100,11 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
   try {
     const result = await withVersionLock(layout, resolved, async () => {
+      await cleanupAbandonedTransactions(layout).catch(() => {});
+      await rm(stagingDirForVersion(layout, resolved), { recursive: true, force: true }).catch(
+        () => {},
+      );
+
       const staging = join(
         stagingDirForVersion(layout, resolved),
         `txn-${process.pid}-${Date.now()}`,
@@ -173,14 +183,14 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         );
 
         await finishInstallTransaction(layout, transaction.id);
-        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        await removeStagingAndPruneParents(staging, layout.stagingRoot);
 
         void cleanupOldVersions(layout);
 
         return { status: "installed" as const, version: resolved, versionPath };
       } catch (error) {
         await finishInstallTransaction(layout, transaction.id).catch(() => {});
-        await rm(staging, { recursive: true, force: true }).catch(() => {});
+        await removeStagingAndPruneParents(staging, layout.stagingRoot);
         throw error;
       }
     });

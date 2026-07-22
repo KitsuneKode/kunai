@@ -19,7 +19,7 @@
     },
     "apps/cli": {
       "name": "@kitsunekode/kunai",
-      "version": "0.2.6",
+      "version": "0.3.0",
       "bin": {
         "kunai": "dist/kunai.js",
       },

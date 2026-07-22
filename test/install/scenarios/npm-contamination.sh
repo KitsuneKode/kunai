@@ -115,10 +115,10 @@ else
 fi
 
 manifest="$KUNAI_CONFIG_DIR/install.json"
-if grep -q '"channel": "binary"' "$manifest" 2>/dev/null; then
+if grep -qE '"method"[[:space:]]*:[[:space:]]*"binary"' "$manifest" 2>/dev/null; then
 	pass "manifest records the binary channel"
 else
-	fail "manifest does not record channel=binary" "$(cat "$manifest" 2>/dev/null || echo 'missing')"
+	fail "manifest does not record method=binary" "$(cat "$manifest" 2>/dev/null || echo 'missing')"
 fi
 
 # ---------------------------------------------------------------------------

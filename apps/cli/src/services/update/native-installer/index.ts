@@ -5,6 +5,7 @@ export {
   isVersionedExecPath,
   lockFilePath,
   parseVersionFromExecPath,
+  removeStagingAndPruneParents,
   stagingDirForVersion,
   transactionFilePath,
   versionBinaryPath,
