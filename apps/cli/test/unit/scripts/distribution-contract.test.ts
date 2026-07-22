@@ -129,16 +129,39 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(pushJob).not.toContain("bun run release");
   });
 
+  // The publish step is `bun run release` (scripts/publish-npm-release.ts),
+  // which publishes the platform packages before the launcher. Match either
+  // spelling so the contract tracks "a publish happens after the binaries are
+  // built" rather than one exact command string.
+  // The lookahead matters: the candidate job legitimately runs `release:pack`
+  // and `release:notes:check`, and a plain \b would match both and make this
+  // assert the opposite of what it means.
+  const PUBLISH_STEP = /bun publish|bun run release(?![:\w-])/;
+
   test("binaries build before npm publish", () => {
     const cand = candidate();
     const pub = publish();
     expect(cand).toContain("build:binaries");
-    expect(cand).not.toContain("bun publish");
-    expect(pub).toMatch(/bun publish/);
+    expect(cand).not.toMatch(PUBLISH_STEP);
+    expect(pub).toMatch(PUBLISH_STEP);
     const binaryBuildIdx = release.indexOf("build:binaries");
-    const npmPublishIdx = release.search(/bun publish/);
+    const npmPublishIdx = release.search(PUBLISH_STEP);
     expect(binaryBuildIdx).toBeGreaterThanOrEqual(0);
     expect(npmPublishIdx).toBeGreaterThan(binaryBuildIdx);
+  });
+
+  // The launcher pins all 8 platform packages as exact-version
+  // optionalDependencies, so publishing it alone ships a CLI with no binary.
+  test("platform packages are built, preserved, and published with the launcher", () => {
+    const cand = candidate();
+    const pub = publish();
+    expect(cand).toContain("build:npm-platform");
+    expect(cand).toContain("npm-platform");
+    expect(pub).toContain("npm-platform");
+    // publish-npm-release.ts is what enforces platform-packages-before-launcher
+    // and refuses on version skew; a bare tarball publish would not.
+    expect(pub).toContain("bun run release");
+    expect(release.indexOf("build:npm-platform")).toBeLessThan(release.search(PUBLISH_STEP));
   });
 
   test("candidate artifacts upload before publication", () => {
