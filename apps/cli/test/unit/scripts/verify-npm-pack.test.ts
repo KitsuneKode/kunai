@@ -7,13 +7,15 @@ import {
   NPM_PACK_PACKED_BUDGET_BYTES,
   NPM_PACK_UNPACKED_BUDGET_BYTES,
 } from "../../../scripts/build-shared";
-import { parseNpmPackDryRun, verifyNpmPackDryRun } from "../../../scripts/verify-npm-pack";
+import {
+  assertNpmPublishManifest,
+  parseNpmPackDryRun,
+  verifyNpmPackDryRun,
+} from "../../../scripts/verify-npm-pack";
 
 describe("forbiddenNpmPackPath", () => {
   test("allows the launcher and package metadata", () => {
-    expect(forbiddenNpmPackPath("dist/kunai.mjs")).toBeNull();
-    expect(forbiddenNpmPackPath("README.md")).toBeNull();
-    expect(forbiddenNpmPackPath("LICENSE")).toBeNull();
+    expect(forbiddenNpmPackPath("dist/npm-launcher.mjs")).toBeNull();
     expect(forbiddenNpmPackPath("package.json")).toBeNull();
   });
 
@@ -21,6 +23,7 @@ describe("forbiddenNpmPackPath", () => {
     // `bin` is the Node launcher now. Shipping the Bun-compiled bundle is what
     // made `npm install -g` produce a CLI that could not start without Bun.
     expect(forbiddenNpmPackPath("dist/kunai.js")).toMatch(/allowlist/);
+    expect(forbiddenNpmPackPath("dist/kunai.mjs")).toMatch(/allowlist/);
     expect(forbiddenNpmPackPath("dist/postinstall.js")).toMatch(/allowlist/);
     // Assets are embedded in each platform binary, so they are dead weight here.
     expect(forbiddenNpmPackPath("dist/assets/module1_patched-x88202mw.wasm")).toMatch(/allowlist/);
@@ -35,20 +38,23 @@ describe("forbiddenNpmPackPath", () => {
 });
 
 describe("assertNpmPackContents", () => {
-  test("passes for allowlisted release paths", () => {
-    expect(() =>
-      assertNpmPackContents(["LICENSE", "README.md", "package.json", "dist/kunai.mjs"]),
-    ).not.toThrow();
+  test("passes only for the minimal launcher package", () => {
+    expect(() => assertNpmPackContents(["package.json", "dist/npm-launcher.mjs"])).not.toThrow();
   });
 
-  test("fails when binaries are present", () => {
-    expect(() => assertNpmPackContents(["dist/kunai.mjs", "dist/bin/kunai-linux-x64"])).toThrow(
-      "forbidden paths",
-    );
+  test("rejects source-package files and compiled binaries", () => {
+    expect(() =>
+      assertNpmPackContents([
+        "package.json",
+        "dist/npm-launcher.mjs",
+        "README.md",
+        "dist/bin/kunai-linux-x64",
+      ]),
+    ).toThrow("forbidden paths");
   });
 
   test("requires the launcher, which is the published bin", () => {
-    expect(() => assertNpmPackContents(["package.json"])).toThrow("dist/kunai.mjs");
+    expect(() => assertNpmPackContents(["package.json"])).toThrow("dist/npm-launcher.mjs");
   });
 });
 
@@ -75,18 +81,14 @@ describe("parseNpmPackDryRun", () => {
     const stdout = `
 npm notice Tarball Contents
 npm notice 1.1kB LICENSE
-npm notice 2.5MB dist/kunai.js
-npm notice 262.9kB dist/assets/module1_patched-x88202mw.wasm
+npm notice 2.5MB dist/npm-launcher.mjs
+npm notice 262.9kB package.json
 npm notice Tarball Details
 npm notice package size: 1.2 MB
 npm notice unpacked size: 3.1 MB
 `;
     const summary = parseNpmPackDryRun(stdout);
-    expect(summary.paths).toEqual([
-      "LICENSE",
-      "dist/kunai.js",
-      "dist/assets/module1_patched-x88202mw.wasm",
-    ]);
+    expect(summary.paths).toEqual(["LICENSE", "dist/npm-launcher.mjs", "package.json"]);
     expect(summary.packedBytes).toBeGreaterThan(1_000_000);
     expect(summary.unpackedBytes).toBeGreaterThan(3_000_000);
   });
@@ -96,14 +98,38 @@ describe("verifyNpmPackDryRun", () => {
   test("accepts a small allowlisted pack listing", () => {
     const stdout = `
 npm notice Tarball Contents
-npm notice 1.1kB LICENSE
-npm notice 6.5kB dist/kunai.mjs
+npm notice 6.5kB dist/npm-launcher.mjs
 npm notice 5.6kB package.json
 npm notice Tarball Details
 npm notice package size: 7.2 kB
 npm notice unpacked size: 19.4 kB
 `;
     expect(() => verifyNpmPackDryRun(stdout)).not.toThrow();
+  });
+});
+
+describe("assertNpmPublishManifest", () => {
+  const minimalManifest = {
+    bin: { kunai: "dist/npm-launcher.mjs" },
+    files: ["dist/npm-launcher.mjs"],
+    engines: { node: ">=18.17" },
+  };
+
+  test("accepts the Node-only launcher entrypoints", () => {
+    expect(() => assertNpmPublishManifest(minimalManifest)).not.toThrow();
+  });
+
+  test("rejects workspace runtime metadata and source entrypoints", () => {
+    expect(() =>
+      assertNpmPublishManifest({
+        ...minimalManifest,
+        dependencies: { ink: "workspace:*" },
+        peerDependencies: { typescript: "workspace:*" },
+        module: "dist/kunai.js",
+        engines: { bun: ">=1.3.9" },
+        bin: { kunai: "dist/kunai.mjs" },
+      }),
+    ).toThrow(/runtime or peer dependencies/);
   });
 });
 

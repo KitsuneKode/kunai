@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Verify the published npm tarball stays small and never includes compiled binaries.
 
-import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,38 @@ import {
 } from "./build-shared";
 
 const ROOT = join(import.meta.dirname, "..");
+const NPM_PUBLISH_ROOT = join(ROOT, "dist/npm");
+
+type NpmPublishManifest = {
+  readonly bin?: Record<string, string>;
+  readonly dependencies?: unknown;
+  readonly engines?: Record<string, string>;
+  readonly files?: string[];
+  readonly module?: unknown;
+  readonly optionalDependencies?: Record<string, string>;
+  readonly peerDependencies?: unknown;
+};
+
+/** Reject workspace-only metadata before checking the generated tarball. */
+export function assertNpmPublishManifest(manifest: NpmPublishManifest): void {
+  if (manifest.dependencies !== undefined || manifest.peerDependencies !== undefined) {
+    throw new Error(
+      "[pkg:check] npm publish manifest must not contain runtime or peer dependencies.",
+    );
+  }
+  if (manifest.module !== undefined) {
+    throw new Error("[pkg:check] npm publish manifest must not contain a module entrypoint.");
+  }
+  if (manifest.engines?.bun !== undefined) {
+    throw new Error("[pkg:check] npm publish manifest must not require Bun.");
+  }
+  if (manifest.bin?.kunai !== "dist/npm-launcher.mjs") {
+    throw new Error("[pkg:check] npm publish manifest must use dist/npm-launcher.mjs as its bin.");
+  }
+  if (manifest.files?.length !== 1 || manifest.files[0] !== "dist/npm-launcher.mjs") {
+    throw new Error("[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs.");
+  }
+}
 
 export type NpmPackDryRun = {
   readonly paths: string[];
@@ -85,9 +117,10 @@ export function verifyNpmPackDryRun(stdout: string): NpmPackDryRun {
 }
 
 function main(): void {
-  const result = spawnSync("npm", ["pack", "--dry-run", "--ignore-scripts"], {
-    cwd: ROOT,
-    encoding: "utf8",
+  const result = Bun.spawnSync(["npm", "pack", "--dry-run", "--ignore-scripts"], {
+    cwd: NPM_PUBLISH_ROOT,
+    stdout: "pipe",
+    stderr: "pipe",
     env: {
       ...process.env,
       // Keep verification hermetic: npm otherwise writes to the user's cache,
@@ -95,12 +128,17 @@ function main(): void {
       npm_config_cache: join(tmpdir(), "kunai-npm-pack-cache"),
     },
   });
-  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  if (result.status !== 0) {
+  const decoder = new TextDecoder();
+  const output = `${decoder.decode(result.stdout)}${decoder.decode(result.stderr)}`;
+  if (result.exitCode !== 0) {
     console.error(output);
-    process.exit(result.status ?? 1);
+    process.exit(result.exitCode ?? 1);
   }
 
+  const manifest = JSON.parse(
+    readFileSync(join(NPM_PUBLISH_ROOT, "package.json"), "utf8"),
+  ) as NpmPublishManifest;
+  assertNpmPublishManifest(manifest);
   const summary = verifyNpmPackDryRun(output);
   console.log(
     `[pkg:check] ok — ${summary.paths.length} files, packed ${formatBuildSize(summary.packedBytes)} / ${formatBuildSize(NPM_PACK_PACKED_BUDGET_BYTES)}, unpacked ${formatBuildSize(summary.unpackedBytes)} / ${formatBuildSize(NPM_PACK_UNPACKED_BUDGET_BYTES)}`,

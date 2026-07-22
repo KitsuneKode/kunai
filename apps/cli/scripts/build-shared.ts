@@ -214,13 +214,13 @@ export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;
 /** Unpacked tarball size budget for `npm pack` dry-run contents. */
 export const NPM_PACK_UNPACKED_BUDGET_BYTES = 20 * 1024 * 1024;
 
-const NPM_PACK_ALLOWED_PATHS = new Set(["dist/kunai.mjs", "README.md", "LICENSE", "package.json"]);
+const NPM_PACK_ALLOWED_PATHS = new Set(["dist/npm-launcher.mjs", "package.json"]);
 
 /**
  * Files the published tarball MUST contain. The launcher is `bin`, so shipping
  * without it means `kunai` resolves to nothing on a real install.
  */
-const NPM_PACK_REQUIRED_PATHS: readonly string[] = ["dist/kunai.mjs"];
+const NPM_PACK_REQUIRED_PATHS: readonly string[] = ["package.json", "dist/npm-launcher.mjs"];
 
 /** Returns required tarball paths that are missing from the given listing. */
 export function missingRequiredNpmPackPaths(paths: readonly string[]): readonly string[] {

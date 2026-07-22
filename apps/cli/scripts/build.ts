@@ -14,7 +14,7 @@
 // rewrites import paths. `bun build --compile` embeds them into binaries too.
 
 import { existsSync } from "node:fs";
-import { chmod, cp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -31,12 +31,14 @@ import {
   requireBuildMetafile,
   topReleaseInputs,
 } from "./build-shared";
+import { writeNpmPublishManifest } from "./write-npm-publish-manifest";
 
 const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
 const ENTRY = join(ROOT, CLI_ENTRY);
 const BIN = join(ROOT, NPM_BUNDLE_OUT);
 const LAUNCHER = join(ROOT, NPM_LAUNCHER_OUT);
+const NPM_PUBLISH_LAUNCHER = join(DIST, "npm/dist/npm-launcher.mjs");
 const ASSETS = join(DIST, "assets");
 
 const clean = process.argv.includes("--clean");
@@ -59,14 +61,16 @@ async function cleanNpmDistArtifacts(): Promise<void> {
   await rm(LAUNCHER, { force: true });
   await rm(join(DIST, "build-meta.json"), { force: true });
   await rm(ASSETS, { recursive: true, force: true });
+  await rm(join(DIST, "npm"), { recursive: true, force: true });
 }
 
 /**
- * Publish the npm `bin` launcher (dist/kunai.mjs).
+ * Build the plain-Node launcher copies.
  *
- * Copied verbatim, never bundled: it must stay plain Node ESM. Bundling it is
- * what previously pulled `bun:` imports into the published entry point and made
- * `npm install -g` yield a CLI that could not start without Bun.
+ * `dist/kunai.mjs` remains a build output for compatibility, while
+ * `dist/npm/dist/npm-launcher.mjs` is the public npm entry point. Both are
+ * copied verbatim, never bundled: bundling previously pulled `bun:` imports
+ * into the published entry point and made `npm install -g` unusable without Bun.
  */
 async function buildNpmLauncher(): Promise<number> {
   const source = join(ROOT, NPM_LAUNCHER_ENTRY);
@@ -77,6 +81,9 @@ async function buildNpmLauncher(): Promise<number> {
 
   await cp(source, LAUNCHER);
   await chmod(LAUNCHER, 0o755);
+  await mkdir(join(DIST, "npm/dist"), { recursive: true });
+  await cp(source, NPM_PUBLISH_LAUNCHER);
+  await chmod(NPM_PUBLISH_LAUNCHER, 0o755);
 
   const text = await Bun.file(LAUNCHER).text();
   if (!text.startsWith("#!/usr/bin/env node")) {
@@ -131,6 +138,7 @@ async function main(): Promise<void> {
   await chmod(BIN, 0o755);
 
   const launcherBytes = await buildNpmLauncher();
+  await writeNpmPublishManifest();
 
   const bundleBytes = Bun.file(BIN).size;
   const assetsTotal = await assetBytes();
@@ -138,7 +146,8 @@ async function main(): Promise<void> {
 
   printBuildSizeTable(
     [
-      { label: "dist/kunai.mjs (published bin)", bytes: launcherBytes },
+      { label: "dist/kunai.mjs (compat launcher)", bytes: launcherBytes },
+      { label: "dist/npm/dist/npm-launcher.mjs (published bin)", bytes: launcherBytes },
       { label: "dist/kunai.js (bun bundle, unpublished)", bytes: bundleBytes },
       { label: "dist/assets/*", bytes: assetsTotal },
       { label: "dist/ published total", bytes: launcherBytes + assetsTotal },

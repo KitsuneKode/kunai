@@ -114,7 +114,7 @@
     "release:notes": "bun run scripts/generate-release-notes.ts",
     "release:notes:check": "bun run scripts/generate-release-notes.ts --check",
     "release:confirmation:check": "bun run scripts/release-confirmation-gate.ts",
-    "release:pack": "mkdir -p .release-candidate && ROOT=\"$PWD\" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename \"$ROOT/.release-candidate/kunai-npm.tgz\")",
+    "release:pack": "mkdir -p .release-candidate && ROOT=\"$PWD\" && (cd apps/cli/dist/npm && bun pm pack --ignore-scripts --quiet --filename \"$ROOT/.release-candidate/kunai-npm.tgz\")",
     "release:publish-tarball": "bun publish .release-candidate/kunai-npm.tgz --access public",
     "release": "bun run scripts/publish-npm-release.ts --yes",
     "guard": "bun run scripts/release-guard.ts",

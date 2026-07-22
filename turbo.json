@@ -41,7 +41,15 @@
     },
     "build": {
       "dependsOn": ["^typecheck", "typecheck"],
-      "outputs": ["dist/kunai.js", "dist/assets/**", "dist/build-meta.json", ".next/**", "!.next/cache/**"],
+      "outputs": [
+        "dist/kunai.js",
+        "dist/kunai.mjs",
+        "dist/npm/**",
+        "dist/assets/**",
+        "dist/build-meta.json",
+        ".next/**",
+        "!.next/cache/**"
+      ],
       "env": ["KUNAI_BUILD_ANALYZE"]
     },
     "build:binary:host": {

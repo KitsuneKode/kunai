@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -220,6 +220,46 @@ describe("release:pack script contract", () => {
     scripts: Record<string, string>;
   };
   const releasePack = rootPackage.scripts["release:pack"] ?? "";
+  const cliPackage = JSON.parse(readFileSync(join(REPO_ROOT, "apps/cli/package.json"), "utf8")) as {
+    version: string;
+  };
+  const npmPublishManifestPath = join(REPO_ROOT, "apps/cli/dist/npm/package.json");
+
+  beforeAll(async () => {
+    const proc = Bun.spawn(["bun", "run", "build"], {
+      cwd: REPO_ROOT,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect(exitCode, `build failed\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
+  }, 60_000);
+
+  test("build writes the exact minimal npm publish manifest", () => {
+    expect(existsSync(npmPublishManifestPath)).toBe(true);
+
+    const manifest = JSON.parse(readFileSync(npmPublishManifestPath, "utf8"));
+    const optionalDependencies = Object.fromEntries(
+      RELEASE_BINARY_TARGETS.map((target) => [
+        `@kitsunekode/kunai-${target.id}`,
+        cliPackage.version,
+      ]),
+    );
+
+    expect(manifest).toEqual({
+      name: "@kitsunekode/kunai",
+      version: cliPackage.version,
+      type: "module",
+      bin: { kunai: "dist/npm-launcher.mjs" },
+      files: ["dist/npm-launcher.mjs"],
+      engines: { node: ">=18.17" },
+      optionalDependencies,
+    });
+  });
 
   test("does not use bun --cwd with pm or combine --destination with --filename", () => {
     expect(releasePack.length).toBeGreaterThan(0);
@@ -232,6 +272,7 @@ describe("release:pack script contract", () => {
     expect(releasePack).toContain("bun pm pack");
     expect(releasePack).toContain("kunai-npm.tgz");
     expect(releasePack).toContain(".release-candidate");
+    expect(releasePack).toContain("apps/cli/dist/npm");
   });
 
   test("bun run release:pack writes a non-empty .release-candidate/kunai-npm.tgz", async () => {
