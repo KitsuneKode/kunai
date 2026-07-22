@@ -1,4 +1,5 @@
 import { debugImage } from "./debug";
+import { getProbedGraphicsSupport } from "./probe";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
@@ -92,7 +93,12 @@ let chafaAvailableMemo: boolean | undefined;
 const capabilityMemo = new Map<string, ImageCapability>();
 
 function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
+  const probe = getProbedGraphicsSupport();
   return JSON.stringify([
+    // Part of the key, not just an input: detection runs before the probe
+    // answers, so without this the pre-probe result would stay cached forever
+    // and the probe would change nothing.
+    probe ? `${String(probe.sixel)}:${String(probe.kittyGraphics)}` : "unprobed",
     runtime.isStdoutTty(),
     env.KUNAI_POSTER ?? "",
     env.KUNAI_IMAGE_PROTOCOL ?? "",
@@ -190,10 +196,41 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     });
   }
 
-  // Windows Terminal only gained sixel in 1.22, and nothing in the environment
-  // reports its version. Emitting sixel to an older build dumps raw escape
-  // bytes across the UI, so we take the always-correct path and leave sixel
-  // available through KUNAI_IMAGE_PROTOCOL=sixel for users who know they have it.
+  // What the terminal *said*, when it was asked at startup, beats what its name
+  // implies. This is the only way to know a Windows Terminal is >=1.22, or that
+  // an unrecognised terminal (foot, contour, mlterm, xterm -ti vt340) does sixel
+  // at all — the name heuristics below can never learn either.
+  const probe = getProbedGraphicsSupport();
+  if (probe?.kittyGraphics) {
+    return buildCapability({
+      terminal,
+      protocol: "kitty",
+      renderer: "kitty-native",
+      available: true,
+      dependency: "none",
+      reason: "terminal answered the kitty graphics query",
+    });
+  }
+  if (probe?.sixel && hasChafa) {
+    return buildCapability({
+      terminal,
+      protocol: "sixel",
+      renderer: "chafa-sixel",
+      available: true,
+      dependency: "chafa",
+      reason: "terminal reported sixel support (DA1)",
+    });
+  }
+  if (probe?.sixel && !hasChafa) {
+    // Detection found sixel but the encoder is missing. Say so explicitly:
+    // "unverifiable" would be a lie now, and chafa is the one thing to install.
+    return halfBlockCapability(terminal, "terminal reports sixel, but chafa is not installed");
+  }
+
+  // No probe answer. Windows Terminal only gained sixel in 1.22, and nothing in
+  // the environment reports its version. Emitting sixel to an older build dumps
+  // raw escape bytes across the UI, so take the always-correct path and leave
+  // sixel available through KUNAI_IMAGE_PROTOCOL=sixel for users who know.
   if (terminal === "windows-terminal") {
     return halfBlockCapability(
       terminal,

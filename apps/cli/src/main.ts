@@ -949,6 +949,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     });
   }
 
+  // Ask the terminal what it can render before Ink takes over stdin. Env vars
+  // cannot express "this build supports sixel", so without this a Windows
+  // Terminal >=1.22 — and every terminal the name heuristics do not know — is
+  // handed the half-block fallback. Never throws, and costs at most one short
+  // timeout when the terminal does not answer.
+  const { initTerminalGraphicsProbe } = await import("./image/probe");
+  await initTerminalGraphicsProbe();
+
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const { launchSessionApp } = await import("./app-shell/ink-shell");
   recordCliStartupMilestone(container.diagnosticsService, "shell-module-loaded");
