@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   collectReleaseReconciliationRows,
   enqueueReleaseReconciliation,
+  toReleaseReconciliationHistoryRows,
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import type { FollowedTitleRecord, HistoryProgress } from "@kunai/storage";
 
@@ -68,6 +69,37 @@ test("collectReleaseReconciliationRows merges history with followed-only titles"
   expect(rows.map((entry) => entry.titleId)).toEqual(["anilist:1", "anilist:2"]);
   expect(rows[1]?.key).toBe("followed:anilist:2");
   expect(rows[1]?.episode).toBe(0);
+
+  // The collected rows are worthless unless they survive conversion. Asserting
+  // only the shape above is what let the followed-title drop ship: `0 ?? 1` is
+  // 0, and the episode-cursor guard rejects episode <= 0, so the row vanished.
+  const converted = toReleaseReconciliationHistoryRows(rows);
+  expect(converted.map((entry) => entry.titleId)).toEqual(["anilist:1", "anilist:2"]);
+});
+
+test("a followed title with no watch history survives conversion and can be reconciled", () => {
+  const followedOnly = [
+    {
+      key: "followed:anilist:99",
+      titleId: "anilist:99",
+      mediaKind: "anime" as const,
+      title: "Followed but never started",
+      season: 1,
+      episode: 0,
+      positionSeconds: 0,
+      completed: false,
+      updatedAt: "2026-05-24T12:00:00.000Z",
+      createdAt: "2026-05-24T12:00:00.000Z",
+    },
+  ] as unknown as readonly HistoryProgress[];
+
+  const converted = toReleaseReconciliationHistoryRows(followedOnly);
+
+  // Without this the follow feature can never produce a new-episode notification:
+  // the title is dropped before reconciliation ever sees it.
+  expect(converted).toHaveLength(1);
+  expect(converted[0]?.titleId).toBe("anilist:99");
+  expect(converted[0]?.completed).toBe(false);
 });
 
 test("release reconciliation triggers share one coalescing scheduler identity", () => {

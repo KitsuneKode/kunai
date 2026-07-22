@@ -294,3 +294,44 @@ describe("ConfigServiceImpl", () => {
     expect(persisted.animeLanguageProfile?.subtitle).toBe("interactive");
   });
 });
+
+describe("session overrides", () => {
+  test("a session override never reaches the persisted config file", async () => {
+    const store = new MemoryConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+    expect(service.zenMode).toBe(false);
+
+    // What `--zen` does at startup (main.ts).
+    service.applySessionOverrides({ zenMode: true, minimalMode: true });
+
+    // The session sees it...
+    expect(service.zenMode).toBe(true);
+    expect(service.minimalMode).toBe(true);
+    expect(service.getRaw().zenMode).toBe(true);
+
+    // ...but any save during the session must not bake it in. UpdateService and
+    // TelemetryService both call save() unconditionally on startup, so this is
+    // the routine path, not an edge case.
+    await service.save();
+
+    const persisted = await store.load();
+    expect(persisted.zenMode).toBeFalsy();
+    expect(persisted.minimalMode).toBeFalsy();
+  });
+
+  test("an explicit user change during the session wins over the flag", async () => {
+    const store = new MemoryConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+
+    service.applySessionOverrides({ zenMode: true });
+    expect(service.zenMode).toBe(true);
+
+    // Turning it off in /settings must actually turn it off, not be masked by
+    // the launch flag, and must persist.
+    await service.update({ zenMode: false });
+    await service.save();
+
+    expect(service.zenMode).toBe(false);
+    expect((await store.load()).zenMode).toBe(false);
+  });
+});

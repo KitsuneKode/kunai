@@ -42,6 +42,12 @@ export interface ConfigService extends KitsuneConfig {
   // Raw config access
   getRaw(): KitsuneConfig;
   update(partial: Partial<KitsuneConfig>): Promise<void>;
+  /**
+   * Apply launch-flag overrides (`--zen`, `-m`) for this run only. Readers see
+   * them; `save()` never does, so a one-run flag cannot be persisted by the
+   * unconditional background saves that happen on startup.
+   */
+  applySessionOverrides(partial: Partial<KitsuneConfig>): void;
   save(): Promise<void>;
   /** Persist any debounced pending save immediately (shutdown path). */
   flushPending(): Promise<void>;

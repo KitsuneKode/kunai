@@ -181,9 +181,15 @@ export function toReleaseReconciliationHistoryRows(
   rows: readonly HistoryProgress[],
 ): readonly ReleaseReconciliationHistoryRow[] {
   return rows.flatMap((row) => {
+    // A followed-but-unwatched title anchors at episode 0 (see
+    // syntheticHistoryFromFollowed). `0 ?? 1` is 0 — nullish coalescing only
+    // falls through on null/undefined — and the cursor guard rejects episode <= 0,
+    // so those rows used to be dropped here and the title could never be checked
+    // for new episodes. Treat "no progress yet" as "before episode 1" instead.
+    const episode = row.episode ?? row.absoluteEpisode ?? 1;
     const cursor = toEpisodeCursor({
       season: row.season ?? 1,
-      episode: row.episode ?? row.absoluteEpisode ?? 1,
+      episode: episode > 0 ? episode : 1,
     });
     if (!cursor) return [];
     return [

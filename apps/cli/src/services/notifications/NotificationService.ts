@@ -115,10 +115,16 @@ export class NotificationService {
     this.emitChange();
   }
 
+  /**
+   * Dismiss is archive. The old `dismissByDedupKey` set a `dismissed_at` column
+   * that no query reads, while bumping `updated_at` — so a dismissed notice
+   * stayed active AND unread AND jumped to the top of the inbox (which orders by
+   * `updated_at DESC`): the exact inverse of dismissing it. The inbox already
+   * worked around that by calling `archive` directly, so the two paths had
+   * silently diverged and only non-inbox surfaces got the broken one.
+   */
   dismiss(dedupKey: string, now = new Date().toISOString()): void {
-    this.deps.repo.dismissByDedupKey(dedupKey, now);
-    this.deps.sinks?.dismiss?.(dedupKey);
-    this.emitChange();
+    this.archive(dedupKey, now);
   }
 
   delete(dedupKey: string, now = new Date().toISOString()): void {

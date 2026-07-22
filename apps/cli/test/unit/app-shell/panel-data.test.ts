@@ -70,6 +70,22 @@ describe("panel-data", () => {
     expect(lines.find((line) => line.label === "Downloads")?.detail).toBe("off");
   });
 
+  test("buildAboutPanelLines reports the real package version", async () => {
+    const packageJson = (await import("../../../package.json", { with: { type: "json" } }))
+      .default as { version: string };
+    const lines = buildAboutPanelLines({
+      config: { ...DEFAULT_CONFIG },
+      state: createInitialState("vidking", "allanime", {
+        anime: { audio: "original", subtitle: "en" },
+        series: { audio: "original", subtitle: "none" },
+        movie: { audio: "original", subtitle: "en" },
+      }),
+    });
+
+    // Was a hardcoded "v0.1.0" long after the package reached 0.3.0.
+    expect(lines.find((line) => line.label === "Version")?.detail).toBe(`v${packageJson.version}`);
+  });
+
   test("buildDiagnosticsPanelLines surfaces missing subtitles clearly", () => {
     const state = createInitialState("vidking", "allanime", {
       anime: { audio: "original", subtitle: "en" },

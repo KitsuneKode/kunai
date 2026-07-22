@@ -139,6 +139,13 @@ function normalizeYoutubeMetadata(
 
 export class ConfigServiceImpl implements ConfigService {
   private config: KitsuneConfig;
+  /**
+   * Transient launch-flag overrides (`--zen`, `-m`). Held apart from `config` so
+   * `save()` — which persists the whole object, and which UpdateService and
+   * TelemetryService both call unconditionally on startup — can never bake a
+   * one-run flag into the user's config file.
+   */
+  private sessionOverrides: Partial<KitsuneConfig> = {};
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -545,11 +552,11 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get minimalMode(): boolean {
-    return this.config.minimalMode;
+    return this.sessionOverrides.minimalMode ?? this.config.minimalMode;
   }
 
   get zenMode(): boolean {
-    return this.config.zenMode;
+    return this.sessionOverrides.zenMode ?? this.config.zenMode;
   }
 
   get powerSaverMode(): boolean {
@@ -577,10 +584,23 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   getRaw(): KitsuneConfig {
-    return { ...this.config };
+    return { ...this.config, ...this.sessionOverrides };
+  }
+
+  /**
+   * Apply launch-flag overrides for this run only. Readers see them; `save()`
+   * never does. An explicit `update()` of the same key later in the session
+   * clears the override, so changing the setting in `/settings` wins over the
+   * flag instead of being silently masked by it.
+   */
+  applySessionOverrides(partial: Partial<KitsuneConfig>): void {
+    this.sessionOverrides = { ...this.sessionOverrides, ...partial };
   }
 
   async update(partial: Partial<KitsuneConfig>): Promise<void> {
+    for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
+      if (key in this.sessionOverrides) delete this.sessionOverrides[key];
+    }
     this.config = {
       ...this.config,
       ...partial,

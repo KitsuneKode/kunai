@@ -48,3 +48,34 @@ describe("NotificationService.subscribe", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("NotificationService.dismiss", () => {
+  test("dismiss archives — it never touches the legacy dismissed_at column", () => {
+    const calls: string[] = [];
+    const repo = {
+      upsert: () => {},
+      listActive: () => [],
+      listArchived: () => [],
+      countUnread: () => 0,
+      countActive: () => 0,
+      markRead: () => {},
+      markAllRead: () => {},
+      archive: (key: string) => calls.push(`archive:${key}`),
+      dismissByDedupKey: (key: string) => calls.push(`dismissByDedupKey:${key}`),
+      deleteByDedupKey: () => {},
+      deleteByKind: () => 0,
+      clearArchived: () => 0,
+      listSuppressedKeys: () => new Set<string>(),
+    };
+    const service = new NotificationService({
+      repo: repo as never,
+      getMutedTitleIds: () => new Set<string>(),
+    });
+
+    service.dismiss("k1");
+
+    // dismissByDedupKey set a column no query reads while bumping updated_at, so
+    // a "dismissed" notice stayed active and jumped to the top of the inbox.
+    expect(calls).toEqual(["archive:k1"]);
+  });
+});

@@ -30,6 +30,7 @@ function createConfig(): ConfigService {
     tuning: resolveTuning(raw.tuningOverrides),
     getRaw: () => ({ ...raw }),
     update: async () => undefined,
+    applySessionOverrides: () => undefined,
     save: async () => undefined,
     flushPending: async () => undefined,
     reset: async () => undefined,

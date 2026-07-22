@@ -101,9 +101,17 @@ export function buildCalendarDaysFromOptions<T>(
 }
 
 function calendarLocalDayKey(nowMs: number): string {
-  const now = new Date(nowMs);
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate(),
+  return formatLocalDayKey(new Date(nowMs));
+}
+
+/**
+ * `YYYY-MM-DD` for a Date read in LOCAL time. Never use `toISOString().slice(0,10)`
+ * for a calendar key: it reads the UTC date, so east of UTC local midnight is the
+ * previous UTC day and every derived key shifts back a day.
+ */
+function formatLocalDayKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
   ).padStart(2, "0")}`;
 }
 
@@ -165,15 +173,18 @@ export function calendarWeekKeyFromIsoDay(isoKey: string): string {
   const day = date.getDay();
   const mondayOffset = (day + 6) % 7;
   date.setDate(date.getDate() - mondayOffset);
-  return date.toISOString().slice(0, 10);
+  // The walk back to Monday happens in local time, so the key must be read in
+  // local time too. Round-tripping through toISOString() here returned the
+  // Sunday date east of UTC.
+  return formatLocalDayKey(date);
 }
 
 export function calendarWeekHeaderLabel(weekKey: string, nowMs: number = Date.now()): string {
-  const thisWeekKey = calendarWeekKeyFromIsoDay(new Date(nowMs).toISOString().slice(0, 10));
+  const thisWeekKey = calendarWeekKeyFromIsoDay(calendarLocalDayKey(nowMs));
   if (weekKey === thisWeekKey) return "This week";
   const nextWeekDate = new Date(`${thisWeekKey}T00:00:00`);
   nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-  if (weekKey === nextWeekDate.toISOString().slice(0, 10)) return "Next week";
+  if (weekKey === formatLocalDayKey(nextWeekDate)) return "Next week";
   const weekStart = new Date(`${weekKey}T00:00:00`);
   if (Number.isNaN(weekStart.getTime())) return weekKey;
   const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
@@ -571,7 +582,10 @@ export function buildCalendarRenderRows<T>(
     // The week marker rides the day header (no separate band) as a quiet tag.
     // Only future weeks earn a tag — the current week is implied, so it stays
     // unlabelled to avoid "this week" noise next to today's rows.
-    const currentWeekKey = calendarWeekKeyFromIsoDay(new Date(nowMs).toISOString().slice(0, 10));
+    // Local, to match the row dayKeys this is compared against. Deriving it from
+    // the UTC date put "today" in the adjacent week outside UTC — in IST that
+    // left the current week untagged and labelled today's rows "next week".
+    const currentWeekKey = calendarWeekKeyFromIsoDay(calendarLocalDayKey(nowMs));
     const weekTag =
       showDayHeader && weekChanged && weekKey && weekKey !== currentWeekKey
         ? calendarWeekHeaderLabel(weekKey, nowMs).toLowerCase()

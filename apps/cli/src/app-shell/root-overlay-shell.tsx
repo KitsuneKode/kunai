@@ -1265,7 +1265,12 @@ export function RootOverlayShell({
         if (row) {
           const next = toggleFavoriteSource(tracksFavorites, row.label);
           setTracksFavorites(next);
-          void container.config.update({ favoriteSources: next });
+          // update() is memory-only; without the save() the favourite is gone at
+          // next launch and the panel only appears to remember it.
+          void container.config
+            .update({ favoriteSources: next })
+            .then(() => container.config.save())
+            .catch(() => undefined);
         }
         return;
       }

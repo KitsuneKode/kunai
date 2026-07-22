@@ -407,7 +407,12 @@ function AppRoot({ container }: { container: Container }) {
         const nextMilestone = getNextStreakMilestone(days, lastCelebrated);
         if (nextMilestone) {
           setStreakMilestoneAlert(`🔥 ${nextMilestone}-day streak! Keep it going.`);
-          void container.config.update({ lastStreakMilestoneDays: nextMilestone });
+          // Must persist: update() is memory-only, so without the save() the same
+          // milestone is celebrated again on every launch.
+          void container.config
+            .update({ lastStreakMilestoneDays: nextMilestone })
+            .then(() => container.config.save())
+            .catch(() => undefined);
           setTimeout(() => setStreakMilestoneAlert(null), 6_000);
         }
 
@@ -499,7 +504,9 @@ function AppRoot({ container }: { container: Container }) {
         const text = container.statsFormatter.formatWeeklyDigest(stats);
         if (!cancelled) {
           setWeeklyDigestLine(text);
+          // Must persist, or the "weekly" digest shows on every launch.
           await container.config.update({ lastWeeklyDigestShownAt: new Date().toISOString() });
+          await container.config.save().catch(() => undefined);
           setTimeout(() => {
             if (!cancelled) setWeeklyDigestLine(null);
           }, 8_000);

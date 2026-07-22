@@ -203,7 +203,13 @@ type CommanderCliOptions = {
   readonly dryRun?: boolean;
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
-  readonly noUserMpvConfig?: boolean;
+  /**
+   * From `--no-user-mpv-config`. Commander stores a `--no-x` option under the
+   * positive key `x`, defaulting to true and set to false when the flag is
+   * passed — so this is `userMpvConfig`, never `noUserMpvConfig`. Declaring the
+   * negative name is what let the flag silently no-op.
+   */
+  readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
   readonly help?: boolean;
   readonly version?: boolean;
@@ -358,7 +364,10 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),
-    ...(options.noUserMpvConfig ? { noUserConfig: true } : {}),
+    // Commander parses `--no-user-mpv-config` as the negation of `user-mpv-config`,
+    // so it arrives as `userMpvConfig: false` — there is never a `noUserMpvConfig`
+    // key to read. Only an explicit `false` counts; unset must stay unset.
+    ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
   };
   args.help = Boolean(options.help);

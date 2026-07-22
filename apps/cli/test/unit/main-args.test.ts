@@ -227,3 +227,17 @@ test("parseArgs routes --history / --offline / --continue to their bootstrap sur
   expect(continuePlayback.history).toBe(false);
   expect(continuePlayback.offline).toBe(false);
 });
+
+test("--no-user-mpv-config reaches mpv as noUserConfig", () => {
+  // Commander treats `--no-x` as the negation of `x`, so this option lands as
+  // `userMpvConfig: false` — never `noUserMpvConfig`. Reading the wrong key made
+  // the flag a permanent no-op while three docs surfaces advertised it.
+  const args = parseArgs(["node", "kunai", "--no-user-mpv-config"]);
+  expect(args.mpv?.noUserConfig).toBe(true);
+});
+
+test("mpv config flags are independent and default to unset", () => {
+  expect(parseArgs(["node", "kunai"]).mpv?.noUserConfig).toBeUndefined();
+  expect(parseArgs(["node", "kunai", "--mpv-clean"]).mpv?.clean).toBe(true);
+  expect(parseArgs(["node", "kunai", "--mpv-clean"]).mpv?.noUserConfig).toBeUndefined();
+});

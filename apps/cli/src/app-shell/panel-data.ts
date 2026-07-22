@@ -41,6 +41,7 @@ import { applyYoutubeHistoryEnrichment } from "@/services/youtube/youtube-histor
 import type { CapabilitySnapshot } from "@/ui";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
+import packageJson from "../../package.json" with { type: "json" };
 import { buildHelpPanelCommandLines } from "../domain/session/command-registry";
 import { buildDiagnosticsPanelLinesFromInsight } from "./diagnostics-panel-lines";
 import { helpSections } from "./keybindings";
@@ -87,7 +88,9 @@ export function buildAboutPanelLines({
   return [
     {
       label: "Version",
-      detail: "v0.1.0",
+      // From package.json, not a literal — the hardcoded one said v0.1.0 long
+      // after the package reached 0.3.0.
+      detail: `v${packageJson.version}`,
     },
     {
       label: "Runtime",

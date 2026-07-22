@@ -730,14 +730,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     if (process.stdin.isTTY) process.stdin.unref();
     process.exit(code);
   }
-  // `--zen` / `-m,--minimal` are transient session overrides: flip the in-memory
-  // config so the minimal/single-column layout renders, without persisting to the
-  // user's config file (update() mutates memory only; save() is never called here).
+  // `--zen` / `-m,--minimal` are transient session overrides: the minimal/single-
+  // column layout renders for this run without touching the user's config file.
+  // They go through applySessionOverrides, NOT update() — update() writes into the
+  // persisted object, and save() persists that whole object, so the unconditional
+  // background saves from UpdateService/TelemetryService below would otherwise
+  // make a one-run flag permanent.
   // `--zen` implies minimal (cli-args sets args.minimal), so a zen launch collapses
   // the companion pane and dims chrome too — matching what each flag's name claims.
   const sessionOverrides = resolveSessionConfigOverrides(args, config);
   if (Object.keys(sessionOverrides).length > 0) {
-    await config.update(sessionOverrides);
+    config.applySessionOverrides(sessionOverrides);
   }
   await maybeRunAutoCleanupDownloads(container);
 

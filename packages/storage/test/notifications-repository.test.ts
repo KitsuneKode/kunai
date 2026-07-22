@@ -127,3 +127,24 @@ test("NotificationRepository: clearArchived purges only archived rows", () => {
   expect(r.listArchived(50, 0)).toHaveLength(0);
   expect(r.listActive(50, 0).map((n) => n.dedupKey)).toEqual(["b"]);
 });
+
+test("NotificationRepository: dismissed notices leave the active list and counts", () => {
+  const r = repo();
+  r.upsert(base("older", "2026-06-14T01:00:00.000Z"));
+  r.upsert(base("target", "2026-06-14T02:00:00.000Z"));
+  r.upsert(base("newer", "2026-06-14T03:00:00.000Z"));
+  expect(r.countActive()).toBe(3);
+  expect(r.countUnread()).toBe(3);
+
+  // Whatever mechanism dismiss uses, the observable contract is the same:
+  // the notice leaves the active list, both counts drop, and it must NOT be
+  // reordered to the top (the old dismissByDedupKey bumped updated_at, which
+  // promoted the dismissed row instead of hiding it).
+  r.archive("target", "2026-06-14T09:00:00.000Z");
+
+  const activeKeys = r.listActive().map((row) => row.dedupKey);
+  expect(activeKeys).not.toContain("target");
+  expect(activeKeys).toEqual(["newer", "older"]);
+  expect(r.countActive()).toBe(2);
+  expect(r.countUnread()).toBe(2);
+});
