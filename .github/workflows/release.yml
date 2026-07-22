@@ -354,18 +354,40 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
-      - name: Verify npm package
+      # Verify the launcher AND every platform package it pins. Checking only
+      # the launcher would pass while a binary package was missing, which is the
+      # one failure a user actually feels: npm treats an unresolvable optional
+      # dependency as success, so the install "works" and the CLI has no binary.
+      - name: Verify npm package and every platform package
         run: |
           set -euo pipefail
           VERSION="${{ needs.confirmation.outputs.version }}"
-          for _ in 1 2 3 4 5 6 7 8 9 10; do
-            if npm view "@kitsunekode/kunai@${VERSION}" version; then
-              exit 0
+          PKGS=(
+            "@kitsunekode/kunai"
+            "@kitsunekode/kunai-linux-x64"
+            "@kitsunekode/kunai-linux-arm64"
+            "@kitsunekode/kunai-linux-x64-musl"
+            "@kitsunekode/kunai-linux-arm64-musl"
+            "@kitsunekode/kunai-darwin-x64"
+            "@kitsunekode/kunai-darwin-arm64"
+            "@kitsunekode/kunai-windows-x64"
+            "@kitsunekode/kunai-windows-arm64"
+          )
+          for PKG in "${PKGS[@]}"; do
+            RESOLVED=""
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              if RESOLVED="$(npm view "${PKG}@${VERSION}" version 2>/dev/null)" && [[ -n "${RESOLVED}" ]]; then
+                break
+              fi
+              RESOLVED=""
+              sleep 15
+            done
+            if [[ -z "${RESOLVED}" ]]; then
+              echo "::error::${PKG}@${VERSION} did not resolve after retries"
+              exit 1
             fi
-            sleep 15
+            echo "ok ${PKG}@${RESOLVED}"
           done
-          echo "::error::npm view @kitsunekode/kunai@${VERSION} failed after retries"
-          exit 1
 
       - name: Create canonical tag
         run: |
