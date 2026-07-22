@@ -65,6 +65,49 @@ function runLauncher(args: readonly string[]) {
   });
 }
 
+function createLauncherFixture(packageRoot: string): string {
+  const fixtureLauncher = join(packageRoot, "dist", "kunai.mjs");
+  mkdirSync(join(packageRoot, "dist"), { recursive: true });
+  writeFileSync(fixtureLauncher, readFileSync(LAUNCHER_SOURCE, "utf8"));
+
+  const binDir = join(packageRoot, "vendor", targetIdForHost(), "bin");
+  mkdirSync(binDir, { recursive: true });
+  const stand = join(binDir, process.platform === "win32" ? "kunai.exe" : "kunai");
+  writeFileSync(
+    stand,
+    `#!/usr/bin/env node
+if (process.argv.includes("--echo-managed-context")) {
+  process.stdout.write(JSON.stringify({
+    manager: process.env.KUNAI_MANAGED_PACKAGE_MANAGER,
+    packageRoot: process.env.KUNAI_MANAGED_PACKAGE_ROOT,
+    unrelated: process.env.KUNAI_LAUNCHER_TEST_UNRELATED,
+  }));
+}
+`,
+  );
+  chmodSync(stand, 0o755);
+  return fixtureLauncher;
+}
+
+function readManagedContext(fixtureLauncher: string, unrelated = "preserved") {
+  const result = Bun.spawnSync({
+    cmd: ["node", fixtureLauncher, "--echo-managed-context"],
+    env: {
+      ...process.env,
+      PATH: NO_BUN_PATH,
+      KUNAI_LAUNCHER_TEST_UNRELATED: unrelated,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(result.exitCode).toBe(0);
+  return JSON.parse(result.stdout.toString()) as {
+    manager?: string;
+    packageRoot?: string;
+    unrelated?: string;
+  };
+}
+
 test("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
   const source = readFileSync(LAUNCHER_SOURCE, "utf8");
   expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
@@ -84,6 +127,43 @@ test("runs under node with no bun on PATH", () => {
 test("passes the child's exit code through unchanged", () => {
   expect(runLauncher(["--exit-code", "0"]).exitCode).toBe(0);
   expect(runLauncher(["--exit-code", "42"]).exitCode).toBe(42);
+});
+
+test("passes npm ownership and its absolute package root to the compiled child", () => {
+  const packageRoot = join(workDir, "npm", "node_modules", "@kitsunekode", "kunai");
+  const fixtureLauncher = createLauncherFixture(packageRoot);
+
+  expect(readManagedContext(fixtureLauncher)).toEqual({
+    manager: "npm",
+    packageRoot,
+    unrelated: "preserved",
+  });
+});
+
+test("passes Bun ownership for launchers under the Bun global package root", () => {
+  const packageRoot = join(
+    workDir,
+    ".bun",
+    "install",
+    "global",
+    "node_modules",
+    "@kitsunekode",
+    "kunai",
+  );
+  const fixtureLauncher = createLauncherFixture(packageRoot);
+
+  expect(readManagedContext(fixtureLauncher)).toEqual({
+    manager: "bun",
+    packageRoot,
+    unrelated: "preserved",
+  });
+});
+
+test("preserves unrelated environment values across the launcher boundary", () => {
+  const packageRoot = join(workDir, "preserve-env", "@kitsunekode", "kunai");
+  const fixtureLauncher = createLauncherFixture(packageRoot);
+
+  expect(readManagedContext(fixtureLauncher, "keep-me").unrelated).toBe("keep-me");
 });
 
 test("reports an actionable error when the platform binary is missing", () => {

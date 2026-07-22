@@ -98,6 +98,11 @@ function reinstallCommand() {
   }
 }
 
+function managedPackageManager(packageRoot) {
+  const normalizedRoot = packageRoot.replaceAll("\\", "/");
+  return normalizedRoot.includes("/.bun/install/global/") ? "bun" : "npm";
+}
+
 function findBinary(targetId) {
   const packageName = `@kitsunekode/kunai-${targetId}`;
 
@@ -141,12 +146,19 @@ if (!binaryPath) {
   process.exit(1);
 }
 
+const packageRoot = path.join(__dirname, "..");
+const manager = managedPackageManager(packageRoot);
+
 // Spawn asynchronously, never spawnSync: the parent must stay responsive to
 // signals so it can forward them to the child. mpv runs under this process, so
 // a swallowed Ctrl-C would strand a player.
 const child = spawn(binaryPath, process.argv.slice(2), {
   stdio: "inherit",
-  env: { ...process.env, KUNAI_MANAGED_PACKAGE_ROOT: path.join(__dirname, "..") },
+  env: {
+    ...process.env,
+    KUNAI_MANAGED_PACKAGE_MANAGER: manager,
+    KUNAI_MANAGED_PACKAGE_ROOT: packageRoot,
+  },
 });
 
 child.on("error", (error) => {

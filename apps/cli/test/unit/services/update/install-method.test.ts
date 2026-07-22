@@ -5,10 +5,93 @@ import {
   detectInstallMethod,
   updateGuidanceForInstallMethod,
 } from "@/services/update/install-method";
+import { readManagedPackageContext } from "@/services/update/managed-package-context";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "../../../../../..");
 
 describe("install method detection", () => {
+  test("reads valid npm and Bun managed package contexts", () => {
+    expect(
+      readManagedPackageContext({
+        KUNAI_MANAGED_PACKAGE_MANAGER: "npm",
+        KUNAI_MANAGED_PACKAGE_ROOT: "/usr/local/lib/node_modules/@kitsunekode/kunai",
+      }),
+    ).toEqual({
+      manager: "npm",
+      packageRoot: "/usr/local/lib/node_modules/@kitsunekode/kunai",
+    });
+    expect(
+      readManagedPackageContext({
+        KUNAI_MANAGED_PACKAGE_MANAGER: "bun",
+        KUNAI_MANAGED_PACKAGE_ROOT:
+          "C:\\Users\\k\\.bun\\install\\global\\node_modules\\@kitsunekode\\kunai",
+      }),
+    ).toEqual({
+      manager: "bun",
+      packageRoot: "C:\\Users\\k\\.bun\\install\\global\\node_modules\\@kitsunekode\\kunai",
+    });
+  });
+
+  test("rejects invalid managed package contexts", () => {
+    expect(
+      readManagedPackageContext({
+        KUNAI_MANAGED_PACKAGE_MANAGER: "pnpm",
+        KUNAI_MANAGED_PACKAGE_ROOT: "/usr/local/lib/node_modules/@kitsunekode/kunai",
+      }),
+    ).toBeNull();
+    expect(readManagedPackageContext({ KUNAI_MANAGED_PACKAGE_MANAGER: "npm" })).toBeNull();
+    expect(
+      readManagedPackageContext({
+        KUNAI_MANAGED_PACKAGE_MANAGER: "npm",
+        KUNAI_MANAGED_PACKAGE_ROOT: "",
+      }),
+    ).toBeNull();
+    expect(
+      readManagedPackageContext({
+        KUNAI_MANAGED_PACKAGE_MANAGER: "bun",
+        KUNAI_MANAGED_PACKAGE_ROOT: "relative/node_modules/@kitsunekode/kunai",
+      }),
+    ).toBeNull();
+  });
+
+  test("valid managed context wins before compiled-binary fallback and retains its root", () => {
+    const packageRoot = "/usr/local/lib/node_modules/@kitsunekode/kunai";
+    const npm = detectInstallMethod({
+      packagedBinary: true,
+      env: {
+        KUNAI_MANAGED_PACKAGE_MANAGER: "npm",
+        KUNAI_MANAGED_PACKAGE_ROOT: packageRoot,
+      },
+    });
+    const bun = detectInstallMethod({
+      packagedBinary: true,
+      env: {
+        KUNAI_MANAGED_PACKAGE_MANAGER: "bun",
+        KUNAI_MANAGED_PACKAGE_ROOT:
+          "C:\\Users\\k\\.bun\\install\\global\\node_modules\\@kitsunekode\\kunai",
+      },
+    });
+
+    expect(npm).toEqual({ kind: "npm-global", label: "npm global", packageRoot });
+    expect(bun).toEqual({
+      kind: "bun-global",
+      label: "Bun global",
+      packageRoot: "C:\\Users\\k\\.bun\\install\\global\\node_modules\\@kitsunekode\\kunai",
+    });
+  });
+
+  test("invalid managed context is ignored for compiled binaries", () => {
+    expect(
+      detectInstallMethod({
+        packagedBinary: true,
+        env: {
+          KUNAI_MANAGED_PACKAGE_MANAGER: "pnpm",
+          KUNAI_MANAGED_PACKAGE_ROOT: "/tmp/kunai",
+        },
+      }).kind,
+    ).toBe("binary");
+  });
+
   test("detects source checkouts before global package layouts", () => {
     const method = detectInstallMethod({
       cwd: REPO_ROOT,

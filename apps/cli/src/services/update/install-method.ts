@@ -1,10 +1,14 @@
 import { posix, win32 } from "node:path";
 
+import { readManagedPackageContext } from "./managed-package-context";
+
 export type InstallMethodKind = "source" | "bun-global" | "npm-global" | "binary" | "unknown";
 
 export type InstallMethod = {
   readonly kind: InstallMethodKind;
   readonly label: string;
+  /** Validated package-manager root when ownership crossed the launcher boundary. */
+  readonly packageRoot?: string;
 };
 
 export type DetectInstallMethodInput = {
@@ -13,6 +17,7 @@ export type DetectInstallMethodInput = {
   readonly packagedBinary?: boolean;
   readonly platform?: NodeJS.Platform;
   readonly fileExists?: (path: string) => boolean;
+  readonly env?: Record<string, string | undefined>;
 };
 
 export function detectInstallMethod(input: DetectInstallMethodInput = {}): InstallMethod {
@@ -21,6 +26,13 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
   const entrypoint = path.normalize(input.entrypoint ?? process.argv[1] ?? "");
   const normalizedEntrypoint = entrypoint.replaceAll("\\", "/");
   const fileExists = input.fileExists ?? (() => false);
+  const managedContext = readManagedPackageContext(input.env);
+
+  if (managedContext) {
+    return managedContext.manager === "bun"
+      ? { kind: "bun-global", label: "Bun global", packageRoot: managedContext.packageRoot }
+      : { kind: "npm-global", label: "npm global", packageRoot: managedContext.packageRoot };
+  }
 
   if (
     fileExists(path.join(cwd, "package.json")) &&

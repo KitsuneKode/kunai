@@ -1,8 +1,13 @@
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { readInstallManifest } from "./install-manifest";
-import type { InstallMethodKind } from "./install-method";
+import {
+  detectInstallMethod,
+  type DetectInstallMethodInput,
+  type InstallMethodKind,
+} from "./install-method";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";
 import { nativeUninstall } from "./native-installer/native-uninstall";
 
@@ -54,6 +59,8 @@ export type RunUninstallOptions = {
   readonly preservePaths?: readonly string[];
   /** Test seam for package-manager delegation. */
   readonly execImpl?: (command: readonly string[]) => Promise<number>;
+  /** Test seam for compiled children carrying launcher ownership context. */
+  readonly detectInstallMethodInput?: DetectInstallMethodInput;
 };
 
 /**
@@ -64,7 +71,12 @@ export type RunUninstallOptions = {
 export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   const layout = opts.layout ?? getInstallLayoutPaths();
   const manifest = await readInstallManifest(layout.configDir);
-  const channel: InstallMethodKind = manifest?.method ?? "unknown";
+  const channel: InstallMethodKind =
+    manifest?.method ??
+    detectInstallMethod({
+      fileExists: existsSync,
+      ...opts.detectInstallMethodInput,
+    }).kind;
   const plan = planUninstall({
     channel,
     binPath: manifest?.launcherPath ?? layout.launcherPath,
