@@ -25,6 +25,13 @@ export interface StreamRequest {
 
 export interface EpisodeListRequest {
   title: TitleInfo;
+  /**
+   * Same language context `resolve` receives. Without it AllAnime's
+   * `resolveAnimeAudioIntent` always falls back to the sub catalog, so dub users
+   * were shown sub episode counts and labels.
+   */
+  audioPreference?: string;
+  subtitlePreference?: string;
 }
 
 export interface Provider {

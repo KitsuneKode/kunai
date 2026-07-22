@@ -1,14 +1,17 @@
 import type { ProviderMetadata, ShellMode, TitleInfo } from "@/domain/types";
 import {
   buildFirstSeenRank,
+  resolveProviderCatalogIdentity,
   resolveProviderId,
   resolveProviderLaneFromModule,
   type CoreProviderManifest,
   type ProviderEngine,
 } from "@kunai/core";
+import type { MediaKind } from "@kunai/types";
 
 import { createProviderFromModule, type Provider } from "./Provider";
 import { providerLaneMatchesMode, shellModeToProviderLane } from "./provider-lane";
+import { titleToCoreIdentity } from "./stream-request-adapter";
 
 export interface ProviderRegistry {
   get(id: string): Provider | undefined;
@@ -95,17 +98,31 @@ export class ProviderRegistryImpl implements ProviderRegistry {
           : undefined,
         listEpisodes: module.listEpisodes
           ? async (request, signal?) => {
+              // Build the title exactly as `resolve` does. Hand-rolling
+              // `{id, kind, title}` here dropped externalIds/anilistId/tmdbId, so
+              // AllAnime's AniList->native bridge and Miruro's numeric-id lookup
+              // had nothing to read and episode listing only worked when the raw
+              // session id happened to already be native.
+              const kindOverride: MediaKind = module.manifest.mediaKinds.includes("anime")
+                ? "anime"
+                : module.manifest.mediaKinds.includes("video")
+                  ? "video"
+                  : request.title.type;
               const episodes = await module.listEpisodes?.(
                 {
-                  title: {
-                    id: request.title.id,
-                    kind: module.manifest.mediaKinds.includes("anime")
-                      ? "anime"
-                      : module.manifest.mediaKinds.includes("video")
-                        ? "video"
-                        : request.title.type,
-                    title: request.title.name,
-                  },
+                  title: titleToCoreIdentity(
+                    request.title,
+                    shellMode,
+                    resolveProviderCatalogIdentity(module.manifest),
+                    module.providerId,
+                    kindOverride,
+                  ),
+                  ...(request.audioPreference !== undefined
+                    ? { preferredAudioLanguage: request.audioPreference }
+                    : {}),
+                  ...(request.subtitlePreference !== undefined
+                    ? { preferredSubtitleLanguage: request.subtitlePreference }
+                    : {}),
                 },
                 this.engine.createRuntimeContext(module.providerId, signal),
               );
