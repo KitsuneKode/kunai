@@ -333,3 +333,51 @@ test("media notification actions fail fast when no media payload exists", async 
     }),
   ).rejects.toThrow("media item");
 });
+
+test("update-app applies the update instead of opening a browser when it can", async () => {
+  const calls: string[] = [];
+  const router = new NotificationActionRouter({
+    appUpdate: {
+      openReleasePage: (latestVersion) => {
+        calls.push(`open:${latestVersion}`);
+        return true;
+      },
+      applyUpdate: (latestVersion) => {
+        calls.push(`apply:${latestVersion}`);
+        return { status: "applied" as const };
+      },
+    },
+    notifications: { dismiss: () => {} },
+  });
+
+  const result = await router.run({
+    actionId: "update-app",
+    notification: notification({ kind: "app-update", dedupKey: "app-update:1.4.0" }),
+  });
+
+  expect(result).toEqual({ status: "handled", actionId: "update-app" });
+  // The regression: a native install that owns its binary was still being sent
+  // to a web page while a transactional in-place upgrade sat one call away.
+  expect(calls).toEqual(["apply:1.4.0"]);
+});
+
+test("update-app surfaces why an update could not be applied", async () => {
+  const router = new NotificationActionRouter({
+    appUpdate: {
+      openReleasePage: () => true,
+      applyUpdate: () => ({ status: "unsupported" as const, reason: "download failed" }),
+    },
+    notifications: { dismiss: () => {} },
+  });
+
+  const result = await router.run({
+    actionId: "update-app",
+    notification: notification({ kind: "app-update", dedupKey: "app-update:1.4.0" }),
+  });
+
+  expect(result).toEqual({
+    status: "unsupported",
+    actionId: "update-app",
+    reason: "download failed",
+  });
+});

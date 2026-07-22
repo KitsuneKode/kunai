@@ -38,6 +38,15 @@ export class UpdateService {
     },
   ) {}
 
+  /** How this copy was installed — decides whether an update can be applied in place. */
+  get installMethodKind(): InstallMethod["kind"] {
+    return this.deps.installMethod.kind;
+  }
+
+  get currentVersion(): string {
+    return this.deps.currentVersion;
+  }
+
   async checkForUpdate(options: { force?: boolean } = {}): Promise<UpdateCheckResult> {
     const now = this.now();
     const config = this.deps.config.getRaw() as KitsuneConfig;

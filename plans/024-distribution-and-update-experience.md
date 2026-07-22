@@ -199,29 +199,36 @@ only reference is the getter — while `cli-args.ts:89` advertises `kunai upgrad
 
 ---
 
-## Stage 3 — Autoupdate, deliberately conservative (M)
+## Stage 3 — Autoupdate (CORRECTION: it already exists)
 
-There is **no autoupdate today** — only a check plus a notification. The config already
-has the right primitives: `updateChecksEnabled`, `updateCheckIntervalDays`,
-`updateSnoozedUntil`.
+**An earlier draft of this plan claimed there was no autoupdate. That was wrong.**
+`src/services/update/BinaryAutoUpdater.ts` implements essentially the policy this
+plan was about to recommend, and it is wired into `main.ts` (`runOnce` at startup,
+`startBackground`, `stopBackground` on shutdown) and `shell-workflows.ts` (a force
+run and a `setAutoApply` toggle).
 
-Recommended policy, and the reasoning matters more than the mechanism:
+What it already does:
 
-- **Default: notify, do not auto-install.** Kunai launches `mpv` and holds playback
-  state; silently swapping the binary under a running session is how you corrupt someone's
-  evening. Codex, gh and rustup all default to notify-only for the same reason.
-- **Opt-in `autoUpdate: "off" | "notify" | "install"`**, honored only for the `binary`
-  install method (a package-manager install must never self-mutate — that fights the
-  package manager, which is the exact thing `install.json` exists to prevent).
-- **Install on exit, never mid-session**, using the existing staging + transaction +
-  version-retention machinery so a failed update rolls back.
-- Respect `updateSnoozedUntil` and offer "skip this version".
+- gated on `updateChecksEnabled` **and** `autoApplyBinaryUpdates` (both config keys);
+- **binary-only** — returns `disabled` unless the install manifest says `binary`;
+- respects `updateSnoozedUntil` and the check-interval freshness window;
+- returns `pending-restart` rather than swapping a running session's binary;
+- installs through `installLatest`, i.e. the transactional staging + rollback path;
+- runs once at startup then on a background interval.
 
-**STOP and report** before implementing `"install"` — auto-installing a binary that plays
-network video is a meaningful trust decision, and it should be the maintainer's call
-whether it ships at all.
+So stage 3 is **not** "build autoupdate". The remaining gaps are smaller:
 
----
+1. **No settings row.** `autoApplyBinaryUpdates` is toggled only via a shell workflow;
+   it does not appear in the settings registry, so it is close to undiscoverable.
+2. **`pending-restart` is not surfaced.** The updater can report that a new version is
+   staged and waiting for a restart, but nothing tells the user — so the update lands
+   silently and they keep running the old binary until they happen to relaunch.
+3. **`updateChannel` still has no reader** (see stage 2), while `kunai upgrade` is
+   advertised as "channel-aware" in the CLI help and both installers.
+
+Treat those three as the stage-3 scope. The trust decision I flagged for a STOP has
+in fact already been made — auto-apply exists and is opt-in — so the open question is
+only whether to surface it more prominently, not whether to build it.
 
 ## What this fixes, end to end
 

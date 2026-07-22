@@ -12,6 +12,11 @@ export type NotificationActionId =
   | "retry-download"
   | "update-app";
 
+/** Result of applying an app update from the inbox. */
+export type AppUpdateOutcome =
+  | { readonly status: "applied" }
+  | { readonly status: "unsupported"; readonly reason: string };
+
 export interface NotificationActionRouterDeps {
   readonly playlist?: {
     readonly restoreRecoverableSession: (sourceSessionId: string) => number | Promise<number>;
@@ -24,6 +29,14 @@ export interface NotificationActionRouterDeps {
   readonly appUpdate?: {
     /** Open the release page for the advertised version (null when unknown). */
     readonly openReleasePage: (latestVersion: string | null) => Promise<boolean> | boolean;
+    /**
+     * Apply the update for install methods we own (the native binary), or report
+     * the exact command for package-manager installs. Optional so callers that
+     * genuinely cannot self-update keep the release-page behavior.
+     */
+    readonly applyUpdate?: (
+      latestVersion: string | null,
+    ) => Promise<AppUpdateOutcome> | AppUpdateOutcome;
   };
   readonly notifications: {
     readonly dismiss: (dedupKey: string) => Promise<void> | void;
@@ -91,9 +104,22 @@ export class NotificationActionRouter {
     }
 
     if (input.actionId === "update-app") {
-      const openReleasePage = this.deps.appUpdate?.openReleasePage;
-      if (!openReleasePage) return unsupported(input.actionId);
-      const opened = await openReleasePage(parseAppUpdateVersion(input.notification));
+      const appUpdate = this.deps.appUpdate;
+      if (!appUpdate) return unsupported(input.actionId);
+      const latestVersion = parseAppUpdateVersion(input.notification);
+
+      // Prefer applying the update. Only fall back to the release page when the
+      // host cannot self-update — otherwise a native install, which owns its own
+      // binary and can upgrade transactionally, would still be sent to a browser.
+      if (appUpdate.applyUpdate) {
+        const outcome = await appUpdate.applyUpdate(latestVersion);
+        if (outcome.status === "unsupported") {
+          return { status: "unsupported", actionId: input.actionId, reason: outcome.reason };
+        }
+        return handled(input.actionId);
+      }
+
+      const opened = await appUpdate.openReleasePage(latestVersion);
       return opened
         ? handled(input.actionId)
         : {

@@ -38,6 +38,7 @@ import {
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
 import { appReleasePageUrl } from "@/services/update/release-url";
 import { Box, Text, useInput } from "ink";
 import {
@@ -1113,6 +1114,51 @@ export function RootOverlayShell({
           if (opened.ok) return true;
           setOverlayStatus(noteForExternalOpenFailure(opened));
           return false;
+        },
+        // Route by install method: apply in place where we own the binary, and
+        // otherwise show the exact command. Opening a browser is the last resort,
+        // not the default it used to be.
+        applyUpdate: async (latestVersion) => {
+          const action = resolveNotificationUpdateAction({
+            channel: container.updateService.installMethodKind,
+            currentVersion: container.updateService.currentVersion,
+            latestVersion,
+          });
+
+          if (action.kind === "up-to-date") {
+            setOverlayStatus("Already up to date.");
+            return { status: "applied" };
+          }
+
+          if (action.kind === "run-command") {
+            setOverlayStatus(action.message);
+            return { status: "applied" };
+          }
+
+          if (action.kind === "self-update") {
+            setOverlayStatus("Updating Kunai…");
+            const result = await container.binaryAutoUpdater.runOnce({ force: true });
+            if (result.status === "installed" || result.status === "pending-restart") {
+              setOverlayStatus(`Updated to ${result.version}. Restart Kunai to use it.`);
+              return { status: "applied" };
+            }
+            if (result.status === "up-to-date") {
+              setOverlayStatus("Already up to date.");
+              return { status: "applied" };
+            }
+            const reason =
+              result.status === "error" ? result.error : `Update did not apply (${result.status}).`;
+            setOverlayStatus(reason);
+            return { status: "unsupported", reason };
+          }
+
+          setOverlayStatus(action.message);
+          const url = appReleasePageUrl(latestVersion);
+          const opened = await openExternalUrlAndWait(url);
+          if (opened.ok) return { status: "applied" };
+          const reason = noteForExternalOpenFailure(opened);
+          setOverlayStatus(reason);
+          return { status: "unsupported", reason };
         },
       },
       notifications: {
