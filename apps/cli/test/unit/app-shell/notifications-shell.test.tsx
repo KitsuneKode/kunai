@@ -110,7 +110,7 @@ describe("NotificationsShell", () => {
 
     expect(frame).toContain("Update available 1.4.0");
     expect(frame).toContain("Read");
-    expect(frame).toContain("↵ Open release page");
+    expect(frame).toContain("↵ Update Kunai");
     expect(frame).not.toContain("Unread");
   });
 

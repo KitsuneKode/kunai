@@ -128,6 +128,7 @@ export function getNotificationTone(kind: string): ShellStatusTone {
   if (kind === "download-failed") return "error";
   if (kind === "new-episode" || kind === "download-complete") return "success";
   if (kind === "app-update") return "info";
+  if (kind === "app-restart-required") return "success";
   return "neutral";
 }
 
@@ -143,7 +144,10 @@ function getNotificationActionBadge(action: NotificationActionId): string {
 function getNotificationActionLabel(action: NotificationActionId): string {
   if (action === "restore-queue") return "Restore queue";
   if (action === "retry-download") return "Retry download";
-  if (action === "update-app") return "Open release page";
+  // Not "Open release page": since the update routing became install-method
+  // aware, this installs in place on native installs and prints the exact
+  // command under a package manager. The release page is only the last resort.
+  if (action === "update-app") return "Update Kunai";
   if (action === "queue-next") return "Queue next";
   if (action === "queue-after-current-chain") return "Queue after current series";
   if (action === "queue-end") return "Queue at end";
@@ -164,7 +168,8 @@ function getNotificationActionDetail(action: NotificationActionId): string {
   if (action === "restore-queue")
     return "Restore pending items into the current queue without autoplay";
   if (action === "retry-download") return "Retry this item through the standard download action";
-  if (action === "update-app") return "Open the release page for the advertised Kunai version";
+  if (action === "update-app")
+    return "Install the new version, or show how to update if a package manager owns this install";
   if (action === "queue-next") return "Place this item next without replacing playback";
   if (action === "queue-after-current-chain")
     return "Place this item after the current series chain";

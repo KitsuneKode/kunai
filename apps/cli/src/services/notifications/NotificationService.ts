@@ -169,6 +169,9 @@ export function defaultNotificationActionIds(input: {
 }): readonly string[] {
   if (input.kind === "queue-recovery") return ["restore-queue", "dismiss"];
   if (input.kind === "app-update") return ["update-app", "dismiss"];
+  // Already installed: the only remaining step is a restart, which the user
+  // performs outside the app. Offering "update" here would re-run a no-op.
+  if (input.kind === "app-restart-required") return ["dismiss"];
 
   if (input.kind === "download-failed") {
     return input.hasItem

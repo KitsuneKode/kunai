@@ -41,6 +41,12 @@ export type NotificationSignal =
       readonly type: "app-update";
       readonly currentVersion: string;
       readonly latestVersion: string;
+      /**
+       * The new binary is already installed on disk and only a restart is left.
+       * Without this the notice told the user to install a version they already
+       * had, and offered an update action with nothing to do.
+       */
+      readonly pendingRestart?: boolean;
     };
 
 export interface DerivedNotification {
@@ -50,7 +56,8 @@ export interface DerivedNotification {
     | "queue-recovery"
     | "download-complete"
     | "download-failed"
-    | "app-update";
+    | "app-update"
+    | "app-restart-required";
   readonly title: string;
   readonly body: string;
   readonly item?: MediaItemIdentity;
@@ -174,14 +181,29 @@ export function deriveNotifications(
     }
 
     if (signal.type === "app-update") {
-      derived.push({
-        dedupKey: `app-update:${signal.latestVersion}`,
-        kind: "app-update",
-        title: `Update available · ${signal.latestVersion}`,
-        body: `You are on ${signal.currentVersion}. Update to ${signal.latestVersion}.`,
-        createdAt: input.now,
-        updatedAt: input.now,
-      });
+      // An already-installed update is a different state from an available one:
+      // there is nothing to download and no action to offer beyond restarting,
+      // so it gets its own dedupKey and never collides with the "available"
+      // notice for the same version.
+      derived.push(
+        signal.pendingRestart
+          ? {
+              dedupKey: `app-restart-required:${signal.latestVersion}`,
+              kind: "app-restart-required",
+              title: `Restart to finish updating · ${signal.latestVersion}`,
+              body: `${signal.latestVersion} is installed. Restart Kunai to leave ${signal.currentVersion}.`,
+              createdAt: input.now,
+              updatedAt: input.now,
+            }
+          : {
+              dedupKey: `app-update:${signal.latestVersion}`,
+              kind: "app-update",
+              title: `Update available · ${signal.latestVersion}`,
+              body: `You are on ${signal.currentVersion}. Update to ${signal.latestVersion}.`,
+              createdAt: input.now,
+              updatedAt: input.now,
+            },
+      );
       continue;
     }
 

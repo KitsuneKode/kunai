@@ -115,6 +115,35 @@ test("derives an app-update notification", () => {
   expect(n?.title).toContain("1.3.0");
 });
 
+// An auto-applied update is already on disk. Announcing it as "Update
+// available · Update to 1.3.0" told the user to install a version they had, and
+// offered an update action with nothing left to do.
+test("a pending-restart update is announced as restart-required, not as available", () => {
+  const [n] = deriveNotifications({
+    signals: [
+      { type: "app-update", currentVersion: "1.2.0", latestVersion: "1.3.0", pendingRestart: true },
+    ],
+    mutedTitleIds: new Set(),
+    now: "2026-07-22T01:00:00.000Z",
+  });
+  expect(n?.kind).toBe("app-restart-required");
+  expect(n?.dedupKey).toBe("app-restart-required:1.3.0");
+  expect(n?.title).toContain("Restart");
+  expect(n?.body).toContain("1.3.0");
+});
+
+test("restart-required and available notices for one version never collide", () => {
+  const notifications = deriveNotifications({
+    signals: [
+      { type: "app-update", currentVersion: "1.2.0", latestVersion: "1.3.0" },
+      { type: "app-update", currentVersion: "1.2.0", latestVersion: "1.3.0", pendingRestart: true },
+    ],
+    mutedTitleIds: new Set(),
+    now: "2026-07-22T01:00:00.000Z",
+  });
+  expect(new Set(notifications.map((n) => n.dedupKey)).size).toBe(2);
+});
+
 test("newEpisodeProjection=false suppresses new-episode notifications but keeps others", () => {
   const notifications = deriveNotifications({
     signals: [

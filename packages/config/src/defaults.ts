@@ -89,7 +89,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   telemetryEndpoint: "",
   updateChecksEnabled: true,
   autoApplyBinaryUpdates: true,
-  updateChannel: "stable",
   updateCheckIntervalDays: 7,
   updateSnoozedUntil: 0,
   lastUpdateCheckAt: 0,

@@ -149,6 +149,7 @@ const TYPE_GROUP: Readonly<Record<string, number>> = {
   "download-failed": 0,
   "new-episode": 1,
   "app-update": 2,
+  "app-restart-required": 2,
   "download-complete": 3,
 };
 

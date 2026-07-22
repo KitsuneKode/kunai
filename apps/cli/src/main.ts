@@ -844,6 +844,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
               type: "app-update",
               currentVersion: KUNAI_VERSION,
               latestVersion: result.version,
+              pendingRestart: result.status === "pending-restart",
             },
           ]);
         }

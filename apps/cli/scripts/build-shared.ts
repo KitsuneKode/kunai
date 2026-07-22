@@ -192,15 +192,21 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 }
 
 /**
- * Soft guard for the published npm JS bundle (excludes dist/assets).
+ * Soft guard for the bundled JS build (excludes dist/assets).
+ *
+ * Note this bundle is no longer what npm ships: `files` publishes only the
+ * ~7 KiB `dist/kunai.mjs` launcher plus per-platform binaries. So this is now a
+ * bloat ratchet on the dev/`start` bundle, not a constraint on install size.
  *
  * Raised from 2_560 when the half-block poster renderer landed: decoding JPEG
  * in process costs ~55 KiB but is what makes posters work on Windows, where
- * `chafa` is effectively never installed. Headroom is deliberate — this is a
- * guard against accidental bloat, so it should only move for a decision like
- * that one, with the reason recorded here.
+ * `chafa` is effectively never installed. Raised from 2_688 on 2026-07-22, which
+ * the build had reached to the byte (2688.24 KiB), when the restart-required
+ * notification kind and the extracted auto-update gate landed. Headroom is
+ * deliberate — this should only move for a decision like those, with the reason
+ * recorded here.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_688;
+export const NPM_BUNDLE_BUDGET_KB = 2_720;
 
 /** Packed tarball size budget for `npm pack` (excludes gzip; npm reports packed size). */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;

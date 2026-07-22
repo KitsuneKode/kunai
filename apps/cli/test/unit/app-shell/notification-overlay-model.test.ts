@@ -124,13 +124,15 @@ test("retry-download and update-app are executable primary actions with copy", (
   expect(getNotificationPrimaryAction(downloadFailed)).toBe("retry-download");
   expect(getNotificationPrimaryAction(appUpdate)).toBe("update-app");
   expect(getNotificationActionPresentation("retry-download").label).toBe("Retry download");
-  expect(getNotificationActionPresentation("update-app").label).toBe("Open release page");
+  // Not "Open release page": update routing became install-method aware, so
+  // this installs in place on native installs and only falls back to the web.
+  expect(getNotificationActionPresentation("update-app").label).toBe("Update Kunai");
   expect(getNotificationActionPresentation("retry-download").tone).toBe("warning");
   expect(getNotificationActionPresentation("retry-download").detail).toBe(
     "Retry this item through the standard download action",
   );
   expect(getNotificationActionPresentation("update-app").detail).toBe(
-    "Open the release page for the advertised Kunai version",
+    "Install the new version, or show how to update if a package manager owns this install",
   );
 });
 

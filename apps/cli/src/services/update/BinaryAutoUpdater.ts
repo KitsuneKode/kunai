@@ -15,6 +15,37 @@ export type BinaryAutoUpdateResult =
   | { readonly status: "skipped" }
   | { readonly status: "error"; readonly error: string };
 
+/**
+ * Should this run stop before touching the network, and with what result?
+ * Returns null to proceed.
+ *
+ * `force` marks an explicit user request ("update now" in the shell), which
+ * deliberately ignores every opt-out: those govern *automatic* behaviour only.
+ * Without that distinction, switching off auto-apply also silently disabled the
+ * manual update action, which then reported "Update did not apply (disabled)".
+ */
+export function resolveAutoUpdateGate(input: {
+  readonly config: Pick<
+    KitsuneConfig,
+    | "updateChecksEnabled"
+    | "autoApplyBinaryUpdates"
+    | "updateSnoozedUntil"
+    | "updateCheckIntervalDays"
+    | "lastUpdateCheckAt"
+    | "lastUpdateCheckFailedAt"
+  >;
+  readonly now: number;
+  readonly force: boolean;
+}): BinaryAutoUpdateResult | null {
+  if (input.force) return null;
+  if (!input.config.updateChecksEnabled || !input.config.autoApplyBinaryUpdates) {
+    return { status: "disabled" };
+  }
+  if (input.config.updateSnoozedUntil > input.now) return { status: "snoozed" };
+  if (!shouldRunUpdateCheck(input.config as KitsuneConfig, input.now)) return { status: "fresh" };
+  return null;
+}
+
 type BinaryAutoUpdateDeps = {
   readonly config: Pick<ConfigService, "getRaw" | "update" | "save">;
   readonly currentVersion: string;
@@ -30,15 +61,12 @@ export class BinaryAutoUpdater {
 
   async runOnce(options: { force?: boolean } = {}): Promise<BinaryAutoUpdateResult> {
     const config = this.deps.config.getRaw() as KitsuneConfig;
-    if (!config.updateChecksEnabled || !config.autoApplyBinaryUpdates) {
-      return { status: "disabled" };
-    }
-    if (config.updateSnoozedUntil > this.now() && !options.force) {
-      return { status: "snoozed" };
-    }
-    if (!options.force && !shouldRunUpdateCheck(config, this.now())) {
-      return { status: "fresh" };
-    }
+    const gate = resolveAutoUpdateGate({
+      config,
+      now: this.now(),
+      force: options.force === true,
+    });
+    if (gate) return gate;
 
     const manifest = await readInstallManifest();
     if (manifest?.method !== "binary" && !manifest?.versionedPath) {

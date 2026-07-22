@@ -37,7 +37,10 @@ import {
 } from "@/app/playback/playback-dead-stream-ledger";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
-import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
+import {
+  animeEpisodeCatalogCacheKey,
+  buildPlaybackEpisodePickerOptions,
+} from "@/app/playback/playback-episode-picker";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import {
   resolvePlaylistAutoNextCountdown,
@@ -58,8 +61,10 @@ import {
 } from "@/app/playback/playback-postplay-policy";
 import {
   playbackAudioPreference,
+  playbackEpisodeCatalogLanguages,
   playbackQualityPreference,
   playbackSubtitlePreference,
+  type EpisodeCatalogLanguagePreferences,
 } from "@/app/playback/playback-profile-context";
 import {
   pickCompatibleFallbackProvider,
@@ -656,6 +661,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         mode: stateManager.getState().mode,
         provider,
         cache: animeEpisodeCatalogByProvider,
+        languages: playbackEpisodeCatalogLanguages({
+          mode: stateManager.getState().mode,
+          title,
+          config,
+        }),
       });
       logger.info("Episode selection metadata", {
         titleId: title.id,
@@ -1183,6 +1193,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             mode: playbackMode,
             provider: currentProvider,
             cache: animeEpisodeCatalogByProvider,
+            languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
             signal: resolveController.signal,
           });
           const downloadedEpisodes = new Set(
@@ -4073,21 +4084,26 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     mode,
     provider,
     cache,
+    languages,
     signal,
   }: {
     title: TitleInfo;
     mode: import("../../domain/types").ShellMode;
     provider: import("../../services/providers/Provider").Provider | undefined;
     cache: Map<string, readonly EpisodePickerOption[] | undefined>;
+    languages: EpisodeCatalogLanguagePreferences;
     signal?: AbortSignal;
   }): Promise<readonly EpisodePickerOption[] | undefined> {
-    const cacheKey =
-      provider && title ? `${provider.metadata.id}:${title.id}` : provider?.metadata.id;
+    const cacheKey = animeEpisodeCatalogCacheKey({
+      providerId: provider?.metadata.id,
+      titleId: title?.id,
+      audioPreference: languages.audioPreference,
+    });
     if (cacheKey && cache.has(cacheKey)) {
       return cache.get(cacheKey);
     }
 
-    const result = await this.loadAnimeEpisodeOptions(title, mode, provider, signal);
+    const result = await this.loadAnimeEpisodeOptions(title, mode, provider, languages, signal);
     // Never cache a failed/aborted load: a cancelled resolve would otherwise
     // pin the episode picker to its 1-entry fallback for the whole session.
     if (cacheKey && result !== undefined) {
@@ -4100,6 +4116,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     title: TitleInfo,
     mode: import("../../domain/types").ShellMode,
     provider: import("../../services/providers/Provider").Provider | undefined,
+    languages: EpisodeCatalogLanguagePreferences,
     signal?: AbortSignal,
   ): Promise<readonly EpisodePickerOption[] | undefined> {
     if (
@@ -4111,7 +4128,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     }
 
     try {
-      return (await provider.listEpisodes({ title }, signal)) ?? undefined;
+      // Same language context `resolve` gets. Omitting it made AllAnime's
+      // `resolveAnimeAudioIntent` fall back to sub, so dub users browsed a sub
+      // episode list and then played dub — mismatched counts and labels.
+      return (
+        (await provider.listEpisodes(
+          {
+            title,
+            audioPreference: languages.audioPreference,
+            subtitlePreference: languages.subtitlePreference,
+          },
+          signal,
+        )) ?? undefined
+      );
     } catch {
       return undefined;
     }

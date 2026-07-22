@@ -121,7 +121,6 @@ export interface KitsuneConfig {
   telemetryEndpoint: string;
   updateChecksEnabled: boolean;
   autoApplyBinaryUpdates: boolean;
-  updateChannel: "stable" | "latest";
   updateCheckIntervalDays: number;
   updateSnoozedUntil: number;
   lastUpdateCheckAt: number;

@@ -37,3 +37,21 @@ export function playbackSubtitlePreference(input: PlaybackProfileContextInput): 
 export function playbackQualityPreference(input: PlaybackProfileContextInput): string | undefined {
   return playbackLanguageProfile(input).quality;
 }
+
+/**
+ * Language context for listing a provider's episode catalog. Providers that key
+ * their catalog by audio (AllAnime serves separate dub/sub episode lists) need
+ * the same preferences `resolve` receives, or the browsed list disagrees with
+ * what actually plays.
+ */
+export type EpisodeCatalogLanguagePreferences = {
+  readonly audioPreference: string;
+  readonly subtitlePreference: string;
+};
+
+export function playbackEpisodeCatalogLanguages(
+  input: PlaybackProfileContextInput,
+): EpisodeCatalogLanguagePreferences {
+  const profile = playbackLanguageProfile(input);
+  return { audioPreference: profile.audio, subtitlePreference: profile.subtitle };
+}

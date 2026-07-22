@@ -11,6 +11,24 @@ import { formatTimestamp, isFinished } from "@/services/continuation/history-pro
 import { fetchEpisodes } from "@/tmdb";
 import type { HistoryProgress } from "@kunai/storage";
 
+/**
+ * Cache key for a provider's episode catalog.
+ *
+ * Audio is part of the key because it selects the catalog, not just a track:
+ * AllAnime serves dub and sub as separate episode lists with different counts,
+ * so a key without it replays the previous audio's list after a mid-session
+ * switch. Returns undefined when there is nothing stable to key on.
+ */
+export function animeEpisodeCatalogCacheKey(input: {
+  readonly providerId: string | undefined;
+  readonly titleId: string | undefined;
+  readonly audioPreference: string;
+}): string | undefined {
+  if (!input.providerId) return undefined;
+  if (!input.titleId) return input.providerId;
+  return `${input.providerId}:${input.titleId}:${input.audioPreference}`;
+}
+
 export type PlaybackEpisodePickerInput = {
   title: TitleInfo;
   currentEpisode: EpisodeInfo;

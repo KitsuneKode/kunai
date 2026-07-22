@@ -5,7 +5,8 @@ export type NotificationKind =
   | "queue-recovery"
   | "download-complete"
   | "download-failed"
-  | "app-update";
+  | "app-update"
+  | "app-restart-required";
 
 export type NotificationSinkDelivery = {
   readonly dedupKey: string;

@@ -4,6 +4,7 @@ export const NOTIFICATION_KIND_GLYPH: Record<string, string> = {
   "download-failed": "⚠",
   "queue-recovery": "↩",
   "app-update": "⬆",
+  "app-restart-required": "⟳",
 };
 
 export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
@@ -12,6 +13,7 @@ export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
   "download-failed": "Download failed",
   "queue-recovery": "Queue recovered",
   "app-update": "Update available",
+  "app-restart-required": "Restart required",
 };
 
 export function notificationKindGlyph(kind: string): string {

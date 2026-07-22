@@ -46,6 +46,9 @@ const PRIORITY_RANK: Record<NotificationPriority, number> = {
 export function defaultPriorityForKind(kind: string): NotificationPriority {
   if (kind === "download-failed" || kind === "queue-recovery") return "high";
   if (kind === "app-update") return "low";
+  // Louder than "available": the work is already done and the user is one
+  // restart away from running it.
+  if (kind === "app-restart-required") return "medium";
   return "medium";
 }
 
