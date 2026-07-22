@@ -67,49 +67,53 @@ function Get-NormalizedVersion([string]$Value) {
   return $trimmed
 }
 
-function Resolve-InstalledPackageVersion {
-  if (Test-Cmd 'kunai') {
+function Read-KunaiPackageVersion([string]$PackageRoot) {
+  $pkgJson = Join-Path $PackageRoot (Join-Path $Package 'package.json')
+  if (Test-Path -LiteralPath $pkgJson) {
     try {
-      $out = (& kunai --version 2>$null | Select-Object -First 1)
-      if ($out -match '^kunai\s+(\d+\.\d+\.\d+)') {
-        return (Get-NormalizedVersion $Matches[1])
+      $pkg = Get-Content -LiteralPath $pkgJson -Raw | ConvertFrom-Json
+      if ($pkg.name -eq $Package -and $pkg.version) {
+        return (Get-NormalizedVersion ([string]$pkg.version))
       }
     }
     catch { }
   }
-  if (Test-Cmd 'npm') {
-    try {
-      $root = (& npm root -g 2>$null | Select-Object -First 1)
-      if ($root) {
-        $pkgJson = Join-Path $root (Join-Path $Package 'package.json')
-        if (Test-Path -LiteralPath $pkgJson) {
-          $pkg = Get-Content -LiteralPath $pkgJson -Raw | ConvertFrom-Json
-          if ($pkg.version) { return (Get-NormalizedVersion ([string]$pkg.version)) }
-        }
-      }
-    }
-    catch { }
-  }
-  $srcPkg = Join-Path (Join-Path $env:LOCALAPPDATA 'kunai\src') 'package.json'
-  if ($env:KUNAI_SOURCE_DIR) {
-    $srcPkg = Join-Path $env:KUNAI_SOURCE_DIR 'package.json'
-  }
-  if (Test-Path -LiteralPath $srcPkg) {
-    try {
-      $pkg = Get-Content -LiteralPath $srcPkg -Raw | ConvertFrom-Json
-      if ($pkg.version) { return (Get-NormalizedVersion ([string]$pkg.version)) }
-    }
-    catch { }
-  }
-  throw 'Could not resolve installed Kunai version after package install. Expected kunai --version or package.json metadata with major.minor.patch.'
+  return $null
 }
 
-function Complete-PackageActiveVersion([string]$Resolved) {
+function Resolve-InstalledPackageVersion([string]$InstallMethod) {
+  if ($InstallMethod -eq 'npm') {
+    $global:LASTEXITCODE = $null
+    $root = (& npm root -g 2>$null | Select-Object -First 1)
+    if ($global:LASTEXITCODE -eq 0 -and $root) {
+      $version = Read-KunaiPackageVersion ([string]$root)
+      if ($version) { return $version }
+    }
+  }
+  elseif ($InstallMethod -eq 'bun') {
+    $bunRoot = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bun' }
+    $root = Join-Path $bunRoot 'install\global\node_modules'
+    $version = Read-KunaiPackageVersion $root
+    if ($version) { return $version }
+  }
+  elseif ($InstallMethod -eq 'source') {
+    $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
+    $version = Read-KunaiPackageVersion $src
+    if ($version) { return $version }
+  }
+  throw "Could not resolve installed Kunai version from $InstallMethod-owned package metadata."
+}
+
+function Complete-PackageActiveVersion([string]$InstallMethod, [string]$Resolved) {
   if ($DryRun) {
     if ($Resolved -eq 'latest') { return 'dry-run' }
     return $Resolved
   }
-  return (Resolve-InstalledPackageVersion)
+  $observed = Resolve-InstalledPackageVersion $InstallMethod
+  if ($Resolved -ne 'latest' -and $observed -ne $Resolved) {
+    throw "Installed Kunai version $observed does not match requested $Resolved."
+  }
+  return $observed
 }
 
 function Get-IsoNow {
@@ -681,15 +685,25 @@ function Install-Binary {
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
 }
 
-function Install-Bun {
-  if (-not (Test-Cmd 'bun')) {
-    if ($DryRun) { Write-Info '[dry-run] would install Bun from bun.sh' }
-    else { Invoke-RestMethod -Uri 'https://bun.sh/install.ps1' | Invoke-Expression }
+function Require-Cmd([string]$Name, [string]$InstallHint) {
+  if (-not $DryRun -and -not (Test-Cmd $Name)) {
+    throw "Required command '$Name' was not found. $InstallHint"
   }
 }
 
 function Invoke-Step([string]$Description, [scriptblock]$Action) {
-  if ($DryRun) { Write-Info "[dry-run] $Description" } else { & $Action }
+  if ($DryRun) {
+    Write-Info "[dry-run] $Description"
+    return
+  }
+
+  $global:LASTEXITCODE = $null
+  & $Action
+  $exitCode = $global:LASTEXITCODE
+  if ($null -ne $exitCode -and $exitCode -ne 0) {
+    throw "$Description failed with exit code $exitCode."
+  }
+  Write-Host 'Done.' -ForegroundColor Green
 }
 
 # Reject non-canonical pinned versions before any install side effects.
@@ -702,7 +716,8 @@ Write-Host 'Kunai installer' -ForegroundColor Cyan
 switch ($Method) {
   'binary' { Install-Binary }
   'npm' {
-    Install-Bun
+    Require-Cmd 'node' 'Install Node.js before using -Method npm.'
+    Require-Cmd 'npm' 'Install npm before using -Method npm.'
     $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
     if ($resolved -eq 'latest') {
       Invoke-Step "npm install -g $Package" { & npm install -g $Package }
@@ -710,11 +725,11 @@ switch ($Method) {
     else {
       Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
     }
-    $resolved = Complete-PackageActiveVersion $resolved
+    $resolved = Complete-PackageActiveVersion 'npm' $resolved
     Write-Manifest 'npm-global' $resolved 'kunai'
   }
   'bun' {
-    Install-Bun
+    Require-Cmd 'bun' 'Install Bun before using -Method bun.'
     $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
     if ($resolved -eq 'latest') {
       Invoke-Step "bun install -g $Package" { & bun install -g $Package }
@@ -722,21 +737,37 @@ switch ($Method) {
     else {
       Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
     }
-    $resolved = Complete-PackageActiveVersion $resolved
+    $resolved = Complete-PackageActiveVersion 'bun' $resolved
     Write-Manifest 'bun-global' $resolved 'kunai'
   }
   'source' {
-    Install-Bun
+    Require-Cmd 'git' 'Install Git before using -Method source.'
+    Require-Cmd 'bun' 'Install Bun before using -Method source.'
     $resolved = if ($Version -eq 'latest') { 'latest' } else { Get-NormalizedVersion $Version }
     $src = if ($env:KUNAI_SOURCE_DIR) { $env:KUNAI_SOURCE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\src' }
-    Invoke-Step "git clone Kunai into $src" {
-      if (Test-Path (Join-Path $src '.git')) { & git -C $src pull --ff-only }
-      else { & git clone --depth 1 'https://github.com/KitsuneKode/kunai.git' $src }
-      Push-Location $src
-      & bun install; & bun run build; & bun run link:global
-      Pop-Location
+    if (Test-Path (Join-Path $src '.git')) {
+      Invoke-Step "git pull Kunai in $src" { & git -C $src pull --ff-only }
     }
-    $resolved = Complete-PackageActiveVersion $resolved
+    else {
+      Invoke-Step "git clone Kunai into $src" { & git clone --depth 1 'https://github.com/KitsuneKode/kunai.git' $src }
+    }
+    if (-not $DryRun) {
+      Push-Location $src
+      try {
+        Invoke-Step 'bun install' { & bun install }
+        Invoke-Step 'bun run build' { & bun run build }
+        Invoke-Step 'bun run link:global' { & bun run link:global }
+      }
+      finally {
+        Pop-Location
+      }
+    }
+    else {
+      Invoke-Step 'bun install' { }
+      Invoke-Step 'bun run build' { }
+      Invoke-Step 'bun run link:global' { }
+    }
+    $resolved = Complete-PackageActiveVersion 'source' $resolved
     Write-Manifest 'source' $resolved 'kunai'
   }
 }

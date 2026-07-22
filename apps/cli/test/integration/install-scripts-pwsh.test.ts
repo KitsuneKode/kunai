@@ -36,6 +36,18 @@ function runInstallPs1(
   });
 }
 
+function installPwshCommandShim(
+  root: string,
+  name: string,
+  contents: { unix: string; windows: string },
+): void {
+  if (process.platform === "win32") {
+    writeFileSync(join(root, `${name}.cmd`), contents.windows);
+    return;
+  }
+  writeFileSync(join(root, name), contents.unix, { mode: 0o755 });
+}
+
 /** Async so Bun.serve can answer while the installer runs (spawnSync deadlocks the fixture). */
 async function runInstallPs1Async(
   args: string[],
@@ -544,20 +556,51 @@ describeWindows("install.ps1 PATH diagnostics", () => {
 });
 
 describePwsh("install.ps1 package activeVersion", () => {
+  test("fails on npm exit 17 without printing Done or writing a manifest", () => {
+    const sandbox = createInstallerSandbox("install-ps1-npm-failure");
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      mkdirSync(shimDir, { recursive: true });
+      installCommandShim(shimDir, "node");
+      installPwshCommandShim(shimDir, "npm", {
+        unix: "#!/bin/sh\nexit 17\n",
+        windows: "@echo off\r\nexit /b 17\r\n",
+      });
+
+      const result = runInstallPs1(["-Method", "npm", "-Yes", "-Version", "4.5.6"], {
+        ...sandbox.env,
+        PATH: `${shimDir}${delimiter}${process.env.PATH ?? ""}`,
+      });
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stderr}${result.stdout}`).toContain("exit code 17");
+      expect(result.stdout).not.toMatch(/^Done\.$/m);
+      expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("npm method resolves activeVersion from kunai --version, never latest", () => {
     const sandbox = createInstallerSandbox("install-ps1-npm-version");
     try {
       const shimDir = join(sandbox.root, "shims");
+      const npmRoot = join(sandbox.root, "npm-root");
       mkdirSync(shimDir, { recursive: true });
-      installCommandShim(shimDir, "npm");
-      installCommandShim(shimDir, "bun");
-      installCommandShim(
-        shimDir,
-        "kunai",
-        process.platform === "win32"
-          ? "@echo off\r\necho kunai 4.5.6 (npm-global)\r\n"
-          : '#!/bin/sh\necho "kunai 4.5.6 (npm-global)"\n',
+      mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
+      writeFileSync(
+        join(npmRoot, "@kitsunekode", "kunai", "package.json"),
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
       );
+      installCommandShim(shimDir, "node");
+      installPwshCommandShim(shimDir, "npm", {
+        unix: '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; fi\nexit 0\n',
+        windows: '@echo off\r\nif "%1"=="root" echo %KUNAI_NPM_ROOT%\r\nexit /b 0\r\n',
+      });
+      installPwshCommandShim(shimDir, "kunai", {
+        unix: '#!/bin/sh\necho "kunai 1.0.0 (stale-path-winner)"\n',
+        windows: "@echo off\r\necho kunai 1.0.0 (stale-path-winner)\r\n",
+      });
 
       const env: NodeJS.ProcessEnv = { ...sandbox.env };
       const inheritedPath =
@@ -566,6 +609,7 @@ describePwsh("install.ps1 package activeVersion", () => {
         if (key.toLowerCase() === "path") delete env[key];
       }
       env.Path = `${shimDir}${delimiter}${inheritedPath}`;
+      env.KUNAI_NPM_ROOT = npmRoot;
 
       const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
       expect(result.status).toBe(0);
@@ -579,6 +623,76 @@ describePwsh("install.ps1 package activeVersion", () => {
       sandbox.cleanup();
     }
   });
+
+  test.each(["npm", "bun"] as const)(
+    "%s method pins explicit argv and records the observed matching version",
+    (method) => {
+      const sandbox = createInstallerSandbox(`install-ps1-${method}-explicit`);
+      try {
+        const shimDir = join(sandbox.root, "shims");
+        const argvLog = join(sandbox.root, `${method}-argv.txt`);
+        const npmRoot = join(sandbox.root, "npm-root");
+        const bunRoot = join(sandbox.root, "bun-root");
+        mkdirSync(shimDir, { recursive: true });
+        if (method === "npm") {
+          installCommandShim(shimDir, "node");
+          mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
+          writeFileSync(
+            join(npmRoot, "@kitsunekode", "kunai", "package.json"),
+            JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
+          );
+          installPwshCommandShim(shimDir, "npm", {
+            unix: '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; else printf "%s\\n" "$*" > "$KUNAI_ARGV_LOG"; fi\nexit 0\n',
+            windows:
+              '@echo off\r\nif "%1"=="root" (echo %KUNAI_NPM_ROOT%) else (echo %* > "%KUNAI_ARGV_LOG%")\r\nexit /b 0\r\n',
+          });
+        } else {
+          mkdirSync(join(bunRoot, "install", "global", "node_modules", "@kitsunekode", "kunai"), {
+            recursive: true,
+          });
+          writeFileSync(
+            join(
+              bunRoot,
+              "install",
+              "global",
+              "node_modules",
+              "@kitsunekode",
+              "kunai",
+              "package.json",
+            ),
+            JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
+          );
+          installPwshCommandShim(shimDir, "bun", {
+            unix: '#!/bin/sh\nprintf "%s\\n" "$*" > "$KUNAI_ARGV_LOG"\nexit 0\n',
+            windows: '@echo off\r\necho %* > "%KUNAI_ARGV_LOG%"\r\nexit /b 0\r\n',
+          });
+        }
+
+        const env: NodeJS.ProcessEnv = {
+          ...sandbox.env,
+          KUNAI_ARGV_LOG: argvLog,
+          KUNAI_NPM_ROOT: npmRoot,
+          BUN_INSTALL: bunRoot,
+        };
+        const inheritedPath =
+          Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+        for (const key of Object.keys(env)) {
+          if (key.toLowerCase() === "path") delete env[key];
+        }
+        env.Path = `${shimDir}${delimiter}${inheritedPath}`;
+
+        const result = runInstallPs1(["-Method", method, "-Yes", "-Version", "4.5.6"], env);
+        expect(result.status).toBe(0);
+        expect(readFileSync(argvLog, "utf8").trim()).toBe(`install -g @kitsunekode/kunai@4.5.6`);
+        const manifest = JSON.parse(
+          readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
+        ) as { activeVersion: string };
+        expect(manifest.activeVersion).toBe("4.5.6");
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
 });
 
 if (!pwshAvailable()) {
