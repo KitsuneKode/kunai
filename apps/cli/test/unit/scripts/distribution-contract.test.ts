@@ -266,6 +266,18 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(Object.values(rootPackage.scripts).join("\n")).not.toContain("bun publish");
     expect(rootPackage.scripts["release:publish-tarball"]).toBeUndefined();
   });
+
+  test("pins every third-party release action to a full commit with its major comment", () => {
+    const usesLines = release
+      .split("\n")
+      .filter((line) => /\buses:/.test(line) && !line.includes("uses: ./"));
+    expect(usesLines.length).toBeGreaterThan(0);
+    for (const line of usesLines) {
+      const match = /uses:\s*([^@\s]+)@([0-9a-f]{40})\s+#\s+([^@\s]+)@(v\d+)\s*$/.exec(line);
+      expect(match, line).not.toBeNull();
+      expect(match?.[3], line).toBe(match?.[1]);
+    }
+  });
 });
 
 describe("release:pack script contract", () => {

@@ -71,7 +71,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -81,7 +81,7 @@ jobs:
           turbo-cache-prefix: release-version-pr
 
       - name: Create or update version PR
-        uses: changesets/action@v1
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # changesets/action@v1
         with:
           version: bun run version:packages
           title: "chore: version packages"
@@ -102,7 +102,7 @@ jobs:
       tag: ${{ steps.ver.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -122,7 +122,7 @@ jobs:
         with:
           turbo-cache-prefix: release-candidate
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # actions/setup-node@v6
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
 
@@ -252,7 +252,7 @@ jobs:
             --output artifacts/gates/releaseAssets.json
 
       - name: Upload candidate artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
@@ -260,7 +260,7 @@ jobs:
           path: .candidate-upload/*
 
       - name: Upload repository gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-repository-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -269,7 +269,7 @@ jobs:
             artifacts/gates/repository.log
 
       - name: Upload package gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-package-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -278,7 +278,7 @@ jobs:
             artifacts/gates/package.log
 
       - name: Upload npm global install gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-npmGlobalInstall-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -287,7 +287,7 @@ jobs:
             artifacts/gates/npmGlobalInstall.log
 
       - name: Upload compiled playback gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-compiledPlayback-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -296,7 +296,7 @@ jobs:
             artifacts/gates/compiledPlayback.log
 
       - name: Upload release assets gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -328,7 +328,7 @@ jobs:
             binary: kunai-darwin-x64
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -338,7 +338,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download exact preserved candidate
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
@@ -419,7 +419,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload native smoke log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           retention-days: 14
@@ -434,14 +434,14 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-native-aggregate
           skip-turbo-cache: "true"
 
       - name: Download every native smoke log
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           pattern: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/native-logs
@@ -467,7 +467,7 @@ jobs:
             --output artifacts/nativePlatforms.json
 
       - name: Upload native platform gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-nativePlatforms-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           retention-days: 14
@@ -492,7 +492,7 @@ jobs:
             runner: windows-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-installer-${{ matrix.id }}
@@ -517,7 +517,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload installer harness log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
           if-no-files-found: error
@@ -531,12 +531,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-installer-aggregate
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           pattern: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
           path: artifacts/installer-logs
@@ -561,7 +561,7 @@ jobs:
             --output artifacts/installer.json
 
       - name: Upload installer gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-installer-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -577,12 +577,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-readme-commands
           skip-turbo-cache: "true"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
@@ -607,7 +607,7 @@ jobs:
             --output artifacts/readmeCommands.json
 
       - name: Upload README commands gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-readmeCommands-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -623,7 +623,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: release-live-providers
@@ -656,7 +656,7 @@ jobs:
             --output artifacts/liveProviders.json
 
       - name: Upload live provider gate evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: gate-liveProviders-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           if-no-files-found: error
@@ -681,7 +681,7 @@ jobs:
       binary_artifact: ${{ steps.gate.outputs.binary_artifact }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -691,7 +691,7 @@ jobs:
           skip-turbo-cache: "true"
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
@@ -712,7 +712,7 @@ jobs:
             apps/cli/dist/bin/
 
       - name: Download every gate evidence document and hashed artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           pattern: gate-*-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: artifacts/gates
@@ -757,7 +757,7 @@ jobs:
           echo "binary_artifact=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload confirmation evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4
         with:
           name: release-confirmation-${{ needs.candidate.outputs.version }}
           retention-days: 14
@@ -783,7 +783,7 @@ jobs:
       tag: ${{ needs.confirmation.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
@@ -804,7 +804,7 @@ jobs:
           turbo-cache-prefix: release-publish
           skip-turbo-cache: "true"
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # actions/setup-node@v6
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
 
@@ -816,7 +816,7 @@ jobs:
           npm --version
 
       - name: Download candidate artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # actions/download-artifact@v4
         with:
           name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}-${{ github.sha }}
           path: .release-download
@@ -897,7 +897,7 @@ jobs:
           git push origin "refs/tags/${TAG}"
 
       - name: Create draft GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.confirmation.outputs.tag }}
           name: ${{ needs.confirmation.outputs.tag }}
@@ -954,7 +954,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
           fetch-depth: 0
           filter: blob:none
