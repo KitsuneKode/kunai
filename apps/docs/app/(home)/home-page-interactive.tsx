@@ -2,26 +2,32 @@
 
 import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { CANONICAL_INSTALL, CANONICAL_SETUP } from "@/lib/install-commands";
+import {
+  CANONICAL_SETUP,
+  NATIVE_INSTALL_BY_OS,
+  type NativeInstallOs,
+} from "@/lib/install-commands";
 import { IconCheck } from "@tabler/icons-react";
 import { useState } from "react";
 
 export default function HomePageInteractive() {
-  const [activeOs, setActiveOs] = useState<"linux" | "macos" | "windows">("linux");
+  const [activeOs, setActiveOs] = useState<NativeInstallOs>("linux");
 
   const prereqCommand =
     activeOs === "linux"
       ? "sudo apt install mpv chafa"
       : activeOs === "macos"
         ? "brew install mpv chafa"
-        : null;
+        : "winget install mpv";
+
+  const installCommand = NATIVE_INSTALL_BY_OS[activeOs];
 
   return (
     <section id="install" className="kunai-home-install kunai-flow-section">
       <SectionHeading
         eyebrow="Install"
         title="Get started in three steps."
-        description="Kunai runs on any machine with Bun and mpv. Select your operating system to see the exact commands."
+        description="Preferred path is a self-contained binary (no Bun or Node required). Select your OS for the exact bootstrap and mpv commands."
       />
 
       <div className="install-section kunai-surface-shell">
@@ -31,7 +37,7 @@ export default function HomePageInteractive() {
             role="tablist"
             aria-label="Operating system"
           >
-            {(["linux", "macos", "windows"] as const).map((os) => (
+            {(["linux", "macos", "windows"] satisfies readonly NativeInstallOs[]).map((os) => (
               <button
                 type="button"
                 key={os}
@@ -59,22 +65,16 @@ export default function HomePageInteractive() {
                 </div>
                 <h3 className="kunai-type-title mt-2 mb-3 text-lg">Install dependencies</h3>
                 <p className="kunai-type-body mb-4 text-xs">
-                  Kunai requires <code className="text-fd-foreground font-mono">mpv</code> for video
-                  playback and <code className="text-fd-foreground font-mono">bun</code> as the CLI
-                  runtime.
+                  Playback needs <code className="text-fd-foreground font-mono">mpv</code> on your{" "}
+                  <code className="text-fd-foreground font-mono">PATH</code>. The binary install
+                  embeds Bun — you do not need Node or Bun separately.
                 </p>
               </div>
               <div className="flex flex-col gap-2">
-                {prereqCommand ? (
-                  <code className="kunai-code-row">
-                    <span>{prereqCommand}</span>
-                    <CopyButton text={prereqCommand} label={`${activeOs}-prereq`} />
-                  </code>
-                ) : (
-                  <div className="kunai-callout-warn">
-                    Install Bun and mpv, then ensure they are on your PATH.
-                  </div>
-                )}
+                <code className="kunai-code-row">
+                  <span>{prereqCommand}</span>
+                  <CopyButton text={prereqCommand} label={`${activeOs}-prereq`} />
+                </code>
               </div>
             </div>
 
@@ -84,8 +84,8 @@ export default function HomePageInteractive() {
                 <h3 className="kunai-type-title mt-2 mb-3 text-lg">Install Kunai shell</h3>
               </div>
               <code className="kunai-code-row">
-                <span>{CANONICAL_INSTALL}</span>
-                <CopyButton text={CANONICAL_INSTALL} label="global-install" />
+                <span>{installCommand}</span>
+                <CopyButton text={installCommand} label={`${activeOs}-install`} />
               </code>
             </div>
 

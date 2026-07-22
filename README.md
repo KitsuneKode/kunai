@@ -12,12 +12,16 @@ One fullscreen, keyboard-driven terminal session.
 &nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
 
 ```bash
-# Zero prerequisites — installs a self-contained binary (no Bun/Node needed)
+# Self-contained binary — no Bun/Node needed (mpv still required for playback)
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
-kunai --version
-mpv --version
-kunai --setup
-kunai -S "Dune"
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+```
+
+```bash
+kunai --setup && kunai -S "Dune"
 ```
 
 </div>
@@ -29,10 +33,11 @@ kunai -S "Dune"
 - [Why Kunai](#why-kunai)
 - [Showcase](#showcase)
 - [Quick Start](#quick-start)
-  - [Install](#install)
-  - [Install by platform](#install-by-platform)
-  - [What you need up front](#what-you-need-up-front)
+  - [Install Kunai](#install-kunai)
   - [Support matrix (0.3.0)](#support-matrix-030)
+  - [Dependencies by platform](#dependencies-by-platform)
+  - [Verify](#verify)
+  - [What you need up front](#what-you-need-up-front)
 - [Usage](#usage)
 - [Key Bindings](#key-bindings)
 - [Features](#features)
@@ -78,31 +83,31 @@ downloads, and Up Next — without leaving the session or touching a mouse.
 
 ## Quick Start
 
-### Install
+### Install Kunai
 
-The recommended install downloads a **self-contained binary** with the Bun
-runtime embedded — **no Bun or Node required**. It verifies a SHA256 checksum,
-records how you installed (so `kunai upgrade` does the right thing), and works on
-Linux, macOS, and Windows.
+The recommended path downloads a **self-contained binary** with the Bun runtime
+embedded — **no Bun or Node required**. It verifies a SHA256 checksum and records
+how you installed so `kunai upgrade` / `kunai uninstall` do the right thing.
+
+Binary install works on Linux, macOS, and Windows; the **bootstrap script differs
+by OS** (`install.sh` vs `install.ps1`).
 
 ```bash
-# Recommended — zero prerequisites
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
-kunai --version
-mpv --version
-kunai --setup
-kunai -S "Dune"
 ```
-
-`-S` lands on search results — select a title, pick an episode when prompted, wait
-for provider resolution, then confirm the committed `mpv` startup. If `mpv` is
-missing, setup and browsing stay available; only playback handoff is blocked.
-
-Windows (PowerShell):
 
 ```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 ```
+
+> **Unsigned beta binaries** — Windows SmartScreen may warn on first run;
+> `install.ps1` runs `Unblock-File` on the staged binary (or right-click →
+> Properties → Unblock). macOS Gatekeeper may quarantine the binary; remove it
+> with `xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install
+> path). Full detail:
+> [Install and update](docs/users/install-and-update.mdx#unsigned-binaries-beta).
 
 Inspect first (no dirs created), pin a version, or pick a channel:
 
@@ -110,8 +115,6 @@ Inspect first (no dirs created), pin a version, or pick a channel:
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --dry-run
 curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash -s -- --version 0.3.0
 ```
-
-Inside the shell, `/` opens the command palette from anywhere.
 
 Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
 (add `--purge` to also delete config/history/cache).
@@ -129,7 +132,24 @@ Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai unin
 > cd kunai && bun install && bun run link:global
 > ```
 
-### Install by platform
+### Support matrix (0.3.0)
+
+| Target                                        | Status                              |
+| --------------------------------------------- | ----------------------------------- |
+| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                       |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                       |
+| `darwin-x64`, `darwin-arm64`                  | **Beta**                            |
+| `windows-x64`                                 | **Beta**                            |
+| `windows-arm64`                               | **Experimental**                    |
+| WSL                                           | Linux install + Linux mpv/PATH/data |
+| FreeBSD / other BSD                           | **Unsupported** binary              |
+
+Installer health: `kunai doctor` / `kunai doctor --json`. List PATH shadows with
+`type -a kunai` / `which -a kunai` (bash), `whence -a kunai` (zsh), or
+`Get-Command kunai -All` (Windows PowerShell).
+See [docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues).
+
+### Dependencies by platform
 
 With the binary install, **mpv is the only required dependency**. The rest are
 optional and auto-detected — install what you want, then run `kunai --setup` to
@@ -213,22 +233,19 @@ kunai --setup
 
 </details>
 
-### Support matrix (0.3.0)
+### Verify
 
-| Target                                        | Status                              |
-| --------------------------------------------- | ----------------------------------- |
-| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                       |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                       |
-| `darwin-x64`, `darwin-arm64`                  | **Beta**                            |
-| `windows-x64`                                 | **Beta**                            |
-| `windows-arm64`                               | **Experimental**                    |
-| WSL                                           | Linux install + Linux mpv/PATH/data |
-| FreeBSD / other BSD                           | **Unsupported** binary              |
+```bash
+kunai --version
+mpv --version
+kunai --setup
+kunai -S "Dune"
+```
 
-Installer health: `kunai doctor` / `kunai doctor --json`. List PATH shadows with
-`type -a kunai` / `which -a kunai` (bash), `whence -a kunai` (zsh), or
-`Get-Command kunai -All` (Windows PowerShell).
-See [docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues).
+`-S` lands on search results — select a title, pick an episode when prompted, wait
+for provider resolution, then confirm the committed `mpv` startup. If `mpv` is
+missing, setup and browsing stay available; only playback handoff is blocked.
+Inside the shell, `/` opens the command palette from anywhere.
 
 ### What you need up front
 
@@ -546,7 +563,7 @@ titles are only indexed under an alternate name.
 
 **Kunai won't start playback.**
 mpv isn't installed or isn't on your `PATH`. Install it (see
-[Install by platform](#install-by-platform)) and re-run.
+[Dependencies by platform](#dependencies-by-platform)) and re-run.
 
 **I don't see download options.**
 Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
@@ -568,8 +585,14 @@ Run `kunai doctor` (or `kunai doctor --json`). List every binary with
 (PowerShell). Rollback with `kunai rollback --list` / `kunai rollback`. Uninstall
 only via the owning channel (`kunai uninstall`, or `npm uninstall -g` for npm).
 Checksums/404s → `kunai install --force` / pin a version or re-verify
-`SHA256SUMS`. Unsigned beta binaries may need SmartScreen unblock or macOS
-quarantine removal.
+`SHA256SUMS`.
+
+**Windows SmartScreen or macOS Gatekeeper blocks the binary?**
+Release binaries are unsigned during beta. On Windows, `install.ps1` runs
+`Unblock-File`; you can also right-click → Properties → Unblock. On macOS:
+`xattr -dr com.apple.quarantine ~/.local/bin/kunai` (or your install path).
+See [Install Kunai](#install-kunai) and
+[Install and update](docs/users/install-and-update.mdx#unsigned-binaries-beta).
 
 **YouTube age-restricted / members content?**
 Set `youtubeMetadata.cookiesFromBrowser` or an absolute `cookiesFile` in

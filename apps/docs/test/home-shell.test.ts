@@ -29,7 +29,9 @@ describe("docs home shell", () => {
     const h1Count = (hero.match(/<h1/g) ?? []).length;
     expect(h1Count).toBe(1);
     expect(hero).toContain("CANONICAL_INSTALL");
+    expect(hero).toContain("NATIVE_INSTALL_PS1");
     expect(readSource("lib/install-commands.ts")).toContain("bun install -g @kitsunekode/kunai");
+    expect(readSource("lib/install-commands.ts")).toContain("NATIVE_INSTALL_PS1");
   });
 
   test("terminal simulator does not duplicate hero markup", () => {

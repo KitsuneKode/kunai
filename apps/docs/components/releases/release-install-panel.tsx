@@ -1,5 +1,5 @@
 import { CopyButton } from "@/components/ui/copy-button";
-import { CANONICAL_INSTALL, CANONICAL_SETUP } from "@/lib/install-commands";
+import { CANONICAL_INSTALL, CANONICAL_SETUP, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import type { ReleaseNotesArtifact } from "@/lib/release-notes";
 
 type ReleaseInstallPanelProps = {
@@ -18,9 +18,15 @@ export function ReleaseInstallPanel({
       {showCanonical ? (
         <>
           <p className="kunai-type-caption m-0">Canonical install</p>
+          <p className="text-fd-muted-foreground m-0 text-xs">Linux / macOS</p>
           <code className="kunai-code-row">
             <span>{CANONICAL_INSTALL}</span>
             <CopyButton text={CANONICAL_INSTALL} label="release-canonical-install" />
+          </code>
+          <p className="text-fd-muted-foreground m-0 text-xs">Windows (PowerShell)</p>
+          <code className="kunai-code-row">
+            <span>{NATIVE_INSTALL_PS1}</span>
+            <CopyButton text={NATIVE_INSTALL_PS1} label="release-windows-install" />
           </code>
           <code className="kunai-code-row">
             <span>{CANONICAL_SETUP}</span>

@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-07-21T07:11:57.374Z",
+  "syncedAt": "2026-07-21T16:29:52.878Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "480cf354",
-  "cliSourceFingerprint": "9e88d10a106a15c6134309c7fce6e2c14176a08956e8f423b94f26db43d3c88b",
+  "cliSourceRevision": "43feafdb",
+  "cliSourceFingerprint": "96c85de2eb9c2c3d36e74ccd39cbc844128086f7a241c72d1d986c467d0c8b37",
   "docsContentFingerprint": "cd27a7f2093de917d524af9ea943f823bc7b99d97d4311eab0c71d3144d584e5",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,

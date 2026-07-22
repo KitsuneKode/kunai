@@ -1,3 +1,4 @@
+import { NATIVE_INSTALL_PS1, NATIVE_INSTALL_SH } from "@/lib/install-commands";
 import { Step, Steps } from "fumadocs-ui/components/steps";
 import Link from "next/link";
 
@@ -7,11 +8,17 @@ export function QuickStartSteps() {
       <Step>
         <h3 className="text-fd-foreground m-0 text-lg font-medium">Install the binary</h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Preferred path (self-contained binary — no Bun or Node required):
+          Preferred path (self-contained binary — no Bun or Node required). Bootstrap script differs
+          by OS:
         </p>
         <pre className="bg-fd-secondary text-fd-foreground mt-2 overflow-x-auto rounded-lg p-3 text-sm">
           <code>
-            {`curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+            {`# Linux / macOS
+${NATIVE_INSTALL_SH}
+
+# Windows (PowerShell)
+${NATIVE_INSTALL_PS1}
+
 kunai --version`}
           </code>
         </pre>

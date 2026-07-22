@@ -8,6 +8,8 @@ import {
   FIRST_SEARCH,
   INSTALL_HIERARCHY,
   MPV_VERSION_CHECK,
+  NATIVE_INSTALL_BY_OS,
+  NATIVE_INSTALL_PS1,
   NATIVE_INSTALL_SH,
   NPM_GLOBAL_INSTALL,
   PREFERRED_INSTALL,
@@ -44,6 +46,9 @@ describe("0.3.0 public truth contract", () => {
     expect(NPM_GLOBAL_INSTALL).toContain("@kitsunekode/kunai");
     // Canonical home/docs install must prefer native once reconciled.
     expect(CANONICAL_INSTALL).toBe(PREFERRED_INSTALL);
+    expect(NATIVE_INSTALL_BY_OS.linux).toBe(NATIVE_INSTALL_SH);
+    expect(NATIVE_INSTALL_BY_OS.macos).toBe(NATIVE_INSTALL_SH);
+    expect(NATIVE_INSTALL_BY_OS.windows).toBe(NATIVE_INSTALL_PS1);
   });
 
   test("quick start is install → version → mpv → setup → first search", () => {
@@ -63,12 +68,17 @@ describe("0.3.0 public truth contract", () => {
       expect(readme).toContain(command);
     }
 
+    expect(readme).toContain(NATIVE_INSTALL_PS1);
+    expect(readme).toContain("### Install Kunai");
+    expect(readme).toContain("### Dependencies by platform");
+
     // Getting started / QuickStartSteps must not present Bun global as the primary path.
     expect(gettingStarted).toContain(NATIVE_INSTALL_SH);
     expect(gettingStarted).toContain(VERSION_CHECK);
     expect(gettingStarted).toContain(MPV_VERSION_CHECK);
     expect(gettingStarted).not.toMatch(/Canonical path:.*bun install -g/i);
-    expect(quickStartSteps).toContain(NATIVE_INSTALL_SH);
+    expect(quickStartSteps).toContain("NATIVE_INSTALL_SH");
+    expect(quickStartSteps).toContain("NATIVE_INSTALL_PS1");
     expect(quickStartSteps).not.toContain(BUN_GLOBAL_INSTALL);
   });
 

@@ -1,6 +1,6 @@
 import { CopyButton } from "@/components/ui/copy-button";
 import { homeHero } from "@/lib/home-content";
-import { CANONICAL_INSTALL } from "@/lib/install-commands";
+import { CANONICAL_INSTALL, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import { IconArrowRight } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -14,18 +14,25 @@ export function HomeHeroStatic() {
       <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">
         {homeHero.description}
       </p>
-      <div className="mt-6 flex flex-wrap items-center gap-4">
-        <code className="kunai-code-row">
-          <span>{installCommand}</span>
-          <CopyButton text={installCommand} label="hero-install" />
+      <div className="mt-6 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-4">
+          <code className="kunai-code-row">
+            <span>{installCommand}</span>
+            <CopyButton text={installCommand} label="hero-install" />
+          </code>
+          <Link className="kunai-button kunai-button-primary" href={homeHero.primaryCta.href}>
+            <span>{homeHero.primaryCta.label}</span>
+            <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
+          </Link>
+          <Link className="kunai-button border-fd-border" href={homeHero.secondaryCta.href}>
+            {homeHero.secondaryCta.label}
+          </Link>
+        </div>
+        <code className="kunai-code-row max-w-fit">
+          <span className="text-fd-muted-foreground mr-2 text-xs">Windows</span>
+          <span>{NATIVE_INSTALL_PS1}</span>
+          <CopyButton text={NATIVE_INSTALL_PS1} label="hero-install-windows" />
         </code>
-        <Link className="kunai-button kunai-button-primary" href={homeHero.primaryCta.href}>
-          <span>{homeHero.primaryCta.label}</span>
-          <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
-        </Link>
-        <Link className="kunai-button border-fd-border" href={homeHero.secondaryCta.href}>
-          {homeHero.secondaryCta.label}
-        </Link>
       </div>
     </section>
   );
