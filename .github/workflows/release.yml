@@ -164,11 +164,18 @@ jobs:
       - name: Create preserved npm tarball
         run: bun run release:pack
 
+      # The launcher declares each platform package as an exact-version
+      # optionalDependency. Publishing it without them yields a CLI with no
+      # binary, so they are built here and preserved alongside the tarball.
+      - name: Build npm platform packages
+        run: bun run build:npm-platform
+
       - name: Stage candidate upload directory
         run: |
           set -euo pipefail
           mkdir -p .candidate-upload
           cp ".release-candidate/${NPM_TARBALL_NAME}" .candidate-upload/
+          cp -R apps/cli/dist/npm-platform .candidate-upload/npm-platform
           cp apps/cli/dist/bin/kunai-linux-x64 \
             apps/cli/dist/bin/kunai-linux-arm64 \
             apps/cli/dist/bin/kunai-linux-x64-musl \
@@ -327,8 +334,10 @@ jobs:
             .release-download/SHA256SUMS \
             apps/cli/dist/bin/
           cp .release-download/kunai-npm.tgz .release-candidate/kunai-npm.tgz
+          cp -R .release-download/npm-platform apps/cli/dist/npm-platform
           test -f .release-candidate/kunai-npm.tgz
           test -f apps/cli/dist/bin/SHA256SUMS
+          test -d apps/cli/dist/npm-platform
 
       - name: Reverify preserved binaries
         run: |
@@ -336,8 +345,12 @@ jobs:
             apps/cli/dist/bin \
             --expected-version "${{ needs.confirmation.outputs.version }}"
 
-      - name: Publish preserved npm tarball
-        run: bun publish .release-candidate/kunai-npm.tgz --access public
+      # Platform packages first, launcher last, refusing on any version skew.
+      # Publishing the launcher first leaves anyone installing in that window
+      # resolving optionalDependencies that do not exist yet, i.e. a CLI with no
+      # binary. The script enforces both the ordering and the version pinning.
+      - name: Publish platform packages, then the launcher
+        run: bun run release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 

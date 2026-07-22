@@ -80,6 +80,10 @@ async function main(): Promise<void> {
       ...(target.os === "linux" ? { libc: [target.libc === "musl" ? "musl" : "glibc"] } : {}),
       files: ["bin/"],
       preferUnplugged: true,
+      // Match the launcher's publishConfig. Without it these packages publish
+      // without provenance, so the attestation would cover the launcher but not
+      // the binaries it actually executes — the half that matters.
+      publishConfig: { access: "public", provenance: true },
     };
 
     await writeFile(
