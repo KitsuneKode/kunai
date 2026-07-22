@@ -70,13 +70,22 @@ of it — **Kunai's failure mode is silent no-ops, not crashes.** Flags parsed a
 dropped, settings persisted and ignored, capabilities declared and unread, comments
 asserting guarantees the code does not keep.
 
-| Plan | Title                                                   | Priority | Effort | Depends on | Status |
-| ---- | ------------------------------------------------------- | -------- | ------ | ---------- | ------ |
-| 019  | Make notifications actionable (play from the inbox)     | P1       | M      | 020 (soft) | TODO   |
-| 020  | Fix the silent no-ops users hit daily (7 independent)   | P1       | M      | —          | TODO   |
-| 021  | Make the provider contract enforced, not decorative     | P2       | L      | —          | TODO   |
-| 022  | Shell interaction coherence: help, destructive, filters | P2       | L      | —          | TODO   |
-| 023  | CLI surface honesty: packaging, flags, docs, first run  | P2       | M      | —          | TODO   |
+| Plan | Title                                                   | Priority | Effort | Depends on | Status  |
+| ---- | ------------------------------------------------------- | -------- | ------ | ---------- | ------- |
+| 019  | Make notifications actionable (play from the inbox)     | P1       | M      | 022.1      | PARTIAL |
+| 020  | Fix the silent no-ops users hit daily (7 independent)   | P1       | M      | —          | DONE    |
+| 021  | Make the provider contract enforced, not decorative     | P2       | L      | —          | PARTIAL |
+| 022  | Shell interaction coherence: help, destructive, filters | P2       | L      | —          | TODO    |
+| 023  | CLI surface honesty: packaging, flags, docs, first run  | P2       | M      | —          | TODO    |
+| 024  | Distribution and update experience (npm, autoupdate)    | P1       | L      | —          | DONE    |
+| 025  | Terminal graphics parity: capability probe + sixel      | P1       | L      | —          | TODO    |
+
+**PARTIAL detail.** `019`: the notification payload is fixed and `play-now` works
+from the palette route; the direct-`OPEN_OVERLAY` route still strands the intent
+and must be fixed by routing through the promise bridge (same rework as `022.1`),
+never by adding a second global consumer. `021`: stage 3 is complete (episode
+catalogs are language-aware and cache-keyed by audio); stages 1, 2, 4, 5, 6, 7
+are untouched.
 
 Already landed from this audit (no plan needed):
 
