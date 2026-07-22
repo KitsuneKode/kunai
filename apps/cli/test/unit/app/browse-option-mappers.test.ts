@@ -19,10 +19,17 @@ describe("toBrowseResultOption", () => {
 
     expect(toBrowseResultOption(result)).toEqual({
       value: result,
+      localFilterFacts: {
+        mediaType: "series",
+        year: 2019,
+        downloaded: false,
+        watched: "unwatched",
+      },
       label: "Demon Slayer (2019)",
       detail: "Series · A young swordsman joins the demon slayer corps.",
       previewTitle: "Demon Slayer",
       previewMeta: ["Series", "2019", "26 episodes", "audio unknown · subs unknown", "8.5/10 TMDB"],
+      previewBadge: undefined,
       previewFacts: [
         {
           label: "Watchlist",

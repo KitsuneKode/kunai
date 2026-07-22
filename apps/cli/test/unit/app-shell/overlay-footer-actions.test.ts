@@ -36,7 +36,7 @@ describe("overlay footer actions", () => {
       "enter:act",
       "a:actions",
       "s:sort",
-      "tab:archive",
+      "Tab:archive",
       "[ / ]:page",
       "/:commands",
       "esc:close",
@@ -52,7 +52,7 @@ describe("overlay footer actions", () => {
       "enter:act",
       "a:actions",
       "s:sort",
-      "tab:active",
+      "Tab:active",
       "/:commands",
       "esc:close",
     ]);

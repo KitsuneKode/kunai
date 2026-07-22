@@ -67,6 +67,9 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/playback/run-post-playback-menu.ts",
     [
       "@/app-shell/commands",
+      // DEBT (2026-07-21): queue-launch handoff lives in app-shell; the bridge
+      // belongs below app-shell so app/ can claim a launch without inverting.
+      "@/app-shell/root-queue-bridge",
       "@/app-shell/title-control/title-control-post-play",
       "@/app-shell/types",
       "@/app-shell/workflows",
@@ -99,6 +102,11 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/calendar-ui.model",
       "@/app-shell/command-router",
       "@/app-shell/commands",
+      // DEBT (2026-07-21): both are shell-owned helpers that app/ reaches up for.
+      // `external-open-fallback` is presentation copy; `root-queue-bridge` is the
+      // queue-launch handoff. Both should move below app-shell.
+      "@/app-shell/external-open-fallback",
+      "@/app-shell/root-queue-bridge",
       "@/app-shell/ink-shell",
       "@/app-shell/pickers",
       "@/app-shell/search-browse-command-ids",
@@ -108,6 +116,13 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
   ],
   ["apps/cli/src/app/search/calendar-continue-launch.ts", ["@/app-shell/root-history-bridge"]],
   ["apps/cli/src/app/search/browse-option-mappers.ts", ["@/app-shell/types"]],
+  // DEBT (2026-07-21): browse filtering/projection helpers and their types are
+  // shell-owned but consumed by app/search. Type-only for the two `types` edges.
+  ["apps/cli/src/app/search/browse-local-filter-facts.ts", ["@/app-shell/types"]],
+  [
+    "apps/cli/src/app/search/browse-initial-results.ts",
+    ["@/app-shell/browse-filters", "@/app-shell/types"],
+  ],
   [
     "apps/cli/src/app/bootstrap/download-episode-checklist.ts",
     ["@/app-shell/checklist-shell", "@/app-shell/pickers", "@/app-shell/workflows"],

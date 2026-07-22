@@ -23,7 +23,10 @@ describe("panel-data", () => {
     const lines = buildHelpPanelLines();
     expect(lines.length).toBeGreaterThan(4);
     expect(lines.some((line) => line.label === "─── Panels & commands")).toBe(true);
-    expect(lines.some((line) => line.label === "Ctrl+W")).toBe(true);
+    // Chords render with the locked glyphs (⌃ Ctrl, ⇧ Shift), not "Ctrl+"/"Shift+"
+    // spellings — see formatChord in keybindings.ts. Assert via the binding's
+    // detail so a relabelled chord fails loudly instead of silently vanishing.
+    expect(lines.find((line) => line.detail === "Delete word backward")?.label).toBe("⌃W");
   });
 
   test("buildHelpPanelLines documents the real mpv quality key (k), not an invented v", () => {

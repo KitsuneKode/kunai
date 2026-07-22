@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 
 import type { TitleInfo } from "@/domain/types";
 
@@ -11,15 +11,20 @@ const mapInvidiousSearchItem = mock(
 );
 const mapInvidiousTrendingVideos = mock((items: unknown[]) => items as never);
 const getYoutubeProviderConfig = mock(() => ({ invidiousInstanceUrl: undefined }));
-const parseYoutubeCatalogId = mock((id: string) => {
-  if (id.startsWith("yt:video:")) {
-    return { kind: "video" as const, nativeId: id.slice("yt:video:".length) };
-  }
-  return { kind: "unknown" as const, nativeId: id };
-});
-const toYoutubeVideoCatalogId = mock((id: string) => `yt:video:${id}`);
+
+// `mock.module` is process-global in Bun and applies at file-LOAD time, so it
+// affects every other test file in the run — including files that execute before
+// this one. Two rules keep it contained:
+//   1. Spread the real module so exports this test does not stub keep working.
+//   2. Never stub a pure helper (id parsing/formatting) — use the real one. The
+//      previous stub invented a fake `yt:video:` id grammar, which silently
+//      broke `isYoutubeCollectionCatalogId` for unrelated suites.
+// Only the network/mapping seams below are stubbed, and `afterAll` restores the
+// module so even those cannot outlive this file.
+const actualYoutubeModule = await import("@kunai/providers/youtube");
 
 mock.module("@kunai/providers/youtube", () => ({
+  ...actualYoutubeModule,
   getYoutubeProviderConfig,
   invidiousGetVideo,
   invidiousGetChannelVideos,
@@ -27,9 +32,11 @@ mock.module("@kunai/providers/youtube", () => ({
   mapInvidiousRecommendedVideos,
   mapInvidiousSearchItem,
   mapInvidiousTrendingVideos,
-  parseYoutubeCatalogId,
-  toYoutubeVideoCatalogId,
 }));
+
+afterAll(() => {
+  mock.module("@kunai/providers/youtube", () => actualYoutubeModule);
+});
 
 const { loadYoutubeRecommendations } =
   await import("@/services/youtube/YoutubeRecommendationService");
@@ -42,7 +49,7 @@ afterEach(() => {
 
 function relatedBatch(count: number) {
   return Array.from({ length: count }, (_, i) => ({
-    id: `yt:video:rel${i}`,
+    id: `youtube:rel${i}`,
     type: "movie" as const,
     title: `Related ${i}`,
   }));
@@ -57,7 +64,7 @@ describe("loadYoutubeRecommendations", () => {
     } as never);
 
     const title = {
-      id: "yt:video:abc",
+      id: "youtube:abc",
       name: "Clip",
       type: "movie",
       externalIds: { youtubeId: "abc", youtubeChannelId: "UCmine" },
@@ -67,7 +74,7 @@ describe("loadYoutubeRecommendations", () => {
       title,
       historySeeds: [
         {
-          titleId: "yt:video:other",
+          titleId: "youtube:other",
           externalIds: { youtubeChannelId: "UChistory" },
           mediaKind: "video",
           providerId: "youtube",
@@ -93,14 +100,14 @@ describe("loadYoutubeRecommendations", () => {
     mapInvidiousSearchItem.mockImplementation(((item: { videoId?: string }) =>
       item.videoId
         ? {
-            id: `yt:video:${item.videoId}`,
+            id: `youtube:${item.videoId}`,
             type: "movie",
             title: item.videoId,
           }
         : null) as typeof mapInvidiousSearchItem);
 
     const title = {
-      id: "yt:video:abc",
+      id: "youtube:abc",
       name: "Clip",
       type: "movie",
       externalIds: { youtubeId: "abc" },
@@ -110,7 +117,7 @@ describe("loadYoutubeRecommendations", () => {
       title,
       historySeeds: [
         {
-          titleId: "yt:video:other",
+          titleId: "youtube:other",
           externalIds: { youtubeChannelId: "UChistory" },
           mediaKind: "video",
           providerId: "youtube",
