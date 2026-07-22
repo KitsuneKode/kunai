@@ -179,3 +179,48 @@ test("ProviderRegistry sorts compatible providers by configured priority", () =>
   expect(registry.getDefault(false).metadata.id).toBe("rivestream");
   expect(registry.getDefault(true).metadata.id).toBe("allanime");
 });
+
+test("listEpisodes receives the full title identity and language preferences", async () => {
+  // Regression: the adapter used to hand-roll `{id, kind, title}`, dropping
+  // externalIds/anilistId/tmdbId — so AllAnime's AniList->native bridge and
+  // Miruro's numeric-id lookup had nothing to read, and episode listing worked
+  // only when the raw session id happened to already be native. It also never
+  // passed language preferences, so dub users got the sub catalogue.
+  let received: Record<string, unknown> | null = null;
+  const module: CoreProviderModule = {
+    providerId: "hooked",
+    manifest,
+    async resolve() {
+      throw new Error("resolve should not be called");
+    },
+    async listEpisodes(input): Promise<ProviderEpisodeOption[]> {
+      received = input as unknown as Record<string, unknown>;
+      return [{ index: 1, label: "Episode 1", totalEpisodeCount: 1 }];
+    },
+  };
+
+  const engine = {
+    modules: [module],
+    getManifest: () => manifest,
+    getProviderIds: () => ["hooked"],
+    createRuntimeContext: () => ({ now: () => Date.now() }),
+  } as unknown as ProviderEngine;
+
+  const registry = new ProviderRegistryImpl(engine);
+  await registry.get("hooked")?.listEpisodes?.({
+    title: {
+      id: "anilist:21",
+      name: "One Piece",
+      type: "series",
+      externalIds: { anilistId: "21", malId: "21" },
+    } as never,
+    audioPreference: "dub",
+    subtitlePreference: "en",
+  });
+
+  const title = (received as unknown as { title: Record<string, unknown> }).title;
+  expect(title.externalIds).toEqual({ anilistId: "21", malId: "21" });
+  expect(title.title).toBe("One Piece");
+  expect((received as unknown as Record<string, unknown>).preferredAudioLanguage).toBe("dub");
+  expect((received as unknown as Record<string, unknown>).preferredSubtitleLanguage).toBe("en");
+});

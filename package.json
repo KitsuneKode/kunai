@@ -116,7 +116,7 @@
     "release:confirmation:check": "bun run scripts/release-confirmation-gate.ts",
     "release:pack": "mkdir -p .release-candidate && ROOT=\"$PWD\" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename \"$ROOT/.release-candidate/kunai-npm.tgz\")",
     "release:publish-tarball": "bun publish .release-candidate/kunai-npm.tgz --access public",
-    "release": "bun run release:publish-tarball",
+    "release": "bun run scripts/publish-npm-release.ts --yes",
     "guard": "bun run scripts/release-guard.ts",
     "link:global": "bun run --cwd apps/cli link:global",
     "unlink:global": "bun run --cwd apps/cli unlink:global",
@@ -125,7 +125,10 @@
     "prototype:serve": "node .prototypes/_harness/server.js",
     "prototype:layout-fixtures": "bun run apps/cli/scripts/export-list-row-layout-fixtures.ts",
     "test:unit": "turbo run test:unit",
-    "test:integration": "turbo run test:integration"
+    "test:integration": "turbo run test:integration",
+    "build:npm-platform": "bun run --cwd apps/cli build:npm-platform",
+    "release:publish": "bun run scripts/publish-npm-release.ts",
+    "release:publish:check": "bun run scripts/publish-npm-release.ts"
   },
   "dependencies": {
     "typescript": "catalog:"
