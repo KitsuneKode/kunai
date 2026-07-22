@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 import { KEYBINDINGS } from "@/app-shell/keybindings";
+import { resolveHelpScope } from "@/app-shell/root-shell-state";
 import { COMMAND_CONTEXTS, COMMANDS } from "@/domain/session/command-registry";
 
 /**
@@ -172,6 +173,43 @@ describe("contract conformance", () => {
     const empty = [...declared].filter((scope) => !used.has(scope as never));
 
     expect(empty.filter((scope) => !KNOWN_EMPTY_SCOPES.has(scope))).toEqual([]);
+  });
+
+  /**
+   * A scope with bindings is still useless if `?` can never select it: the help
+   * overlay is the only place those keys are documented. `resolveHelpScope` used
+   * to switch on playback status alone, so five surfaces' bindings were
+   * unreachable — this pins every scope to a state that actually produces it.
+   */
+  test("every keybinding scope is reachable from resolveHelpScope", () => {
+    const state = (playbackStatus: string, ...modals: readonly string[]) =>
+      ({ playbackStatus, activeModals: modals.map((type) => ({ type })) }) as never;
+
+    const REACHABLE: Readonly<Record<string, () => unknown>> = {
+      player: () => resolveHelpScope(state("playing")),
+      postPlayback: () => resolveHelpScope(state("finished")),
+      browse: () => resolveHelpScope(state("idle")),
+      queue: () => resolveHelpScope(state("idle", "queue")),
+      history: () => resolveHelpScope(state("idle", "history")),
+      notifications: () => resolveHelpScope(state("idle", "notifications")),
+      library: () => resolveHelpScope(state("idle", "library")),
+    };
+
+    // Scopes the help overlay is not expected to select on its own:
+    // `global` is folded into every scope by `bindingsForScope`; `editing` and
+    // `loading` are transient input modes; `search` has no bindings at all.
+    const NOT_HELP_SELECTABLE = new Set(["global", "editing", "loading", "search"]);
+
+    const declared = [...new Set(KEYBINDINGS.map((binding) => binding.scope as string))];
+    const unreachable = declared.filter(
+      (scope) => !NOT_HELP_SELECTABLE.has(scope) && !(scope in REACHABLE),
+    );
+    expect(unreachable).toEqual([]);
+
+    // And each mapping above must genuinely produce the scope it claims.
+    for (const [scope, produce] of Object.entries(REACHABLE)) {
+      expect(produce()).toBe(scope);
+    }
   });
 
   /**

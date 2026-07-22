@@ -124,13 +124,51 @@ export function resolveRootShellSurface(
 }
 
 /**
+ * Overlay currently being documented by `?`.
+ *
+ * `help` is skipped because pressing `?` pushes it on top of the surface it is
+ * meant to describe; documenting `help` itself would be circular. `confirm` is
+ * skipped for the same reason — it is a transient prompt over a real surface.
+ */
+function overlayUnderHelp(state: SessionState): OverlayState | null {
+  const modals = state.activeModals ?? [];
+  for (let i = modals.length - 1; i >= 0; i -= 1) {
+    const overlay = modals[i];
+    if (!overlay) continue;
+    if (overlay.type === "help" || overlay.type === "confirm") continue;
+    return overlay;
+  }
+  return null;
+}
+
+/**
  * Keybinding scope the `?` help overlay should document, derived from what the
- * user is actually doing beneath the overlay. Help is pushed on top of the live
- * surface, so we read playback truth rather than the (now "root-overlay")
- * RootShellSurface: active playback → player, just-finished → postPlayback,
- * otherwise the browse surface. Globals are folded in by `bindingsForScope`.
+ * user is actually doing beneath the overlay. Globals are folded in by
+ * `bindingsForScope`.
+ *
+ * The top overlay wins, because that is the surface whose keys are live. This
+ * used to switch on `playbackStatus` alone and so could only ever return
+ * `player`, `postPlayback`, or `browse` — pressing `?` in Up Next, History,
+ * Notifications, Library or Downloads showed *browse* help, leaving the bindings
+ * those surfaces define undocumented and unreachable.
  */
 export function resolveHelpScope(state: SessionState): KeyScope {
+  const overlay = overlayUnderHelp(state);
+  switch (overlay?.type) {
+    case "queue":
+      return "queue";
+    case "history":
+      return "history";
+    case "notifications":
+      return "notifications";
+    // Downloads is the library's other view and shares its bindings.
+    case "downloads":
+    case "library":
+      return "library";
+    default:
+      break;
+  }
+
   switch (state.playbackStatus) {
     case "loading":
     case "ready":
