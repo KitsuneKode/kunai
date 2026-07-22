@@ -163,4 +163,13 @@ describe("version:packages contract", () => {
       /^bunx changeset version && bun run scripts\/sync-npm-platform-versions\.ts && bun run scripts\/sync-root-changelog\.ts && bun run release:notes$/,
     );
   });
+
+  test("guard and release:guard route to the same release guard implementation", () => {
+    const rootPackage = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(rootPackage.scripts.guard).toBe("bun run scripts/release-guard.ts");
+    expect(rootPackage.scripts["release:guard"]).toBe(rootPackage.scripts.guard);
+  });
 });

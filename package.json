@@ -118,6 +118,7 @@
     "release:publish-tarball": "bun publish .release-candidate/kunai-npm.tgz --access public",
     "release": "bun run scripts/publish-npm-release.ts --yes",
     "guard": "bun run scripts/release-guard.ts",
+    "release:guard": "bun run scripts/release-guard.ts",
     "link:global": "bun run --cwd apps/cli link:global",
     "unlink:global": "bun run --cwd apps/cli unlink:global",
     "relink:global": "bun run --cwd apps/cli relink:global",
