@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 export const RELEASE_GATE_NAMES = [
   "repository",
@@ -58,6 +58,16 @@ export interface ValidatedReleaseGateEvidence {
   readonly commitSha: string;
   readonly documents: readonly ReleaseGateEvidenceDocument[];
   readonly gates: Readonly<Record<ReleaseGateName, "passed">>;
+}
+
+export interface CreateReleaseGateEvidenceInput {
+  readonly gate: ReleaseGateName;
+  readonly version: string;
+  readonly commitSha: string;
+  readonly runId: string;
+  readonly artifactName: string;
+  readonly artifactPath: string;
+  readonly generatedAt?: string;
 }
 
 const DOCUMENT_KEYS = [
@@ -142,6 +152,39 @@ function sha256File(path: string): string {
     const message = error instanceof Error ? error.message : String(error);
     fail(`artifact file is not readable: ${path}: ${message}`);
   }
+}
+
+export function createReleaseGateEvidence(
+  input: CreateReleaseGateEvidenceInput,
+): ReleaseGateEvidenceDocument {
+  if (
+    !input.artifactName.includes(input.version) ||
+    !input.artifactName.includes(input.commitSha)
+  ) {
+    fail("artifactName must be immutable and contain the exact version and commit SHA");
+  }
+  const document: ReleaseGateEvidenceDocument = {
+    schemaVersion: 1,
+    gate: input.gate,
+    status: "passed",
+    version: input.version,
+    commitSha: input.commitSha,
+    runId: input.runId,
+    artifactName: input.artifactName,
+    artifactSha256: sha256File(resolve(input.artifactPath)),
+    generatedAt: input.generatedAt ?? new Date().toISOString(),
+  };
+  return parseReleaseGateEvidenceDocument(document);
+}
+
+export function writeReleaseGateEvidence(
+  outputPath: string,
+  document: ReleaseGateEvidenceDocument,
+): void {
+  const parsed = parseReleaseGateEvidenceDocument(document);
+  const path = resolve(outputPath);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
 }
 
 export function parseReleaseGateEvidenceDocument(input: unknown): ReleaseGateEvidenceDocument {
@@ -347,4 +390,64 @@ export function loadReleaseGateEvidence(
     };
   });
   return aggregateReleaseGateEvidence(documents, hashedArtifacts, expectations);
+}
+
+type CreateCliArgs = CreateReleaseGateEvidenceInput & { readonly outputPath: string };
+
+function parseCreateCliArgs(argv: readonly string[]): CreateCliArgs {
+  const values = new Map<string, string>();
+  for (let index = 0; index < argv.length; index += 2) {
+    const option = argv[index];
+    const value = argv[index + 1];
+    if (!option?.startsWith("--") || !value || value.startsWith("--")) {
+      fail(`invalid create arguments near ${option ?? "(missing)"}`);
+    }
+    if (values.has(option)) fail(`duplicate create option: ${option}`);
+    values.set(option, value);
+  }
+  const required = (option: string): string => {
+    const value = values.get(option);
+    if (!value) fail(`create requires ${option}`);
+    return value;
+  };
+  const known = new Set([
+    "--gate",
+    "--version",
+    "--commit",
+    "--run-id",
+    "--artifact-name",
+    "--artifact-path",
+    "--output",
+  ]);
+  const unknown = [...values.keys()].filter((option) => !known.has(option));
+  if (unknown.length > 0) fail(`unknown create options: ${unknown.join(", ")}`);
+  const gate = required("--gate");
+  if (!RELEASE_GATE_NAMES.includes(gate as ReleaseGateName)) fail(`unknown release gate: ${gate}`);
+  return {
+    gate: gate as ReleaseGateName,
+    version: required("--version"),
+    commitSha: required("--commit"),
+    runId: required("--run-id"),
+    artifactName: required("--artifact-name"),
+    artifactPath: required("--artifact-path"),
+    outputPath: required("--output"),
+  };
+}
+
+if (import.meta.main) {
+  try {
+    const [command, ...argv] = process.argv.slice(2);
+    if (command !== "create") {
+      fail(
+        "usage: create --gate <gate> --version <semver> --commit <sha> --run-id <id> --artifact-name <name> --artifact-path <path> --output <path>",
+      );
+    }
+    const args = parseCreateCliArgs(argv);
+    const document = createReleaseGateEvidence(args);
+    writeReleaseGateEvidence(args.outputPath, document);
+    console.log(JSON.stringify(document));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }

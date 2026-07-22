@@ -219,12 +219,184 @@ jobs:
           path: .candidate-upload/*
 
   # ---------------------------------------------------------------------------
+  # Execute the exact preserved native candidate on each blocking host OS.
+  # ---------------------------------------------------------------------------
+  native-smoke:
+    name: Native candidate smoke (${{ matrix.id }})
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux-x64
+            runner: ubuntu-latest
+            binary: kunai-linux-x64
+          - id: windows-x64
+            runner: windows-latest
+            binary: kunai-windows-x64.exe
+          - id: darwin-x64
+            runner: macos-13
+            binary: kunai-darwin-x64
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-native-${{ matrix.id }}
+          skip-turbo-cache: "true"
+
+      - name: Download exact preserved candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          path: .release-download
+
+      - name: Verify checksums and execute Unix candidate
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          KUNAI_NATIVE_BINARY: ${{ matrix.binary }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd .release-download && sha256sum --check SHA256SUMS)
+          else
+            (cd .release-download && shasum --algorithm 256 --check SHA256SUMS)
+          fi
+          chmod +x ".release-download/${KUNAI_NATIVE_BINARY}"
+          PROFILE_ROOT="$(mktemp -d)"
+          export HOME="${PROFILE_ROOT}/home"
+          export XDG_CONFIG_HOME="${PROFILE_ROOT}/config"
+          export XDG_DATA_HOME="${PROFILE_ROOT}/data"
+          export XDG_CACHE_HOME="${PROFILE_ROOT}/cache"
+          mkdir -p "${HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+          ".release-download/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee "artifacts/native-${{ matrix.id }}.log"
+          ".release-download/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
+
+      - name: Execute preserved musl candidate in Alpine
+        if: matrix.id == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x .release-download/kunai-linux-x64-musl
+          docker run --rm \
+            --volume "$PWD/.release-download:/candidate:ro" \
+            --env HOME=/tmp/kunai-home \
+            alpine:3.20 \
+            /candidate/kunai-linux-x64-musl --version \
+            2>&1 | tee -a artifacts/native-linux-x64.log
+          docker run --rm \
+            --volume "$PWD/.release-download:/candidate:ro" \
+            --env HOME=/tmp/kunai-home \
+            alpine:3.20 \
+            /candidate/kunai-linux-x64-musl --help \
+            2>&1 | tee -a artifacts/native-linux-x64.log
+
+      - name: Verify checksums and execute Windows candidate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          KUNAI_NATIVE_BINARY: ${{ matrix.binary }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          foreach ($line in Get-Content .release-download/SHA256SUMS) {
+            if ($line -notmatch '^([0-9a-f]{64})\s+(.+)$') { throw "Malformed SHA256SUMS row: $line" }
+            $expected = $Matches[1]
+            $name = $Matches[2]
+            $actual = (Get-FileHash ".release-download/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { throw "Checksum mismatch for $name" }
+          }
+          $profileRoot = Join-Path $env:RUNNER_TEMP "kunai-native-$([guid]::NewGuid())"
+          $env:USERPROFILE = Join-Path $profileRoot "home"
+          $env:APPDATA = Join-Path $profileRoot "appdata"
+          $env:LOCALAPPDATA = Join-Path $profileRoot "localappdata"
+          New-Item -ItemType Directory -Force $env:USERPROFILE,$env:APPDATA,$env:LOCALAPPDATA | Out-Null
+          & ".release-download/$env:KUNAI_NATIVE_BINARY" --version 2>&1 | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ".release-download/$env:KUNAI_NATIVE_BINARY" --help 2>&1 | Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Exercise PowerShell installer harness
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          bun run --cwd apps/cli test:file -- test/integration/install-scripts-pwsh.test.ts 2>&1 |
+            Tee-Object -FilePath "artifacts/native-${{ matrix.id }}.log" -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload native smoke log
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: artifacts/native-${{ matrix.id }}.log
+
+  native-platforms-gate:
+    name: Aggregate native platform evidence
+    needs: [candidate, native-smoke]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-native-aggregate
+          skip-turbo-cache: "true"
+
+      - name: Download every native smoke log
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
+          path: artifacts/native-logs
+          merge-multiple: true
+
+      - name: Aggregate native platform logs and emit evidence
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          ARTIFACT_NAME="nativePlatforms-${VERSION}-${{ github.sha }}"
+          test "$(find artifacts/native-logs -type f -name 'native-*.log' | wc -l)" -eq 3
+          find artifacts/native-logs -type f -name 'native-*.log' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > artifacts/native-platforms.log
+          bun run scripts/release-gate-evidence.ts create \
+            --gate nativePlatforms \
+            --version "${VERSION}" \
+            --commit "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --artifact-name "${ARTIFACT_NAME}" \
+            --artifact-path artifacts/native-platforms.log \
+            --output artifacts/nativePlatforms.json
+
+      - name: Upload native platform gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-nativePlatforms-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/nativePlatforms.json
+            artifacts/native-platforms.log
+
+  # ---------------------------------------------------------------------------
   # Confirmation gate: deterministic candidate + fresh provider evidence.
   # Stops before protected publication; never publishes.
   # ---------------------------------------------------------------------------
   confirmation:
     name: Release confirmation gate
-    needs: candidate
+    needs: [candidate, native-platforms-gate]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15

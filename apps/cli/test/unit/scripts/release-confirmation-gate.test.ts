@@ -357,7 +357,7 @@ describe("release workflow confirmation dependency graph", () => {
     const confirmation = extractWorkflowJob(release, "confirmation");
     const publish = extractWorkflowJob(release, "publish");
 
-    expect(confirmation).toMatch(/needs:\s*candidate/);
+    expect(confirmation).toMatch(/needs:[^\n]*candidate/);
     expect(confirmation).toContain("release:confirmation:check");
     expect(confirmation).toContain("provider_signoff_run_id");
     expect(confirmation).not.toMatch(/environment:\s*release-production/);
@@ -373,5 +373,24 @@ describe("release workflow confirmation dependency graph", () => {
 
   test("workflow_dispatch accepts provider_signoff_run_id", () => {
     expect(release).toMatch(/provider_signoff_run_id:/);
+  });
+
+  test("blocking host-native matrix executes preserved Linux, Windows, and macOS candidates", () => {
+    const native = extractWorkflowJob(release, "native-smoke");
+    const aggregate = extractWorkflowJob(release, "native-platforms-gate");
+    const confirmation = extractWorkflowJob(release, "confirmation");
+
+    expect(native).toContain("ubuntu-latest");
+    expect(native).toContain("windows-latest");
+    expect(native).toContain("macos-13");
+    expect(native).not.toContain("continue-on-error: true");
+    expect(native).toContain("SHA256SUMS");
+    expect(native).toContain("--version");
+    expect(native).toContain("--help");
+    expect(native).toContain("download-artifact");
+    expect(native).toContain("install-scripts-pwsh.test.ts");
+    expect(aggregate).toMatch(/needs:[^\n]*native-smoke/);
+    expect(aggregate).toContain("nativePlatforms");
+    expect(confirmation).toMatch(/needs:[\s\S]*native-platforms-gate/);
   });
 });

@@ -1,15 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   RELEASE_GATE_NAMES,
   aggregateReleaseGateEvidence,
+  createReleaseGateEvidence,
   loadReleaseGateEvidence,
   parseReleaseGateEvidenceDocument,
   validateReleaseGateEvidenceDocument,
+  writeReleaseGateEvidence,
   type ReleaseGateArtifact,
   type ReleaseGateEvidenceDocument,
   type ReleaseGateName,
@@ -268,6 +270,67 @@ describe("release gate evidence file loading", () => {
           nowMs: NOW_MS,
         }),
       ).toThrow(/digest|sha-?256|repository/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("release gate evidence production", () => {
+  test("creates and writes passed evidence only after hashing the exact producer artifact", () => {
+    const root = mkdtempSync(join(tmpdir(), "kunai-release-evidence-create-"));
+    const artifactPath = join(root, "repository.log");
+    const outputPath = join(root, "repository.json");
+    writeFileSync(artifactPath, "repository checks passed\n", "utf8");
+
+    try {
+      const document = createReleaseGateEvidence({
+        gate: "repository",
+        version: VERSION,
+        commitSha: COMMIT_SHA,
+        runId: RUN_ID,
+        artifactName: `repository-${VERSION}-${COMMIT_SHA}`,
+        artifactPath,
+        generatedAt: "2026-07-23T11:00:00.000Z",
+      });
+      expect(document.artifactSha256).toBe(sha256("repository checks passed\n"));
+      expect(document.status).toBe("passed");
+
+      writeReleaseGateEvidence(outputPath, document);
+      expect(JSON.parse(readFileSync(outputPath, "utf8"))).toEqual(document);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses missing artifacts and mutable artifact names without version and commit", () => {
+    expect(() =>
+      createReleaseGateEvidence({
+        gate: "package",
+        version: VERSION,
+        commitSha: COMMIT_SHA,
+        runId: RUN_ID,
+        artifactName: "package-latest",
+        artifactPath: "/missing/package.log",
+        generatedAt: "2026-07-23T11:00:00.000Z",
+      }),
+    ).toThrow(/artifact|missing|readable/i);
+
+    const root = mkdtempSync(join(tmpdir(), "kunai-release-evidence-name-"));
+    const artifactPath = join(root, "package.log");
+    writeFileSync(artifactPath, "ok", "utf8");
+    try {
+      expect(() =>
+        createReleaseGateEvidence({
+          gate: "package",
+          version: VERSION,
+          commitSha: COMMIT_SHA,
+          runId: RUN_ID,
+          artifactName: "package-latest",
+          artifactPath,
+          generatedAt: "2026-07-23T11:00:00.000Z",
+        }),
+      ).toThrow(/artifactName.*version.*commit|immutable/i);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
