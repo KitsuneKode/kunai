@@ -1,5 +1,51 @@
 # 019 — Make notifications actionable (play / open details from the inbox)
 
+> **2026-07-22 — the remaining half is fully mapped. Read this box first; it is
+> the hard part of the work and it is done.**
+>
+> **The defect is not notification-specific.** Overlays opened by the _direct_
+> `OPEN_OVERLAY` route have no channel back to the phase loop, so any result they
+> produce is dropped. Three instances of the same hole:
+>
+> | Site                                             | Dropped result                                         |
+> | ------------------------------------------------ | ------------------------------------------------------ |
+> | `root-overlay-shell.tsx:823-845` (notifications) | staged playback intent — nobody consumes it            |
+> | `root-overlay-shell.tsx:1444` (history)          | `resolveRootHistorySelection` with no pending resolver |
+> | `root-workflow-dispatch.ts:21`                   | `ShellWorkflowResult` awaited and **discarded**        |
+>
+> **Why the obvious fixes do not work** (all three were checked):
+>
+> - `subscribeNotificationPlayback` — the staged-global pattern that caused the
+>   bug. The repo memory note forbids it.
+> - `resolveRootHistorySelection` — `RootHistorySelection` demands a full
+>   `HistoryProgress` record; a `{title, episode}` intent cannot produce one
+>   without fabricating history.
+> - Resolving the browse-shell promise from the overlay — **not reachable**.
+>   `ink-shell.tsx:59` renders `RootContentBody`, so the overlay tree is a
+>   _sibling_ of the `openBrowseShell` promise, not inside it.
+>
+> **The seam that does exist.** `SearchPhase.ts:690-696` handles a
+> `BrowseShellResult` variant `offline-playback` by dispatching `SELECT_TITLE` +
+> `SELECT_EPISODE` and returning from the phase — which is exactly how playback
+> starts. It is byte-for-byte the same handling as `history-entry`
+> (`SearchPhase.ts:900-906`). **It is already the generic "launch this
+> title/episode" channel; only its name is offline-specific.**
+>
+> **Recommended shape.**
+>
+> 1. Rename the `offline-playback` variant to something honest
+>    (`launch-playback`) in `types.ts:380-383` and its two handlers. Pure rename,
+>    no behaviour change — do it as its own commit so the real change is readable.
+> 2. Add a playback-launch promise bridge mirroring `root-history-bridge.ts`
+>    (~40 lines, a proven pattern in this repo), awaited by the phase loop
+>    alongside the browse shell.
+> 3. Route all three sites above through it, so the direct and palette routes
+>    converge instead of drifting.
+>
+> Steps 2 and 3 are the actual work. Do **not** patch per-action: the three rows
+> in the table are one defect, and fixing them separately is what produced the
+> current drift.
+
 - **Written against commit**: `01ab215b`
 - **Priority**: P1
 - **Effort**: M
