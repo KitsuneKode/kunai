@@ -146,35 +146,44 @@ jobs:
           echo "version=${ACTUAL}" >> "$GITHUB_OUTPUT"
           echo "tag=v${ACTUAL}" >> "$GITHUB_OUTPUT"
 
-      - name: Full CI
-        run: bun run ci
+      - name: Repository gate
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/gates
+          bun run ci 2>&1 | tee artifacts/gates/repository.log
 
-      - name: Build
-        run: bun run build
-
-      - name: Package check
-        run: bun run pkg:check
+      - name: Package gate
+        run: |
+          set -euo pipefail
+          bun run build 2>&1 | tee artifacts/gates/package.log
+          bun run pkg:check 2>&1 | tee -a artifacts/gates/package.log
 
       - name: Release guard
-        run: bun run guard
+        run: bun run guard 2>&1 | tee -a artifacts/gates/repository.log
 
       - name: Release notes guard
-        run: bun run release:notes:check
+        run: bun run release:notes:check 2>&1 | tee -a artifacts/gates/repository.log
 
       - name: Build all release binaries
         run: bunx turbo run build:binaries --filter=@kitsunekode/kunai -- --jobs 2
 
       - name: Verify release binaries
-        run: bash apps/cli/scripts/verify-release-binaries.sh
+        run: bash apps/cli/scripts/verify-release-binaries.sh 2>&1 | tee artifacts/gates/releaseAssets.log
 
       - name: Local artifact verification
         run: |
+          set -euo pipefail
           bun run scripts/verify-release-artifact-directory.ts \
             apps/cli/dist/bin \
-            --expected-version "${{ steps.ver.outputs.version }}"
+            --expected-version "${{ steps.ver.outputs.version }}" \
+            2>&1 | tee -a artifacts/gates/releaseAssets.log
 
       - name: Compiled binary smoke
-        run: KUNAI_BINARY_SMOKE=1 bun run --cwd apps/cli test:file -- test/integration/compiled-binary-smoke.test.ts
+        run: |
+          set -euo pipefail
+          KUNAI_BINARY_SMOKE=1 bun run --cwd apps/cli test:file -- \
+            test/integration/compiled-binary-smoke.test.ts \
+            2>&1 | tee artifacts/gates/compiledPlayback.log
 
       # The launcher declares each platform package as an exact-version
       # optionalDependency. Publishing it without them yields a CLI with no
@@ -189,7 +198,7 @@ jobs:
         run: bun run release:prepare
 
       - name: Install preserved npm candidate without registry access
-        run: bun run test:npm-global-install
+        run: bun run test:npm-global-install 2>&1 | tee artifacts/gates/npmGlobalInstall.log
         env:
           KUNAI_NPM_CANDIDATE_PREBUILT: "1"
 
@@ -210,13 +219,90 @@ jobs:
             apps/cli/dist/bin/SHA256SUMS \
             .candidate-upload/
 
+      - name: Emit candidate gate evidence
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          SHA="${{ github.sha }}"
+          RUN_ID="${{ github.run_id }}"
+          create_gate() {
+            local gate="$1"
+            local artifact_path="$2"
+            local artifact_name="${gate}-${VERSION}-${SHA}"
+            bun run scripts/release-gate-evidence.ts create \
+              --gate "${gate}" \
+              --version "${VERSION}" \
+              --commit "${SHA}" \
+              --run-id "${RUN_ID}" \
+              --artifact-name "${artifact_name}" \
+              --artifact-path "${artifact_path}" \
+              --output "artifacts/gates/${gate}.json"
+          }
+          create_gate repository artifacts/gates/repository.log
+          create_gate package artifacts/gates/package.log
+          create_gate npmGlobalInstall artifacts/gates/npmGlobalInstall.log
+          create_gate compiledPlayback artifacts/gates/compiledPlayback.log
+          bun run scripts/release-gate-evidence.ts create \
+            --gate releaseAssets \
+            --version "${VERSION}" \
+            --commit "${SHA}" \
+            --run-id "${RUN_ID}" \
+            --artifact-name "${CANDIDATE_ARTIFACT}-${VERSION}-${SHA}" \
+            --artifact-path apps/cli/dist/bin/SHA256SUMS \
+            --output artifacts/gates/releaseAssets.json
+
       - name: Upload candidate artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ steps.ver.outputs.version }}-${{ github.sha }}
           retention-days: 14
           if-no-files-found: error
           path: .candidate-upload/*
+
+      - name: Upload repository gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-repository-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/gates/repository.json
+            artifacts/gates/repository.log
+
+      - name: Upload package gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-package-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/gates/package.json
+            artifacts/gates/package.log
+
+      - name: Upload npm global install gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-npmGlobalInstall-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/gates/npmGlobalInstall.json
+            artifacts/gates/npmGlobalInstall.log
+
+      - name: Upload compiled playback gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-compiledPlayback-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/gates/compiledPlayback.json
+            artifacts/gates/compiledPlayback.log
+
+      - name: Upload release assets gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-releaseAssets-${{ steps.ver.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/gates/releaseAssets.json
+            apps/cli/dist/bin/SHA256SUMS
 
   # ---------------------------------------------------------------------------
   # Execute the exact preserved native candidate on each blocking host OS.
@@ -254,7 +340,7 @@ jobs:
       - name: Download exact preserved candidate
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
 
       - name: Verify checksums and execute Unix candidate
@@ -390,13 +476,202 @@ jobs:
             artifacts/nativePlatforms.json
             artifacts/native-platforms.log
 
+  installer-smoke:
+    name: Installer harness (${{ matrix.id }})
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: bash
+            runner: ubuntu-latest
+          - id: powershell
+            runner: windows-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-installer-${{ matrix.id }}
+          skip-turbo-cache: "true"
+
+      - name: Exercise Bash installer harness
+        if: matrix.id == 'bash'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bun run --cwd apps/cli test:file -- test/integration/install-scripts.test.ts \
+            2>&1 | tee artifacts/installer-bash.log
+
+      - name: Exercise PowerShell installer harness
+        if: matrix.id == 'powershell'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          bun run --cwd apps/cli test:file -- test/integration/install-scripts-pwsh.test.ts 2>&1 |
+            Tee-Object -FilePath artifacts/installer-powershell.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload installer harness log
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-${{ matrix.id }}
+          if-no-files-found: error
+          path: artifacts/installer-${{ matrix.id }}.log
+
+  installer-gate:
+    name: Aggregate installer evidence
+    needs: [candidate, installer-smoke]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-installer-aggregate
+          skip-turbo-cache: "true"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-smoke-${{ needs.candidate.outputs.version }}-${{ github.sha }}-*
+          path: artifacts/installer-logs
+          merge-multiple: true
+
+      - name: Aggregate installer logs and emit evidence
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.candidate.outputs.version }}"
+          test "$(find artifacts/installer-logs -type f -name 'installer-*.log' | wc -l)" -eq 2
+          find artifacts/installer-logs -type f -name 'installer-*.log' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > artifacts/installer.log
+          bun run scripts/release-gate-evidence.ts create \
+            --gate installer \
+            --version "${VERSION}" \
+            --commit "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --artifact-name "installer-${VERSION}-${{ github.sha }}" \
+            --artifact-path artifacts/installer.log \
+            --output artifacts/installer.json
+
+      - name: Upload installer gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-installer-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/installer.json
+            artifacts/installer.log
+
+  readme-commands-gate:
+    name: Verify README commands
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-readme-commands
+          skip-turbo-cache: "true"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          path: .release-download
+
+      - name: Execute README quick-start commands
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          chmod +x .release-download/kunai-linux-x64
+          bun run verify:readme:commands -- \
+            --mode fixture-assets \
+            --version "${{ needs.candidate.outputs.version }}" \
+            --binary .release-download/kunai-linux-x64 \
+            2>&1 | tee artifacts/readmeCommands.log
+          bun run scripts/release-gate-evidence.ts create \
+            --gate readmeCommands \
+            --version "${{ needs.candidate.outputs.version }}" \
+            --commit "${{ github.sha }}" \
+            --run-id "${{ github.run_id }}" \
+            --artifact-name "readmeCommands-${{ needs.candidate.outputs.version }}-${{ github.sha }}" \
+            --artifact-path artifacts/readmeCommands.log \
+            --output artifacts/readmeCommands.json
+
+      - name: Upload README commands gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-readmeCommands-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/readmeCommands.json
+            artifacts/readmeCommands.log
+
+  live-providers-gate:
+    name: Validate live provider signoff
+    needs: candidate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-live-providers
+          skip-turbo-cache: "true"
+
+      - name: Download provider signoff evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVIDER_SIGNOFF_RUN_ID: ${{ inputs.provider_signoff_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh run download "${PROVIDER_SIGNOFF_RUN_ID}" \
+            --repo "${{ github.repository }}" \
+            --name "release-provider-signoff-${PROVIDER_SIGNOFF_RUN_ID}" \
+            --dir artifacts
+          test -f artifacts/release-provider-signoff.json
+
+      - name: Validate provider freshness and lanes before evidence production
+        env:
+          PROVIDER_SIGNOFF_RUN_ID: ${{ inputs.provider_signoff_run_id }}
+        run: |
+          bun run scripts/release-gate-evidence.ts validate-live-providers \
+            --gate liveProviders \
+            --version "${{ needs.candidate.outputs.version }}" \
+            --commit "${{ github.sha }}" \
+            --run-id "${PROVIDER_SIGNOFF_RUN_ID}" \
+            --artifact-name "liveProviders-${{ needs.candidate.outputs.version }}-${{ github.sha }}" \
+            --artifact-path artifacts/release-provider-signoff.json \
+            --output artifacts/liveProviders.json
+
+      - name: Upload live provider gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-liveProviders-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            artifacts/liveProviders.json
+            artifacts/release-provider-signoff.json
+
   # ---------------------------------------------------------------------------
   # Confirmation gate: deterministic candidate + fresh provider evidence.
   # Stops before protected publication; never publishes.
   # ---------------------------------------------------------------------------
   confirmation:
     name: Release confirmation gate
-    needs: [candidate, native-platforms-gate]
+    needs:
+      [candidate, installer-gate, readme-commands-gate, live-providers-gate, native-platforms-gate]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -418,7 +693,7 @@ jobs:
       - name: Download candidate artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.candidate.outputs.version }}-${{ github.sha }}
           path: .release-download
 
       - name: Stage binaries for confirmation
@@ -436,18 +711,12 @@ jobs:
             .release-download/SHA256SUMS \
             apps/cli/dist/bin/
 
-      - name: Download provider signoff evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROVIDER_SIGNOFF_RUN_ID: ${{ inputs.provider_signoff_run_id }}
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          gh run download "${PROVIDER_SIGNOFF_RUN_ID}" \
-            --repo "${{ github.repository }}" \
-            --name "release-provider-signoff-${PROVIDER_SIGNOFF_RUN_ID}" \
-            --dir artifacts
-          test -f artifacts/release-provider-signoff.json
+      - name: Download every gate evidence document and hashed artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gate-*-${{ needs.candidate.outputs.version }}-${{ github.sha }}
+          path: artifacts/gates
+          merge-multiple: true
 
       - name: Run confirmation gate
         id: gate
@@ -456,11 +725,31 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.candidate.outputs.version }}"
-          ARTIFACT_NAME="${CANDIDATE_ARTIFACT}-${VERSION}"
+          SHA="${{ github.sha }}"
+          ARTIFACT_NAME="${CANDIDATE_ARTIFACT}-${VERSION}-${SHA}"
           bun run release:confirmation:check -- \
             --version "${VERSION}" \
-            --commit "${{ github.sha }}" \
-            --provider-evidence artifacts/release-provider-signoff.json \
+            --commit "${SHA}" \
+            --run-id "${{ github.run_id }}" \
+            --gate-evidence artifacts/gates/repository.json \
+            --gate-evidence artifacts/gates/package.json \
+            --gate-evidence artifacts/gates/installer.json \
+            --gate-evidence artifacts/gates/npmGlobalInstall.json \
+            --gate-evidence artifacts/gates/compiledPlayback.json \
+            --gate-evidence artifacts/gates/readmeCommands.json \
+            --gate-evidence artifacts/gates/liveProviders.json \
+            --gate-evidence artifacts/gates/releaseAssets.json \
+            --gate-evidence artifacts/gates/nativePlatforms.json \
+            --gate-artifact "repository-${VERSION}-${SHA}=artifacts/gates/repository.log" \
+            --gate-artifact "package-${VERSION}-${SHA}=artifacts/gates/package.log" \
+            --gate-artifact "installer-${VERSION}-${SHA}=artifacts/gates/installer.log" \
+            --gate-artifact "npmGlobalInstall-${VERSION}-${SHA}=artifacts/gates/npmGlobalInstall.log" \
+            --gate-artifact "compiledPlayback-${VERSION}-${SHA}=artifacts/gates/compiledPlayback.log" \
+            --gate-artifact "readmeCommands-${VERSION}-${SHA}=artifacts/gates/readmeCommands.log" \
+            --gate-artifact "liveProviders-${VERSION}-${SHA}=artifacts/gates/release-provider-signoff.json" \
+            --gate-artifact "${ARTIFACT_NAME}=artifacts/gates/SHA256SUMS" \
+            --gate-artifact "nativePlatforms-${VERSION}-${SHA}=artifacts/gates/native-platforms.log" \
+            --provider-evidence artifacts/gates/release-provider-signoff.json \
             --provider-signoff-run-id "${PROVIDER_SIGNOFF_RUN_ID}" \
             --binary-dir apps/cli/dist/bin \
             --binary-artifact-name "${ARTIFACT_NAME}" \
@@ -529,7 +818,7 @@ jobs:
       - name: Download candidate artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}
+          name: ${{ env.CANDIDATE_ARTIFACT }}-${{ needs.confirmation.outputs.version }}-${{ github.sha }}
           path: .release-download
 
       - name: Stage preserved binaries and tarball

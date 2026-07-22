@@ -16,6 +16,7 @@ import {
   type ReleaseGateEvidenceDocument,
   type ReleaseGateName,
 } from "../../../../../scripts/release-gate-evidence";
+import { buildReleaseProviderSignoff } from "../../live/release-provider-signoff";
 
 const VERSION = "0.3.0";
 const COMMIT_SHA = "abc123def456";
@@ -331,6 +332,60 @@ describe("release gate evidence production", () => {
           generatedAt: "2026-07-23T11:00:00.000Z",
         }),
       ).toThrow(/artifactName.*version.*commit|immutable/i);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("creates liveProviders evidence only for a fresh complete matching signoff", () => {
+    const root = mkdtempSync(join(tmpdir(), "kunai-live-provider-evidence-"));
+    const artifactPath = join(root, "release-provider-signoff.json");
+    const signoff = buildReleaseProviderSignoff({
+      generatedAt: "2026-07-23T11:30:00.000Z",
+      commitSha: COMMIT_SHA,
+      version: VERSION,
+      routes: ["movie", "series", "anime"].map((lane) => ({
+        lane: lane as "movie" | "series" | "anime",
+        configuredProvider: "fixture",
+        successfulProvider: "fixture",
+        resolved: true,
+        streamCandidates: 1,
+        streamReachable: true,
+        failureClass: null,
+        durationMs: 10,
+      })),
+    });
+    writeFileSync(artifactPath, JSON.stringify(signoff), "utf8");
+
+    try {
+      expect(
+        createReleaseGateEvidence({
+          gate: "liveProviders",
+          version: VERSION,
+          commitSha: COMMIT_SHA,
+          runId: PROVIDER_RUN_ID,
+          artifactName: `liveProviders-${VERSION}-${COMMIT_SHA}`,
+          artifactPath,
+          nowMs: NOW_MS,
+        }).runId,
+      ).toBe(PROVIDER_RUN_ID);
+
+      writeFileSync(
+        artifactPath,
+        JSON.stringify({ ...signoff, generatedAt: "2026-07-20T00:00:00.000Z" }),
+        "utf8",
+      );
+      expect(() =>
+        createReleaseGateEvidence({
+          gate: "liveProviders",
+          version: VERSION,
+          commitSha: COMMIT_SHA,
+          runId: PROVIDER_RUN_ID,
+          artifactName: `liveProviders-${VERSION}-${COMMIT_SHA}`,
+          artifactPath,
+          nowMs: NOW_MS,
+        }),
+      ).toThrow(/stale|unresolved|unreachable/i);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

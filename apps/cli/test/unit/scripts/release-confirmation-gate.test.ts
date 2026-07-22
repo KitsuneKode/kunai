@@ -339,6 +339,7 @@ describe("release confirmation evidence CLI contract", () => {
 
 describe("release workflow confirmation dependency graph", () => {
   const release = readFileSync(join(REPO_ROOT, ".github/workflows/release.yml"), "utf8");
+  const workflowGateNames = [...RELEASE_GATE_NAMES];
 
   function extractWorkflowJob(yaml: string, jobId: string): string {
     const header = new RegExp(`^  ${jobId}:\\s*$`, "m");
@@ -357,7 +358,7 @@ describe("release workflow confirmation dependency graph", () => {
     const confirmation = extractWorkflowJob(release, "confirmation");
     const publish = extractWorkflowJob(release, "publish");
 
-    expect(confirmation).toMatch(/needs:[^\n]*candidate/);
+    expect(confirmation).toMatch(/needs:\s*(?:\n\s*)?\[[^\]]*candidate/);
     expect(confirmation).toContain("release:confirmation:check");
     expect(confirmation).toContain("provider_signoff_run_id");
     expect(confirmation).not.toMatch(/environment:\s*release-production/);
@@ -392,5 +393,72 @@ describe("release workflow confirmation dependency graph", () => {
     expect(aggregate).toMatch(/needs:[^\n]*native-smoke/);
     expect(aggregate).toContain("nativePlatforms");
     expect(confirmation).toMatch(/needs:[\s\S]*native-platforms-gate/);
+  });
+
+  function assertCompleteWorkflowGateWiring(yaml: string): void {
+    const confirmation = extractWorkflowJob(yaml, "confirmation");
+    const needs = /needs:\s*(?:\n\s*)?\[([^\]]+)\]/.exec(confirmation)?.[1] ?? "";
+    for (const producer of [
+      "candidate",
+      "installer-gate",
+      "readme-commands-gate",
+      "live-providers-gate",
+      "native-platforms-gate",
+    ]) {
+      if (
+        !needs
+          .split(",")
+          .map((value) => value.trim())
+          .includes(producer)
+      ) {
+        throw new Error(`confirmation missing producer dependency: ${producer}`);
+      }
+    }
+    for (const gate of workflowGateNames) {
+      if (!yaml.includes(`gate-${gate}-\${{`)) {
+        throw new Error(`workflow missing immutable upload for gate: ${gate}`);
+      }
+      if (!confirmation.includes(`--gate-evidence`) || !confirmation.includes(`${gate}.json`)) {
+        throw new Error(`confirmation missing evidence mapping: ${gate}`);
+      }
+      const artifactIdentity =
+        gate === "releaseAssets" ? "${ARTIFACT_NAME}=artifacts/gates/SHA256SUMS" : `${gate}-`;
+      if (!confirmation.includes(`--gate-artifact`) || !confirmation.includes(artifactIdentity)) {
+        throw new Error(`confirmation missing artifact mapping: ${gate}`);
+      }
+    }
+  }
+
+  test("all nine gates have real immutable uploads and explicit confirmation mappings", () => {
+    expect(() => assertCompleteWorkflowGateWiring(release)).not.toThrow();
+    const confirmation = extractWorkflowJob(release, "confirmation");
+    expect(confirmation).toContain('--run-id "${{ github.run_id }}"');
+    expect(confirmation.match(/--gate-evidence/g)).toHaveLength(RELEASE_GATE_NAMES.length);
+    expect(confirmation.match(/--gate-artifact/g)).toHaveLength(RELEASE_GATE_NAMES.length);
+    expect(release).toContain("validate-live-providers");
+    expect(release).toContain("release-provider-signoff.json");
+    expect(release).toContain("${{ github.sha }}");
+  });
+
+  test("removing any producer dependency or gate upload fails the workflow contract", () => {
+    for (const producer of [
+      "installer-gate",
+      "readme-commands-gate",
+      "live-providers-gate",
+      "native-platforms-gate",
+    ]) {
+      const confirmation = extractWorkflowJob(release, "confirmation");
+      const mutatedConfirmation = confirmation.replace(producer, `removed-${producer}`);
+      expect(() =>
+        assertCompleteWorkflowGateWiring(release.replace(confirmation, mutatedConfirmation)),
+      ).toThrow(producer);
+    }
+    for (const gate of workflowGateNames) {
+      expect(() =>
+        assertCompleteWorkflowGateWiring(
+          release.replace(`gate-${gate}-\${{`, `removed-${gate}-\${{`),
+        ),
+      ).toThrow(gate);
+    }
   });
 });

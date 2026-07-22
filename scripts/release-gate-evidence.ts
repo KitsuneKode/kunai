@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import {
+  assertReleaseProviderSignoffComplete,
+  isReleaseProviderSignoffAcceptable,
+  type ReleaseProviderSignoff,
+} from "../apps/cli/test/live/release-provider-signoff";
+
 export const RELEASE_GATE_NAMES = [
   "repository",
   "package",
@@ -68,6 +74,7 @@ export interface CreateReleaseGateEvidenceInput {
   readonly artifactName: string;
   readonly artifactPath: string;
   readonly generatedAt?: string;
+  readonly nowMs?: number;
 }
 
 const DOCUMENT_KEYS = [
@@ -162,6 +169,29 @@ export function createReleaseGateEvidence(
     !input.artifactName.includes(input.commitSha)
   ) {
     fail("artifactName must be immutable and contain the exact version and commit SHA");
+  }
+  if (input.gate === "liveProviders") {
+    let signoff: ReleaseProviderSignoff;
+    try {
+      signoff = JSON.parse(
+        readFileSync(resolve(input.artifactPath), "utf8"),
+      ) as ReleaseProviderSignoff;
+      assertReleaseProviderSignoffComplete(signoff);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      fail(`liveProviders artifact is not valid provider signoff evidence: ${message}`);
+    }
+    if (signoff.version !== input.version) {
+      fail(`liveProviders version mismatch: expected ${input.version}, got ${signoff.version}`);
+    }
+    if (signoff.commitSha !== input.commitSha) {
+      fail(
+        `liveProviders commit SHA mismatch: expected ${input.commitSha}, got ${signoff.commitSha}`,
+      );
+    }
+    if (!isReleaseProviderSignoffAcceptable(signoff, input.nowMs ?? Date.now())) {
+      fail("liveProviders signoff is stale or has unresolved/unreachable required lanes");
+    }
   }
   const document: ReleaseGateEvidenceDocument = {
     schemaVersion: 1,
@@ -437,12 +467,15 @@ function parseCreateCliArgs(argv: readonly string[]): CreateCliArgs {
 if (import.meta.main) {
   try {
     const [command, ...argv] = process.argv.slice(2);
-    if (command !== "create") {
+    if (command !== "create" && command !== "validate-live-providers") {
       fail(
         "usage: create --gate <gate> --version <semver> --commit <sha> --run-id <id> --artifact-name <name> --artifact-path <path> --output <path>",
       );
     }
     const args = parseCreateCliArgs(argv);
+    if (command === "validate-live-providers" && args.gate !== "liveProviders") {
+      fail("validate-live-providers requires --gate liveProviders");
+    }
     const document = createReleaseGateEvidence(args);
     writeReleaseGateEvidence(args.outputPath, document);
     console.log(JSON.stringify(document));
