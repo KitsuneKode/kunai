@@ -14,8 +14,13 @@ export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
 export const CLI_ENTRY = "src/main.ts";
 export const NPM_BUNDLE_OUT = "dist/kunai.js";
-export const POSTINSTALL_ENTRY = "scripts/postinstall.ts";
-export const NPM_POSTINSTALL_OUT = "dist/postinstall.js";
+/**
+ * The published `bin`. Plain Node ESM, copied verbatim rather than bundled —
+ * running it through the Bun bundler is what introduced `bun:` imports and made
+ * `npm install -g` produce a CLI that could not start without Bun.
+ */
+export const NPM_LAUNCHER_ENTRY = "scripts/npm-launcher.mjs";
+export const NPM_LAUNCHER_OUT = "dist/kunai.mjs";
 
 /**
  * Ink can optionally load `react-devtools-core` when `process.env.DEV` is truthy.
@@ -112,35 +117,6 @@ export function npmBundleBuildOptions(
   };
 }
 
-/**
- * Bun.build options for the published npm postinstall hook (dist/postinstall.js).
- *
- * The hook registers the install manifest after a global npm install. Its source
- * imports `../package.json` and `../src/services/update/install-manifest`, neither
- * of which ships in the tarball, so it MUST be bundled into a single self-contained
- * ESM file with every import inlined — otherwise the declared `postinstall` script
- * can never run from a real install.
- */
-export function npmPostinstallBuildOptions(root: string): BunBuildOptions {
-  return {
-    ...releaseBuildBaseOptions(root),
-    entrypoints: [join(root, POSTINSTALL_ENTRY)],
-    outdir: join(root, "dist"),
-    format: "esm",
-    splitting: false,
-    // Inline package.json, install-manifest, and its @kunai/* graph into one file.
-    packages: "bundle",
-    naming: {
-      entry: "postinstall.js",
-      chunk: "[name]-[hash].[ext]",
-      asset: "assets/[name]-[hash].[ext]",
-    },
-    sourcemap: "none",
-    // Small hook run once at install time; readability over marginal size wins.
-    minify: false,
-  };
-}
-
 /** Bun.build options for a single compiled binary target. */
 export function compileBinaryBuildOptions(
   root: string,
@@ -232,21 +208,13 @@ export const NPM_PACK_PACKED_BUDGET_BYTES = 15 * 1024 * 1024;
 /** Unpacked tarball size budget for `npm pack` dry-run contents. */
 export const NPM_PACK_UNPACKED_BUDGET_BYTES = 20 * 1024 * 1024;
 
-const NPM_PACK_ALLOWED_PATHS = new Set([
-  "dist/kunai.js",
-  "dist/postinstall.js",
-  "README.md",
-  "LICENSE",
-  "package.json",
-]);
+const NPM_PACK_ALLOWED_PATHS = new Set(["dist/kunai.mjs", "README.md", "LICENSE", "package.json"]);
 
 /**
- * Files the published tarball MUST contain. The bundled postinstall hook is
- * required because package.json declares a `postinstall` script pointing at it;
- * shipping the declaration without the artifact means the hook silently never
- * runs from a real install (the bug this guard exists to prevent).
+ * Files the published tarball MUST contain. The launcher is `bin`, so shipping
+ * without it means `kunai` resolves to nothing on a real install.
  */
-const NPM_PACK_REQUIRED_PATHS: readonly string[] = ["dist/postinstall.js"];
+const NPM_PACK_REQUIRED_PATHS: readonly string[] = ["dist/kunai.mjs"];
 
 /** Returns required tarball paths that are missing from the given listing. */
 export function missingRequiredNpmPackPaths(paths: readonly string[]): readonly string[] {
@@ -265,9 +233,6 @@ export function forbiddenNpmPackPath(path: string): string | null {
   }
   if (normalized === "dist/build-meta.json") {
     return "build metafiles must not ship on npm";
-  }
-  if (normalized.startsWith("dist/assets/")) {
-    return null;
   }
   if (NPM_PACK_ALLOWED_PATHS.has(normalized)) {
     return null;

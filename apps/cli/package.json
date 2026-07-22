@@ -26,12 +26,10 @@
     "url": "https://github.com/KitsuneKode/kunai"
   },
   "bin": {
-    "kunai": "dist/kunai.js"
+    "kunai": "dist/kunai.mjs"
   },
   "files": [
-    "dist/kunai.js",
-    "dist/postinstall.js",
-    "dist/assets/**",
+    "dist/kunai.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -97,7 +95,7 @@
     "unlink:global": "bun unlink",
     "relink:global": "bun run unlink:global && bun run link:global",
     "prepack": "bun run build",
-    "postinstall": "bun dist/postinstall.js"
+    "build:npm-platform": "bun run scripts/build-npm-platform-packages.ts"
   },
   "dependencies": {
     "commander": "catalog:cli",
@@ -118,6 +116,16 @@
   },
   "peerDependencies": {
     "typescript": "catalog:"
+  },
+  "optionalDependencies": {
+    "@kitsunekode/kunai-darwin-arm64": "0.3.0",
+    "@kitsunekode/kunai-darwin-x64": "0.3.0",
+    "@kitsunekode/kunai-linux-arm64": "0.3.0",
+    "@kitsunekode/kunai-linux-arm64-musl": "0.3.0",
+    "@kitsunekode/kunai-linux-x64": "0.3.0",
+    "@kitsunekode/kunai-linux-x64-musl": "0.3.0",
+    "@kitsunekode/kunai-windows-arm64": "0.3.0",
+    "@kitsunekode/kunai-windows-x64": "0.3.0"
   },
   "engines": {
     "bun": ">=1.3.9"

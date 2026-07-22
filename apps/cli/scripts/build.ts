@@ -14,7 +14,7 @@
 // rewrites import paths. `bun build --compile` embeds them into binaries too.
 
 import { existsSync } from "node:fs";
-import { chmod, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
@@ -22,11 +22,11 @@ import {
   CLI_ENTRY,
   formatBuildSize,
   NPM_BUNDLE_OUT,
-  NPM_POSTINSTALL_OUT,
+  NPM_LAUNCHER_ENTRY,
+  NPM_LAUNCHER_OUT,
   assertNoForbiddenReleaseInputs,
   forbiddenReleaseInputs,
   npmBundleBuildOptions,
-  npmPostinstallBuildOptions,
   printBuildSizeTable,
   requireBuildMetafile,
   topReleaseInputs,
@@ -36,7 +36,7 @@ const ROOT = join(import.meta.dirname, "..");
 const DIST = join(ROOT, "dist");
 const ENTRY = join(ROOT, CLI_ENTRY);
 const BIN = join(ROOT, NPM_BUNDLE_OUT);
-const POSTINSTALL = join(ROOT, NPM_POSTINSTALL_OUT);
+const LAUNCHER = join(ROOT, NPM_LAUNCHER_OUT);
 const ASSETS = join(DIST, "assets");
 
 const clean = process.argv.includes("--clean");
@@ -56,35 +56,39 @@ async function assetBytes(): Promise<number> {
 
 async function cleanNpmDistArtifacts(): Promise<void> {
   await rm(BIN, { force: true });
-  await rm(POSTINSTALL, { force: true });
+  await rm(LAUNCHER, { force: true });
   await rm(join(DIST, "build-meta.json"), { force: true });
   await rm(ASSETS, { recursive: true, force: true });
 }
 
 /**
- * Build the bundled npm postinstall hook (dist/postinstall.js). Kept next to the
- * npm bundle so the same metafile guard applies and the published tarball ships a
- * self-contained hook with no runtime import from excluded source files.
+ * Publish the npm `bin` launcher (dist/kunai.mjs).
+ *
+ * Copied verbatim, never bundled: it must stay plain Node ESM. Bundling it is
+ * what previously pulled `bun:` imports into the published entry point and made
+ * `npm install -g` yield a CLI that could not start without Bun.
  */
-async function buildPostinstallHook(): Promise<number> {
-  const result = await Bun.build(npmPostinstallBuildOptions(ROOT));
-  if (!result.success) {
-    console.error("[build] Bun postinstall build failed");
-    for (const log of result.logs) {
-      console.error(log);
-    }
+async function buildNpmLauncher(): Promise<number> {
+  const source = join(ROOT, NPM_LAUNCHER_ENTRY);
+  if (!existsSync(source)) {
+    console.error(`[build] Missing launcher source ${NPM_LAUNCHER_ENTRY}`);
     process.exit(1);
   }
 
-  assertNoForbiddenReleaseInputs(requireBuildMetafile(result.metafile));
+  await cp(source, LAUNCHER);
+  await chmod(LAUNCHER, 0o755);
 
-  if (!existsSync(POSTINSTALL)) {
-    console.error("[build] Build succeeded but dist/postinstall.js was not created.");
+  const text = await Bun.file(LAUNCHER).text();
+  if (!text.startsWith("#!/usr/bin/env node")) {
+    console.error("[build] Launcher must start with a Node shebang.");
+    process.exit(1);
+  }
+  if (/from\s+["']bun:|require\(["']bun:/.test(text)) {
+    console.error("[build] Launcher must not import bun: modules — it runs under plain Node.");
     process.exit(1);
   }
 
-  await chmod(POSTINSTALL, 0o755);
-  return Bun.file(POSTINSTALL).size;
+  return Bun.file(LAUNCHER).size;
 }
 
 async function main(): Promise<void> {
@@ -126,7 +130,7 @@ async function main(): Promise<void> {
 
   await chmod(BIN, 0o755);
 
-  const postinstallBytes = await buildPostinstallHook();
+  const launcherBytes = await buildNpmLauncher();
 
   const bundleBytes = Bun.file(BIN).size;
   const assetsTotal = await assetBytes();
@@ -134,10 +138,10 @@ async function main(): Promise<void> {
 
   printBuildSizeTable(
     [
-      { label: "dist/kunai.js", bytes: bundleBytes },
-      { label: "dist/postinstall.js", bytes: postinstallBytes },
+      { label: "dist/kunai.mjs (published bin)", bytes: launcherBytes },
+      { label: "dist/kunai.js (bun bundle, unpublished)", bytes: bundleBytes },
       { label: "dist/assets/*", bytes: assetsTotal },
-      { label: "dist/ total", bytes: bundleBytes + postinstallBytes + assetsTotal },
+      { label: "dist/ published total", bytes: launcherBytes + assetsTotal },
     ],
     "npm release artifact",
   );

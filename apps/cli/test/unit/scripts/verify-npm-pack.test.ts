@@ -10,12 +10,20 @@ import {
 import { parseNpmPackDryRun, verifyNpmPackDryRun } from "../../../scripts/verify-npm-pack";
 
 describe("forbiddenNpmPackPath", () => {
-  test("allows npm bundle and runtime assets", () => {
-    expect(forbiddenNpmPackPath("dist/kunai.js")).toBeNull();
-    expect(forbiddenNpmPackPath("dist/assets/module1_patched-x88202mw.wasm")).toBeNull();
+  test("allows the launcher and package metadata", () => {
+    expect(forbiddenNpmPackPath("dist/kunai.mjs")).toBeNull();
     expect(forbiddenNpmPackPath("README.md")).toBeNull();
     expect(forbiddenNpmPackPath("LICENSE")).toBeNull();
     expect(forbiddenNpmPackPath("package.json")).toBeNull();
+  });
+
+  test("rejects the Bun bundle, which is no longer published", () => {
+    // `bin` is the Node launcher now. Shipping the Bun-compiled bundle is what
+    // made `npm install -g` produce a CLI that could not start without Bun.
+    expect(forbiddenNpmPackPath("dist/kunai.js")).toMatch(/allowlist/);
+    expect(forbiddenNpmPackPath("dist/postinstall.js")).toMatch(/allowlist/);
+    // Assets are embedded in each platform binary, so they are dead weight here.
+    expect(forbiddenNpmPackPath("dist/assets/module1_patched-x88202mw.wasm")).toMatch(/allowlist/);
   });
 
   test("rejects compiled binaries and analyze artifacts", () => {
@@ -29,27 +37,18 @@ describe("forbiddenNpmPackPath", () => {
 describe("assertNpmPackContents", () => {
   test("passes for allowlisted release paths", () => {
     expect(() =>
-      assertNpmPackContents([
-        "LICENSE",
-        "README.md",
-        "package.json",
-        "dist/kunai.js",
-        "dist/postinstall.js",
-        "dist/assets/kunai-bridge-qvcd1402.lua",
-      ]),
+      assertNpmPackContents(["LICENSE", "README.md", "package.json", "dist/kunai.mjs"]),
     ).not.toThrow();
   });
 
   test("fails when binaries are present", () => {
-    expect(() => assertNpmPackContents(["dist/kunai.js", "dist/bin/kunai-linux-x64"])).toThrow(
+    expect(() => assertNpmPackContents(["dist/kunai.mjs", "dist/bin/kunai-linux-x64"])).toThrow(
       "forbidden paths",
     );
   });
 
-  test("requires the bundled postinstall file", () => {
-    expect(() => assertNpmPackContents(["dist/kunai.js", "package.json"])).toThrow(
-      "dist/postinstall.js",
-    );
+  test("requires the launcher, which is the published bin", () => {
+    expect(() => assertNpmPackContents(["package.json"])).toThrow("dist/kunai.mjs");
   });
 });
 
@@ -97,12 +96,49 @@ describe("verifyNpmPackDryRun", () => {
   test("accepts a small allowlisted pack listing", () => {
     const stdout = `
 npm notice Tarball Contents
-npm notice 2.5MB dist/kunai.js
-npm notice 0.6MB dist/postinstall.js
+npm notice 1.1kB LICENSE
+npm notice 6.5kB dist/kunai.mjs
+npm notice 5.6kB package.json
 npm notice Tarball Details
-npm notice package size: 1.2 MB
-npm notice unpacked size: 3.1 MB
+npm notice package size: 7.2 kB
+npm notice unpacked size: 19.4 kB
 `;
     expect(() => verifyNpmPackDryRun(stdout)).not.toThrow();
+  });
+});
+
+describe("platform package contract", () => {
+  test("every optionalDependency is a platform package pinned to this exact version", async () => {
+    const cli = (await import("../../../package.json", { with: { type: "json" } })).default as {
+      version: string;
+      optionalDependencies?: Record<string, string>;
+      bin?: Record<string, string>;
+    };
+    const optional = cli.optionalDependencies ?? {};
+
+    // The launcher resolves `@kitsunekode/kunai-<targetId>` at runtime. Version
+    // skew between the launcher and its platform packages is the classic failure
+    // of this layout: npm resolves a binary from a different release, or none.
+    expect(Object.keys(optional).length).toBeGreaterThan(0);
+    for (const [name, range] of Object.entries(optional)) {
+      expect(name.startsWith("@kitsunekode/kunai-"), name).toBe(true);
+      expect(range, name).toBe(cli.version);
+    }
+
+    // bin must be the Node launcher, never the Bun bundle.
+    expect(cli.bin?.kunai).toBe("dist/kunai.mjs");
+  });
+
+  test("optionalDependencies cover exactly the published binary targets", async () => {
+    const { RELEASE_BINARY_TARGETS } = await import("../../../src/services/update/platform-assets");
+    const cli = (await import("../../../package.json", { with: { type: "json" } })).default as {
+      optionalDependencies?: Record<string, string>;
+    };
+
+    const declared = Object.keys(cli.optionalDependencies ?? {}).sort();
+    const expected = RELEASE_BINARY_TARGETS.map((t) => `@kitsunekode/kunai-${t.id}`).sort();
+    // A target built but not declared is unreachable from npm; a target declared
+    // but not built resolves to a package that will never be published.
+    expect(declared).toEqual(expected);
   });
 });
