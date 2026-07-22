@@ -15,6 +15,7 @@ import {
   correctedHistoryMediaKind,
   historyContentType,
   isFinished,
+  isYoutubeHistoryEntry,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
@@ -37,11 +38,13 @@ export type HistoryTab = (typeof HISTORY_TABS)[number];
 
 // Second filter axis: content type. Uses correctedHistoryMediaKind so a drama
 // watched in anime mode (legacy mislabel) filters as Series, not Anime (#1/#4).
-const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie"] as const;
+// YouTube is its own facet: entries arrive with mediaKind "movie"/"video", so
+// without it a watched video is filed under Movies next to actual films.
+const HISTORY_TYPE_FILTERS = ["all", "anime", "series", "movie", "youtube"] as const;
 export type HistoryTypeFilter = (typeof HISTORY_TYPE_FILTERS)[number];
 
 export function historyTypeFilterLabels(): readonly string[] {
-  return ["All", "Anime", "Series", "Movies"];
+  return ["All", "Anime", "Series", "Movies", "YouTube"];
 }
 
 export function historyTypeFilterIndex(filter: HistoryTypeFilter): number {
@@ -59,7 +62,12 @@ export function cycleHistoryTypeFilter(
 }
 
 function matchesHistoryTypeFilter(entry: HistoryProgress, filter: HistoryTypeFilter): boolean {
-  return filter === "all" || correctedHistoryMediaKind(entry) === filter;
+  if (filter === "all") return true;
+  // YouTube wins over the stored kind so the facets stay mutually exclusive: a
+  // video stored as "movie" belongs under YouTube, not alongside actual films.
+  if (isYoutubeHistoryEntry(entry)) return filter === "youtube";
+  if (filter === "youtube") return false;
+  return correctedHistoryMediaKind(entry) === filter;
 }
 
 export type HistoryViewState = "loading" | "empty" | "success" | "error";

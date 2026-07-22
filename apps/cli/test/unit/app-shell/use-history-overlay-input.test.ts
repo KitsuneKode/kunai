@@ -185,6 +185,7 @@ describe("handleHistoryOverlayInput", () => {
 
     expect(handleHistoryOverlayInput("", { rightArrow: true }, ctx)).toBe("handled");
     expect(handleHistoryOverlayInput("", { leftArrow: true }, ctx)).toBe("handled");
-    expect(filters).toEqual(["anime", "movie"]);
+    // Both start from "all": forward lands on the first facet, back wraps to the last.
+    expect(filters).toEqual(["anime", "youtube"]);
   });
 });

@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { buildHistoryView } from "@/app-shell/history-view";
+import {
+  buildHistoryView,
+  cycleHistoryTypeFilter,
+  historyTypeFilterLabels,
+  type HistoryTypeFilter,
+} from "@/app-shell/history-view";
 import { historyBucketFor } from "@/app-shell/panel-data";
 import { buildRootHistorySelection } from "@/app-shell/root-history-bridge";
 import { projectContinuationState } from "@/services/continuation/continuation-policy";
@@ -414,4 +419,50 @@ test("history bucket placement agrees with projection-derived resume action", ()
       expect(selection.targetEpisode?.reason).toBe("new-episode");
     }
   }
+});
+
+test("YouTube history is its own facet, not filed under Movies", () => {
+  const now = Date.now();
+  const ytVideo = progress({
+    titleId: "yt-clip",
+    title: "AMD Ultimate Tech Upgrade",
+    // YouTube rows arrive stored as a movie; the provider is what identifies them.
+    mediaKind: "movie",
+    providerId: "youtube",
+    updatedAt: new Date(now - DAY_MS).toISOString(),
+  });
+  const realMovie = progress({
+    titleId: "film",
+    title: "Enemy",
+    mediaKind: "movie",
+    providerId: "videasy",
+    updatedAt: new Date(now - DAY_MS * 2).toISOString(),
+  });
+
+  const titlesFor = (typeFilter: HistoryTypeFilter): string[] =>
+    buildHistoryView({
+      entries: [
+        ["yt-clip", ytVideo],
+        ["film", realMovie],
+      ],
+      tab: "all",
+      typeFilter,
+      filterQuery: "",
+      selectedIndex: 0,
+      maxVisible: 50,
+      narrow: true,
+      context: {},
+    }).flatRows.map((row) => row.title);
+
+  expect(titlesFor("youtube")).toEqual(["AMD Ultimate Tech Upgrade"]);
+  // The point of the facet: a watched video must not sit next to actual films.
+  expect(titlesFor("movie")).toEqual(["Enemy"]);
+  expect(titlesFor("all").sort()).toEqual(["AMD Ultimate Tech Upgrade", "Enemy"]);
+});
+
+test("history type filter cycles through the YouTube facet", () => {
+  expect(historyTypeFilterLabels()).toEqual(["All", "Anime", "Series", "Movies", "YouTube"]);
+  expect(cycleHistoryTypeFilter("movie")).toBe("youtube");
+  expect(cycleHistoryTypeFilter("youtube")).toBe("all");
+  expect(cycleHistoryTypeFilter("all", -1)).toBe("youtube");
 });
