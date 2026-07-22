@@ -270,6 +270,26 @@ function structuredNpmError(result: CommandResult): JsonObject | null {
   return null;
 }
 
+function canonical404PackageName(summary: string): string | null {
+  const prefixes = ["404 Not Found - GET ", "Not Found - GET "];
+  const prefix = prefixes.find((candidate) => summary.startsWith(candidate));
+  if (!prefix) return null;
+
+  const remainder = summary.slice(prefix.length);
+  const firstSpace = remainder.indexOf(" ");
+  const urlText = firstSpace === -1 ? remainder : remainder.slice(0, firstSpace);
+  try {
+    const pathname = new URL(urlText).pathname;
+    return decodeURIComponent(pathname.startsWith("/") ? pathname.slice(1) : pathname);
+  } catch {
+    return null;
+  }
+}
+
+function hasExactDetailLine(detail: string, expected: string): boolean {
+  return detail.split("\n").some((line) => line.trim() === expected);
+}
+
 function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): boolean {
   const error = structuredNpmError(result);
   if (
@@ -282,22 +302,17 @@ function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): b
 
   const summary = error.summary.trim();
   const detail = error.detail.trim();
-  const structuredMessage = `${summary}\n${detail}`;
-  if (
-    /authentication|authorization|token|credentials?|npm login|configuration|config/i.test(
-      structuredMessage,
-    )
-  ) {
-    return false;
-  }
-
   const packageSpec = `${candidate.name}@${candidate.version}`;
-  const mentionsPackage = structuredMessage.includes(candidate.name);
   const missingPackage =
-    /^(?:404\s+)?Not Found(?:\s+-\s+GET\b|$)/i.test(summary) && mentionsPackage;
+    canonical404PackageName(summary) === candidate.name &&
+    (hasExactDetailLine(detail, `'${packageSpec}' is not in this registry.`) ||
+      hasExactDetailLine(detail, `'${candidate.name}' is not in this registry.`));
   const missingVersion =
     summary === `No match found for version ${candidate.version}` &&
-    structuredMessage.includes(packageSpec);
+    hasExactDetailLine(
+      detail,
+      `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.`,
+    );
   return missingPackage || missingVersion;
 }
 

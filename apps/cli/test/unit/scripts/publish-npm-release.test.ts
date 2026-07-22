@@ -57,6 +57,20 @@ function metadata(candidate: LocalPackageCandidate): RegistryPackageMetadata {
   };
 }
 
+function candidatePackage404(candidate: LocalPackageCandidate, detail: string) {
+  return {
+    exitCode: 1,
+    stdout: JSON.stringify({
+      error: {
+        code: "E404",
+        summary: `404 Not Found - GET https://registry.npmjs.org/${candidate.name}`,
+        detail,
+      },
+    }),
+    stderr: "npm error code E404",
+  };
+}
+
 describe("local npm publication candidates", () => {
   test("packs canonical platform inputs and inspects the preserved launcher tarball", async () => {
     const root = mkdtempSync(join(tmpdir(), "kunai-publication-candidates-"));
@@ -180,7 +194,7 @@ describe("npm registry error classification", () => {
             code: "E404",
             summary:
               "404 Not Found - GET https://registry.npmjs.org/@kitsunekode%2fkunai-linux-x64",
-            detail: `The requested resource '${packageSpec}' could not be found.`,
+            detail: `'${packageSpec}' is not in this registry.`,
           },
         }),
         stderr: "npm error code E404\nnpm error 404 Not Found",
@@ -202,7 +216,7 @@ describe("npm registry error classification", () => {
         error: {
           code: "E404",
           summary: `No match found for version ${candidate.version}`,
-          detail: `The requested resource '${packageSpec}' could not be found.`,
+          detail: `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.`,
         },
       }),
       stderr: "",
@@ -225,6 +239,44 @@ describe("npm registry error classification", () => {
     }));
 
     await expect(registry.queryIntegrity(candidates()[0]!)).rejects.toThrow(/npm view/i);
+  });
+
+  for (const denial of [
+    "unauthorized",
+    "not authorized",
+    "permission denied",
+    "access denied",
+    "forbidden",
+  ]) {
+    test(`propagates candidate-bound E404 with ${denial} detail`, async () => {
+      const candidate = candidates()[0]!;
+      const packageSpec = `${candidate.name}@${candidate.version}`;
+      const registry = createNpmRegistryPort(async () =>
+        candidatePackage404(candidate, `The requested resource '${packageSpec}' is ${denial}.`),
+      );
+
+      await expect(registry.queryIntegrity(candidate)).rejects.toThrow(/npm view/i);
+    });
+  }
+
+  test("propagates candidate-bound E404 with empty detail", async () => {
+    const candidate = candidates()[0]!;
+    const registry = createNpmRegistryPort(async () => candidatePackage404(candidate, ""));
+
+    await expect(registry.queryIntegrity(candidate)).rejects.toThrow(/npm view/i);
+  });
+
+  test("propagates candidate-bound E404 with ambiguous detail", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
+    const registry = createNpmRegistryPort(async () =>
+      candidatePackage404(
+        candidate,
+        `The requested resource '${packageSpec}' could not be confirmed.`,
+      ),
+    );
+
+    await expect(registry.queryIntegrity(candidate)).rejects.toThrow(/npm view/i);
   });
 
   test("propagates E404 for an unrelated missing registry resource", async () => {
