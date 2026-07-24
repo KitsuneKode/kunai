@@ -68,6 +68,10 @@
     },
     "clean": {
       "cache": false
+    },
+    "@kunai/docs#test": {
+      "dependsOn": ["transit", "generate"],
+      "outputs": []
     }
   }
 }
