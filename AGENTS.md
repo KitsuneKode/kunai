@@ -140,6 +140,20 @@ Relay smoke is opt-in: run `bun run dev:relay`, set `KUNAI_RELAY_BASE_URL=http:/
 - JSON config/provider stores remain; JSON history/cache stores are legacy implementation details only
 - Logs: `./logs.txt`
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `KitsuneKode/kunai`, driven by the `gh` CLI. See [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+
+### Triage labels
+
+Default vocabulary — each label string equals its canonical role name. See [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` plus ADRs in `.docs/adr/`. See [docs/agents/domain.md](docs/agents/domain.md).
+
 ## Active Planning Docs
 
 - [.plans/plan-implementation-truth.md](.plans/plan-implementation-truth.md): reconciled plan vs code status (update when landing plan work)
