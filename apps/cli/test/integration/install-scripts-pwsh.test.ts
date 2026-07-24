@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import {
   createInstallerSandbox,
   installCommandShim,
+  windowsShellEnvDefaults,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
 
@@ -22,9 +24,17 @@ function pwshAvailable(): boolean {
 
 const describePwsh = pwshAvailable() ? describe : describe.skip;
 
+// Tests that do not build their own sandbox still need install.ps1's Windows
+// default directories to resolve. Rooted in the OS temp dir so a stray write
+// under Linux pwsh lands somewhere disposable rather than in the repo.
+const DEFAULT_SHELL_ENV: NodeJS.ProcessEnv = {
+  ...process.env,
+  ...windowsShellEnvDefaults(join(tmpdir(), "kunai-pwsh-default-env")),
+};
+
 function runInstallPs1(
   args: string[],
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = DEFAULT_SHELL_ENV,
 ): {
   status: number | null;
   stdout: string;
@@ -51,7 +61,7 @@ function installPwshCommandShim(
 /** Async so Bun.serve can answer while the installer runs (spawnSync deadlocks the fixture). */
 async function runInstallPs1Async(
   args: string[],
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = DEFAULT_SHELL_ENV,
 ): Promise<{ status: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", INSTALL_PS1, ...args], {
     env,
@@ -586,7 +596,9 @@ describePwsh("install.ps1 package activeVersion", () => {
     try {
       const shimDir = join(sandbox.root, "shims");
       const npmRoot = join(sandbox.root, "npm-root");
+      const npmPrefix = join(sandbox.root, "npm-prefix");
       mkdirSync(shimDir, { recursive: true });
+      mkdirSync(npmPrefix, { recursive: true });
       mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
       writeFileSync(
         join(npmRoot, "@kitsunekode", "kunai", "package.json"),
@@ -594,8 +606,12 @@ describePwsh("install.ps1 package activeVersion", () => {
       );
       installCommandShim(shimDir, "node");
       installPwshCommandShim(shimDir, "npm", {
-        unix: '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; fi\nexit 0\n',
-        windows: '@echo off\r\nif "%1"=="root" echo %KUNAI_NPM_ROOT%\r\nexit /b 0\r\n',
+        unix:
+          '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; ' +
+          'elif [ "$1" = "prefix" ]; then printf "%s\\n" "$KUNAI_NPM_PREFIX"; fi\nexit 0\n',
+        windows:
+          '@echo off\r\nif "%1"=="root" echo %KUNAI_NPM_ROOT%\r\n' +
+          'if "%1"=="prefix" echo %KUNAI_NPM_PREFIX%\r\nexit /b 0\r\n',
       });
       installPwshCommandShim(shimDir, "kunai", {
         unix: '#!/bin/sh\necho "kunai 1.0.0 (stale-path-winner)"\n',
@@ -610,15 +626,18 @@ describePwsh("install.ps1 package activeVersion", () => {
       }
       env.Path = `${shimDir}${delimiter}${inheritedPath}`;
       env.KUNAI_NPM_ROOT = npmRoot;
+      env.KUNAI_NPM_PREFIX = npmPrefix;
 
       const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
       expect(result.status).toBe(0);
       const manifest = JSON.parse(
         readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; method: string };
+      ) as { activeVersion: string; method: string; launcherPath: string };
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
+      // An absolute npm-owned shim path, never the bare command name.
+      expect(manifest.launcherPath).toBe(join(npmPrefix, "kunai.cmd"));
     } finally {
       sandbox.cleanup();
     }
@@ -632,8 +651,10 @@ describePwsh("install.ps1 package activeVersion", () => {
         const shimDir = join(sandbox.root, "shims");
         const argvLog = join(sandbox.root, `${method}-argv.txt`);
         const npmRoot = join(sandbox.root, "npm-root");
+        const npmPrefix = join(sandbox.root, "npm-prefix");
         const bunRoot = join(sandbox.root, "bun-root");
         mkdirSync(shimDir, { recursive: true });
+        mkdirSync(npmPrefix, { recursive: true });
         if (method === "npm") {
           installCommandShim(shimDir, "node");
           mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
@@ -642,9 +663,14 @@ describePwsh("install.ps1 package activeVersion", () => {
             JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
           );
           installPwshCommandShim(shimDir, "npm", {
-            unix: '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; else printf "%s\\n" "$*" > "$KUNAI_ARGV_LOG"; fi\nexit 0\n',
+            unix:
+              '#!/bin/sh\nif [ "$1" = "root" ]; then printf "%s\\n" "$KUNAI_NPM_ROOT"; ' +
+              'elif [ "$1" = "prefix" ]; then printf "%s\\n" "$KUNAI_NPM_PREFIX"; ' +
+              'else printf "%s\\n" "$*" > "$KUNAI_ARGV_LOG"; fi\nexit 0\n',
             windows:
-              '@echo off\r\nif "%1"=="root" (echo %KUNAI_NPM_ROOT%) else (echo %* > "%KUNAI_ARGV_LOG%")\r\nexit /b 0\r\n',
+              '@echo off\r\nif "%1"=="root" (echo %KUNAI_NPM_ROOT%) ' +
+              'else if "%1"=="prefix" (echo %KUNAI_NPM_PREFIX%) ' +
+              'else (echo %* > "%KUNAI_ARGV_LOG%")\r\nexit /b 0\r\n',
           });
         } else {
           mkdirSync(join(bunRoot, "install", "global", "node_modules", "@kitsunekode", "kunai"), {
@@ -672,6 +698,7 @@ describePwsh("install.ps1 package activeVersion", () => {
           ...sandbox.env,
           KUNAI_ARGV_LOG: argvLog,
           KUNAI_NPM_ROOT: npmRoot,
+          KUNAI_NPM_PREFIX: npmPrefix,
           BUN_INSTALL: bunRoot,
         };
         const inheritedPath =
@@ -686,8 +713,12 @@ describePwsh("install.ps1 package activeVersion", () => {
         expect(readFileSync(argvLog, "utf8").trim()).toBe(`install -g @kitsunekode/kunai@4.5.6`);
         const manifest = JSON.parse(
           readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-        ) as { activeVersion: string };
+        ) as { activeVersion: string; launcherPath: string };
         expect(manifest.activeVersion).toBe("4.5.6");
+        // Each channel records its own owner's absolute launcher, not "kunai".
+        expect(manifest.launcherPath).toBe(
+          method === "npm" ? join(npmPrefix, "kunai.cmd") : join(bunRoot, "bin", "kunai.exe"),
+        );
       } finally {
         sandbox.cleanup();
       }

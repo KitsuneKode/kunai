@@ -117,6 +117,28 @@ function Complete-PackageActiveVersion([string]$InstallMethod, [string]$Resolved
   return $observed
 }
 
+# Resolve the absolute launcher path recorded in the manifest, mirroring
+# resolve_owned_package_launcher in install.sh and inspectPackageInstall in
+# apps/cli/src/services/update/run-install.ts. A bare "kunai" is not a path:
+# anything later reading launcherPath would resolve it against the wrong root.
+# On Windows npm shims live directly in the prefix, not in a bin/ subdirectory.
+function Resolve-OwnedPackageLauncher([string]$InstallMethod) {
+  if ($DryRun) { return 'kunai' }
+  if ($InstallMethod -eq 'npm') {
+    $global:LASTEXITCODE = $null
+    $prefix = (& npm prefix -g 2>$null | Select-Object -First 1)
+    if ($global:LASTEXITCODE -eq 0 -and $prefix) {
+      return (Join-Path ([string]$prefix) 'kunai.cmd')
+    }
+  }
+  elseif ($InstallMethod -eq 'bun') {
+    $bunRoot = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bun' }
+    $binDir = if ($env:BUN_INSTALL_BIN) { $env:BUN_INSTALL_BIN } else { Join-Path $bunRoot 'bin' }
+    return (Join-Path $binDir 'kunai.exe')
+  }
+  throw "Could not resolve the $InstallMethod-owned Kunai launcher path."
+}
+
 function Get-IsoNow {
   return (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
@@ -727,7 +749,7 @@ switch ($Method) {
       Invoke-Step "npm install -g $Package@$resolved" { & npm install -g "$Package@$resolved" }
     }
     $resolved = Complete-PackageActiveVersion 'npm' $resolved
-    Write-Manifest 'npm-global' $resolved 'kunai'
+    Write-Manifest 'npm-global' $resolved (Resolve-OwnedPackageLauncher 'npm')
   }
   'bun' {
     Require-Cmd 'bun' 'Install Bun before using -Method bun.'
@@ -739,7 +761,7 @@ switch ($Method) {
       Invoke-Step "bun install -g $Package@$resolved" { & bun install -g "$Package@$resolved" }
     }
     $resolved = Complete-PackageActiveVersion 'bun' $resolved
-    Write-Manifest 'bun-global' $resolved 'kunai'
+    Write-Manifest 'bun-global' $resolved (Resolve-OwnedPackageLauncher 'bun')
   }
   'source' {
     Require-Cmd 'git' 'Install Git before using -Method source.'
