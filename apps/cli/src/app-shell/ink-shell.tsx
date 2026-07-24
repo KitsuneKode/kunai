@@ -54,6 +54,7 @@ import {
 } from "./playback-mount-shell";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
+import { SakuraPetal } from "./primitives/SakuraPetal";
 import { SegmentedControl } from "./primitives/SegmentedControl";
 import { resolveHeaderDestination } from "./resolve-header-destination";
 import { RootContentBody } from "./root-content-shell";
@@ -1314,7 +1315,7 @@ function ListShell<T>({
       ? "Use ↑↓ to move through results"
       : "No matching results. Keep typing or press Esc to clear the filter.");
   const detailLines = wrapText(selectedDetail, Math.max(20, companionWidth - 2), 7);
-  const { poster, posterState } = usePosterPreview(settledOption?.previewImageUrl, {
+  const { poster, spinner: posterSpinner } = usePosterPreview(settledOption?.previewImageUrl, {
     rows: 9,
     cols: Math.max(18, Math.min(30, companionWidth - 4)),
     enabled: showCompanion && Boolean(settledOption?.previewImageUrl),
@@ -1526,12 +1527,12 @@ function ListShell<T>({
                       <Box flexDirection="column" marginBottom={1}>
                         <Text>{poster.placeholder}</Text>
                       </Box>
-                    ) : selectedOption?.previewImageUrl &&
-                      (navigating || posterState === "loading") ? (
+                    ) : selectedOption?.previewImageUrl && posterSpinner && !navigating ? (
+                      // Only a settled selection whose artwork genuinely missed
+                      // the cache earns the petal — spinning while `navigating`
+                      // put a loading state on every ↑/↓ through the list.
                       <Box marginBottom={1}>
-                        <Text color={palette.muted} dimColor>
-                          Loading artwork…
-                        </Text>
+                        <SakuraPetal mode="loading" />
                       </Box>
                     ) : null}
                     <Text bold color={palette.text}>

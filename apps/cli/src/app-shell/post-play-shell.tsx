@@ -29,6 +29,7 @@ import {
 } from "./post-play-view";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
+import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -318,7 +319,7 @@ function NextUpHeroCard({
   const innerWidth = Math.max(20, width - 4);
   const posterCols = 10;
   const textWidth = Math.max(8, innerWidth - posterCols - 2);
-  const { poster, posterState } = usePosterPreview(artworkUrl, {
+  const { poster, spinner } = usePosterPreview(artworkUrl, {
     rows: 4,
     cols: posterCols,
     enabled: Boolean(artworkUrl),
@@ -345,9 +346,11 @@ function NextUpHeroCard({
         <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
           {poster.kind !== "none" ? (
             <Text>{poster.placeholder}</Text>
+          ) : spinner ? (
+            <SakuraPetal mode="loading" />
           ) : (
             <Text color={palette.dim} bold>
-              {posterState === "loading" ? "…" : initialsOf(title)}
+              {initialsOf(title)}
             </Text>
           )}
         </Box>

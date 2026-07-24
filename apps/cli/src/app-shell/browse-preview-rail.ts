@@ -217,9 +217,11 @@ export function mapPosterPreviewState(input: {
   readonly hasPosterPath: boolean;
   readonly poster: PosterResult;
   readonly posterState: PosterState;
+  /** Cache-missed and pending past the spinner threshold — see usePosterPreview. */
+  readonly spinner?: boolean;
 }): PreviewPosterState {
   if (!input.hasPosterPath) return "none";
-  if (input.posterState === "loading") return "loading";
+  if (input.posterState === "loading") return input.spinner ? "pending" : "loading";
   if (
     input.poster.kind === "kitty" ||
     input.poster.kind === "text" ||

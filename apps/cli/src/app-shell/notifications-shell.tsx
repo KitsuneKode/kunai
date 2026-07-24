@@ -59,7 +59,7 @@ export function NotificationsShell({
   readonly unreadCount: number;
 }) {
   const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
-  const { poster, posterState } = useRailPoster(view.rail?.preview.posterUrl, {
+  const { poster, posterState, spinner } = useRailPoster(view.rail?.preview.posterUrl, {
     rows: 10,
     cols: 28,
     enabled: showRail,
@@ -83,6 +83,7 @@ export function NotificationsShell({
     hasPosterPath: Boolean(view.rail?.preview.posterUrl),
     poster,
     posterState,
+    spinner,
   });
 
   const rail =

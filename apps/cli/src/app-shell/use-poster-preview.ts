@@ -2,25 +2,41 @@ import { startTransition, useEffect, useReducer, useRef } from "react";
 
 import {
   fetchPoster,
+  isPosterCached,
   releasePosterPlacement,
   undisplayRenderedPosterImages,
   type KittyPlacementSlot,
 } from "./image-pane";
 import type { PosterResult, PosterState } from "./poster-types";
 
+/**
+ * How long an uncached poster may stay pending before a surface may show a
+ * spinner. Below this the fetch usually lands within a frame or two and the
+ * spinner would read as a flicker, not as progress.
+ */
+export const POSTER_SPINNER_DELAY_MS = 150;
+
 type PosterPreviewState = {
   readonly poster: PosterResult;
   readonly posterState: PosterState;
+  /**
+   * True only when this fetch missed the cache AND has been pending past
+   * POSTER_SPINNER_DELAY_MS. Surfaces show a spinner on this, never on
+   * `posterState === "loading"`, which is also true for cache hits.
+   */
+  readonly spinner: boolean;
 };
 
 type PosterPreviewAction =
   | { type: "reset"; posterState: PosterState }
   | { type: "loading" }
+  | { type: "spinner" }
   | { type: "resolved"; result: PosterResult };
 
 const initialPosterPreviewState: PosterPreviewState = {
   poster: { kind: "none" },
   posterState: "idle",
+  spinner: false,
 };
 
 function posterPreviewReducer(
@@ -29,18 +45,24 @@ function posterPreviewReducer(
 ): PosterPreviewState {
   switch (action.type) {
     case "reset":
-      return { poster: { kind: "none" }, posterState: action.posterState };
+      return { poster: { kind: "none" }, posterState: action.posterState, spinner: false };
     case "loading":
       // Already loading: return the SAME reference so React bails out of the
       // re-render. Without this, holding ↑/↓ dispatches "loading" on every
       // keystroke and each new object forces an extra render during navigation.
       if (state.posterState === "loading") return state;
       // Preserve previous poster while loading to avoid flash when switching episodes
-      return { poster: state.poster, posterState: "loading" };
+      return { poster: state.poster, posterState: "loading", spinner: false };
+    case "spinner":
+      // Only a still-pending fetch may raise the spinner: the arming timer can
+      // outlive the resolve it was armed for.
+      if (state.spinner || state.posterState !== "loading") return state;
+      return { ...state, spinner: true };
     case "resolved":
       return {
         poster: action.result,
         posterState: action.result.kind === "none" ? "unavailable" : "ready",
+        spinner: false,
       };
     default:
       return state;
@@ -88,7 +110,7 @@ export function usePosterPreview(
     /** Named Kitty slot — per-fetch cleanup deletes only this slot. */
     placementSlot?: KittyPlacementSlot;
   },
-): { poster: PosterResult; posterState: PosterState } {
+): { poster: PosterResult; posterState: PosterState; spinner: boolean } {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
   const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
   // One delayed retry per URL: a transient fetch failure (busy machine right
@@ -131,6 +153,7 @@ export function usePosterPreview(
     let cancelled = false;
     const abort = new AbortController();
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let spinnerTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleRetryIfFirstFailure = () => {
       if (retryAttempted.current === url) return;
       retryAttempted.current = url;
@@ -147,15 +170,16 @@ export function usePosterPreview(
       // Do NOT global-wipe before fetch. Slot registration replaces the previous
       // imageId for this slot; siblings keep their placements.
       dispatch({ type: "loading" });
-      fetchPoster(url, {
-        rows,
-        cols,
-        variant,
-        allowKitty,
-        inkEmbedded,
-        placementSlot,
-        signal: abort.signal,
-      })
+      const fetchOptions = { rows, cols, variant, allowKitty, inkEmbedded, placementSlot };
+      // Arm the spinner only for a genuine cache miss. A cached poster paints on
+      // the next frame, so spinning for it would flash on every revisit — the
+      // exact "spinner on every navigation move" this policy exists to avoid.
+      if (!isPosterCached(url, fetchOptions)) {
+        spinnerTimer = setTimeout(() => {
+          if (!cancelled && !abort.signal.aborted) dispatch({ type: "spinner" });
+        }, POSTER_SPINNER_DELAY_MS);
+      }
+      fetchPoster(url, { ...fetchOptions, signal: abort.signal })
         .then((result) => {
           if (cancelled || abort.signal.aborted) return undefined;
           if (result.kind === "none") scheduleRetryIfFirstFailure();
@@ -166,6 +190,11 @@ export function usePosterPreview(
           if (cancelled || abort.signal.aborted) return;
           scheduleRetryIfFirstFailure();
           startTransition(() => dispatch({ type: "reset", posterState: "unavailable" }));
+        })
+        // Settled either way: stop the arming timer so a slow-but-successful
+        // fetch cannot raise a spinner over an image that already painted.
+        .finally(() => {
+          if (spinnerTimer !== undefined) clearTimeout(spinnerTimer);
         });
     }, debounceMs);
 
@@ -174,6 +203,7 @@ export function usePosterPreview(
       abort.abort();
       clearTimeout(timer);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
+      if (spinnerTimer !== undefined) clearTimeout(spinnerTimer);
       // Do not release the slot here — the incoming effect's fetch registers a
       // replacement imageId (or the disable path releases explicitly).
     };
@@ -191,7 +221,7 @@ export function usePosterPreview(
     variant,
   ]);
 
-  return { poster: state.poster, posterState: state.posterState };
+  return { poster: state.poster, posterState: state.posterState, spinner: state.spinner };
 }
 
 export const __testing = {

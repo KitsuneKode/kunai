@@ -11,6 +11,7 @@ import {
   wrapSynopsis,
 } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
+import { SakuraPetal } from "./primitives/SakuraPetal";
 import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
 import { palette, semanticToneColor } from "./shell-theme";
 import type { ShellPanelLine } from "./types";
@@ -150,7 +151,7 @@ export function DetailsPaneUI({
   posterCols?: number;
 }) {
   const { primary, secondary } = data;
-  const { poster, posterState } = usePosterPreview(primary.posterPath ?? undefined, {
+  const { poster, spinner } = usePosterPreview(primary.posterPath ?? undefined, {
     rows: posterRows,
     cols: posterCols,
     enabled: Boolean(primary.posterPath),
@@ -170,11 +171,12 @@ export function DetailsPaneUI({
         <Box marginBottom={1}>
           {poster.kind !== "none" ? (
             <Text>{poster.placeholder}</Text>
-          ) : primary.posterPath ? (
-            <Text color={posterState === "loading" ? palette.muted : palette.dim} dimColor>
-              {posterState === "loading" ? "Loading poster…" : "[poster]"}
-            </Text>
+          ) : primary.posterPath && spinner ? (
+            <SakuraPetal mode="loading" />
           ) : (
+            // No poster URL, a cache hit still painting, or a failed fetch — the
+            // initials block is the honest resting state. A spinner that never
+            // resolves reads as a hang.
             <PosterInitialBlock title={primary.title} width={8} height={4} />
           )}
         </Box>
@@ -295,7 +297,7 @@ function DetailPosterSlot({
   readonly posterCols: number;
 }) {
   const posterUrl = resolvePosterUrl(detail);
-  const { poster, posterState } = usePosterPreview(posterUrl, {
+  const { poster, spinner } = usePosterPreview(posterUrl, {
     rows: posterRows,
     cols: posterCols,
     enabled: Boolean(posterUrl),
@@ -312,12 +314,10 @@ function DetailPosterSlot({
     );
   }
 
-  if (posterUrl && posterState === "loading") {
+  if (spinner) {
     return (
-      <Box minHeight={posterRows} alignItems="flex-start">
-        <Text color={palette.muted} dimColor>
-          {"loading poster…"}
-        </Text>
+      <Box minHeight={posterRows} width={posterCols} justifyContent="center" alignItems="center">
+        <SakuraPetal mode="loading" />
       </Box>
     );
   }

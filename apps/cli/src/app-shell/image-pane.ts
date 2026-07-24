@@ -136,6 +136,53 @@ function evictPosterCacheEntry(key: string): void {
   posterCache.delete(key);
 }
 
+export type PosterFetchOptions = {
+  rows: number;
+  cols: number;
+  variant?: "preview" | "detail";
+  allowKitty?: boolean;
+  /** Chafa symbols inside Ink — does not claim Kitty placements. */
+  inkEmbedded?: boolean;
+  placementSlot?: KittyPlacementSlot;
+  signal?: AbortSignal;
+};
+
+/**
+ * Cache identity for one poster render. Extracted so the synchronous probe
+ * (`isPosterCached`) and `fetchPoster` can never drift: a probe computing its
+ * own key would silently report misses and make every render spin.
+ */
+function posterCacheKey(
+  url: string,
+  { rows, cols, variant = "preview", inkEmbedded = false, placementSlot }: PosterFetchOptions,
+): { readonly key: string; readonly resolved: string; readonly rendererKey: string } {
+  const resolved = resolvePosterUrl(url, { cols, variant });
+  const rendererKey = inkEmbedded ? "ink-embedded" : runtime.detectImageCapability().renderer;
+  // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
+  const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
+  return { key: `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}`, resolved, rendererKey };
+}
+
+/**
+ * Synchronous "will this render without I/O?" probe.
+ *
+ * Only the spinner policy uses this: a poster already in cache paints on the
+ * very next frame, so arming a spinner for it would flash rose for one frame on
+ * every revisit. Deliberately conservative — an in-flight entry counts as a miss
+ * (it has not painted yet), and a stale slotted Kitty id counts as a miss for
+ * the same reason `fetchPoster` re-uploads it.
+ */
+export function isPosterCached(url: string | undefined, options: PosterFetchOptions): boolean {
+  if (!url) return false;
+  const { key } = posterCacheKey(url, options);
+  const cached = posterCache.get(key);
+  if (!cached) return false;
+  if (cached.kind === "kitty" && options.placementSlot) {
+    return getKittyPlacement(options.placementSlot) === cached.imageId;
+  }
+  return true;
+}
+
 export async function fetchPoster(
   url: string | undefined,
   {
@@ -146,16 +193,7 @@ export async function fetchPoster(
     inkEmbedded = false,
     placementSlot,
     signal,
-  }: {
-    rows: number;
-    cols: number;
-    variant?: "preview" | "detail";
-    allowKitty?: boolean;
-    /** Chafa symbols inside Ink — does not claim Kitty placements. */
-    inkEmbedded?: boolean;
-    placementSlot?: KittyPlacementSlot;
-    signal?: AbortSignal;
-  },
+  }: PosterFetchOptions,
 ): Promise<PosterResult> {
   if (!url) return { kind: "none" };
   if (signal?.aborted) return { kind: "none" };
@@ -164,11 +202,13 @@ export async function fetchPoster(
   if (!inkEmbedded && (!capability.available || capability.renderer === "none")) {
     return { kind: "none" };
   }
-  const resolved = resolvePosterUrl(url, { cols, variant });
-  const rendererKey = inkEmbedded ? "ink-embedded" : capability.renderer;
-  // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
-  const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
-  const key = `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}`;
+  const { key, resolved, rendererKey } = posterCacheKey(url, {
+    rows,
+    cols,
+    variant,
+    inkEmbedded,
+    placementSlot,
+  });
 
   const cached = posterCache.get(key);
   if (cached) {

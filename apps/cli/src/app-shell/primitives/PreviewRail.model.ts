@@ -1,6 +1,12 @@
 import { buildContextCardTile } from "./ContextCard.model";
 
-export type PreviewPosterState = "none" | "loading" | "ready" | "failed";
+/**
+ * `loading` = a fetch is in flight but may still land within a frame (cache hit,
+ * warm source) — show the calm placeholder tile. `pending` = it missed the cache
+ * and has been in flight past POSTER_SPINNER_DELAY_MS, which is the only state
+ * that earns a spinner.
+ */
+export type PreviewPosterState = "none" | "loading" | "pending" | "ready" | "failed";
 
 export type PreviewFact = {
   readonly label: string;
@@ -21,6 +27,7 @@ export function getPreviewPosterLabel(
   input: Pick<PreviewRailModel, "title" | "posterState">,
 ): string {
   if (input.posterState === "loading") return "loading poster";
+  // `pending` renders a spinner instead of a label, so it keeps the tile text.
   return buildContextCardTile(input.title);
 }
 

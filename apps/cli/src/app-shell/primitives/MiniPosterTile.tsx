@@ -52,7 +52,7 @@ export function MiniPosterTile({
   const tileCols = square ? Math.max(2, Math.min(cols, rows + 1)) : cols;
   const tileRows = square ? Math.max(2, Math.min(rows, tileCols)) : rows;
   const useKitty = allowKitty && Boolean(placementSlot);
-  const { poster, posterState } = usePosterPreview(url, {
+  const { poster } = usePosterPreview(url, {
     rows: tileRows,
     cols: tileCols,
     enabled: enabled && Boolean(url),
@@ -72,6 +72,10 @@ export function MiniPosterTile({
     return <Text>{poster.placeholder}</Text>;
   }
 
-  const fallback = posterState === "loading" ? "…" : initialsOf(title);
-  return <Text color={placeholderColor}>{fallback}</Text>;
+  // Tiles never signal load state. A rail of these all flipping initials → "…" →
+  // art on every ↑/↓ reads as noise, and the ellipsis is one cell where the
+  // initials are two, so the row reflows on each transition. Initials hold the
+  // slot until the image is ready; spinners belong to large single-poster
+  // surfaces only (see usePosterPreview's spinner contract).
+  return <Text color={placeholderColor}>{initialsOf(title)}</Text>;
 }

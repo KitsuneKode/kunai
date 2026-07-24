@@ -9,8 +9,9 @@ import { useSettledValue } from "./hooks/use-settled-value";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { PosterInitialBlock } from "./poster-initial-block";
-import type { PosterResult, PosterState } from "./poster-types";
+import type { PosterResult } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
+import { SakuraPetal } from "./primitives/SakuraPetal";
 import {
   getWindowStart,
   padColumnsEnd,
@@ -90,12 +91,13 @@ const POSTER_NONE: PosterResult = { kind: "none" };
 
 const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
   poster,
-  posterState,
+  spinner,
   option,
   width,
 }: {
   poster: PosterResult;
-  posterState: PosterState;
+  /** Cache-missed and pending past the threshold — see usePosterPreview. */
+  spinner: boolean;
   option: ShellPickerOption<string> | undefined;
   width: number;
 }) {
@@ -105,9 +107,11 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
       <Box height={6} width={width}>
         {poster.kind !== "none" ? (
           <Text>{poster.placeholder}</Text>
+        ) : spinner ? (
+          <SakuraPetal mode="loading" />
         ) : (
           <Text color={palette.dim} dimColor>
-            {posterState === "loading" ? "loading artwork…" : "no preview art"}
+            no preview art
           </Text>
         )}
       </Box>
@@ -172,17 +176,14 @@ export function OverlayPanel({
   // episode list never spawns a chafa/Kitty subprocess mid-navigation.
   const settledPickerImageUrl = useSettledValue(pickerPreviewImageUrl);
   const pickerNavigating = pickerPreviewImageUrl !== settledPickerImageUrl;
-  const { poster: pickerPoster, posterState: pickerPosterState } = usePosterPreview(
-    settledPickerImageUrl,
-    {
-      rows: 6,
-      cols: 16,
-      enabled: overlay.type === "episode-picker" && Boolean(settledPickerImageUrl),
-      // `settledPickerImageUrl` already absorbs the navigation burst.
-      debounceMs: 16,
-      placementSlot: "overlay-picker",
-    },
-  );
+  const { poster: pickerPoster, spinner: pickerSpinner } = usePosterPreview(settledPickerImageUrl, {
+    rows: 6,
+    cols: 16,
+    enabled: overlay.type === "episode-picker" && Boolean(settledPickerImageUrl),
+    // `settledPickerImageUrl` already absorbs the navigation burst.
+    debounceMs: 16,
+    placementSlot: "overlay-picker",
+  });
   // Suppress the heavy chafa block while navigating; Kitty (out-of-band) stays.
   const pickerPosterSuppressed = pickerNavigating && pickerPoster.kind === "text";
   // Two-pane episode picker: dense list (left) + anchored preview rail (right).
@@ -332,7 +333,7 @@ export function OverlayPanel({
             {showPreviewRail ? (
               <EpisodePreviewRail
                 poster={pickerPosterSuppressed ? POSTER_NONE : pickerPoster}
-                posterState={pickerPosterSuppressed ? "loading" : pickerPosterState}
+                spinner={pickerSpinner && !pickerNavigating}
                 option={overlay.options[overlay.selectedIndex]}
                 width={railColumnWidth}
               />

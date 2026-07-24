@@ -1051,23 +1051,25 @@ export function BrowseShell<T>({
     Boolean(selectedOption) &&
     (listFocused || idleFocused);
   const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
-  const { poster, posterState: posterPreviewState } = usePosterPreview(
-    settledOption?.previewImageUrl ?? undefined,
-    {
-      rows: PREVIEW_POSTER_ROWS,
-      cols: Math.max(14, Math.min(20, previewWidth - 6)),
-      enabled: Boolean(settledOption?.previewImageUrl),
-      // `settledOption` already absorbs the rapid-navigation burst, so the poster
-      // hook only needs a tiny guard rather than re-debouncing on top of it.
-      debounceMs: 16,
-      variant: "detail",
-      placementSlot: "browse-preview",
-    },
-  );
+  const {
+    poster,
+    posterState: posterPreviewState,
+    spinner: posterSpinner,
+  } = usePosterPreview(settledOption?.previewImageUrl ?? undefined, {
+    rows: PREVIEW_POSTER_ROWS,
+    cols: Math.max(14, Math.min(20, previewWidth - 6)),
+    enabled: Boolean(settledOption?.previewImageUrl),
+    // `settledOption` already absorbs the rapid-navigation burst, so the poster
+    // hook only needs a tiny guard rather than re-debouncing on top of it.
+    debounceMs: 16,
+    variant: "detail",
+    placementSlot: "browse-preview",
+  });
   const mappedPosterState = mapPosterPreviewState({
     hasPosterPath: Boolean(settledOption?.previewImageUrl),
     poster,
     posterState: posterPreviewState,
+    spinner: posterSpinner,
   });
   const previewRailModel = isCalendarView
     ? buildCalendarPreviewRailModel(

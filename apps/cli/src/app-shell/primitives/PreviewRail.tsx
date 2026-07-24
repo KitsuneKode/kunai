@@ -10,6 +10,7 @@ import {
   type PreviewFact,
   type PreviewRailModel,
 } from "./PreviewRail.model";
+import { SakuraPetal } from "./SakuraPetal";
 
 function factColor(tone: PreviewFact["tone"]): string {
   if (tone === "success") return palette.ok;
@@ -59,9 +60,16 @@ export function PreviewRail({
           borderStyle="round"
           borderColor={palette.lineSoft}
         >
-          <Text color={model.posterState === "loading" ? palette.muted : palette.dim} bold>
-            {posterLabel}
-          </Text>
+          {/* A single ❀ replaces the initials only once the fetch has missed the
+              cache and stayed pending — a cached poster paints on the next frame,
+              so spinning for it would flash rose on every revisit. */}
+          {model.posterState === "pending" ? (
+            <SakuraPetal mode="loading" />
+          ) : (
+            <Text color={model.posterState === "loading" ? palette.muted : palette.dim} bold>
+              {posterLabel}
+            </Text>
+          )}
         </Box>
       )}
       <Box marginTop={1} flexDirection="column">

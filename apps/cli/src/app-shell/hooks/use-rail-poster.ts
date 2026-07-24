@@ -28,10 +28,10 @@ export function useRailPoster(
     readonly variant?: "preview" | "detail";
     readonly allowKitty?: boolean;
   },
-): { poster: PosterResult; posterState: PosterState; navigating: boolean } {
+): { poster: PosterResult; posterState: PosterState; spinner: boolean; navigating: boolean } {
   const settledUrl = useSettledValue(url);
   const navigating = url !== settledUrl;
-  const { poster, posterState } = usePosterPreview(settledUrl, {
+  const { poster, posterState, spinner } = usePosterPreview(settledUrl, {
     rows: opts.rows,
     cols: opts.cols,
     enabled: (opts.enabled ?? true) && Boolean(settledUrl),
@@ -42,5 +42,7 @@ export function useRailPoster(
     debounceMs: 16,
   });
   const displayPoster = navigating && poster.kind === "text" ? POSTER_NONE : poster;
-  return { poster: displayPoster, posterState, navigating };
+  // Never spin mid-navigation: the settled url has not caught up, so a spinner
+  // here would fire on every ↑/↓ — the thing the settle debounce exists to stop.
+  return { poster: displayPoster, posterState, spinner: spinner && !navigating, navigating };
 }
