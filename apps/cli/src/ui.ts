@@ -10,11 +10,7 @@ import { getKunaiPaths } from "@kunai/storage";
 export type CapabilitySeverity = "fatal" | "degraded";
 
 export interface CapabilityIssue {
-  readonly id:
-    | "mpv-missing"
-    | "yt-dlp-missing"
-    | "poster-rendering-unavailable"
-    | "poster-rendering-degraded";
+  readonly id: "mpv-missing" | "yt-dlp-missing" | "poster-rendering-unavailable";
   readonly severity: CapabilitySeverity;
   readonly message: string;
   readonly remediation: readonly string[];
@@ -115,35 +111,10 @@ export async function probeCapabilities(
     });
   }
 
-  if (image.terminal === "windows-terminal" && !chafa) {
-    issues.push({
-      id: "poster-rendering-degraded",
-      severity: "degraded",
-      message:
-        "Windows Terminal detected, but chafa is missing. Poster previews require chafa for Sixel output.",
-      remediation: [
-        "Windows: winget install hpjansson.Chafa",
-        "Arch:    sudo pacman -S chafa",
-        "Debian/Ubuntu: sudo apt install chafa",
-        "macOS:   brew install chafa",
-      ],
-    });
-  }
-
-  if (image.renderer === "kitty-native" && !magick) {
-    issues.push({
-      id: "poster-rendering-degraded",
-      severity: "degraded",
-      message:
-        "Kitty/Ghostty detected, but ImageMagick is missing. Non-PNG posters may be unavailable.",
-      remediation: [
-        "Arch:    sudo pacman -S imagemagick",
-        "Debian/Ubuntu: sudo apt install imagemagick",
-        "macOS:   brew install imagemagick",
-        "Windows: winget install ImageMagick.ImageMagick",
-      ],
-    });
-  }
+  // Posters no longer gate on chafa or ImageMagick: the in-process half-block
+  // renderer covers every truecolour terminal (including Windows Terminal
+  // without chafa), and the kitty path decodes JPEG/PNG itself. chafa/magick
+  // only raise fidelity on the paths that use them, so they are not issues.
 
   return {
     mpv,
