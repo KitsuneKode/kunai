@@ -328,7 +328,6 @@ export function BrowseShell<T>({
     hasResults: false,
     hasFilterBar: false,
     canFocusIdle: false,
-    selectedIndex: 0,
   });
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
@@ -471,17 +470,11 @@ export function BrowseShell<T>({
         setCommandInput("");
         setHighlightedCommandIndex(0);
       }
-      // Draft emptied while browsing discovery/trending: keep the loaded list.
-      // Clearing a submitted search restores trending when available.
-      if (normalized.value.trim().length === 0 && lastSearchedQuery.trim().length > 0) {
-        if (onLoadDiscovery && reloadDiscoveryRef.current) {
-          reloadDiscoveryRef.current();
-        } else {
-          clearResults();
-        }
-      }
+      // Emptying the draft is not a gesture — backspacing to retype must not
+      // fire a discovery reload or move focus. Restoring trending is deliberate
+      // and lives on the Esc ladder (query → clear text, results → clearResults).
     },
-    [clearResults, lastSearchedQuery, onLoadDiscovery, setQuery],
+    [setQuery],
   );
 
   const runSearch = useCallback(
@@ -909,7 +902,6 @@ export function BrowseShell<T>({
     hasResults: displayOptions.length > 0,
     hasFilterBar: showResultFilterBar,
     canFocusIdle: canFocusIdleRows,
-    selectedIndex: boundedSelectedIndex,
   };
 
   // Never strand focus on a list that has emptied — hand focus back to query.
@@ -1507,7 +1499,13 @@ export function BrowseShell<T>({
       }
 
       if (escLayer === "results") {
-        clearResults();
+        // Deliberate reset: this is where a submitted search hands the surface
+        // back to trending, now that emptying the draft no longer does it.
+        if (onLoadDiscovery && reloadDiscoveryRef.current) {
+          reloadDiscoveryRef.current();
+        } else {
+          clearResults();
+        }
         return;
       }
 
@@ -1558,10 +1556,11 @@ export function BrowseShell<T>({
         dispatchFocusZone({ type: "arrow-down" });
         return;
       }
-      // Last result + ↓ returns to search instead of wrapping the list — keeps
-      // the same ring as idle (search ↔ rows) without trapping in results.
+      // Closed loop: the last row wraps to the first instead of dropping back
+      // into the search box. Bouncing to the query zone here made row 0
+      // unreachable going down whenever the remembered row was the last one.
       if (boundedSelectedIndex >= displayOptions.length - 1) {
-        dispatchFocusZone({ type: "focus-query" });
+        setSelectedIndex(0);
         return;
       }
       setSelectedIndex((current) => current + 1);
@@ -1573,13 +1572,15 @@ export function BrowseShell<T>({
         moveCalendarRowFromInput(-1);
         return;
       }
+      // Both arrows out of the search box mean the same thing: resume the list
+      // where it was left. (↑ used to jump to the last row; with the list
+      // wrapping that is simply one ↑ from row 0.)
       if (!listFocused) {
         dispatchFocusZone({ type: "arrow-up" });
-        setSelectedIndex(displayOptions.length - 1);
         return;
       }
       if (boundedSelectedIndex === 0) {
-        dispatchFocusZone({ type: "arrow-up" });
+        setSelectedIndex(displayOptions.length - 1);
         return;
       }
       setSelectedIndex((current) => current - 1);
