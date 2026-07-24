@@ -21,6 +21,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Net.Http
 
+# $IsWindows is an automatic variable in PowerShell 6+ only. Windows PowerShell
+# 5.1 does not define it and runs nowhere else, so its absence implies Windows.
+$OnWindows = if ($null -eq $IsWindows) { $true } else { $IsWindows }
+
 $DlBase = if ($env:KUNAI_DL_BASE) { $env:KUNAI_DL_BASE } else { 'https://github.com/KitsuneKode/kunai/releases' }
 $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { 'https://api.github.com/repos/KitsuneKode/kunai/releases/latest' }
 $Package = '@kitsunekode/kunai'
@@ -81,11 +85,28 @@ function Read-KunaiPackageVersion([string]$PackageRoot) {
   return $null
 }
 
+# Run a native command and return its first output line, or $null unless it
+# exited 0.
+#
+# The exit code must be read before the output is piped anywhere. Reading
+# $LASTEXITCODE off the end of a `| Select-Object -First 1` pipeline is not
+# reliable: Select-Object stops the pipeline as soon as it has its item, and the
+# native command's exit status is then never recorded — $LASTEXITCODE stays
+# null, `-eq 0` is false, and a command that actually succeeded reads as failed.
+function Get-FirstLineIfSucceeded([scriptblock]$Command) {
+  $global:LASTEXITCODE = $null
+  $output = & $Command
+  $exitCode = $global:LASTEXITCODE
+  if ($exitCode -ne 0) { return $null }
+  $first = $output | Select-Object -First 1
+  if (-not $first) { return $null }
+  return ([string]$first).Trim()
+}
+
 function Resolve-InstalledPackageVersion([string]$InstallMethod) {
   if ($InstallMethod -eq 'npm') {
-    $global:LASTEXITCODE = $null
-    $root = (& npm root -g 2>$null | Select-Object -First 1)
-    if ($global:LASTEXITCODE -eq 0 -and $root) {
+    $root = Get-FirstLineIfSucceeded { & npm root -g 2>$null }
+    if ($root) {
       $version = Read-KunaiPackageVersion ([string]$root)
       if ($version) { return $version }
     }
@@ -125,10 +146,9 @@ function Complete-PackageActiveVersion([string]$InstallMethod, [string]$Resolved
 function Resolve-OwnedPackageLauncher([string]$InstallMethod) {
   if ($DryRun) { return 'kunai' }
   if ($InstallMethod -eq 'npm') {
-    $global:LASTEXITCODE = $null
-    $prefix = (& npm prefix -g 2>$null | Select-Object -First 1)
-    if ($global:LASTEXITCODE -eq 0 -and $prefix) {
-      return (Join-Path ([string]$prefix) 'kunai.cmd')
+    $prefix = Get-FirstLineIfSucceeded { & npm prefix -g 2>$null }
+    if ($prefix) {
+      return (Join-Path $prefix 'kunai.cmd')
     }
   }
   elseif ($InstallMethod -eq 'bun') {
@@ -436,7 +456,9 @@ function Update-Launcher([string]$VersionPath, [string]$LauncherPath) {
     }
   }
   Copy-Item -Force -Path $VersionPath -Destination $LauncherPath
-  Unblock-File -Path $LauncherPath -ErrorAction SilentlyContinue
+  # Clearing the mark-of-the-web is meaningful only on Windows, and the cmdlet
+  # raises an unsuppressable platform error elsewhere.
+  if ($OnWindows) { Unblock-File -Path $LauncherPath -ErrorAction SilentlyContinue }
 }
 
 function Get-PreviousActiveVersion {
@@ -454,7 +476,7 @@ function Get-PreviousActiveVersion {
 }
 
 function Broadcast-EnvironmentChange {
-  if ($DryRun) { return }
+  if ($DryRun -or -not $OnWindows) { return }
   Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -471,6 +493,10 @@ public static class KunaiEnvBroadcast {
 }
 
 function Add-UserPath([string]$Dir) {
+  # The 'User' environment target and the WM_SETTINGCHANGE broadcast that makes
+  # it visible are both Windows-only; there is no persistent equivalent to
+  # update elsewhere, and reading the target throws off-Windows.
+  if (-not $OnWindows) { return }
   $current = [Environment]::GetEnvironmentVariable('Path', 'User')
   if (($current -split ';') -notcontains $Dir) {
     $next = if ([string]::IsNullOrEmpty($current)) { $Dir } else { "$current;$Dir" }
@@ -657,7 +683,7 @@ function Install-Binary {
     New-Item -ItemType Directory -Force -Path (Split-Path $versionPath) | Out-Null
     $versionTmp = "$versionPath.tmp.$PID"
     Copy-Item -Force -Path $stagedBin -Destination $versionTmp
-    Unblock-File -Path $versionTmp -ErrorAction SilentlyContinue
+    if ($OnWindows) { Unblock-File -Path $versionTmp -ErrorAction SilentlyContinue }
     Move-Item -Force -Path $versionTmp -Destination $versionPath
 
     $sizeBytes = [long](Get-Item -LiteralPath $versionPath).Length
