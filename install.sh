@@ -158,43 +158,54 @@ json_escape() {
 	printf '%s' "$s"
 }
 
-# Resolve canonical activeVersion after npm/bun/source install.
-# Prefer `kunai --version`, then package.json metadata. Never returns "latest".
+# Read and validate Kunai's version from package-manager-owned metadata.
+read_owned_package_version() {
+	local pkg_json="$1" name ver
+	[[ -f "$pkg_json" ]] || return 1
+	name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg_json" | head -1)"
+	[[ "$name" == "$KUNAI_PACKAGE" ]] || return 1
+	ver="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg_json" | head -1)"
+	[[ -n "$ver" ]] && normalize_requested_version "$ver"
+}
+
+# Resolve canonical activeVersion from the selected owner's metadata only.
 resolve_installed_package_version() {
-	local out ver root pkg_json
-	if have kunai; then
-		out="$(kunai --version 2>/dev/null || true)"
-		ver="$(printf '%s\n' "$out" | head -1 |
-			sed -n 's/^kunai[[:space:]]\{1,\}\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
-		if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
-			printf '%s\n' "$ver"
-			return 0
-		fi
-	fi
-	if have npm; then
-		root="$(npm root -g 2>/dev/null || true)"
-		pkg_json="${root:+$root/$KUNAI_PACKAGE/package.json}"
-		if [[ -n "${pkg_json:-}" && -f "$pkg_json" ]]; then
-			ver="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg_json" | head -1)"
-			if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
-				printf '%s\n' "$ver"
-				return 0
-			fi
-		fi
-	fi
-	if [[ -f "$SOURCE_DIR/package.json" ]]; then
-		ver="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SOURCE_DIR/package.json" | head -1)"
-		if [[ -n "$ver" ]] && ver="$(normalize_requested_version "$ver" 2>/dev/null)"; then
-			printf '%s\n' "$ver"
-			return 0
-		fi
-	fi
-	return 1
+	local owner="$1" root global_dir
+	case "$owner" in
+	npm)
+		root="$(npm root -g 2>/dev/null)" || return 1
+		[[ -n "$root" ]] || return 1
+		read_owned_package_version "$root/$KUNAI_PACKAGE/package.json"
+		;;
+	bun)
+		global_dir="${BUN_INSTALL_GLOBAL_DIR:-${BUN_INSTALL:-$HOME/.bun}/install/global}"
+		read_owned_package_version "$global_dir/node_modules/$KUNAI_PACKAGE/package.json"
+		;;
+	source) read_owned_package_version "$SOURCE_DIR/package.json" ;;
+	*) return 1 ;;
+	esac
+}
+
+resolve_owned_package_launcher() {
+	local owner="$1" prefix bin_dir
+	case "$owner" in
+	npm)
+		prefix="$(npm prefix -g 2>/dev/null)" || return 1
+		[[ -n "$prefix" ]] || return 1
+		printf '%s\n' "$prefix/bin/kunai"
+		;;
+	bun)
+		bin_dir="${BUN_INSTALL_BIN:-${BUN_INSTALL:-$HOME/.bun}/bin}"
+		printf '%s\n' "$bin_dir/kunai"
+		;;
+	source) command -v kunai || return 1 ;;
+	*) return 1 ;;
+	esac
 }
 
 # After package install (or dry-run), produce a canonical activeVersion for the manifest.
 finalize_package_active_version() {
-	local resolved="$1"
+	local owner="$1" resolved="$2" observed
 	if [[ "$DRY" == 1 ]]; then
 		if [[ "$resolved" == latest ]]; then
 			printf '%s\n' "dry-run"
@@ -203,11 +214,15 @@ finalize_package_active_version() {
 		fi
 		return 0
 	fi
-	resolve_installed_package_version || {
-		err "Could not resolve installed Kunai version after package install."
-		err "Expected \`kunai --version\` or package.json metadata with major.minor.patch."
+	observed="$(resolve_installed_package_version "$owner")" || {
+		err "Could not resolve installed Kunai version from $owner-owned package metadata."
 		return 1
 	}
+	if [[ "$resolved" != latest && "$observed" != "$resolved" ]]; then
+		err "Installed Kunai version $observed does not match requested $resolved."
+		return 1
+	fi
+	printf '%s\n' "$observed"
 }
 
 resolve_published_version() {
@@ -759,9 +774,9 @@ ensure_bun() {
 }
 
 install_npm() {
-	local resolved
+	local resolved launcher
+	require node
 	require npm
-	ensure_bun
 	if [[ "$VERSION" != latest ]]; then
 		resolved="$(normalize_requested_version "$VERSION")" || {
 			err "Invalid version: $VERSION (expected exact major.minor.patch)."
@@ -776,13 +791,14 @@ install_npm() {
 	else
 		run npm install -g "${KUNAI_PACKAGE}@${resolved}"
 	fi
-	resolved="$(finalize_package_active_version "$resolved")" || exit 1
-	write_manifest npm-global "${resolved}" "$(command -v kunai || echo kunai)"
-	have kunai && path_hint "$(dirname "$(command -v kunai)")"
+	resolved="$(finalize_package_active_version npm "$resolved")" || exit 1
+	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher npm)" || exit 1; fi
+	write_manifest npm-global "${resolved}" "$launcher"
+	[[ "$DRY" == 1 ]] || path_hint "$(dirname "$launcher")"
 }
 
 install_bun() {
-	local resolved
+	local resolved launcher
 	ensure_bun
 	if [[ "$VERSION" != latest ]]; then
 		resolved="$(normalize_requested_version "$VERSION")" || {
@@ -798,9 +814,10 @@ install_bun() {
 	else
 		run bun install -g "${KUNAI_PACKAGE}@${resolved}"
 	fi
-	resolved="$(finalize_package_active_version "$resolved")" || exit 1
-	write_manifest bun-global "${resolved}" "$(command -v kunai || echo kunai)"
-	have kunai && path_hint "$(dirname "$(command -v kunai)")"
+	resolved="$(finalize_package_active_version bun "$resolved")" || exit 1
+	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher bun)" || exit 1; fi
+	write_manifest bun-global "${resolved}" "$launcher"
+	[[ "$DRY" == 1 ]] || path_hint "$(dirname "$launcher")"
 }
 
 install_source() {
@@ -843,7 +860,7 @@ install_source() {
 	else
 		(cd "$SOURCE_DIR" && bun install && bun run build && bun run link:global)
 	fi
-	resolved="$(finalize_package_active_version "$resolved")" || exit 1
+	resolved="$(finalize_package_active_version source "$resolved")" || exit 1
 	write_manifest source "$resolved" "$(command -v kunai || echo kunai)"
 }
 

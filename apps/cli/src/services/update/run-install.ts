@@ -26,7 +26,7 @@ export interface PackageInstallEvidence {
   readonly launcherPath: string;
 }
 
-interface PackageInspectionPorts {
+export interface PackageInspectionPorts {
   readonly captureCommand: (
     command: readonly string[],
   ) => Promise<{ readonly code: number; readonly stdout: string }>;
@@ -86,9 +86,9 @@ const defaultInspectionPorts: PackageInspectionPorts = {
 
 export async function inspectPackageInstall(
   method: PackageInstallMethod,
-  overrides: Partial<PackageInspectionPorts> = {},
+  ports: PackageInspectionPorts = defaultInspectionPorts,
 ): Promise<PackageInstallEvidence | null> {
-  const ports = { ...defaultInspectionPorts, ...overrides };
+  if (!isPackageInspectionPorts(ports)) return null;
   try {
     let packageRoot: string;
     let launcherPath: string;
@@ -124,14 +124,39 @@ export async function inspectPackageInstall(
   }
 }
 
+function isPackageInspectionPorts(value: unknown): value is PackageInspectionPorts {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<PackageInspectionPorts>;
+  return (
+    typeof candidate.captureCommand === "function" &&
+    typeof candidate.readText === "function" &&
+    typeof candidate.bunGlobalDir === "function" &&
+    typeof candidate.bunGlobalBinDir === "function" &&
+    typeof candidate.platform === "string"
+  );
+}
+
+function isRunInstallPorts(value: unknown): value is RunInstallPorts {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<RunInstallPorts>;
+  return (
+    typeof candidate.runCommand === "function" &&
+    typeof candidate.inspectPackageInstall === "function" &&
+    typeof candidate.writeInstallManifest === "function"
+  );
+}
+
 /**
  * `kunai install` — bootstrap or reinstall via the active channel (binary default).
  */
 export async function runInstall(
   argv: RunInstallArgv,
-  portOverrides: Partial<RunInstallPorts> = {},
+  ports: RunInstallPorts = defaultPorts,
 ): Promise<number> {
-  const ports = { ...defaultPorts, ...portOverrides };
+  if (!isRunInstallPorts(ports)) {
+    console.error("Installer ports are incomplete; refusing to run install commands.");
+    return 1;
+  }
   const force = argv.includes("--force");
   const skipDeps = argv.includes("--skip-deps");
   const methodIdx = argv.indexOf("--method");

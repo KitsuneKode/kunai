@@ -574,52 +574,124 @@ describe("install.sh lifecycle contract", () => {
 });
 
 describe("install.sh package activeVersion", () => {
-  test("npm method resolves activeVersion from kunai --version, never latest", () => {
+  test("npm ignores stale PATH kunai, needs no Bun, and records npm-owned evidence", () => {
     const sandbox = createInstallerSandbox("install-sh-npm-version");
     try {
       const shimDir = join(sandbox.root, "shims");
+      const npmRoot = join(sandbox.root, "npm-root");
+      const npmPrefix = join(sandbox.root, "npm-prefix");
       mkdirSync(shimDir, { recursive: true });
-      installCommandShim(shimDir, "npm", "#!/bin/sh\nexit 0\n");
-      installCommandShim(shimDir, "bun", "#!/bin/sh\nexit 0\n");
-      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 4.5.6 (npm-global)"\n');
+      mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
+      writeFileSync(
+        join(npmRoot, "@kitsunekode", "kunai", "package.json"),
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" }),
+      );
+      installCommandShim(shimDir, "node");
+      installCommandShim(
+        shimDir,
+        "npm",
+        '#!/bin/sh\ncase "$1 $2" in "root -g") echo "$KUNAI_NPM_ROOT" ;; "prefix -g") echo "$KUNAI_NPM_PREFIX" ;; esac\nexit 0\n',
+      );
+      installCommandShim(
+        shimDir,
+        "bun",
+        '#!/bin/sh\necho invoked > "$KUNAI_BUN_MARKER"\nexit 99\n',
+      );
+      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 1.0.0 (stale-path)"\n');
 
       const result = runInstallSh(["--method", "npm", "--yes", "--skip-deps"], {
         ...sandbox.env,
+        KUNAI_NPM_ROOT: npmRoot,
+        KUNAI_NPM_PREFIX: npmPrefix,
+        KUNAI_BUN_MARKER: join(sandbox.root, "bun-invoked"),
         PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
       });
 
       expect(result.status).toBe(0);
       const manifest = JSON.parse(
         readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; method: string };
+      ) as { activeVersion: string; launcherPath: string; method: string };
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
+      expect(manifest.launcherPath).toBe(join(npmPrefix, "bin", "kunai"));
+      expect(result.stdout).not.toContain("bun found");
+      expect(existsSync(join(sandbox.root, "bun-invoked"))).toBe(false);
     } finally {
       sandbox.cleanup();
     }
   });
 
-  test("bun method resolves activeVersion from kunai --version, never latest", () => {
+  test("bun ignores stale PATH kunai and records Bun-owned evidence", () => {
     const sandbox = createInstallerSandbox("install-sh-bun-version");
     try {
       const shimDir = join(sandbox.root, "shims");
+      const bunRoot = join(sandbox.root, "bun-root");
       mkdirSync(shimDir, { recursive: true });
+      mkdirSync(join(bunRoot, "install", "global", "node_modules", "@kitsunekode", "kunai"), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(bunRoot, "install", "global", "node_modules", "@kitsunekode", "kunai", "package.json"),
+        JSON.stringify({ name: "@kitsunekode/kunai", version: "7.8.9" }),
+      );
       installCommandShim(shimDir, "bun", "#!/bin/sh\nexit 0\n");
-      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 7.8.9 (bun-global)"\n');
+      installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 1.0.0 (stale-path)"\n');
 
       const result = runInstallSh(["--method", "bun", "--yes", "--skip-deps"], {
         ...sandbox.env,
+        BUN_INSTALL: bunRoot,
         PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
       });
 
       expect(result.status).toBe(0);
       const manifest = JSON.parse(
         readFileSync(join(sandbox.configDir, "install.json"), "utf8"),
-      ) as { activeVersion: string; method: string };
+      ) as { activeVersion: string; launcherPath: string; method: string };
       expect(manifest.method).toBe("bun-global");
       expect(manifest.activeVersion).toBe("7.8.9");
       expect(manifest.activeVersion).not.toBe("latest");
+      expect(manifest.launcherPath).toBe(join(bunRoot, "bin", "kunai"));
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    ["mismatch", "4.5.7"],
+    ["unverifiable", null],
+  ] as const)("explicit npm %s fails before writing a manifest", (_label, observedVersion) => {
+    const sandbox = createInstallerSandbox(`install-sh-npm-${_label}`);
+    try {
+      const shimDir = join(sandbox.root, "shims");
+      const npmRoot = join(sandbox.root, "npm-root");
+      mkdirSync(shimDir, { recursive: true });
+      mkdirSync(join(npmRoot, "@kitsunekode", "kunai"), { recursive: true });
+      if (observedVersion) {
+        writeFileSync(
+          join(npmRoot, "@kitsunekode", "kunai", "package.json"),
+          JSON.stringify({ name: "@kitsunekode/kunai", version: observedVersion }),
+        );
+      }
+      installCommandShim(shimDir, "node");
+      installCommandShim(
+        shimDir,
+        "npm",
+        '#!/bin/sh\ncase "$1 $2" in "root -g") echo "$KUNAI_NPM_ROOT" ;; "prefix -g") echo "$KUNAI_NPM_PREFIX" ;; esac\nexit 0\n',
+      );
+
+      const result = runInstallSh(
+        ["--method", "npm", "--version", "4.5.6", "--yes", "--skip-deps"],
+        {
+          ...sandbox.env,
+          KUNAI_NPM_ROOT: npmRoot,
+          KUNAI_NPM_PREFIX: join(sandbox.root, "npm-prefix"),
+          PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
     } finally {
       sandbox.cleanup();
     }

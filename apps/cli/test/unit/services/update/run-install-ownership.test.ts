@@ -2,6 +2,7 @@ import { afterAll, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 import type { InstallDiagnostic } from "@/services/update/native-installer/install-diagnostic";
+import type { PackageInspectionPorts, RunInstallPorts } from "@/services/update/run-install";
 
 const UPDATE_ROOT = join(import.meta.dir, "../../../../src/services/update");
 const installLatest = mock(async () => ({ status: "installed" as const, version: "0.3.0" }));
@@ -116,6 +117,19 @@ test("records the observed installed version only after a successful package ins
   expect(manifests).toEqual([expect.objectContaining({ activeVersion: "4.5.6" })]);
 });
 
+test("rejects an incomplete injected port object before invoking any command", async () => {
+  const events: string[] = [];
+  const incompletePorts = {
+    runCommand: async () => {
+      events.push("command");
+      return 0;
+    },
+  } as unknown as RunInstallPorts;
+
+  await expect(runInstall(["--method", "npm"], incompletePorts)).resolves.toBe(1);
+  expect(events).toEqual([]);
+});
+
 test("rejects invalid package versions before commands or manifest writes", async () => {
   const events: string[] = [];
   const code = await runInstall(["--method", "bun", "../4.5.6"], {
@@ -181,7 +195,7 @@ test.each([
 
 test("npm inspection ignores a stale PATH launcher and trusts npm-owned package metadata", async () => {
   const commands: string[] = [];
-  const evidence = await inspectPackageInstall("npm", {
+  const ports: PackageInspectionPorts = {
     captureCommand: async (command) => {
       commands.push(command.join(" "));
       return command[1] === "root"
@@ -192,8 +206,11 @@ test("npm inspection ignores a stale PATH launcher and trusts npm-owned package 
       expect(path).toBe("/npm/root/@kitsunekode/kunai/package.json");
       return JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" });
     },
+    bunGlobalDir: () => "/unused/bun/global",
+    bunGlobalBinDir: () => "/unused/bun/bin",
     platform: "linux",
-  });
+  };
+  const evidence = await inspectPackageInstall("npm", ports);
 
   // A PATH `kunai` reporting 1.0.0 is intentionally never consulted.
   expect(commands).toEqual(["npm root -g", "npm prefix -g"]);
@@ -201,7 +218,8 @@ test("npm inspection ignores a stale PATH launcher and trusts npm-owned package 
 });
 
 test("bun inspection reads Bun-owned global package metadata", async () => {
-  const evidence = await inspectPackageInstall("bun", {
+  const ports: PackageInspectionPorts = {
+    captureCommand: async () => ({ code: 1, stdout: "" }),
     bunGlobalDir: () => "/bun/global",
     bunGlobalBinDir: () => "/bun/bin",
     readText: async (path) => {
@@ -209,7 +227,8 @@ test("bun inspection reads Bun-owned global package metadata", async () => {
       return JSON.stringify({ name: "@kitsunekode/kunai", version: "4.5.6" });
     },
     platform: "linux",
-  });
+  };
+  const evidence = await inspectPackageInstall("bun", ports);
 
   expect(evidence).toEqual({ version: "4.5.6", launcherPath: "/bun/bin/kunai" });
 });
