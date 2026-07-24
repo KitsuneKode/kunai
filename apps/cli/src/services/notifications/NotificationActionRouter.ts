@@ -229,7 +229,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNotificationActionId(value: unknown): value is NotificationActionId {
+export function isNotificationActionId(value: unknown): value is NotificationActionId {
   return (
     value === "restore-queue" ||
     value === "retry-download" ||

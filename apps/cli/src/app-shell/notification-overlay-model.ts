@@ -1,8 +1,13 @@
 import type { ShellPickerOption, ShellStatusTone } from "@/app-shell/types";
 import {
+  isNotificationActionId,
   parseNotificationActionIds,
   type NotificationActionId,
 } from "@/services/notifications/NotificationActionRouter";
+import {
+  defaultNotificationActionIds,
+  KNOWN_NOTIFICATION_KINDS,
+} from "@/services/notifications/NotificationService";
 import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
 const OVERLAY_NOTIFICATION_ACTIONS = new Set<NotificationActionId>([
@@ -64,12 +69,30 @@ export type NotificationActionPresentation = {
   readonly tone: ShellStatusTone;
 };
 
+/**
+ * The actions this notice offers, derived from its kind at render time.
+ *
+ * `action_json` is a snapshot written when the notice was created, so it freezes
+ * whatever the policy was that day. Rows stored before `play-now` was added kept
+ * `["queue-next","queue-end","dismiss"]` forever — a "new episode" notice
+ * literally could not play the episode it announced, however complete the
+ * handler was. Deriving from `kind` makes the policy the single source of truth
+ * and repairs existing rows without a migration.
+ *
+ * The stored list is still honoured for kinds the policy does not know, so a
+ * notice written by a newer build cannot lose its actions on an older one.
+ */
 export function getExecutableNotificationActions(
   notification: NotificationRecord,
 ): readonly NotificationActionId[] {
-  return parseNotificationActionIds(notification).filter((action) =>
-    OVERLAY_NOTIFICATION_ACTIONS.has(action),
-  );
+  const source = KNOWN_NOTIFICATION_KINDS.has(notification.kind)
+    ? defaultNotificationActionIds({
+        kind: notification.kind,
+        hasItem: Boolean(notification.itemJson),
+      }).filter(isNotificationActionId)
+    : parseNotificationActionIds(notification);
+
+  return source.filter((action) => OVERLAY_NOTIFICATION_ACTIONS.has(action));
 }
 
 export function getNotificationActionPresentation(

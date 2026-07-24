@@ -64,7 +64,7 @@ describe("NotificationsShell", () => {
 
     // Dense row: title, primary action label, recency.
     expect(frame).toContain("Frieren S1E13 available");
-    expect(frame).toContain("Queue next");
+    expect(frame).toContain("Play now");
     expect(frame).toContain("2h");
     // Context strip: tab, sort, unread count.
     expect(frame).toContain("Active");
@@ -73,7 +73,7 @@ describe("NotificationsShell", () => {
     // Rail: body, read state, primary + secondary actions, lifecycle hints.
     expect(frame).toContain("available on allanime");
     expect(frame).toContain("Unread");
-    expect(frame).toContain("↵ Queue next");
+    expect(frame).toContain("↵ Play now");
     expect(frame).toContain("· Queue at end");
     expect(frame).toContain("r mark read");
     expect(frame).toContain("x archive");
@@ -88,12 +88,12 @@ describe("NotificationsShell", () => {
       const frame = frameAt(columns);
 
       expect(frame).toContain("Frieren S1E13 available");
-      expect(frame).toContain("Queue next");
+      expect(frame).toContain("Play now");
       expect(frame).toContain("Needs attention");
       // Rail-only evidence is absent.
       expect(frame).not.toContain("mark read");
       expect(frame).not.toContain("S01E06");
-      expect(frame).not.toContain("↵ Queue next");
+      expect(frame).not.toContain("↵ Play now");
     }
   });
 

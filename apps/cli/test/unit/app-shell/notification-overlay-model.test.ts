@@ -39,14 +39,31 @@ test("notification picker exposes actionable queue recovery rows", () => {
 
 test("primary action prefers the first actionable notification action", () => {
   expect(getNotificationPrimaryAction(base)).toBe("restore-queue");
+  // A new-episode notice that carries a media identity leads with playback:
+  // "watch the episode this notice is announcing" is the whole point of it.
   expect(
     getNotificationPrimaryAction({
       ...base,
       kind: "new-episode",
-      actionJson: JSON.stringify(["queue-next", "dismiss"]),
+      itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
     }),
-  ).toBe("queue-next");
-  expect(getNotificationPrimaryAction({ ...base, actionJson: undefined })).toBe("dismiss");
+  ).toBe("play-now");
+  // Without a media identity there is nothing to play, so only dismiss remains.
+  expect(getNotificationPrimaryAction({ ...base, kind: "new-episode" })).toBe("dismiss");
+});
+
+test("known kinds derive actions from policy, ignoring a stale stored list", () => {
+  // Rows written before `play-now` existed stored ["queue-next","queue-end",
+  // "dismiss"] and would otherwise be frozen that way forever.
+  const staleRow: NotificationRecord = {
+    ...base,
+    kind: "new-episode",
+    itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
+    actionJson: JSON.stringify(["queue-next", "queue-end", "dismiss"]),
+  };
+
+  expect(getExecutableNotificationActions(staleRow)).toContain("play-now");
+  expect(getNotificationPrimaryAction(staleRow)).toBe("play-now");
 });
 
 test("notification action menu exposes explicit safe row actions", () => {
@@ -137,10 +154,15 @@ test("retry-download and update-app are executable primary actions with copy", (
 });
 
 test("malformed stored actions collapse to a dismiss-only notice", () => {
-  const malformedActions = { ...base, actionJson: "{not json" };
+  // Only unknown kinds still read the stored list, so that is where malformed
+  // JSON can strand a notice — a known kind derives its actions regardless.
+  const malformedActions = { ...base, kind: "future-kind", actionJson: "{not json" };
 
   expect(getExecutableNotificationActions(malformedActions)).toEqual([]);
   expect(getNotificationPrimaryAction(malformedActions)).toBe("dismiss");
+
+  const knownKind = { ...base, actionJson: "{not json" };
+  expect(getExecutableNotificationActions(knownKind)).toEqual(["restore-queue", "dismiss"]);
 });
 
 test("unknown kinds keep valid stored actions and neutral presentation", () => {
@@ -167,23 +189,18 @@ test("notification action menu exposes actions the root overlay can execute", ()
   const notice = {
     ...base,
     kind: "new-episode",
-    actionJson: JSON.stringify([
-      "download",
-      "queue-end",
-      "follow",
-      "play-now",
-      "open-details",
-      "dismiss",
-    ]),
+    itemJson: JSON.stringify({ titleId: "tt1", title: "Show" }),
   };
 
-  expect(getNotificationPrimaryAction(notice)).toBe("download");
+  // Playback leads, queueing follows, and every id offered must be one the root
+  // overlay can actually execute.
+  expect(getNotificationPrimaryAction(notice)).toBe("play-now");
   expect(buildNotificationActionOptions(notice).map((option) => option.value)).toEqual([
-    "download",
-    "queue-end",
-    "follow",
     "play-now",
     "open-details",
+    "add-to-up-next",
+    "queue-end",
+    "mute",
     "dismiss",
   ]);
 });

@@ -16,6 +16,9 @@ const rec = (over: Partial<NotificationRecord>): NotificationRecord => ({
   kind: "new-episode",
   title: "Frieren S1E13 available",
   body: "available on allanime",
+  // Real new-episode notices always carry a media identity; without one the
+  // policy correctly reduces them to dismiss-only.
+  itemJson: JSON.stringify({ titleId: "tt-frieren", title: "Frieren", mediaKind: "series" }),
   actionJson: JSON.stringify(["queue-next", "queue-end", "dismiss"]),
   createdAt: "2026-07-16T00:00:00.000Z",
   updatedAt: "2026-07-16T00:00:00.000Z",
@@ -67,7 +70,8 @@ describe("buildNotificationsView ordering", () => {
       }),
       rec({
         dedupKey: "unread-dismiss-new",
-        actionJson: JSON.stringify(["dismiss"]),
+        // No media identity, so the policy reduces this notice to dismiss-only.
+        itemJson: undefined,
         updatedAt: "2026-07-16T09:00:00.000Z",
       }),
       rec({ dedupKey: "unread-action-new", updatedAt: "2026-07-16T10:00:00.000Z" }),
@@ -208,8 +212,8 @@ describe("buildNotificationsView projection", () => {
     expect(row?.tone).toBe("success");
     expect(row?.unread).toBe(true);
     expect(row?.actionable).toBe(true);
-    expect(row?.primaryAction.id).toBe("queue-next");
-    expect(row?.primaryAction.label).toBe("Queue next");
+    expect(row?.primaryAction.id).toBe("play-now");
+    expect(row?.primaryAction.label).toBe("Play now");
     expect(row?.relativeTime).toBe("2h");
     expect(projected.tabLabel).toBe("Active");
     expect(projected.sortLabel).toBe("Needs attention");
@@ -217,7 +221,7 @@ describe("buildNotificationsView projection", () => {
 
   it("treats dismiss-only notices as non-actionable", () => {
     const projected = view({
-      records: [rec({ dedupKey: "a", actionJson: JSON.stringify(["dismiss"]) })],
+      records: [rec({ dedupKey: "a", itemJson: undefined })],
     });
 
     expect(projected.rows[0]?.actionable).toBe(false);
@@ -305,8 +309,13 @@ describe("buildNotificationsView projection", () => {
     expect(rail?.preview.overview).toBe("available on allanime");
     expect(rail?.preview.posterState).toBe("none");
     expect(rail?.preview.posterUrl).toBe("https://img.example/frieren.jpg");
-    expect(rail?.primaryAction).toMatchObject({ id: "queue-next", key: "enter" });
-    expect(rail?.secondaryActions.map((action) => action.id)).toEqual(["queue-end"]);
+    expect(rail?.primaryAction).toMatchObject({ id: "play-now", key: "enter" });
+    expect(rail?.secondaryActions.map((action) => action.id)).toEqual([
+      "open-details",
+      "add-to-up-next",
+      "queue-end",
+      "mute",
+    ]);
     expect(rail?.lifecycleHints).toEqual([
       { key: "r", label: "mark read" },
       { key: "x", label: "archive" },

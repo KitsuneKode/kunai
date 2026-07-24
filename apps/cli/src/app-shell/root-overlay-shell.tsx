@@ -80,7 +80,10 @@ import {
   resolveOverlayPanelKind,
 } from "./layout-policy";
 import { LibraryShell } from "./library-shell";
-import { executeNotificationOverlayAction } from "./notification-action-flow";
+import {
+  describeQueuedNotificationAction,
+  executeNotificationOverlayAction,
+} from "./notification-action-flow";
 import {
   buildNotificationActionOptions,
   buildNotificationPickerOptions,
@@ -1214,8 +1217,18 @@ export function RootOverlayShell({
           const nearest = nearestNotificationDedupKey(notificationsView.orderedDedupKeys, dedupKey);
           setNotificationsState((current) => ({ ...current, selectedDedupKey: nearest }));
         }
+        // Queueing used to fall through every branch below to the generic
+        // "Action queued", which named neither the episode nor where it landed
+        // nor how to reach it — the action worked and still read as a no-op.
+        const queuedStatus = describeQueuedNotificationAction({
+          actionId: resolvedAction,
+          title: notification.title,
+          pendingCount: container.queueService.getUnplayed().length,
+        });
+
         const actionStatus =
-          resolvedAction === "dismiss"
+          queuedStatus ??
+          (resolvedAction === "dismiss"
             ? "Notification dismissed"
             : resolvedAction === "restore-queue"
               ? "Queue restored"
@@ -1239,7 +1252,7 @@ export function RootOverlayShell({
                                 ? "Opening details"
                                 : resolvedAction === "update-app"
                                   ? "Opening release page in your browser"
-                                  : "Action queued";
+                                  : "Action queued");
         setOverlayStatus(
           result.markReadError
             ? `${actionStatus}, but the notification remains unread`

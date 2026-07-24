@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { executeNotificationOverlayAction } from "@/app-shell/notification-action-flow";
+import {
+  describeQueuedNotificationAction,
+  executeNotificationOverlayAction,
+} from "@/app-shell/notification-action-flow";
 import type {
   NotificationActionId,
   NotificationActionRunResult,
@@ -37,20 +40,78 @@ function makeDeps(result: NotificationActionRunResult | Error) {
   return { router, markRead, calls };
 }
 
+describe("describeQueuedNotificationAction", () => {
+  test("names the title and what is waiting, per placement", () => {
+    expect(
+      describeQueuedNotificationAction({
+        actionId: "queue-next",
+        title: "Frieren S1E13",
+        pendingCount: 3,
+      }),
+    ).toBe("Playing next: Frieren S1E13 · 3 waiting in Up Next");
+
+    expect(
+      describeQueuedNotificationAction({
+        actionId: "queue-end",
+        title: "Frieren S1E13",
+        pendingCount: 1,
+      }),
+    ).toBe("Queued at the end: Frieren S1E13 · 1 waiting in Up Next");
+  });
+
+  test("omits the count when nothing is pending", () => {
+    expect(
+      describeQueuedNotificationAction({
+        actionId: "add-to-up-next",
+        title: "Frieren S1E13",
+        pendingCount: 0,
+      }),
+    ).toBe("Added to Up Next: Frieren S1E13");
+  });
+
+  test("returns null for non-queue actions so callers keep their wording", () => {
+    for (const actionId of ["play-now", "dismiss", "update-app"] as const) {
+      expect(
+        describeQueuedNotificationAction({ actionId, title: "Frieren", pendingCount: 2 }),
+      ).toBeNull();
+    }
+  });
+});
+
 describe("executeNotificationOverlayAction", () => {
   test("handled non-lifecycle action marks the notice read", async () => {
-    const { router, markRead, calls } = makeDeps({ status: "handled", actionId: "queue-next" });
+    const { router, markRead, calls } = makeDeps({ status: "handled", actionId: "play-now" });
 
     const result = await executeNotificationOverlayAction({
       router,
       notification: notice,
-      actionId: "queue-next",
+      actionId: "play-now",
       playbackActive: false,
       markRead,
     });
 
-    expect(result).toEqual({ status: "handled", actionId: "queue-next" });
+    expect(result).toEqual({ status: "handled", actionId: "play-now" });
     expect(calls).toEqual(["router:start", "router:done", "mark-read:notice-1"]);
+  });
+
+  test("queueing defers the notice instead of consuming it", async () => {
+    // Queueing is not an acknowledgement — the episode still has not been
+    // watched, so the notice stays unread and keeps its place in Active rather
+    // than sinking under the read ordering the moment it is queued.
+    for (const actionId of ["queue-next", "queue-end", "add-to-up-next"] as const) {
+      const { router, markRead, calls } = makeDeps({ status: "handled", actionId });
+
+      const result = await executeNotificationOverlayAction({
+        router,
+        notification: notice,
+        actionId,
+        playbackActive: false,
+        markRead,
+      });
+
+      expect(result).toEqual({ status: "handled", actionId });
+      expect(calls).toEqual(["router:start", "router:done"]);
+    }
   });
 
   test("handled restore-queue marks read and never archives", async () => {
@@ -137,12 +198,12 @@ describe("executeNotificationOverlayAction", () => {
 
   test("mark-read failure preserves the handled action result", async () => {
     const error = new Error("database locked");
-    const { router, calls } = makeDeps({ status: "handled", actionId: "queue-next" });
+    const { router, calls } = makeDeps({ status: "handled", actionId: "play-now" });
 
     const result = await executeNotificationOverlayAction({
       router,
       notification: notice,
-      actionId: "queue-next",
+      actionId: "play-now",
       playbackActive: false,
       markRead: () => {
         calls.push("mark-read:start");
@@ -152,7 +213,7 @@ describe("executeNotificationOverlayAction", () => {
 
     expect(result).toEqual({
       status: "handled",
-      actionId: "queue-next",
+      actionId: "play-now",
       markReadError: error,
     });
     expect(calls).toEqual(["router:start", "router:done", "mark-read:start"]);

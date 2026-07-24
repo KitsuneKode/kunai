@@ -163,6 +163,20 @@ export class NotificationService {
  * Playback and details are only offered when the notification actually carries a
  * media identity; otherwise the action would resolve to nothing.
  */
+/**
+ * Kinds whose action set this build actually models. Anything outside it — a
+ * notice written by a newer build — keeps the actions stored on the record, so
+ * downgrading never strips a notice of actions this build cannot name.
+ */
+export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set([
+  "queue-recovery",
+  "app-update",
+  "app-restart-required",
+  "download-failed",
+  "download-complete",
+  "new-episode",
+]);
+
 export function defaultNotificationActionIds(input: {
   readonly kind: string;
   readonly hasItem: boolean;
