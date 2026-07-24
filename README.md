@@ -6,7 +6,7 @@
 One fullscreen, keyboard-driven terminal session.
 
 [![npm](https://img.shields.io/npm/v/@kitsunekode/kunai?color=ff8fb0&label=kunai&logo=npm)](https://www.npmjs.com/package/@kitsunekode/kunai)
-&nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.3.9-ff8fb0)
+&nbsp;![runtime](https://img.shields.io/badge/runtime-Bun%20%E2%89%A51.3.14-ff8fb0)
 &nbsp;![player](https://img.shields.io/badge/player-mpv-4fd1c5)
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
 &nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
@@ -119,7 +119,7 @@ curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh |
 Keep it current with `kunai upgrade`; remove it with ownership-aware `kunai uninstall`
 (add `--purge` to also delete config/history/cache).
 
-> **Alternatives** (require Bun `>=1.3.9` at runtime — the published `dist/kunai.js`
+> **Alternatives** (require Bun `>=1.3.14` at runtime — the published `dist/kunai.js`
 > starts with `#!/usr/bin/env bun`). Source checkout is contributor-oriented:
 >
 > ```bash
@@ -251,7 +251,7 @@ Inside the shell, `/` opens the command palette from anywhere.
 
 | Tool            | Required?            | Why                                                                                     |
 | --------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| **Bun** ≥1.3.9  | npm/bun/source       | Runtime for non-binary installs. The default binary embeds it — not needed.             |
+| **Bun** ≥1.3.14 | npm/bun/source       | Runtime for non-binary installs. The default binary embeds it — not needed.             |
 | **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
 | **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
 | **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
@@ -453,10 +453,10 @@ shows what you're watching:
 
 ### Required
 
-| Dependency        | Purpose        | Install                                     |
-| ----------------- | -------------- | ------------------------------------------- |
-| **Bun** `>=1.3.9` | Runtime        | `curl -fsSL https://bun.sh/install \| bash` |
-| **mpv**           | Video playback | `sudo pacman -S mpv` / `brew install mpv`   |
+| Dependency         | Purpose        | Install                                     |
+| ------------------ | -------------- | ------------------------------------------- |
+| **Bun** `>=1.3.14` | Runtime        | `curl -fsSL https://bun.sh/install \| bash` |
+| **mpv**            | Video playback | `sudo pacman -S mpv` / `brew install mpv`   |
 
 ### Optional — what each enables
 

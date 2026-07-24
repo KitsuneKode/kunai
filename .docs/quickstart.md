@@ -4,7 +4,7 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 ## Prerequisites
 
-- Bun `>=1.3.9` for source installs during beta
+- Bun `>=1.3.14` for source installs during beta
 - `mpv` in `PATH`
 - Kitty/Ghostty for native Kitty poster previews
 - `chafa` for poster previews in Windows Terminal/WezTerm/other terminals

@@ -18,9 +18,13 @@
 // Kitty path the PNG *is* the payload, which drops both ImageMagick and the
 // deflate step.
 //
-// Everything here degrades to `null` so callers keep the synchronous decoder as
-// their floor — the package supports `bun >= 1.3.9` and Bun.Image may not exist
-// there.
+// `bun >= 1.3.14` is the supported floor, so Bun.Image is expected to exist and
+// the native path is the normal one — not an opportunistic upgrade. The
+// capability check and the `null` returns remain as a safety net (engines is
+// advisory, and a compiled binary embeds whichever Bun built it), so a build
+// without Bun.Image degrades to the synchronous decoder rather than losing
+// posters. Note `decode.ts` is not made redundant by any of this: Bun.Image has
+// no raw-pixel output, so it is what turns the resized PNG back into pixels.
 // =============================================================================
 
 import { debugImage } from "./debug";
