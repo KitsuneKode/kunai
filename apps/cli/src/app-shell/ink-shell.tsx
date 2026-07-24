@@ -275,9 +275,23 @@ async function openPlaybackStreamSelectionPicker(
   }
 }
 
+/**
+ * Collaborators of {@link openActivePlaybackEpisodePicker}. Injectable so tests
+ * exercise the wiring without `mock.module`, which swaps the picker builder
+ * process-wide and silently breaks whichever suites load afterwards.
+ */
+export type ActivePlaybackEpisodePickerDeps = {
+  readonly buildOptions: typeof buildPlaybackEpisodePickerOptions;
+  readonly openPicker: typeof openSessionPicker;
+};
+
 export async function openActivePlaybackEpisodePicker(
   container: Container,
   reason: string,
+  deps: ActivePlaybackEpisodePickerDeps = {
+    buildOptions: buildPlaybackEpisodePickerOptions,
+    openPicker: openSessionPicker,
+  },
 ): Promise<void> {
   const state = container.stateManager.getState();
   const title = state.currentTitle;
@@ -290,7 +304,7 @@ export async function openActivePlaybackEpisodePicker(
   let pickerEpisode = currentEpisode;
 
   while (true) {
-    const picker = await buildPlaybackEpisodePickerOptions({
+    const picker = await deps.buildOptions({
       title,
       currentEpisode: pickerEpisode,
       isAnime,
@@ -300,7 +314,7 @@ export async function openActivePlaybackEpisodePicker(
     });
     if (picker.options.length === 0) return;
 
-    const picked = await openSessionPicker(container.stateManager, {
+    const picked = await deps.openPicker(container.stateManager, {
       type: "episode_picker",
       season: pickerEpisode.season,
       initialIndex: picker.initialIndex,

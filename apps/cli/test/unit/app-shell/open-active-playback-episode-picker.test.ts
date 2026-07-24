@@ -1,25 +1,28 @@
 import { describe, expect, mock, test } from "bun:test";
 
+import {
+  type ActivePlaybackEpisodePickerDeps,
+  openActivePlaybackEpisodePicker,
+} from "@/app-shell/ink-shell";
 import type { Container } from "@/container";
 import { SessionStateManagerImpl } from "@/domain/session/SessionStateManager";
 import type { EpisodePickerOption, TitleInfo } from "@/domain/types";
 
+// Injected rather than mock.module'd: swapping the picker builder process-wide
+// leaked this stub's hardcoded "1 eps" subtitle into playback-episode-picker's
+// own suite whenever that file loaded after this one.
 const buildPlaybackEpisodePickerOptionsMock = mock(async () => ({
   options: [{ value: "1:1", label: "Episode 1" }],
   subtitle: "Example Series  ·  S01  ·  1 eps",
   initialIndex: 0,
 }));
 
-mock.module("@/app/playback/playback-episode-picker", () => ({
-  buildPlaybackEpisodePickerOptions: buildPlaybackEpisodePickerOptionsMock,
-}));
+const openSessionPickerMock = mock(async () => null);
 
-mock.module("@/app-shell/session-picker", () => ({
-  openSessionPicker: mock(async () => null),
-  EPISODE_PICKER_SWITCH_SEASON: "__switch_season__",
-}));
-
-const { openActivePlaybackEpisodePicker } = await import("@/app-shell/ink-shell");
+const pickerDeps = {
+  buildOptions: buildPlaybackEpisodePickerOptionsMock,
+  openPicker: openSessionPickerMock,
+} as unknown as ActivePlaybackEpisodePickerDeps;
 
 const seriesTitle: TitleInfo = {
   id: "anilist:1",
@@ -67,7 +70,7 @@ describe("openActivePlaybackEpisodePicker", () => {
     stateManager.dispatch({ type: "SET_CURRENT_ANIME_EPISODES", episodes: animeEpisodes });
 
     const container = createContainer(stateManager);
-    await openActivePlaybackEpisodePicker(container, "test-episode-picker");
+    await openActivePlaybackEpisodePicker(container, "test-episode-picker", pickerDeps);
 
     expect(buildPlaybackEpisodePickerOptionsMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -86,7 +89,7 @@ describe("openActivePlaybackEpisodePicker", () => {
     expect(stateManager.getState().currentAnimeEpisodes).toBeNull();
 
     const container = createContainer(stateManager);
-    await openActivePlaybackEpisodePicker(container, "test-episode-picker");
+    await openActivePlaybackEpisodePicker(container, "test-episode-picker", pickerDeps);
 
     expect(buildPlaybackEpisodePickerOptionsMock).toHaveBeenCalledWith(
       expect.objectContaining({
