@@ -7,12 +7,11 @@ import {
 } from "@/domain/lists/WatchGenreStats";
 import type { WatchStatsTitleSecondsRow } from "@kunai/storage";
 
+// Injected per call rather than mock.module'd: replacing "@/services/catalog/tmdb-proxy"
+// swaps it process-wide for every suite loaded afterwards, which silently emptied
+// every TMDB-backed result in TitleDetail, recommendations, search, and the
+// episode picker.
 const fetchTmdbJsonCached = mock(async (_path: string): Promise<unknown> => ({ genres: [] }));
-
-mock.module("@/services/catalog/tmdb-proxy", () => ({
-  fetchTmdbJsonCached,
-  clearTmdbSessionCache: () => {},
-}));
 
 function row(
   patch: Partial<WatchStatsTitleSecondsRow> & Pick<WatchStatsTitleSecondsRow, "titleId">,
@@ -67,6 +66,7 @@ describe("resolveWatchTitleTmdbIdentity", () => {
   test("falls back to TMDB search when stored ids are missing", async () => {
     const resolved = await resolveWatchTitleTmdbIdentity(
       row({ titleId: "anilist:1", title: "Barakamon" }),
+      fetchTmdbJsonCached,
     );
     expect(resolved).toEqual({ id: "42", mediaType: "tv" });
     expect(fetchTmdbJsonCached).toHaveBeenCalledWith(
@@ -90,9 +90,10 @@ describe("buildWatchGenreBreakdown", () => {
       return { genres: [] };
     });
 
-    const breakdown = await buildWatchGenreBreakdown([
-      row({ titleId: "opaque-anime", title: "Split Genres", totalSeconds: 1_000 }),
-    ]);
+    const breakdown = await buildWatchGenreBreakdown(
+      [row({ titleId: "opaque-anime", title: "Split Genres", totalSeconds: 1_000 })],
+      fetchTmdbJsonCached,
+    );
 
     expect(breakdown.resolvedTitles).toBe(1);
     expect(breakdown.genres).toHaveLength(2);
@@ -103,9 +104,10 @@ describe("buildWatchGenreBreakdown", () => {
   test("returns empty genres when TMDB resolution fails", async () => {
     fetchTmdbJsonCached.mockImplementation(async () => ({ results: [] }));
 
-    const breakdown = await buildWatchGenreBreakdown([
-      row({ titleId: "no-match", title: "Unknown Title" }),
-    ]);
+    const breakdown = await buildWatchGenreBreakdown(
+      [row({ titleId: "no-match", title: "Unknown Title" })],
+      fetchTmdbJsonCached,
+    );
 
     expect(breakdown.resolvedTitles).toBe(0);
     expect(breakdown.genres).toHaveLength(0);

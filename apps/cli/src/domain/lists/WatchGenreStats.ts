@@ -16,8 +16,16 @@ export type WatchGenreBreakdown = {
 
 const TITLE_CONCURRENCY = 5;
 
+/**
+ * TMDB JSON reader seam. Injectable so tests can supply a fake without
+ * replacing the shared `tmdb-proxy` module process-wide — a global module mock
+ * leaks into every other suite that reads TMDB.
+ */
+export type TmdbJsonReader = (path: string) => Promise<unknown>;
+
 export async function buildWatchGenreBreakdown(
   rows: readonly WatchStatsTitleSecondsRow[],
+  fetchJson: TmdbJsonReader = fetchTmdbJsonCached,
 ): Promise<WatchGenreBreakdown> {
   if (rows.length === 0) {
     return { genres: [], resolvedTitles: 0, totalTitles: 0 };
@@ -30,9 +38,11 @@ export async function buildWatchGenreBreakdown(
     const batch = rows.slice(index, index + TITLE_CONCURRENCY);
     const profiles = await Promise.all(
       batch.map(async (row) => {
-        const resolved = await resolveWatchTitleTmdbIdentity(row);
+        const resolved = await resolveWatchTitleTmdbIdentity(row, fetchJson);
         if (!resolved) return null;
-        const genres = await fetchTitleGenres(resolved.id, resolved.mediaType).catch(() => []);
+        const genres = await fetchTitleGenres(resolved.id, resolved.mediaType, fetchJson).catch(
+          () => [],
+        );
         if (genres.length === 0) return null;
         return { row, genres };
       }),
@@ -70,6 +80,7 @@ export async function buildWatchGenreBreakdown(
 /** Resolve TMDB id from stored ids, numeric title_id, or a bounded title search. */
 export async function resolveWatchTitleTmdbIdentity(
   row: WatchStatsTitleSecondsRow,
+  fetchJson: TmdbJsonReader = fetchTmdbJsonCached,
 ): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
   const fromIds = resolveTmdbIdentityFromStoredIds(row);
   if (fromIds) return fromIds;
@@ -77,7 +88,7 @@ export async function resolveWatchTitleTmdbIdentity(
   const title = row.title.trim();
   if (title.length === 0) return null;
   const mediaType = row.mediaKind === "movie" ? "movie" : "tv";
-  return searchTmdbTitleByName(title, mediaType);
+  return searchTmdbTitleByName(title, mediaType, fetchJson);
 }
 
 export function resolveTmdbIdentityFromStoredIds(
@@ -116,8 +127,9 @@ function parseExternalIds(json: string | null): ProviderExternalIds | undefined 
 async function searchTmdbTitleByName(
   title: string,
   mediaType: "movie" | "tv",
+  fetchJson: TmdbJsonReader,
 ): Promise<{ id: string; mediaType: "movie" | "tv" } | null> {
-  const data = (await fetchTmdbJsonCached(
+  const data = (await fetchJson(
     `/search/${mediaType}?query=${encodeURIComponent(title)}&include_adult=false&page=1`,
   ).catch(() => null)) as { results?: Array<{ id?: number }> } | null;
   const match = data?.results?.find((item) => typeof item.id === "number");
@@ -128,8 +140,9 @@ async function searchTmdbTitleByName(
 async function fetchTitleGenres(
   id: string,
   mediaType: "movie" | "tv",
+  fetchJson: TmdbJsonReader,
 ): Promise<readonly { id: number; name: string }[]> {
-  const details = (await fetchTmdbJsonCached(`/${mediaType}/${id}`)) as {
+  const details = (await fetchJson(`/${mediaType}/${id}`)) as {
     genres?: Array<{ id?: number; name?: string }>;
   };
   return (details.genres ?? [])
