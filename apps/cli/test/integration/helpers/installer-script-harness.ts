@@ -2,6 +2,22 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * install.ps1 is a Windows script: it resolves its default directories from
+ * LOCALAPPDATA/APPDATA, which PowerShell defines only on Windows. Supplying
+ * them lets the identical suite run under Linux pwsh (the local Docker
+ * harness) without teaching the production installer about a platform it does
+ * not target. On Windows the real values are already present, so this is empty.
+ */
+export function windowsShellEnvDefaults(root: string): NodeJS.ProcessEnv {
+  if (process.platform === "win32") return {};
+  return {
+    LOCALAPPDATA: join(root, "localappdata"),
+    APPDATA: join(root, "appdata"),
+    USERPROFILE: join(root, "userprofile"),
+  };
+}
+
 export function createInstallerSandbox(name: string) {
   const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
   const binDir = join(root, "bin");
@@ -16,6 +32,7 @@ export function createInstallerSandbox(name: string) {
     cacheDir,
     env: {
       ...process.env,
+      ...windowsShellEnvDefaults(root),
       KUNAI_BIN_DIR: binDir,
       KUNAI_DATA_DIR: dataDir,
       KUNAI_CONFIG_DIR: configDir,

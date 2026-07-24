@@ -71,6 +71,8 @@
     "test:coverage": "bun run --cwd apps/cli test:coverage",
     "test:cli:file": "bun run --cwd apps/cli test:file",
     "test:npm-global-install": "bun run --cwd apps/cli test:npm-global-install",
+    "test:installer:pwsh": "bun run --cwd apps/cli test:installer:pwsh",
+    "test:installer:pwsh:shell": "bun run --cwd apps/cli test:installer:pwsh:shell",
     "test:installer:docker": "bun run --cwd apps/cli test:installer:docker",
     "test:installer:docker:scenario": "bun run --cwd apps/cli test:installer:docker:scenario",
     "test:installer:ci": "bun run --cwd apps/cli test:installer:ci",
