@@ -270,6 +270,9 @@ function toRail(
     tab === "active"
       ? [
           { key: "r", label: "mark read" },
+          // Bound since the inbox shipped but never advertised, so clearing a
+          // backlog meant pressing "r" once per row.
+          { key: "A", label: "mark all read" },
           { key: "x", label: "archive" },
           { key: "d", label: "delete" },
         ]

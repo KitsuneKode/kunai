@@ -40,13 +40,18 @@ function harness(options?: {
   records?: readonly NotificationRecord[];
   state?: NotificationsOverlayState;
   pageSize?: number;
+  /** How many notices markAllRead reports having marked. */
+  unreadCount?: number;
 }): Harness {
   const records = options?.records ?? fiveRecords();
   const pageSize = options?.pageSize ?? 2;
   const calls: string[] = [];
   const container = {
     notificationService: {
-      markAllRead: () => calls.push("markAllRead"),
+      markAllRead: () => {
+        calls.push("markAllRead");
+        return options?.unreadCount ?? 3;
+      },
       markRead: (key: string) => calls.push(`markRead:${key}`),
       archive: (key: string) => calls.push(`archive:${key}`),
       delete: (key: string) => calls.push(`delete:${key}`),
@@ -240,8 +245,17 @@ describe("handleNotificationsOverlayInput", () => {
     });
 
     h.press("A");
-    expect(h.calls).toEqual(["markAllRead"]);
+    expect(h.calls).toEqual(["markAllRead", "status:Marked 3 as read"]);
     expect(h.state.selectedDedupKey).toBe("k1");
+  });
+
+  test("A reports that nothing changed when no notice was unread", () => {
+    // Marking read only clears a dot. With an already-read inbox the keypress
+    // would otherwise look dropped.
+    const h = harness({ unreadCount: 0 });
+
+    h.press("A");
+    expect(h.calls).toEqual(["markAllRead", "status:Nothing unread to mark"]);
   });
 
   test("x selects the nearest surviving row before archiving", () => {

@@ -112,7 +112,11 @@ export function handleNotificationsOverlayInput(
   }
   if (input === "A") {
     ctx.setState((state) => ({ ...state, selectedDedupKey: selectedKey }));
-    ctx.container.notificationService.markAllRead();
+    const marked = ctx.container.notificationService.markAllRead();
+    // Marking read changes only the unread dot, which is easy to miss on a long
+    // list — and when nothing was unread it changes nothing at all. Say which
+    // happened rather than leaving the keypress looking dropped.
+    ctx.setOverlayStatus(marked > 0 ? `Marked ${marked} as read` : "Nothing unread to mark");
     return "handled";
   }
   if (input === "r" && selectedKey) {

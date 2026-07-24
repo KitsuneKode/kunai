@@ -109,9 +109,10 @@ export class NotificationService {
     this.emitChange();
   }
 
-  markAllRead(now = new Date().toISOString()): void {
-    this.deps.repo.markAllRead(now);
+  markAllRead(now = new Date().toISOString()): number {
+    const marked = this.deps.repo.markAllRead(now);
     this.emitChange();
+    return marked;
   }
 
   archive(dedupKey: string, now = new Date().toISOString()): void {

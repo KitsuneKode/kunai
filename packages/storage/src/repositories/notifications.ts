@@ -172,10 +172,13 @@ export class NotificationRepository {
       .run(now, dedupKey);
   }
 
-  markAllRead(now: string): void {
+  /** Returns how many notices were actually marked, so callers can report it. */
+  markAllRead(now: string): number {
+    const before = this.countUnread();
     this.db
       .query("UPDATE notifications SET read_at = ? WHERE archived_at IS NULL AND read_at IS NULL")
       .run(now);
+    return before;
   }
 
   archive(dedupKey: string, now: string): void {

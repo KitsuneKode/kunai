@@ -37,8 +37,11 @@ test("NotificationRepository: counts unread, marks read, clears unread", () => {
   expect(r.countUnread()).toBe(2);
   r.markRead("a", "2026-06-14T03:00:00.000Z");
   expect(r.countUnread()).toBe(1);
-  r.markAllRead("2026-06-14T04:00:00.000Z");
+  // The return value is what the inbox reports back to the user, so it has to
+  // be how many were actually marked — not how many rows exist.
+  expect(r.markAllRead("2026-06-14T04:00:00.000Z")).toBe(1);
   expect(r.countUnread()).toBe(0);
+  expect(r.markAllRead("2026-06-14T05:00:00.000Z")).toBe(0);
 });
 
 test("NotificationRepository: archive removes from active and appears in archived", () => {

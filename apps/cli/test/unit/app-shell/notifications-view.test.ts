@@ -318,6 +318,7 @@ describe("buildNotificationsView projection", () => {
     ]);
     expect(rail?.lifecycleHints).toEqual([
       { key: "r", label: "mark read" },
+      { key: "A", label: "mark all read" },
       { key: "x", label: "archive" },
       { key: "d", label: "delete" },
     ]);
