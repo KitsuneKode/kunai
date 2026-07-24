@@ -12,6 +12,7 @@ export type TerminalId =
   | "ghostty"
   | "windows-terminal"
   | "wezterm"
+  | "konsole"
   | "vscode"
   | "unknown";
 

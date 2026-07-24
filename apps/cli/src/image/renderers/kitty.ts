@@ -1,9 +1,10 @@
 import { ensurePngBytes } from "../convert";
+import { prepareKittyPayload, uploadKittyPayload, type KittyPayload } from "../kitty-transport";
 import type { ImageRenderOptions } from "../types";
 
 export class NonPngError extends Error {
   constructor() {
-    super("kitty-native requires PNG input");
+    super("kitty-native could not decode or convert the input");
     this.name = "NonPngError";
   }
 }
@@ -14,24 +15,23 @@ export async function renderKittyNative(
 ): Promise<void> {
   const file = Bun.file(filePath);
   if (!(await file.exists())) return;
-  const data = await file.arrayBuffer();
+  const data = new Uint8Array(await file.arrayBuffer());
   if (data.byteLength === 0) return;
 
-  const png = await ensurePngBytes(new Uint8Array(data));
-  if (!png) throw new NonPngError();
-
-  const b64 = Buffer.from(png).toString("base64");
-  if (b64.length === 0) return;
-
-  const chunkSize = 4096;
-  for (let i = 0; i < b64.length; i += chunkSize) {
-    const chunk = b64.slice(i, i + chunkSize);
-    const isFirst = i === 0;
-    const isLast = i + chunkSize >= b64.length;
-    const more = isLast ? 0 : 1;
-    const ctrl = isFirst ? `a=T,f=100,q=2,r=${options.maxRows},m=${more}` : `m=${more}`;
-    process.stdout.write(`\x1b_G${ctrl};${chunk}\x1b\\`);
+  let payload: KittyPayload | null = prepareKittyPayload(data);
+  if (!payload) {
+    // Exotic source (WebP, AVIF, …): ImageMagick is the last-resort converter.
+    const png = await ensurePngBytes(data);
+    if (!png) throw new NonPngError();
+    payload = { kind: "png", data: png };
   }
 
+  // No explicit image id on the legacy one-shot path: posters are meant to
+  // accumulate in scrollback, and kitty evicts placement-less images itself
+  // when it runs out of storage quota.
+  await uploadKittyPayload(payload, {
+    rows: options.maxRows,
+    preferFileTransmission: true,
+  });
   process.stdout.write("\n\n");
 }

@@ -8,6 +8,9 @@ import {
   resolveAppShellPosterCapability,
 } from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
+import { __testing as probeTesting } from "@/image/probe";
+
+import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalRuntime = {
   detectImageCapability: rendererTesting.runtime.detectImageCapability,
@@ -15,6 +18,7 @@ const originalRuntime = {
   spawn: rendererTesting.runtime.spawn,
 };
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+const originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
 
 function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "none") {
@@ -27,6 +31,16 @@ function capability(renderer: ImageCapability["renderer"]): ImageCapability {
       reason: "test none",
     };
   }
+  if (renderer === "half-block") {
+    return {
+      terminal: "windows-terminal",
+      protocol: "half-block",
+      renderer: "half-block",
+      available: true,
+      dependency: "none",
+      reason: "test half-block",
+    };
+  }
   return {
     terminal: renderer === "kitty-native" ? "kitty" : "unknown",
     protocol: renderer === "kitty-native" ? "kitty" : "symbols",
@@ -37,8 +51,22 @@ function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   };
 }
 
+/** Hermetic escape assertions: force chunked base64 instead of t=t temp files. */
+function forceDirectTransport(): void {
+  process.env.KUNAI_IMAGE_TRANSPORT = "direct";
+}
+
 function pngBytes(): ArrayBuffer {
   return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]).buffer;
+}
+
+function captureStdout(): { writes: string[] } {
+  const writes: string[] = [];
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
+  return { writes };
 }
 
 afterEach(() => {
@@ -46,21 +74,49 @@ afterEach(() => {
   rendererTesting.runtime.which = originalRuntime.which;
   rendererTesting.runtime.spawn = originalRuntime.spawn;
   process.stdout.write = originalStdoutWrite;
+  if (originalTransportEnv === undefined) {
+    delete process.env.KUNAI_IMAGE_TRANSPORT;
+  } else {
+    process.env.KUNAI_IMAGE_TRANSPORT = originalTransportEnv;
+  }
+  probeTesting.reset();
   clearKittyPlacementRegistry();
 });
 
 describe("app-shell poster renderer", () => {
   test("returns kitty result for kitty-native capability", async () => {
+    forceDirectTransport();
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    const writes: string[] = [];
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-      return true;
-    }) as typeof process.stdout.write;
+    const { writes } = captureStdout();
 
     const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
     expect(result.kind).toBe("kitty");
     expect(writes.join("")).toContain("\x1b_Ga=T,f=100,U=1,q=2");
+  });
+
+  test("uploads TMDB JPEG posters to kitty as compressed RGBA without magick or chafa", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    rendererTesting.runtime.which = () => null;
+    rendererTesting.runtime.spawn = () => {
+      throw new Error("chafa must not spawn on the kitty path");
+    };
+    const { writes } = captureStdout();
+
+    const jpeg = makeRgbJpeg(
+      8,
+      4,
+      Array.from({ length: 8 * 4 * 3 }, (_, i) => i % 256),
+    );
+    const result = await renderPoster(jpeg.buffer as ArrayBuffer, {
+      rows: 2,
+      cols: 4,
+      allowKitty: true,
+    });
+    expect(result.kind).toBe("kitty");
+    const out = writes.join("");
+    expect(out).toContain("f=32,s=8,v=4,o=z");
+    expect(out).toContain("U=1");
   });
 
   test("returns text result for chafa fallback capability", async () => {
@@ -78,6 +134,99 @@ describe("app-shell poster renderer", () => {
     if (result.kind === "text") {
       expect(result.placeholder).toBe("ASCII_PREVIEW");
     }
+  });
+
+  test("renders half-block text without chafa for half-block capability", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
+    rendererTesting.runtime.which = () => null;
+    rendererTesting.runtime.spawn = () => {
+      throw new Error("chafa must not spawn on the half-block path");
+    };
+
+    // 2x2 red over blue pixels — real bytes, decoded in-process.
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+    const result = await renderPoster(png.buffer as ArrayBuffer, {
+      rows: 2,
+      cols: 2,
+      allowKitty: true,
+    });
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") {
+      expect(result.placeholder).toContain("▀");
+      expect(result.placeholder).toContain("38;2;");
+    }
+  });
+
+  test("falls back to half-block text when chafa-symbols capability has no chafa binary", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
+    rendererTesting.runtime.which = () => null;
+
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+    const result = await renderPoster(png.buffer as ArrayBuffer, {
+      rows: 2,
+      cols: 2,
+      allowKitty: true,
+    });
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") {
+      expect(result.placeholder).toContain("▀");
+    }
+  });
+
+  test("inkEmbedded renders half-block text when chafa is missing", async () => {
+    rendererTesting.runtime.which = () => null;
+
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+    const result = await renderPoster(png.buffer as ArrayBuffer, {
+      rows: 2,
+      cols: 2,
+      inkEmbedded: true,
+    });
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") {
+      expect(result.placeholder).toContain("▀");
+    }
+  });
+
+  test("probe-detected kitty on a placeholder-less terminal stays on text renderers", async () => {
+    rendererTesting.runtime.detectImageCapability = () => ({
+      terminal: "wezterm",
+      protocol: "kitty",
+      renderer: "kitty-native",
+      available: true,
+      dependency: "none",
+      reason: "terminal answered the kitty graphics query",
+    });
+    rendererTesting.runtime.which = () => null;
+    const { writes } = captureStdout();
+
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+    const result = await renderPoster(png.buffer as ArrayBuffer, {
+      rows: 2,
+      cols: 2,
+      allowKitty: true,
+    });
+    // WezTerm's opt-in kitty mode has no Unicode placeholders — Ink layout wins.
+    expect(writes.join("")).not.toContain("\x1b_G");
+    expect(result.kind).toBe("text");
+  });
+
+  test("probe-detected kitty on an unknown terminal still uses kitty placeholders", async () => {
+    forceDirectTransport();
+    probeTesting.setProbed({ sixel: false, kittyGraphics: true });
+    rendererTesting.runtime.detectImageCapability = () => ({
+      terminal: "unknown",
+      protocol: "kitty",
+      renderer: "kitty-native",
+      available: true,
+      dependency: "none",
+      reason: "terminal answered the kitty graphics query",
+    });
+    const { writes } = captureStdout();
+
+    const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
+    expect(result.kind).toBe("kitty");
+    expect(writes.join("")).toContain("U=1");
   });
 
   test("normalizes Windows Terminal sixel capability to Ink-safe chafa symbols", () => {
@@ -105,7 +254,7 @@ describe("app-shell poster renderer", () => {
     expect(result).toEqual({ kind: "none" });
   });
 
-  test("falls back to chafa symbols when Kitty PNG conversion is unavailable", async () => {
+  test("falls back to text renderers when Kitty payload preparation fails", async () => {
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
     rendererTesting.runtime.which = (command: string) =>
       command === "chafa" ? "/usr/bin/chafa" : null;
@@ -117,7 +266,7 @@ describe("app-shell poster renderer", () => {
       }) as unknown as Bun.Subprocess;
     process.stdout.write = (() => true) as typeof process.stdout.write;
 
-    // Minimal JPEG SOI marker — ensurePngBytes cannot convert without magick.
+    // Truncated JPEG SOI — undecodable in-process and unconvertible.
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).buffer;
     const result = await renderPoster(jpeg, {
       rows: 3,
@@ -132,12 +281,9 @@ describe("app-shell poster renderer", () => {
   });
 
   test("registers placement slot without emitting global delete", async () => {
+    forceDirectTransport();
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    const writes: string[] = [];
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-      return true;
-    }) as typeof process.stdout.write;
+    const { writes } = captureStdout();
 
     const first = await renderPoster(pngBytes(), {
       rows: 4,

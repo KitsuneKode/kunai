@@ -1,7 +1,15 @@
 import { detectImageCapability } from "@/image";
-import type { ImageCapability } from "@/image";
+import type { ImageCapability, TerminalId } from "@/image";
 import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
+import { decodeImageBytes } from "@/image/decode";
+import {
+  prepareKittyPayload,
+  uploadKittyPayload,
+  type KittyPayload,
+} from "@/image/kitty-transport";
+import { getProbedGraphicsSupport } from "@/image/probe";
+import { buildHalfBlockOutput } from "@/image/renderers/half-block";
 
 import {
   clearKittyPlacementRegistry,
@@ -119,39 +127,34 @@ function buildPlaceholder(imageId: number, rows: number, cols: number): string {
   return lines.join("\n");
 }
 
-/** Hand the event loop a turn so queued stdin (keypresses) gets processed. */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise<void>((resolve) => setImmediate(resolve));
+/**
+ * Unicode placeholders only work on terminals that implement them — kitty and
+ * Ghostty (name-verified) do. Probe-detected kitty terminals on an "unknown"
+ * name are treated as placeholder-safe (kitty-over-SSH keeps working);
+ * WezTerm's opt-in kitty mode and Konsole answer the probe but have no
+ * placeholder support, so Ink-embedded rendering must stay on text there.
+ */
+function supportsKittyPlaceholders(terminal: TerminalId): boolean {
+  if (terminal === "kitty" || terminal === "ghostty") return true;
+  if (terminal === "unknown") return getProbedGraphicsSupport()?.kittyGraphics === true;
+  return false;
 }
 
-async function uploadKitty(
-  data: Uint8Array,
-  imageId: number,
-  rows: number,
-  cols: number,
-): Promise<void> {
-  const b64 = Buffer.from(data).toString("base64");
-  if (b64.length === 0) return;
-  const chunkSize = 4096;
-  // Yield to the event loop every few chunks. A poster is tens of KB of base64;
-  // writing it all in one synchronous burst blocks the loop (TTY writes don't
-  // yield), which starved stdin and made arrow keys stall MID-UPLOAD (the
-  // "waiting" stall in the loop monitor). Interleaving lets queued keypresses run
-  // between chunks. The image still only displays once the final chunk lands
-  // (m=0), so there is no partial-render flicker.
-  const yieldEveryChunks = 8;
-  let chunksSinceYield = 0;
-  for (let i = 0; i < b64.length; i += chunkSize) {
-    const chunk = b64.slice(i, i + chunkSize);
-    const more = i + chunkSize < b64.length ? 1 : 0;
-    const ctrl =
-      i === 0 ? `a=T,f=100,U=1,q=2,i=${imageId},c=${cols},r=${rows},m=${more}` : `m=${more}`;
-    process.stdout.write(`\x1b_G${ctrl};${chunk}\x1b\\`);
-    if (++chunksSinceYield >= yieldEveryChunks) {
-      chunksSinceYield = 0;
-      await yieldToEventLoop();
-    }
-  }
+/**
+ * Universal in-process text renderer: two pixels per cell via U+2580 with
+ * truecolour SGR. Needs no external binary — this is what keeps posters alive
+ * on Windows Terminal, iTerm2, and any chafa-less machine.
+ */
+function renderHalfBlockText(data: ArrayBuffer, rows: number, cols: number): PosterResult {
+  const image = decodeImageBytes(new Uint8Array(data));
+  if (!image) return { kind: "none" };
+  const text = buildHalfBlockOutput(image, {
+    size: `${cols}x${rows}`,
+    maxRows: rows,
+    debug: false,
+  }).trimEnd();
+  if (!text) return { kind: "none" };
+  return { kind: "text", placeholder: text, rows, cols };
 }
 
 async function renderKitty(
@@ -163,17 +166,30 @@ async function renderKitty(
 ): Promise<PosterResult> {
   if (data.byteLength === 0) return { kind: "none" };
   if (signal?.aborted) return { kind: "none" };
-  const png = await ensurePngBytes(new Uint8Array(data));
+  const bytes = new Uint8Array(data);
+  // In-process first: PNG passes through, JPEG decodes to RGBA. ImageMagick
+  // remains only as the last resort for formats we cannot decode (WebP, …).
+  let payload: KittyPayload | null = prepareKittyPayload(bytes);
+  if (!payload) {
+    const png = await ensurePngBytes(bytes);
+    if (png) payload = { kind: "png", data: png };
+  }
   if (signal?.aborted) return { kind: "none" };
-  if (!png) {
-    // JPEG/WebP without ImageMagick: fall back to chafa and release any prior
-    // Kitty for this slot so the old image does not ghost under the text.
-    debugImage("kitty PNG conversion failed; falling back to chafa symbols");
+  if (!payload) {
+    // Undecodable even with ImageMagick: fall back to text renderers and
+    // release any prior Kitty for this slot so it does not ghost underneath.
+    debugImage("kitty payload preparation failed; falling back to text renderers");
     if (placementSlot) releaseKittySlot(placementSlot);
-    return await renderChafaSymbols(data, rows, cols);
+    return await renderTextPoster(data, rows, cols);
   }
   const imageId = allocId();
-  await uploadKitty(png, imageId, rows, cols);
+  await uploadKittyPayload(payload, {
+    imageId,
+    rows,
+    cols,
+    unicodePlaceholder: true,
+    preferFileTransmission: true,
+  });
   if (signal?.aborted) {
     // Upload finished after cancel — delete the orphan so it cannot clobber a winner.
     deleteKittyImage(imageId);
@@ -247,6 +263,21 @@ async function renderChafaSymbols(
   return { kind: "text", placeholder: text, rows, cols };
 }
 
+/**
+ * Text poster chain: chafa symbols when chafa resolves (higher fidelity:
+ * symbol selection + dithering), otherwise the in-process half-block
+ * renderer. Never spawns a process on the half-block path.
+ */
+async function renderTextPoster(
+  data: ArrayBuffer,
+  rows: number,
+  cols: number,
+): Promise<PosterResult> {
+  const viaChafa = await renderChafaSymbols(data, rows, cols);
+  if (viaChafa.kind !== "none") return viaChafa;
+  return renderHalfBlockText(data, rows, cols);
+}
+
 export async function renderPoster(
   data: ArrayBuffer,
   {
@@ -268,16 +299,33 @@ export async function renderPoster(
   try {
     if (signal?.aborted) return { kind: "none" };
     if (inkEmbedded) {
-      return await renderChafaSymbols(data, rows, cols);
+      return await renderTextPoster(data, rows, cols);
     }
     if (!allowKitty) return { kind: "none" };
     const capability = resolveAppShellPosterCapability(runtime.detectImageCapability());
     if (!capability.available || capability.renderer === "none") return { kind: "none" };
     if (capability.renderer === "kitty-native") {
-      return await renderKitty(data, rows, cols, placementSlot, signal);
+      if (supportsKittyPlaceholders(capability.terminal)) {
+        return await renderKitty(data, rows, cols, placementSlot, signal);
+      }
+      // The probe found kitty graphics but the terminal has no Unicode
+      // placeholders (WezTerm's opt-in kitty mode, Konsole). A real placement
+      // would fight Ink's layout, so stay on text renderers.
+      debugImage(
+        `kitty Unicode placeholders unsupported on terminal "${capability.terminal}"; using text renderers`,
+      );
+      return await renderTextPoster(data, rows, cols);
     }
+    if (capability.renderer === "chafa-symbols") {
+      return await renderTextPoster(data, rows, cols);
+    }
+    // half-block: capability-faithful in-process rendering, no chafa spawn.
+    const viaHalfBlock = renderHalfBlockText(data, rows, cols);
+    if (viaHalfBlock.kind !== "none") return viaHalfBlock;
+    // Undecodable in-process (e.g. WebP): chafa may still manage it.
     return await renderChafaSymbols(data, rows, cols);
-  } catch {
+  } catch (error) {
+    debugImage(`poster render failed: ${error instanceof Error ? error.message : String(error)}`);
     return { kind: "none" };
   }
 }

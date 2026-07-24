@@ -18,9 +18,12 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 ## Capability selection (summary)
 
 - **TTY / disable**: non-TTY stdout or `KUNAI_POSTER=0|false` → no posters.
-- **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|sixel|symbols` (invalid values fall back to auto with optional debug log).
-- **Auto path**: Kitty/Ghostty → `kitty-native`; Windows Terminal + `chafa` → sixel for one-shot output; WezTerm + `chafa` → sixel; otherwise `chafa` symbols if available.
-- **Ink app shell**: non-Kitty sixel capabilities are normalized to `chafa` symbols before rendering so poster output stays inside Ink's layout instead of corrupting or shifting the interactive shell.
+- **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|sixel|symbols|half-block` (invalid values fall back to auto with optional debug log). Overrides are resolved before every heuristic below and always win.
+- **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
+- **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to `chafa` symbols (or half-block). `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
+- **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; probe-confirmed sixel + `chafa` → sixel; WezTerm + `chafa` → sixel; otherwise **half-block**.
+- **Half-block is the universal floor.** It decodes in-process and needs no external binary, which is what makes posters work on Windows at all — `chafa` is effectively never installed there.
+- **Ink app shell**: non-Kitty sixel capabilities are normalized to `chafa` symbols before rendering so poster output stays inside Ink's layout instead of corrupting or shifting the interactive shell. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) also stay on text renderers, since a real placement would fight Ink's layout.
 
 Details live in `apps/cli/src/image/capability.ts`.
 
@@ -32,17 +35,36 @@ Details live in `apps/cli/src/image/capability.ts`.
 | `KUNAI_IMAGE_PROTOCOL`          | Force or constrain renderer (see capability module)                                                     |
 | `KUNAI_IMAGE_SIZE`              | Size string for generic `displayPoster()` (default in `index.ts`)                                       |
 | `KUNAI_IMAGE_DEBUG`             | `1` enables `[kunai:image]` debug lines                                                                 |
+| `KUNAI_IMAGE_PROBE`             | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                          |
+| `KUNAI_IMAGE_TRANSPORT`         | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                      |
 | `KUNAI_IMAGE_MAGICK_TIMEOUT_MS` | Per-conversion time budget for the `magick` subprocess (default **30000**, clamped **1000**–**120000**) |
+
+### `KUNAI_IMAGE_TRANSPORT`
+
+Kitty accepts pixels either inline through the PTY (`t=d`, base64 chunks) or as a
+temp file it reads and deletes (`t=t`). File transmission skips the PTY entirely
+and skips compression, so it is markedly faster — but Kunai sends `q=2`, which
+suppresses error replies, so a terminal that does not implement `t=t` fails
+**silently** and simply never draws the poster.
+
+Auto-detection therefore only uses files where support is documented: local
+kitty and Ghostty, never over SSH (the terminal cannot see our filesystem) and
+never inside tmux/screen. Everything else — including terminals that answer the
+probe on an unknown name — uses chunks, which work anywhere the protocol works.
+
+Set `direct` to force chunks (the fix if posters silently fail to appear on a
+kitty-compatible terminal), or `file` to force the fast path. Invalid values fall
+back to auto with a debug line.
 
 ## Tools
 
-- **`chafa`**: Sixel/symbols output for non-Kitty terminals; required for forced `sixel` / `symbols` and for Windows Terminal / WezTerm auto paths where applicable.
-- **`magick` (ImageMagick 7+)**: Converts non-PNG raster sources to PNG for Kitty-native and shared renderer paths when TMDB serves JPEG/WebP. The CLI invokes `magick` only (not other binary names).
+- **`chafa`** _(optional)_: Sixel/symbols output for non-Kitty terminals; required for forced `sixel` / `symbols`. When absent, the half-block renderer takes over — posters degrade in fidelity but never disappear.
+- **`magick` (ImageMagick 7+)** _(optional, last resort)_: PNG passes through untouched and JPEG (all of TMDB) decodes in-process, so `magick` is no longer on the hot path. It is only reached for formats the in-process decoder cannot read (WebP, AVIF). The CLI invokes `magick` only (not other binary names).
 
 ## App-shell `PosterResult` kinds
 
 - **`kitty`**: Kitty graphics protocol + placeholder grid for Ink layout.
-- **`text`**: chafa symbols output as placeholder text (fallback terminals).
+- **`text`**: chafa symbols _or_ in-process half-block output as placeholder text. The app shell prefers chafa (symbol selection and dithering give higher fidelity) and falls back to half-block, so this kind covers every terminal without kitty graphics.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.

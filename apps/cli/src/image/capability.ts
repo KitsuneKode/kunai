@@ -67,6 +67,9 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalId
   if (env.WT_SESSION) return "windows-terminal";
   if (env.TERM_PROGRAM?.toLowerCase() === "wezterm") return "wezterm";
   if (env.WEZTERM_EXECUTABLE) return "wezterm";
+  // Konsole answers the kitty graphics probe but has no Unicode placeholder
+  // support — naming it keeps the app shell off the placeholder path there.
+  if (env.KONSOLE_VERSION) return "konsole";
   if (env.TERM_PROGRAM?.toLowerCase() === "vscode") return "vscode";
   return "unknown";
 }
@@ -74,6 +77,19 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalId
 export function isKittyCompatible(env: NodeJS.ProcessEnv = process.env): boolean {
   const terminal = detectTerminal(env);
   return terminal === "kitty" || terminal === "ghostty";
+}
+
+/**
+ * Inside tmux or screen the graphics escapes must be wrapped in the
+ * multiplexer's passthrough sequence, which we do not emit. Detection cannot
+ * rely on the probe to catch this: `KITTY_WINDOW_ID` is inherited into tmux
+ * panes, so the name check would claim kitty-native and every poster would be
+ * swallowed by tmux, leaving blank cells where the placeholder grid expects an
+ * image. Text renderers pass through a multiplexer untouched, so prefer them.
+ */
+export function isMultiplexed(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.TMUX || env.STY) return true;
+  return /^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "");
 }
 
 function normalizeProtocol(value: string | undefined): ProtocolOverride | "invalid" {
@@ -106,6 +122,11 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
     env.TERM_PROGRAM ?? "",
     env.WT_SESSION ?? "",
     env.WEZTERM_EXECUTABLE ?? "",
+    env.KONSOLE_VERSION ?? "",
+    // Multiplexer detection feeds the result, so it has to feed the key too.
+    env.TMUX ?? "",
+    env.STY ?? "",
+    env.TERM ?? "",
   ]);
 }
 
@@ -183,6 +204,25 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
 
   if (override === "half-block") {
     return halfBlockCapability(terminal, "forced half-block output");
+  }
+
+  // Past this point every branch picks a graphics protocol, and none of them
+  // survive a multiplexer without passthrough wrapping. Explicit
+  // KUNAI_IMAGE_PROTOCOL overrides are handled above and still win.
+  if (isMultiplexed(env)) {
+    return isChafaAvailable()
+      ? buildCapability({
+          terminal,
+          protocol: "symbols",
+          renderer: "chafa-symbols",
+          available: true,
+          dependency: "chafa",
+          reason: "tmux/screen detected; graphics escapes need passthrough, using text output",
+        })
+      : halfBlockCapability(
+          terminal,
+          "tmux/screen detected; graphics escapes need passthrough, using half-block",
+        );
   }
 
   if (terminal === "kitty" || terminal === "ghostty") {

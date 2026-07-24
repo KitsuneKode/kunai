@@ -41,7 +41,7 @@ export async function displayPoster(
       await renderPosterFile(cachedPath, capability, resolvedOptions);
     } catch (error) {
       if (error instanceof NonPngError) {
-        debugImage("kitty-native skipped: non-PNG input");
+        debugImage("kitty-native skipped: input could not be decoded or converted");
         if (capability.renderer === "kitty-native" && isChafaAvailable()) {
           try {
             await renderChafaKitty(cachedPath, resolvedOptions);

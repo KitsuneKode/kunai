@@ -14,7 +14,10 @@ function getTmdbSize(cols: number, variant: "preview" | "detail"): string {
   if (variant === "detail") return cols <= 28 ? "w500" : "w780";
   if (cols <= 18) return "w342";
   if (cols <= 28) return "w500";
-  return "original";
+  // Never "original": a terminal pane tops out near 40 cells (~400px), so
+  // multi-megabyte originals only add fetch latency, decode time, and RAM in
+  // the source cache (raw ArrayBuffers) without changing a single output cell.
+  return "w780";
 }
 
 export function resolvePosterUrl(
