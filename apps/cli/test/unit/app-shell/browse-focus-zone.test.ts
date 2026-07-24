@@ -15,14 +15,12 @@ const withResults: BrowseFocusZoneContext = {
   hasResults: true,
   hasFilterBar: true,
   canFocusIdle: false,
-  selectedIndex: 0,
 };
 
 const idleOnly: BrowseFocusZoneContext = {
   hasResults: false,
   hasFilterBar: false,
   canFocusIdle: true,
-  selectedIndex: 0,
 };
 
 describe("createInitialBrowseFocusZone", () => {
@@ -37,25 +35,25 @@ describe("createInitialBrowseFocusZone", () => {
 
 describe("browseFocusZoneReducer", () => {
   test("↓ from query enters list when results exist", () => {
-    expect(
-      browseFocusZoneReducer("query", { type: "arrow-down" }, { ...withResults, selectedIndex: 2 }),
-    ).toBe("list");
+    expect(browseFocusZoneReducer("query", { type: "arrow-down" }, withResults)).toBe("list");
   });
 
   test("↓ from query enters idle when no results but continue row is available", () => {
     expect(browseFocusZoneReducer("query", { type: "arrow-down" }, idleOnly)).toBe("idle");
   });
 
-  test("↑ at top of list returns focus to query", () => {
-    expect(
-      browseFocusZoneReducer("list", { type: "arrow-up" }, { ...withResults, selectedIndex: 0 }),
-    ).toBe("query");
+  test("↑ at top of list keeps list focus so the shell can wrap to the last row", () => {
+    // The list is a closed loop: neither edge exits to the search box. Esc is
+    // the only list → query gesture, so ↑ on row 0 must not leak focus out.
+    expect(browseFocusZoneReducer("list", { type: "arrow-up" }, withResults)).toBe("list");
+  });
+
+  test("↓ at bottom of list keeps list focus so the shell can wrap to the first row", () => {
+    expect(browseFocusZoneReducer("list", { type: "arrow-down" }, withResults)).toBe("list");
   });
 
   test("↑ from query with results enters list zone", () => {
-    expect(
-      browseFocusZoneReducer("query", { type: "arrow-up" }, { ...withResults, selectedIndex: 4 }),
-    ).toBe("list");
+    expect(browseFocusZoneReducer("query", { type: "arrow-up" }, withResults)).toBe("list");
   });
 
   test("ctrl+f shortcut focuses filter when filter bar is available", () => {

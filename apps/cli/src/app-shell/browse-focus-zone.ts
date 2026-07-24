@@ -12,7 +12,6 @@ export type BrowseFocusZoneContext = {
   readonly hasResults: boolean;
   readonly hasFilterBar: boolean;
   readonly canFocusIdle: boolean;
-  readonly selectedIndex: number;
 };
 
 export type BrowseFocusZoneEvent =
@@ -59,7 +58,8 @@ export function browseFocusZoneReducer(
       if (zone === "filter" && ctx.hasResults) return "list";
       return zone;
     case "arrow-up":
-      if (zone === "list" && ctx.selectedIndex === 0) return "query";
+      // The list is a closed loop — both edges wrap in BrowseShell rather than
+      // exiting here, so Esc stays the single list → query gesture.
       if (zone === "filter") return "query";
       if (zone === "idle") return "query";
       if (zone === "query" && ctx.hasResults) return "list";
