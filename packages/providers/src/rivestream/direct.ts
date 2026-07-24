@@ -110,9 +110,20 @@ type AbortSignalConstructorWithAny = typeof AbortSignal & {
 };
 
 function createTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!signal) return timeout;
   const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
-  if (!signal) return AbortSignal.timeout(timeoutMs);
-  return abortSignal.any ? abortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal;
+  if (abortSignal.any) return abortSignal.any([signal, timeout]);
+  // Manual combine fallback so the timeout is never dropped.
+  const controller = new AbortController();
+  const abortFrom = (source: AbortSignal) => {
+    if (!controller.signal.aborted) controller.abort(source.reason);
+  };
+  if (signal.aborted) abortFrom(signal);
+  else signal.addEventListener("abort", () => abortFrom(signal), { once: true });
+  if (timeout.aborted) abortFrom(timeout);
+  else timeout.addEventListener("abort", () => abortFrom(timeout), { once: true });
+  return controller.signal;
 }
 
 function getRivestreamRawSources(
@@ -331,6 +342,20 @@ export const rivestreamProviderModule: CoreProviderModule = {
         cachePolicy,
       );
 
+      // Prefetch every candidate service in parallel — the sequential cycle
+      // then reads settling results, so a slow/dead service no longer
+      // serializes the whole resolve (Rivestream's own frontend races too).
+      const prefetchedSources = prefetchRivestreamServiceCandidates({
+        candidates: cycleCandidates,
+        input,
+        context,
+        tmdbId,
+        typeStr,
+        season,
+        episode,
+        secretKey,
+      });
+
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -341,7 +366,8 @@ export const rivestreamProviderModule: CoreProviderModule = {
         candidateTimeoutMs: 10_000,
         resolveCandidate: async (candidate) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
-          if (!provider) {
+          const sourceDataPromise = prefetchedSources.get(provider);
+          if (!provider || !sourceDataPromise) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-unsupported",
               message: `Rivestream candidate ${candidate.id} is missing provider metadata`,
@@ -357,11 +383,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               input,
               context,
               cachePolicy,
-              tmdbId,
-              typeStr,
-              season,
-              episode,
-              secretKey,
+              sourceDataPromise,
             });
           } catch (error) {
             const providerError =
@@ -370,7 +392,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
                 : new ProviderHttpError({
                     providerId: RIVESTREAM_PROVIDER_ID,
                     stage: "source:start",
-                    code: "not-found",
+                    code: isRivestreamAbortOrTimeoutError(error) ? "timeout" : "not-found",
                     message:
                       error instanceof Error ? error.message : `Internal server ${provider} failed`,
                     retryable: true,
@@ -669,47 +691,89 @@ async function getRivestreamProviderServices(
   return RIVESTREAM_STATIC_PROVIDER_SERVICES;
 }
 
+function fetchRivestreamSourceData(opts: {
+  readonly context: ProviderRuntimeContext;
+  readonly provider: string;
+  readonly input: ProviderResolveInput;
+  readonly tmdbId: string;
+  readonly typeStr: "movie" | "tv";
+  readonly season: number;
+  readonly episode: number;
+  readonly secretKey: string;
+}): Promise<RivestreamSourceResponse> {
+  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey } = opts;
+  let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
+  if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
+  url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
+
+  return providerJson<RivestreamSourceResponse>(
+    context,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
+      signal: createTimeoutSignal(context.signal, 8000),
+    },
+    { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
+  );
+}
+
+/** Fire every candidate's source request at once so the cycle reads settling results. */
+function prefetchRivestreamServiceCandidates(opts: {
+  readonly candidates: readonly ProviderCycleCandidate[];
+  readonly input: ProviderResolveInput;
+  readonly context: ProviderRuntimeContext;
+  readonly tmdbId: string;
+  readonly typeStr: "movie" | "tv";
+  readonly season: number;
+  readonly episode: number;
+  readonly secretKey: string;
+}): Map<string, Promise<RivestreamSourceResponse>> {
+  const { candidates, input, context, tmdbId, typeStr, season, episode, secretKey } = opts;
+  const prefetched = new Map<string, Promise<RivestreamSourceResponse>>();
+  for (const candidate of candidates) {
+    const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
+    if (!provider || prefetched.has(provider)) continue;
+    const promise = fetchRivestreamSourceData({
+      context,
+      provider,
+      input,
+      tmdbId,
+      typeStr,
+      season,
+      episode,
+      secretKey,
+    });
+    // Mark rejections handled — the engine may resolve before awaiting losers.
+    promise.catch(() => {});
+    prefetched.set(provider, promise);
+  }
+  return prefetched;
+}
+
+function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
 async function resolveRivestreamProviderCandidate({
   candidate,
   provider,
   input,
   context,
   cachePolicy,
-  tmdbId,
-  typeStr,
-  season,
-  episode,
-  secretKey,
+  sourceDataPromise,
 }: {
   readonly candidate: ProviderCycleCandidate;
   readonly provider: string;
   readonly input: ProviderResolveInput;
   readonly context: ProviderRuntimeContext;
   readonly cachePolicy: CachePolicy;
-  readonly tmdbId: string;
-  readonly typeStr: "movie" | "tv";
-  readonly season: number;
-  readonly episode: number;
-  readonly secretKey: string;
+  readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
 }): Promise<RivestreamResolvedCandidate> {
   const displayLabel = displayRivestreamSourceLabel(provider);
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
   const sourceId =
     candidate.sourceId ?? providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
-  let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
-  if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
-  url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
-
-  const fetchSignal = createTimeoutSignal(context.signal, 8000);
-  const sourceData = await providerJson<RivestreamSourceResponse>(
-    context,
-    url,
-    {
-      headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-      signal: fetchSignal,
-    },
-    { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
-  );
+  const sourceData = await sourceDataPromise;
   const rawSources = getRivestreamRawSources(sourceData.data);
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {

@@ -1091,7 +1091,7 @@ test("rivestream caches provider services across cold resolves", async () => {
   }
 
   expect(requests.filter((url) => url.includes("VideoProviderServices"))).toHaveLength(1);
-  expect(requests.filter((url) => url.includes("VideoProvider&id="))).toHaveLength(2);
+  expect(requests.filter((url) => url.includes("VideoProvider&id="))).toHaveLength(4);
 });
 
 test("miruro evidence fixture preserves server evidence subtitles and seek thumbnails", async () => {
