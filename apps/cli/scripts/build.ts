@@ -42,6 +42,10 @@ const LAUNCHER = join(ROOT, NPM_LAUNCHER_OUT);
 const NPM_PUBLISH_LAUNCHER = join(DIST, "npm/dist/npm-launcher.mjs");
 const REPOSITORY_LICENSE = join(ROOT, "../..", "LICENSE");
 const NPM_PUBLISH_LICENSE = join(DIST, "npm/LICENSE");
+// The CLI readme, not the repository one: npm renders this as the package page,
+// and the root readme is both monorepo-shaped and far past the pack budget.
+const CLI_README = join(ROOT, "README.md");
+const NPM_PUBLISH_README = join(DIST, "npm/README.md");
 const NPM_PUBLISH_MANIFEST = join(DIST, "npm/package.json");
 const ASSETS = join(DIST, "assets");
 
@@ -89,6 +93,7 @@ async function buildNpmLauncher(): Promise<number> {
   await cp(source, NPM_PUBLISH_LAUNCHER);
   await chmod(NPM_PUBLISH_LAUNCHER, 0o755);
   await cp(REPOSITORY_LICENSE, NPM_PUBLISH_LICENSE);
+  await cp(CLI_README, NPM_PUBLISH_README);
 
   const text = await Bun.file(LAUNCHER).text();
   if (!text.startsWith("#!/usr/bin/env node")) {
@@ -148,6 +153,7 @@ async function main(): Promise<void> {
   const bundleBytes = Bun.file(BIN).size;
   const licenseBytes = Bun.file(NPM_PUBLISH_LICENSE).size;
   const manifestBytes = Bun.file(NPM_PUBLISH_MANIFEST).size;
+  const readmeBytes = Bun.file(NPM_PUBLISH_README).size;
   const assetsTotal = await assetBytes();
   const ms = Date.now() - start;
 
@@ -156,6 +162,7 @@ async function main(): Promise<void> {
       { label: "dist/kunai.mjs (local launcher compatibility)", bytes: launcherBytes },
       { label: "dist/npm/dist/npm-launcher.mjs (public launcher)", bytes: launcherBytes },
       { label: "dist/npm/LICENSE (public license)", bytes: licenseBytes },
+      { label: "dist/npm/README.md (public package page)", bytes: readmeBytes },
       { label: "dist/npm/package.json (public manifest)", bytes: manifestBytes },
       { label: "dist/kunai.js (development Bun bundle, unpublished)", bytes: bundleBytes },
       { label: "dist/assets/* (development bundle assets, unpublished)", bytes: assetsTotal },

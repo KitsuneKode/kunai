@@ -218,16 +218,23 @@ export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
 /** Unpacked-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_UNPACKED_BUDGET_BYTES = 64 * 1024;
 
-const NPM_PACK_ALLOWED_PATHS = new Set(["dist/npm-launcher.mjs", "LICENSE", "package.json"]);
+const NPM_PACK_ALLOWED_PATHS = new Set([
+  "dist/npm-launcher.mjs",
+  "LICENSE",
+  "README.md",
+  "package.json",
+]);
 
 /**
  * Files the published tarball MUST contain. The launcher is `bin`, so shipping
- * without it means `kunai` resolves to nothing on a real install.
+ * without it means `kunai` resolves to nothing on a real install. The readme is
+ * the package page npm renders; omitting it publishes a blank listing.
  */
 const NPM_PACK_REQUIRED_PATHS: readonly string[] = [
   "package.json",
   "dist/npm-launcher.mjs",
   "LICENSE",
+  "README.md",
 ];
 
 /** Returns required tarball paths that are missing from the given listing. */

@@ -57,7 +57,7 @@ export function buildNpmPublishManifest(source: NpmPublishManifestSource) {
     ...(source.repository ? { repository: source.repository } : {}),
     type: "module",
     bin: { kunai: "dist/npm-launcher.mjs" },
-    files: ["dist/npm-launcher.mjs", "LICENSE"],
+    files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
     engines: { node: ">=18.17" },
     optionalDependencies: Object.fromEntries(
       RELEASE_BINARY_TARGETS.map((target) => [`@kitsunekode/kunai-${target.id}`, source.version]),

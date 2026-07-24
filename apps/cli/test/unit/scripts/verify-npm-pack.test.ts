@@ -41,7 +41,7 @@ describe("forbiddenNpmPackPath", () => {
 describe("assertNpmPackContents", () => {
   test("passes only for the minimal launcher package", () => {
     expect(() =>
-      assertNpmPackContents(["package.json", "dist/npm-launcher.mjs", "LICENSE"]),
+      assertNpmPackContents(["package.json", "dist/npm-launcher.mjs", "LICENSE", "README.md"]),
     ).not.toThrow();
   });
 
@@ -64,9 +64,15 @@ describe("assertNpmPackContents", () => {
   });
 
   test("requires the repository license text", () => {
-    expect(() => assertNpmPackContents(["package.json", "dist/npm-launcher.mjs"])).toThrow(
-      "LICENSE",
-    );
+    expect(() =>
+      assertNpmPackContents(["package.json", "dist/npm-launcher.mjs", "README.md"]),
+    ).toThrow("LICENSE");
+  });
+
+  test("requires the readme npm renders as the package page", () => {
+    expect(() =>
+      assertNpmPackContents(["package.json", "dist/npm-launcher.mjs", "LICENSE"]),
+    ).toThrow("README.md");
   });
 });
 
@@ -111,6 +117,7 @@ describe("verifyNpmPackDryRun", () => {
     const stdout = `
 npm notice Tarball Contents
 npm notice 1.1kB LICENSE
+npm notice 6.0kB README.md
 npm notice 6.5kB dist/npm-launcher.mjs
 npm notice 5.6kB package.json
 npm notice Tarball Details
@@ -124,7 +131,7 @@ npm notice unpacked size: 19.4 kB
 describe("assertNpmPublishManifest", () => {
   const minimalManifest = {
     bin: { kunai: "dist/npm-launcher.mjs" },
-    files: ["dist/npm-launcher.mjs", "LICENSE"],
+    files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
     engines: { node: ">=18.17" },
     license: "MIT",
     publishConfig: { access: "public", provenance: true },

@@ -52,12 +52,13 @@ export function assertNpmPublishManifest(manifest: NpmPublishManifest): void {
     throw new Error("[pkg:check] npm publish manifest must use dist/npm-launcher.mjs as its bin.");
   }
   if (
-    manifest.files?.length !== 2 ||
+    manifest.files?.length !== 3 ||
     manifest.files[0] !== "dist/npm-launcher.mjs" ||
-    manifest.files[1] !== "LICENSE"
+    manifest.files[1] !== "LICENSE" ||
+    manifest.files[2] !== "README.md"
   ) {
     throw new Error(
-      "[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs and LICENSE.",
+      "[pkg:check] npm publish manifest must include only dist/npm-launcher.mjs, LICENSE, and README.md.",
     );
   }
   if (manifest.license !== "MIT") {

@@ -306,7 +306,7 @@ describe("release:pack script contract", () => {
       ...source,
       type: "module",
       bin: { kunai: "dist/npm-launcher.mjs" },
-      files: ["dist/npm-launcher.mjs", "LICENSE"],
+      files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
       engines: { node: ">=18.17" },
       optionalDependencies,
     });
