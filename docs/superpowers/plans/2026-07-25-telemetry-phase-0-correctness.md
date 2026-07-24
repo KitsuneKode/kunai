@@ -19,6 +19,103 @@
 - Before finishing: `bun run typecheck`, `bun run lint`, `bun run fmt`.
 - Spec of record: `docs/superpowers/specs/2026-07-25-telemetry-privacy-and-observability-design.md` §3.3, §4, §7, §13 (Phase 0).
 
+## Executor Protocol
+
+Read this section fully before Task 1. It overrides your own judgement wherever they disagree.
+
+### Working directory
+
+`cd` persists between tool calls. Never assume where you are. **Every** bash command
+you run must begin by returning to a known location:
+
+```bash
+cd "$(git rev-parse --show-toplevel)" && <your command>
+```
+
+Where a task says `cd apps/telemetry-ingest && bun test ...`, run this instead:
+
+```bash
+cd "$(git rev-parse --show-toplevel)/apps/telemetry-ingest" && bun test <path>
+```
+
+### The red phase is mandatory
+
+Every task is Write test → **Run it and watch it fail** → Implement → Run it and watch
+it pass → Commit. Step 2 is not a formality. A test that passes before you write the
+implementation is a broken test, and you must fix the test before continuing.
+
+When Step 2 says `Expected: FAIL with <reason>`, the failure you observe must match
+that reason. If it fails for a different reason — a typo, a bad import path, a syntax
+error — fix that first and re-run until the failure is the expected one.
+
+### Never report a step complete without running it
+
+Do not tick a checkbox based on what you believe the outcome would be. Tick it only
+after you have run the command and read its output. If you did not run it, it is not
+done. Paste the relevant output line in your task report.
+
+### Do not repair collateral damage
+
+These changes are deliberately tightening validation. If a **pre-existing** test fails
+after your change, that is a signal, not a chore:
+
+- **STOP immediately.** Do not edit the failing test to make it pass.
+- Report which test failed, its file and line, and the assertion message.
+- Wait for review.
+
+The one exception: `bun run typecheck` failing because some file builds a
+`KitsuneConfig` object literal without spreading `DEFAULT_CONFIG` is expected in
+Task 4. Add `telemetryRetryAfter: 0` to that literal and continue. This exception
+applies to typecheck errors only, never to failing tests.
+
+### Write exactly what the plan says
+
+The plan contains complete, final code. Do not improve it, rename anything, add error
+handling, add logging, add comments beyond those shown, reorder functions, or
+"modernize" adjacent lines. If code in the plan looks wrong to you, **stop and report
+it** rather than silently correcting it. Your judgement about this codebase is worse
+than the plan's; the plan was written with the files open.
+
+Do not run `bun run fmt` until Task 6. It rewrites files repo-wide and will pollute
+your diffs.
+
+### Hard prohibitions
+
+Violating any of these fails the task:
+
+- Do not modify `TELEMETRY_PAYLOAD_KEYS` in `apps/telemetry-ingest/src/ingest.ts`. Its
+  value must remain exactly `["arch", "installId", "os", "ts", "version"]`.
+- Do not add any config field other than `telemetryRetryAfter`.
+- Do not add a retry loop, `setTimeout` backoff, or sleep to `TelemetryService`. The
+  retry mechanism is a persisted marker read on the next process launch. This is
+  deliberate and is the entire point of Task 5.
+- Do not make telemetry failures visible: no `console.*`, no logger call, no thrown
+  error escaping `TelemetryService`.
+- Do not touch any file not listed in the task's **Files** block.
+- Do not use `npm`, `npx`, `node`, `yarn`, or `pnpm`. This repo is Bun-only.
+- Do not run bare `bun test` from the repo root. Per-file runs happen inside the owning
+  app directory; full-suite runs use `bun run test` from the root.
+
+### Commit discipline
+
+One commit per task, using the exact message given in that task's final step. Stage
+only the files listed in that task's **Files** block — never `git add -A` before
+Task 6. A pre-commit hook runs `oxfmt` on staged files and may reformat them; that is
+expected and its output is not an error.
+
+### Reporting back
+
+At the end of every task, report:
+
+1. Task number and name.
+2. The Step 2 failure message you observed.
+3. The Step 4 pass output, including the test count.
+4. The commit SHA from `git log --oneline -1`.
+5. Anything that did not match the plan, however small.
+
+If you are blocked, stop and report. Never improvise a workaround, and never skip
+ahead to a later task.
+
 ## File Structure
 
 | File                                                              | Responsibility                                                       | Change                        |
