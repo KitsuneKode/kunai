@@ -186,6 +186,9 @@ describe("telemetry payload contract", () => {
       fetchImpl,
       now: () => now,
       platform: { os: "linux", arch: "x64" },
+      // Hermetic: the send path is hard-gated on ambient DO_NOT_TRACK/CI, so a
+      // real CI runner would otherwise suppress the ping under test.
+      env: {},
     });
 
     await service.maybePing();
@@ -273,6 +276,7 @@ describe("telemetry cadence", () => {
       fetchImpl,
       now: () => t0,
       platform: { os: "linux", arch: "x64" },
+      env: {},
     });
 
     await service.maybePing();
@@ -287,6 +291,7 @@ describe("telemetry cadence", () => {
       fetchImpl,
       now: () => t0 + 12 * 60 * 60 * 1000,
       platform: { os: "linux", arch: "x64" },
+      env: {},
     });
     await laterSameDay.maybePing();
     expect(calls).toHaveLength(1);
@@ -298,6 +303,7 @@ describe("telemetry cadence", () => {
       fetchImpl,
       now: () => t0 + 24 * 60 * 60 * 1000,
       platform: { os: "linux", arch: "x64" },
+      env: {},
     });
     await nextDay.maybePing();
     expect(calls).toHaveLength(2);
