@@ -5,6 +5,7 @@ import {
   createTraceStep,
   runProviderCycle,
   type CoreProviderModule,
+  type ProviderCycleCandidateContext,
 } from "@kunai/core";
 import type {
   CachePolicy,
@@ -145,8 +146,8 @@ export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
  *  runtime fallback now always uses VIDKING_PHASE_A_SERVERS. */
 const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 
-export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 90_000;
-const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 95_000;
+export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 25_000;
+const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 45_000;
 const WINGS_SEED_FETCH_TIMEOUT_MS = 8_000;
 const WINGS_SOURCE_FETCH_TIMEOUT_MS = 15_000;
 /** Normalize audio language codes to ISO 639-1. Delegates to the shared language
@@ -356,9 +357,9 @@ export async function resolveVideasyDirect(
     preferredFlavorIds.length === 0 &&
     !resolvedOptions?.serverEndpoint &&
     !resolvedOptions?.customReferer;
-  let activeServers: VidkingServerEndpoint[] = (
-    phaseAOnly ? [...VIDKING_PHASE_A_SERVERS] : [...VIDKING_PHASE_A_SERVERS]
-  ).filter((s) => createVideasyEndpointHealth(context).shouldTry(s));
+  let activeServers: VidkingServerEndpoint[] = [...VIDKING_PHASE_A_SERVERS].filter((s) =>
+    createVideasyEndpointHealth(context).shouldTry(s),
+  );
   const exhaustiveFlavorIds =
     exhaustiveRefresh && !resolvedOptions?.serverEndpoint
       ? listVidkingFlavors()
@@ -491,7 +492,10 @@ export async function resolveVideasyDirect(
     preferredSourceId: input.preferredSourceId,
   });
 
-  const resolveVidkingCycleCandidate = async (candidate: ProviderCycleCandidate) => {
+  const resolveVidkingCycleCandidate = async (
+    candidate: ProviderCycleCandidate,
+    cycleContext: ProviderCycleCandidateContext,
+  ) => {
     const metadata = parseVidkingCycleCandidateMetadata(candidate);
     const flavorOptions = metadata.flavorId
       ? (resolveFlavorEngineOptions(metadata.flavorId) ?? {})
@@ -515,6 +519,7 @@ export async function resolveVideasyDirect(
       customReferer: metadata.customReferer,
       engineOptions: candidateOptions,
       clientProfile,
+      candidateSignal: cycleContext.signal,
     });
     if (!result) {
       const candidateFailures = failures.slice(failureStartIndex);
@@ -1125,6 +1130,13 @@ function createVideasyFetchSignal(
   return abortSignal.any ? abortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : signal;
 }
 
+/** N-way signal combine (raced seed hosts); falls back to the first signal without AbortSignal.any. */
+function combineVideasyAbortSignals(signals: readonly AbortSignal[]): AbortSignal {
+  const abortSignal = AbortSignal as AbortSignalConstructorWithAny;
+  if (abortSignal.any) return abortSignal.any(signals);
+  return signals.find((signal) => signal.aborted) ?? signals[0] ?? AbortSignal.abort();
+}
+
 function isVideasyTimeoutError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.name === "TimeoutError" || error.name === "AbortError") {
@@ -1236,6 +1248,7 @@ async function probeSelectedVidkingPayloadStream({
   engineOptions,
   events,
   context,
+  signal,
 }: {
   readonly decoded: VidkingPayload;
   readonly input: ProviderResolveInput;
@@ -1247,6 +1260,7 @@ async function probeSelectedVidkingPayloadStream({
   readonly engineOptions?: VidKingEngineOptions;
   readonly events: ProviderTraceEvent[];
   readonly context: ProviderRuntimeContext;
+  readonly signal?: AbortSignal;
 }): Promise<VidkingStreamProbeOutcome> {
   const presentation = resolveVidkingPresentation(server, engineOptions ?? {});
   const streams = normalizeStreamCandidates({
@@ -1287,7 +1301,7 @@ async function probeSelectedVidkingPayloadStream({
     headers: selected.headers,
     fetchImpl: context.fetch?.fetch.bind(context.fetch),
     timeoutMs: STREAM_HEALTH_DEFAULTS.vidkingResolveGateTimeoutMs,
-    signal: context.signal,
+    signal: signal ?? context.signal,
   });
   const probeDurationMs = Date.now() - probeStartedAt;
 
@@ -1331,6 +1345,9 @@ type WingsSeedTransport = {
 
 const wingsSeedCache = new Map<string, { seed: string; expiresAt: number }>();
 const wingsPreferredHostCache = new Map<number, { apiBase: string; expiresAt: number }>();
+/** Hosts that recently failed a seed request get skipped for a while (host-level). */
+const wingsHostFailureCache = new Map<string, number>();
+const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
 
 function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
   return `${apiBase}\u001f${mediaId}`;
@@ -1339,8 +1356,10 @@ function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
 async function fetchWingsdatabaseSeed(
   mediaId: number,
   context: ProviderRuntimeContext,
+  signal?: AbortSignal,
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
+  const effectiveSignal = signal ?? context.signal;
   const seedHeaders = {
     accept: "*/*",
     "user-agent": USER_AGENT,
@@ -1348,9 +1367,9 @@ async function fetchWingsdatabaseSeed(
     referer: "https://www.cineby.at/",
   } as const;
 
+  const now = Date.now();
   const preferred = wingsPreferredHostCache.get(mediaId);
-  const preferredBase =
-    preferred && Date.now() < preferred.expiresAt ? preferred.apiBase : undefined;
+  const preferredBase = preferred && now < preferred.expiresAt ? preferred.apiBase : undefined;
   const bases = preferredBase
     ? [
         preferredBase,
@@ -1358,33 +1377,65 @@ async function fetchWingsdatabaseSeed(
       ]
     : [WINGS_API_BASE, WINGS_API_FALLBACK_BASE];
 
-  // Prefer the live player host, but make every fallback an indivisible host+seed pair.
+  // Prefer cached seeds (order: last working host, primary, fallback); every
+  // fallback stays an indivisible host+seed pair.
+  const uncached: string[] = [];
   for (const apiBase of bases) {
-    const cacheKey = wingsSeedCacheKey(apiBase, mediaId);
-    const cached = wingsSeedCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) {
+    const cached = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));
+    if (cached && now < cached.expiresAt) {
       return { apiBase, seed: cached.seed };
     }
-    try {
-      const response = await requester(`${apiBase}/seed?mediaId=${mediaId}`, {
-        signal: createVideasyFetchSignal(context.signal, WINGS_SEED_FETCH_TIMEOUT_MS),
-        headers: seedHeaders,
-      });
-      if (!response.ok) continue;
-
-      const body = (await response.json()) as { seed?: string; ttlMs?: number };
-      if (!body.seed) continue;
-
-      const ttlMs = body.ttlMs ?? 30_000;
-      const expiresAt = Date.now() + ttlMs;
-      wingsSeedCache.set(cacheKey, { seed: body.seed, expiresAt });
-      wingsPreferredHostCache.set(mediaId, { apiBase, expiresAt });
-      return { apiBase, seed: body.seed };
-    } catch {
-      // try next host
-    }
+    uncached.push(apiBase);
   }
-  return undefined;
+
+  // Skip recently-failed hosts unless every host is in the penalty box.
+  const healthy = uncached.filter((base) => (wingsHostFailureCache.get(base) ?? 0) <= now);
+  const candidates = healthy.length > 0 ? healthy : uncached;
+  if (candidates.length === 0) return undefined;
+
+  // Race the remaining hosts — a dead primary previously cost a full serial
+  // timeout before the fallback was even contacted.
+  const controllers = candidates.map(() => new AbortController());
+  let won = false;
+  try {
+    const winner = await Promise.any(
+      candidates.map(async (apiBase, index) => {
+        try {
+          const response = await requester(`${apiBase}/seed?mediaId=${mediaId}`, {
+            signal: combineVideasyAbortSignals(
+              [
+                effectiveSignal,
+                controllers[index]?.signal,
+                AbortSignal.timeout(WINGS_SEED_FETCH_TIMEOUT_MS),
+              ].filter((candidate): candidate is AbortSignal => Boolean(candidate)),
+            ),
+            headers: seedHeaders,
+          });
+          if (!response.ok) throw new Error(`seed HTTP ${response.status}`);
+          const body = (await response.json()) as { seed?: string; ttlMs?: number };
+          if (!body.seed) throw new Error("seed payload missing seed");
+          return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
+        } catch (error) {
+          if (!won) wingsHostFailureCache.set(apiBase, Date.now() + WINGS_HOST_FAILURE_PENALTY_MS);
+          throw error;
+        }
+      }),
+    ).catch(() => undefined);
+    if (!winner) return undefined;
+
+    const expiresAt = Date.now() + winner.ttlMs;
+    wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), {
+      seed: winner.seed,
+      expiresAt,
+    });
+    wingsPreferredHostCache.set(mediaId, { apiBase: winner.apiBase, expiresAt });
+    wingsHostFailureCache.delete(winner.apiBase);
+    return { apiBase: winner.apiBase, seed: winner.seed };
+  } finally {
+    // Stop the losing seed requests; Promise.any already consumed their outcomes.
+    won = true;
+    for (const controller of controllers) controller.abort();
+  }
 }
 
 /** Decrypt a wingsdatabase "sources-with-title" response (enc=2) into a VidkingPayload. */
@@ -1404,7 +1455,7 @@ async function decodeWingsdatabaseSourcesPayload(
 
 /**
  * Probe a single VidKing server with all query variants and retries.
- * Runs sequentially internally but multiple servers are fired in parallel.
+ * Runs sequentially internally; the provider cycle probes servers one at a time.
  */
 async function tryVidkingServer(opts: {
   readonly server: VidkingServerEndpoint;
@@ -1418,6 +1469,8 @@ async function tryVidkingServer(opts: {
   readonly customReferer?: string;
   readonly engineOptions?: VidKingEngineOptions;
   readonly clientProfile?: VideasyClientProfile;
+  /** Per-candidate abort from the cycle engine (timeout + parent cancel). */
+  readonly candidateSignal?: AbortSignal;
 }): Promise<ProviderResolveResult | null> {
   const {
     server,
@@ -1431,6 +1484,7 @@ async function tryVidkingServer(opts: {
     customReferer,
     engineOptions = {},
   } = opts;
+  const candidateSignal = opts.candidateSignal ?? context.signal;
   const presentation = resolveVidkingPresentation(server, engineOptions);
   const sourceId = customReferer
     ? `${vidkingSourceIdForPresentation(server, engineOptions)}:embed-ref`
@@ -1461,7 +1515,7 @@ async function tryVidkingServer(opts: {
   /* For wingsdatabase, fetch a seed before proceeding. Skip server if seed fails. */
   let wingsTransport: WingsSeedTransport | undefined;
   if (isWings) {
-    wingsTransport = await fetchWingsdatabaseSeed(tmdbId, context);
+    wingsTransport = await fetchWingsdatabaseSeed(tmdbId, context, candidateSignal);
     if (!wingsTransport) {
       emitTraceEvent(events, context, {
         type: "source:failed",
@@ -1508,7 +1562,7 @@ async function tryVidkingServer(opts: {
             server: requestServer,
             query,
             fetchPort: context.fetch,
-            signal: context.signal,
+            signal: candidateSignal,
             customReferer: requestReferer,
             sessionToken,
             appId,
@@ -1601,6 +1655,7 @@ async function tryVidkingServer(opts: {
             engineOptions,
             events,
             context,
+            signal: candidateSignal,
           });
           if (!streamProbe.ok) {
             endpointHealth.recordFailure(server, { class: "transient", titleId });
