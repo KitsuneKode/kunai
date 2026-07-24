@@ -29,11 +29,18 @@ describe("npm pack guard with binaries on disk", () => {
       expect(manifest).toMatchObject({
         license: "MIT",
         publishConfig: { access: "public", provenance: true },
-        files: ["dist/npm-launcher.mjs", "LICENSE"],
+        files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"],
       });
       expect(existsSync(join(NPM_PUBLISH_ROOT, "LICENSE"))).toBe(true);
       expect(readFileSync(join(NPM_PUBLISH_ROOT, "LICENSE"), "utf8")).toBe(
         readFileSync(join(REPO_ROOT, "LICENSE"), "utf8"),
+      );
+
+      // The CLI readme, not the repository one: npm renders this as the package
+      // page, and the root readme is monorepo-shaped and past the pack budget.
+      expect(existsSync(join(NPM_PUBLISH_ROOT, "README.md"))).toBe(true);
+      expect(readFileSync(join(NPM_PUBLISH_ROOT, "README.md"), "utf8")).toBe(
+        readFileSync(join(CLI_ROOT, "README.md"), "utf8"),
       );
 
       await mkdir(join(CLI_ROOT, "dist/bin"), { recursive: true });
