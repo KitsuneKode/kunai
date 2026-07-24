@@ -39,6 +39,12 @@
 
 - 545477f: Ship the npm postinstall registration hook in the published tarball and verify a clean global install, update check, and package-manager uninstall.
 
+### Patch Changes
+
+- Ship the npm package as a minimal Node launcher with exact-version optional
+  platform binaries, and preserve the correct npm or Bun managed-install
+  ownership in the compiled CLI.
+
 ## 0.2.6
 
 ### Patch Changes
