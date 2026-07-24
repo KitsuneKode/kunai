@@ -3,8 +3,6 @@ login_shell = false
 default_profile = "dev"
 
 # Global environment variables applied to all profiles
-[env]
-FORCE_COLOR = "1"
 
 [profiles.dev]
 command = "trmw --profile editor -- bun run dev"
