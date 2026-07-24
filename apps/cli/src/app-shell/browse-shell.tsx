@@ -1843,13 +1843,6 @@ export function BrowseShell<T>({
                         key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
                         option={row.option}
                         selected={selected}
-                        // Gate the row mini-poster on settled navigation the same
-                        // way the companion poster is gated. `enabled={selected}`
-                        // alone dispatched "loading" on every ↑/↓ and, after a
-                        // brief pause mid-burst, spawned chafa — competing with
-                        // stdin and making mixed-direction calendar nav feel
-                        // blocked / late to register.
-                        posterEnabled={selected && !navigating}
                         rowWidth={rowWidth}
                         timeLabel={row.timeLabel}
                         episodeCode={row.episodeCode}
@@ -1864,7 +1857,6 @@ export function BrowseShell<T>({
                         showForYouHeaderOnce={row.showForYouHeaderOnce}
                         isNew={row.isNew}
                         tracked={row.tracked}
-                        posterUrl={row.posterUrl}
                       />
                     );
                   })

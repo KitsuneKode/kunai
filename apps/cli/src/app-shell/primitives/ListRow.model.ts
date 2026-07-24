@@ -16,6 +16,19 @@ export function listRowTitleColumn(title: string, width: number): ListRowColumn 
   return { text: title, width, color: palette.text };
 }
 
+/**
+ * Attention marker between time and title. The glyph carries the meaning, not
+ * the colour — two states separated only by tint are indistinguishable to a
+ * colourblind reader and nearly so at a glance.
+ */
+export function listRowMarkerColumn(
+  marker: string,
+  width: number,
+  color: string = palette.muted,
+): ListRowColumn {
+  return { text: marker, width, color, align: "left" };
+}
+
 export function listRowEpColumn(
   ep: string,
   width = 8,

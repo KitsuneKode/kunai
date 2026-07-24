@@ -1,6 +1,7 @@
 import { palette } from "../shell-theme";
 import {
   listRowEpColumn,
+  listRowMarkerColumn,
   listRowStatusColumn,
   listRowTimeColumn,
   listRowTitleColumn,
@@ -9,6 +10,7 @@ import {
 
 export type CalendarRowLayout = {
   readonly timeWidth: number;
+  readonly markerWidth: number;
   readonly titleWidth: number;
   readonly episodeWidth: number;
   readonly statusWidth: number;
@@ -31,17 +33,19 @@ export type QueueRowLayout = {
   readonly flexColumnIndex: number;
 };
 
-/** Schedule list: fixed time + flex title + episode slot + status. */
+/** Schedule list: fixed time + attention marker + flex title + episode slot + status. */
 export function computeCalendarRowLayout(rowWidth: number): CalendarRowLayout {
   const timeWidth = 7;
   const episodeWidth = 8;
   const statusWidth = Math.min(18, Math.max(12, Math.floor(rowWidth * 0.22)));
   return {
     timeWidth,
+    markerWidth: 2,
     titleWidth: 12,
     episodeWidth,
     statusWidth,
-    flexColumnIndex: 1,
+    // Time and marker both precede the flexing title column.
+    flexColumnIndex: 2,
   };
 }
 
@@ -147,6 +151,8 @@ export function buildListRowLayoutFixtures(): readonly ListRowLayoutFixture[] {
 export function buildCalendarRowColumns(input: {
   readonly timeLabel: string;
   readonly title: string;
+  readonly marker?: string;
+  readonly markerColor?: string;
   readonly episodeCode?: string;
   readonly episodeColor?: string;
   readonly statusText: string;
@@ -157,6 +163,7 @@ export function buildCalendarRowColumns(input: {
   const ep = input.episodeCode?.trim() ?? "";
   return [
     listRowTimeColumn(input.timeLabel, input.layout.timeWidth),
+    listRowMarkerColumn(input.marker ?? "", input.layout.markerWidth, input.markerColor),
     listRowTitleColumn(input.title, input.layout.titleWidth),
     listRowEpColumn(ep, input.layout.episodeWidth, input.episodeColor),
     listRowStatusColumn(

@@ -13,14 +13,13 @@ import {
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
-import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { palette } from "./shell-theme";
 
-/** Width reserved at the start of a schedule row for the mini-poster + new dot. */
-const CALENDAR_ROW_LEAD_WIDTH = 7;
+/** Schedule rows start at the time column; no lead gutter is reserved. */
+const CALENDAR_ROW_LEAD_WIDTH = 0;
 
 export function CalendarScheduleStatus({
   model,
@@ -138,11 +137,6 @@ function CalendarScheduleRowInner<T>({
   weekTag,
   isNew,
   tracked,
-  posterUrl,
-  // Default matches `selected` for callers that do not gate on navigation.
-  // Browse calendar passes `selected && !navigating` so rapid ↑/↓ never kicks
-  // the mini-poster pipeline (loading dispatch + chafa) on intermediate rows.
-  posterEnabled = selected,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -160,9 +154,6 @@ function CalendarScheduleRowInner<T>({
   weekTag?: string | null;
   isNew?: boolean;
   tracked?: boolean;
-  posterUrl?: string;
-  /** When false, keep initials only — used to suppress fetches mid-navigation. */
-  posterEnabled?: boolean;
   showTimeHeader?: boolean;
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
@@ -183,9 +174,17 @@ function CalendarScheduleRowInner<T>({
   // Episode code is secondary context — color must not encode content type.
   const epColor = palette.muted;
 
+  // Distinct glyphs, not just distinct tints: "new for you" and "tracked" used to
+  // share ● and differ only by colour, which is unreadable at a glance and
+  // invisible to a colourblind reader.
+  const marker = isNew ? "●" : tracked ? "★" : "";
+  const markerColor = isNew ? palette.accent : palette.ok;
+
   const columns = buildCalendarRowColumns({
     timeLabel,
     title: option.label,
+    marker,
+    markerColor,
     episodeCode: ep,
     episodeColor: epColor,
     statusText,
@@ -203,12 +202,6 @@ function CalendarScheduleRowInner<T>({
         <SectionGroup label={dayHeaderLabel} tag={weekTag ?? undefined} marginTop={1} />
       ) : null}
       <Box flexDirection="row">
-        <Box width={5}>
-          <MiniPosterTile url={posterUrl} title={option.label} enabled={posterEnabled} />
-        </Box>
-        <Text color={isNew ? palette.accent : palette.ok}>
-          {isNew ? "● " : tracked ? "● " : "  "}
-        </Text>
         <Box flexGrow={1}>
           <ListRow
             selected={selected}
