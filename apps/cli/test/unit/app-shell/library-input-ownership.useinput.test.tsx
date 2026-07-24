@@ -5,7 +5,7 @@ import type { Container } from "@/container";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import React, { act } from "react";
 
-import { render } from "../../harness/render-capture";
+import { render, stripAnsi } from "../../harness/render-capture";
 
 type FixtureOptions = {
   readonly updates?: unknown[];
@@ -117,7 +117,9 @@ describe("library input ownership", () => {
     try {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("d");
-      expect(handle.lastFrame()).toContain("Filter: d");
+      // The label and the typed value sit in different styles, so the raw frame
+      // has escape bytes between them whenever colour is on.
+      expect(stripAnsi(handle.lastFrame())).toContain("Filter: d");
       expect(updates).toEqual([]);
     } finally {
       handle.unmount();

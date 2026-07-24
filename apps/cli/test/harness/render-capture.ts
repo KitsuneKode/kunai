@@ -60,6 +60,23 @@ if ((globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONM
 export const CAPTURE_WIDTHS = { narrow: 72, medium: 100, wide: 140 } as const;
 export type CaptureWidth = keyof typeof CAPTURE_WIDTHS;
 
+// Matches CSI sequences (colour, style, cursor). Built from a char code so the
+// escape byte does not sit literally in the source.
+const ANSI_CSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+
+/**
+ * Strip ANSI escapes from a captured frame.
+ *
+ * Assert through this whenever the expected text spans a style boundary.
+ * `"Filter: d"` renders as a dim label followed by a bold value, so the raw
+ * frame carries escape bytes between them and a bare `toContain` only passes
+ * when colour happens to be disabled — green when piped, red under a TTY or
+ * FORCE_COLOR.
+ */
+export function stripAnsi(frame: string): string {
+  return frame.replace(ANSI_CSI, "");
+}
+
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
 const DEFAULT_ROWS = 45; // ≥ blocked floor (20); tall enough for full surfaces
 
