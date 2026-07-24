@@ -6,7 +6,7 @@ import type {
 } from "@kunai/storage";
 
 import type { ListService } from "../lists/ListService";
-import type { MediaItemIdentity } from "../media/media-item-identity";
+import { getEpisodeIdentityKey, type MediaItemIdentity } from "../media/media-item-identity";
 import {
   queuePlaybackIntentFromEntry,
   type QueuePlaybackFailureContext,
@@ -208,6 +208,17 @@ export class QueueService {
 
   getUnplayed(): QueueEntry[] {
     return this.repo.getUnplayed(this.sessionId);
+  }
+
+  /**
+   * Episode-identity keys for everything still waiting to play, for surfaces
+   * that need to answer "is this already queued?" without loading the queue.
+   *
+   * Unplayed only: a finished entry is history, not a queue member, and badging
+   * it would tell the user they cannot re-queue something they can.
+   */
+  getQueuedEpisodeKeys(): Set<string> {
+    return new Set(this.getUnplayed().map(getEpisodeIdentityKey));
   }
 
   listRecoverableSessions(): QueueSessionRecord[] {

@@ -6,6 +6,7 @@ import { useRailPoster } from "./hooks/use-rail-poster";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
 import {
+  listRowMarkerColumn,
   listRowStatusColumn,
   listRowTimeColumn,
   listRowTitleColumn,
@@ -38,6 +39,10 @@ function rowColumns(row: NotificationRow): readonly ListRowColumn[] {
       dim: !row.unread,
     },
     listRowTitleColumn(row.title, 12),
+    // Queue membership, so a row is not queued twice by someone who cannot tell
+    // from the inbox that it already is. The rail spells it out ("Already
+    // queued"); on the row it only has to be distinguishable at a glance.
+    listRowMarkerColumn(row.queued ? "≡" : "", 2, palette.ok),
     listRowStatusColumn(
       row.primaryAction.label,
       16,

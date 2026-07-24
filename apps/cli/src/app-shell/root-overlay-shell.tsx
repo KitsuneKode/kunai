@@ -944,8 +944,19 @@ export function RootOverlayShell({
         : container.notificationService.listAllArchived()
       : [];
   }, [container.notificationService, notificationRevision, notificationsState.tab, overlay.type]);
+  // Invalidated by either signal. A stale set would keep telling the user an
+  // episode is not queued right after they queued it from this very overlay,
+  // and queue mutations do not always round-trip through a notification change.
+  const queuedEpisodeKeys = useMemo(() => {
+    void notificationRevision;
+    void queueTick;
+    return overlay.type === "notifications"
+      ? container.queueService.getQueuedEpisodeKeys()
+      : undefined;
+  }, [container.queueService, notificationRevision, overlay.type, queueTick]);
   const notificationsView = buildNotificationsView({
     records: notificationRecordsAll,
+    queuedEpisodeKeys,
     tab: notificationsState.tab,
     sortMode: notificationsState.sortByTab[notificationsState.tab],
     page: notificationsState.page,

@@ -1,3 +1,4 @@
+import { getEpisodeIdentityKey } from "@/domain/media/media-item-identity";
 import { parseNotificationMediaItem } from "@/services/notifications/NotificationActionRouter";
 import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
@@ -44,6 +45,8 @@ export type NotificationRow = {
   readonly body: string;
   readonly unread: boolean;
   readonly actionable: boolean;
+  /** This notice's episode is already waiting in the queue. */
+  readonly queued: boolean;
   readonly primaryAction: NotificationActionPresentation;
   readonly posterUrl?: string;
   readonly relativeTime: string;
@@ -88,6 +91,12 @@ export type BuildNotificationsViewInput = {
   readonly now: string;
   /** Optional poster lookup by titleId (e.g. from watch history). */
   readonly resolvePosterUrl?: (titleId: string) => string | undefined;
+  /**
+   * Episode-identity keys currently waiting in the queue
+   * (`QueueService.getQueuedEpisodeKeys`). Absent means "unknown", which shows
+   * no badge — better than claiming nothing is queued.
+   */
+  readonly queuedEpisodeKeys?: ReadonlySet<string>;
 };
 
 const TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w342";
@@ -201,10 +210,21 @@ function relativeTime(updatedAt: string, now: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/** True when this notice points at an episode already waiting in the queue. */
+function isRecordQueued(
+  record: NotificationRecord,
+  queuedEpisodeKeys: ReadonlySet<string> | undefined,
+): boolean {
+  if (!queuedEpisodeKeys || queuedEpisodeKeys.size === 0) return false;
+  const media = parseNotificationMediaItem(record);
+  return media ? queuedEpisodeKeys.has(getEpisodeIdentityKey(media)) : false;
+}
+
 function toRow(
   record: NotificationRecord,
   now: string,
   resolvePosterUrl?: (titleId: string) => string | undefined,
+  queuedEpisodeKeys?: ReadonlySet<string>,
 ): NotificationRow {
   const primaryAction = getNotificationActionPresentation(getNotificationPrimaryAction(record));
   return {
@@ -217,6 +237,7 @@ function toRow(
     body: record.body,
     unread: !record.readAt,
     actionable: primaryAction.id !== "dismiss",
+    queued: isRecordQueued(record, queuedEpisodeKeys),
     primaryAction,
     posterUrl: posterUrlOf(record, resolvePosterUrl),
     relativeTime: relativeTime(record.updatedAt, now),
@@ -262,6 +283,11 @@ function toRail(
       { label: "Kind", value: row.kindLabel },
       { label: "Status", value: row.unread ? "Unread" : "Read" },
       { label: "When", value: row.relativeTime },
+      // Stated before the queue actions below it, so "Queue at end" is read as a
+      // duplicate rather than as the only way to act on the notice.
+      ...(row.queued
+        ? [{ label: "Queue", value: "Already queued", tone: "success" as const }]
+        : []),
       ...mediaFacts(record),
     ],
   };
@@ -319,7 +345,9 @@ export function buildNotificationsView(input: BuildNotificationsViewInput): Noti
 
   const start = page * pageSize;
   const pageRecords = orderedRecords.slice(start, start + pageSize);
-  const rows = pageRecords.map((record) => toRow(record, input.now, input.resolvePosterUrl));
+  const rows = pageRecords.map((record) =>
+    toRow(record, input.now, input.resolvePosterUrl, input.queuedEpisodeKeys),
+  );
 
   const selectedIndex =
     selectedGlobalIndex >= 0 ? selectedGlobalIndex - start : rows.length > 0 ? 0 : -1;

@@ -8,6 +8,7 @@ import {
   NOTIFICATION_SORT_MODES_BY_TAB,
   type BuildNotificationsViewInput,
 } from "@/app-shell/notifications-view";
+import { getEpisodeIdentityKey } from "@/domain/media/media-item-identity";
 import type { NotificationRecord } from "@kunai/storage";
 
 const rec = (over: Partial<NotificationRecord>): NotificationRecord => ({
@@ -36,6 +37,73 @@ const view = (over: Partial<BuildNotificationsViewInput>) =>
     now: "2026-07-16T12:00:00.000Z",
     ...over,
   });
+
+describe("queued badge", () => {
+  const queuedRecord = rec({
+    dedupKey: "k-queued",
+    itemJson: JSON.stringify({
+      titleId: "tt-frieren",
+      title: "Frieren",
+      mediaKind: "series",
+      season: 1,
+      episode: 13,
+    }),
+  });
+  // Matches QueueService.getQueuedEpisodeKeys() output for the same episode.
+  const queuedKey = "series:tt-frieren:1:13";
+
+  it("uses the same key the queue side builds", () => {
+    // Both sides call getEpisodeIdentityKey, so they cannot drift — but pin the
+    // literal too, so a format change is a deliberate decision rather than a
+    // silently-still-passing refactor.
+    expect(
+      getEpisodeIdentityKey({
+        mediaKind: "series",
+        titleId: "tt-frieren",
+        season: 1,
+        episode: 13,
+      }),
+    ).toBe(queuedKey);
+  });
+
+  it("marks a row whose episode is already waiting in the queue", () => {
+    const v = view({
+      records: [queuedRecord],
+      queuedEpisodeKeys: new Set([queuedKey]),
+    });
+    expect(v.rows[0]?.queued).toBe(true);
+    expect(v.rail?.preview.facts).toContainEqual({
+      label: "Queue",
+      value: "Already queued",
+      tone: "success",
+    });
+  });
+
+  it("leaves a different episode of the same title unmarked", () => {
+    // The badge must be per-episode, not per-title: queueing E13 says nothing
+    // about E14, and marking it would hide a real action.
+    const v = view({
+      records: [queuedRecord],
+      queuedEpisodeKeys: new Set(["series:tt-frieren:1:14"]),
+    });
+    expect(v.rows[0]?.queued).toBe(false);
+  });
+
+  it("shows no badge when queue membership was not supplied", () => {
+    // Absent means unknown. Claiming "not queued" would be a guess.
+    const v = view({ records: [queuedRecord] });
+    expect(v.rows[0]?.queued).toBe(false);
+    expect(v.rail?.preview.facts.some((fact) => fact.label === "Queue")).toBe(false);
+  });
+
+  it("never marks a notice that carries no media identity", () => {
+    const v = view({
+      records: [rec({ dedupKey: "k-bare", kind: "app-update", itemJson: undefined })],
+      queuedEpisodeKeys: new Set([queuedKey]),
+    });
+    expect(v.rows[0]?.queued).toBe(false);
+  });
+});
 
 describe("notifications sort modes", () => {
   it("declares per-tab modes and defaults", () => {
