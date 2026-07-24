@@ -12,7 +12,7 @@ import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 export type ListOption<T> = {
   value: T;
@@ -41,6 +41,16 @@ function ChecklistShell<T>({
   const [confirmed, setConfirmed] = useState(false);
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
   const [selectedSet, setSelectedSet] = useState<Set<T>>(new Set());
+
+  // The confirm flash defers onSubmit so the checkmark is visible. If the shell
+  // unmounts inside that window (Ctrl-C, route change), the pending callback
+  // must not fire into a torn-down tree.
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    };
+  }, []);
 
   const viewport = useDebouncedViewportPolicy("picker");
   const normalizedFilter = filterQuery.trim().toLowerCase();
@@ -127,7 +137,7 @@ function ChecklistShell<T>({
     if (key.return) {
       if (!confirmed) {
         setConfirmed(true);
-        setTimeout(() => {
+        confirmTimer.current = setTimeout(() => {
           if (selectedSet.size > 0) {
             onSubmit(Array.from(selectedSet));
           } else {
