@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 /**
  * install.ps1 is a Windows script: it resolves its default directories from
@@ -16,6 +16,33 @@ export function windowsShellEnvDefaults(root: string): NodeJS.ProcessEnv {
     APPDATA: join(root, "appdata"),
     USERPROFILE: join(root, "userprofile"),
   };
+}
+
+/**
+ * Return `env` with `dirs` prepended to the command search path.
+ *
+ * Windows environment variables are case-insensitive, so writing `Path` there
+ * updates the real `PATH`. POSIX ones are not: `Path` and `PATH` are separate
+ * variables, so setting the former while clearing the latter leaves the child
+ * with no search path at all and every shim silently unreachable. Pick the key
+ * the host actually reads, and join with the host's delimiter rather than a
+ * hardcoded semicolon.
+ */
+export function withCommandPath(
+  env: NodeJS.ProcessEnv,
+  ...dirs: readonly string[]
+): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = { ...env };
+  const existing = Object.entries(next)
+    .filter(([key]) => key.toLowerCase() === "path")
+    .map(([, value]) => value)
+    .find((value) => value !== undefined);
+  for (const key of Object.keys(next)) {
+    if (key.toLowerCase() === "path") delete next[key];
+  }
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  next[pathKey] = [...dirs, ...(existing ? [existing] : [])].join(delimiter);
+  return next;
 }
 
 export function createInstallerSandbox(name: string) {

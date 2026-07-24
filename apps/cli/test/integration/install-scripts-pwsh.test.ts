@@ -9,6 +9,7 @@ import {
   createInstallerSandbox,
   installCommandShim,
   windowsShellEnvDefaults,
+  withCommandPath,
   withReleaseFixture,
 } from "./helpers/installer-script-harness";
 
@@ -530,13 +531,7 @@ describeWindows("install.ps1 PATH diagnostics", () => {
     mkdirSync(npmBinDir);
     installCommandShim(npmBinDir, "kunai");
 
-    const env: NodeJS.ProcessEnv = { ...sandbox.env };
-    const inheritedPath =
-      Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
-    for (const key of Object.keys(env)) {
-      if (key.toLowerCase() === "path") delete env[key];
-    }
-    env.Path = `${npmBinDir};${inheritedPath}`;
+    const env = withCommandPath(sandbox.env, npmBinDir);
 
     try {
       await withReleaseFixture(
@@ -618,13 +613,7 @@ describePwsh("install.ps1 package activeVersion", () => {
         windows: "@echo off\r\necho kunai 1.0.0 (stale-path-winner)\r\n",
       });
 
-      const env: NodeJS.ProcessEnv = { ...sandbox.env };
-      const inheritedPath =
-        Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
-      for (const key of Object.keys(env)) {
-        if (key.toLowerCase() === "path") delete env[key];
-      }
-      env.Path = `${shimDir}${delimiter}${inheritedPath}`;
+      const env = withCommandPath(sandbox.env, shimDir);
       env.KUNAI_NPM_ROOT = npmRoot;
       env.KUNAI_NPM_PREFIX = npmPrefix;
 
@@ -694,19 +683,21 @@ describePwsh("install.ps1 package activeVersion", () => {
           });
         }
 
-        const env: NodeJS.ProcessEnv = {
-          ...sandbox.env,
-          KUNAI_ARGV_LOG: argvLog,
-          KUNAI_NPM_ROOT: npmRoot,
-          KUNAI_NPM_PREFIX: npmPrefix,
-          BUN_INSTALL: bunRoot,
-        };
-        const inheritedPath =
-          Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
-        for (const key of Object.keys(env)) {
-          if (key.toLowerCase() === "path") delete env[key];
-        }
-        env.Path = `${shimDir}${delimiter}${inheritedPath}`;
+        const env = withCommandPath(
+          {
+            ...sandbox.env,
+            KUNAI_ARGV_LOG: argvLog,
+            KUNAI_NPM_ROOT: npmRoot,
+            KUNAI_NPM_PREFIX: npmPrefix,
+            BUN_INSTALL: bunRoot,
+            // BUN_INSTALL_BIN outranks BUN_INSTALL by design (matching
+            // install.sh and run-install.ts), so an ambient value — the Bun
+            // Docker images set it to /usr/local/bin — would silently win over
+            // this sandbox. Clear it so the precedence chain is what we assert.
+            BUN_INSTALL_BIN: undefined,
+          },
+          shimDir,
+        );
 
         const result = runInstallPs1(["-Method", method, "-Yes", "-Version", "4.5.6"], env);
         expect(result.status).toBe(0);
