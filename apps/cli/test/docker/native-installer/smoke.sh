@@ -153,7 +153,10 @@ install_pinned() {
 }
 
 seed_user_data() {
-  mkdir -p "$KUNAI_DATA_DIR/downloads" "$HOME/external-downloads"
+  # Create every directory written below, including the config dir. Most
+  # scenarios seed after an install has already made it, but stale-lock-recovery
+  # seeds first — the helper must not depend on that ordering.
+  mkdir -p "$KUNAI_CONFIG_DIR" "$KUNAI_DATA_DIR/downloads" "$HOME/external-downloads"
   printf '{"theme":"sakura"}\n' >"$KUNAI_CONFIG_DIR/config.json"
   printf 'history-db\n' >"$KUNAI_DATA_DIR/kunai-data.sqlite"
   printf 'offline\n' >"$KUNAI_DATA_DIR/downloads/ep1.mkv"
