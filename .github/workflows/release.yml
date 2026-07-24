@@ -320,12 +320,22 @@ jobs:
           - id: linux-x64
             runner: ubuntu-latest
             binary: kunai-linux-x64
+            musl_binary: kunai-linux-x64-musl
+          - id: linux-arm64
+            runner: ubuntu-24.04-arm
+            binary: kunai-linux-arm64
+            musl_binary: kunai-linux-arm64-musl
           - id: windows-x64
             runner: windows-latest
             binary: kunai-windows-x64.exe
           - id: darwin-x64
             runner: macos-13
             binary: kunai-darwin-x64
+          # Apple Silicon is the majority Mac target; macos-13 is Intel-only, so
+          # without this entry darwin-arm64 would ship on a checksum alone.
+          - id: darwin-arm64
+            runner: macos-14
+            binary: kunai-darwin-arm64
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -366,24 +376,24 @@ jobs:
           ".release-download/${KUNAI_NATIVE_BINARY}" --version 2>&1 | tee "artifacts/native-${{ matrix.id }}.log"
           ".release-download/${KUNAI_NATIVE_BINARY}" --help 2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
 
+      # Alpine on the host's own architecture, so the arm64 runner exercises the
+      # arm64 musl build rather than emulating x64.
       - name: Execute preserved musl candidate in Alpine
-        if: matrix.id == 'linux-x64'
+        if: matrix.musl_binary != ''
         shell: bash
+        env:
+          KUNAI_MUSL_BINARY: ${{ matrix.musl_binary }}
         run: |
           set -euo pipefail
-          chmod +x .release-download/kunai-linux-x64-musl
-          docker run --rm \
-            --volume "$PWD/.release-download:/candidate:ro" \
-            --env HOME=/tmp/kunai-home \
-            alpine:3.20 \
-            /candidate/kunai-linux-x64-musl --version \
-            2>&1 | tee -a artifacts/native-linux-x64.log
-          docker run --rm \
-            --volume "$PWD/.release-download:/candidate:ro" \
-            --env HOME=/tmp/kunai-home \
-            alpine:3.20 \
-            /candidate/kunai-linux-x64-musl --help \
-            2>&1 | tee -a artifacts/native-linux-x64.log
+          chmod +x ".release-download/${KUNAI_MUSL_BINARY}"
+          for command in --version --help; do
+            docker run --rm \
+              --volume "$PWD/.release-download:/candidate:ro" \
+              --env HOME=/tmp/kunai-home \
+              alpine:3.20 \
+              "/candidate/${KUNAI_MUSL_BINARY}" "${command}" \
+              2>&1 | tee -a "artifacts/native-${{ matrix.id }}.log"
+          done
 
       - name: Verify checksums and execute Windows candidate
         if: runner.os == 'Windows'
@@ -452,7 +462,8 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.candidate.outputs.version }}"
           ARTIFACT_NAME="nativePlatforms-${VERSION}-${{ github.sha }}"
-          test "$(find artifacts/native-logs -type f -name 'native-*.log' | wc -l)" -eq 3
+          # One log per native-smoke matrix entry; keep in step with that matrix.
+          test "$(find artifacts/native-logs -type f -name 'native-*.log' | wc -l)" -eq 5
           find artifacts/native-logs -type f -name 'native-*.log' -print0 \
             | sort -z \
             | xargs -0 sha256sum \
@@ -888,6 +899,42 @@ jobs:
             fi
             echo "ok ${PKG}@${RESOLVED}"
           done
+
+      # `npm view` above proves each name resolves; it does not prove the install
+      # graph works. npm treats an unresolvable optionalDependency as success, so
+      # the failure a user actually feels — "installed fine, CLI has no binary" —
+      # is invisible until someone runs it. Install exactly as a user would, from
+      # the public registry, with no repo artifacts on PATH and no Bun involved.
+      # This runs before tagging so a broken graph stops the release here.
+      - name: Smoke the published package from the public registry
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.confirmation.outputs.version }}"
+          SMOKE_ROOT="$(mktemp -d)"
+          PREFIX="${SMOKE_ROOT}/prefix"
+          export HOME="${SMOKE_ROOT}/home"
+          mkdir -p "${HOME}" "${PREFIX}"
+
+          npm install --global \
+            --prefix "${PREFIX}" \
+            --cache "${SMOKE_ROOT}/cache" \
+            "@kitsunekode/kunai@${VERSION}"
+
+          # The host platform package must be physically present: if npm skipped
+          # it, the launcher would still install and only fail at runtime.
+          HOST_PACKAGE="${PREFIX}/lib/node_modules/@kitsunekode/kunai-linux-x64"
+          test -x "${HOST_PACKAGE}/bin/kunai" \
+            || { echo "::error::host platform package missing at ${HOST_PACKAGE}"; exit 1; }
+
+          LAUNCHER="${PREFIX}/bin/kunai"
+          test -x "${LAUNCHER}"
+          OBSERVED="$("${LAUNCHER}" --version 2>&1)"
+          echo "published install reports: ${OBSERVED}"
+          case "${OBSERVED}" in
+            *"${VERSION}"*) ;;
+            *) echo "::error::published install reported ${OBSERVED}, expected ${VERSION}"; exit 1 ;;
+          esac
+          "${LAUNCHER}" --help >/dev/null
 
       - name: Create canonical tag
         run: |
