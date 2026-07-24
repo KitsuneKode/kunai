@@ -94,9 +94,19 @@ export async function probeTerminalGraphics(
   try {
     return await new Promise<TerminalGraphicsSupport | null>((resolve) => {
       let buffer = "";
+      // The timeout and the DA1 reply race each other. Clearing the timer and
+      // detaching the listener already makes a second call unreachable in
+      // practice, but that is emergent from cleanup ordering rather than
+      // stated — an explicit latch keeps the single-settle guarantee local.
+      let settled = false;
       const finish = (value: TerminalGraphicsSupport | null): void => {
+        if (settled) return;
+        settled = true;
         if (timer) clearTimeout(timer);
         if (onData) stdin.off("data", onData);
+        // The `settled` latch above makes this reachable exactly once; the rule
+        // is syntactic and cannot see it.
+        // oxlint-disable-next-line no-multiple-resolved
         resolve(value);
       };
 
