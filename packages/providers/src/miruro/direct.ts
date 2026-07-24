@@ -72,12 +72,11 @@ export const MIRURO_PIPE_BASE_URLS = ["https://www.miruro.bz", "https://www.miru
  * fail-fast budget without ever resolving. `miruro.com` serves a different
  * static app shell (no `/api/secure/pipe`), and `.tv` / `.to` are TLS-dead.
  *
- * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Set one
- * above the real mirror count so a transient block on the primary host still
- * lets the secondary `www.` mirror get a full attempt (the old threshold of 2
- * aborted after both `www.` hosts failed, never reaching a working fallback).
+ * Consecutive Cloudflare HTML 403s before aborting remaining mirrors. Matches
+ * the real mirror count (www.miruro.bz + www.miruro.ru): when both return CF
+ * HTML the block is region-wide and further candidates fail the same way.
  */
-const MIRURO_WAF_FAIL_FAST_THRESHOLD = 3;
+const MIRURO_WAF_FAIL_FAST_THRESHOLD = 2;
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -232,7 +231,9 @@ export async function createMiruroResultFromPayload({
     context,
     context?.signal,
   );
-  const rawStreams = rankMiruroStreams(expandedStreams.filter((s) => s.type === "hls" && s.url));
+  const rawStreams = rankMiruroStreams(
+    expandedStreams.filter((s) => (s.type === "hls" || s.type === "mp4") && s.url),
+  );
   if (rawStreams.length === 0) return null;
   const subtitlePresentation = resolveMiruroSubtitlePresentation(
     audioCategory,
@@ -885,12 +886,22 @@ async function expandMiruroPipeStreams(
 
 function anySignal(...signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
+  const removers: Array<() => void> = [];
+  const cleanup = () => {
+    for (const remove of removers.splice(0)) remove();
+  };
   for (const s of signals) {
     if (s.aborted) {
+      cleanup();
       controller.abort(s.reason);
       return controller.signal;
     }
-    s.addEventListener("abort", () => controller.abort(s.reason), { once: true });
+    const listener = () => {
+      cleanup();
+      controller.abort(s.reason);
+    };
+    s.addEventListener("abort", listener, { once: true });
+    removers.push(() => s.removeEventListener("abort", listener));
   }
   return controller.signal;
 }
@@ -1169,8 +1180,11 @@ async function fetchMiruroPipeBody(
   readonly cloudflareHtml: boolean;
 }> {
   const requester = fetchPort?.fetch.bind(fetchPort) ?? fetch;
+  // Always bound the fetch, even when the caller passes a signal — a stalled
+  // pipe connection must not hang the whole resolve.
+  const timeoutSignal = AbortSignal.timeout(options.wafLikely ? 3_000 : 8_000);
   const response = await requester(url, {
-    signal: signal ?? AbortSignal.timeout(options.wafLikely ? 3_000 : 8_000),
+    signal: signal ? anySignal(signal, timeoutSignal) : timeoutSignal,
     headers,
   });
   const responseText = await response.text();
@@ -1224,7 +1238,9 @@ async function fetchMiruroPipeBody(
     };
   }
 
-  const curlMaxTime = fetchWasCloudflare || options.wafLikely ? "8" : "20";
+  // Curl exists to clear Cloudflare challenges; for plain HTTP errors it rarely
+  // changes the answer, so keep every curl attempt inside the candidate budget.
+  const curlMaxTime = "8";
   const args = [
     curlPath,
     "-sS",
@@ -1478,7 +1494,12 @@ export const miruroProviderModule: CoreProviderModule = {
         emit: context.emit,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs: 20_000,
-        resolveCandidate: async (candidate) => {
+        // Every candidate goes through the same two pipe hosts — one region-wide
+        // Cloudflare block means the rest will fail identically, so stop early.
+        shouldStopAfterFailure: (failure) =>
+          failure.failureClass === "candidate-blocked" &&
+          failure.message.toLowerCase().includes("cloudflare"),
+        resolveCandidate: async (candidate, cycleContext) => {
           const metadata = parseMiruroCycleCandidateMetadata(candidate, context);
           const serverProfile = createMiruroServerProfile(
             metadata.serverId,
@@ -1496,18 +1517,19 @@ export const miruroProviderModule: CoreProviderModule = {
                 provider: metadata.serverId,
                 category: metadata.audioCategory,
               },
-              context.signal,
+              cycleContext.signal,
             )) as MiruroSourcesResponse | null;
             if (srcData) sourceCache.set(srcCacheKey, srcData);
           }
 
-          const rawStreams = srcData?.streams?.filter((s) => s.type === "hls" && s.url) ?? [];
+          const rawStreams =
+            srcData?.streams?.filter((s) => (s.type === "hls" || s.type === "mp4") && s.url) ?? [];
           if (rawStreams.length === 0) {
             throw createProviderCycleFailureError(candidate, {
               failureClass: "candidate-empty",
               message:
                 `${serverProfile.label} ` +
-                `(${metadata.serverId}/${metadata.audioCategory}) returned no HLS streams`,
+                `(${metadata.serverId}/${metadata.audioCategory}) returned no playable streams`,
               retryable: true,
               at: context.now(),
             });
