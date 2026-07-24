@@ -2,12 +2,12 @@ import { detectImageCapability } from "@/image";
 import type { ImageCapability, TerminalId } from "@/image";
 import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
-import { decodeImageBytes } from "@/image/decode";
 import {
   prepareKittyPayload,
   uploadKittyPayload,
   type KittyPayload,
 } from "@/image/kitty-transport";
+import { decodeToRgba, encodeNativePng } from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
 
@@ -145,8 +145,16 @@ function supportsKittyPlaceholders(terminal: TerminalId): boolean {
  * truecolour SGR. Needs no external binary — this is what keeps posters alive
  * on Windows Terminal, iTerm2, and any chafa-less machine.
  */
-function renderHalfBlockText(data: ArrayBuffer, rows: number, cols: number): PosterResult {
-  const image = decodeImageBytes(new Uint8Array(data));
+async function renderHalfBlockText(
+  data: ArrayBuffer,
+  rows: number,
+  cols: number,
+): Promise<PosterResult> {
+  // Decode straight to the cell geometry we are about to draw: two pixels per
+  // cell row is what the half-block trick encodes. Bun.Image does the resize
+  // natively and off-thread, so the full-size bitmap never enters JS and the
+  // event loop keeps ticking; without it this falls back to a blocking decode.
+  const image = await decodeToRgba(new Uint8Array(data), { width: cols, height: rows * 2 });
   if (!image) return { kind: "none" };
   const text = buildHalfBlockOutput(image, {
     size: `${cols}x${rows}`,
@@ -167,9 +175,14 @@ async function renderKitty(
   if (data.byteLength === 0) return { kind: "none" };
   if (signal?.aborted) return { kind: "none" };
   const bytes = new Uint8Array(data);
-  // In-process first: PNG passes through, JPEG decodes to RGBA. ImageMagick
-  // remains only as the last resort for formats we cannot decode (WebP, …).
-  let payload: KittyPayload | null = prepareKittyPayload(bytes);
+  // Native PNG first: Bun.Image encodes off-thread, and an f=100 PNG is both
+  // smaller on the wire than deflated RGBA and skips the synchronous
+  // decode-then-deflate pair entirely. In-process decode is the fallback, and
+  // ImageMagick stays the last resort for formats neither can read (WebP, …).
+  const nativePng = await encodeNativePng(bytes);
+  let payload: KittyPayload | null = nativePng
+    ? { kind: "png", data: nativePng }
+    : prepareKittyPayload(bytes);
   if (!payload) {
     const png = await ensurePngBytes(bytes);
     if (png) payload = { kind: "png", data: png };
@@ -275,7 +288,7 @@ async function renderTextPoster(
 ): Promise<PosterResult> {
   const viaChafa = await renderChafaSymbols(data, rows, cols);
   if (viaChafa.kind !== "none") return viaChafa;
-  return renderHalfBlockText(data, rows, cols);
+  return await renderHalfBlockText(data, rows, cols);
 }
 
 export async function renderPoster(
@@ -320,7 +333,7 @@ export async function renderPoster(
       return await renderTextPoster(data, rows, cols);
     }
     // half-block: capability-faithful in-process rendering, no chafa spawn.
-    const viaHalfBlock = renderHalfBlockText(data, rows, cols);
+    const viaHalfBlock = await renderHalfBlockText(data, rows, cols);
     if (viaHalfBlock.kind !== "none") return viaHalfBlock;
     // Undecodable in-process (e.g. WebP): chafa may still manage it.
     return await renderChafaSymbols(data, rows, cols);

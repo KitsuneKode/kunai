@@ -8,6 +8,7 @@ import {
   resolveAppShellPosterCapability,
 } from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
+import { hasNativeImage } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
@@ -94,7 +95,7 @@ describe("app-shell poster renderer", () => {
     expect(writes.join("")).toContain("\x1b_Ga=T,f=100,U=1,q=2");
   });
 
-  test("uploads TMDB JPEG posters to kitty as compressed RGBA without magick or chafa", async () => {
+  test("uploads TMDB JPEG posters to kitty without magick or chafa", async () => {
     forceDirectTransport();
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
     rendererTesting.runtime.which = () => null;
@@ -115,7 +116,10 @@ describe("app-shell poster renderer", () => {
     });
     expect(result.kind).toBe("kitty");
     const out = writes.join("");
-    expect(out).toContain("f=32,s=8,v=4,o=z");
+    // Bun.Image re-encodes natively to PNG (f=100), which is both smaller than
+    // deflated RGBA and avoids the synchronous decode+deflate pair. Builds
+    // without Bun.Image fall back to the in-process RGBA path (f=32 + o=z).
+    expect(out).toMatch(hasNativeImage() ? /f=100/ : /f=32,s=8,v=4,o=z/);
     expect(out).toContain("U=1");
   });
 
