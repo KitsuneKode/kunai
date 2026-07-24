@@ -59,10 +59,11 @@ export function safeAllMangaHostname(url: string): string | null {
   }
 }
 
+// Parity with ani-cli master (72d7f72): api.mkissa.net + mkissa.to referer.
 const DEFAULT_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
-const ALLANIME_API_URL = "https://api.allanime.day/api";
-const ALLANIME_REFERER = "https://youtu-chan.com";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
+const ALLANIME_API_URL = "https://api.mkissa.net/api";
+const ALLANIME_REFERER = "https://mkissa.to";
 export const ALLMANGA_QUALITY_FIRST_WAIT_BUDGET_MS = 4_000;
 // The Ak endpoint (separate CDN, slowest single step) normally answers in
 // 40–680ms. Cap the ak-only FALLBACK lane so a genuinely hung Ak can't stall the

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 
 import type {
   ProviderResolveInput,
@@ -19,15 +20,22 @@ import {
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
   ALLMANGA_KEY_HEX,
+  ALLMANGA_QUERY_HASH,
+  BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
+  decryptTobeparsedPlaintext,
   fetchAllMangaEpisodeCatalog,
+  getAllMangaCryptoMaterial,
   gqlPost,
   resolveAllMangaAkDeferredLocator,
   resolveAnimeEpisodeString,
+  resolveEpisodeSources,
   searchAllManga,
   collectAllMangaLinksForStartup,
+  setAllMangaCryptoMaterialForTest,
+  setAllMangaRetrySleepForTest,
 } from "../src/index";
 
 const TEST_KEY_HEX = ALLMANGA_KEY_HEX;
@@ -193,23 +201,207 @@ describe("decodeTobeparsed", () => {
     const plain =
       '{"sourceUrl":"--68656c6c6f","sourceName":"Default"}' +
       '{"sourceUrl":"--776f726c64","sourceName":"Yt-mp4"}';
-    const blob = await buildBlob(plain);
+    const blob = buildBlob(plain);
 
     await expect(decodeTobeparsed(blob)).resolves.toEqual([
       { sourceUrl: "--68656c6c6f", sourceName: "Default" },
       { sourceUrl: "--776f726c64", sourceName: "Yt-mp4" },
     ]);
   });
+
+  test("decrypts AES-256-GCM blobs with the request key and rejects wrong keys", async () => {
+    const blob = buildBlob('{"sourceUrl":"--68656c6c6f","sourceName":"Default"}');
+
+    await expect(decryptTobeparsedPlaintext(blob, TEST_KEY_HEX)).resolves.toContain("sourceUrl");
+    await expect(decryptTobeparsedPlaintext(blob, "00".repeat(32))).resolves.toBeNull();
+    await expect(decryptTobeparsedPlaintext("not-a-blob", TEST_KEY_HEX)).resolves.toBeNull();
+  });
 });
 
 describe("buildAllMangaAaReq", () => {
-  test("builds a versioned AES-GCM attestation blob", () => {
+  test("builds a versioned AES-GCM attestation blob without buildId", () => {
     const aaReq = buildAllMangaAaReq(1_700_000_000_000);
     const raw = Buffer.from(aaReq, "base64");
     expect(raw[0]).toBe(1);
     expect(raw.length).toBeGreaterThan(1 + 12 + 16);
     // Key must be 32 raw bytes (not SHA-256 of a passphrase).
     expect(Buffer.from(ALLMANGA_KEY_HEX, "hex").length).toBe(32);
+
+    // Round-trip (ani-cli get_aa_req): iv = sha256(`${epoch}:${qh}:${ts}`)[0:12].
+    const ts = Math.floor(1_700_000_000_000 / 300_000) * 300_000;
+    const iv = createHash("sha256")
+      .update(`${BUNDLED_ALLMANGA_CRYPTO.epoch}:${BUNDLED_ALLMANGA_CRYPTO.queryHash}:${ts}`)
+      .digest()
+      .subarray(0, 12);
+    expect(raw.subarray(1, 13).equals(iv)).toBe(true);
+
+    const rest = raw.subarray(13);
+    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(ALLMANGA_KEY_HEX, "hex"), iv);
+    decipher.setAuthTag(rest.subarray(rest.length - 16));
+    const payload = JSON.parse(
+      Buffer.concat([
+        decipher.update(rest.subarray(0, rest.length - 16)),
+        decipher.final(),
+      ]).toString("utf8"),
+    ) as Record<string, unknown>;
+    expect(payload).toEqual({
+      v: 1,
+      ts,
+      epoch: BUNDLED_ALLMANGA_CRYPTO.epoch,
+      qh: BUNDLED_ALLMANGA_CRYPTO.queryHash,
+    });
+    expect("buildId" in payload).toBe(false);
+  });
+});
+
+describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
+  const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
+  const maskBytes = Array.from({ length: 32 }, (_, index) => 0xa0 + index);
+  const PART_B = Buffer.from(partBBytes).toString("base64");
+  const MASK_HEX = maskBytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const EXPECTED_KEY_HEX = partBBytes
+    .map((byte, index) => (byte ^ (maskBytes[index] ?? 0)).toString(16).padStart(2, "0"))
+    .join("");
+  const PLAIN_SOURCE_JSON = JSON.stringify({
+    data: {
+      episode: {
+        episodeString: "1",
+        sourceUrls: [
+          {
+            sourceUrl: "--https://cdn.allmanga.example/sub/1080/video.mp4?token=x",
+            sourceName: "Default",
+          },
+        ],
+      },
+    },
+  });
+
+  function mockCryptoSiteFetch(options: {
+    readonly apiResponses: readonly string[];
+    readonly pageStatus?: number;
+  }) {
+    clearAllMangaProviderCachesForTest();
+    const originalFetch = globalThis.fetch;
+    let apiCallCount = 0;
+    let pageFetchCount = 0;
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      if (url.startsWith("https://mkissa.to")) {
+        pageFetchCount += 1;
+        if (options.pageStatus && options.pageStatus !== 200) {
+          return new Response("nope", { status: options.pageStatus });
+        }
+        return new Response(
+          `<html>"epoch":6900,"partB":"${PART_B}"<script src="https://cdn.mkissa.net/all/mk/_app/immutable/entry/app.Test123.js"></html>`,
+          { status: 200 },
+        );
+      }
+      if (url.includes("/entry/app.")) {
+        return new Response(`import "../chunks/a.js"; import "../chunks/b.js";`, { status: 200 });
+      }
+      if (url.includes("/chunks/")) {
+        return new Response(`const mask = "${MASK_HEX}";`, { status: 200 });
+      }
+      if (url.includes("variables=")) {
+        const body =
+          options.apiResponses[Math.min(apiCallCount, options.apiResponses.length - 1)] ?? "{}";
+        apiCallCount += 1;
+        return new Response(body, { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+    return {
+      get apiCallCount() {
+        return apiCallCount;
+      },
+      get pageFetchCount() {
+        return pageFetchCount;
+      },
+      [Symbol.dispose]() {
+        globalThis.fetch = originalFetch;
+      },
+    };
+  }
+
+  function resolveWithSiteSources() {
+    return resolveEpisodeSources({
+      context: TEST_CONTEXT,
+      apiUrl: "https://api.mkissa.net/api",
+      referer: "https://mkissa.to",
+      ua: "ua",
+      showId: "show-1",
+      epStr: "1",
+      mode: "sub",
+    });
+  }
+
+  test("derives the key from site fixtures and caches it", async () => {
+    using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON] });
+
+    const material = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
+    expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
+    expect(material?.epoch).toBe(6900);
+    expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
+
+    const again = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
+    expect(again?.keyHex).toBe(EXPECTED_KEY_HEX);
+    expect(site.pageFetchCount).toBe(1);
+  });
+
+  test("falls back to bundled material when the scrape fails", async () => {
+    using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON], pageStatus: 500 });
+
+    const links = await resolveWithSiteSources();
+
+    expect(links.length).toBeGreaterThan(0);
+    expect(site.apiCallCount).toBe(1);
+  });
+
+  test("refreshes crypto material on AA_CRYPTO_STALE instead of retry-storming", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"AA_CRYPTO_STALE"}]}', PLAIN_SOURCE_JSON],
+    });
+    const sleeps: number[] = [];
+    setAllMangaRetrySleepForTest((ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    });
+
+    try {
+      const links = await resolveWithSiteSources();
+
+      expect(links.length).toBeGreaterThan(0);
+      expect(site.apiCallCount).toBe(2);
+      // Initial derive + exactly one stale re-derivation.
+      expect(site.pageFetchCount).toBe(2);
+      expect(sleeps).toEqual([400]);
+    } finally {
+      clearAllMangaProviderCachesForTest();
+    }
+  });
+
+  test("backs off on API rate limiting instead of failing", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: [
+        '{"errors":[{"message":"Too many requests, please try again in 3 seconds."}]}',
+        PLAIN_SOURCE_JSON,
+      ],
+    });
+    const sleeps: number[] = [];
+    setAllMangaRetrySleepForTest((ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    });
+
+    try {
+      const links = await resolveWithSiteSources();
+
+      expect(links.length).toBeGreaterThan(0);
+      expect(site.apiCallCount).toBe(2);
+      expect(sleeps).toEqual([3_200]);
+    } finally {
+      clearAllMangaProviderCachesForTest();
+    }
   });
 });
 
@@ -727,36 +919,12 @@ describe("AllManga provider evidence fixtures", () => {
   });
 });
 
-async function buildBlob(plain: string): Promise<string> {
-  const iv = Uint8Array.from({ length: 12 }, (_, index) => index + 1);
-  const footer = Uint8Array.from({ length: 16 }, (_, index) => 200 + index);
-  const version = new Uint8Array([1]);
-  const counter = new Uint8Array(16);
-  counter.set(iv, 0);
-  counter[15] = 2;
-
-  const keyBytes = Buffer.from(TEST_KEY_HEX, "hex");
-  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CTR" }, false, [
-    "encrypt",
-  ]);
-
-  const encrypted = new Uint8Array(
-    await crypto.subtle.encrypt(
-      { name: "AES-CTR", counter, length: 64 },
-      key,
-      new TextEncoder().encode(plain),
-    ),
-  );
-
-  const bytes = new Uint8Array(version.length + iv.length + encrypted.length + footer.length);
-  bytes.set(version, 0);
-  bytes.set(iv, version.length);
-  bytes.set(encrypted, version.length + iv.length);
-  bytes.set(footer, version.length + iv.length + encrypted.length);
-
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
+/** Build a tobeparsed blob with the live layout: base64(0x01 || iv12 || ct || gcmTag16). */
+function buildBlob(plain: string, keyHex: string = TEST_KEY_HEX): string {
+  const iv = Buffer.from(Array.from({ length: 12 }, (_, index) => index + 1));
+  const cipher = createCipheriv("aes-256-gcm", Buffer.from(keyHex, "hex"), iv);
+  const ciphertext = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  return Buffer.concat([Buffer.from([1]), iv, ciphertext, cipher.getAuthTag()]).toString("base64");
 }
 
 type ExpectedAllMangaContract = {
@@ -855,6 +1023,9 @@ async function mockAllMangaFetch(
   } = {},
 ): Promise<Disposable & { readonly calls: readonly string[]; readonly abortedAkRequests: number }> {
   clearAllMangaProviderCachesForTest();
+  // Keep resolve paths off the live mkissa.to key scrape; fixtures return plain
+  // sourceUrls JSON so the key itself is never exercised here.
+  setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
   const originalFetch = globalThis.fetch;
   const calls: string[] = [];
   let abortedAkRequests = 0;

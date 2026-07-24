@@ -4,10 +4,10 @@ import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { TTLCache } from "../shared/provider-cache";
 import { searchAllManga } from "./api-client";
 
-const ALLANIME_API_URL = "https://api.allanime.day/api";
-const ALLANIME_REFERER = "https://youtu-chan.com";
+const ALLANIME_API_URL = "https://api.mkissa.net/api";
+const ALLANIME_REFERER = "https://mkissa.to";
 const DEFAULT_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0";
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 const ANILIST_BRIDGE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 

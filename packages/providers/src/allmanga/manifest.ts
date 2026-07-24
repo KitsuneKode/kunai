@@ -48,10 +48,16 @@ export const allanimeManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: false,
   relayProfile: {
-    upstreamHosts: ["api.allanime.day", "allanime.day", "wp.youtube-anime.com"],
+    upstreamHosts: [
+      "api.mkissa.net",
+      "mkissa.to",
+      "cdn.mkissa.net",
+      "allanime.day",
+      "wp.youtube-anime.com",
+    ],
     videoRelayHosts: ["fast4speed.rsvp", "tools.fast4speed.rsvp"],
     defaultHeaders: {
-      Referer: "https://youtu-chan.com",
+      Referer: "https://mkissa.to",
     },
   },
   notes: [

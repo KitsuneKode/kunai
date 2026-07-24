@@ -403,12 +403,13 @@ If the provider has native search or episode listing, export standalone function
 - when fixing this family of providers, check:
   - search GraphQL query shape
   - episode list query shape
-  - episode source GET with persisted query + `aaReq` AES-GCM attestation (`x-build-id`, epoch/build_id) — without this the API returns `AA_CRYPTO_MISSING`
-  - `tobeparsed` AES-CTR decoding key (ani-cli hex key on `origin/fix`, not SHA-256 of a passphrase)
+  - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`
+  - dynamic key derivation (`getAllMangaCryptoMaterial`, ani-cli `fetch_keys`): scrape `mkissa.to` for `epoch` + base64 `partB` + app-JS URL, grep the first 64-hex mask from the first CDN chunks, `key = mask XOR partB`. Bundled constants in `api-client.ts` are fallback only
+  - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16) — since ani-cli 72d7f72 (2026-07-23); the old AES-256-CTR scheme is dead
   - source-name inventory and ranking
   - downstream link extraction from decoded source URLs
 
-Parity tip: local ani-cli `master` may lag the crypto rotation on `origin/fix` (`get_aa_req`). Prefer that branch when AllAnime episode resolve breaks.
+Parity tip: ani-cli `origin/fix` and `master` currently carry the same script; compare against `master`. The API rate-limits bursts (~3s), so stale-material recovery refetches keys instead of retry-storming epochs.
 
 Recommended workflow:
 

@@ -1,4 +1,4 @@
-import { createCipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
 
@@ -88,21 +88,48 @@ export type AllMangaAkDeferredDescriptor = {
 export type AllMangaSourceLane = "baseline" | "ak-only";
 
 /**
- * AllAnime crypto constants — keep aligned with ani-cli `origin/fix`
- * (`get_aa_req`, `allanime_key`, epoch/build_id). Upstream rotates these.
+ * AllAnime crypto — aligned with ani-cli master `72d7f72` ("Add AES-256-GCM
+ * encryption", 2026-07-23). Upstream now derives the key at runtime
+ * (`fetch_keys`): scrape `mkissa.to` for `epoch` + base64 `partB` + the app JS
+ * URL, download the first JS chunks from `cdn.mkissa.net`, take the first
+ * 64-hex mask, and XOR mask with partB. `getAllMangaCryptoMaterial` ports that
+ * flow; the bundled constants below are only a fallback when the scrape fails.
  *
- * Previous key was SHA-256("Xot36i3lK3:v1"); episode resolve now requires an
- * AES-GCM `aaReq` attestation or the API returns `AA_CRYPTO_MISSING`.
+ * Scheme notes:
+ * - `tobeparsed` is AES-256-GCM (was AES-256-CTR): base64(0x01 || iv12 || ct || tag16).
+ * - `aaReq` carries no buildId anymore (IV string is `epoch:qh:ts`) and the
+ *   `x-build-id` header is gone.
+ * - API base moved to `api.mkissa.net` with Referer/Origin `https://mkissa.to`.
+ * - The API rate-limits bursts ("try again in 3 seconds"), so stale-material
+ *   retries refetch keys instead of storming the endpoint.
  *
- * Last rotated: 2026-07-20 (commit 82776c40, ani-cli a06ee54)
+ * Bundled material last derived: 2026-07-24 (epoch 6885, ani-cli 72d7f72).
  */
-export const ALLMANGA_KEY_HEX = "f34fa715e2958b8c1ebc6efa4d089acd8f196d8b83d4b6201586c00c8a52e4a8";
+export const ALLMANGA_KEY_HEX = "ff102360a5065bb72fc128f7efa5042dbf4db582e5c58754078265926a76bfd8";
 export const ALLMANGA_QUERY_HASH =
-  "d405d0edd690624b66baba3068e0edc3ac90f1597d898a1ec8db4e5c43c00fec";
-/** Upstream clock bucket; rotate with ani-cli when AA_CRYPTO_* errors reappear. */
-export const ALLMANGA_EPOCH = 6884;
-/** Upstream client build id; sent as `x-build-id` and inside `aaReq`. */
-export const ALLMANGA_BUILD_ID = 50;
+  "f4662f4b7510b26795dd53ef824a0bf1740fbbc5d1273fab18222ac831bca8d0";
+/** Upstream clock bucket fallback; the live value is scraped from mkissa.to. */
+export const ALLMANGA_EPOCH = 6885;
+
+/** Site page that carries the epoch + partB + app-JS pointer (ani-cli `allanime_refr`). */
+const ALLMANGA_SITE_URL = "https://mkissa.to";
+/** SvelteKit immutable asset base that hosts the app JS with the key mask. */
+const ALLMANGA_CDN_IMMUTABLE_BASE = "https://cdn.mkissa.net/all/mk/_app/immutable";
+/** How long derived crypto material stays trusted before a lazy refetch. */
+const ALLMANGA_CRYPTO_MATERIAL_TTL_MS = 6 * 60 * 60 * 1000;
+
+export type AllMangaCryptoMaterial = {
+  readonly keyHex: string;
+  readonly epoch: number;
+  readonly queryHash: string;
+};
+
+/** Last-known-good material, used only when the live scrape fails. */
+export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
+  keyHex: ALLMANGA_KEY_HEX,
+  epoch: ALLMANGA_EPOCH,
+  queryHash: ALLMANGA_QUERY_HASH,
+};
 
 const HEX: Record<string, string> = {
   "79": "A",
@@ -191,7 +218,9 @@ const HEX: Record<string, string> = {
   "1d": "%",
 };
 
-const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Fm-mp4", "Ak"]);
+// ani-cli handles Default/Yt-mp4/S-mp4/Mp4 upstream; Fm-mp4 (filemoon) was
+// removed upstream in b8032b7 and no longer ships a compatible payload.
+const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Ak"]);
 const akDeferredRegistry = new Map<string, AllMangaAkDeferredDescriptor>();
 let akDeferredCounter = 0;
 
@@ -225,24 +254,31 @@ export function hexDecode(encoded: string): string {
 
 export async function decodeTobeparsed(
   blob: string,
+  keyHex: string = ALLMANGA_KEY_HEX,
 ): Promise<Array<{ sourceName: string; sourceUrl: string }>> {
-  const plain = await decryptTobeparsedPlaintext(blob);
+  const plain = await decryptTobeparsedPlaintext(blob, keyHex);
   if (!plain) return [];
   return extractRawSourcesFromPlaintext(plain);
 }
 
-export async function decryptTobeparsedPlaintext(blob: string): Promise<string | null> {
+/**
+ * Decrypt the API's `tobeparsed` blob (ani-cli `process_tobeparsed`).
+ * Layout: base64(0x01 || iv12 || ciphertext || gcmTag16), AES-256-GCM.
+ */
+export async function decryptTobeparsedPlaintext(
+  blob: string,
+  keyHex: string = ALLMANGA_KEY_HEX,
+): Promise<string | null> {
   try {
-    const raw = Uint8Array.from(atob(blob), (char) => char.charCodeAt(0));
-    const iv = raw.slice(1, 13);
-    const data = raw.slice(13, Math.max(13, raw.length - 16));
-    const counter = new Uint8Array(16);
-    counter.set(iv, 0);
-    counter[15] = 2;
-
-    const key = await deriveAllMangaKey();
-    const plain = await crypto.subtle.decrypt({ name: "AES-CTR", counter, length: 64 }, key, data);
-    return new TextDecoder().decode(plain);
+    const raw = Buffer.from(blob, "base64");
+    if (raw.length <= 1 + 12 + 16) return null;
+    const iv = raw.subarray(1, 13);
+    const rest = raw.subarray(13);
+    const ciphertext = rest.subarray(0, rest.length - 16);
+    const tag = rest.subarray(rest.length - 16);
+    const decipher = createDecipheriv("aes-256-gcm", Buffer.from(keyHex, "hex"), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
     return null;
   }
@@ -269,31 +305,151 @@ function extractRawSourcesFromPlaintext(
 /**
  * Build the AllAnime `aaReq` attestation (ani-cli `get_aa_req`).
  * Layout: base64(0x01 || iv12 || ciphertext || gcmTag16)
- * where iv = SHA-256(`${epoch}:${buildId}:${qh}:${ts}`)[0:12]
- * and plaintext is `{"v":1,"ts",…}` encrypted with AES-256-GCM.
+ * where iv = SHA-256(`${epoch}:${qh}:${ts}`)[0:12]
+ * and plaintext is `{"v":1,"ts","epoch","qh"}` encrypted with AES-256-GCM.
  */
 export function buildAllMangaAaReq(
   nowMs: number = Date.now(),
-  epochOverride?: number,
-  buildIdOverride?: number,
+  material: AllMangaCryptoMaterial = BUNDLED_ALLMANGA_CRYPTO,
 ): string {
-  const epoch = epochOverride ?? ALLMANGA_EPOCH;
-  const buildId = buildIdOverride ?? ALLMANGA_BUILD_ID;
   const ts = Math.floor(nowMs / 300_000) * 300_000;
-  const payloadIv = `${epoch}:${buildId}:${ALLMANGA_QUERY_HASH}:${ts}`;
+  const payloadIv = `${material.epoch}:${material.queryHash}:${ts}`;
   const payload = JSON.stringify({
     v: 1,
     ts,
-    epoch,
-    buildId: String(buildId),
-    qh: ALLMANGA_QUERY_HASH,
+    epoch: material.epoch,
+    qh: material.queryHash,
   });
   const iv = createHash("sha256").update(payloadIv).digest().subarray(0, 12);
-  const key = Buffer.from(ALLMANGA_KEY_HEX, "hex");
+  const key = Buffer.from(material.keyHex, "hex");
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([Buffer.from([1]), iv, ciphertext, tag]).toString("base64");
+}
+
+let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt: number } | null =
+  null;
+let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
+let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
+let retrySleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms);
+
+export function setAllMangaCryptoMaterialForTest(material: AllMangaCryptoMaterial | null): void {
+  cryptoMaterialOverrideForTest = material;
+}
+
+export function setAllMangaRetrySleepForTest(sleep: ((ms: number) => Promise<void>) | null): void {
+  retrySleep = sleep ?? ((ms) => Bun.sleep(ms));
+}
+
+/**
+ * Crypto material for the episode persisted query: cached when fresh, derived
+ * live otherwise (ani-cli `fetch_keys`). Falls back to the bundled material
+ * when the scrape fails so resolve degrades to a plain AA_CRYPTO_* miss
+ * instead of a hard error.
+ */
+export async function getAllMangaCryptoMaterial(
+  context: ProviderRuntimeContext,
+  ua: string,
+  signal?: AbortSignal,
+): Promise<AllMangaCryptoMaterial | null> {
+  if (cryptoMaterialOverrideForTest) return cryptoMaterialOverrideForTest;
+  if (cachedCryptoMaterial && cachedCryptoMaterial.expiresAt > Date.now()) {
+    return cachedCryptoMaterial.material;
+  }
+  return refreshAllMangaCryptoMaterial(context, ua, signal);
+}
+
+/** Force a live re-derivation (AA_CRYPTO_STALE recovery); dedupes concurrent callers. */
+export function refreshAllMangaCryptoMaterial(
+  context: ProviderRuntimeContext,
+  ua: string,
+  signal?: AbortSignal,
+): Promise<AllMangaCryptoMaterial | null> {
+  if (cryptoMaterialOverrideForTest) return Promise.resolve(cryptoMaterialOverrideForTest);
+  inFlightCryptoMaterial ??= fetchAllMangaCryptoMaterial(context, ua, signal)
+    .then((material) => {
+      const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
+      cachedCryptoMaterial = {
+        material: resolved,
+        // A failed scrape falls back to bundled material; retry the scrape
+        // sooner than the normal TTL in that case.
+        expiresAt: Date.now() + (material ? ALLMANGA_CRYPTO_MATERIAL_TTL_MS : 60_000),
+      };
+      return resolved;
+    })
+    .finally(() => {
+      inFlightCryptoMaterial = null;
+    });
+  return inFlightCryptoMaterial;
+}
+
+/** Port of ani-cli `fetch_keys`: key = first-64-hex-in-JS-chunks XOR base64(partB). */
+async function fetchAllMangaCryptoMaterial(
+  context: ProviderRuntimeContext,
+  ua: string,
+  signal?: AbortSignal,
+): Promise<AllMangaCryptoMaterial | null> {
+  try {
+    const pageRes = await providerFetch(context, ALLMANGA_SITE_URL, {
+      signal: createTimeoutSignal(signal, 12_000),
+      headers: { "User-Agent": ua },
+    });
+    if (!pageRes.ok) return null;
+    const page = await pageRes.text();
+
+    const epoch = Number(/"epoch":(\d+)/.exec(page)?.[1]);
+    const partB = /"partB":"([^"]*)"/.exec(page)?.[1];
+    const appUrl = new RegExp(
+      `${ALLMANGA_CDN_IMMUTABLE_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/entry/app\\.[A-Za-z0-9_.-]+\\.js`,
+    ).exec(page)?.[0];
+    if (!Number.isFinite(epoch) || epoch <= 0 || !partB || !appUrl) return null;
+
+    const appRes = await providerFetch(context, appUrl, {
+      signal: createTimeoutSignal(signal, 12_000),
+      headers: { "User-Agent": ua },
+    });
+    if (!appRes.ok) return null;
+    const appJs = await appRes.text();
+
+    const chunkPaths = [...appJs.matchAll(/"\.\.\/(chunks\/[A-Za-z0-9_.-]+\.js)"/g)]
+      .map((match) => match[1])
+      .filter((path): path is string => Boolean(path))
+      .slice(0, 5);
+    if (chunkPaths.length === 0) return null;
+
+    const chunkBodies = await Promise.all(
+      chunkPaths.map(async (path) => {
+        try {
+          const res = await providerFetch(context, `${ALLMANGA_CDN_IMMUTABLE_BASE}/${path}`, {
+            signal: createTimeoutSignal(signal, 12_000),
+            headers: { "User-Agent": ua },
+          });
+          return res.ok ? await res.text() : "";
+        } catch {
+          return "";
+        }
+      }),
+    );
+
+    let maskHex: string | undefined;
+    for (const body of chunkBodies) {
+      maskHex = /[0-9a-f]{64}/.exec(body)?.[0];
+      if (maskHex) break;
+    }
+    if (!maskHex) return null;
+
+    const partBytes = Buffer.from(partB, "base64");
+    const maskBytes = Buffer.from(maskHex, "hex");
+    if (partBytes.length !== 32 || maskBytes.length !== 32) return null;
+    const key = Buffer.alloc(32);
+    for (let index = 0; index < 32; index += 1) {
+      key[index] = (maskBytes[index] ?? 0) ^ (partBytes[index] ?? 0);
+    }
+    return { keyHex: key.toString("hex"), epoch, queryHash: ALLMANGA_QUERY_HASH };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeShowThumbnail(path: string | undefined): string | undefined {
@@ -416,6 +572,9 @@ export function clearAllMangaProviderCachesForTest(): void {
   showCatalogCache.clear();
   sourceCache.clear();
   akDeferredRegistry.clear();
+  cachedCryptoMaterial = null;
+  cryptoMaterialOverrideForTest = null;
+  retrySleep = (ms) => Bun.sleep(ms);
 }
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
@@ -495,7 +654,7 @@ export async function loadShowCatalogInfo(
     data = (await gqlPost(
       context,
       apiUrl,
-      "https://youtu-chan.com",
+      "https://mkissa.to",
       ua,
       query,
       {
@@ -583,20 +742,24 @@ export async function resolveEpisodeSources(opts: {
   const cached = sourceCache.get(cacheKey);
   if (cached) return cached;
 
-  // GET with persisted query + aaReq attestation (ani-cli origin/fix).
-  // Without aaReq the API returns AA_CRYPTO_MISSING; POST without aaReq fails the same way.
-  // The server rotates epochs; if AA_CRYPTO_STALE is returned we retry with higher epochs.
+  // GET with persisted query + aaReq attestation (ani-cli master 72d7f72).
+  // Without aaReq the API returns AA_CRYPTO_MISSING; a rotated key/epoch
+  // returns AA_CRYPTO_STALE/INVALID — recover by re-deriving the key from the
+  // site instead of storming the API (which rate-limits bursts for ~3s).
   const vars = { showId, translationType: mode, episodeString: epStr };
-  const maxRetries = 30;
+  const maxAttempts = 5;
 
+  let material = await getAllMangaCryptoMaterial(context, ua, signal);
   let rawText: string | null = null;
+  let staleRefreshes = 0;
+  let rateLimitRetries = 0;
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const epochOffset = attempt > 0 ? attempt : 0;
-    const aaReq = buildAllMangaAaReq(undefined, ALLMANGA_EPOCH + epochOffset);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (!material) return [];
+    const aaReq = buildAllMangaAaReq(undefined, material);
     const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
       JSON.stringify({
-        persistedQuery: { version: 1, sha256Hash: ALLMANGA_QUERY_HASH },
+        persistedQuery: { version: 1, sha256Hash: material.queryHash },
         aaReq,
       }),
     )}`;
@@ -605,25 +768,38 @@ export async function resolveEpisodeSources(opts: {
       const getRes = await providerFetch(context, getUrl, {
         signal: createTimeoutSignal(signal, 12_000),
         headers: {
-          Referer: "https://youtu-chan.com",
+          Referer: referer,
           Origin: "https://mkissa.to",
           "User-Agent": ua,
-          "x-build-id": String(ALLMANGA_BUILD_ID),
         },
       });
-      if (getRes.ok) rawText = await getRes.text();
+      rawText = getRes.ok ? await getRes.text() : null;
     } catch {
-      // fall through — empty rawText returns []
+      rawText = null;
     }
 
     if (!rawText) return [];
+    if (rawText.includes('"tobeparsed"')) break;
 
-    if (rawText.includes('"tobeparsed"') || !rawText.includes("AA_CRYPTO_STALE")) {
-      break;
+    if (rawText.includes("Too many requests")) {
+      rateLimitRetries += 1;
+      if (rateLimitRetries > 2) return [];
+      rawText = null;
+      await retrySleep(3_200);
+      continue;
     }
 
-    rawText = null;
-    if (attempt > 0) await Bun.sleep(100);
+    if (/AA_CRYPTO_(STALE|INVALID|MISSING)/.test(rawText)) {
+      staleRefreshes += 1;
+      if (staleRefreshes > 2) return [];
+      rawText = null;
+      material = await refreshAllMangaCryptoMaterial(context, ua, signal);
+      await retrySleep(400);
+      continue;
+    }
+
+    // Non-crypto response (e.g. plain sourceUrls JSON) — stop retrying.
+    break;
   }
 
   if (!rawText) return [];
@@ -631,7 +807,9 @@ export async function resolveEpisodeSources(opts: {
   let rawSources: Array<{ sourceUrl: string; sourceName: string }> = [];
   if (rawText.includes('"tobeparsed"')) {
     const blobMatch = /"tobeparsed"\s*:\s*"([^"]+)"/.exec(rawText);
-    const plain = blobMatch?.[1] ? await decryptTobeparsedPlaintext(blobMatch[1]) : null;
+    const plain = blobMatch?.[1]
+      ? await decryptTobeparsedPlaintext(blobMatch[1], material?.keyHex)
+      : null;
     if (plain) {
       seedAllMangaEpisodeInfoFromPlaintext(showId, mode, plain);
       rawSources = extractRawSourcesFromPlaintext(plain);
@@ -674,12 +852,7 @@ export async function resolveEpisodeSources(opts: {
     }
 
     const sourceName = source.sourceName;
-    const fetcher =
-      sourceName === "Fm-mp4"
-        ? fetchFilemoonLinks
-        : sourceName === "Ak"
-          ? fetchAkLinks
-          : fetchStreamLinks;
+    const fetcher = sourceName === "Ak" ? fetchAkLinks : fetchStreamLinks;
     apiJobs.push(
       fetcher(decoded, referer, ua, context, signal)
         .then((links) =>
@@ -897,11 +1070,6 @@ export async function searchAllManga(
       availableAudioModes,
     };
   });
-}
-
-async function deriveAllMangaKey(): Promise<CryptoKey> {
-  const keyBytes = Buffer.from(ALLMANGA_KEY_HEX, "hex");
-  return crypto.subtle.importKey("raw", keyBytes, { name: "AES-CTR" }, false, ["decrypt"]);
 }
 
 async function extractRawSources(
@@ -1204,69 +1372,6 @@ async function fetchM3u8Variants({
     referer,
     subtitle,
   }));
-}
-
-function base64urlToBytes(s: string): Uint8Array {
-  const pad = (4 - (s.length % 4)) % 4;
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad);
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-}
-
-async function fetchFilemoonLinks(
-  apiPath: string,
-  referer: string,
-  ua: string,
-  context: ProviderRuntimeContext,
-  signal?: AbortSignal,
-): Promise<StreamLink[]> {
-  try {
-    const res = await providerFetch(context, `https://allanime.day${apiPath}`, {
-      signal: createTimeoutSignal(signal, 15_000),
-      headers: { Referer: referer, "User-Agent": ua },
-    });
-    if (!res.ok) return [];
-
-    const parsed = (await res.json()) as {
-      iv: string;
-      payload: string;
-      key_parts: [string, string];
-    };
-
-    const iv = base64urlToBytes(parsed.iv);
-    const kp1 = base64urlToBytes(parsed.key_parts[0]);
-    const kp2 = base64urlToBytes(parsed.key_parts[1]);
-    const keyBytes = new Uint8Array(kp1.length + kp2.length);
-    keyBytes.set(kp1, 0);
-    keyBytes.set(kp2, kp1.length);
-
-    const counter = new Uint8Array(16);
-    counter.set(iv, 0);
-    counter[15] = 2;
-
-    const rawPayload = base64urlToBytes(parsed.payload);
-    const data = rawPayload.slice(0, Math.max(0, rawPayload.length - 16));
-
-    const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CTR" }, false, [
-      "decrypt",
-    ]);
-    const plain = await crypto.subtle.decrypt({ name: "AES-CTR", counter, length: 64 }, key, data);
-    const text = new TextDecoder().decode(plain);
-    const results: StreamLink[] = [];
-    const pattern = /"url"\s*:\s*"([^"]+)"[^}]*"height"\s*:\s*(\d+)/g;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      const url = match[1];
-      const height = match[2];
-      if (!url || !height) continue;
-      results.push({
-        url: url.replace(/\\u0026/g, "&").replace(/\\u003D/g, "="),
-        quality: height,
-      });
-    }
-    return results;
-  } catch {
-    return [];
-  }
 }
 
 function parseHttpUrl(url: string): URL | null {
