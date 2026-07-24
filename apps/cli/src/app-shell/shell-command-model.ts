@@ -97,12 +97,24 @@ export function buildCommandPickerModel(
   highlightedIndex: number,
 ) {
   const showGrouped = input.trim().length === 0;
+  // The idle list is a menu of what can be run *now*, so commands blocked by
+  // context (/download with nothing selected, /bookmark before a title exists)
+  // are dropped rather than shown greyed with an explanation nobody asked for —
+  // roughly half the visible rows were unusable.
+  //
+  // They stay in the list the moment anything is typed: a user who searches
+  // "download" must still find it and learn why it is unavailable, so this
+  // declutters the default view without making a command undiscoverable.
+  // If context blocks everything, fall back to the full list rather than
+  // rendering an empty palette.
+  const runnable = commands.filter((command) => command.enabled);
+  const visible = showGrouped && runnable.length > 0 ? runnable : commands;
   return buildPickerModel<AppCommandId>({
     query: input,
     selectedIndex: highlightedIndex,
     groupOrder: showGrouped ? ["context", "global"] : undefined,
     groupLabels: COMMAND_GROUP_LABELS,
-    options: commands.map((command) => ({
+    options: visible.map((command) => ({
       id: command.id,
       value: command.id,
       label: command.label,

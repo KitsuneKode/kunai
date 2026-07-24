@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import type { ResolvedAppCommand } from "@/app-shell/commands";
 import { buildCommandPickerModel, getHighlightedCommand } from "@/app-shell/shell-command-model";
@@ -12,6 +12,50 @@ const COMMANDS = [
   cmd("calendar", ["calendar", "schedule"], "Anime and series release schedule"),
   cmd("recommendation", ["recommendation", "recommend"], "Personalized recommendations"),
 ];
+
+function blockedCmd(id: string, aliases: readonly string[], reason: string): ResolvedAppCommand {
+  return {
+    id,
+    label: id,
+    aliases,
+    description: id,
+    enabled: false,
+    reason,
+  } as unknown as ResolvedAppCommand;
+}
+
+describe("context-blocked commands in the idle list", () => {
+  const MIXED = [
+    ...COMMANDS,
+    blockedCmd("download", ["download"], "Select a search result first."),
+    blockedCmd("bookmark", ["bookmark"], "Play or select a title first."),
+  ];
+
+  test("the idle palette lists only what can run right now", () => {
+    const ids = buildCommandPickerModel("", MIXED, 0).options.map((option) => option.value);
+
+    expect(ids).toContain("continue");
+    expect(ids).not.toContain("download");
+    expect(ids).not.toContain("bookmark");
+  });
+
+  test("searching still surfaces a blocked command with its reason", () => {
+    // Dropping them from the idle list must not make them undiscoverable: a user
+    // who types "download" has to find it and learn why it cannot run.
+    const model = buildCommandPickerModel("download", MIXED, 0);
+    const download = model.options.find((option) => option.value === "download");
+
+    expect(download).toBeDefined();
+    expect(download?.enabled).toBe(false);
+    expect(download?.disabledReason).toBe("Select a search result first.");
+  });
+
+  test("an all-blocked context falls back to the full list, never an empty palette", () => {
+    const allBlocked = [blockedCmd("download", ["download"], "nope")];
+
+    expect(buildCommandPickerModel("", allBlocked, 0).options).toHaveLength(1);
+  });
+});
 
 // The core invariant: the command Enter runs is ALWAYS the one the palette
 // highlights (model.selectedOption). No separate resolution path may diverge.
