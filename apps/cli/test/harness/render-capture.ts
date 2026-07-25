@@ -67,11 +67,17 @@ const ANSI_CSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[ -/]*[@-~]`, 
 /**
  * Strip ANSI escapes from a captured frame.
  *
- * Assert through this whenever the expected text spans a style boundary.
- * `"Filter: d"` renders as a dim label followed by a bold value, so the raw
- * frame carries escape bytes between them and a bare `toContain` only passes
- * when colour happens to be disabled — green when piped, red under a TTY or
- * FORCE_COLOR.
+ * `captureFrame` and `captureFrames` already apply this, so frames arrive as
+ * text and assertions never depend on whether colour happened to be enabled.
+ * It stays exported for raw stdout capture (poster/Kitty writes), which is not
+ * a frame and must keep its escapes.
+ *
+ * Why it is applied for you rather than left to each call site: Ink only emits
+ * colour when stdout looks colour-capable, so a frame is plain text under a
+ * piped `bun test` and escape-laden under a TTY or FORCE_COLOR. Any expectation
+ * spanning a style boundary — a coloured key followed by a muted label, as in
+ * "1 Open details" — then passes locally and fails in a terminal for reasons
+ * that have nothing to do with the component being tested.
  */
 export function stripAnsi(frame: string): string {
   return frame.replace(ANSI_CSI, "");
@@ -228,7 +234,7 @@ export function captureResizeSequence(
           stdout.emit("resize");
         });
       }
-      frames.push(stdout.lastFrame().replace(/\s+$/, ""));
+      frames.push(stripAnsi(stdout.lastFrame()).replace(/\s+$/, ""));
     }
     return frames;
   } finally {
@@ -242,7 +248,7 @@ export function captureResizeSequence(
 export function captureFrame(node: ReactElement, options: CaptureOptions = {}): string {
   const active = mount(node, options);
   try {
-    return active.stdout.lastFrame().replace(/\s+$/, "");
+    return stripAnsi(active.stdout.lastFrame()).replace(/\s+$/, "");
   } finally {
     active.unmount();
   }
