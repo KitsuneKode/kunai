@@ -256,6 +256,26 @@ export class PresenceServiceImpl implements PresenceService {
         }),
       );
     } catch (error) {
+      // Failing to clear while shutting down is the expected teardown order,
+      // not a fault: the IPC socket is already gone precisely because we are
+      // exiting. Routing it through markUnavailable printed a full ERROR line —
+      // the console sink is enabled once the Ink shell unmounts, which on Ctrl+C
+      // happens before this runs, so it surfaced on ordinary non-debug quits —
+      // and claimed "auto-retry-in-1s" for a retry that can never happen. There
+      // is also nothing left to mark unavailable, since the process is ending.
+      if (this.shuttingDown) {
+        this.deps.diagnostics.record(
+          buildPresenceDiagnosticEvent({
+            operation: "presence.clear.succeeded",
+            status: "succeeded",
+            severity: "healthy",
+            recommendedAction: "none",
+            message: "Presence clear skipped — client already closed during shutdown",
+            context: { provider: "discord", reason, error: normalizePresenceError(error) },
+          }),
+        );
+        return;
+      }
       this.markUnavailable("Discord presence clear failed", error, {
         suspectedDuplicateDiscordConsumer: true,
       });

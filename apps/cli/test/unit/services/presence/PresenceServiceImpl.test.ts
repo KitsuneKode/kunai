@@ -401,6 +401,66 @@ describe("PresenceServiceImpl", () => {
     ).toBeNull();
   });
 
+  test("a clear that fails during shutdown is teardown, not a fault", async () => {
+    // The console log sink turns on once the Ink shell unmounts, which on Ctrl+C
+    // happens before this runs — so recording a failure here printed a full
+    // ERROR line on an ordinary non-debug quit, and promised an auto-retry that
+    // can never happen because the process is exiting.
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      shuttingDown: true,
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        async clearActivity() {
+          throw new Error("Discord IPC client destroyed");
+        },
+        async destroy() {},
+        on() {},
+      },
+      status: "ready",
+    });
+
+    await service.clearPlayback("shutdown");
+
+    // `level` is what decides whether this reaches the console sink at all.
+    expect(diagnostics.events.some((event) => event.level === "error")).toBe(false);
+    expect((service as unknown as { status: string }).status).not.toBe("unavailable");
+  });
+
+  test("a clear that fails while running is still a real fault", async () => {
+    // The shutdown exemption must not swallow a genuine mid-session IPC failure.
+    const diagnostics = createDiagnostics();
+    const service = new PresenceServiceImpl({
+      config: createConfig({ presenceProvider: "discord" }),
+      diagnostics,
+    });
+
+    Object.assign(service as unknown as Record<string, unknown>, {
+      shuttingDown: false,
+      discordClient: {
+        async login() {},
+        async setActivity() {},
+        async clearActivity() {
+          throw new Error("Discord IPC client destroyed");
+        },
+        async destroy() {},
+        on() {},
+      },
+      status: "ready",
+    });
+
+    await service.clearPlayback("test-clear");
+
+    expect(diagnostics.events.some((event) => event.level === "error")).toBe(true);
+    expect((service as unknown as { status: string }).status).toBe("unavailable");
+  });
+
   test("describes effective discord client id source", () => {
     expect(
       describePresenceConfiguration(createConfig({ presenceProvider: "off" }), {
