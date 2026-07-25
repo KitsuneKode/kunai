@@ -141,6 +141,75 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert).toBeNull();
   });
 
+  test("a playing movie reads as a movie, not as its lane", () => {
+    // The rail beside the header renders the resolved content kind, so a movie
+    // opened from the series lane had two panels disagreeing about one title.
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "series",
+        provider: "vidking",
+        view: "playback",
+        playbackStatus: "playing",
+        currentTitle: { id: "fc", name: "Fight Club", type: "movie" },
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    expect(summary.crumb).toContain("movie");
+    expect(summary.crumb).not.toContain("series");
+  });
+
+  test("a playing series still reads as its lane", () => {
+    // Only the movie case is corrected: the anime and YouTube lanes carry
+    // meaning that a title's own "series" type would throw away.
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        mode: "anime",
+        provider: "hianime",
+        view: "playback",
+        playbackStatus: "playing",
+        currentTitle: { id: "fr", name: "Frieren", type: "series" },
+      },
+      currentViewLabel: "playback",
+      rootStatus: "playing",
+    });
+
+    expect(summary.crumb).toContain("anime");
+  });
+
+  test("an idle movie lane keeps the browsing lane crumb", () => {
+    // Outside playback the lane describes the search context, which is what the
+    // crumb should say — there is no single title to contradict.
+    const base = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        currentTitle: { id: "fc", name: "Fight Club", type: "movie" },
+      },
+      currentViewLabel: "search",
+      rootStatus: "ready",
+    });
+
+    expect(summary.crumb).toContain("series");
+  });
+
   test("carries active notifications in the crumb bell, not a persistent alert", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },

@@ -11,7 +11,7 @@
 // =============================================================================
 
 import type { TitleDetail } from "@/domain/catalog/title-detail";
-import type { ContentKind } from "@/domain/media/content-kind";
+import { contentKindHasEpisodes, type ContentKind } from "@/domain/media/content-kind";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { VideoMeta } from "@/domain/types";
 import { Box, Text } from "ink";
@@ -305,16 +305,30 @@ function initialsOf(title: string): string {
 
 // ── Next-Up hero (body centerpiece; holds the one Kitty image) ─────────────────
 
+/**
+ * The card's own heading. "UP NEXT" was hardcoded, so a resume — the same title
+ * at the same position — announced itself as something coming next, and a
+ * queue head looked like the next episode of what just played.
+ */
+const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
+  resume: "▶ RESUME",
+  "next-episode": "▶ UP NEXT",
+  "next-season": "▶ NEXT SEASON",
+  queue: "▶ FROM QUEUE",
+};
+
 function NextUpHeroCard({
   hero,
   artworkUrl,
   title,
   width,
+  contentKind,
 }: {
   readonly hero: PostPlayNextUpHero;
   readonly artworkUrl?: string;
   readonly title: string;
   readonly width: number;
+  readonly contentKind?: ContentKind;
 }) {
   const innerWidth = Math.max(20, width - 4);
   const posterCols = 10;
@@ -329,7 +343,13 @@ function NextUpHeroCard({
   // The auto-next countdown ticks on the mpv loading overlay and is cleared
   // before this menu ever mounts, so the hero only advertises the manual
   // resume/play accelerator — never a live "Playing in Ns" timer.
-  const countdownLine = hero.kind === "resume" ? "↵ resume · e episodes" : "↵ play · e episodes";
+  //
+  // "e episodes" is only offered when there are episodes to open: a movie has
+  // no episode list, so advertising the key pointed at nothing.
+  const countdownLine = [
+    hero.kind === "resume" ? "↵ resume" : "↵ play",
+    ...(contentKindHasEpisodes(contentKind) ? ["e episodes"] : []),
+  ].join(" · ");
   return (
     <Box
       borderStyle="round"
@@ -340,7 +360,7 @@ function NextUpHeroCard({
       marginTop={1}
     >
       <Text color={palette.accent} bold>
-        ▶ UP NEXT
+        {NEXT_UP_HERO_HEADINGS[hero.kind]}
       </Text>
       <Box flexDirection="row" marginTop={1}>
         <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
@@ -531,6 +551,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               artworkUrl={nextEpisodeThumbUrl ?? posterUrl}
               title={title}
               width={bodyWidth}
+              contentKind={resolvedContentKind}
             />
           ) : null}
 

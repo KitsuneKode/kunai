@@ -103,6 +103,17 @@ export function showsEpisodeLabel(title: Pick<TitleInfo, "type"> | null | undefi
   return title?.type !== "movie";
 }
 
+/**
+ * Whether this kind has an episode list worth offering.
+ *
+ * The `ContentKind` sibling of {@link showsEpisodeLabel}, for surfaces that hold
+ * a resolved kind rather than a `TitleInfo`. A standalone video has no episode
+ * list either, so offering "e episodes" on one is as wrong as on a movie.
+ */
+export function contentKindHasEpisodes(kind: ContentKind | undefined): boolean {
+  return kind === "series" || kind === "anime";
+}
+
 /** Pick the language profile (audio/subtitle/quality) matching the content kind. */
 export function mediaLanguageProfileFor(input: {
   readonly mode: ShellMode;

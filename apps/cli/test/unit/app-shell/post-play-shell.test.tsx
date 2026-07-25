@@ -57,6 +57,51 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).not.toContain("Playing in");
     expect(frame).toContain("↵ resume");
   });
+
+  it("calls a resume a resume, not something coming up next", () => {
+    // A resume is the same title at the same position. Announcing it as "UP
+    // NEXT" claimed the opposite of what pressing Enter would do.
+    const frame = captureFrame(
+      <PostPlayShell
+        title="Fight Club"
+        episodeLabel=""
+        postPlayState={{ kind: "mid-series" }}
+        resumeLabel="resume 1:59"
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("▶ RESUME");
+    expect(frame).not.toContain("▶ UP NEXT");
+  });
+
+  it("does not offer an episode list for a movie", () => {
+    // No episode/season signals => resolvedContentKind infers "movie", so the
+    // "e episodes" accelerator would point at nothing.
+    const frame = captureFrame(
+      <PostPlayShell
+        title="Fight Club"
+        episodeLabel=""
+        postPlayState={{ kind: "mid-series" }}
+        resumeLabel="resume 1:59"
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("↵ resume");
+    expect(frame).not.toContain("e episodes");
+  });
+
+  it("still offers the episode list for a series", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="My Show"
+        episodeLabel="S01 E01"
+        postPlayState={{ kind: "mid-series" }}
+        resumeLabel="resume 12:30"
+      />,
+      { columns: 130 },
+    );
+    expect(frame).toContain("e episodes");
+  });
 });
 
 describe("PostPlayShell series-complete celebration", () => {

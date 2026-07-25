@@ -143,7 +143,17 @@ export function buildRootStatusSummary({
   if (isActivePlayback && playbackIsLocal) {
     crumbParts.push("↓ offline");
   } else {
-    crumbParts.push(formatSessionLaneLabel(state.mode), providerCrumb);
+    // The lane describes the search context ("series" vs "anime"), which is the
+    // right crumb while browsing. Once a concrete title is playing, though, a
+    // movie opened from the series lane read "series" in the header while the
+    // rail beside it read "movie" — two panels contradicting each other about
+    // the same title. Correct only that case: the anime and YouTube lanes carry
+    // real meaning a title's own type would lose.
+    const laneCrumb =
+      isActivePlayback && state.currentTitle?.type === "movie"
+        ? "movie"
+        : formatSessionLaneLabel(state.mode);
+    crumbParts.push(laneCrumb, providerCrumb);
   }
   if (!isActivePlayback) {
     if (streak !== undefined && streak >= 2) {
