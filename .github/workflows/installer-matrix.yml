@@ -10,11 +10,16 @@ concurrency:
   group: installer-matrix-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   validate-registry:
     name: Validate scenario registry
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      cells: ${{ steps.matrix.outputs.cells }}
     steps:
       - uses: actions/checkout@v5
       - name: List and validate registry
@@ -22,6 +27,17 @@ jobs:
           bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios
           bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios --gate pr >/dev/null
           bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios --gate nightly >/dev/null
+
+      # Nightly sweeps every registered cell, both gates. The matrix is derived
+      # rather than transcribed so a scenario added to scenarios.tsv is covered
+      # here without a parallel edit to this file.
+      - name: Derive full installer matrix
+        id: matrix
+        run: |
+          cells="$(bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios \
+            | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {scenario: .[0], variant: .[1]})')"
+          echo "cells=$cells" >> "$GITHUB_OUTPUT"
+          echo "Nightly installer cells: $cells"
 
   build-binaries:
     name: Build linux binaries
@@ -52,39 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - scenario: full-lifecycle
-            variant: glibc
-          - scenario: full-lifecycle
-            variant: musl
-          - scenario: clean-install
-            variant: glibc
-          - scenario: clean-install
-            variant: musl
-          - scenario: checksum-rejection
-            variant: glibc
-          - scenario: checksum-rejection
-            variant: musl
-          - scenario: reinstall-idempotent
-            variant: glibc
-          - scenario: reinstall-idempotent
-            variant: musl
-          - scenario: upgrade-rollback
-            variant: glibc
-          - scenario: upgrade-rollback
-            variant: musl
-          - scenario: stale-lock-recovery
-            variant: glibc
-          - scenario: stale-lock-recovery
-            variant: musl
-          - scenario: uninstall-preserves-user-data
-            variant: glibc
-          - scenario: uninstall-preserves-user-data
-            variant: musl
-          - scenario: custom-xdg-layout
-            variant: glibc
-          - scenario: custom-xdg-layout
-            variant: musl
+        include: ${{ fromJSON(needs.validate-registry.outputs.cells) }}
     steps:
       - uses: actions/checkout@v5
       - name: Download linux binaries

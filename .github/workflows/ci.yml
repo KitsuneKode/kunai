@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseding a PR push is free; superseding a main push destroys the only
+  # signal that commit will ever get, which is how two main runs were lost as
+  # "cancelled" rather than reporting pass or fail.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,8 +30,22 @@ jobs:
       cli: ${{ steps.filter.outputs.cli }}
       docs: ${{ steps.filter.outputs.docs }}
       installer: ${{ steps.filter.outputs.installer }}
+      installer-matrix: ${{ steps.installer-matrix.outputs.cells }}
     steps:
       - uses: actions/checkout@v5
+
+      # scenarios.tsv is the single source of truth for which installer cells
+      # exist and which gate they belong to. Deriving the matrix keeps this
+      # workflow from drifting away from the registry it is supposed to enforce.
+      - name: Derive PR-gate installer matrix
+        id: installer-matrix
+        run: |
+          cells="$(bash apps/cli/test/docker/native-installer/run-local.sh \
+            --list-scenarios --gate pr \
+            | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {scenario: .[0], variant: .[1]})')"
+          echo "cells=$cells" >> "$GITHUB_OUTPUT"
+          echo "PR-gate installer cells: $cells"
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -309,13 +326,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - scenario: full-lifecycle
-            variant: glibc
-          - scenario: full-lifecycle
-            variant: musl
-          - scenario: checksum-rejection
-            variant: glibc
+        include: ${{ fromJSON(needs.changes.outputs.installer-matrix) }}
 
     steps:
       - uses: actions/checkout@v5

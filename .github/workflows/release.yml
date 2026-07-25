@@ -329,10 +329,11 @@ jobs:
             runner: windows-latest
             binary: kunai-windows-x64.exe
           - id: darwin-x64
-            runner: macos-13
+            runner: macos-15-intel
             binary: kunai-darwin-x64
-          # Apple Silicon is the majority Mac target; macos-13 is Intel-only, so
-          # without this entry darwin-arm64 would ship on a checksum alone.
+          # Apple Silicon is the majority Mac target; the runner above is
+          # Intel-only, so without this entry darwin-arm64 would ship on a
+          # checksum alone.
           - id: darwin-arm64
             runner: macos-14
             binary: kunai-darwin-arm64
