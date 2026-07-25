@@ -86,6 +86,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   telemetry: "unset",
   installId: "",
   lastTelemetryPingAt: 0,
+  telemetryRetryAfter: 0,
   telemetryEndpoint: "",
   updateChecksEnabled: true,
   autoApplyBinaryUpdates: true,

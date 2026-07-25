@@ -117,6 +117,12 @@ export interface KitsuneConfig {
   installId: string;
   /** Last successful cadence mark for the daily telemetry ping (epoch ms). */
   lastTelemetryPingAt: number;
+  /**
+   * Earliest epoch ms at which a failed telemetry send may be retried.
+   * `0` means no retry is pending. Set instead of `lastTelemetryPingAt` when a
+   * send fails, so the next CLI launch retries rather than losing the day.
+   */
+  telemetryRetryAfter: number;
   /** Optional override for the telemetry ingest URL (else env / built-in default). */
   telemetryEndpoint: string;
   updateChecksEnabled: boolean;

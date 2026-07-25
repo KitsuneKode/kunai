@@ -365,3 +365,19 @@ describe("telemetry consent", () => {
     }
   });
 });
+
+describe("telemetryRetryAfter config field", () => {
+  test("defaults to zero, meaning no pending retry", () => {
+    expect(DEFAULT_CONFIG.telemetryRetryAfter).toBe(0);
+  });
+
+  test("is a distinct field from the success cadence mark", () => {
+    const config: KitsuneConfig = {
+      ...DEFAULT_CONFIG,
+      lastTelemetryPingAt: 111,
+      telemetryRetryAfter: 222,
+    };
+    expect(config.lastTelemetryPingAt).toBe(111);
+    expect(config.telemetryRetryAfter).toBe(222);
+  });
+});

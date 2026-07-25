@@ -220,6 +220,11 @@ export class ConfigServiceImpl implements ConfigService {
         Number.isFinite(loaded.lastTelemetryPingAt)
           ? Math.max(0, loaded.lastTelemetryPingAt)
           : 0,
+      telemetryRetryAfter:
+        typeof loaded.telemetryRetryAfter === "number" &&
+        Number.isFinite(loaded.telemetryRetryAfter)
+          ? Math.max(0, loaded.telemetryRetryAfter)
+          : 0,
       telemetryEndpoint:
         typeof loaded.telemetryEndpoint === "string" ? loaded.telemetryEndpoint.trim() : "",
     };
@@ -489,6 +494,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get lastTelemetryPingAt(): number {
     return this.config.lastTelemetryPingAt;
+  }
+
+  get telemetryRetryAfter(): number {
+    return this.config.telemetryRetryAfter;
   }
 
   get telemetryEndpoint(): string {
