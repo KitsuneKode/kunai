@@ -206,26 +206,25 @@ export function installCurlShim(shimDir: string, fixtureBaseUrl: string): void {
   const realCurl = Bun.which("curl");
   if (!realCurl) throw new Error("curl is required for README install verification");
   const path = join(shimDir, "curl");
+  // Rewriting arguments in place keeps this POSIX: the previous version built a
+  // quoted string with `printf '%q'` and `eval`, but `%q` is a bash extension.
+  // It worked only where /bin/sh happens to be bash and failed on Debian and
+  // Ubuntu, whose /bin/sh is dash ("printf: %q: invalid directive").
   writeFileSync(
     path,
     `#!/bin/sh
 REAL_CURL=${JSON.stringify(realCurl)}
 FIXTURE=${JSON.stringify(fixtureBaseUrl.replace(/\/$/, ""))}
-rewritten=0
-args=
-for arg in "$@"; do
+for arg do
   case "$arg" in
     https://raw.githubusercontent.com/KitsuneKode/kunai/*/install.sh)
       arg="$FIXTURE/install.sh"
-      rewritten=1
       ;;
   esac
-  # shellcheck disable=SC2089
-  args="$args $(printf '%q' "$arg")"
+  set -- "$@" "$arg"
+  shift
 done
-# When fetching the installer script, append non-interactive fixture flags via
-# bash -s if the caller pipes to bash with no args (exact README shape).
-eval "exec \\"$REAL_CURL\\" $args"
+exec "$REAL_CURL" "$@"
 `,
     { mode: 0o755 },
   );
@@ -306,7 +305,11 @@ async function runShell(
   env: NodeJS.ProcessEnv,
   options: { readonly cwd?: string; readonly timeoutMs?: number } = {},
 ): Promise<CommandResult> {
-  const proc = Bun.spawn(["bash", "-lc", command], {
+  // Deliberately not a login shell: `bash -lc` sources /etc/profile, which on
+  // Debian derivatives reassigns PATH outright and would discard the isolated
+  // bin/shim directories this harness just built — silently running the README
+  // commands against host tooling and the real network instead of the fixtures.
+  const proc = Bun.spawn(["bash", "-c", command], {
     cwd: options.cwd ?? process.cwd(),
     env,
     stdout: "pipe",

@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,10 +24,22 @@ import { join } from "node:path";
  * is tested without depending on the real app's startup behavior.
  */
 const LAUNCHER_SOURCE = join(import.meta.dirname, "../../scripts/npm-launcher.mjs");
-const NO_BUN_PATH = "/usr/bin:/bin";
 
 let workDir = "";
 let launcher = "";
+/**
+ * PATH that reaches `node` but not `bun`.
+ *
+ * Built from a directory we populate ourselves rather than hardcoded system
+ * directories: "bun is absent" then holds by construction on any image, and
+ * `node` stays reachable wherever it happens to live. Hardcoding `/usr/bin:/bin`
+ * silently passed on distros that ship `/usr/bin/node` and failed on GitHub's
+ * Ubuntu runners, which install Node under `/usr/local/bin`.
+ *
+ * The stand-in child resolves `node` through this PATH too, via its
+ * `#!/usr/bin/env node` shebang.
+ */
+let noBunPath = "";
 
 function targetIdForHost(): string {
   const arch = process.arch === "arm64" ? "arm64" : "x64";
@@ -30,6 +50,13 @@ function targetIdForHost(): string {
 
 beforeAll(() => {
   workDir = mkdtempSync(join(tmpdir(), "kunai-launcher-"));
+
+  const nodeBin = Bun.which("node");
+  if (!nodeBin) throw new Error("node is required to verify the npm launcher");
+  noBunPath = join(workDir, "no-bun-bin");
+  mkdirSync(noBunPath, { recursive: true });
+  symlinkSync(nodeBin, join(noBunPath, "node"));
+
   mkdirSync(join(workDir, "dist"), { recursive: true });
   launcher = join(workDir, "dist", "kunai.mjs");
   writeFileSync(launcher, readFileSync(LAUNCHER_SOURCE, "utf8"));
@@ -59,7 +86,7 @@ afterAll(() => {
 function runLauncher(args: readonly string[]) {
   return Bun.spawnSync({
     cmd: ["node", launcher, ...args],
-    env: { ...process.env, PATH: NO_BUN_PATH },
+    env: { ...process.env, PATH: noBunPath },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -94,7 +121,7 @@ function readManagedContext(fixtureLauncher: string, unrelated = "preserved") {
     cmd: ["node", fixtureLauncher, "--echo-managed-context"],
     env: {
       ...process.env,
-      PATH: NO_BUN_PATH,
+      PATH: noBunPath,
       KUNAI_LAUNCHER_TEST_UNRELATED: unrelated,
     },
     stdout: "pipe",
@@ -115,9 +142,10 @@ test("launcher is plain Node ESM with a node shebang and no bun: imports", () =>
 });
 
 test("runs under node with no bun on PATH", () => {
-  expect(
-    Bun.spawnSync({ cmd: ["sh", "-c", "command -v bun"], env: { PATH: NO_BUN_PATH } }).exitCode,
-  ).not.toBe(0);
+  // Guards the premise: the launcher below must be starved of bun, not merely
+  // running somewhere bun happens to be missing.
+  expect(Bun.which("bun", { PATH: noBunPath })).toBeNull();
+  expect(Bun.which("node", { PATH: noBunPath })).not.toBeNull();
 
   const result = runLauncher(["--echo-args", "hello"]);
   expect(result.exitCode).toBe(0);
@@ -174,7 +202,7 @@ test("reports an actionable error when the platform binary is missing", () => {
 
   const result = Bun.spawnSync({
     cmd: ["node", lonely],
-    env: { ...process.env, PATH: NO_BUN_PATH },
+    env: { ...process.env, PATH: noBunPath },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -199,7 +227,7 @@ signalTest("dies by the same signal as the child, giving 128+n", async () => {
   ] as const) {
     const child = Bun.spawn({
       cmd: ["node", launcher],
-      env: { ...process.env, PATH: NO_BUN_PATH },
+      env: { ...process.env, PATH: noBunPath },
       stdout: "ignore",
       stderr: "ignore",
     });
