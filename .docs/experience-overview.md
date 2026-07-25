@@ -125,6 +125,11 @@ When enabled (setup wizard or `/telemetry`), Kunai may send at most one ping per
 
 - `installId` is a random UUID stored in config — never hostname, MAC, IP, or username
 - No title, query, provider result, URL, or file path is ever transmitted
+- `version` must be strict semver and `os`/`arch` must be on a closed allowlist —
+  the ingest server rejects anything else, so a hostile client cannot inject a
+  fabricated dimension into published aggregates
+- A failed send does **not** consume the 24h cadence: it schedules a 15-minute
+  retry marker so the next launch retries, rather than silently losing the day
 - Decline, timeout, non-TTY, `CI=true`, and `DO_NOT_TRACK=1` resolve to **disabled**
 - `DO_NOT_TRACK=1` / `CI=true` also hard-block **sends and enable**, even if config
   already says `enabled`
@@ -132,7 +137,7 @@ When enabled (setup wizard or `/telemetry`), Kunai may send at most one ping per
 - `/telemetry` shows status and toggles consent; `/telemetry show` prints the exact JSON
 
 The receiving endpoint is a minimal user-owned Vercel function
-(`apps/telemetry-ingest`). It accepts POST only, validates the payload shape,
+(`apps/telemetry-ingest`). It accepts POST only, validates the payload shape and every dimension value,
 rejects clock skew, rate-limits per IP hash, and counts at most once per
 HMAC-hashed install id per UTC day. Durable storage (Upstash Redis) keeps only
 hashed ids (short TTL daily sets), a lifetime HyperLogLog, and aggregate day
