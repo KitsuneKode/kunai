@@ -109,11 +109,20 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
       ...(isSeriesPlayback
         ? [
             footerActionFromBinding("player-episode", "pick-episode", bindings),
+            // Autoplay stays series-only: it means "start the next episode", so
+            // a movie has nothing for it to do.
             footerActionFromBinding("player-autoplay", "toggle-autoplay", bindings, {
               label: state.autoplayPaused ? "resume autoplay" : "pause autoplay",
             }),
           ]
         : []),
+      // Autoskip was missing from the playing footer entirely — only the
+      // bootstrap footer offered it — so the one surface where skipping
+      // actually happens never advertised its key. Ungated, matching the GO
+      // line, which has always listed it for any content.
+      footerActionFromBinding("player-autoskip", "toggle-autoskip", bindings, {
+        label: state.autoskipPaused ? "resume autoskip" : "pause autoskip",
+      }),
       footerActionFromBinding("player-source", "source", bindings),
       footerActionFromBinding("player-stop", "quit", bindings, { label: "stop" }),
     ];
