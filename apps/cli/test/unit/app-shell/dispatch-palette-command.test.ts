@@ -35,23 +35,40 @@ function episodeInfoFromQueuePlaybackLaunch(launch: QueuePlaybackLaunch): Episod
   };
 }
 
+// Each factory spreads the real module before overriding. `mock.module` is
+// process-global and applied at load time, so returning only the stubbed
+// members deletes every other export for every other test file in the run --
+// root-overlay-bridge.test.ts saw an `openNotificationsOverlay` that resolved
+// undefined and an `openRootOwnedOverlay` that never dispatched, because this
+// file had replaced the module wholesale. It passed on Linux and failed on
+// Windows purely on test-file load order, so the Linux pass was luck.
+const actualSetupWorkflows = await import("@/app-shell/workflows/setup-workflows");
+const actualRootOverlayBridge = await import("@/app-shell/root-overlay-bridge");
+const actualRootQueueBridge = await import("@/app-shell/root-queue-bridge");
+const actualShellWorkflows = await import("@/app-shell/workflows/shell-workflows");
+
 mock.module("@/app-shell/workflows/setup-workflows", () => ({
+  ...actualSetupWorkflows,
   openSetupWizardFromShell,
 }));
 
 mock.module("@/app-shell/root-overlay-bridge", () => ({
+  ...actualRootOverlayBridge,
   openRootOwnedOverlay,
   openDiagnosticsOverlay,
-  openNotificationsOverlay: async () => {},
+  // Must match the real resolved shape; callers read `.playback`.
+  openNotificationsOverlay: async () => ({ playback: null }),
 }));
 
 mock.module("@/app-shell/root-queue-bridge", () => ({
+  ...actualRootQueueBridge,
   waitForRootQueueSelection,
   titleInfoFromQueuePlaybackLaunch,
   episodeInfoFromQueuePlaybackLaunch,
 }));
 
 mock.module("@/app-shell/workflows/shell-workflows", () => ({
+  ...actualShellWorkflows,
   handleShellAction,
   resolveQuitWithDownloadQueue: async () => "handled" as const,
 }));
