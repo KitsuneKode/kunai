@@ -383,7 +383,14 @@ describe("release workflow confirmation dependency graph", () => {
 
     expect(native).toContain("ubuntu-latest");
     expect(native).toContain("windows-latest");
-    expect(native).toContain("macos-13");
+    // Assert the macOS coverage, not the runner label. This pinned "macos-13"
+    // and broke the moment that image was retired for "macos-15-intel" — a
+    // rename that changed no guarantee. Both architectures are the thing worth
+    // holding: the Intel runner cannot build Apple Silicon, so losing the
+    // arm64 entry would ship the majority Mac target on a checksum alone.
+    expect(native).toContain("darwin-x64");
+    expect(native).toContain("darwin-arm64");
+    expect(native.match(/runner:\s*macos-[\w.-]+/g) ?? []).toHaveLength(2);
     expect(native).not.toContain("continue-on-error: true");
     expect(native).toContain("SHA256SUMS");
     expect(native).toContain("--version");
