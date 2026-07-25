@@ -47,6 +47,14 @@ export interface KitsuneConfig {
   youtubeMetadata: YouTubeMetadataConfig;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
   subLang: string;
+  /**
+   * User-owned Wyzie API key for the external subtitle search
+   * (https://store.wyzie.io/redeem). Empty by default and never shipped with a
+   * value: the free tier is per-key rate limited, so a shared credential would
+   * throttle everyone at once, and the key belongs to whoever redeemed it. With
+   * no key the external lookup is skipped and only provider subtitles are used.
+   */
+  wyzieApiKey: string;
   /** @deprecated use animeLanguageProfile/seriesLanguageProfile/movieLanguageProfile */
   animeLang: "sub" | "dub";
   animeLanguageProfile: MediaLanguageProfile;

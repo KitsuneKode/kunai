@@ -217,7 +217,12 @@ import {
   summarizeStartupPhases,
 } from "@/services/playback/playback-startup-timeline";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import { mergeSubtitleTracks, resolveSubtitlesByTmdbId, selectAutomaticSubtitle } from "@/subtitle";
+import {
+  mergeSubtitleTracks,
+  resolveSubtitlesByTmdbId,
+  resolveWyzieApiKey,
+  selectAutomaticSubtitle,
+} from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
 
@@ -3873,6 +3878,27 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const tmdbId = provenTmdbId;
     if (!tmdbId) return;
 
+    // The external search is the user's own Wyzie key (Kunai ships none), so an
+    // unconfigured key is an ordinary "not available here" — say so once in
+    // diagnostics rather than spending a request that can only 401.
+    const wyzieApiKey = resolveWyzieApiKey(context.container.config.getRaw().wyzieApiKey);
+    if (!wyzieApiKey) {
+      diagnosticsService.record(
+        buildSubtitleDiagnosticEvent({
+          operation: "subtitle.lookup.skipped",
+          status: "skipped",
+          severity: "healthy",
+          recommendedAction: "none",
+          message: "Late subtitle lookup skipped (no Wyzie API key configured)",
+          titleId: title.id,
+          season: episode.season,
+          episode: episode.episode,
+          context: { reason: "wyzie-key-missing", requestedSubLang },
+        }),
+      );
+      return;
+    }
+
     const inflightKey = `${title.id}:${episode.season}:${episode.episode}:${requestedSubLang}`;
     if (PlaybackPhase.lateSubtitleInflight.has(inflightKey)) {
       diagnosticsService.record(
@@ -3920,6 +3946,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           season: title.type === "series" ? episode.season : undefined,
           episode: title.type === "series" ? episode.episode : undefined,
           preferredLang: requestedSubLang,
+          apiKey: wyzieApiKey,
           signal: iterationSignal,
         });
 

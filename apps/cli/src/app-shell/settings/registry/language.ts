@@ -135,6 +135,22 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       }),
     },
     {
+      kind: "text",
+      id: "wyzieApiKey",
+      label: "Subtitle search key",
+      // Kunai ships no key here on purpose: the free tier is per-key rate
+      // limited, so one shared credential would throttle every user at once.
+      detail: "Your own Wyzie key for subtitle search — get one at store.wyzie.io/redeem",
+      placeholder: "Paste your Wyzie API key, then press Enter",
+      envOverride: "KUNAI_WYZIE_API_KEY",
+      read: (config) => config.wyzieApiKey,
+      apply: (config, value) => ({ ...config, wyzieApiKey: value.trim() }),
+      validate: (value) =>
+        !value.trim() || value.trim().length >= 8
+          ? null
+          : "That looks too short for a Wyzie key. Paste the whole key, or clear it to disable subtitle search.",
+    },
+    {
       kind: "enum",
       id: "animeTitlePreference",
       label: "Anime title names",

@@ -286,13 +286,39 @@ describe("resolveSubtitlesByTmdbId", () => {
       season: 1,
       episode: 2,
       preferredLang: "en",
+      apiKey: "wyzie-user-key",
     });
 
     expect(requestedUrl).toContain("id=127529");
+    expect(requestedUrl).toContain("key=wyzie-user-key");
     expect(requestedUrl).toContain("season=1");
     expect(requestedUrl).toContain("episode=2");
     expect(requestedUrl).toContain("language=en");
     expect(result.failed).toBe(false);
     expect(result.selected).toBe("https://sub.wyzie.io/c/demo/id/99?format=srt");
+  });
+
+  test("skips the request entirely when the user has configured no key", async () => {
+    // Kunai ships no Wyzie key. Without one there is nothing to authenticate
+    // with, so the lookup must not spend a request that can only be rejected —
+    // and must report `no-key` rather than a generic failure, so callers can
+    // tell "not set up" apart from "the service is down".
+    let called = false;
+    globalThis.fetch = mock(async () => {
+      called = true;
+      return new Response("[]", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await resolveSubtitlesByTmdbId({
+      tmdbId: "127529",
+      type: "movie",
+      preferredLang: "en",
+      apiKey: "   ",
+    });
+
+    expect(called).toBe(false);
+    expect(result.outcome).toBe("no-key");
+    expect(result.failed).toBe(false);
+    expect(result.list).toEqual([]);
   });
 });

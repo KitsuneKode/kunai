@@ -17,6 +17,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: {},
   subLang: "en",
+  wyzieApiKey: "",
   animeLang: "sub",
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "best" },

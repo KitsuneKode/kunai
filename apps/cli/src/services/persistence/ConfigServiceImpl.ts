@@ -276,6 +276,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.subLang;
   }
 
+  get wyzieApiKey(): string {
+    return this.config.wyzieApiKey;
+  }
+
   get animeLang(): "sub" | "dub" {
     return this.config.animeLang;
   }

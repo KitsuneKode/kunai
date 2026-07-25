@@ -212,7 +212,7 @@ export function mergeSubtitleTracks<T extends { url: string }>(
   return order.map((key) => merged.get(key)).filter((track): track is T => track !== undefined);
 }
 
-export type WyzieFetchOutcome = "ok" | "empty" | "failed" | "cancelled";
+export type WyzieFetchOutcome = "ok" | "empty" | "failed" | "cancelled" | "no-key";
 
 export type WyzieFetchResult = {
   list: SubtitleEntry[];
@@ -529,19 +529,33 @@ function mergeTrackObjects<T extends { url: string }>(
 // =============================================================================
 // ACTIVE WYZIE RESOLUTION
 //
-// Bypasses the passive browser-sniffing approach entirely. The Wyzie API key
-// embedded in Vidking's player is static and reusable. We call the search
-// endpoint directly with the TMDB ID + episode info so we never need to wait
-// for the embed to click the CC button.
+// Bypasses the passive browser-sniffing approach entirely: call the search
+// endpoint directly with the TMDB/IMDb id + episode info, so we never wait for
+// an embed to click its CC button.
 //
-// The current key was extracted from the VidKing embed (luffy project).
-// Get your own free key at https://store.wyzie.io/redeem (1,000 req/day).
+// The key is the user's own (`wyzieApiKey`, redeemed at
+// https://store.wyzie.io/redeem — free tier 1,000 req/day). Kunai ships no key,
+// for the same reason it ships no relay URL: the credential belongs to whoever
+// redeemed it, and one shared key would rate-limit every user at once. Without
+// a key this resolver makes no request and reports `no-key`.
 //
 // Ref: .docs/subtitle-resolver-analysis.md
 // =============================================================================
 
-const WYZIE_KEY = "wyzie-bpct649andjfotnyln2scnjl06h73d3a";
 const WYZIE_SEARCH = "https://sub.wyzie.io/search";
+
+/**
+ * Single source of truth for which Wyzie key is in force: the environment wins
+ * over the stored setting, matching how `KUNAI_DISCORD_CLIENT_ID` overrides the
+ * presence client id. Returns "" when neither is set — the caller must treat
+ * that as "subtitle search is not configured", not as a failure.
+ */
+export function resolveWyzieApiKey(
+  configuredKey: string | undefined,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return env.KUNAI_WYZIE_API_KEY?.trim() || (configuredKey ?? "").trim();
+}
 
 export async function resolveSubtitlesByTmdbId(opts: {
   tmdbId: string;
@@ -549,12 +563,20 @@ export async function resolveSubtitlesByTmdbId(opts: {
   season?: number;
   episode?: number;
   preferredLang: string;
+  /** User-owned Wyzie key; without it the lookup is skipped, not attempted. */
+  apiKey: string;
   signal?: AbortSignal;
 }): Promise<WyzieFetchResult> {
-  const { tmdbId, type, season, episode, preferredLang, signal } = opts;
+  const { tmdbId, type, season, episode, preferredLang, apiKey, signal } = opts;
+
+  const key = apiKey.trim();
+  if (!key) {
+    dbg("subtitle", "wyzie lookup skipped — no user API key configured", { tmdbId });
+    return { list: [], selected: null, failed: false, outcome: "no-key" };
+  }
 
   try {
-    const params = new URLSearchParams({ id: tmdbId, key: WYZIE_KEY });
+    const params = new URLSearchParams({ id: tmdbId, key });
     if (type === "series" && season !== undefined) params.set("season", String(season));
     if (type === "series" && episode !== undefined) params.set("episode", String(episode));
     if (
@@ -576,14 +598,12 @@ export async function resolveSubtitlesByTmdbId(opts: {
       url: redactWyzieKey(url),
     });
 
+    // No referer/origin spoofing: those were part of borrowing another site's
+    // key. A key we own is presented as ours.
     return await fetchSubtitlesFromWyzie(
       url,
       preferredLang,
-      {
-        referer: "https://www.vidking.net/",
-        origin: "https://www.vidking.net",
-        "accept-language": "en-US,en;q=0.9",
-      },
+      { "accept-language": "en-US,en;q=0.9" },
       { signal },
     );
   } catch (error) {
