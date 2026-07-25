@@ -99,9 +99,14 @@ Violating any of these fails the task:
 ### Commit discipline
 
 One commit per task, using the exact message given in that task's final step. Stage
-only the files listed in that task's **Files** block — never `git add -A` before
-Task 6. A pre-commit hook runs `oxfmt` on staged files and may reformat them; that is
-expected and its output is not an error.
+only the files listed in that task's **Files** block. **Never `git add -A`, in any
+task.** Other sessions may have unrelated uncommitted work in this tree; a blanket
+stage would commit it under your message. A pre-commit hook runs `oxfmt` on staged
+files and may reformat them; that is expected and its output is not an error.
+
+Other sessions may also land commits on this branch while you work. That is expected
+and harmless — your commits stay intact. Do not rebase, reset, stash, or otherwise
+tidy history you did not create.
 
 ### Reporting back
 
@@ -979,8 +984,13 @@ Expected: only formatting changes from `bun run fmt`, if any. Confirm that `TELE
 
 - [ ] **Step 5: Commit**
 
+Stage explicitly. **Never `git add -A`** — other sessions may have unrelated
+uncommitted work in this tree, and a blanket stage would commit it under this
+message.
+
 ```bash
-git add -A
+cd "$(git rev-parse --show-toplevel)"
+git add .docs/experience-overview.md
 git commit -m "docs(telemetry): document dimension validation and retry semantics"
 ```
 
