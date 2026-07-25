@@ -78,8 +78,22 @@ function readExistingMetadata(filePath: string): Record<string, unknown> | null 
   }
 }
 
-function metadataPayload(value: Record<string, unknown>) {
-  const { syncedAt: _syncedAt, ...payload } = value;
+/**
+ * The metadata's *content* identity, ignoring provenance stamps.
+ *
+ * `syncedAt` and `cliSourceRevision` move on every regeneration and every
+ * commit respectively, while saying nothing about whether the docs content
+ * changed. Comparing them rewrote the file on every commit, so it sat
+ * permanently modified in `git status` and added a two-line diff to unrelated
+ * commits.
+ *
+ * Exported because `check-codegen-freshness.ts` must ask the identical
+ * question. It previously kept its own copy that ignored BOTH fields while this
+ * one ignored only `syncedAt` — so the writer rewrote for a change the checker
+ * declared irrelevant. One definition, no drift.
+ */
+export function metadataIdentity(value: Record<string, unknown>): string {
+  const { syncedAt: _syncedAt, cliSourceRevision: _cliSourceRevision, ...payload } = value;
   return JSON.stringify(payload);
 }
 
@@ -389,7 +403,7 @@ function main() {
 
   const outputPath = path.join(DOCS_LIB_DIR, "generated-metadata.json");
   const existing = readExistingMetadata(outputPath);
-  if (existing && metadataPayload(existing) === metadataPayload(metadata)) {
+  if (existing && metadataIdentity(existing) === metadataIdentity(metadata)) {
     formatGeneratedFile(outputPath);
     console.log(`Metadata already up to date at: ${outputPath}`);
     return;
