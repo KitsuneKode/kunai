@@ -1470,6 +1470,7 @@ export function BrowseShell<T>({
         hasResultsOrErrorOrLoading:
           options.length > 0 || searchState === "error" || searchState === "loading",
         queryNonEmpty: query.trim().length > 0,
+        hasSubmittedSearch: lastSearchedQuery.trim().length > 0,
       });
 
       if (escLayer === "narrow") {

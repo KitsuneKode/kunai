@@ -194,6 +194,7 @@ export function InputField({
     onChange,
     onSubmit,
     onRedraw,
+    focus,
   });
   const rootContentSuspended = useRootContentSuspended();
 

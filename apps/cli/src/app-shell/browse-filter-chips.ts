@@ -25,17 +25,33 @@ export function shouldResearchAfterFilterChange(input: {
   return input.nextQuery.trim().length > 0;
 }
 
+/**
+ * One Esc = undo the narrowest thing currently applied.
+ *
+ * Order matters and is the whole contract: narrow → chips → query → results →
+ * cancel. `query` sits ahead of `results` deliberately — with text typed and
+ * results on screen (the ordinary state), checking `results` first meant the
+ * first Esc reset the surface to trending instead of clearing what the user had
+ * typed, which is the reload that emptying the draft was changed to stop doing.
+ *
+ * `results` also requires a search to actually reset *from*. Without that, a
+ * surface showing default discovery results kept re-answering "results" forever:
+ * the reload repopulated the list, so the condition stayed true and Esc could
+ * never fall through to `cancel` — the surface was inescapable by Esc alone.
+ */
 export function nextBrowseEscFilterLayer(input: {
   readonly narrowOpenOrFocused: boolean;
   readonly resultFilterNonEmpty: boolean;
   readonly structuredChipCount: number;
   readonly hasResultsOrErrorOrLoading: boolean;
   readonly queryNonEmpty: boolean;
+  /** A user search produced these results, so there is something to reset. */
+  readonly hasSubmittedSearch: boolean;
 }): BrowseEscFilterLayer {
   if (input.narrowOpenOrFocused || input.resultFilterNonEmpty) return "narrow";
   if (input.structuredChipCount > 0) return "chips";
-  if (input.hasResultsOrErrorOrLoading) return "results";
   if (input.queryNonEmpty) return "query";
+  if (input.hasResultsOrErrorOrLoading && input.hasSubmittedSearch) return "results";
   return "cancel";
 }
 

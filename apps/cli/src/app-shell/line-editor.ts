@@ -382,16 +382,20 @@ export function useLineEditor({
   onChange,
   onSubmit,
   onRedraw,
+  focus = true,
 }: {
   value: string;
   onChange: (nextValue: string) => void;
   onSubmit?: (value: string) => void;
   onRedraw?: () => void;
+  /** Regaining focus puts the caret back at the end of the text. */
+  focus?: boolean;
 }) {
   const [cursor, setCursor] = useState(value.length);
   const [killRing, setKillRing] = useState("");
   const [initialState] = useState(() => createLineEditorState(value));
   const stateRef = useRef(initialState);
+  const wasFocused = useRef(focus);
 
   useEffect(() => {
     const nextCursor = clampCursor(value, stateRef.current.cursor);
@@ -402,6 +406,20 @@ export function useLineEditor({
     };
     setCursor(nextCursor);
   }, [value]);
+
+  // Leaving the field for the list and coming back used to restore the caret
+  // wherever it happened to be sitting — often mid-word, so the next keystroke
+  // landed inside the existing text instead of continuing it. Returning to a
+  // filled field means "keep typing", so snap to the end. Only on the
+  // unfocused → focused edge, so it never fights arrow keys while focused.
+  useEffect(() => {
+    if (focus && !wasFocused.current) {
+      const end = stateRef.current.value.length;
+      stateRef.current = { ...stateRef.current, cursor: end };
+      setCursor(end);
+    }
+    wasFocused.current = focus;
+  }, [focus]);
 
   const handleInput = useCallback(
     (input: string, key: LineEditorKey): boolean => {

@@ -27,7 +27,7 @@ describe("browse filter chips", () => {
     expect(removeFilterTokenFromQuery(raw, "year")).toBe("isekai mode:anime genre:action rating:8");
   });
 
-  test("Esc ladder prefers narrow then chips then results", () => {
+  test("Esc ladder prefers narrow, then chips, then the typed query", () => {
     expect(
       nextBrowseEscFilterLayer({
         narrowOpenOrFocused: true,
@@ -35,6 +35,7 @@ describe("browse filter chips", () => {
         structuredChipCount: 2,
         hasResultsOrErrorOrLoading: true,
         queryNonEmpty: true,
+        hasSubmittedSearch: true,
       }),
     ).toBe("narrow");
 
@@ -45,9 +46,13 @@ describe("browse filter chips", () => {
         structuredChipCount: 2,
         hasResultsOrErrorOrLoading: true,
         queryNonEmpty: true,
+        hasSubmittedSearch: true,
       }),
     ).toBe("chips");
 
+    // Text typed with results on screen is the ordinary state. Answering
+    // "results" here reset the surface to trending instead of clearing what was
+    // typed — the reload that emptying the draft was changed to stop doing.
     expect(
       nextBrowseEscFilterLayer({
         narrowOpenOrFocused: false,
@@ -55,8 +60,44 @@ describe("browse filter chips", () => {
         structuredChipCount: 0,
         hasResultsOrErrorOrLoading: true,
         queryNonEmpty: true,
+        hasSubmittedSearch: true,
       }),
-    ).toBe("results");
+    ).toBe("query");
+  });
+
+  test("results reset only when there is a search to reset from", () => {
+    const base = {
+      narrowOpenOrFocused: false,
+      resultFilterNonEmpty: false,
+      structuredChipCount: 0,
+      hasResultsOrErrorOrLoading: true,
+      queryNonEmpty: false,
+    };
+
+    expect(nextBrowseEscFilterLayer({ ...base, hasSubmittedSearch: true })).toBe("results");
+
+    // Default discovery results with no search behind them. This used to answer
+    // "results" forever: the reload repopulated the list, so the condition
+    // stayed true and Esc could never reach "cancel" — the surface was
+    // inescapable by Esc alone.
+    expect(nextBrowseEscFilterLayer({ ...base, hasSubmittedSearch: false })).toBe("cancel");
+  });
+
+  test("Esc clears the query, then resets results, then leaves", () => {
+    const base = {
+      narrowOpenOrFocused: false,
+      resultFilterNonEmpty: false,
+      structuredChipCount: 0,
+      hasResultsOrErrorOrLoading: true,
+      hasSubmittedSearch: true,
+    };
+
+    expect(nextBrowseEscFilterLayer({ ...base, queryNonEmpty: true })).toBe("query");
+    expect(nextBrowseEscFilterLayer({ ...base, queryNonEmpty: false })).toBe("results");
+    // After the reset there is no search left behind the results.
+    expect(
+      nextBrowseEscFilterLayer({ ...base, queryNonEmpty: false, hasSubmittedSearch: false }),
+    ).toBe("cancel");
   });
 
   test("removeFilterTokenFromQuery round-trips remaining structured tokens", () => {
