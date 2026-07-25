@@ -534,10 +534,13 @@ function mergeTrackObjects<T extends { url: string }>(
 // endpoint directly with the TMDB ID + episode info so we never need to wait
 // for the embed to click the CC button.
 //
+// The current key was extracted from the VidKing embed (luffy project).
+// Get your own free key at https://store.wyzie.io/redeem (1,000 req/day).
+//
 // Ref: .docs/subtitle-resolver-analysis.md
 // =============================================================================
 
-const WYZIE_KEY = "wyzie-4e88cddcd20e4d3e9a390625e66a290c";
+const WYZIE_KEY = "wyzie-bpct649andjfotnyln2scnjl06h73d3a";
 const WYZIE_SEARCH = "https://sub.wyzie.io/search";
 
 export async function resolveSubtitlesByTmdbId(opts: {

@@ -611,14 +611,15 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         </Box>
 
         {/* ── Right rail (wide only) ─────────────────────────────────────── */}
-        {/* Prefer hero Kitty when next-up exists; otherwise rail owns the primary slot. */}
+        {/* The rail owns its own named slot, like every other image on this
+            surface. It used to be denied Kitty whenever a hero existed, on a
+            one-image-per-screen assumption the surface had already outgrown —
+            the hero and three discovery tiles claim four placements between
+            them. Losing the slot dropped the rail onto the inline text path,
+            where it rendered nothing at rail size, so a movie showed an empty
+            column beside its own synopsis. */}
         {showRail ? (
-          <MediaPanel
-            model={railModel}
-            railWidth={railWidth}
-            placementSlot="postplay-rail"
-            allowKitty={!view.nextUpHero}
-          />
+          <MediaPanel model={railModel} railWidth={railWidth} placementSlot="postplay-rail" />
         ) : null}
       </Box>
     </ViewportResizeGate>

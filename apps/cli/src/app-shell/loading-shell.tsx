@@ -809,10 +809,15 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                {/* mpv ownership hint — Kunai owns session, mpv owns the video. */}
+                {/* mpv ownership hint — Kunai owns session, mpv owns the video.
+                    Deliberately names no keys: it used to spell out
+                    "n/p/e/o/k/u", duplicating the GO row directly above it and
+                    advertising episode keys even on a movie, which has none.
+                    The GO row is registry-derived and content-aware, so it is
+                    the one place keys are listed. */}
                 <Box marginTop={1}>
                   <Text color={palette.dim} dimColor>
-                    Terminal or mpv — n/p/e/o/k/u shortcuts stay live · / for full commands
+                    Terminal or mpv — the keys above stay live · / for full commands
                   </Text>
                 </Box>
 

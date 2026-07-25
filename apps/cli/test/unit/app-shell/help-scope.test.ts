@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { helpSectionsForScope } from "@/app-shell/keybindings";
 import { resolveHelpScope } from "@/app-shell/root-shell-state";
 import type { PlaybackStatus, SessionState } from "@/domain/session/SessionState";
 
@@ -27,6 +28,26 @@ test("resolveHelpScope maps a finished session to the post-play scope", () => {
 test("resolveHelpScope falls back to browse when idle or errored", () => {
   expect(resolveHelpScope(stateWith("idle"))).toBe("browse");
   expect(resolveHelpScope(stateWith("error"))).toBe("browse");
+});
+
+// The footer is width-capped and content-aware, so it legitimately hides keys —
+// a movie drops next/previous/episodes, and the cap trims the rest. Help is the
+// place with no such excuse: if a key is live during playback it must be
+// listed, or the only way to discover it is to already know it.
+test("every playback shortcut is documented in the player help overlay", () => {
+  const listed = helpSectionsForScope("player").flatMap((section) =>
+    section.items.map((item) => item.keys),
+  );
+  // Matched loosely because a chord renders as its full display form — "n / N"
+  // for a key with a shift variant — and the point is that the key appears at
+  // all, not how it is spelled.
+  const documents = (key: string) =>
+    listed.some((keys) => keys.split(" / ").includes(key) || keys === key);
+
+  // autoplay, autoskip, next, previous, episodes, source, stop, skip
+  for (const key of ["a", "u", "n", "p", "e", "o", "q", "b"]) {
+    expect(documents(key)).toBe(true);
+  }
 });
 
 const stateWithOverlays = (
