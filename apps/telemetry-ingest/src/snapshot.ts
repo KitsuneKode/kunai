@@ -5,6 +5,14 @@ import type { UpstashRedis } from "./upstash-client";
 
 export const METRICS_SCHEMA_VERSION = 1;
 
+/**
+ * The snapshot is rewritten once per day by cron, so a CDN may safely serve a
+ * stale copy for a full day while it revalidates. Without the stale window,
+ * every shared-cache expiry stampedes the origin.
+ */
+export const PUBLIC_METRICS_CACHE_CONTROL =
+  "public, s-maxage=3600, max-age=300, stale-while-revalidate=86400";
+
 export type PublicTelemetryMetrics = {
   readonly schemaVersion: typeof METRICS_SCHEMA_VERSION;
   readonly day: string;

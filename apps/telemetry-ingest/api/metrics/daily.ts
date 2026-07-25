@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { loadTelemetryRuntimeConfig } from "../../src/runtime-config";
-import { readPublicMetricsFromRedis } from "../../src/snapshot";
+import { PUBLIC_METRICS_CACHE_CONTROL, readPublicMetricsFromRedis } from "../../src/snapshot";
 
 /**
  * Public read-only aggregates. No install hashes, IPs, or raw ids.
@@ -34,7 +34,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return;
     }
     res.statusCode = 200;
-    res.setHeader("Cache-Control", "public, s-maxage=3600, max-age=300");
+    res.setHeader("Cache-Control", PUBLIC_METRICS_CACHE_CONTROL);
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(metrics));
   } catch {
