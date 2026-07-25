@@ -205,7 +205,8 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "browse-mode",
     chord: { named: "tab" },
-    label: "Cycle catalog mode (series / anime / YouTube)",
+    display: "Tab / ⇧Tab",
+    label: "Cycle catalog mode forward (⇧Tab back): series / anime / YouTube",
     hintLabel: "mode",
     scope: "browse",
     group: "While browsing",

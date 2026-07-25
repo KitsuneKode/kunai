@@ -55,6 +55,8 @@ export type ActivePlaybackCommandDispatchDeps = {
   ) => Promise<unknown> | unknown;
   readonly switchSessionMode: (
     stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
+    providerRegistry?: undefined,
+    direction?: "forward" | "backward",
   ) => void;
   readonly setSessionLane: (
     stateManager: ActivePlaybackCommandDispatchDeps["stateManager"],
@@ -182,8 +184,12 @@ export async function dispatchActivePlaybackCommand(
     await deps.playerControl.stopCurrentPlayback("playback-loading-command-stop");
     return "handled";
   }
-  if (action === "toggle-mode") {
-    deps.switchSessionMode(deps.stateManager);
+  if (action === "toggle-mode" || action === "toggle-mode-reverse") {
+    deps.switchSessionMode(
+      deps.stateManager,
+      undefined,
+      action === "toggle-mode-reverse" ? "backward" : "forward",
+    );
     return "handled";
   }
   if (action === "series-mode") {

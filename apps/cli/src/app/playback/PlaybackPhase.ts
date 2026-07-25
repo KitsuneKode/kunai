@@ -311,6 +311,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
   private static readonly lateSubtitleInflight = new Set<string>();
+  /** Session-scoped so the "set up subtitle search" note is shown once, not per episode. */
+  private static wyzieKeyNoticeShown = false;
   private playbackLedger: PlaybackHistoryLedger | null = null;
   private unregisterActiveCheckpoint: (() => void) | null = null;
 
@@ -3896,6 +3898,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           context: { reason: "wyzie-key-missing", requestedSubLang },
         }),
       );
+      // Told once per session, not per episode: a stream with no subtitles and
+      // no explanation reads as Kunai losing them, when the search that would
+      // find them simply is not set up yet.
+      if (!PlaybackPhase.wyzieKeyNoticeShown) {
+        PlaybackPhase.wyzieKeyNoticeShown = true;
+        this.updatePlaybackFeedback(context, {
+          note: "No subtitles in this source. Add a Wyzie key in Settings › Language to search for them.",
+        });
+      }
       return;
     }
 
@@ -4003,6 +4014,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           playbackIterationSignal,
         });
         if (!attached) return;
+
+        // The attach is silent otherwise: subtitles appear mid-playback with no
+        // account of where they came from, and the alternates that came with
+        // them stay invisible even though the tracks panel can switch them live.
+        this.updatePlaybackFeedback(context, {
+          note:
+            mergedSubtitleList.length > 1
+              ? `Attached subtitles · ${mergedSubtitleList.length} tracks found, switchable from the tracks panel`
+              : "Attached subtitles found by search",
+        });
 
         const currentState = stateManager.getState();
         if (

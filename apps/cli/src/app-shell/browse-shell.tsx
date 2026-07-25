@@ -1439,7 +1439,9 @@ export function BrowseShell<T>({
     }
 
     if (key.tab) {
-      onResolve("toggle-mode");
+      // Tab forward, Shift+Tab back — the same pairing the calendar type tabs
+      // use, so a three-mode cycle never has to be walked the long way round.
+      onResolve(key.shift ? "toggle-mode-reverse" : "toggle-mode");
       return;
     }
 

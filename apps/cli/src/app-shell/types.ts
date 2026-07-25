@@ -29,6 +29,7 @@ export type ShellAction =
   | "telemetry-show"
   | "notifications"
   | "toggle-mode"
+  | "toggle-mode-reverse"
   | "series-mode"
   | "anime-mode"
   | "youtube-mode"

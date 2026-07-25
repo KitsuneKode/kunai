@@ -238,7 +238,9 @@ test("publicShortcutMetadata only includes opted-in non-helpOnly bindings with o
 test("public shortcuts lock Tab browse mode, Shift+F fallback, and one playback m", () => {
   const publicRows = publicShortcutMetadata();
   const browseMode = publicRows.find((row) => row.id === "browse-mode");
-  expect(browseMode?.keys).toBe("Tab");
+  // One binding, both directions: Tab steps the mode cycle forward and ⇧Tab
+  // steps it back, so a three-mode cycle never has to be walked the long way.
+  expect(browseMode?.keys).toBe("Tab / ⇧Tab");
   expect(browseMode?.tier).toBe("core");
   expect(browseMode?.label.toLowerCase()).toContain("catalog mode");
 

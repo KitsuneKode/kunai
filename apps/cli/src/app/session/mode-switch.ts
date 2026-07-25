@@ -1,4 +1,8 @@
-import { getModeSwitchTarget, sessionTargetForMode } from "@/domain/session/mode-target";
+import {
+  getModeSwitchTarget,
+  type ModeSwitchDirection,
+  sessionTargetForMode,
+} from "@/domain/session/mode-target";
 import {
   ensureSessionProviderMatchesLane,
   resolveProviderIdForSessionLane,
@@ -7,7 +11,11 @@ import {
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { ShellMode } from "@/domain/types";
 
-export { getModeSwitchTarget, sessionTargetForMode } from "@/domain/session/mode-target";
+export {
+  getModeSwitchTarget,
+  type ModeSwitchDirection,
+  sessionTargetForMode,
+} from "@/domain/session/mode-target";
 
 /** Switch session to a specific catalog lane and clear stale browse/search context. */
 export function setSessionLane(
@@ -39,7 +47,8 @@ export function setSessionLane(
 export function switchSessionMode(
   stateManager: SessionStateManager,
   providerRegistry?: SessionProviderLaneLookup,
+  direction: ModeSwitchDirection = "forward",
 ): void {
-  const target = getModeSwitchTarget(stateManager.getState());
+  const target = getModeSwitchTarget(stateManager.getState(), direction);
   setSessionLane(stateManager, target.mode, providerRegistry);
 }

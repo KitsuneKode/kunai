@@ -158,3 +158,29 @@ function providerRegistry() {
     }),
   };
 }
+
+describe("reverse mode cycling", () => {
+  const stateInMode = (mode: "series" | "anime" | "youtube") => ({
+    ...createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    }),
+    mode,
+    defaultProviders: { series: "videasy", anime: "allanime", youtube: "youtube" },
+  });
+
+  test("steps backward through the cycle and wraps below the first mode", () => {
+    // ⇧Tab is what makes a three-mode cycle usable: without it, reaching the
+    // previous mode means walking the whole ring forward.
+    expect(getModeSwitchTarget(stateInMode("youtube"), "backward").mode).toBe("anime");
+    expect(getModeSwitchTarget(stateInMode("anime"), "backward").mode).toBe("series");
+    // The wrap is the case a naive `index - 1` gets wrong: it lands on -1.
+    expect(getModeSwitchTarget(stateInMode("series"), "backward").mode).toBe("youtube");
+  });
+
+  test("forward stays the default so Tab is unchanged", () => {
+    expect(getModeSwitchTarget(stateInMode("series")).mode).toBe("anime");
+    expect(getModeSwitchTarget(stateInMode("series"), "forward").mode).toBe("anime");
+  });
+});

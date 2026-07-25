@@ -160,8 +160,12 @@ export async function dispatchPaletteCommand(
   if (action === "quit") {
     return workflows.resolveQuit(container);
   }
-  if (action === "toggle-mode") {
-    switchSessionMode(stateManager, container.providerRegistry);
+  if (action === "toggle-mode" || action === "toggle-mode-reverse") {
+    switchSessionMode(
+      stateManager,
+      container.providerRegistry,
+      action === "toggle-mode-reverse" ? "backward" : "forward",
+    );
     return "mode-switch";
   }
   if (action === "series-mode") {
