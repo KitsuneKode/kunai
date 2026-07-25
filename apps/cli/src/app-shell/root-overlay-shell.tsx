@@ -1608,6 +1608,7 @@ export function RootOverlayShell({
           onRedraw,
           setOverlayStatus,
           setNotificationActionDedupKey,
+          runNotificationAction,
           setFilterQuery,
           setSelectedIndex,
         }) === "handled"

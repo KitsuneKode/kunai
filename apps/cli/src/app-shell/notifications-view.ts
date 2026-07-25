@@ -35,6 +35,14 @@ export function cycleNotificationsSortMode(
   return modes[(currentIndex + 1 + modes.length) % modes.length] ?? modes[0] ?? "newest";
 }
 
+/**
+ * One digit each, so every action the rail lists is directly runnable. Capped at
+ * the single digits rather than truncated to a shorter list: the rail used to
+ * render only the first three, which silently hid the rest behind the `a`
+ * picker with nothing on screen saying they existed.
+ */
+const MAX_KEYED_SECONDARY_ACTIONS = 9;
+
 export type NotificationRow = {
   readonly dedupKey: string;
   readonly kind: string;
@@ -61,7 +69,10 @@ export type NotificationRailView = {
   readonly relativeTime: string;
   readonly preview: PreviewRailModel;
   readonly primaryAction: NotificationActionPresentation & { readonly key: "enter" };
-  readonly secondaryActions: readonly NotificationActionPresentation[];
+  /** Each carries the digit that runs it directly (1, 2, 3). */
+  readonly secondaryActions: readonly (NotificationActionPresentation & {
+    readonly key: string;
+  })[];
   readonly lifecycleHints: readonly { readonly key: string; readonly label: string }[];
 };
 
@@ -269,9 +280,15 @@ function toRail(
   row: NotificationRow,
   tab: NotificationsTab,
 ): NotificationRailView {
+  // Numbered so each one is directly runnable. They used to render as bare "·"
+  // bullets, which reads as a list of features rather than a list of keys —
+  // the actions were real and executable, but the only way to reach them was
+  // the `a` picker, and nothing on the rail said so.
   const secondaryActions = getExecutableNotificationActions(record)
     .filter((action) => action !== row.primaryAction.id && action !== "dismiss")
-    .map(getNotificationActionPresentation);
+    .map(getNotificationActionPresentation)
+    .slice(0, MAX_KEYED_SECONDARY_ACTIONS)
+    .map((action, index) => ({ ...action, key: String(index + 1) }));
 
   const preview: PreviewRailModel = {
     title: record.title,

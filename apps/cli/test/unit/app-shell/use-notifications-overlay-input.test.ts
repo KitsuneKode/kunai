@@ -86,6 +86,8 @@ function harness(options?: {
         },
         onRedraw: () => {},
         setOverlayStatus: (status) => calls.push(`status:${status}`),
+        runNotificationAction: (dedupKey, actionId) =>
+          calls.push(`runAction:${dedupKey}:${actionId}`),
         setNotificationActionDedupKey: (key2) => calls.push(`openActions:${key2}`),
         setFilterQuery: () => {},
         setSelectedIndex: () => {
@@ -247,6 +249,36 @@ describe("handleNotificationsOverlayInput", () => {
     h.press("A");
     expect(h.calls).toEqual(["markAllRead", "status:Marked 3 as read"]);
     expect(h.state.selectedDedupKey).toBe("k1");
+  });
+
+  // Actions are derived from kind + whether the notice carries a media identity,
+  // so a record without itemJson correctly reduces to dismiss-only.
+  const actionableRecords = () => [
+    rec("k0", "2026-07-16T05:00:00.000Z", {
+      itemJson: JSON.stringify({ titleId: "tt-1", title: "Frieren", mediaKind: "series" }),
+    }),
+  ];
+
+  test("a digit runs the matching secondary action directly", () => {
+    // The rail lists these with their key, so pressing it must act rather than
+    // requiring the `a` picker — they previously rendered as inert bullets.
+    const h = harness({ records: actionableRecords() });
+    h.press("1");
+    const first = h.view.rail?.secondaryActions[0];
+
+    expect(first?.key).toBe("1");
+    expect(h.calls).toEqual([`runAction:k0:${first?.id}`]);
+  });
+
+  test("a digit with no matching action is not swallowed", () => {
+    // Falling through matters: an unbound digit must stay available to whatever
+    // else wants it rather than being silently eaten by the inbox.
+    const h = harness({ records: actionableRecords() });
+    const result = h.press("9");
+
+    expect(h.view.rail?.secondaryActions.some((action) => action.key === "9")).toBe(false);
+    expect(h.calls).toEqual([]);
+    expect(result).toBe("not-handled");
   });
 
   test("A reports that nothing changed when no notice was unread", () => {

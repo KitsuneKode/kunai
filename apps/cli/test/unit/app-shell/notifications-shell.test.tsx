@@ -74,7 +74,13 @@ describe("NotificationsShell", () => {
     expect(frame).toContain("available on allanime");
     expect(frame).toContain("Unread");
     expect(frame).toContain("↵ Play now");
-    expect(frame).toContain("· Queue at end");
+    // Each secondary carries the digit that runs it. They used to render as "·"
+    // bullets, which read as a list of features rather than a list of keys.
+    expect(frame).toContain("1 Open details");
+    expect(frame).toContain("3 Queue at end");
+    // Beyond the old three-item slice, which hid the rest with nothing on
+    // screen saying they existed.
+    expect(frame).toContain("4 Mute release notices");
     expect(frame).toContain("r mark read");
     expect(frame).toContain("x archive");
     expect(frame).toContain("d delete");

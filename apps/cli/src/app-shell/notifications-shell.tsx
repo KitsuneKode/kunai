@@ -101,8 +101,11 @@ export function NotificationsShell({
         />
         <Box marginTop={1} flexDirection="column">
           <Text color={palette.accent} bold>{`↵ ${view.rail.primaryAction.label}`}</Text>
-          {view.rail.secondaryActions.slice(0, 3).map((action) => (
-            <Text key={action.id} color={palette.muted}>{`· ${action.label}`}</Text>
+          {view.rail.secondaryActions.map((action) => (
+            <Text key={action.id}>
+              <Text color={palette.accent}>{action.key}</Text>
+              <Text color={palette.muted}>{` ${action.label}`}</Text>
+            </Text>
           ))}
         </Box>
         <Box marginTop={1} flexDirection="column">

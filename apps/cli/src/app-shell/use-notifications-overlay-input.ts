@@ -47,6 +47,8 @@ export type NotificationsOverlayInputContext = {
   readonly onRedraw: () => void;
   readonly setOverlayStatus: (status: string) => void;
   readonly setNotificationActionDedupKey: (key: string) => void;
+  /** Run one of the rail's numbered secondary actions directly. */
+  readonly runNotificationAction?: (dedupKey: string, actionId: NotificationActionId) => void;
   readonly setFilterQuery: (query: string) => void;
   /** Generic picker index shared with the nested action/confirm pickers. */
   readonly setSelectedIndex: (update: (current: number) => number) => void;
@@ -142,6 +144,18 @@ export function handleNotificationsOverlayInput(
     ctx.setState((state) => ({ ...state, page: 0, selectedDedupKey: null }));
     ctx.setOverlayStatus(removed > 0 ? `Cleared ${removed} archived` : "Nothing to clear");
     return "handled";
+  }
+  // Digits run the rail's numbered secondary actions. The rail lists them with
+  // their key, so what is shown is directly runnable rather than a menu you
+  // have to know to open with `a`.
+  if (/^[1-9]$/.test(input) && selectedKey && ctx.runNotificationAction) {
+    const action = ctx.view.rail?.secondaryActions.find((candidate) => candidate.key === input);
+    if (action) {
+      ctx.setState((state) => ({ ...state, selectedDedupKey: selectedKey }));
+      ctx.runNotificationAction(selectedKey, action.id);
+      return "handled";
+    }
+    // An unbound digit is not an action; fall through rather than swallowing it.
   }
   if (input.toLowerCase() === "a" && selectedKey) {
     // Pin identity before entering the nested action picker: the child picker
