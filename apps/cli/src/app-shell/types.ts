@@ -275,6 +275,8 @@ export type LoadingShellState = {
   onCommandAction?: (action: ShellAction) => void;
   commands?: readonly ResolvedAppCommand[];
   footerMode?: ShellFooterMode;
+  /** Playbacks that have already shown the on-screen key card; it retires past a few. */
+  playbackKeysSessionsSeen?: number;
 };
 
 export type BrowseIdleContext = {

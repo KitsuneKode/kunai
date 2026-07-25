@@ -33,6 +33,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
 import { LoadingShell } from "./loading-shell";
+import { PLAYBACK_KEYS_PANEL_SESSIONS } from "./playback-keys-panel";
 import { formatPlaybackSessionKeysHint } from "./playback-session-key-hints";
 import { buildPostPlayFooterActions } from "./post-play-footer-actions";
 import { PostPlayShell } from "./post-play-shell";
@@ -221,6 +222,7 @@ export function buildPlaybackRootLoadingShellState(
       : undefined,
     commands: resolveCommandContext(state, "activePlayback"),
     footerMode: effectiveFooterHints(container),
+    playbackKeysSessionsSeen: container.config.playbackKeysSessionsSeen,
     qualityLabel: (() => {
       const result = state.stream?.providerResolveResult;
       const selected = result?.streams.find(
@@ -279,6 +281,17 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
   const [telemetrySnapshot, setTelemetrySnapshot] = useState<PlaybackTelemetrySnapshot | null>(
     null,
   );
+
+  // Count this playback against the key card's budget once it actually starts,
+  // so the card retires after being seen rather than after N launches that may
+  // never have reached playback. Guarded past the threshold so a long-time user
+  // is not rewriting config on every play.
+  useEffect(() => {
+    if (!playbackIsActive) return;
+    const seen = input.container.config.playbackKeysSessionsSeen;
+    if (seen >= PLAYBACK_KEYS_PANEL_SESSIONS) return;
+    void input.container.config.update({ playbackKeysSessionsSeen: seen + 1 });
+  }, [input.container.config, playbackIsActive]);
 
   useEffect(() => {
     if (!playbackIsActive) return undefined;

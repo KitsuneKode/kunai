@@ -109,6 +109,12 @@ export interface KitsuneConfig {
   downloadPath: string;
   downloadOnboardingDismissed: boolean;
   /**
+   * Playbacks that have shown the on-screen key card. It retires itself after a
+   * few, so the keys are learnable without opening `?` or the docs, without
+   * becoming permanent furniture for someone who already knows them.
+   */
+  playbackKeysSessionsSeen: number;
+  /**
    * Opt-in anonymous usage ping. Default `unset` → zero network calls.
    * Payload is only `{ installId, version, os, arch, ts }`.
    */

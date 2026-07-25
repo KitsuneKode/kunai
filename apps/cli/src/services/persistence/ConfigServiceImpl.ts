@@ -484,6 +484,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.downloadOnboardingDismissed;
   }
 
+  get playbackKeysSessionsSeen(): number {
+    return this.config.playbackKeysSessionsSeen;
+  }
+
   get telemetry(): KitsuneConfig["telemetry"] {
     return this.config.telemetry;
   }

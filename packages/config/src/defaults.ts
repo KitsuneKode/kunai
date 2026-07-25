@@ -83,6 +83,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   onboardingVersion: 0,
   downloadPath: "",
   downloadOnboardingDismissed: false,
+  playbackKeysSessionsSeen: 0,
   telemetry: "unset",
   installId: "",
   lastTelemetryPingAt: 0,

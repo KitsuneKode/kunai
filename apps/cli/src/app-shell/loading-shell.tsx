@@ -24,6 +24,7 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { OffscreenFreeze } from "./offscreen-freeze";
+import { buildPlaybackKeysPanel, type PlaybackKeysPanelModel } from "./playback-keys-panel";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import { applyPlaybackShellInputEffect, resolvePlaybackShellInput } from "./playback-shell-input";
 import { ProgressBar } from "./primitives/ProgressBar";
@@ -253,6 +254,50 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
           </Text>
         </Box>
       ) : null}
+    </Box>
+  );
+});
+
+/**
+ * The first-run key card. Renders nothing once the model retires it, so the
+ * layout below is untouched from that playback onward.
+ */
+const PlaybackKeysCard = React.memo(function PlaybackKeysCard({
+  model,
+  width,
+}: {
+  readonly model: PlaybackKeysPanelModel;
+  readonly width: number;
+}) {
+  if (!model.visible) return null;
+  // Widest key in the card, so labels line up in one column across every group
+  // rather than each group finding its own indent.
+  const keyColumn = Math.max(
+    ...model.groups.flatMap((group) => group.rows.map((row) => row.keys.length)),
+  );
+  return (
+    <Box marginTop={1} flexDirection="column">
+      {model.groups.map((group) => (
+        <Box key={group.title} flexDirection="row" marginTop={0}>
+          <Box width={9}>
+            <Text color={palette.muted}>{group.title}</Text>
+          </Box>
+          <Text>
+            {group.rows.map((row, index) => (
+              <Text key={row.label}>
+                {index > 0 ? <Text color={palette.dim}>{"  "}</Text> : null}
+                <Text color={palette.accent}>{row.keys.padEnd(keyColumn)}</Text>
+                <Text color={palette.dim}>{` ${row.label}`}</Text>
+              </Text>
+            ))}
+          </Text>
+        </Box>
+      ))}
+      <Box marginTop={1}>
+        <Text color={palette.dim} dimColor>
+          {truncateLine(model.footnote, Math.max(12, width - 2))}
+        </Text>
+      </Box>
     </Box>
   );
 });
@@ -820,6 +865,18 @@ export const LoadingShell = React.memo(function LoadingShell({
                     Terminal or mpv — the keys above stay live · / for full commands
                   </Text>
                 </Box>
+
+                {/* First-run key card. The GO row is a dense single line and `?`
+                    is invisible to someone who has never pressed it, so a new
+                    user had no way to learn these without the docs. Fills the
+                    space mpv leaves empty, then retires itself. */}
+                <PlaybackKeysCard
+                  model={buildPlaybackKeysPanel({
+                    contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
+                    sessionsSeen: state.playbackKeysSessionsSeen ?? 0,
+                  })}
+                  width={infoWidth}
+                />
 
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {playbackTrouble ? (
