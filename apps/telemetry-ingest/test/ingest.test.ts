@@ -180,3 +180,46 @@ describe("telemetry ingest privacy contract", () => {
     ).toEqual({ ok: false, status: 429, error: "rate_limited" });
   });
 });
+
+describe("telemetry ingest dimension validation", () => {
+  test("rejects non-semver versions", () => {
+    expect(parseTelemetryPayload({ ...valid, version: "latest" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, version: "v0.3.0" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, version: "0.3" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, version: "<script>x</script>" })).toBeNull();
+  });
+
+  test("accepts prerelease versions", () => {
+    const parsed = parseTelemetryPayload({ ...valid, version: "0.4.0-beta.1" });
+    expect(parsed?.version).toBe("0.4.0-beta.1");
+  });
+
+  test("rejects os and arch outside the allowlist", () => {
+    expect(parseTelemetryPayload({ ...valid, os: "beos" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, os: "Linux" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, arch: "sparc" })).toBeNull();
+    expect(parseTelemetryPayload({ ...valid, arch: "X64" })).toBeNull();
+  });
+
+  test("still accepts every shipped platform combination", () => {
+    for (const os of ["linux", "darwin", "win32"]) {
+      for (const arch of ["x64", "arm64"]) {
+        expect(parseTelemetryPayload({ ...valid, os, arch })).not.toBeNull();
+      }
+    }
+  });
+
+  test("polluted payloads are rejected end-to-end with 400", async () => {
+    const result = await ingestTelemetryPing({
+      method: "POST",
+      body: { ...valid, version: "latest", ts: Date.now() },
+      ipKey: "ip-hash-pollution",
+      hashSecret: HASH_SECRET,
+      rateLimit: createMemoryRateLimitStore(),
+      installDayGate: createMemoryInstallDayGate(),
+      daily: createMemoryDailyDistinctStore(),
+      lifetime: createMemoryLifetimeStore(),
+    });
+    expect(result).toEqual({ ok: false, status: 400, error: "invalid_payload" });
+  });
+});

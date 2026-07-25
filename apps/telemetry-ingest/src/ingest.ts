@@ -15,6 +15,10 @@
  * - IP addresses in durable identity storage
  * - titles, queries, provider results, URLs, or file paths
  *
+ * `version`, `os`, and `arch` are aggregation keys and are validated against
+ * strict semver and closed allowlists (see payload-validation.ts) so a hostile
+ * client cannot inject a fabricated dimension into published aggregates.
+ *
  * Abuse model: a hostile client can mint many install ids and inflate counters
  * (subject to rate limits). They cannot expose another user's watch history —
  * that data is never accepted. Redis dumps without TELEMETRY_HASH_SECRET cannot
@@ -22,6 +26,8 @@
  */
 
 import { createHmac } from "node:crypto";
+
+import { isAllowedArch, isAllowedOs, isValidVersion } from "./payload-validation";
 
 export const TELEMETRY_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
 
@@ -58,9 +64,9 @@ export function parseTelemetryPayload(body: unknown): TelemetryIngestPayload | n
   const arch = typeof record.arch === "string" ? record.arch.trim() : "";
   const ts = typeof record.ts === "number" && Number.isFinite(record.ts) ? record.ts : NaN;
   if (!UUID_RE.test(installId)) return null;
-  if (!version || version.length > 64) return null;
-  if (!os || os.length > 32) return null;
-  if (!arch || arch.length > 32) return null;
+  if (!isValidVersion(version)) return null;
+  if (!isAllowedOs(os)) return null;
+  if (!isAllowedArch(arch)) return null;
   if (!Number.isFinite(ts) || ts <= 0) return null;
   return { installId, version, os, arch, ts };
 }
