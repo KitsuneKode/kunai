@@ -138,9 +138,12 @@ export class NotificationActionRouter {
     const mediaActionId: MediaActionId =
       input.actionId === "retry-download" ? "download" : input.actionId;
 
-    const runMediaAction = this.deps.mediaActions?.run;
-    if (!runMediaAction) return unsupported(input.actionId);
-    const result = await runMediaAction({
+    // Call through the object, never through a detached `.run`. Production hands
+    // us a `MediaActionRouter` instance, and pulling its method into a local
+    // dropped the receiver — every media-backed action threw on `this.deps`.
+    const mediaActions = this.deps.mediaActions;
+    if (!mediaActions) return unsupported(input.actionId);
+    const result = await mediaActions.run({
       actionId: mediaActionId,
       item,
       source: "notification",

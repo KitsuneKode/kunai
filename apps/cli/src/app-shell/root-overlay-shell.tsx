@@ -1992,7 +1992,12 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Notifications"
+          // Every other overlay surfaces `overlayStatus` through the panel
+          // subtitle; this surface renders its own chrome and returns before
+          // that, so action feedback — including thrown failures — had nowhere
+          // to land and a broken action was indistinguishable from an ignored
+          // keypress. The status clears itself after 2.5s.
+          taskLabel={overlayStatus ?? "Notifications"}
           actions={notificationsFooterActions({
             tab: notificationsState.tab,
             paginated: notificationsView.totalPages > 1,

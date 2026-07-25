@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
 
+import type {
+  MediaActionRunResult,
+  RunMediaActionInput,
+} from "@/services/media-actions/MediaActionRouter";
 import {
   NotificationActionRouter,
   parseAppUpdateVersion,
@@ -380,4 +384,41 @@ test("update-app surfaces why an update could not be applied", async () => {
     actionId: "update-app",
     reason: "download failed",
   });
+});
+
+test("media actions run as a method so a class-based router keeps its instance", async () => {
+  // Production passes a `MediaActionRouter` instance here. Pulling `.run` off it
+  // into a local dropped the receiver, so every media-backed notification action
+  // (play, queue, mute, details) threw `this.deps is undefined` and the inbox
+  // looked inert. Object literals in tests hid it — they have no `this`.
+  const calls: string[] = [];
+  const mediaActions = new (class {
+    private readonly sink = calls;
+    async run(input: RunMediaActionInput): Promise<MediaActionRunResult> {
+      this.sink.push(`${input.actionId}:${input.item.titleId}:${input.source}`);
+      return { status: "handled", actionId: input.actionId };
+    }
+  })();
+
+  const router = new NotificationActionRouter({
+    mediaActions,
+    notifications: { dismiss: () => {} },
+  });
+
+  const result = await router.run({
+    actionId: "add-to-up-next",
+    notification: notification({
+      kind: "new-episode",
+      dedupKey: "new-playable-episode:182578:-:11:anilist",
+      itemJson: JSON.stringify({
+        mediaKind: "anime",
+        titleId: "182578",
+        title: "Mission: Yozakura Family Season 2",
+        episode: 11,
+      }),
+    }),
+  });
+
+  expect(result).toEqual({ status: "handled", actionId: "add-to-up-next" });
+  expect(calls).toEqual(["add-to-up-next:182578:notification"]);
 });
