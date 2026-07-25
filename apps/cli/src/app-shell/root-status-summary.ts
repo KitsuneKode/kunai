@@ -112,7 +112,11 @@ export function buildRootStatusSummary({
   // session selection (for example after recovery fallback or stale shell state).
   const streamProviderId = state.stream?.providerResolveResult?.providerId;
   const providerCrumb = (() => {
-    if (isActivePlayback && streamProviderId && streamProviderId !== state.provider) {
+    // Deliberately not gated on `isActivePlayback`: post-play still describes
+    // the stream that just played, and hiding the arrow there re-credited the
+    // provider that had failed. The stream's own presence is the right gate —
+    // it is cleared when the session leaves that playback behind.
+    if (streamProviderId && streamProviderId !== state.provider) {
       const selected = formatSessionProviderLabel(
         state.mode,
         state.provider,

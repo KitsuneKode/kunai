@@ -288,6 +288,41 @@ describe("buildRootStatusSummary", () => {
     expect(summary.crumb).toContain("vidking→rivestream");
   });
 
+  test("keeps the fallback crumb after playback ends", () => {
+    // The regression: the arrow was gated on an active playback status, so
+    // post-play dropped back to the session selection and put the provider that
+    // had just failed in the header — crediting the broken source for the
+    // episode the fallback actually served.
+    const base = createInitialState("vidking", "allanime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+
+    const summary = buildRootStatusSummary({
+      state: {
+        ...base,
+        currentTitle: { id: "demo", name: "Vincenzo", type: "series" },
+        currentEpisode: { season: 1, episode: 5 },
+        stream: {
+          url: "https://example.com/master.m3u8",
+          headers: {},
+          timestamp: 1,
+          providerResolveResult: {
+            status: "resolved",
+            providerId: "rivestream",
+            streams: [],
+            subtitles: [],
+          },
+        } as never,
+      },
+      currentViewLabel: "playback",
+      rootStatus: "ready",
+    });
+
+    expect(summary.crumb).toContain("vidking→rivestream");
+  });
+
   test("labels youtube lane and provider as YouTube in the crumb", () => {
     const base = createInitialState(
       "videasy",
