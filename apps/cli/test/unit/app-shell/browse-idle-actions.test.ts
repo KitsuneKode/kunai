@@ -78,6 +78,15 @@ describe("browse idle actions", () => {
     expect(resolveIdleRowAction("offline-ready", context)).toBe("play-offline-ready");
     expect(resolveIdleRowAction("playlist-next", context)).toBe("play-queue-next");
     expect(resolveIdleRowAction("ready-now", context)).toBe("notifications");
-    expect(resolveIdleRowAction("calendar-nudge", context)).toBe("calendar");
+    // Not plain "calendar": the row counts *tracked* titles airing, so it must
+    // land on the Tracked tab. Opening the unfiltered All tab made the count
+    // look wrong and left the user to find the tab themselves.
+    expect(resolveIdleRowAction("calendar-nudge", context)).toBe("tracked-calendar");
+  });
+
+  test("the calendar nudge stays inert when nothing tracked is airing", () => {
+    expect(resolveIdleRowAction("calendar-nudge", { calendarNudge: { airingTodayCount: 0 } })).toBe(
+      null,
+    );
   });
 });

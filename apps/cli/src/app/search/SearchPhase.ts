@@ -15,7 +15,7 @@ import { resolveCommands } from "@/app-shell/commands";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
-import type { BrowseIdleContext, BrowseShellOption } from "@/app-shell/types";
+import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
@@ -71,6 +71,17 @@ import {
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles, type SearchFilterEvidence } from "@/services/search/SearchRoutingService";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
+
+/**
+ * Entry points that open the calendar already filtered. Each loads the same
+ * schedule route; the value only seeds which type tab the shell opens on, so a
+ * surface never promises one thing and lands the user on another.
+ */
+const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> = {
+  "anime-calendar": "Anime",
+  "series-calendar": "TV",
+  "tracked-calendar": "Tracked",
+};
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -203,8 +214,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         browseQueryDraft.value = stateManager.getState().searchQuery;
       };
 
-      // Carries a one-shot calendar type tab from /anime-calendar · /series-calendar
-      // into the next BrowseShell open (which seeds the useCalendarState hook). Reset
+      // Carries a one-shot calendar type tab from a pre-filtered entry point into
+      // the next BrowseShell open (which seeds the useCalendarState hook). Reset
       // after each open so a plain /calendar afterwards is not stuck on a filter.
       let pendingCalendarType: CalendarTypeTab | undefined;
 
@@ -880,10 +891,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             continue;
           }
 
-          // Anime/series calendars load the same schedule route, but seed the next
-          // BrowseShell open with the matching type tab so it opens pre-filtered.
-          if (outcome.action === "anime-calendar" || outcome.action === "series-calendar") {
-            pendingCalendarType = outcome.action === "anime-calendar" ? "Anime" : "TV";
+          // These all load the same schedule route but seed the next BrowseShell
+          // open with a matching type tab, so it opens pre-filtered to whatever
+          // the entry point promised.
+          const seededCalendarTab = SEEDED_CALENDAR_TYPE_TABS[outcome.action];
+          if (seededCalendarTab) {
+            pendingCalendarType = seededCalendarTab;
             routeSubtitle = await loadSearchRoute("calendar", context);
             syncBrowseQueryDraft();
             continue;

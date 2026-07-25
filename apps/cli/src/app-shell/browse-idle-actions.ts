@@ -25,7 +25,10 @@ export function resolveIdleRowAction(
     case "ready-now":
       return (idleContext.todayReleaseCount ?? 0) > 0 ? "notifications" : null;
     case "calendar-nudge":
-      return (idleContext.calendarNudge?.airingTodayCount ?? 0) > 0 ? "calendar" : null;
+      // Opens the calendar already on Tracked. This row counts *tracked* titles
+      // airing, so landing on the unfiltered All tab made the number look wrong
+      // — the user had to find and switch the tab to see what the row promised.
+      return (idleContext.calendarNudge?.airingTodayCount ?? 0) > 0 ? "tracked-calendar" : null;
     default:
       return null;
   }
@@ -61,7 +64,7 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
     case "ready-now":
       return "↵ open notices";
     case "calendar-nudge":
-      return "↵ open calendar";
+      return "↵ open schedule";
     default:
       return undefined;
   }

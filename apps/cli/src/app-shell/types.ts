@@ -18,6 +18,7 @@ export type ShellAction =
   | "calendar"
   | "anime-calendar"
   | "series-calendar"
+  | "tracked-calendar"
   | "random"
   | "surprise"
   | "back-to-results"
