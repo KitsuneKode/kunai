@@ -185,7 +185,10 @@ jobs:
     if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
     runs-on: windows-latest
     continue-on-error: true
-    timeout-minutes: 25
+    # The suite is seconds of real work; anything approaching this is a hang,
+    # not slow tests. Windows minutes bill at 2x, and continue-on-error means a
+    # hang reports green, so a generous limit is spent silently.
+    timeout-minutes: 12
 
     # Promote this job to blocking only after the native mpv named-pipe smoke
     # exists and the Windows parity backlog in repo-infrastructure.md is empty.
@@ -202,6 +205,9 @@ jobs:
         run: bun run typecheck
 
       - name: Test CLI
+        # Step-level bound so a wedged suite is attributed here rather than
+        # surfacing as an unexplained job cancellation with no failing step.
+        timeout-minutes: 8
         run: bun run --cwd apps/cli test
 
   installer-lint:
