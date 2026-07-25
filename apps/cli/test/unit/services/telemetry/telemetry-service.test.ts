@@ -14,6 +14,7 @@ import {
 } from "@/services/telemetry/install-id";
 import {
   DEFAULT_TELEMETRY_ENDPOINT,
+  TELEMETRY_RETRY_BACKOFF_MS,
   TelemetryService,
   type TelemetryFetch,
   type TelemetryPayload,
@@ -379,5 +380,147 @@ describe("telemetryRetryAfter config field", () => {
     };
     expect(config.lastTelemetryPingAt).toBe(111);
     expect(config.telemetryRetryAfter).toBe(222);
+  });
+});
+
+describe("TelemetryService retry marker", () => {
+  const DAY = Date.UTC(2026, 6, 20, 12, 0, 0);
+
+  function okFetch(calls: unknown[]): TelemetryFetch {
+    return async (...args) => {
+      calls.push(args);
+      return new Response("{}", { status: 200 });
+    };
+  }
+
+  function failFetch(calls: unknown[]): TelemetryFetch {
+    return async (...args) => {
+      calls.push(args);
+      throw new Error("network down");
+    };
+  }
+
+  test("a failed send leaves the cadence mark untouched and sets a retry marker", async () => {
+    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const calls: unknown[] = [];
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl: failFetch(calls),
+      now: () => DAY,
+      env: {},
+    });
+
+    await service.maybePing();
+
+    expect(calls).toHaveLength(1);
+    expect(config.rawRef.lastTelemetryPingAt).toBe(0);
+    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
+  });
+
+  test("the retry marker suppresses re-sends until it expires", async () => {
+    const config = makeConfig({
+      telemetry: "enabled",
+      lastTelemetryPingAt: 0,
+      telemetryRetryAfter: DAY + TELEMETRY_RETRY_BACKOFF_MS,
+    });
+    const calls: unknown[] = [];
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl: okFetch(calls),
+      now: () => DAY + 60_000,
+      env: {},
+    });
+
+    await service.maybePing();
+
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a later launch retries once the marker has expired", async () => {
+    const config = makeConfig({
+      telemetry: "enabled",
+      lastTelemetryPingAt: 0,
+      telemetryRetryAfter: DAY + TELEMETRY_RETRY_BACKOFF_MS,
+    });
+    const calls: unknown[] = [];
+    const later = DAY + TELEMETRY_RETRY_BACKOFF_MS + 1;
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl: okFetch(calls),
+      now: () => later,
+      env: {},
+    });
+
+    await service.maybePing();
+
+    expect(calls).toHaveLength(1);
+    expect(config.rawRef.lastTelemetryPingAt).toBe(later);
+    expect(config.rawRef.telemetryRetryAfter).toBe(0);
+  });
+
+  test("a 5xx response is treated as failure, not success", async () => {
+    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const fetchImpl: TelemetryFetch = async () => new Response("nope", { status: 503 });
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl,
+      now: () => DAY,
+      env: {},
+    });
+
+    await service.maybePing();
+
+    expect(config.rawRef.lastTelemetryPingAt).toBe(0);
+    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
+  });
+
+  test("a 4xx response is permanent — cadence advances so the client stops hammering", async () => {
+    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const fetchImpl: TelemetryFetch = async () => new Response("bad", { status: 400 });
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl,
+      now: () => DAY,
+      env: {},
+    });
+
+    await service.maybePing();
+
+    expect(config.rawRef.lastTelemetryPingAt).toBe(DAY);
+    expect(config.rawRef.telemetryRetryAfter).toBe(0);
+  });
+
+  test("a failure never throws out of pingInBackground", async () => {
+    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+
+    const service = new TelemetryService({
+      config,
+      currentVersion: "0.3.0",
+      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      fetchImpl: async () => {
+        throw new Error("network down");
+      },
+      now: () => DAY,
+      env: {},
+    });
+
+    expect(() => service.pingInBackground()).not.toThrow();
+    await Bun.sleep(10);
+    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
   });
 });

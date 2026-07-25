@@ -8,6 +8,14 @@ export const DEFAULT_TELEMETRY_ENDPOINT = "https://kunai-telemetry.vercel.app/ap
 
 export const TELEMETRY_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Delay before retrying a failed send. A failed ping must not consume the
+ * 24h cadence, or a single flaky network moment silently discards the day.
+ * Retries happen on the next CLI launch — never on an in-process timer, which
+ * would be killed with the short-lived process.
+ */
+export const TELEMETRY_RETRY_BACKOFF_MS = 15 * 60 * 1000;
+
 /** Wire contract with users — never add fields without updating docs + snapshot tests. */
 export type TelemetryPayload = {
   readonly installId: string;
@@ -129,11 +137,12 @@ export class TelemetryService {
       return;
     }
 
-    const installId = ensureInstallId(config);
-    if (installId !== config.installId) {
-      await this.deps.config.update({ installId });
-      await this.deps.config.save();
+    // A pending retry from an earlier failed send is still cooling down.
+    if (config.telemetryRetryAfter > now) {
+      return;
     }
+
+    const installId = ensureInstallId(config);
 
     const payload: TelemetryPayload = {
       installId,
@@ -143,21 +152,36 @@ export class TelemetryService {
       ts: now,
     };
 
-    // Persist cadence before the network call so a hung request cannot spam.
-    await this.deps.config.update({ lastTelemetryPingAt: now, installId });
-    await this.deps.config.save();
+    const outcome = await this.send(endpoint, payload);
 
+    // Success and permanent rejection both consume the 24h cadence; only a
+    // transient failure schedules a near-term retry.
+    await this.deps.config.update(
+      outcome === "retry"
+        ? { installId, telemetryRetryAfter: now + TELEMETRY_RETRY_BACKOFF_MS }
+        : { installId, lastTelemetryPingAt: now, telemetryRetryAfter: 0 },
+    );
+    await this.deps.config.save();
+  }
+
+  /**
+   * `permanent` covers success and 4xx: both mean "do not try this again today".
+   * `retry` covers network errors, timeouts, and 5xx.
+   */
+  private async send(endpoint: string, payload: TelemetryPayload): Promise<"permanent" | "retry"> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.pingTimeoutMs);
     try {
-      await this.fetchImpl(endpoint, {
+      const response = await this.fetchImpl(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
+      return response.status >= 500 ? "retry" : "permanent";
     } catch {
-      // Silent — network/timeout/abort must not affect the CLI.
+      // Network error, timeout, or abort — all transient.
+      return "retry";
     } finally {
       clearTimeout(timer);
     }
