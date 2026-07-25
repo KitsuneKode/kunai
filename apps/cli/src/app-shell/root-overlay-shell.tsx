@@ -178,6 +178,7 @@ const HELP_SCOPE_LABELS: Record<KeyScope, string> = {
   library: "library",
   player: "playing",
   postPlayback: "post-play",
+  stats: "stats",
   queue: "queue",
   history: "history",
   notifications: "notifications",

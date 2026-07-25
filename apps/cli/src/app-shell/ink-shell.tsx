@@ -1661,20 +1661,24 @@ function StatsShell({
       onBack();
       return;
     }
-    if (key.leftArrow) {
-      setTabIdx((i) => (i + STATS_TABS.length - 1) % STATS_TABS.length);
-      return;
-    }
-    if (key.rightArrow) {
-      setTabIdx((i) => (i + 1) % STATS_TABS.length);
-      return;
-    }
-    if (key.tab && key.shift) {
-      setKindIdx((i) => (i + 1) % STATS_KINDS.length);
-      return;
-    }
+    // Three independent axes live here. Tab/⇧Tab belong to the tab strip that
+    // is visibly on screen — they used to drive range and type respectively,
+    // putting forward/back of one cycle onto two unrelated filters,
+    // arrows walk the media type, and the range takes a mnemonic plus its
+    // direct 1-3 keys. Every axis now has a reverse — walking back one of five
+    // types used to take four presses — and each has exactly one control.
+    const step = (index: number, length: number, delta: number): number =>
+      (index + delta + length) % length;
     if (key.tab) {
-      setRangeIdx((i) => (i + 1) % STATS_RANGES.length);
+      setTabIdx((i) => step(i, STATS_TABS.length, key.shift ? -1 : 1));
+      return;
+    }
+    if (input === "r" || input === "R") {
+      setRangeIdx((i) => step(i, STATS_RANGES.length, input === "R" ? -1 : 1));
+      return;
+    }
+    if (key.leftArrow || key.rightArrow) {
+      setKindIdx((i) => step(i, STATS_KINDS.length, key.leftArrow ? -1 : 1));
       return;
     }
     if (input === "1") setRangeIdx(0);

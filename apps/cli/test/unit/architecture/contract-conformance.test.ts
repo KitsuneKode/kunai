@@ -198,7 +198,10 @@ describe("contract conformance", () => {
     // Scopes the help overlay is not expected to select on its own:
     // `global` is folded into every scope by `bindingsForScope`; `editing` and
     // `loading` are transient input modes; `search` has no bindings at all.
-    const NOT_HELP_SELECTABLE = new Set(["global", "editing", "loading", "search"]);
+    // `stats` is a root content view rather than an overlay — it is absent from
+    // SessionState, so resolveHelpScope has nothing to switch on, and the
+    // surface renders its own registry-generated hint row instead.
+    const NOT_HELP_SELECTABLE = new Set(["global", "editing", "loading", "search", "stats"]);
 
     const declared = [...new Set(KEYBINDINGS.map((binding) => binding.scope as string))];
     const unreachable = declared.filter(

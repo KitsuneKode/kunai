@@ -29,7 +29,8 @@ export type KeyScope =
   | "postPlayback"
   | "queue"
   | "history"
-  | "notifications";
+  | "notifications"
+  | "stats";
 
 export type KeyChord = {
   /** Printable trigger character, e.g. "/", "?", "n". Omit for pure named keys. */
@@ -813,6 +814,84 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     footerPriority: 25,
     helpOnly: true,
   },
+  // ── Stats ──
+  //
+  // Three independent axes live on this surface: the view tabs, the range, and
+  // the media type. Tab/⇧Tab belong to the tab strip that is visibly on screen —
+  // they used to drive range and type respectively, which put forward/back of
+  // one cycle on two unrelated filters. The filters take mnemonic letters, each
+  // with a shift-reverse, so no axis is forward-only.
+  {
+    id: "stats-tab",
+    chord: { named: "tab" },
+    display: "Tab / ⇧Tab",
+    label: "Next / previous stats tab (Overview · Titles · Insights)",
+    hintLabel: "tabs",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 10,
+    docs: { tier: "surface", order: 600 },
+  },
+  {
+    id: "stats-range",
+    chord: { input: "r" },
+    display: "r / ⇧R",
+    label: "Cycle range forward / back (All time · Last 7d · Last 30d)",
+    hintLabel: "range",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 15,
+    docs: { tier: "surface", order: 610 },
+  },
+  {
+    id: "stats-type",
+    chord: { named: "leftArrow" },
+    display: "←→",
+    label: "Cycle media type forward / back (All · Anime · Series · Movies · YouTube)",
+    hintLabel: "type",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 20,
+    docs: { tier: "surface", order: 620 },
+  },
+  {
+    id: "stats-range-jump",
+    chord: { input: "1" },
+    display: "1-3",
+    label: "Jump straight to a range",
+    hintLabel: "jump",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 25,
+  },
+  {
+    id: "stats-share",
+    chord: { input: "s" },
+    label: "Copy a shareable summary",
+    hintLabel: "share",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 30,
+  },
+  {
+    id: "stats-export",
+    chord: { input: "e" },
+    label: "Export stats to a file",
+    hintLabel: "export",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 35,
+  },
+  {
+    id: "stats-back",
+    chord: { input: "q" },
+    label: "Back",
+    hintLabel: "back",
+    scope: "stats",
+    group: "Stats",
+    footerPriority: 40,
+  },
+
   {
     id: "notifications-page",
     chord: { input: "[" },

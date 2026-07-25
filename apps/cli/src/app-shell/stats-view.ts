@@ -14,6 +14,7 @@ import type {
 import { ALL_TIME_STATS_WINDOW_DAYS } from "@/domain/lists/StatsService";
 
 import { heatBucket } from "./format/heatmap";
+import { footerHints as statsFooterHints } from "./keybindings";
 import { padColumnsEnd, truncateLine } from "./shell-text";
 import { palette, resolveStatsTintColor, statsHeatCellColor } from "./shell-theme";
 
@@ -479,6 +480,10 @@ export function buildStatsView(input: {
     insights: buildInsightRows(input.stats),
     genreRows: buildGenreRows(input.stats.genreBreakdown, maxGenreRows, genreLabelWidth),
     genreAffinityNote: input.stats.genreAffinityNote,
-    footerHints: "←→ tab · Tab range · ⇧Tab type · s share · e export · q back",
+    // Generated, not written out: a hand-kept string drifts from the handler
+    // silently, and the keys it named never reached the `?` overlay.
+    footerHints: statsFooterHints("stats")
+      .map((hint) => `${hint.keys} ${hint.label}`)
+      .join(" · "),
   };
 }

@@ -273,3 +273,27 @@ test("public shortcuts lock Tab browse mode, Shift+F fallback, and one playback 
     "Open title control menu",
   );
 });
+
+test("stats puts Tab on the tab strip and gives every filter a reverse", () => {
+  // The regression: Tab cycled the range and Shift+Tab cycled the media type,
+  // so forward/back of one cycle drove two unrelated filters — and neither
+  // filter could be walked backwards at all.
+  const stats = bindingsForScope("stats");
+  const byId = (id: string) => stats.find((binding) => binding.id === id);
+
+  expect(byId("stats-tab")?.chord.named).toBe("tab");
+  expect(byId("stats-tab")?.label.toLowerCase()).toContain("tab");
+  // Range and type are letters now, each documenting its shift-reverse.
+  expect(byId("stats-range")?.chord.input).toBe("r");
+  expect(byId("stats-range")?.display).toContain("⇧R");
+  expect(byId("stats-type")?.chord.named).toBe("leftArrow");
+  expect(byId("stats-type")?.display).toBe("←→");
+
+  // The footer is generated, so the direct range keys stopped being a secret.
+  const hints = footerHints("stats");
+  const labels = hints.map((hint) => hint.label);
+  expect(labels).toContain("jump");
+  // The media-type filter is on the arrows and must say so in the footer.
+  expect(hints.find((hint) => hint.label === "type")?.keys).toBe("←→");
+  expect(hints[0]?.keys).toBe("Tab / ⇧Tab");
+});
