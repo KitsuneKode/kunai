@@ -332,7 +332,6 @@ export function BrowseShell<T>({
   const searchRequestGateRef = useRef(createLatestRequestGate());
   const detailRequestGateRef = useRef(createLatestRequestGate());
   const [idleContextRequestGate] = useState(() => createLatestRequestGate());
-  const reloadDiscoveryRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -594,10 +593,6 @@ export function BrowseShell<T>({
       setEmptyMessage("Trending failed.");
     }
   };
-  reloadDiscoveryRef.current = () => {
-    void loadDiscovery();
-  };
-
   const loadRecommendations = async () => {
     if (!onLoadRecommendations) return;
 
@@ -1467,10 +1462,7 @@ export function BrowseShell<T>({
         narrowOpenOrFocused: resultFilterFocused || filterModeOpen,
         resultFilterNonEmpty: resultFilter.length > 0,
         structuredChipCount: structuredFilterChips.length,
-        hasResultsOrErrorOrLoading:
-          options.length > 0 || searchState === "error" || searchState === "loading",
         queryNonEmpty: query.trim().length > 0,
-        hasSubmittedSearch: lastSearchedQuery.trim().length > 0,
       });
 
       if (escLayer === "narrow") {
@@ -1496,17 +1488,6 @@ export function BrowseShell<T>({
 
       if (listFocused || idleFocused) {
         dispatchFocusZone({ type: "escape" });
-        return;
-      }
-
-      if (escLayer === "results") {
-        // Deliberate reset: this is where a submitted search hands the surface
-        // back to trending, now that emptying the draft no longer does it.
-        if (onLoadDiscovery && reloadDiscoveryRef.current) {
-          reloadDiscoveryRef.current();
-        } else {
-          clearResults();
-        }
         return;
       }
 

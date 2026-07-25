@@ -2,7 +2,7 @@ import type { FilterState, FilterStateKey } from "@/domain/search/SearchIntent";
 import { clearFilterStateKey, describeFilterStateChips } from "@/domain/search/SearchIntent";
 import { parseSearchIntentText } from "@/domain/search/SearchIntentParser";
 
-export type BrowseEscFilterLayer = "narrow" | "chips" | "results" | "query" | "cancel";
+export type BrowseEscFilterLayer = "narrow" | "chips" | "query" | "cancel";
 
 export type StructuredFilterChip = {
   readonly key: FilterStateKey;
@@ -26,32 +26,27 @@ export function shouldResearchAfterFilterChange(input: {
 }
 
 /**
- * One Esc = undo the narrowest thing currently applied.
+ * One Esc = undo the narrowest thing currently applied: narrow → chips → query
+ * → cancel. Two Escapes from a typed search therefore clear the text and then
+ * leave, which is the whole contract.
  *
- * Order matters and is the whole contract: narrow → chips → query → results →
- * cancel. `query` sits ahead of `results` deliberately — with text typed and
- * results on screen (the ordinary state), checking `results` first meant the
- * first Esc reset the surface to trending instead of clearing what the user had
- * typed, which is the reload that emptying the draft was changed to stop doing.
- *
- * `results` also requires a search to actually reset *from*. Without that, a
- * surface showing default discovery results kept re-answering "results" forever:
- * the reload repopulated the list, so the condition stayed true and Esc could
- * never fall through to `cancel` — the surface was inescapable by Esc alone.
+ * There is deliberately no "reset results to trending" rung. It used to sit
+ * between `query` and `cancel`, and it broke the ladder twice over: it ran a
+ * full discovery refetch, so the second Esc looked like the page reloading
+ * rather than going back; and because the refetch repopulated the list, the
+ * condition that selected it stayed true forever, leaving no way to reach
+ * `cancel` by Esc at all. Returning to trending is still a deliberate gesture
+ * via `/trending` — it just is not what Escape means.
  */
 export function nextBrowseEscFilterLayer(input: {
   readonly narrowOpenOrFocused: boolean;
   readonly resultFilterNonEmpty: boolean;
   readonly structuredChipCount: number;
-  readonly hasResultsOrErrorOrLoading: boolean;
   readonly queryNonEmpty: boolean;
-  /** A user search produced these results, so there is something to reset. */
-  readonly hasSubmittedSearch: boolean;
 }): BrowseEscFilterLayer {
   if (input.narrowOpenOrFocused || input.resultFilterNonEmpty) return "narrow";
   if (input.structuredChipCount > 0) return "chips";
   if (input.queryNonEmpty) return "query";
-  if (input.hasResultsOrErrorOrLoading && input.hasSubmittedSearch) return "results";
   return "cancel";
 }
 

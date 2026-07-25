@@ -75,11 +75,16 @@ export function createShutdownCoordinator(
 
   const run = async (intent: ShutdownIntent): Promise<void> => {
     const releaseAbort = new AbortController();
+    // Deliberately ref'd. This timer is the only thing that can end a hung
+    // release phase, so it has to be able to hold the loop open long enough to
+    // fire: unref'd, an otherwise-idle loop either exits on its own — losing
+    // the intent's exit code and reporting 0 — or, under a test runner that
+    // keeps awaiting, never fires at all and hangs forever. The `finally` below
+    // always clears it, so a healthy shutdown is never delayed.
     const forceExit = setTimeout(() => {
       releaseAbort.abort(new Error(`shutdown deadline (${deadlineMs}ms) exceeded`));
       exitOnce();
     }, deadlineMs);
-    forceExit.unref?.();
 
     try {
       await runPhase("quiesce", () => runtime.quiesce(intent));
