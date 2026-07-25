@@ -147,6 +147,7 @@ import { useShellInput } from "./shell-command-input";
 import { CommandPalette } from "./shell-command-ui";
 import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { subtitleGridColumns, tracksOptionsPaneWidth } from "./tracks-panel-layout";
 import {
   createInitialTracksNav,
   tracksPanelNavReducer,
@@ -1321,11 +1322,18 @@ export function RootOverlayShell({
     if (overlay.type === "tracks_panel") {
       // Nested two-pane: sections (left) ⇄ options (right). Selection resolves
       // through the picker bridge (RESOLVE/CANCEL_PICKER). See tracks-panel-nav.ts.
+      const focusedGroup = trackGroups[tracksNav.sectionIndex];
+      // Subtitles render as a grid, so the cursor has to step by the same number
+      // of columns the renderer draws — otherwise "down" walks sideways.
       const navCtx = {
         sectionCount: trackGroups.length,
-        optionCount: trackGroups[tracksNav.sectionIndex]?.rows.length ?? 0,
+        optionCount: focusedGroup?.rows.length ?? 0,
+        gridColumns:
+          focusedGroup?.section === "subtitle"
+            ? subtitleGridColumns(tracksOptionsPaneWidth(overlayLayout.contentColumns))
+            : 1,
       };
-      const focusedGroup = trackGroups[tracksNav.sectionIndex];
+      const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
       if (key.escape) {
         const backAction = resolveOverlayBackStack({
@@ -1341,11 +1349,24 @@ export function RootOverlayShell({
         return;
       }
       if (key.leftArrow && tracksNav.focusedPane === "options") {
-        setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "exit-section" }, navCtx));
+        // Inside a grid row, left moves one cell; only at the row start does it
+        // mean "leave the pane".
+        const atRowStart = tracksNav.optionIndex % navCtx.gridColumns === 0;
+        setTracksNav((nav) =>
+          tracksPanelNavReducer(
+            nav,
+            { type: inSubtitleGrid && !atRowStart ? "left" : "exit-section" },
+            navCtx,
+          ),
+        );
         return;
       }
       if (key.rightArrow && tracksNav.focusedPane === "sections") {
         setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
+        return;
+      }
+      if (key.rightArrow && inSubtitleGrid) {
+        setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "right" }, navCtx));
         return;
       }
       if (key.upArrow || key.downArrow || input === "j" || input === "k") {

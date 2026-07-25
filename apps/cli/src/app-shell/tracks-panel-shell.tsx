@@ -12,12 +12,19 @@ import React from "react";
 import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
-import { chunkSubtitleGrid, tracksCountsHeader } from "./tracks-panel-layout";
+import {
+  chunkSubtitleGrid,
+  disambiguateSubtitleLabels,
+  SUBTITLE_CELL_MIN_WIDTH,
+  TRACKS_SECTION_COL_WIDTH as SECTION_COL_WIDTH,
+  TRACKS_TWO_PANE_MIN_WIDTH as TWO_PANE_MIN_WIDTH,
+  subtitleGridColumns,
+  subtitleGridWindow,
+  tracksPaneVisibleRows,
+  tracksCountsHeader,
+} from "./tracks-panel-layout";
 import { createInitialTracksNav, type TracksNavState } from "./tracks-panel-nav";
 
-/** Width below which the two-pane layout collapses to the stacked single column. */
-const TWO_PANE_MIN_WIDTH = 56;
-const SECTION_COL_WIDTH = 22;
 /** Stable empty default so the favorites prop keeps referential equality across renders. */
 const EMPTY_FAVORITES: readonly string[] = [];
 
@@ -170,7 +177,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     return (
       <Box flexDirection="column" paddingX={1}>
         {header}
-        <StackedView groups={groups} favorites={favorites} width={width} />
+        <StackedView groups={groups} favorites={favorites} width={width} height={height} />
         {footer}
       </Box>
     );
@@ -245,20 +252,36 @@ function OptionsPane({
   const headerLabel = `${group.title.toUpperCase()} · ${rows.length}`;
 
   if (group.section === "subtitle") {
-    const columns = Math.max(1, Math.floor(width / 16));
-    const grid = chunkSubtitleGrid(rows, columns);
+    const columns = subtitleGridColumns(width);
+    const cellWidth = Math.max(SUBTITLE_CELL_MIN_WIDTH, Math.floor(width / columns));
+    // Repeated language names ("English" four times over) are unpickable without
+    // this; the labels carry their own discriminator before they reach the grid.
+    const labels = disambiguateSubtitleLabels(rows);
+    const focusedIndex = optionsFocused ? Math.min(state.optionIndex, rows.length - 1) : 0;
+    // Reserve the header, the hint line, and both overflow markers.
+    const { startRow, endRow, totalRows } = subtitleGridWindow({
+      totalCells: rows.length,
+      columns,
+      focusedIndex,
+      visibleRows: tracksPaneVisibleRows(height),
+    });
+    const grid = chunkSubtitleGrid(rows, columns).slice(startRow, endRow);
+    const hiddenAbove = startRow * columns;
+    const hiddenBelowCells = Math.max(0, rows.length - endRow * columns);
+
     return (
       <Box flexDirection="column">
         <Text color={palette.muted} bold>
           {headerLabel}
         </Text>
+        {hiddenAbove > 0 ? <Text color={palette.dim}>{`↑ ${hiddenAbove} more`}</Text> : null}
         {grid.map((line, rowIndex) => (
           <Box key={`subrow-${line[0]?.value ?? rowIndex}`}>
             {line.map((capability, cellIndex) => {
-              const flatIndex = rowIndex * columns + cellIndex;
+              const flatIndex = (startRow + rowIndex) * columns + cellIndex;
               const highlighted = optionsFocused && flatIndex === state.optionIndex;
               return (
-                <Box key={`sub-${capability.value}`} width={16}>
+                <Box key={`sub-${capability.value}`} width={cellWidth}>
                   <Text
                     color={
                       highlighted
@@ -270,22 +293,30 @@ function OptionsPane({
                     bold={highlighted || capability.selected}
                     wrap="truncate"
                   >
-                    {capability.selected ? "✓ " : "  "}
-                    {capability.label}
+                    {capability.selected ? "✓ " : highlighted ? "▌ " : "  "}
+                    {labels[flatIndex] ?? capability.label}
                   </Text>
                 </Box>
               );
             })}
           </Box>
         ))}
+        {hiddenBelowCells > 0 ? (
+          <Text color={palette.dim}>{`↓ ${hiddenBelowCells} more`}</Text>
+        ) : null}
         <Text color={palette.dim}>
-          ↳ subtitles attach live in mpv — switch instantly in the player
+          {truncateLine(
+            totalRows > 1
+              ? "↳ attach live in mpv · ↑↓ row · ←→ within row"
+              : "↳ subtitles attach live in mpv — switch instantly in the player",
+            width,
+          )}
         </Text>
       </Box>
     );
   }
 
-  const maxVisible = Math.max(4, Math.min(rows.length, (height ?? 18) - 4));
+  const maxVisible = Math.max(1, Math.min(rows.length, tracksPaneVisibleRows(height)));
   const highlightIndex = optionsFocused ? Math.min(state.optionIndex, rows.length - 1) : 0;
   const windowStart = getWindowStart(highlightIndex, rows.length, maxVisible);
   const visible = rows.slice(windowStart, windowStart + maxVisible);
@@ -346,12 +377,21 @@ function StackedView({
   groups,
   favorites,
   width,
+  height,
 }: {
   groups: readonly TrackCapabilityGroup[];
   favorites: readonly string[];
   width: number;
+  height?: number;
 }) {
-  const rows = buildTrackPanelRows(groups);
+  const allRows = buildTrackPanelRows(groups);
+  // This view stacks every section's rows, so a long subtitle list ran straight
+  // past the bottom of a narrow terminal and over what sat below it. It carries
+  // no focus state, so the honest budget is a cap plus a count of the remainder
+  // rather than a window that pretends to follow a cursor.
+  const budget = tracksPaneVisibleRows(height);
+  const rows = allRows.slice(0, budget);
+  const hiddenRows = allRows.length - rows.length;
   return (
     <Box flexDirection="column">
       {rows.map((row) => {
@@ -390,6 +430,9 @@ function StackedView({
           </Box>
         );
       })}
+      {hiddenRows > 0 ? (
+        <Text color={palette.dim}>{`↓ ${String(hiddenRows)} more — widen the terminal`}</Text>
+      ) : null}
     </Box>
   );
 }

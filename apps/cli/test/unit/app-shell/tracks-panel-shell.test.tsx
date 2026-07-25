@@ -78,3 +78,83 @@ describe("TracksPanelShell two-pane", () => {
     expect(frame).toContain("No stream details");
   });
 });
+
+describe("TracksPanelShell subtitle grid", () => {
+  const subtitleGroup = (labels: readonly string[]): TrackCapabilityGroup[] => [
+    {
+      section: "subtitle",
+      title: "Subtitle",
+      selectable: true,
+      rows: labels.map((label, index) => ({
+        section: "subtitle" as const,
+        label,
+        value: `sub-${String(index)}`,
+        selected: index === 0,
+        enabled: true,
+        risk: "normal" as const,
+      })),
+    },
+  ];
+
+  test("stays inside its height for a long merged list", () => {
+    // The grid used to render every row regardless of the height it was given,
+    // so an external-search merge drew past the bottom of the panel and over
+    // whatever sat below it.
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={subtitleGroup(Array.from({ length: 60 }, (_, i) => `Track ${String(i)}`))}
+        width={80}
+        height={20}
+        nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 44 }}
+        favorites={[]}
+        providerLabel="videasy"
+      />,
+      { columns: 84 },
+    );
+
+    expect(frame.split("\n").length).toBeLessThanOrEqual(20);
+    // The focused cell is on screen, with the rest accounted for above it.
+    expect(frame).toContain("Track 44");
+    expect(frame).toContain("more");
+  });
+
+  test("keeps repeated language names tellable apart", () => {
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={subtitleGroup(["English", "English", "English", "Spanish"])}
+        width={80}
+        height={20}
+        nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 0 }}
+        favorites={[]}
+        providerLabel="videasy"
+      />,
+      { columns: 84 },
+    );
+
+    expect(frame).toContain("English #1");
+    expect(frame).toContain("English #2");
+    expect(frame).toContain("English #3");
+    // A label with no twin is left alone.
+    expect(frame).toContain("Spanish");
+    expect(frame).not.toContain("Spanish #");
+  });
+
+  test("caps the narrow stacked view instead of drawing past the terminal", () => {
+    // The stacked fallback rendered every section's rows with no height budget
+    // at all, so a merged subtitle list overflowed a narrow terminal entirely.
+    const frame = captureFrame(
+      <TracksPanelShell
+        groups={subtitleGroup(Array.from({ length: 40 }, (_, i) => `Track ${String(i)}`))}
+        width={40}
+        height={16}
+        nav={{ focusedPane: "options", sectionIndex: 0, optionIndex: 0 }}
+        favorites={[]}
+        providerLabel="videasy"
+      />,
+      { columns: 44 },
+    );
+
+    expect(frame.split("\n").length).toBeLessThanOrEqual(16);
+    expect(frame).toContain("more");
+  });
+});

@@ -1090,6 +1090,8 @@ test("rivestream caches provider services across cold resolves", async () => {
     expect(result.status).toBe("resolved");
   }
 
+  // Services discovery is cached across cold resolves (1 call), while each
+  // resolve prefetches every candidate service in parallel (2 per resolve).
   expect(requests.filter((url) => url.includes("VideoProviderServices"))).toHaveLength(1);
   expect(requests.filter((url) => url.includes("VideoProvider&id="))).toHaveLength(4);
 });

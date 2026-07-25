@@ -232,7 +232,9 @@ export async function createMiruroResultFromPayload({
     context?.signal,
   );
   const rawStreams = rankMiruroStreams(
-    expandedStreams.filter((s) => (s.type === "hls" || s.type === "mp4") && s.url),
+    expandedStreams.filter(
+      (s) => (s.type === "hls" || s.type === "mp4") && s.url && !isMiruroPlaceholderStream(s),
+    ),
   );
   if (rawStreams.length === 0) return null;
   const subtitlePresentation = resolveMiruroSubtitlePresentation(
@@ -1002,6 +1004,19 @@ function isMiruroCdnStream(stream: MiruroPipeStream): boolean {
   try {
     const host = new URL(stream.url).hostname.toLowerCase();
     return host.includes("uwucdn") || host.includes("owocdn");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `bonk`'s CDN (ibyteimg.com) is image-only and serves PNG placeholders for
+ * video segments — such streams must never count as a successful resolve.
+ */
+function isMiruroPlaceholderStream(stream: MiruroPipeStream): boolean {
+  if (!stream.url) return false;
+  try {
+    return new URL(stream.url).hostname.toLowerCase().includes("ibyteimg");
   } catch {
     return false;
   }
