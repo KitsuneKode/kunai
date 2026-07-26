@@ -59,4 +59,19 @@ describe("canProbeTerminal", () => {
     expect(canProbeTerminal({ TERM: "xterm", KUNAI_IMAGE_PROBE: "0" }, tty, tty)).toBe(false);
     expect(canProbeTerminal({ TERM: "xterm", KUNAI_IMAGE_PROBE: "false" }, tty, tty)).toBe(false);
   });
+
+  // TERM is a Unix convention. Treating its absence as "not worth asking" meant
+  // the probe never ran on Windows, so sixel and kitty were always false there
+  // and every Windows terminal was pinned to the half-block fallback.
+  test("still asks a Windows console, which never sets TERM", () => {
+    expect(canProbeTerminal({ WT_SESSION: "abc-123", OS: "Windows_NT" }, tty, tty)).toBe(true);
+    expect(canProbeTerminal({ OS: "Windows_NT" }, tty, tty)).toBe(true);
+    expect(canProbeTerminal({ ConEmuANSI: "ON" }, tty, tty)).toBe(true);
+  });
+
+  test("the Windows path still honours every refusal", () => {
+    expect(canProbeTerminal({ OS: "Windows_NT", CI: "1" }, tty, tty)).toBe(false);
+    expect(canProbeTerminal({ OS: "Windows_NT", KUNAI_IMAGE_PROBE: "0" }, tty, tty)).toBe(false);
+    expect(canProbeTerminal({ OS: "Windows_NT" }, { isTTY: false }, tty)).toBe(false);
+  });
 });

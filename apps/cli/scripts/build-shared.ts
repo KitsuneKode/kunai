@@ -209,8 +209,18 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * notification kind and the extracted auto-update gate landed. Headroom is
  * deliberate — this should only move for a decision like those, with the reason
  * recorded here.
+ *
+ * Raised from 2_720 on 2026-07-26, which the build had again reached to the
+ * byte (2721 KiB), for the title-control menu work: episode navigation on the
+ * loading surface, the poster carried through to the preview pane, and
+ * context-aware row labels/glyphs. Note this budget guards the *development*
+ * bundle only — `dist/kunai.js` is not published. The public package is the
+ * Node launcher (`files: ["dist/npm-launcher.mjs", "LICENSE", "README.md"]`,
+ * ~9 KiB) and is ratcheted separately by NPM_PACK_PACKED_BUDGET_BYTES /
+ * NPM_PACK_UNPACKED_BUDGET_BYTES, so moving this number cannot affect what a
+ * user installs from npm.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_720;
+export const NPM_BUNDLE_BUDGET_KB = 2_800;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

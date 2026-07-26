@@ -54,8 +54,21 @@ export function canProbeTerminal(
   }
   // CI never has a terminal worth asking, and `dumb` cannot answer.
   if (env.CI) return false;
-  if (!env.TERM || env.TERM === "dumb") return false;
+  if (env.TERM === "dumb") return false;
+
+  // A missing TERM is normal on Windows — it is a Unix convention that neither
+  // Windows Terminal nor PowerShell sets — so it cannot mean "not worth
+  // asking" there. Gating on it is why the probe never ran on Windows at all:
+  // sixel and kitty both came back false by default and every Windows user got
+  // the half-block fallback, no matter how capable their terminal was.
+  if (!env.TERM) return isWindowsConsoleEnv(env);
+
   return true;
+}
+
+/** Windows consoles that speak VT sequences and can therefore answer a query. */
+function isWindowsConsoleEnv(env: NodeJS.ProcessEnv): boolean {
+  return env.OS === "Windows_NT" || env.WT_SESSION !== undefined || env.ConEmuANSI !== undefined;
 }
 
 let probed: TerminalGraphicsSupport | null = null;

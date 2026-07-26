@@ -47,7 +47,65 @@ export type TitleControlAction = {
   readonly reason?: string;
   readonly group: TitleControlActionGroup;
   readonly shellAction?: ShellAction;
+  /** Leading glyph, so a row is identifiable before it is read. */
+  readonly icon?: string;
+  /** Discards data or resets state. Rendered so it cannot be picked by accident. */
+  readonly destructive?: boolean;
 };
+
+/**
+ * Glyphs live in one map rather than baked into each label, so the icon
+ * vocabulary stays consistent and a label can be rewritten by `labelFor`
+ * without losing its mark.
+ */
+const ACTION_ICONS: Partial<Record<TitleControlActionId, string>> = {
+  play: "▶",
+  resume: "▶",
+  restart: "↻",
+  replay: "↻",
+  next: "⏭",
+  previous: "⏮",
+  "next-season": "⏩",
+  "pick-episode": "☰",
+  cancel: "✕",
+  stop: "■",
+  source: "≡",
+  quality: "◆",
+  "lazy-resolve-source": "⣷",
+  "switch-provider": "⇄",
+  "recompute-sources": "↺",
+  fallback: "⤳",
+  recover: "✚",
+  "purge-episode-cache": "⌫",
+  "purge-title-cache": "⌫",
+  "clear-cache": "⌫",
+  "reset-provider-health": "⟲",
+  "forget-title-provider-preference": "⌫",
+  download: "↓",
+  "mark-watched": "✓",
+  "mark-unwatched": "○",
+  "mark-season-watched": "✓",
+  share: "↗",
+  bookmark: "★",
+  watchlist: "★",
+  search: "⌕",
+  diagnostics: "⚙",
+  setup: "⚙",
+};
+
+/**
+ * Irreversible or state-resetting actions. These sit next to ordinary ones in
+ * the same list, so without a distinct tone "Purge title cache" reads exactly
+ * like "Switch provider" — one keystroke apart from each other.
+ */
+const DESTRUCTIVE_ACTIONS: ReadonlySet<TitleControlActionId> = new Set([
+  "purge-episode-cache",
+  "purge-title-cache",
+  "clear-cache",
+  "reset-provider-health",
+  "forget-title-provider-preference",
+  "mark-unwatched",
+]);
 
 export type TitleControlContext = {
   readonly surface: TitleControlSurface;
@@ -75,6 +133,18 @@ export type TitleControlContext = {
   readonly hasResolvedStream?: boolean;
   readonly postPlayKind?: PostPlayState["kind"];
   readonly canResume?: boolean;
+  /** Poster for the Current Selection preview pane. */
+  readonly posterUrl?: string;
+  // Concrete episode identity, so a row can read "Next episode S1E2 · Blue Cat"
+  // rather than a bare "Next episode". A generic label forces the reader to
+  // remember where they were; naming the target is what makes the menu legible.
+  readonly currentSeason?: number;
+  readonly currentEpisodeNumber?: number;
+  readonly currentEpisodeName?: string;
+  /** Already-formatted by the session reducer (e.g. `S1E2`); do not rebuild it. */
+  readonly nextEpisodeLabel?: string;
+  readonly nextEpisodeName?: string;
+  readonly resumeAtLabel?: string;
 };
 
 type ActionSpec = {
@@ -83,6 +153,10 @@ type ActionSpec = {
   readonly detail?: string;
   readonly group: TitleControlActionGroup;
   readonly shellAction?: ShellAction;
+  /** Overrides `label` when the context can name the concrete target. */
+  readonly labelFor?: (ctx: TitleControlContext) => string | undefined;
+  /** Overrides `detail` when the context can describe the concrete target. */
+  readonly detailFor?: (ctx: TitleControlContext) => string | undefined;
   readonly when: (ctx: TitleControlContext) => {
     readonly enabled: boolean;
     readonly reason?: string;
@@ -91,6 +165,22 @@ type ActionSpec = {
 
 const disabled = (reason: string) => ({ enabled: false, reason });
 const enabled = () => ({ enabled: true });
+
+/** `S1E2`, or `E2` in anime mode where seasons are not the unit users think in. */
+function episodeTag(
+  ctx: TitleControlContext,
+  season: number | undefined,
+  episode: number | undefined,
+): string | undefined {
+  if (episode === undefined) return undefined;
+  if (ctx.isAnime || season === undefined) return `E${episode}`;
+  return `S${season}E${episode}`;
+}
+
+/** Appends the episode name when we know it, so rows read as content not coordinates. */
+function withEpisodeName(base: string, name: string | undefined): string {
+  return name ? `${base} · ${name}` : base;
+}
 
 const ACTION_SPECS: readonly ActionSpec[] = [
   {
@@ -112,6 +202,14 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     detail: "Continue from your saved position",
     group: "primary",
     shellAction: "resume",
+    labelFor: (ctx) => {
+      const tag = episodeTag(ctx, ctx.currentSeason, ctx.currentEpisodeNumber);
+      return tag ? `Resume ${tag}` : undefined;
+    },
+    detailFor: (ctx) =>
+      ctx.resumeAtLabel
+        ? withEpisodeName(`Continue from ${ctx.resumeAtLabel}`, ctx.currentEpisodeName)
+        : undefined,
     when: (ctx) => {
       if (ctx.surface === "post-play") {
         return ctx.canResume ? enabled() : disabled("Nothing to resume");
@@ -137,6 +235,11 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     label: "Next episode",
     group: "primary",
     shellAction: "next",
+    labelFor: (ctx) => (ctx.nextEpisodeLabel ? `Next episode  ${ctx.nextEpisodeLabel}` : undefined),
+    detailFor: (ctx) =>
+      ctx.nextEpisodeLabel
+        ? withEpisodeName("Advance to the next released episode", ctx.nextEpisodeName)
+        : undefined,
     when: (ctx) =>
       ctx.hasNextEpisode && !ctx.seriesComplete ? enabled() : disabled("No next episode available"),
   },
@@ -153,6 +256,8 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     detail: "Choose season and episode manually",
     group: "primary",
     shellAction: "pick-episode",
+    labelFor: (ctx) => (ctx.isAnime ? "Pick episode…" : "Pick season & episode…"),
+    detailFor: () => "Choose manually from metadata",
     when: (ctx) =>
       ctx.titleType === "series" ? enabled() : disabled("Episode selection is only for series"),
   },
@@ -419,7 +524,17 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "share",
     "diagnostics",
   ],
+  // Episode navigation belongs here, not just on `playing`. This is an
+  // allow-list, so omitting these filtered them out before `when()` ever ran:
+  // opening the menu mid-resolve for a series showed only recovery actions and
+  // dropped "Pick season & episode" entirely, even though it was applicable.
+  // Redirecting to a different episode is a normal thing to want while a
+  // stream is still resolving.
   loading: [
+    "pick-episode",
+    "next",
+    "previous",
+    "next-season",
     "cancel",
     "lazy-resolve-source",
     "switch-provider",
@@ -474,12 +589,14 @@ function buildAction(spec: ActionSpec, ctx: TitleControlContext): TitleControlAc
   const state = spec.when(ctx);
   return {
     id: spec.id,
-    label: spec.label,
-    detail: spec.detail,
+    label: spec.labelFor?.(ctx) ?? spec.label,
+    detail: spec.detailFor?.(ctx) ?? spec.detail,
     group: spec.group,
     shellAction: spec.shellAction,
     enabled: state.enabled,
     reason: state.reason,
+    ...(ACTION_ICONS[spec.id] ? { icon: ACTION_ICONS[spec.id] } : {}),
+    ...(DESTRUCTIVE_ACTIONS.has(spec.id) ? { destructive: true } : {}),
   };
 }
 

@@ -1,79 +1,53 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
+import { dispatchPaletteCommand } from "@/app-shell/dispatch-palette-command";
+import {
+  createPaletteWorkflowPort,
+  type PaletteWorkflowPort,
+} from "@/app-shell/palette-workflow-port";
 import type { QueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
-import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
-const openSetupWizardFromShell = mock(async () => {});
+// Injected rather than mock.module'd. `mock.module` is process-global and
+// applied at load time, so stubbing these bridges here also replaced them for
+// every other file in the run: root-overlay-bridge.test.ts saw an
+// `openNotificationsOverlay` that resolved `{ playback: null }` and an
+// `openRootOwnedOverlay` that never dispatched. Whether that broke anything
+// depended on test-file load order, so the suite passed on Linux and failed on
+// Windows for the same commit. The port keeps every swap local to this file.
+const openSetupWizardFromShell = mock(async () => "completed" as const);
 const handleShellAction = mock(async () => "handled" as const);
 const openRootOwnedOverlay = mock(async () => {});
 const openDiagnosticsOverlay = mock(async () => {});
 const waitForRootQueueSelection = mock(async (): Promise<QueuePlaybackLaunch | null> => null);
 
-function titleInfoFromQueuePlaybackLaunch(launch: QueuePlaybackLaunch): TitleInfo {
-  return {
-    id: launch.intent.titleId,
-    type: launch.intent.mediaKind === "movie" ? "movie" : "series",
-    name: launch.title,
-    queuePlaybackIntent: launch.intent,
-  };
+// Everything not stubbed keeps its real implementation, including the pure
+// queue-launch mappers the assertions below depend on.
+function createTestPort(): PaletteWorkflowPort {
+  return createPaletteWorkflowPort({
+    loadShellWorkflows: async () => ({
+      ...(await import("@/app-shell/workflows/shell-workflows")),
+      handleShellAction,
+      resolveQuitWithDownloadQueue: async () => "handled" as const,
+    }),
+    loadSetupWorkflow: async () => ({
+      ...(await import("@/app-shell/workflows/setup-workflows")),
+      openSetupWizardFromShell,
+    }),
+    loadOverlayBridge: async () => ({
+      ...(await import("@/app-shell/root-overlay-bridge")),
+      openRootOwnedOverlay,
+      openDiagnosticsOverlay,
+      // Must match the real resolved shape; callers read `.playback`.
+      openNotificationsOverlay: async () => ({ playback: null }),
+    }),
+    loadQueueBridge: async () => ({
+      ...(await import("@/app-shell/root-queue-bridge")),
+      waitForRootQueueSelection,
+    }),
+  });
 }
 
-function episodeInfoFromQueuePlaybackLaunch(launch: QueuePlaybackLaunch): EpisodeInfo | undefined {
-  const { intent } = launch;
-  if (intent.mediaKind === "movie") return undefined;
-  if (
-    intent.season === undefined &&
-    intent.episode === undefined &&
-    intent.absoluteEpisode === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    season: intent.season ?? 1,
-    episode: intent.episode ?? intent.absoluteEpisode ?? 1,
-    absoluteEpisode: intent.absoluteEpisode,
-  };
-}
-
-// Each factory spreads the real module before overriding. `mock.module` is
-// process-global and applied at load time, so returning only the stubbed
-// members deletes every other export for every other test file in the run --
-// root-overlay-bridge.test.ts saw an `openNotificationsOverlay` that resolved
-// undefined and an `openRootOwnedOverlay` that never dispatched, because this
-// file had replaced the module wholesale. It passed on Linux and failed on
-// Windows purely on test-file load order, so the Linux pass was luck.
-const actualSetupWorkflows = await import("@/app-shell/workflows/setup-workflows");
-const actualRootOverlayBridge = await import("@/app-shell/root-overlay-bridge");
-const actualRootQueueBridge = await import("@/app-shell/root-queue-bridge");
-const actualShellWorkflows = await import("@/app-shell/workflows/shell-workflows");
-
-mock.module("@/app-shell/workflows/setup-workflows", () => ({
-  ...actualSetupWorkflows,
-  openSetupWizardFromShell,
-}));
-
-mock.module("@/app-shell/root-overlay-bridge", () => ({
-  ...actualRootOverlayBridge,
-  openRootOwnedOverlay,
-  openDiagnosticsOverlay,
-  // Must match the real resolved shape; callers read `.playback`.
-  openNotificationsOverlay: async () => ({ playback: null }),
-}));
-
-mock.module("@/app-shell/root-queue-bridge", () => ({
-  ...actualRootQueueBridge,
-  waitForRootQueueSelection,
-  titleInfoFromQueuePlaybackLaunch,
-  episodeInfoFromQueuePlaybackLaunch,
-}));
-
-mock.module("@/app-shell/workflows/shell-workflows", () => ({
-  ...actualShellWorkflows,
-  handleShellAction,
-  resolveQuitWithDownloadQueue: async () => "handled" as const,
-}));
-
-const { dispatchPaletteCommand } = await import("@/app-shell/dispatch-palette-command");
+const port = createTestPort();
 
 afterEach(() => {
   openSetupWizardFromShell.mockClear();
@@ -88,8 +62,20 @@ describe("dispatchPaletteCommand", () => {
   test("setup routes through the dedicated wizard once, not generic shell workflows", async () => {
     const container = { stateManager: { dispatch: () => {} } };
 
-    const browseResult = await dispatchPaletteCommand("browse", "setup", container as never);
-    const playbackResult = await dispatchPaletteCommand("playback", "setup", container as never);
+    const browseResult = await dispatchPaletteCommand(
+      "browse",
+      "setup",
+      container as never,
+      undefined,
+      port,
+    );
+    const playbackResult = await dispatchPaletteCommand(
+      "playback",
+      "setup",
+      container as never,
+      undefined,
+      port,
+    );
 
     expect(browseResult).toBe("handled");
     expect(playbackResult).toBe("handled");
@@ -102,7 +88,13 @@ describe("dispatchPaletteCommand", () => {
   });
 
   test("provider command returns provider picker intent from the shared dispatcher", async () => {
-    const result = await dispatchPaletteCommand("playback", "provider", {} as never);
+    const result = await dispatchPaletteCommand(
+      "playback",
+      "provider",
+      {} as never,
+      undefined,
+      port,
+    );
 
     expect(result).toBe("provider");
     expect(handleShellAction).not.toHaveBeenCalled();
@@ -111,27 +103,27 @@ describe("dispatchPaletteCommand", () => {
   test("routes saved-media palette actions to distinct workflows", async () => {
     const container = { stateManager: { dispatch: () => {} } };
 
-    await expect(dispatchPaletteCommand("browse", "up-next", container as never)).resolves.toBe(
-      "handled",
-    );
+    await expect(
+      dispatchPaletteCommand("browse", "up-next", container as never, undefined, port),
+    ).resolves.toBe("handled");
     expect(openRootOwnedOverlay).toHaveBeenCalledWith(container, { type: "queue" });
     expect(handleShellAction).not.toHaveBeenCalled();
 
-    await expect(dispatchPaletteCommand("browse", "playlists", container as never)).resolves.toBe(
-      "handled",
-    );
-    await expect(dispatchPaletteCommand("browse", "playlist", container as never)).resolves.toBe(
-      "handled",
-    );
+    await expect(
+      dispatchPaletteCommand("browse", "playlists", container as never, undefined, port),
+    ).resolves.toBe("handled");
+    await expect(
+      dispatchPaletteCommand("browse", "playlist", container as never, undefined, port),
+    ).resolves.toBe("handled");
     expect(handleShellAction).toHaveBeenCalledTimes(2);
     expect(handleShellAction).toHaveBeenCalledWith({ action: "playlists", container });
   });
 
   test("diagnostics routes through the shared overlay opener", async () => {
     const container = { stateManager: { dispatch: () => {} } };
-    await expect(dispatchPaletteCommand("browse", "diagnostics", container as never)).resolves.toBe(
-      "handled",
-    );
+    await expect(
+      dispatchPaletteCommand("browse", "diagnostics", container as never, undefined, port),
+    ).resolves.toBe("handled");
     expect(openDiagnosticsOverlay).toHaveBeenCalledWith(container, "diagnostics-palette");
     expect(openRootOwnedOverlay).not.toHaveBeenCalled();
   });
@@ -150,7 +142,13 @@ describe("dispatchPaletteCommand", () => {
     };
     waitForRootQueueSelection.mockImplementationOnce(async () => claimed);
 
-    const result = await dispatchPaletteCommand("browse", "up-next", container as never);
+    const result = await dispatchPaletteCommand(
+      "browse",
+      "up-next",
+      container as never,
+      undefined,
+      port,
+    );
 
     expect(result).toEqual({
       type: "history-entry",

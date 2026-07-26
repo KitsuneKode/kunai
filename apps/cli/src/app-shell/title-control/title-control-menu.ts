@@ -15,6 +15,8 @@ export type TitleControlMenuModel = {
   readonly title: string;
   readonly subtitle: string;
   readonly groups: readonly TitleControlMenuGroup[];
+  /** Poster for the Current Selection pane; absent when the title has none. */
+  readonly posterUrl?: string;
 };
 
 const GROUP_LABELS: Record<TitleControlMenuGroupId, string> = {
@@ -47,6 +49,7 @@ export function buildTitleControlMenuModel(ctx: TitleControlContext): TitleContr
     title: "Where to start?",
     subtitle: buildSubtitle(ctx),
     groups,
+    ...(ctx.posterUrl ? { posterUrl: ctx.posterUrl } : {}),
   };
 }
 
@@ -55,6 +58,10 @@ export type TitleControlMenuOption<T> = {
   readonly label: string;
   readonly detail?: string;
   readonly disabled?: boolean;
+  /** Carried per-option because the preview pane reads it off the selected row. */
+  readonly previewImageUrl?: string;
+  /** Discards data or resets state; the surface renders it in a warning tone. */
+  readonly destructive?: boolean;
 };
 
 export type TitleControlMenuExpandToken =
@@ -95,14 +102,22 @@ export function titleControlMenuOptions(
     for (const action of group.actions) {
       options.push({
         value: action.id,
-        label: action.label,
+        // A leading glyph makes the row scannable before it is read. Disabled
+        // rows lose theirs: an unavailable action should not carry the same
+        // visual weight as one you can actually pick.
+        label: action.enabled && action.icon ? `${action.icon} ${action.label}` : action.label,
         detail: action.enabled ? action.detail : (action.reason ?? "Unavailable"),
         disabled: !action.enabled,
+        ...(action.destructive ? { destructive: true } : {}),
       });
     }
   }
 
-  return options;
+  // The preview pane reads the poster off the selected row, so every row has to
+  // carry it — including the group expand/collapse rows, otherwise the poster
+  // blinks out whenever the cursor lands on one.
+  if (!model.posterUrl) return options;
+  return options.map((option) => ({ ...option, previewImageUrl: model.posterUrl }));
 }
 
 export function applyTitleControlMenuExpand(

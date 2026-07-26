@@ -9,12 +9,16 @@ describe("diagnostics workflow routing", () => {
   // dispatch-palette-command tests. Cross-file mock.module of shell-workflows
   // leaks in bun's shared module cache, so this file locks the three source
   // labels instead of importing the real workflow dispatcher.
+  //
+  // The palette reaches the opener through PaletteWorkflowPort rather than a
+  // direct import, so its label lives on the port call; the other two still
+  // call the bridge directly.
   test("palette, workflow, and overlay entry points share openDiagnosticsOverlay sources", () => {
     const palette = readFileSync(join(SRC, "dispatch-palette-command.ts"), "utf8");
     const workflow = readFileSync(join(SRC, "workflows/shell-workflows.ts"), "utf8");
     const overlay = readFileSync(join(SRC, "root-overlay-shell.tsx"), "utf8");
 
-    expect(palette).toContain('openDiagnosticsOverlay(container, "diagnostics-palette")');
+    expect(palette).toContain('workflows.openDiagnostics(container, "diagnostics-palette")');
     expect(workflow).toContain('openDiagnosticsOverlay(container, "diagnostics-command")');
     expect(overlay).toContain('openDiagnosticsOverlay(container, "diagnostics-overlay-command")');
     expect(workflow).not.toContain('openStaticInfoShell({\n      title: "Diagnostics"');

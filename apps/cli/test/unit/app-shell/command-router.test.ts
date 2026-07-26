@@ -6,6 +6,7 @@ import {
   routeSearchShellAction,
 } from "@/app-shell/command-router";
 import { resolveCommandContext } from "@/app-shell/commands";
+import { defaultPaletteWorkflowPort } from "@/app-shell/palette-workflow-port";
 import { type OverlayState, type SessionState } from "@/domain/session/SessionState";
 
 import { createSessionStateFixture } from "../../support/session-state-fixture";
@@ -94,7 +95,10 @@ describe("routePlaybackShellAction", () => {
     const result = await routeSearchShellAction({
       action: "stats",
       container: {} as never,
+      // Spread the real port so growing it does not break this test; only the
+      // members this route actually exercises are stubbed.
       workflows: {
+        ...defaultPaletteWorkflowPort,
         resolveQuit: async () => "quit",
         runSetup: async () => "handled",
         runAction: async (action) => {

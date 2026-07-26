@@ -54,7 +54,12 @@ async function flushMicrotasks(times = 8): Promise<void> {
 }
 
 describe("diagnostics overlay preparation", () => {
-  test("records memory, runs probes, then opens the overlay", async () => {
+  // Previously this asserted the overlay stayed closed until the probes
+  // resolved. That was the bug, not the contract: the probes spawn yt-dlp and
+  // hit a live Invidious instance, each bounded at 8s, so an unreachable
+  // instance held the panel closed for eight seconds. The surface rebuilds the
+  // evidence from diagnostic events, so it can open first and fill in after.
+  test("opens the overlay immediately and fills in probe evidence after", async () => {
     const container = createOverlayContainer();
     const calls: string[] = [];
     let resolveProbes: (() => void) | undefined;
@@ -85,11 +90,13 @@ describe("diagnostics overlay preparation", () => {
     }));
 
     await flushMicrotasks();
-    expect(container.stateManager.getState().activeModals).toEqual([]);
+    // Open already, while the probes are still in flight.
+    expect(container.stateManager.getState().activeModals.at(-1)).toEqual({ type: "diagnostics" });
     expect(calls).toEqual(["memory:diagnostics-palette", "youtube"]);
 
     resolveProbes?.();
     await flushMicrotasks();
+    // Still open, and now backed by real evidence.
     expect(container.stateManager.getState().activeModals.at(-1)).toEqual({ type: "diagnostics" });
 
     const probe = extractYoutubeProbeFromEvents(container.diagnosticsService.getRecent());

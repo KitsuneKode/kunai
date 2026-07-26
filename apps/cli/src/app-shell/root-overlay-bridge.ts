@@ -149,7 +149,18 @@ export async function openDiagnosticsOverlay(
 ): Promise<void> {
   const preparation = await load();
   preparation.recordMemorySample(container, source);
-  await preparation.runYoutubeProbes(container);
+
+  // Do not await the probes. They spawn yt-dlp and make a live HTTP request to
+  // an Invidious instance, each bounded at 8s, so awaiting them here meant an
+  // unreachable instance held the panel closed for eight seconds with nothing
+  // on screen. The overlay never needed the wait: the probes record ordinary
+  // diagnostic events and the surface reconstructs them through
+  // extractYoutubeProbeFromEvents, so the evidence fills in when it lands.
+  void preparation.runYoutubeProbes(container).catch(() => {
+    // Probe failures are already recorded as diagnostic events; a rejection
+    // here must not surface as an unhandled rejection.
+  });
+
   await openRootOwnedOverlay(container, { type: "diagnostics" });
 }
 

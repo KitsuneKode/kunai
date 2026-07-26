@@ -5,14 +5,8 @@ import { resolveHistorySelectionLaunch } from "./history-selection-launch";
 import { defaultPaletteWorkflowPort, type PaletteWorkflowPort } from "./palette-workflow-port";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import {
-  openDiagnosticsOverlay,
-  openNotificationsOverlay,
-  openRootOwnedOverlay,
-} from "./root-overlay-bridge";
-import {
   episodeInfoFromQueuePlaybackLaunch,
   titleInfoFromQueuePlaybackLaunch,
-  waitForRootQueueSelection,
 } from "./root-queue-bridge";
 import type { ShellAction } from "./types";
 
@@ -89,7 +83,10 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "mark-series",
 ]);
 
-async function routeNotificationsInbox(container: Container): Promise<PaletteCommandResult> {
+async function routeNotificationsInbox(
+  container: Container,
+  workflows: PaletteWorkflowPort,
+): Promise<PaletteCommandResult> {
   if (!container.featureFlags.attentionInbox) {
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
@@ -97,7 +94,7 @@ async function routeNotificationsInbox(container: Container): Promise<PaletteCom
     });
     return "handled";
   }
-  const { playback } = await openNotificationsOverlay(container);
+  const { playback } = await workflows.openNotifications(container);
   if (playback) {
     return {
       type: "history-entry",
@@ -111,9 +108,10 @@ async function routeNotificationsInbox(container: Container): Promise<PaletteCom
 async function openRootHistorySelection(
   container: Container,
   reason: "continue" | "history",
+  workflows: PaletteWorkflowPort,
 ): Promise<PaletteCommandResult> {
   const selectionPromise = waitForRootHistorySelection();
-  await openRootOwnedOverlay(
+  await workflows.openOverlay(
     container,
     reason === "continue"
       ? { type: "history", initialFilterMode: "watching" }
@@ -131,9 +129,12 @@ async function openRootHistorySelection(
   };
 }
 
-async function openRootQueueSelection(container: Container): Promise<PaletteCommandResult> {
-  const selectionPromise = waitForRootQueueSelection();
-  await openRootOwnedOverlay(container, { type: "queue" });
+async function openRootQueueSelection(
+  container: Container,
+  workflows: PaletteWorkflowPort,
+): Promise<PaletteCommandResult> {
+  const selectionPromise = workflows.waitForQueueSelection();
+  await workflows.openOverlay(container, { type: "queue" });
   const selection = await selectionPromise;
   if (!selection) return "handled";
   // selection.intent is the beginPlayback return value — do not rebuild/reattach.
@@ -181,19 +182,19 @@ export async function dispatchPaletteCommand(
     return "mode-switch";
   }
   if (action === "help") {
-    await openRootOwnedOverlay(container, { type: "help" });
+    await workflows.openOverlay(container, { type: "help" });
     return "handled";
   }
   if (action === "about") {
-    await openRootOwnedOverlay(container, { type: "about" });
+    await workflows.openOverlay(container, { type: "about" });
     return "handled";
   }
   if (action === "diagnostics") {
-    await openDiagnosticsOverlay(container, "diagnostics-palette");
+    await workflows.openDiagnostics(container, "diagnostics-palette");
     return "handled";
   }
   if (action === "notifications") {
-    return routeNotificationsInbox(container);
+    return routeNotificationsInbox(container, workflows);
   }
   // Playback keeps /provider as the tracks-panel provider section; browse and
   // overlays use the Providers hub (session switch vs sticky defaults).
@@ -203,14 +204,14 @@ export async function dispatchPaletteCommand(
   if (action === "providers" || action === "provider") {
     return workflows.runAction("providers", container);
   }
-  if (action === "up-next") return openRootQueueSelection(container);
+  if (action === "up-next") return openRootQueueSelection(container, workflows);
   if (action === "playlists" || action === "playlist") {
     return workflows.runAction("playlists", container);
   }
-  if (action === "continue") return openRootHistorySelection(container, "continue");
-  if (action === "history") return openRootHistorySelection(container, "history");
+  if (action === "continue") return openRootHistorySelection(container, "continue", workflows);
+  if (action === "history") return openRootHistorySelection(container, "history", workflows);
   if (action === "settings" || action === "presence") {
-    await openRootOwnedOverlay(container, { type: "settings" });
+    await workflows.openOverlay(container, { type: "settings" });
     return "handled";
   }
   if (action === "setup") {

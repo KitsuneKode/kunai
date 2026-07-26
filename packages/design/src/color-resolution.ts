@@ -76,6 +76,23 @@ function currentEnv(): TerminalColorEnv {
     {}) as TerminalColorEnv;
 }
 
+/**
+ * Windows sets neither `COLORTERM` nor `TERM` — both are Unix conventions — so
+ * a purely Unix ladder drops every Windows session onto the 16-colour branch,
+ * where the whole surface family (`bg`, `surface*`, `accentGlow`, every
+ * `*Fill`) collapses to literal `black` and the UI loses all depth. Windows
+ * Terminal has done 24-bit colour since 2019 and conhost since Windows 10
+ * 1703, which is below the floor Bun itself supports, so on Windows truecolour
+ * is the safe default rather than an optimistic guess.
+ *
+ * `OS` is the platform probe here, not `process.platform`, to keep this
+ * function a pure function of its env argument.
+ */
+function isWindowsEnv(env: TerminalColorEnv): boolean {
+  if (env.OS === "Windows_NT") return true;
+  return env.WT_SESSION !== undefined || env.ConEmuANSI !== undefined;
+}
+
 export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): TerminalColorLevel {
   const forced = env.FORCE_COLOR;
   if (forced === "3") return "truecolor";
@@ -84,7 +101,18 @@ export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): 
   if (forced === "0" || env.NO_COLOR !== undefined) return "16";
 
   if (TRUECOLOR_HINTS.test(env.COLORTERM ?? "")) return "truecolor";
+
+  // Named terminals that document 24-bit colour but report nothing in TERM.
+  if (env.WT_SESSION !== undefined) return "truecolor";
+  if (env.ConEmuANSI?.toUpperCase() === "ON") return "truecolor";
+  if (env.TERM_PROGRAM?.toLowerCase() === "vscode") return "truecolor";
+
   if (ANSI_256_HINTS.test(env.TERM ?? "")) return "256";
+
+  // A Windows console with no TERM at all: still 24-bit capable. Anything with
+  // a TERM has already been classified above by the Unix hints.
+  if (env.TERM === undefined && isWindowsEnv(env)) return "truecolor";
+
   return "16";
 }
 

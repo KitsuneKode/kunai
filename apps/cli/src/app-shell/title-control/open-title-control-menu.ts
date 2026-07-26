@@ -34,14 +34,25 @@ export function buildTitleControlContext(
     readonly historyFinished?: boolean;
     readonly canResume?: boolean;
     readonly providerName?: string;
+    readonly resumeAtLabel?: string;
+    readonly currentEpisodeName?: string;
+    readonly nextEpisodeName?: string;
   } = {},
 ): TitleControlContext {
   const title = state.currentTitle;
+  const episode = state.currentEpisode;
 
   return {
     surface,
     titleName: options.titleName ?? title?.name,
     titleType: title?.type,
+    ...(title?.posterUrl ? { posterUrl: title.posterUrl } : {}),
+    currentSeason: episode?.season,
+    currentEpisodeNumber: episode?.episode,
+    currentEpisodeName: options.currentEpisodeName,
+    nextEpisodeLabel: state.episodeNavigation.nextLabel,
+    nextEpisodeName: options.nextEpisodeName,
+    resumeAtLabel: options.resumeAtLabel,
     isAnime: state.mode === "anime" || title?.isAnime === true,
     hasTitle: options.hasTitle ?? Boolean(title),
     hasTitleProviderPreference: options.hasTitleProviderPreference,
@@ -198,6 +209,7 @@ export async function pickTitleControlShellAction(
         label: option.label,
         detail: option.detail,
         disabled: option.disabled,
+        previewImageUrl: option.previewImageUrl,
       })),
       actionContext: buildPickerActionContext({
         container,
