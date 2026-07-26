@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
 
 import { KEYBINDINGS } from "@/app-shell/keybindings";
 import { resolveHelpScope } from "@/app-shell/root-shell-state";
 import { COMMAND_CONTEXTS, COMMANDS } from "@/domain/session/command-registry";
+
+import {
+  collectSourceFiles as collectRepoSourceFiles,
+  readRepoFile,
+} from "../../support/repo-scan";
 
 /**
  * Conformance gates for declarations that must have a reader.
@@ -22,51 +25,8 @@ import { COMMAND_CONTEXTS, COMMANDS } from "@/domain/session/command-registry";
  * is a debt record, not a suppression.
  */
 
-function findRepoRoot(start: string): string {
-  let directory = start;
-  while (directory !== dirname(directory)) {
-    try {
-      const packageJson = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as {
-        workspaces?: unknown;
-      };
-      if (packageJson.workspaces !== undefined) return directory;
-    } catch {
-      // Keep walking toward the filesystem root.
-    }
-    directory = dirname(directory);
-  }
-  return start;
-}
-
-const REPO_ROOT = findRepoRoot(process.cwd());
-const SKIP_DIRS = new Set(["node_modules", "dist", "legacy", "experiments", ".turbo"]);
-const SOURCE_EXTENSIONS = [".ts", ".tsx"];
-
 function collectSourceFiles(rootRelative: string): string[] {
-  const absoluteRoot = join(REPO_ROOT, rootRelative);
-  const files: string[] = [];
-  const walk = (directory: string): void => {
-    let entries: string[];
-    try {
-      entries = readdirSync(directory);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (SKIP_DIRS.has(entry)) continue;
-      const path = join(directory, entry);
-      const stats = statSync(path);
-      if (stats.isDirectory()) {
-        walk(path);
-        continue;
-      }
-      if (SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) {
-        files.push(relative(REPO_ROOT, path));
-      }
-    }
-  };
-  walk(absoluteRoot);
-  return files;
+  return collectRepoSourceFiles(rootRelative, { skipDirs: ["experiments"] });
 }
 
 const PRODUCTION_ROOTS = [
@@ -84,7 +44,7 @@ const PRODUCTION_ROOTS = [
  */
 const PRODUCTION_SOURCES: readonly { file: string; text: string }[] = PRODUCTION_ROOTS.flatMap(
   collectSourceFiles,
-).map((file) => ({ file, text: readFileSync(join(REPO_ROOT, file), "utf8") }));
+).map((file) => ({ file, text: readRepoFile(file) }));
 
 /** Production files that reference `symbol`, excluding the files that define it. */
 function readerFilesFor(symbol: string, definedIn: readonly string[]): string[] {

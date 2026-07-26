@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { redactBundleText, redactBundleValue } from "@/services/diagnostics/bundle-redaction";
+import {
+  redactBundleText,
+  redactBundleValue,
+  resolveBundleRedactionOptions,
+} from "@/services/diagnostics/bundle-redaction";
 import { buildDiagnosticsSupportBundle } from "@/services/diagnostics/support-bundle";
 
 describe("bundle-redaction", () => {
@@ -48,6 +52,37 @@ describe("bundle-redaction", () => {
     });
     expect(JSON.stringify(redacted)).not.toContain("ada");
     expect(JSON.stringify(redacted)).not.toContain("auth=secret");
+  });
+
+  test("resolves home and username from a Windows environment", () => {
+    // Windows sets USERPROFILE rather than HOME. Reading HOME alone left both
+    // fields undefined, so bundles shipped full user paths unredacted.
+    const options = resolveBundleRedactionOptions({
+      USERPROFILE: "C:\\Users\\ada",
+    } as NodeJS.ProcessEnv);
+
+    expect(options.homeDir).toBe("C:\\Users\\ada");
+    expect(options.username).toBe("ada");
+  });
+
+  test("does not mistake a bare Windows drive root for a username", () => {
+    const options = resolveBundleRedactionOptions({
+      USERPROFILE: "C:\\",
+    } as NodeJS.ProcessEnv);
+
+    expect(options.username).toBeUndefined();
+  });
+
+  test("redacts a Windows account name derived from the environment", () => {
+    const options = resolveBundleRedactionOptions({
+      USERPROFILE: "C:\\Users\\ada",
+    } as NodeJS.ProcessEnv);
+    const redacted = redactBundleValue(
+      { note: "resolved for user ada", env: "USERNAME=ada" },
+      options,
+    );
+
+    expect(JSON.stringify(redacted)).not.toContain("ada");
   });
 
   test("strips search queries and human titles from nested context keys and sibling messages", () => {

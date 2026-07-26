@@ -2,7 +2,7 @@ import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { getKunaiPaths } from "@kunai/storage";
+import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
 
 import { parseCanonicalVersion, type CanonicalVersion } from "../version";
 
@@ -31,6 +31,11 @@ function requireCanonicalVersion(version: string): CanonicalVersion {
   return parsed;
 }
 
+/** `getKunaiPaths` speaks the three storage platforms; everything else is Linux-shaped. */
+function storagePlatformFor(platform: NodeJS.Platform): StoragePlatform {
+  return platform === "darwin" || platform === "win32" ? platform : "linux";
+}
+
 function defaultLauncherPath(platform: NodeJS.Platform = process.platform): string {
   if (platform === "win32") {
     const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
@@ -57,11 +62,15 @@ export function getInstallLayoutPaths(
     readonly platform?: NodeJS.Platform;
   } = {},
 ): InstallLayoutPaths {
-  const kunai = getKunaiPaths();
+  const platform = overrides.platform ?? process.platform;
+  // Resolve the storage dirs for the *same* platform as the launcher and binary
+  // name. Calling getKunaiPaths() bare made `platform: "win32"` on Linux return a
+  // Windows launcher beside Linux XDG dirs -- a layout no real machine has, so
+  // installer tests could agree with each other and disagree with production.
+  const kunai = getKunaiPaths({ platform: storagePlatformFor(platform) });
   const dataDir = overrides.dataDir ?? kunai.dataDir;
   const cacheDir = overrides.cacheDir ?? kunai.cacheDir;
   const configDir = overrides.configDir ?? kunai.configDir;
-  const platform = overrides.platform ?? process.platform;
 
   return {
     dataDir,

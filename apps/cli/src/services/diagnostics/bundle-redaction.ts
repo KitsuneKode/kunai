@@ -70,7 +70,14 @@ export function redactBundleValue(value: unknown, options: BundleRedactionOption
 export function resolveBundleRedactionOptions(
   env: NodeJS.ProcessEnv = process.env,
 ): BundleRedactionOptions {
-  const homeDir = typeof env.HOME === "string" && env.HOME.length > 1 ? env.HOME : undefined;
+  // Windows sets USERPROFILE, not HOME. Reading HOME alone left homeDir
+  // undefined on Windows, so no path was ever collapsed to `~` and the username
+  // fallback below never ran -- support bundles shipped full user paths.
+  const readEnv = (key: string): string | undefined => {
+    const value = env[key];
+    return typeof value === "string" && value.length > 1 ? value : undefined;
+  };
+  const homeDir = readEnv("HOME") ?? readEnv("USERPROFILE");
   const username =
     (typeof env.USER === "string" && env.USER.length > 0 ? env.USER : undefined) ??
     (typeof env.USERNAME === "string" && env.USERNAME.length > 0 ? env.USERNAME : undefined) ??
@@ -206,7 +213,15 @@ function redactUsernameOccurrences(value: string, username: string): string {
 }
 
 function usernameFromHomeDir(homeDir: string): string | undefined {
-  const parts = homeDir.replace(/\/+$/, "").split("/");
+  // Split on both separators: a Windows home dir is `C:\Users\name`, and a
+  // POSIX-only split would take the whole string as the username. That still
+  // redacts the exact full path, but leaves bare `name` -- in log lines, URLs
+  // and config values -- unredacted throughout the bundle.
+  const parts = homeDir.replace(/[/\\]+$/, "").split(/[/\\]/);
   const last = parts.at(-1);
-  return last && last.length > 0 && last !== "home" && last !== "Users" ? last : undefined;
+  if (!last || last.length === 0) return undefined;
+  if (last === "home" || last === "Users") return undefined;
+  // A bare drive root (`C:`) has no username to extract.
+  if (/^[A-Za-z]:$/.test(last)) return undefined;
+  return last;
 }

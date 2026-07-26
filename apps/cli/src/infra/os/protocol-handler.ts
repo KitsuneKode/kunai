@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { posix as posixPath } from "node:path";
 
 export type LinuxProtocolHandlerPaths = {
   readonly applicationsDir: string;
@@ -20,11 +20,15 @@ export function resolveLinuxProtocolHandlerPaths({
   readonly home: string | undefined;
   readonly xdgDataHome: string | undefined;
 }): LinuxProtocolHandlerPaths {
-  const dataHome = xdgDataHome || join(home || process.cwd(), ".local", "share");
-  const applicationsDir = join(dataHome, "applications");
+  // These are XDG paths on a Linux desktop, so they are POSIX regardless of the
+  // platform doing the computing. `buildProtocolHandlerInstallPlan` is a
+  // cross-platform dry-run planner, so native `join` would hand a Windows user
+  // backslashed nonsense for paths that only ever exist on Linux.
+  const dataHome = xdgDataHome || posixPath.join(home || process.cwd(), ".local", "share");
+  const applicationsDir = posixPath.join(dataHome, "applications");
   return {
     applicationsDir,
-    desktopPath: join(applicationsDir, "kunai-protocol-handler.desktop"),
+    desktopPath: posixPath.join(applicationsDir, "kunai-protocol-handler.desktop"),
   };
 }
 

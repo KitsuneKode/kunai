@@ -1,34 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-function findRepoRoot(start: string): string {
-  let directory = start;
-  while (directory !== dirname(directory)) {
-    try {
-      const packageJson = JSON.parse(readFileSync(join(directory, "package.json"), "utf8")) as {
-        workspaces?: unknown;
-      };
-      if (packageJson.workspaces !== undefined) {
-        return directory;
-      }
-    } catch {
-      // Keep walking toward the filesystem root.
-    }
-    directory = dirname(directory);
-  }
-  return start;
-}
+import {
+  collectSourceFiles as collectRepoSourceFiles,
+  REPO_ROOT,
+  readRepoFile,
+} from "../../support/repo-scan";
 
-const REPO_ROOT = findRepoRoot(process.cwd());
 const ACTIVE_ROOTS = [
   "apps/cli/src",
   "packages/core/src",
   "packages/storage/src",
   "packages/types/src",
 ];
-const SKIP_DIRS = new Set(["legacy", "node_modules", "dist"]);
-const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 const IMPORT_SPECIFIER_REGEX = /(?:from\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\))/g;
 const ACTIVE_FORBIDDEN_IMPORT =
   /(^|\/)(legacy|experiments)(\/|$)|apps\/legacy-reference|archive\/legacy/;
@@ -159,37 +144,27 @@ const ALLOWED_WORKSPACE_DEPS_BY_PACKAGE = new Map<string, readonly string[]>([
 ]);
 
 function collectImports(file: string): string[] {
-  const source = readFileSync(join(REPO_ROOT, file), "utf8");
+  const source = readRepoFile(file);
   return Array.from(source.matchAll(IMPORT_SPECIFIER_REGEX), (match) => match[1] ?? match[2] ?? "");
 }
 
 function collectSourceFiles(root: string): string[] {
-  const absoluteRoot = join(REPO_ROOT, root);
-  const files: string[] = [];
-
-  function walk(directory: string) {
-    for (const entry of readdirSync(directory)) {
-      const absolute = join(directory, entry);
-      const relativePath = relative(REPO_ROOT, absolute);
-      const stats = statSync(absolute);
-      if (stats.isDirectory()) {
-        if (SKIP_DIRS.has(entry) || relativePath.startsWith("apps/experiments")) {
-          continue;
-        }
-        walk(absolute);
-        continue;
-      }
-      if (SOURCE_EXTENSIONS.some((extension) => entry.endsWith(extension))) {
-        files.push(relativePath);
-      }
-    }
-  }
-
-  walk(absoluteRoot);
-  return files;
+  return collectRepoSourceFiles(root, { skipPrefixes: ["apps/experiments"] });
 }
 
 describe("runtime boundary imports", () => {
+  /**
+   * Every allowlist, baseline and skip prefix in this file is written with
+   * forward slashes, so a backslashed scan result silently misses all of them
+   * at once -- the Windows failure mode this sweep had. Pin the invariant here
+   * rather than trusting each comparison site.
+   */
+  test("scan results are POSIX-separated on every platform", () => {
+    const scanned = ACTIVE_ROOTS.flatMap(collectSourceFiles);
+    expect(scanned.length).toBeGreaterThan(0);
+    expect(scanned.filter((file) => file.includes("\\"))).toEqual([]);
+  });
+
   test("active runtime code does not import legacy or experiments modules", () => {
     const offenders = ACTIVE_ROOTS.flatMap(collectSourceFiles).filter((file) => {
       return collectImports(file).some((specifier) => ACTIVE_FORBIDDEN_IMPORT.test(specifier));

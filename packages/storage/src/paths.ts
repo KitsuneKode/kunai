@@ -1,5 +1,5 @@
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { posix as posixPath, win32 as win32Path } from "node:path";
 
 export type StoragePlatform = "linux" | "darwin" | "win32";
 
@@ -23,10 +23,24 @@ export interface KunaiPaths {
   readonly logPath: string;
 }
 
+/**
+ * Join for the *target* platform rather than the host.
+ *
+ * `node:path.join` follows whatever OS is running, so asking for `win32` paths
+ * from Linux produced mixed separators (`C:\Roaming/kunai/config.json`). That is
+ * harmless in production -- the host and target always agree there -- but it
+ * makes the `platform` option untrustworthy in tests, which is precisely where
+ * Windows layout has to be verified from a Linux CI runner.
+ */
+function joinerFor(platform: StoragePlatform): (...segments: string[]) => string {
+  return platform === "win32" ? win32Path.join : posixPath.join;
+}
+
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const platform = options.platform ?? normalizePlatform(process.platform);
   const env = options.env ?? process.env;
   const home = options.homeDir ?? homedir();
+  const join = joinerFor(platform);
 
   const dirs = getBaseDirs(platform, env, home);
 
@@ -54,6 +68,8 @@ function getBaseDirs(
   env: Record<string, string | undefined>,
   home: string,
 ): Pick<KunaiPaths, "configDir" | "dataDir" | "cacheDir" | "tempDir"> {
+  const join = joinerFor(platform);
+
   if (platform === "darwin") {
     const applicationSupport = join(home, "Library", "Application Support", "kunai");
     return {

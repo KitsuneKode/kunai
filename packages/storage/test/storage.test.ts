@@ -65,10 +65,16 @@ test("path resolver is deterministic across supported platforms", () => {
   expect(mac.configPath).toBe("/Users/k/Library/Application Support/kunai/config.json");
   expect(mac.cacheDbPath).toBe("/Users/k/Library/Caches/kunai/kunai-cache.sqlite");
   expect(mac.mpvBridgePath).toBe("/Users/k/Library/Application Support/kunai/mpv/kunai-bridge.lua");
-  expect(win.configPath).toContain("C:\\Roaming");
-  expect(win.dataDbPath).toContain("kunai-data.sqlite");
-  expect(win.mpvBridgePath).toContain("kunai-bridge.lua");
-  expect(win.mpvBridgePath.toLowerCase()).toContain("roaming");
+  // Windows convention splits these deliberately: config roams with the user
+  // profile, data and cache stay machine-local. Pin the split rather than just
+  // asserting the filenames -- putting a SQLite DB in Roaming would sync it
+  // between machines and corrupt it.
+  expect(win.configPath).toBe("C:\\Roaming\\kunai\\config.json");
+  expect(win.providerOverridesPath).toBe("C:\\Roaming\\kunai\\providers.json");
+  expect(win.mpvBridgePath).toBe("C:\\Roaming\\kunai\\mpv\\kunai-bridge.lua");
+  expect(win.dataDbPath).toBe("C:\\Local\\kunai\\kunai-data.sqlite");
+  expect(win.cacheDbPath).toBe("C:\\Local\\kunai\\kunai-cache.sqlite");
+  expect(win.tempDir).toBe("C:\\Temp\\kunai");
 });
 
 test("migrations are idempotent and create expected storage tables", () => {

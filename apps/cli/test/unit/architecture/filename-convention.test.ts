@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 
+import { toPosixPath } from "../../support/repo-scan";
+
 const CLI_SRC = join(import.meta.dir, "../../../src");
+
+/** Src-relative POSIX path, so allowlist lookups match on Windows too. */
+function srcRelative(absolute: string): string {
+  return toPosixPath(relative(CLI_SRC, absolute));
+}
 
 /** Existing PascalCase `.ts` files (migration allowlist — shrink when renaming). */
 const PASCAL_CASE_TS_ALLOWLIST = new Set<string>();
@@ -50,7 +57,7 @@ function walkTsFiles(directory: string, files: string[] = []): string[] {
       continue;
     }
     if (entry.endsWith(".ts") && !entry.endsWith(".d.ts")) {
-      files.push(relative(CLI_SRC, absolute));
+      files.push(srcRelative(absolute));
     }
   }
   return files;
@@ -87,7 +94,7 @@ describe("filename conventions", () => {
           continue;
         }
         if (!entry.endsWith(".tsx")) continue;
-        const rel = relative(CLI_SRC, absolute);
+        const rel = srcRelative(absolute);
         const ok =
           /^[A-Z]/.test(entry) || entry.endsWith("-shell.tsx") || entry.endsWith("-ui.tsx");
         if (!ok && !TSX_NAMING_ALLOWLIST.has(rel)) violations.push(rel);
