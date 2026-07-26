@@ -311,7 +311,9 @@ describe("buildNotificationsView projection", () => {
     });
 
     expect(projected.rows[0]?.kindLabel).toBe("Notification");
-    expect(projected.rows[0]?.glyph).toBe("●");
+    // Not "●": the filled dot is the unread marker, and a kind glyph that
+    // matched it rendered every row as two identical dots.
+    expect(projected.rows[0]?.glyph).toBe("◇");
     expect(projected.rows[0]?.tone).toBe("neutral");
   });
 

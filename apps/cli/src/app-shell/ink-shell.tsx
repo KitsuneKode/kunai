@@ -39,6 +39,7 @@ import {
   clearInteractiveShellMounted,
   markInteractiveShellMounted,
 } from "./interactive-shell-state";
+import { helpSectionsForScope } from "./keybindings";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "./layout-policy";
 import {
   createNotificationQueueState,
@@ -1609,6 +1610,7 @@ function StatsShell({
   const [rangeIdx, setRangeIdx] = useState(0);
   const [kindIdx, setKindIdx] = useState(0);
   const [copiedFlash, setCopiedFlash] = useState<string | null>(null);
+  const [showStatsKeys, setShowStatsKeys] = useState(false);
   const { cols, rows } = useShellDimensions();
   const innerWidth = Math.max(30, cols - 6);
   const available = rows - 4;
@@ -1669,6 +1671,14 @@ function StatsShell({
     // types used to take four presses — and each has exactly one control.
     const step = (index: number, length: number, delta: number): number =>
       (index + delta + length) % length;
+    if (input === "?") {
+      // Stats is a root view, not an overlay, so the shared `?` overlay has no
+      // state to select it from and pressing `?` here did nothing at all. The
+      // surface owns its hint row already; it owns the expanded list too, built
+      // from the same registry so the two can never disagree.
+      setShowStatsKeys((shown) => !shown);
+      return;
+    }
     if (key.tab) {
       setTabIdx((i) => step(i, STATS_TABS.length, key.shift ? -1 : 1));
       return;
@@ -1947,9 +1957,26 @@ function StatsShell({
           </Box>
         ) : (
           <Box marginTop={1}>
-            <Text color={palette.dim}>{view.footerHints}</Text>
+            <Text color={palette.dim}>{`${view.footerHints} · ? keys`}</Text>
           </Box>
         )}
+        {showStatsKeys ? (
+          <Box marginTop={1} flexDirection="column">
+            {helpSectionsForScope("stats").map((section) => (
+              <Box key={section.group} flexDirection="column" marginBottom={1}>
+                <Text color={palette.muted} bold>
+                  {section.group}
+                </Text>
+                {section.items.map((item) => (
+                  <Text key={`${section.group}-${item.keys}`}>
+                    <Text color={palette.accent}>{item.keys.padEnd(12)}</Text>
+                    <Text color={palette.textDim}>{item.label}</Text>
+                  </Text>
+                ))}
+              </Box>
+            ))}
+          </Box>
+        ) : null}
       </Box>
     </Box>
   );
