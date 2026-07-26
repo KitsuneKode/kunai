@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-07-24T21:13:53.703Z",
+  "syncedAt": "2026-07-26T13:12:52.136Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "885937e2",
-  "cliSourceFingerprint": "92e940288b89aa54a3368d30194005d1b7c31a59a4e5528d456e7b8e9f92b9f4",
+  "cliSourceRevision": "424cf2f2",
+  "cliSourceFingerprint": "deae2e43bdb9bf2e563b028afb92ab8aa754f7c77316906631f2c2294e2ef3b4",
   "docsContentFingerprint": "f2213d99ae9a21314779bd659758510bcf6407da04a844fb2b95dc987b207e09",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
@@ -907,8 +907,8 @@
       "id": "browse-mode",
       "scope": "browse",
       "group": "While browsing",
-      "keys": "Tab",
-      "label": "Cycle catalog mode (series / anime / YouTube)",
+      "keys": "Tab / ⇧Tab",
+      "label": "Cycle catalog mode forward (⇧Tab back): series / anime / YouTube",
       "tier": "core",
       "order": 40
     },
@@ -1235,6 +1235,33 @@
       "label": "Open title control menu",
       "tier": "surface",
       "order": 560
+    },
+    {
+      "id": "stats-tab",
+      "scope": "stats",
+      "group": "Stats",
+      "keys": "Tab / ⇧Tab",
+      "label": "Next / previous stats tab (Overview · Titles · Insights)",
+      "tier": "surface",
+      "order": 600
+    },
+    {
+      "id": "stats-range",
+      "scope": "stats",
+      "group": "Stats",
+      "keys": "r / ⇧R",
+      "label": "Cycle range forward / back (All time · Last 7d · Last 30d)",
+      "tier": "surface",
+      "order": 610
+    },
+    {
+      "id": "stats-type",
+      "scope": "stats",
+      "group": "Stats",
+      "keys": "←→",
+      "label": "Cycle media type forward / back (All · Anime · Series · Movies · YouTube)",
+      "tier": "surface",
+      "order": 620
     }
   ]
 }

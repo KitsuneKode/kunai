@@ -217,7 +217,9 @@ describe("docs codegen drift", () => {
       codeMetadata.shortcuts.every((row) => row.tier === "core" || row.tier === "surface"),
     ).toBe(true);
     expect(
-      codeMetadata.shortcuts.some((row) => row.id === "browse-mode" && row.keys === "Tab"),
+      // Tab cycles forward, ⇧Tab back — the registry renders both in one row,
+      // so this asserts the pair rather than the bare forward key.
+      codeMetadata.shortcuts.some((row) => row.id === "browse-mode" && row.keys === "Tab / ⇧Tab"),
     ).toBe(true);
     expect(
       codeMetadata.shortcuts.some((row) => row.id === "player-fallback" && row.keys === "⇧F"),
