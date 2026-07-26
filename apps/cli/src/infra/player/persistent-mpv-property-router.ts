@@ -3,6 +3,7 @@ import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerTelemetryState } from "./mpv-telemetry";
 import type { PersistentSubtitleManager } from "./persistent-subtitle-manager";
+import type { MpvRequestedAction } from "./PlayerControlService";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
 type LatestIpcSample = NonNullable<PlayerTelemetryState["latestIpcSample"]>;
@@ -32,7 +33,7 @@ export type PersistentMpvPropertyRouterDeps = {
   getIpcSession(): MpvIpcSession | null;
   getCurrentOptions(): PersistentMpvPropertyOptions;
   subtitleManager: PersistentSubtitleManager;
-  notifyMpvActionRequest(action: "next" | "previous" | "pick-quality" | "refresh"): void;
+  notifyMpvActionRequest(action: MpvRequestedAction): void;
   finishResumeChoiceWait(choice: "resume" | "start"): void;
   handleResumeSeekFromMpv(): Promise<void>;
   handleCopyShareFromMpv(): Promise<void>;
@@ -125,23 +126,37 @@ export class PersistentMpvPropertyRouter {
     }
   }
 
+  /** mpv's request vocabulary, mapped onto the action names the app uses. */
+  private static readonly MPV_REQUEST_ACTIONS: Readonly<Record<string, MpvRequestedAction>> = {
+    next: "next",
+    previous: "previous",
+    quality: "pick-quality",
+    refresh: "refresh",
+  };
+
   private handleKunaiRequest(value: unknown): void {
     const req = typeof value === "string" ? value : null;
-    if (req === "next" || req === "previous" || req === "quality" || req === "refresh") {
-      this.deps.notifyMpvActionRequest(
-        req === "quality" ? "pick-quality" : req === "refresh" ? "refresh" : req,
-      );
-      void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
+    if (!req) return;
+
+    const action = PersistentMpvPropertyRouter.MPV_REQUEST_ACTIONS[req];
+    if (action) {
+      this.deps.notifyMpvActionRequest(action);
     } else if (req === "resume-seek") {
       void this.deps.handleResumeSeekFromMpv();
-      void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
     } else if (req === "copy-share") {
       void this.deps.handleCopyShareFromMpv();
-      void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
     } else if (req === "skip" || req === "auto-skip") {
       void this.deps.onSkipRequestFromMpv(req === "auto-skip");
-      void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
+    } else {
+      // Unrecognised request: leave the property alone rather than clearing it,
+      // so an unhandled verb stays visible instead of vanishing silently.
+      return;
     }
+
+    // Every handled request clears the property so the next one is observed as a
+    // change. This used to be repeated per branch, which is how a new verb could
+    // be added without one.
+    void this.deps.getIpcSession()?.send(["set_property", "user-data/kunai-request", ""], 500);
   }
 
   private handleTrackChanged(value: unknown): void {

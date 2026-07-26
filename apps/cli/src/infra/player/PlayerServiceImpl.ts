@@ -38,7 +38,7 @@ import {
 } from "./playback-failure-classifier";
 import type { PlayerPresentationPort } from "./player-presentation-port";
 import { nonInteractivePlayerPresentation } from "./player-presentation-port";
-import type { PlayerControlService } from "./PlayerControlService";
+import type { MpvRequestedAction, PlayerControlService } from "./PlayerControlService";
 import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
 
 export class PlayerServiceImpl implements PlayerService {
@@ -417,7 +417,7 @@ export class PlayerServiceImpl implements PlayerService {
       autoNextEnabled: true,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
-      onMpvActionRequest: (action: "next" | "previous" | "pick-quality" | "refresh") => {
+      onMpvActionRequest: (action: MpvRequestedAction) => {
         this.deps.playerControl.signalPlaybackAction(action);
       },
       onNearEof: options.onNearEof,

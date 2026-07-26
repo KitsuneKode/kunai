@@ -25,6 +25,19 @@ export type PlaybackPickerAction = Extract<
   "pick-stream" | "pick-source" | "pick-quality"
 >;
 
+/**
+ * Actions the mpv window can raise on its own, via `user-data/kunai-request`.
+ *
+ * A strict subset of PlaybackControlAction: mpv can ask for these four, and the
+ * router maps its wire vocabulary ("quality") onto them. Declared once because
+ * the same four-way union was spelled out by hand in the router, the session and
+ * the player service, so widening it meant finding all three.
+ */
+export type MpvRequestedAction = Extract<
+  PlaybackControlAction,
+  "next" | "previous" | "pick-quality" | "refresh"
+>;
+
 export type PlaybackStreamSelection = {
   readonly sourceId: string | null;
   readonly streamId: string | null;

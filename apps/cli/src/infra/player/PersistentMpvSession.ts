@@ -67,7 +67,7 @@ import {
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import { buildPlaybackTelemetrySnapshot } from "./PlaybackTelemetrySnapshot";
-import type { ActivePlayerControl } from "./PlayerControlService";
+import type { ActivePlayerControl, MpvRequestedAction } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
 
@@ -118,7 +118,7 @@ type PlayerCycleOptions = {
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   /** Called when the user presses N or P inside the mpv window. The mpv process
    *  handles the stop itself; the app only needs to record the intent. */
-  onMpvActionRequest?: (action: "next" | "previous" | "pick-quality" | "refresh") => void;
+  onMpvActionRequest?: (action: MpvRequestedAction) => void;
   /** Called once when playback reaches the credits prefetch window or the final ~30 s fallback. */
   onNearEof?: () => void;
   shareLinkContext?: {
