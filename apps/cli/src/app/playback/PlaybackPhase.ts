@@ -770,7 +770,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               : await startNavigationToEpisode(episode);
         } else {
           const { chooseStartingEpisode } = await import("@/session-flow");
-          const selection = await chooseStartingEpisode({
+          const outcome = await chooseStartingEpisode({
             currentId: title.id,
             isAnime: usesNativeEpisodes,
             animeEpisodeCount: title.episodeCount,
@@ -780,16 +780,32 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             container,
           });
 
-          if (!selection) {
-            logger.info("Episode selection cancelled before playback", {
-              titleId: title.id,
-              mode: stateManager.getState().mode,
-            });
+          if (outcome.kind !== "selected") {
+            // A catalog failure is not a cancel. Both used to unwind silently,
+            // so a TMDB outage dropped the user back into History with no idea
+            // the fetch had failed -- surface the reason instead.
+            if (outcome.kind === "unavailable") {
+              logger.warn("Episode selection unavailable before playback", {
+                titleId: title.id,
+                reason: outcome.reason,
+                mode: stateManager.getState().mode,
+              });
+              stateManager.dispatch({
+                type: "SET_PLAYBACK_FEEDBACK",
+                note: outcome.reason,
+              });
+            } else {
+              logger.info("Episode selection cancelled before playback", {
+                titleId: title.id,
+                mode: stateManager.getState().mode,
+              });
+            }
             return {
               status: "success",
               value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
             };
           }
+          const selection = outcome.selection;
 
           episode = episodeInfoFromSelection({
             season: selection.season,
@@ -3248,7 +3264,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             openPlaybackShell,
             chooseEpisodeFromMetadata: async (input) => {
               const { chooseEpisodeFromMetadata } = await import("@/session-flow");
-              return chooseEpisodeFromMetadata(input);
+              const outcome = await chooseEpisodeFromMetadata(input);
+              // The post-play menu branches on success only, so report the
+              // reason here rather than letting a catalog failure read to the
+              // user as though they had dismissed the picker themselves.
+              if (outcome.kind === "unavailable") {
+                stateManager.dispatch({
+                  type: "SET_PLAYBACK_FEEDBACK",
+                  note: outcome.reason,
+                });
+              }
+              return outcome.kind === "selected" ? outcome.selection : null;
             },
             episodeInfoFromSelection,
             readAutoAdvanceGuards,

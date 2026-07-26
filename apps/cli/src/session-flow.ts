@@ -30,7 +30,31 @@ export type EpisodeSelection = {
   suppressResumePrompt?: boolean;
 };
 
+/**
+ * Why episode selection ended without a selection.
+ *
+ * A bare `null` conflated two very different endings: the user pressing Esc, and
+ * the catalog failing to return any seasons. Callers unwound identically for
+ * both, so a TMDB outage looked like a deliberate cancel -- the user picked
+ * "Pick episode", waited, and landed back in History with nothing said about
+ * why. Keep the reason attached so the caller can report it.
+ */
+export type EpisodeSelectionOutcome =
+  | { readonly kind: "selected"; readonly selection: EpisodeSelection }
+  | { readonly kind: "cancelled" }
+  | { readonly kind: "unavailable"; readonly reason: string };
+
 export type EpisodeSelectionResult = EpisodeSelection | null;
+
+const CANCELLED: EpisodeSelectionOutcome = { kind: "cancelled" };
+
+function selected(selection: EpisodeSelection): EpisodeSelectionOutcome {
+  return { kind: "selected", selection };
+}
+
+function unavailable(reason: string): EpisodeSelectionOutcome {
+  return { kind: "unavailable", reason };
+}
 
 type SelectionOpts = {
   currentId: string;
@@ -253,14 +277,19 @@ async function pickAnimeEpisode(
   return await openAnimeEpisodePicker(episodeCount, initialEpisode, actionContext, container);
 }
 
+/** Catalog reads, injectable so the outcome mapping is testable without network or UI. */
+export type EpisodeSelectionLoaders = {
+  readonly loadSeasons: typeof fetchSeriesData;
+};
+
 async function pickEpisodeSelection(
   initSeason: number,
   initEpisode: number,
   opts: Pick<
     SelectionOpts,
     "currentId" | "isAnime" | "animeEpisodeCount" | "animeEpisodes" | "container"
-  >,
-): Promise<EpisodeSelectionResult> {
+  > & { readonly loaders?: EpisodeSelectionLoaders },
+): Promise<EpisodeSelectionOutcome> {
   if (opts.isAnime) {
     const episode = await pickAnimeEpisode(
       initEpisode,
@@ -268,12 +297,15 @@ async function pickEpisodeSelection(
       opts.animeEpisodeCount,
       opts.container,
     );
-    if (!episode) return null;
-    return { season: 1, episode };
+    if (!episode) return CANCELLED;
+    return selected({ season: 1, episode });
   }
 
-  const { seasons, episodes: initialEpisodes } = await fetchSeriesData(opts.currentId, initSeason);
-  if (!seasons) return null;
+  const loadSeasons = opts.loaders?.loadSeasons ?? fetchSeriesData;
+  const { seasons, episodes: initialEpisodes } = await loadSeasons(opts.currentId, initSeason);
+  if (!seasons) {
+    return unavailable("Could not load season data for this title. Check your connection.");
+  }
   let selectedSeason = initSeason;
   while (true) {
     const season = await chooseSeasonFromOptions(
@@ -282,7 +314,7 @@ async function pickEpisodeSelection(
       createPickerActionContext(opts.container, "Choose season"),
       opts.container,
     );
-    if (!season) return null;
+    if (!season) return CANCELLED;
     selectedSeason = season;
     const fetchedEpisodes =
       season === initSeason ? initialEpisodes : await fetchEpisodes(opts.currentId, season);
@@ -303,10 +335,10 @@ async function pickEpisodeSelection(
       // A single-season series has no season picker to fall back to: looping
       // would re-auto-select the lone season and re-open this picker forever.
       // Escaping the episode list must exit instead of getting stuck.
-      if (seasons.length <= 1) return null;
+      if (seasons.length <= 1) return CANCELLED;
       continue;
     }
-    return { season, episode: episode.number };
+    return selected({ season, episode: episode.number });
   }
 }
 
@@ -318,16 +350,17 @@ export async function chooseEpisodeFromMetadata(opts: {
   animeEpisodeCount?: number;
   animeEpisodes?: readonly EpisodePickerOption[];
   container?: Container;
-}): Promise<EpisodeSelectionResult> {
+  loaders?: EpisodeSelectionLoaders;
+}): Promise<EpisodeSelectionOutcome> {
   return pickEpisodeSelection(opts.currentSeason, opts.currentEpisode, opts);
 }
 
-export async function chooseStartingEpisode(opts: SelectionOpts): Promise<EpisodeSelectionResult> {
+export async function chooseStartingEpisode(opts: SelectionOpts): Promise<EpisodeSelectionOutcome> {
   if (opts.flags.season || opts.flags.episode) {
-    return {
+    return selected({
       season: opts.isAnime ? 1 : parsePositiveInt(opts.flags.season, 1),
       episode: parsePositiveInt(opts.flags.episode, 1),
-    };
+    });
   }
 
   const history = await opts.getHistoryEntry();
@@ -474,7 +507,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     });
 
     if (!picked) {
-      return null;
+      return CANCELLED;
     }
 
     if (picked === "switch-provider") {
@@ -514,7 +547,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     history,
     nextEpisode,
   });
-  if (resolvedChoice) return resolvedChoice;
+  if (resolvedChoice) return selected(resolvedChoice);
 
   return pickEpisodeSelection(historySeason, historyEpisode, opts);
 }

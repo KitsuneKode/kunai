@@ -152,8 +152,15 @@ async function pickSingleDownloadEpisodeFallback({
       ),
     container,
   });
-  if (!selected) return null;
-  return { season: selected.season, episode: selected.episode };
+  if (selected.kind === "unavailable") {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: selected.reason,
+    });
+    return null;
+  }
+  if (selected.kind !== "selected") return null;
+  return { season: selected.selection.season, episode: selected.selection.episode };
 }
 
 export function updateDownloadConfirmationProfile(

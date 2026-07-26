@@ -1,7 +1,32 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveMovieStartingChoice, resolveStartingEpisodeChoice } from "@/session-flow";
+import {
+  chooseEpisodeFromMetadata,
+  resolveMovieStartingChoice,
+  resolveStartingEpisodeChoice,
+} from "@/session-flow";
 import type { HistoryProgress } from "@kunai/storage";
+
+describe("episode selection outcome", () => {
+  /**
+   * The catalog failing and the user pressing Esc used to both return `null`, so
+   * callers unwound identically: picking "Pick episode" during a TMDB outage
+   * dropped the user back into History with nothing said about why. The reason
+   * has to survive far enough for a caller to show it.
+   */
+  test("reports a missing season list as unavailable, not as a cancel", async () => {
+    const outcome = await chooseEpisodeFromMetadata({
+      currentId: "42",
+      isAnime: false,
+      currentSeason: 1,
+      currentEpisode: 1,
+      loaders: { loadSeasons: async () => ({ seasons: null, episodes: null }) },
+    });
+
+    expect(outcome.kind).toBe("unavailable");
+    expect(outcome.kind === "unavailable" && outcome.reason.length).toBeGreaterThan(0);
+  });
+});
 
 function movieHistory(patch: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
