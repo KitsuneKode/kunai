@@ -21,7 +21,7 @@
       "name": "@kitsunekode/kunai",
       "version": "0.3.0",
       "bin": {
-        "kunai": "dist/kunai.js",
+        "kunai": "dist/kunai.mjs",
       },
       "dependencies": {
         "commander": "catalog:cli",
@@ -39,6 +39,16 @@
         "@kunai/types": "workspace:*",
         "@types/bun": "catalog:",
         "@types/react": "catalog:",
+      },
+      "optionalDependencies": {
+        "@kitsunekode/kunai-darwin-arm64": "0.3.0",
+        "@kitsunekode/kunai-darwin-x64": "0.3.0",
+        "@kitsunekode/kunai-linux-arm64": "0.3.0",
+        "@kitsunekode/kunai-linux-arm64-musl": "0.3.0",
+        "@kitsunekode/kunai-linux-x64": "0.3.0",
+        "@kitsunekode/kunai-linux-x64-musl": "0.3.0",
+        "@kitsunekode/kunai-windows-arm64": "0.3.0",
+        "@kitsunekode/kunai-windows-x64": "0.3.0",
       },
       "peerDependencies": {
         "typescript": "catalog:",
