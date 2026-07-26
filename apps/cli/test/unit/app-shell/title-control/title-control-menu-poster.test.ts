@@ -40,3 +40,25 @@ test("a title with no poster leaves the field unset rather than empty-stringing 
     expect(option.previewImageUrl).toBeUndefined();
   }
 });
+
+// `ShellOption` carried neither flag, and `.map()` produces a non-fresh type so
+// TypeScript never flagged the extra properties -- both were dropped silently
+// between the menu and the renderer. Rows that discard data looked exactly like
+// rows that play something, and unavailable rows looked available until picked.
+test("cache purges are marked destructive so the renderer can warn on them", () => {
+  const model = buildTitleControlMenuModel(baseCtx);
+  const options = titleControlMenuOptions(model, new Set(["providers-data", "this-title"]));
+
+  const destructive = options
+    .filter((option) => option.destructive)
+    .map((option) => String(option.value))
+    .sort();
+  expect(destructive).toEqual([
+    "purge-episode-cache",
+    "purge-title-cache",
+    "reset-provider-health",
+  ]);
+
+  // And a row that merely plays something must not inherit the tone.
+  expect(options.find((option) => option.value === "pick-episode")?.destructive).toBeUndefined();
+});

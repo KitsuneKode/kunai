@@ -1507,25 +1507,52 @@ function ListShell<T>({
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
                   const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
+                  // Availability and consequence have to be legible before the
+                  // pick. An unavailable row used to look identical to a live
+                  // one, and a row that discards data looked like a row that
+                  // plays something -- both only revealed themselves after
+                  // being chosen.
                   const itemTone = isConfirmed
                     ? palette.ok
-                    : selected
-                      ? palette.accent
-                      : palette.dim;
+                    : option.disabled
+                      ? palette.dim
+                      : selected
+                        ? option.destructive
+                          ? palette.warn
+                          : palette.accent
+                        : option.destructive
+                          ? palette.warnDim
+                          : palette.dim;
                   const secondary = option.detail
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 4))}`
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 2);
+                  const highlighted = selected && !option.disabled;
+                  const rowColor = option.disabled
+                    ? palette.textDim
+                    : option.destructive
+                      ? selected
+                        ? palette.warn
+                        : palette.warnDim
+                      : selected || isConfirmed
+                        ? palette.text
+                        : palette.textDim;
                   return (
                     <Box
                       key={`${option.label}-${option.detail ?? ""}`}
                       width={rowWidth}
-                      backgroundColor={selected ? palette.accentFill : undefined}
+                      backgroundColor={
+                        highlighted
+                          ? option.destructive
+                            ? palette.warnFill
+                            : palette.accentFill
+                          : undefined
+                      }
                     >
                       <Text
-                        color={selected || isConfirmed ? palette.text : palette.textDim}
-                        bold={selected || isConfirmed}
-                        dimColor={!selected && !isConfirmed}
+                        color={rowColor}
+                        bold={highlighted || isConfirmed}
+                        dimColor={option.disabled || (!selected && !isConfirmed)}
                       >
                         <Text color={itemTone}>{`${itemPrefix} `}</Text>
                         {padColumnsEnd(rowText, rowWidth - 2)}

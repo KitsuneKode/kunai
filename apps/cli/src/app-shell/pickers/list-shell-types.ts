@@ -16,4 +16,12 @@ export type ShellOption<T> = {
   readonly label: string;
   readonly detail?: string;
   readonly previewImageUrl?: string;
+  /**
+   * Unavailable right now. Still selectable -- picking one surfaces the reason
+   * in `detail` -- but rendered so availability is legible before the pick
+   * rather than only after it.
+   */
+  readonly disabled?: boolean;
+  /** Discards data or resets state; rendered in a warning tone. */
+  readonly destructive?: boolean;
 };

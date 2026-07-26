@@ -213,6 +213,7 @@ export async function pickTitleControlShellAction(
         label: option.label,
         detail: option.detail,
         disabled: option.disabled,
+        destructive: option.destructive,
         previewImageUrl: option.previewImageUrl,
       })),
       actionContext: buildPickerActionContext({
