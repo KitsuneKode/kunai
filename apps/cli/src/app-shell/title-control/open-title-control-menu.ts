@@ -187,7 +187,11 @@ export async function pickTitleControlShellAction(
   }
 
   const { openListShell } = await import("@/app-shell/ink-shell");
-  const { buildPickerActionContext } = await import("@/app-shell/workflows");
+  // Import from the defining module, not the `workflows` barrel. The barrel
+  // re-exports history/picker/setup/shell workflows, so reaching it for this
+  // one helper pulled in shell-workflows.ts -- 110 KiB, the second-largest
+  // first-party input in the bundle -- on the first menu open.
+  const { buildPickerActionContext } = await import("@/app-shell/pickers");
 
   let expanded = new Set<TitleControlMenuGroupId>();
   while (true) {
