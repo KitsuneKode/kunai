@@ -359,16 +359,20 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     seasonEpisodeCache.set(season, episodes);
     return episodes;
   };
-  const resolveEpisodeName = async (
-    season: number,
-    episode: number,
-  ): Promise<string | undefined> => {
+  /**
+   * Cache-only. Episode names are a decoration on the row ("· Sugarwood"), and
+   * awaiting TMDB for them held the whole menu closed behind a network round
+   * trip — seconds of blank screen with no spinner, on a menu whose other
+   * fifteen rows are already known from local state. Read what is cached, warm
+   * the rest in the background, and let the next open show names.
+   */
+  const cachedEpisodeName = (season: number, episode: number): string | undefined => {
     if (opts.isAnime) {
       const raw = opts.animeEpisodes?.find((option) => option.index === episode)?.name;
       const name = raw?.trim();
       return name && !/^episode\s+\d+$/i.test(name) ? name : undefined;
     }
-    const entry = (await loadSeasonEpisodes(season))?.find((row) => row.number === episode);
+    const entry = seasonEpisodeCache.get(season)?.find((row) => row.number === episode);
     if (!entry) return undefined;
     const label = formatEpisodePickerLabel(entry.number, entry.name, entry.overview);
     const prefix = `Episode ${entry.number}  ·  `;
@@ -376,12 +380,20 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
     return label.slice(prefix.length).trim() || undefined;
   };
 
-  const [currentName, nextName] = await Promise.all([
-    finished ? Promise.resolve(undefined) : resolveEpisodeName(historySeason, historyEpisode),
-    nextEpisode
-      ? resolveEpisodeName(nextEpisode.season, nextEpisode.episode)
-      : Promise.resolve(undefined),
-  ]);
+  // Fire and forget: nothing awaits this, so the menu opens immediately.
+  if (!opts.isAnime) {
+    const seasonsToWarm = new Set<number>();
+    if (!finished) seasonsToWarm.add(historySeason);
+    if (nextEpisode) seasonsToWarm.add(nextEpisode.season);
+    for (const season of seasonsToWarm) {
+      if (!seasonEpisodeCache.has(season)) void loadSeasonEpisodes(season);
+    }
+  }
+
+  const currentName = finished ? undefined : cachedEpisodeName(historySeason, historyEpisode);
+  const nextName = nextEpisode
+    ? cachedEpisodeName(nextEpisode.season, nextEpisode.episode)
+    : undefined;
   const withName = (base: string, name: string | undefined): string =>
     name ? `${base} · ${name}` : base;
 
