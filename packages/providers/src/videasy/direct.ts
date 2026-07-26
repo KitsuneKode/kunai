@@ -147,7 +147,7 @@ export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
 const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 
 export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 25_000;
-const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 45_000;
+const VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS = 20_000;
 const WINGS_SEED_FETCH_TIMEOUT_MS = 8_000;
 const WINGS_SOURCE_FETCH_TIMEOUT_MS = 15_000;
 /** Normalize audio language codes to ISO 639-1. Delegates to the shared language
@@ -553,7 +553,7 @@ export async function resolveVideasyDirect(
     endpointHealth: context.endpointHealth,
     titleId: input.title.id,
     allowTransientCandidateRetry: true,
-    maxAttemptsPerCandidate: 1,
+    maxAttemptsPerCandidate: 2,
     candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
     shouldStopAfterFailure: (failure) =>
       failure.failureClass === "candidate-blocked" && isVideasySessionGuardMessage(failure.message),
@@ -595,7 +595,7 @@ export async function resolveVideasyDirect(
       endpointHealth: context.endpointHealth,
       titleId: input.title.id,
       allowTransientCandidateRetry: true,
-      maxAttemptsPerCandidate: 1,
+      maxAttemptsPerCandidate: 2,
       candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
       shouldStopAfterFailure: (failure) =>
         failure.failureClass === "candidate-blocked" &&
@@ -644,7 +644,7 @@ export async function resolveVideasyDirect(
       endpointHealth: context.endpointHealth,
       titleId: input.title.id,
       allowTransientCandidateRetry: true,
-      maxAttemptsPerCandidate: 1,
+      maxAttemptsPerCandidate: 2,
       candidateTimeoutMs: VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS,
       shouldStopAfterFailure: (failure) =>
         failure.failureClass === "candidate-blocked" &&

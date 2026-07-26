@@ -63,19 +63,7 @@ export function resolveVidlinkDirect(
           ? `movie/${encryptedId}`
           : `tv/${encryptedId}/${season}/${episode}`;
 
-      const response = await providerFetch(ctx, `${VIDLINK_API_BASE}/${path}`, {
-        headers: {
-          accept: "*/*",
-          "accept-language": "en-US,en;q=0.9",
-          referer: VIDLINK_REFERER,
-          origin: VIDLINK_ORIGIN,
-          "user-agent": USER_AGENT,
-        },
-        signal: directStreamFetchSignal(ctx.signal, VIDLINK_FETCH_TIMEOUT_MS),
-      });
-      if (!response.ok) {
-        throw new Error(`VidLink API returned HTTP ${response.status}`);
-      }
+      const response = await fetchVidlinkApi(ctx, `${VIDLINK_API_BASE}/${path}`, ctx.signal);
 
       const data = (await response.json()) as { stream?: VidlinkStream };
       const stream = data.stream;
@@ -136,22 +124,70 @@ export function resolveVidlinkDirect(
   });
 }
 
+/** Fetch VidLink API with retry on 5xx. */
+async function fetchVidlinkApi(
+  context: ProviderRuntimeContext,
+  url: string,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
+  const maxAttempts = 2;
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await providerFetch(context, url, {
+        headers: {
+          accept: "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          referer: VIDLINK_REFERER,
+          origin: VIDLINK_ORIGIN,
+          "user-agent": USER_AGENT,
+        },
+        signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
+      });
+      if (response.ok) return response;
+      if (attempt < maxAttempts && response.status >= 500 && !signal?.aborted) {
+        lastError = new Error(`VidLink API returned HTTP ${response.status}`);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      throw new Error(`VidLink API returned HTTP ${response.status}`);
+    } catch (error) {
+      if (attempt >= maxAttempts || signal?.aborted) throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError ?? new Error("VidLink API fetch failed");
+}
+
 /** Encrypt the TMDB id via enc-dec.app, which VidLink requires for its source path. */
 async function encryptTmdbId(
   context: ProviderRuntimeContext,
   tmdbId: number,
   signal: AbortSignal | undefined,
 ): Promise<string> {
-  const response = await providerFetch(context, `${ENC_DEC_BASE}/enc-vidlink?text=${tmdbId}`, {
-    headers: { accept: "application/json", "user-agent": USER_AGENT },
-    signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`enc-dec.app returned HTTP ${response.status}`);
+  const maxAttempts = 2;
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await providerFetch(context, `${ENC_DEC_BASE}/enc-vidlink?text=${tmdbId}`, {
+        headers: { accept: "application/json", "user-agent": USER_AGENT },
+        signal: directStreamFetchSignal(signal, VIDLINK_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new Error(`enc-dec.app returned HTTP ${response.status}`);
+      }
+      const data = (await response.json()) as { result?: string };
+      if (!data?.result) {
+        throw new Error("enc-dec.app did not return an encrypted id");
+      }
+      return data.result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < maxAttempts && !signal?.aborted) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
   }
-  const data = (await response.json()) as { result?: string };
-  if (!data?.result) {
-    throw new Error("enc-dec.app did not return an encrypted id");
-  }
-  return data.result;
+  throw lastError ?? new Error("enc-dec.app encryption failed after retries");
 }
