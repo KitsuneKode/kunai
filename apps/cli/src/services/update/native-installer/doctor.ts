@@ -1,6 +1,8 @@
-import { existsSync } from "node:fs";
-import { readdir, readlink } from "node:fs/promises";
-import { win32 } from "node:path";
+import { existsSync, constants as fsConstants } from "node:fs";
+import { access, readdir, readlink } from "node:fs/promises";
+import { dirname as nodeDirname, win32 } from "node:path";
+
+const { W_OK } = fsConstants;
 
 import type { CapabilitySnapshot } from "@/ui";
 
@@ -66,6 +68,23 @@ export interface DoctorPlatformInfo {
   readonly targetId?: string;
 }
 
+/**
+ * Writability of a directory Kunai must own.
+ *
+ * An unwritable config or data directory is the one class of failure that makes
+ * every other diagnostic misleading: settings appear not to save, history
+ * silently stops recording, and the install itself looks fine. It happens for
+ * ordinary reasons — a directory created by `sudo` on a first run, a synced
+ * folder held open by its client, or a read-only mount — and the user has no
+ * way to see it without being told.
+ */
+export interface DoctorStorageInfo {
+  readonly label: "config" | "data" | "cache";
+  readonly path: string;
+  readonly exists: boolean;
+  readonly writable: boolean;
+}
+
 export interface DoctorReport {
   readonly schemaVersion: 1;
   readonly generatedAt: string;
@@ -78,6 +97,7 @@ export interface DoctorReport {
   readonly transactions: readonly InstallTransactionRecord[];
   readonly platform: DoctorPlatformInfo;
   readonly dependencies: CapabilitySnapshot;
+  readonly storage: readonly DoctorStorageInfo[];
   readonly findings: readonly DoctorFinding[];
 }
 
@@ -91,7 +111,45 @@ export type BuildDoctorReportInput = {
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
   readonly probeCapabilities?: () => Promise<CapabilitySnapshot>;
+  readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
 };
+
+/**
+ * Probe the directories Kunai owns, without writing to them.
+ *
+ * `access(W_OK)` rather than a temp-file round trip on purpose: doctor is
+ * documented as read-only, and creating a probe file in a directory the user is
+ * asking us to diagnose is exactly the kind of side effect that turns a
+ * diagnostic into a second bug report. A missing directory is not a failure —
+ * Kunai creates these lazily — so the parent is checked instead, since that is
+ * what the creation will actually need.
+ */
+async function probeStorageWritability(
+  platform: NodeJS.Platform,
+): Promise<readonly DoctorStorageInfo[]> {
+  const { getKunaiPaths } = await import("@kunai/storage");
+  const paths = getKunaiPaths({ platform: platform === "win32" ? "win32" : "linux" });
+  const targets: ReadonlyArray<{ label: DoctorStorageInfo["label"]; path: string }> = [
+    { label: "config", path: paths.configDir },
+    { label: "data", path: paths.dataDir },
+    { label: "cache", path: paths.cacheDir },
+  ];
+
+  const results: DoctorStorageInfo[] = [];
+  for (const target of targets) {
+    const exists = existsSync(target.path);
+    const probed = exists ? target.path : nodeDirname(target.path);
+    let writable = false;
+    try {
+      await access(probed, W_OK);
+      writable = true;
+    } catch {
+      writable = false;
+    }
+    results.push({ label: target.label, path: target.path, exists, writable });
+  }
+  return results;
+}
 
 function pathsMatch(left: string, right: string, platform: NodeJS.Platform): boolean {
   if (platform === "win32") {
@@ -357,6 +415,23 @@ function collectFindings(input: {
     });
   }
 
+  for (const store of report.storage) {
+    if (store.writable) continue;
+    findings.push({
+      severity: "error",
+      code: `storage-not-writable-${store.label}`,
+      message: `Kunai cannot write to its ${store.label} directory (${store.path}).`,
+      remediation: [
+        store.exists
+          ? `Check ownership and permissions: ${store.path}`
+          : `Kunai cannot create ${store.path} — its parent directory is not writable.`,
+        // Running once under sudo is the usual cause, and it leaves a
+        // root-owned directory that every later non-root run fails against.
+        "If you ever ran kunai with sudo, the directory may now be root-owned.",
+      ],
+    });
+  }
+
   if (!findings.length) {
     findings.push({
       severity: "info",
@@ -506,6 +581,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     transactions,
     platform: platformInfo,
     dependencies,
+    storage: await (input.probeStorage ?? (() => probeStorageWritability(platform)))(),
   };
 
   return {
@@ -607,6 +683,12 @@ export function formatDoctorReportText(report: DoctorReport): string {
   lines.push(
     `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"}`,
   );
+  lines.push("");
+  lines.push("Storage");
+  for (const store of report.storage) {
+    const state = store.writable ? "writable" : "NOT WRITABLE";
+    lines.push(`  ${store.label}: ${store.path} (${store.exists ? state : `${state}, missing`})`);
+  }
   lines.push("");
   lines.push("Findings");
   for (const finding of report.findings) {

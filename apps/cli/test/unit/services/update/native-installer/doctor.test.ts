@@ -299,3 +299,91 @@ describe("buildDoctorReport", () => {
     );
   });
 });
+
+describe("storage writability", () => {
+  async function reportWithStorage(
+    storage: Awaited<ReturnType<typeof buildDoctorReport>>["storage"],
+  ) {
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-storage-"));
+    made.push(root);
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", LAUNCHER_NAME),
+    });
+    return await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () => emptyCapabilities(),
+      probeStorage: async () => storage,
+    });
+  }
+
+  test("raises an error finding for a directory Kunai cannot write to", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/etc/kunai", exists: true, writable: false },
+      { label: "data", path: "/var/kunai", exists: true, writable: true },
+      { label: "cache", path: "/var/cache/kunai", exists: true, writable: true },
+    ]);
+
+    const finding = report.findings.find((c) => c.code === "storage-not-writable-config");
+    expect(finding?.severity).toBe("error");
+    expect(finding?.message).toContain("/etc/kunai");
+    // sudo on a first run is the usual cause and the least obvious to the user.
+    expect(finding?.remediation.join(" ")).toContain("sudo");
+  });
+
+  test("distinguishes an unwritable parent from an unwritable directory", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/readonly/kunai", exists: false, writable: false },
+      { label: "data", path: "/var/kunai", exists: true, writable: true },
+      { label: "cache", path: "/var/cache/kunai", exists: true, writable: true },
+    ]);
+
+    const finding = report.findings.find((c) => c.code === "storage-not-writable-config");
+    expect(finding?.remediation[0]).toContain("parent directory is not writable");
+  });
+
+  test("stays silent when every directory is writable", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/c", exists: true, writable: true },
+      { label: "data", path: "/d", exists: true, writable: true },
+      { label: "cache", path: "/e", exists: true, writable: true },
+    ]);
+
+    expect(report.findings.filter((c) => c.code.startsWith("storage-not-writable"))).toEqual([]);
+  });
+
+  test("reports storage state in the text output", async () => {
+    const report = await reportWithStorage([
+      { label: "config", path: "/etc/kunai", exists: true, writable: false },
+      { label: "data", path: "/var/kunai", exists: true, writable: true },
+      { label: "cache", path: "/var/cache/kunai", exists: false, writable: true },
+    ]);
+
+    const text = formatDoctorReportText(report);
+    expect(text).toContain("Storage");
+    expect(text).toContain("config: /etc/kunai (NOT WRITABLE)");
+    expect(text).toContain("data: /var/kunai (writable)");
+    expect(text).toContain("cache: /var/cache/kunai (writable, missing)");
+  });
+
+  test("the real probe reports a writable temp directory", async () => {
+    // Exercises the default (non-injected) probe against a directory that
+    // genuinely exists, so the access() path itself is covered.
+    const report = await buildDoctorReport({
+      now: () => FIXED_DATE,
+      runningExecutable: { path: "/tmp/kunai", version: "1.0.0" },
+      pathValue: "",
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: () => false,
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    expect(report.storage.map((s) => s.label).sort()).toEqual(["cache", "config", "data"]);
+  });
+});
