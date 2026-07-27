@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -6,6 +6,7 @@ import { delimiter, join } from "node:path";
 
 import { getKunaiPaths } from "@kunai/storage";
 
+import { describePosixOnly as describe } from "../helpers/platform-gates";
 import {
   createInstallerSandbox,
   hostInstallShAsset,

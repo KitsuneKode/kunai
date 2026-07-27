@@ -15,6 +15,16 @@ import { isMuslEnvironmentSync } from "@/services/update/native-installer/musl";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
 import { releaseAssetName } from "@/services/update/platform-assets";
 
+/**
+ * Unix launcher mechanics: these cases seed the launcher with `symlink()` and
+ * assert with `readlink()`. On Windows `activateLauncher` copies instead — a
+ * running .exe cannot be replaced in place — so `readlink` on the resulting
+ * (correct) copy fails EINVAL. Scoped to the platform they describe; Windows
+ * launcher activation coverage is tracked in the Windows parity backlog in
+ * .docs/repo-infrastructure.md.
+ */
+const posixLauncherTest = process.platform === "win32" ? test.skip : test;
+
 const made: string[] = [];
 
 afterEach(async () => {
@@ -56,7 +66,7 @@ function sumsFor(assetName: string, digest: string): string {
 }
 
 describe("installLatest", () => {
-  test("checksum failure preserves launcher and manifest", async () => {
+  posixLauncherTest("checksum failure preserves launcher and manifest", async () => {
     const { layout } = await makeLayout();
     const previousPath = versionBinaryPath(layout, "1.0.0");
     await mkdir(dirname(previousPath), { recursive: true });
@@ -100,39 +110,42 @@ describe("installLatest", () => {
     expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("1.0.0");
   });
 
-  test("successful install writes version metadata after checksum verification", async () => {
-    const { layout } = await makeLayout();
-    const assetName = hostAssetName();
-    const bytes = new TextEncoder().encode("VERIFIED-BINARY");
-    const digest = sha256Hex(bytes);
+  posixLauncherTest(
+    "successful install writes version metadata after checksum verification",
+    async () => {
+      const { layout } = await makeLayout();
+      const assetName = hostAssetName();
+      const bytes = new TextEncoder().encode("VERIFIED-BINARY");
+      const digest = sha256Hex(bytes);
 
-    const result = await installLatest({
-      version: "3.1.4",
-      force: true,
-      layout,
-      dlBase: "https://example.test/releases",
-      fetchImpl: async (input) => {
-        const url = String(input);
-        if (url.includes("SHA256SUMS")) {
-          return new Response(sumsFor(assetName, digest), { status: 200 });
-        }
-        if (url.includes(assetName)) {
-          return new Response(bytes, { status: 200 });
-        }
-        return new Response("missing", { status: 404 });
-      },
-    });
+      const result = await installLatest({
+        version: "3.1.4",
+        force: true,
+        layout,
+        dlBase: "https://example.test/releases",
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url.includes("SHA256SUMS")) {
+            return new Response(sumsFor(assetName, digest), { status: 200 });
+          }
+          if (url.includes(assetName)) {
+            return new Response(bytes, { status: 200 });
+          }
+          return new Response("missing", { status: 404 });
+        },
+      });
 
-    expect(result).toMatchObject({ status: "installed", version: "3.1.4" });
-    const versionPath = versionBinaryPath(layout, "3.1.4");
-    expect(await Bun.file(versionPath).text()).toBe("VERIFIED-BINARY");
-    expect(await readlink(layout.launcherPath)).toBe(versionPath);
-    expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("3.1.4");
+      expect(result).toMatchObject({ status: "installed", version: "3.1.4" });
+      const versionPath = versionBinaryPath(layout, "3.1.4");
+      expect(await Bun.file(versionPath).text()).toBe("VERIFIED-BINARY");
+      expect(await readlink(layout.launcherPath)).toBe(versionPath);
+      expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe("3.1.4");
 
-    const metaRaw = await readFile(versionMetadataPath(layout, "3.1.4"), "utf8");
-    const meta = JSON.parse(metaRaw) as { verification: string; artifactSha256: string };
-    expect(meta.verification).toBe("release-checksum");
-    expect(meta.artifactSha256).toBe(digest);
-    expect(await verifyStoredVersion(layout, "3.1.4")).toMatchObject({ status: "verified" });
-  });
+      const metaRaw = await readFile(versionMetadataPath(layout, "3.1.4"), "utf8");
+      const meta = JSON.parse(metaRaw) as { verification: string; artifactSha256: string };
+      expect(meta.verification).toBe("release-checksum");
+      expect(meta.artifactSha256).toBe(digest);
+      expect(await verifyStoredVersion(layout, "3.1.4")).toMatchObject({ status: "verified" });
+    },
+  );
 });

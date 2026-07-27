@@ -31,6 +31,8 @@ import {
   writeInstalledVersionMetadata,
 } from "@/services/update/native-installer/version-metadata";
 
+import { describePosixOnly } from "../../../../helpers/platform-gates";
+
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
 
@@ -239,7 +241,14 @@ describe("listRollbackCandidates / planRollback (read-only)", () => {
   });
 });
 
-describe("executeRollback activation and refusal", () => {
+// Unix launcher mechanics: every case here seeds the launcher with `symlink()`
+// and one asserts a read-only directory via `chmod`. Neither models Windows,
+// where `activateLauncher` copies (a running .exe cannot be replaced in place)
+// and mode bits do not deny writes. Running them there asserts the wrong shape —
+// `readlink` on a copy fails EINVAL — so this is scoped to the platform it
+// describes. Windows launcher activation still needs its own coverage; it is
+// tracked in the Windows parity backlog in .docs/repo-infrastructure.md.
+describePosixOnly("executeRollback activation and refusal", () => {
   test("default targets previousVersion and swaps launcher + manifest", async () => {
     const { layout } = await makeRoot();
     const previousPath = await seedVerifiedVersion(layout, "1.0.0", "old");

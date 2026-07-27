@@ -167,7 +167,15 @@ describe("resolveShareTarget", () => {
   });
 
   it("rejects a non-anime provider hint for anime refs", async () => {
-    const container = createResolverContainer({ availableProviders: ["videasy", "allanime"] });
+    // The active provider must be the anime one: rejecting the hint means
+    // falling back to the user's default, and for an anime ref that default is
+    // `allanime`. Leaving `videasy` active sent the anime mapping down its
+    // provider-native remap path, which calls the live AllManga API -- a unit
+    // test that needed the network and timed out at 5s when it was slow.
+    const container = createResolverContainer({
+      providerId: "allanime",
+      availableProviders: ["videasy", "allanime"],
+    });
     const out = await resolveShareTarget(
       {
         anchor: { by: "catalog", ns: "anilist", id: "21" },

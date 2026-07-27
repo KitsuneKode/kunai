@@ -1,8 +1,10 @@
 import { Database } from "bun:sqlite";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import { describePosixOnly as describe } from "../helpers/platform-gates";
 
 // Real-process shutdown coverage: spawn the CLI against an isolated shadow XDG
 // profile, deliver a signal, and assert the conventional exit status plus a

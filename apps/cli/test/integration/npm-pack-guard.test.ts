@@ -10,7 +10,21 @@ const NPM_PUBLISH_ROOT = join(CLI_ROOT, "dist/npm");
 const STUB_BIN = join(CLI_ROOT, "dist/bin/kunai-linux-x64-stub-for-pack-guard");
 const RELEASE_TARBALL = join(REPO_ROOT, ".release-candidate/kunai-npm.tgz");
 
-describe("npm pack guard with binaries on disk", () => {
+/**
+ * `verify-npm-pack.ts` runs the published launcher under Node, because the whole
+ * point of the npm package is that it works without Bun. A machine without Node
+ * therefore cannot answer the question this suite asks, on any platform — it is
+ * a missing prerequisite, not a failing guard, so say so instead of reporting a
+ * red test. Mirrors the `pwshAvailable()` gate in the installer suites. CI
+ * installs Node, so coverage there is unchanged.
+ */
+function nodeAvailable(): boolean {
+  return spawnSync("node", ["--version"], { encoding: "utf8" }).status === 0;
+}
+
+const describeWithNode = nodeAvailable() ? describe : describe.skip;
+
+describeWithNode("npm pack guard with binaries on disk", () => {
   test("builds and release-packs only the policy-safe launcher files", async () => {
     const tarballBackup = `${RELEASE_TARBALL}.test-backup-${process.pid}`;
     const hadExistingTarball = existsSync(RELEASE_TARBALL);

@@ -57,7 +57,11 @@ const CANONICAL_INSTALL =
  * The installer lives under `### Install Kunai`; the four post-install probes
  * live under `### Verify`. Legacy single-fence copies remain supported.
  */
-export function extractReadmeQuickStart(readme: string): readonly string[] {
+export function extractReadmeQuickStart(readmeSource: string): readonly string[] {
+  // A Windows checkout hands this CRLF text (see .gitattributes). Every pattern
+  // below anchors on "\n", so without normalising first the section and fence
+  // matches all miss and the contract looks broken when only the newlines are.
+  const readme = readmeSource.replace(/\r\n/g, "\n");
   const quickStart = readme.match(/## Quick Start\n([\s\S]*?)(?=\n## |$)/);
   const quickStartBody = quickStart?.[1] ?? readme;
   const installSection = quickStartBody.match(/### Install(?: Kunai)?([\s\S]*?)(?=\n### |\n## |$)/);

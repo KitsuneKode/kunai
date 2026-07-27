@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   chmodSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -48,14 +49,50 @@ function targetIdForHost(): string {
   return `linux-${arch}`;
 }
 
+/**
+ * These tests exist to prove the launcher runs under plain Node, so Node is a
+ * prerequisite rather than something they can assert. Throwing in `beforeAll`
+ * when it is absent reported an unnamed failure with no useful location on any
+ * machine without Node; skipping says what is actually missing. CI installs
+ * Node, so coverage there is unchanged.
+ */
+const NODE_BIN = Bun.which("node");
+const nodeTest = NODE_BIN ? test : test.skip;
+
+/**
+ * Cases that actually execute the stand-in child are POSIX-only.
+ *
+ * The stand-in is a `#!/usr/bin/env node` text file, and the launcher spawns the
+ * platform binary directly (`spawn(binaryPath, ...)`, no shell — deliberately,
+ * so signals reach mpv). Windows has no shebang: it needs a real PE executable,
+ * and Node refuses to spawn `.cmd`/`.bat` without a shell. So these fail on
+ * Windows for a reason that has nothing to do with the launcher's contract.
+ *
+ * They were not merely skipped before — they *failed*, but only where `node` is
+ * on PATH, so a shell without it reported a tidy all-skipped run and the real
+ * result only appeared under CI. Gating says what is true.
+ *
+ * The launcher's Windows behaviour is covered instead by the compiled-binary
+ * smoke in CI, which runs the real `kunai.exe`. Tracked in the Windows parity
+ * backlog in .docs/repo-infrastructure.md.
+ */
+const execTest = NODE_BIN && process.platform !== "win32" ? test : test.skip;
+
 beforeAll(() => {
+  if (!NODE_BIN) return;
   workDir = mkdtempSync(join(tmpdir(), "kunai-launcher-"));
 
-  const nodeBin = Bun.which("node");
-  if (!nodeBin) throw new Error("node is required to verify the npm launcher");
+  const nodeBin = NODE_BIN;
   noBunPath = join(workDir, "no-bun-bin");
   mkdirSync(noBunPath, { recursive: true });
-  symlinkSync(nodeBin, join(noBunPath, "node"));
+  // Copy rather than symlink on Windows: creating a symlink there needs
+  // Developer Mode or elevation, which a CI runner does not have. The point is
+  // only a PATH directory that has node and no bun — a copy satisfies that.
+  if (process.platform === "win32") {
+    copyFileSync(nodeBin, join(noBunPath, "node.exe"));
+  } else {
+    symlinkSync(nodeBin, join(noBunPath, "node"));
+  }
 
   mkdirSync(join(workDir, "dist"), { recursive: true });
   launcher = join(workDir, "dist", "kunai.mjs");
@@ -135,13 +172,13 @@ function readManagedContext(fixtureLauncher: string, unrelated = "preserved") {
   };
 }
 
-test("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
+nodeTest("launcher is plain Node ESM with a node shebang and no bun: imports", () => {
   const source = readFileSync(LAUNCHER_SOURCE, "utf8");
   expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
   expect(/from\s+["']bun:|require\(["']bun:/.test(source)).toBe(false);
 });
 
-test("runs under node with no bun on PATH", () => {
+execTest("runs under node with no bun on PATH", () => {
   // Guards the premise: the launcher below must be starved of bun, not merely
   // running somewhere bun happens to be missing.
   expect(Bun.which("bun", { PATH: noBunPath })).toBeNull();
@@ -152,12 +189,12 @@ test("runs under node with no bun on PATH", () => {
   expect(result.stdout.toString()).toBe("--echo-args,hello");
 });
 
-test("passes the child's exit code through unchanged", () => {
+execTest("passes the child's exit code through unchanged", () => {
   expect(runLauncher(["--exit-code", "0"]).exitCode).toBe(0);
   expect(runLauncher(["--exit-code", "42"]).exitCode).toBe(42);
 });
 
-test("passes npm ownership and its absolute package root to the compiled child", () => {
+execTest("passes npm ownership and its absolute package root to the compiled child", () => {
   const packageRoot = join(workDir, "npm", "node_modules", "@kitsunekode", "kunai");
   const fixtureLauncher = createLauncherFixture(packageRoot);
 
@@ -168,7 +205,7 @@ test("passes npm ownership and its absolute package root to the compiled child",
   });
 });
 
-test("passes Bun ownership for launchers under the Bun global package root", () => {
+execTest("passes Bun ownership for launchers under the Bun global package root", () => {
   const packageRoot = join(
     workDir,
     ".bun",
@@ -187,14 +224,14 @@ test("passes Bun ownership for launchers under the Bun global package root", () 
   });
 });
 
-test("preserves unrelated environment values across the launcher boundary", () => {
+execTest("preserves unrelated environment values across the launcher boundary", () => {
   const packageRoot = join(workDir, "preserve-env", "@kitsunekode", "kunai");
   const fixtureLauncher = createLauncherFixture(packageRoot);
 
   expect(readManagedContext(fixtureLauncher, "keep-me").unrelated).toBe("keep-me");
 });
 
-test("reports an actionable error when the platform binary is missing", () => {
+nodeTest("reports an actionable error when the platform binary is missing", () => {
   const empty = mkdtempSync(join(tmpdir(), "kunai-launcher-empty-"));
   mkdirSync(join(empty, "dist"), { recursive: true });
   const lonely = join(empty, "dist", "kunai.mjs");

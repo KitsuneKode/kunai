@@ -3,14 +3,21 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
 /**
- * install.ps1 is a Windows script: it resolves its default directories from
- * LOCALAPPDATA/APPDATA, which PowerShell defines only on Windows. Supplying
- * them lets the identical suite run under Linux pwsh (the local Docker
- * harness) without teaching the production installer about a platform it does
- * not target. On Windows the real values are already present, so this is empty.
+ * Sandbox the directories install.ps1 resolves its defaults from.
+ *
+ * install.ps1 is a Windows script: it reads LOCALAPPDATA/APPDATA/USERPROFILE,
+ * which PowerShell defines only on Windows. Supplying them lets the identical
+ * suite run under Linux pwsh (the local Docker harness) without teaching the
+ * production installer about a platform it does not target.
+ *
+ * This used to return `{}` on Windows, on the reasoning that the real values are
+ * already there — which is exactly the problem. It pointed the installer suite
+ * at the developer's own `%LOCALAPPDATA%\kunai`, the same tree the unit suite
+ * writes its poster cache into. Run the two tasks concurrently, as `bun run
+ * test` does, and the dry-run intermittently exited 1 while passing whenever it
+ * ran alone. A test must not read, let alone write, the real install.
  */
 export function windowsShellEnvDefaults(root: string): NodeJS.ProcessEnv {
-  if (process.platform === "win32") return {};
   return {
     LOCALAPPDATA: join(root, "localappdata"),
     APPDATA: join(root, "appdata"),

@@ -1,0 +1,35 @@
+# Normalise line endings.
+#
+# Without this, a Windows clone with the default `core.autocrlf=true` checks
+# every text file out as CRLF. That is not cosmetic here:
+#   - install.sh and the test/docker shell scripts are executed by bash, which
+#     reads a trailing CR as part of the command and fails in ways that read as
+#     "command not found";
+#   - fixtures and docs are parsed by `\n`-anchored regexes (the README
+#     quick-start contract among them), which silently stop matching;
+#   - checksums over text fixtures differ from the Linux CI values.
+#
+# LF in the working tree on every platform keeps the repo byte-identical to what
+# CI and the release pipeline see. Windows editors and PowerShell both handle LF
+# fine; the only files that genuinely need CRLF are marked below.
+* text=auto eol=lf
+
+# Windows shells are the exception: PowerShell tolerates LF, but .bat/.cmd
+# dispatch is historically CRLF-sensitive, so keep those native.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.wasm binary
+*.sqlite binary
+*.exe binary
+*.tgz binary
+*.gz binary

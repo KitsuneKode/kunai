@@ -83,7 +83,7 @@ function hostWindowsAsset(): string {
 
 describePwsh("install.ps1 dry-run", () => {
   test("prints the binary install plan without downloading", () => {
-    const result = runInstallPs1(["-DryRun", "-Yes"]);
+    const result = runInstallPs1(["-DryRun", "-Yes", "-SkipDeps"]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Kunai installer");
@@ -94,7 +94,7 @@ describePwsh("install.ps1 dry-run", () => {
   });
 
   test("honors pinned -Version in dry-run output", () => {
-    const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"]);
+    const result = runInstallPs1(["-DryRun", "-Yes", "-SkipDeps", "-Version", "9.8.7"]);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("v9.8.7");
@@ -103,7 +103,10 @@ describePwsh("install.ps1 dry-run", () => {
   test("dry-run is side-effect-free — creates no sandbox directories", () => {
     const sandbox = createInstallerSandbox("install-ps1-dry");
     try {
-      const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], sandbox.env);
+      const result = runInstallPs1(
+        ["-DryRun", "-Yes", "-SkipDeps", "-Version", "9.8.7"],
+        sandbox.env,
+      );
       expect(result.status).toBe(0);
       expect(existsSync(sandbox.binDir)).toBe(false);
       expect(existsSync(sandbox.dataDir)).toBe(false);
@@ -127,6 +130,8 @@ describePwsh("install.ps1 dry-run", () => {
     const sandbox = createInstallerSandbox("install-ps1-deps");
     installCommandShim(sandbox.root, "winget");
     try {
+      // Deliberately no -SkipDeps: this case exists to prove the dependency plan
+      // is reached. -DryRun keeps it a plan, so no winget process is spawned.
       const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], {
         ...sandbox.env,
         PATH: `${sandbox.root}${delimiter}${process.env.PATH ?? ""}`,
@@ -158,7 +163,7 @@ describePwsh("install.ps1 release asset failures", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl, evidence) => {
-          const result = await runInstallPs1Async(["-Yes"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_RELEASES_API: `${baseUrl}/releases/latest`,
@@ -196,7 +201,7 @@ describePwsh("install.ps1 release asset failures", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
@@ -225,7 +230,7 @@ describePwsh("install.ps1 release asset failures", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
@@ -246,7 +251,7 @@ describePwsh("install.ps1 release asset failures", () => {
     const sandbox = createInstallerSandbox("install-ps1-404");
     try {
       await withReleaseFixture({}, async (baseUrl) => {
-        const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+        const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
           ...sandbox.env,
           KUNAI_DL_BASE: baseUrl,
         });
@@ -279,7 +284,7 @@ describePwsh("install.ps1 release asset failures", () => {
           },
         },
         async (baseUrl, evidence) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
@@ -357,7 +362,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
@@ -383,7 +388,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
         },
         async (baseUrl) => {
           const started = Date.now();
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_DOWNLOAD_RETRY_BASE_MS: "200",
@@ -413,7 +418,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_DOWNLOAD_MAX_BYTES: "1024",
@@ -444,7 +449,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_DOWNLOAD_STALL_MS: "500",
@@ -499,7 +504,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
           });
@@ -542,7 +547,7 @@ describeWindows("install.ps1 PATH diagnostics", () => {
           },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-Version", "9.8.7"], {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
             ...env,
             KUNAI_DL_BASE: baseUrl,
           });
