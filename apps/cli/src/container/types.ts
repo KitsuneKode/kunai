@@ -40,6 +40,7 @@ import type { ContinuationProjectionService } from "../services/continuation/Con
 import type { ContinueWatchingService } from "../services/continuation/ContinueWatchingService";
 import type { DiagnosticsService } from "../services/diagnostics/DiagnosticsService";
 import type { DiagnosticsStore } from "../services/diagnostics/DiagnosticsStore";
+import type { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { DownloadService } from "../services/download/DownloadService";
 import type { HistoryMetadataHealer } from "../services/history-metadata/HistoryMetadataHealer";
 import type { Connectivity } from "../services/network/Connectivity";
@@ -111,6 +112,7 @@ export interface Container {
   readonly diagnosticsService: DiagnosticsService;
   readonly storageMaintenance: StorageMaintenanceService;
   readonly sourceInventory: SourceInventoryService;
+  readonly resolveTraceSink: ResolveTraceSink;
   readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
   readonly titlePlaybackSource: TitlePlaybackSourceService;
   readonly videasyLazySourceProbe: VideasyLazySourceProbeService;

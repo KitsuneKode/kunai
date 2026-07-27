@@ -34,6 +34,7 @@ import {
   markDataMigrationApplied,
   markHistoryIdentityConsolidatorApplied,
   markWatchLedgerBackfillApplied,
+  ResolveTraceRepository,
   ScheduleCacheRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
@@ -65,6 +66,7 @@ import {
   type DurableDiagnosticsSinkOptions,
 } from "../services/diagnostics/DurableDiagnosticsSink";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "../services/diagnostics/redaction";
+import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
@@ -124,6 +126,7 @@ export type PersistenceBootstrap = {
   readonly featureFlags: ReturnType<typeof resolveAttentionFeatureFlags>;
   readonly diagnosticsService: DiagnosticsServiceImpl;
   readonly sourceInventory: SourceInventoryService;
+  readonly resolveTraceSink: ResolveTraceSink;
   readonly episodePlaybackSelection: EpisodePlaybackSelectionService;
   readonly titlePlaybackSource: TitlePlaybackSourceService;
   readonly videasyLazySourceProbe: VideasyLazySourceProbeService;
@@ -276,6 +279,7 @@ export async function bootstrapPersistence(
   const sourceInventory = new SourceInventoryService(new SourceInventoryRepository(cacheDb), {
     diagnostics: diagnosticsService,
   });
+  const resolveTraceSink = new ResolveTraceSink(new ResolveTraceRepository(cacheDb));
   const episodePlaybackSelection = new EpisodePlaybackSelectionService(
     join(paths.configDir, "episode-playback-selections.json"),
   );
@@ -347,6 +351,7 @@ export async function bootstrapPersistence(
     featureFlags,
     diagnosticsService,
     sourceInventory,
+    resolveTraceSink,
     episodePlaybackSelection,
     titlePlaybackSource,
     videasyLazySourceProbe,

@@ -11,10 +11,11 @@ import { buildPtyCommand } from "../helpers/pty-command";
 // profile, deliver a signal, and assert the conventional exit status plus a
 // readable data store afterwards. Never touches the live user profile.
 //
-// Ink refuses to mount without a raw-mode TTY, so the CLI runs under
-// `script(1)`, which allocates a pty and (via -e) propagates the child's exit
-// status. The wrapper shell writes its own PID before exec-ing bun — exec
-// preserves the PID — so the test can signal the CLI process directly.
+// Ink refuses to mount without a raw-mode TTY, so the CLI runs under a PTY
+// wrapper (`script` on Linux, `expect` on macOS — see buildPtyCommand) that
+// propagates shell-style signal exit statuses (128+sig). The wrapper shell
+// writes its own PID before exec-ing bun — exec preserves the PID — so the
+// test can signal the CLI process directly.
 
 const repoRoot = resolve(import.meta.dir, "../../../..");
 const tempRoots: string[] = [];
