@@ -16,6 +16,26 @@ const DEGRADED_HEAL_MS = 60 * 60 * 1000;
 const DOWN_TO_DEGRADED_MS = 4 * 60 * 60 * 1000;
 const DOWN_TO_HEALTHY_MS = 8 * 60 * 60 * 1000;
 
+/**
+ * Failure rate at or above which a provider is treated as degraded regardless
+ * of its consecutive-failure counter. A provider can fail most attempts while
+ * never stringing two together, which previously read as fully healthy.
+ */
+const SUSTAINED_FAILURE_RATE = 0.75;
+
+/**
+ * Minimum recorded outcomes before the rate is trusted. Rows written before
+ * `observations` existed report `undefined` and are deliberately exempt: they
+ * carry a legacy seed of 1 after a single failure and would all demote at once.
+ */
+const MIN_RATE_OBSERVATIONS = 4;
+
+function hasSustainedFailures(stored: ProviderHealth): boolean {
+  const { recentFailureRate: rate, observations } = stored;
+  if (rate === undefined || observations === undefined) return false;
+  return observations >= MIN_RATE_OBSERVATIONS && rate >= SUSTAINED_FAILURE_RATE;
+}
+
 export function resolveEffectiveProviderHealth(
   stored: ProviderHealth | undefined,
   now: Date = new Date(),
@@ -29,7 +49,11 @@ export function resolveEffectiveProviderHealth(
   const ageMs = Number.isFinite(checkedAtMs)
     ? Math.max(0, now.getTime() - checkedAtMs)
     : Number.POSITIVE_INFINITY;
-  const effectiveStatus = resolveEffectiveStatus(stored.status, ageMs);
+  const agedStatus = resolveEffectiveStatus(stored.status, ageMs);
+  // A sustained failure rate demotes, but never promotes: a `down` provider
+  // with a clean rate stays down until its TTL or a real success heals it.
+  const effectiveStatus =
+    agedStatus === "healthy" && hasSustainedFailures(stored) ? "degraded" : agedStatus;
 
   return {
     providerId: stored.providerId,
@@ -38,7 +62,9 @@ export function resolveEffectiveProviderHealth(
     checkedAt: stored.checkedAt,
     consecutiveFailures: stored.consecutiveFailures,
     recentFailureRate: stored.recentFailureRate,
-    healedByTtl: effectiveStatus !== stored.status,
+    // Keyed off the aged status, not the final one: being demoted by the
+    // failure rate is not healing and must not render as "(was healthy)".
+    healedByTtl: agedStatus !== stored.status,
   };
 }
 

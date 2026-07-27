@@ -74,3 +74,84 @@ describe("provider-health-policy", () => {
     ).toBeNull();
   });
 });
+
+function rateHealth(overrides: Partial<ProviderHealth>): ProviderHealth {
+  return {
+    providerId: "vidlink" as ProviderId,
+    status: "healthy",
+    checkedAt: NOW.toISOString(),
+    consecutiveFailures: 0,
+    ...overrides,
+  };
+}
+
+describe("failure rate feeds effective status", () => {
+  test("a provider failing nearly every attempt is not healthy", () => {
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "healthy", recentFailureRate: 0.95, observations: 12 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("degraded");
+  });
+
+  test("a high rate backed by too little evidence is ignored", () => {
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "healthy", recentFailureRate: 1, observations: 1 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("healthy");
+  });
+
+  test("legacy rows without an observation count are not demoted", () => {
+    // Rows written before observations existed carry the old 1.0 seed, so
+    // trusting the rate alone would demote every one of them at once.
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "healthy", recentFailureRate: 1 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("healthy");
+  });
+
+  test("a healthy rate leaves status alone", () => {
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "healthy", recentFailureRate: 0.1, observations: 30 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("healthy");
+  });
+
+  test("rate never promotes a down provider", () => {
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "down", recentFailureRate: 0, observations: 30 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("down");
+  });
+
+  test("a rate demotion is not reported as TTL healing", () => {
+    // healedByTtl drives the "(was X)" badge. A provider demoted by its rate
+    // was not healed by anything and must not claim it was.
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({ status: "healthy", recentFailureRate: 0.95, observations: 12 }),
+      NOW,
+    );
+    expect(effective?.effectiveStatus).toBe("degraded");
+    expect(effective?.healedByTtl).toBe(false);
+  });
+
+  test("TTL healing is still reported when the rate also demotes", () => {
+    const stale = new Date(NOW.getTime() - 9 * 60 * 60 * 1000).toISOString();
+    const effective = resolveEffectiveProviderHealth(
+      rateHealth({
+        status: "down",
+        checkedAt: stale,
+        recentFailureRate: 0.95,
+        observations: 12,
+      }),
+      NOW,
+    );
+    // Aged out of down into healthy, then demoted by the rate.
+    expect(effective?.effectiveStatus).toBe("degraded");
+    expect(effective?.healedByTtl).toBe(true);
+  });
+});
