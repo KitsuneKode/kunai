@@ -7,9 +7,10 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { directSmokeArgs } from "./smoke-argv";
 
 const profile = createProviderSmokeProfile("allanime");
-const args = process.argv.slice(2);
+const args = directSmokeArgs();
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });

@@ -7,10 +7,11 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { directSmokeArgs } from "./smoke-argv";
 
 const profile = createProviderSmokeProfile("miruro");
 // bun path/to/smoke.ts [episode] [anilistId] [title...]
-const args = process.argv.slice(2);
+const args = directSmokeArgs();
 
 const episode = Number(args[0] ?? "1159");
 const titleId = args[1] ?? "21";
