@@ -24,6 +24,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { buildPtyCommand } from "../../helpers/pty-command";
+
 export type ReadmeCommandMode = "fixture-assets" | "published-assets";
 
 export interface ReadmeCommandVerification {
@@ -363,7 +365,7 @@ async function runCommandUnderPty(options: {
 }): Promise<CommandResult & { readonly ready: boolean }> {
   const settleMs = options.settleMs ?? 2500;
   const timeoutMs = options.timeoutMs ?? 30_000;
-  const proc = Bun.spawn(["script", "-qec", options.command, options.transcriptPath], {
+  const proc = Bun.spawn(buildPtyCommand(options.command, options.transcriptPath), {
     env: options.env,
     stdin: "ignore",
     stdout: "ignore",

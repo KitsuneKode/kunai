@@ -12,6 +12,7 @@ REPO_ROOT="$(cd "$ROOT/../.." && pwd)"
 BIN_DIR="$ROOT/dist/bin"
 SKIP_VERSION=0
 PARTIAL=0
+source "$ROOT/scripts/checksum-tools.sh"
 
 for arg in "$@"; do
   case "$arg" in
@@ -41,7 +42,10 @@ if [[ "$PARTIAL" -eq 1 ]]; then
     echo "✗ missing $BIN_DIR/SHA256SUMS" >&2
     exit 1
   fi
-  mapfile -t ASSETS < <(awk '{print $2}' "$BIN_DIR/SHA256SUMS")
+  ASSETS=()
+  while IFS= read -r asset; do
+    [[ -n "$asset" ]] && ASSETS+=("$asset")
+  done < <(awk '{print $2}' "$BIN_DIR/SHA256SUMS")
 
   missing=0
   for asset in "${ASSETS[@]}"; do
@@ -56,7 +60,7 @@ if [[ "$PARTIAL" -eq 1 ]]; then
 
   (
     cd "$BIN_DIR"
-    sha256sum -c SHA256SUMS
+    verify_checksums SHA256SUMS
   )
 
   if [[ "$SKIP_VERSION" -eq 0 && -f "$BIN_DIR/kunai-linux-x64" ]]; then

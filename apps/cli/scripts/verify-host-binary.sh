@@ -9,6 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$ROOT/dist/bin"
 SKIP_SMOKE=0
+source "$ROOT/scripts/checksum-tools.sh"
 
 for arg in "$@"; do
   case "$arg" in
@@ -50,7 +51,7 @@ fi
 
 (
   cd "$BIN_DIR"
-  sha256sum -c SHA256SUMS 2>/dev/null | grep -q "^$ASSET: OK$" || {
+  verify_checksums SHA256SUMS >/dev/null || {
     echo "✗ checksum mismatch for $ASSET" >&2
     exit 1
   }

@@ -127,27 +127,24 @@ Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size 
 
 `windows-cli` is a blocking `windows-latest` job. It runs the workspace
 typecheck, the CLI unit/integration suite, the storage package suite (including
-Windows SQLite teardown), and a compiled Windows-binary smoke.
-The mpv endpoint suite always checks the Windows pipe spelling; its native
-bind/connect/command tests run when `mpv` is present and otherwise report a
-skip because mpv is a user-installed runtime dependency.
+Windows SQLite teardown), provisions native mpv so the real named-pipe IPC
+contract is mandatory, and runs the compiled Windows binary through the plain
+Node npm launcher with Bun absent from the child PATH.
 
 Closed: the parity leg now builds a Windows host binary and smoke-tests
-`--version` / `--help` on it. That gap had shipped a `kunai.exe` which exited 0
+`--version` / `--help` through the same Node launcher npm users execute. That
+gap had shipped a `kunai.exe` which exited 0
 printing nothing — inside a compiled Windows binary `import.meta.main` is false
 for the entry module (Bun compares `import.meta.path`, spelled with backslashes,
 against a forward-slash main specifier), so the startup call behind the guard
 never ran. `isProcessEntrypoint` in `apps/cli/src/infra/build/entrypoint.ts` now
 answers that question, and the smoke asserts real output rather than exit 0 —
 the failure mode exits 0, so an exit-code check alone would not have caught it.
+Release native smoke also executes the advertised Windows ARM64 artifact on a
+`windows-11-arm` runner instead of qualifying it by checksum alone.
 
 Open Windows parity backlog:
 
-- Decide whether CI should install mpv so
-  `test/integration/mpv-ipc-endpoint-native.test.ts` is required rather than
-  skipped. The test already launches real mpv and proves bind, connect, command,
-  and close on any host where mpv is installed; the unit contract still checks
-  the Windows spelling from every platform.
 - Windows-only test isolation is easy to get wrong in ways POSIX hides. Two
   shared helpers exist for the cases already found — `test/helpers/temp-store.ts`
   (close database handles before removing a temp dir; Windows refuses to delete

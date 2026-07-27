@@ -383,6 +383,8 @@ describe("release workflow confirmation dependency graph", () => {
 
     expect(native).toContain("ubuntu-latest");
     expect(native).toContain("windows-latest");
+    expect(native).toContain("windows-arm64");
+    expect(native).toContain("windows-11-arm");
     // Assert the macOS coverage, not the runner label. This pinned "macos-13"
     // and broke the moment that image was retired for "macos-15-intel" — a
     // rename that changed no guarantee. Both architectures are the thing worth

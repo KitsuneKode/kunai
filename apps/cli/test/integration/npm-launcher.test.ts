@@ -59,6 +59,9 @@ function targetIdForHost(): string {
  */
 const NODE_BIN = Bun.which("node");
 const nodeTest = NODE_BIN ? test : test.skip;
+const WINDOWS_LAUNCHER_BINARY = process.env.KUNAI_NPM_LAUNCHER_BINARY;
+const windowsNativeLauncherTest =
+  NODE_BIN && process.platform === "win32" && WINDOWS_LAUNCHER_BINARY ? test : test.skip;
 
 /**
  * Cases that actually execute the stand-in child are POSIX-only.
@@ -73,9 +76,9 @@ const nodeTest = NODE_BIN ? test : test.skip;
  * on PATH, so a shell without it reported a tidy all-skipped run and the real
  * result only appeared under CI. Gating says what is true.
  *
- * The launcher's Windows behaviour is covered instead by the compiled-binary
- * smoke in CI, which runs the real `kunai.exe`. Tracked in the Windows parity
- * backlog in .docs/repo-infrastructure.md.
+ * The real Windows execution path uses the opt-in PE fixture below. CI gives it
+ * the host binary after building it, so Node stages that exact executable in
+ * the vendor layout and runs it with Bun absent from PATH.
  */
 const execTest = NODE_BIN && process.platform !== "win32" ? test : test.skip;
 
@@ -133,6 +136,20 @@ function runLauncher(args: readonly string[]) {
     stdout: "pipe",
     stderr: "pipe",
   });
+}
+
+function createNativeWindowsLauncherFixture(binary: string): {
+  readonly launcher: string;
+  readonly packageRoot: string;
+} {
+  const packageRoot = mkdtempSync(join(tmpdir(), "kunai-windows-launcher-"));
+  const fixtureLauncher = join(packageRoot, "dist", "kunai.mjs");
+  const fixtureBinary = join(packageRoot, "vendor", "windows-x64", "bin", "kunai.exe");
+  mkdirSync(join(packageRoot, "dist"), { recursive: true });
+  mkdirSync(join(packageRoot, "vendor", "windows-x64", "bin"), { recursive: true });
+  writeFileSync(fixtureLauncher, readFileSync(LAUNCHER_SOURCE, "utf8"));
+  copyFileSync(binary, fixtureBinary);
+  return { launcher: fixtureLauncher, packageRoot };
 }
 
 function createLauncherFixture(packageRoot: string): string {
@@ -194,6 +211,37 @@ execTest("runs under node with no bun on PATH", () => {
   expect(result.exitCode).toBe(0);
   expect(result.stdout.toString()).toBe("--echo-args,hello");
 });
+
+windowsNativeLauncherTest(
+  "runs the staged Windows PE through the Node launcher with Bun absent from PATH",
+  () => {
+    const fixture = createNativeWindowsLauncherFixture(WINDOWS_LAUNCHER_BINARY as string);
+    try {
+      expect(Bun.which("bun", { PATH: noBunPath })).toBeNull();
+      expect(Bun.which("node", { PATH: noBunPath })).not.toBeNull();
+
+      const version = Bun.spawnSync({
+        cmd: ["node", fixture.launcher, "--version"],
+        env: { ...process.env, PATH: noBunPath },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(version.exitCode).toBe(0);
+      expect(version.stdout.toString()).toMatch(/^kunai\s+v?\d/m);
+
+      const help = Bun.spawnSync({
+        cmd: ["node", fixture.launcher, "--help"],
+        env: { ...process.env, PATH: noBunPath },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(help.exitCode).toBe(0);
+      expect(help.stdout.toString().trim()).not.toBe("");
+    } finally {
+      rmSync(fixture.packageRoot, { recursive: true, force: true });
+    }
+  },
+);
 
 execTest("passes the child's exit code through unchanged", () => {
   expect(runLauncher(["--exit-code", "0"]).exitCode).toBe(0);

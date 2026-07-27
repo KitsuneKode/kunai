@@ -1,40 +1,96 @@
 // =============================================================================
 // clipboard.ts — cross-platform clipboard copy/read via the host clipboard tool.
 //
-// macOS: pbcopy/pbpaste · Wayland: wl-copy/wl-paste · X11: xclip. Best-effort —
-// returns false / null when no clipboard tool is available rather than throwing.
+// macOS: pbcopy/pbpaste · Wayland: wl-copy/wl-paste · X11: xclip · Windows:
+// PowerShell's Set-Clipboard/Get-Clipboard. Best-effort — returns false / null
+// when no clipboard tool is available rather than throwing.
 // =============================================================================
 
-function copyCommand(): string[] {
-  if (process.platform === "darwin") return ["pbcopy"];
-  if (process.env["WAYLAND_DISPLAY"]) return ["wl-copy"];
+type ClipboardSpawnOptions = {
+  readonly stdin?: "pipe";
+  readonly stdout?: "pipe" | "ignore";
+  readonly stderr?: "ignore";
+};
+
+type ClipboardProcess = {
+  readonly exited: Promise<number>;
+  readonly stdin?: {
+    write(data: string): void;
+    end(): void;
+  };
+  readonly stdout?: ReadableStream<Uint8Array> | null;
+};
+
+/** Injectable process boundary for deterministic platform clipboard contracts. */
+export type ClipboardRuntime = {
+  readonly platform: NodeJS.Platform;
+  readonly env: NodeJS.ProcessEnv;
+  readonly spawn: (command: readonly string[], options: ClipboardSpawnOptions) => ClipboardProcess;
+};
+
+export const defaultClipboardRuntime: ClipboardRuntime = {
+  platform: process.platform,
+  env: process.env,
+  spawn: (command, options) => Bun.spawn([...command], options) as unknown as ClipboardProcess,
+};
+
+function copyCommand(runtime: ClipboardRuntime): string[] {
+  if (runtime.platform === "win32") {
+    return [
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+    ];
+  }
+  if (runtime.platform === "darwin") return ["pbcopy"];
+  if (runtime.env["WAYLAND_DISPLAY"]) return ["wl-copy"];
   return ["xclip", "-selection", "clipboard"];
 }
 
-function pasteCommand(): string[] {
-  if (process.platform === "darwin") return ["pbpaste"];
-  if (process.env["WAYLAND_DISPLAY"]) return ["wl-paste", "--no-newline"];
+function pasteCommand(runtime: ClipboardRuntime): string[] {
+  if (runtime.platform === "win32") {
+    return [
+      "powershell.exe",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::Out.Write((Get-Clipboard -Raw))",
+    ];
+  }
+  if (runtime.platform === "darwin") return ["pbpaste"];
+  if (runtime.env["WAYLAND_DISPLAY"]) return ["wl-paste", "--no-newline"];
   return ["xclip", "-selection", "clipboard", "-o"];
 }
 
-export async function copyToClipboard(text: string): Promise<boolean> {
+export async function copyToClipboard(
+  text: string,
+  runtime: ClipboardRuntime = defaultClipboardRuntime,
+): Promise<boolean> {
   try {
-    const proc = Bun.spawn(copyCommand(), { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+    const proc = runtime.spawn(copyCommand(runtime), {
+      stdin: "pipe",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    if (!proc.stdin) return false;
     proc.stdin.write(text);
     proc.stdin.end();
-    await proc.exited;
-    return proc.exitCode === 0;
+    return (await proc.exited) === 0;
   } catch {
     return false;
   }
 }
 
-export async function readClipboard(): Promise<string | null> {
+export async function readClipboard(
+  runtime: ClipboardRuntime = defaultClipboardRuntime,
+): Promise<string | null> {
   try {
-    const proc = Bun.spawn(pasteCommand(), { stdout: "pipe", stderr: "ignore" });
+    const proc = runtime.spawn(pasteCommand(runtime), { stdout: "pipe", stderr: "ignore" });
+    if (!proc.stdout) return null;
     const text = await new Response(proc.stdout).text();
-    await proc.exited;
-    return proc.exitCode === 0 ? text : null;
+    return (await proc.exited) === 0 ? text : null;
   } catch {
     return null;
   }

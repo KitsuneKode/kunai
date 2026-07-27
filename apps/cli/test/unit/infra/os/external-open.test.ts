@@ -84,19 +84,22 @@ describe("external-open", () => {
     });
   });
 
-  test("Windows uses cmd start for URLs and explorer /select for paths", async () => {
+  test("Windows passes a metacharacter-rich URL as one opaque explorer argument", async () => {
+    const url = "https://example.com/watch?title=one&next=two#frag%20three";
     const WIN_URL = runtime({
       platform: "win32",
       which: (cmd) =>
-        cmd === "cmd.exe" || cmd === "cmd" ? "C:\\Windows\\System32\\cmd.exe" : null,
+        cmd === "explorer.exe" || cmd === "explorer" ? "C:\\Windows\\explorer.exe" : null,
       spawn: succeedingSpawn([]),
     });
-    const urlResult = await openExternal({ kind: "url", url: "https://example.com" }, WIN_URL);
+    const urlResult = await openExternal({ kind: "url", url }, WIN_URL);
     expect(urlResult).toMatchObject({
       ok: true,
-      command: ["C:\\Windows\\System32\\cmd.exe", "/c", "start", "", "https://example.com"],
+      command: ["C:\\Windows\\explorer.exe", url],
     });
+  });
 
+  test("Windows uses explorer /select for paths", async () => {
     const path = "C:\\Users\\me\\Videos\\show.mkv";
     const WIN_PATH = runtime({
       platform: "win32",

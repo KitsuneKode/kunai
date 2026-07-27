@@ -90,6 +90,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/installer-matrix.yml'
+              - '.github/actions/setup-bun-monorepo/**'
 
   fmt:
     name: Format check
@@ -182,18 +183,20 @@ jobs:
   windows-cli:
     name: Windows CLI parity
     needs: changes
-    if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.cli == 'true' ||
+      needs.changes.outputs.installer == 'true'
     runs-on: windows-latest
     # Blocking. It was `continue-on-error: true` while the Windows suite could
     # not pass, and that is exactly how a kunai.exe which exited 0 printing
     # nothing reached main: the job that would have caught it was advisory. The
     # suite is green on Windows now, so a red result here is a real regression.
     #
-    # The suite is ~2 minutes of real work on Windows; anything approaching this
-    # limit is a hang, not slow tests. Windows minutes bill at 2x, so the bound
-    # stays tight deliberately: the last hang here was install.ps1 shelling out
-    # to a real `winget`, which sat for minutes per package.
-    timeout-minutes: 8
+    # Native mpv provisioning plus the compiled launcher check add bounded real
+    # work. Individual steps retain tight limits so this outer ceiling still
+    # identifies a true hang rather than masking one.
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v5
@@ -204,13 +207,22 @@ jobs:
         with:
           turbo-cache-prefix: windows-cli
 
+      - name: Provision native mpv
+        shell: pwsh
+        timeout-minutes: 8
+        run: |
+          choco install mpvio --yes --no-progress
+          $mpv = (Get-Command mpv.exe -ErrorAction Stop).Source
+          & $mpv --version
+          if ($LASTEXITCODE -ne 0) { throw "mpv --version exited $LASTEXITCODE" }
+
       - name: Typecheck workspaces
         run: bun run typecheck
 
       - name: Test CLI
         # Step-level bound so a wedged suite is attributed here rather than
         # surfacing as an unexplained job cancellation with no failing step.
-        timeout-minutes: 5
+        timeout-minutes: 8
         run: bun run --cwd apps/cli test
 
       - name: Test Windows storage lifecycle
@@ -228,29 +240,20 @@ jobs:
         timeout-minutes: 10
         run: bun run build:binary:host
 
-      - name: Smoke test Windows binary
+      - name: Run the Windows binary through the Node npm launcher
         shell: pwsh
         timeout-minutes: 3
-        run: |
-          $exe = "apps/cli/dist/bin/kunai-windows-x64.exe"
-          if (-not (Test-Path $exe)) { throw "missing $exe" }
-
-          $version = (& $exe --version 2>&1 | Out-String).Trim()
-          Write-Host "kunai --version => '$version'"
-          if ($LASTEXITCODE -ne 0) { throw "--version exited $LASTEXITCODE" }
-          # The empty-output failure mode exits 0, so asserting the exit code is
-          # not enough — require the real version line.
-          if ($version -notmatch '^kunai\s+v?\d') { throw "--version did not print a kunai version" }
-
-          $help = (& $exe --help 2>&1 | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0) { throw "--help exited $LASTEXITCODE" }
-          if ($help.Length -eq 0) { throw "--help printed nothing" }
-          Write-Host "Windows binary smoke ok"
+        env:
+          KUNAI_NPM_LAUNCHER_BINARY: ${{ github.workspace }}/apps/cli/dist/bin/kunai-windows-x64.exe
+        run: bun run --cwd apps/cli test:file -- test/integration/npm-launcher.test.ts
 
   macos-cli:
     name: macOS CLI parity
     needs: changes
-    if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.cli == 'true' ||
+      needs.changes.outputs.installer == 'true'
     # Apple Silicon deliberately, not `macos-13`/Intel. `macos-14` is the arm64
     # runner, and darwin-arm64 is the majority Mac target — an Intel-only leg
     # would green-light the binary most Mac users actually download.
@@ -260,9 +263,9 @@ jobs:
     # that is release time, so every macOS regression stayed invisible on main
     # until a release was already being cut.
     #
-    # macOS minutes bill at 10x, so the bound is tight on purpose. The suite is
-    # a couple of minutes of real work; anything near this limit is a hang.
-    timeout-minutes: 12
+    # mpv is installed deliberately so the native IPC tests are mandatory. The
+    # step limits below keep this wider job ceiling diagnostic rather than lax.
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v5
@@ -273,6 +276,12 @@ jobs:
         with:
           turbo-cache-prefix: macos-cli
 
+      - name: Provision native mpv
+        timeout-minutes: 10
+        run: |
+          brew install mpv
+          mpv --version
+
       - name: Typecheck workspaces
         run: bun run typecheck
 
@@ -282,7 +291,7 @@ jobs:
       # so a GNU-only flag in it is a broken install for every Mac user and
       # the Linux leg cannot see it.
       - name: Test CLI
-        timeout-minutes: 6
+        timeout-minutes: 8
         run: bun run --cwd apps/cli test
 
       - name: Test storage lifecycle

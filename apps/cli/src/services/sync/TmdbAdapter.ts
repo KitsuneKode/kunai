@@ -1,3 +1,4 @@
+import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
@@ -53,7 +54,7 @@ export class TmdbAdapter implements SyncAdapter {
       const authorizeUrl = `${TMDB_AUTHENTICATE_BASE}/${requestToken}`;
       console.log(`\nTMDB authorization URL:\n${authorizeUrl}\n`);
       console.log("After approving, press Enter to continue…");
-      this.openUrl(authorizeUrl);
+      void openExternalUrl(authorizeUrl);
 
       await this.waitForEnterOrTimeout(signal);
 
@@ -166,16 +167,6 @@ export class TmdbAdapter implements SyncAdapter {
         settle();
       });
     });
-  }
-
-  private openUrl(url: string): void {
-    const openers = ["xdg-open", "open", "start"];
-    for (const opener of openers) {
-      if (Bun.which(opener)) {
-        Bun.spawn([opener, url], { stdout: "ignore", stderr: "ignore" });
-        return;
-      }
-    }
   }
 }
 

@@ -1,3 +1,4 @@
+import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
@@ -81,7 +82,7 @@ export class AniListAdapter implements SyncAdapter {
 
     console.log(`\nAniList authorization URL:\n${authorizeUrl}\n`);
     console.log("Opening in browser… (60s timeout)");
-    this.openUrl(authorizeUrl);
+    void openExternalUrl(authorizeUrl);
 
     const code = await callback.code;
     if (!code) {
@@ -225,16 +226,6 @@ export class AniListAdapter implements SyncAdapter {
       throw new Error("OAuth callback server failed to bind a port");
     }
     return { port, code };
-  }
-
-  private openUrl(url: string): void {
-    const openers = ["xdg-open", "open", "start"];
-    for (const opener of openers) {
-      if (Bun.which(opener)) {
-        Bun.spawn([opener, url], { stdout: "ignore", stderr: "ignore" });
-        return;
-      }
-    }
   }
 }
 

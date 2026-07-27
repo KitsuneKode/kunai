@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { describePosixOnly as describe } from "../helpers/platform-gates";
+import { buildPtyCommand } from "../helpers/pty-command";
 
 // Real-process shutdown coverage: spawn the CLI against an isolated shadow XDG
 // profile, deliver a signal, and assert the conventional exit status plus a
@@ -18,6 +19,12 @@ import { describePosixOnly as describe } from "../helpers/platform-gates";
 const repoRoot = resolve(import.meta.dir, "../../../..");
 const tempRoots: string[] = [];
 const spawnedPids: number[] = [];
+const startupTimeoutMs = 45_000;
+const exitTimeoutMs = 10_000;
+// Must exceed every bounded wait in spawnAndSignal. In particular, a slow
+// macOS cold boot is allowed the full startup deadline before the helper can
+// either signal the CLI or report its transcript.
+const testTimeoutMs = startupTimeoutMs + 1_500 + exitTimeoutMs + 5_000;
 
 afterEach(() => {
   for (const pid of spawnedPids.splice(0)) {
@@ -69,7 +76,7 @@ async function spawnAndSignal(
   // the only symptom used to be `kill(): ESRCH` from the signal below, which
   // says nothing about why. The log is what turns that into a real report.
   const transcript = join(shadow.root, "cli.log");
-  const child = Bun.spawn(["script", "-qec", cliCommand, transcript], {
+  const child = Bun.spawn(buildPtyCommand(cliCommand, transcript), {
     cwd: repoRoot,
     stdin: "ignore",
     stdout: "ignore",
@@ -85,7 +92,6 @@ async function spawnAndSignal(
   // slowest of the three. This is a deadline, not a sleep: a fast machine still
   // proceeds the moment both files appear, so raising it costs nothing when
   // boot is quick and only buys headroom when it is not.
-  const startupTimeoutMs = 45_000;
   const startupDeadline = Date.now() + startupTimeoutMs;
   while (Date.now() < startupDeadline && !(existsSync(pidFile) && existsSync(dataDbPath))) {
     await Bun.sleep(100);
@@ -130,30 +136,42 @@ async function spawnAndSignal(
     );
   }
 
-  const exitCode = await Promise.race([child.exited, Bun.sleep(10_000).then(() => -1)]);
+  const exitCode = await Promise.race([child.exited, Bun.sleep(exitTimeoutMs).then(() => -1)]);
   return { exitCode: exitCode as number, dataDbPath };
 }
 
 describe("process shutdown", () => {
-  test("SIGINT exits 130 and leaves the shadow data store readable", async () => {
-    const { exitCode, dataDbPath } = await spawnAndSignal("SIGINT");
-    expect(exitCode).toBe(130);
+  test(
+    "SIGINT exits 130 and leaves the shadow data store readable",
+    async () => {
+      const { exitCode, dataDbPath } = await spawnAndSignal("SIGINT");
+      expect(exitCode).toBe(130);
 
-    const db = new Database(dataDbPath, { readonly: true });
-    const tables = db
-      .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table'")
-      .all();
-    db.close();
-    expect(tables.length).toBeGreaterThan(0);
-  }, 30_000);
+      const db = new Database(dataDbPath, { readonly: true });
+      const tables = db
+        .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table'")
+        .all();
+      db.close();
+      expect(tables.length).toBeGreaterThan(0);
+    },
+    testTimeoutMs,
+  );
 
-  test("SIGTERM exits 143", async () => {
-    const { exitCode } = await spawnAndSignal("SIGTERM");
-    expect(exitCode).toBe(143);
-  }, 30_000);
+  test(
+    "SIGTERM exits 143",
+    async () => {
+      const { exitCode } = await spawnAndSignal("SIGTERM");
+      expect(exitCode).toBe(143);
+    },
+    testTimeoutMs,
+  );
 
-  test("SIGHUP exits 129", async () => {
-    const { exitCode } = await spawnAndSignal("SIGHUP");
-    expect(exitCode).toBe(129);
-  }, 30_000);
+  test(
+    "SIGHUP exits 129",
+    async () => {
+      const { exitCode } = await spawnAndSignal("SIGHUP");
+      expect(exitCode).toBe(129);
+    },
+    testTimeoutMs,
+  );
 });

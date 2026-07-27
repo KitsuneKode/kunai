@@ -4,11 +4,11 @@
 // JSON file persistence using the existing file paths from the legacy code.
 // =============================================================================
 
-import { mkdir, unlink } from "node:fs/promises";
+import { chmod, mkdir, unlink } from "node:fs/promises";
 import os from "node:os";
 import { join, dirname } from "node:path";
 
-import { writeAtomicJson } from "@/infra/fs/atomic-write";
+import { writeAtomicSecretJson, writeAtomicSecretText } from "@/infra/fs/atomic-write";
 
 import type { StorageService } from "./StorageService";
 
@@ -45,6 +45,7 @@ export class FileStorage implements StorageService {
 
     const file = Bun.file(path);
     if (!(await file.exists())) return null;
+    if (process.platform !== "win32") await chmod(path, 0o600);
     try {
       return (await file.json()) as T;
     } catch {
@@ -52,7 +53,7 @@ export class FileStorage implements StorageService {
       const corruptPath = `${path}.corrupt.bak`;
       const parent = dirname(corruptPath);
       if (parent) await mkdir(parent, { recursive: true }).catch(() => {});
-      await Bun.write(corruptPath, await file.text().catch(() => "")).catch(() => {});
+      await writeAtomicSecretText(corruptPath, await file.text().catch(() => "")).catch(() => {});
       return null;
     }
   }
@@ -62,7 +63,7 @@ export class FileStorage implements StorageService {
     if (!path) throw new Error(`Unknown storage key: ${key}`);
 
     const task = this.writeLock.then(async () => {
-      await writeAtomicJson(path, data);
+      await writeAtomicSecretJson(path, data);
       return undefined;
     });
 

@@ -74,9 +74,9 @@ function resolveCommand(
 
   if (platform === "win32") {
     if (target.kind === "url") {
-      const opener = which("cmd.exe") ?? which("cmd");
+      const opener = which("explorer.exe") ?? which("explorer");
       if (!opener) return { ok: false, reason: "opener-not-found" };
-      return { ok: true, command: [opener, "/c", "start", "", target.url] };
+      return { ok: true, command: [opener, target.url] };
     }
     const opener = which("explorer.exe") ?? which("explorer");
     if (!opener) return { ok: false, reason: "opener-not-found" };
