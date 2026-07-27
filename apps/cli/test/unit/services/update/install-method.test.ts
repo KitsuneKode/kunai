@@ -97,9 +97,12 @@ describe("install method detection", () => {
       cwd: REPO_ROOT,
       entrypoint: path.join(REPO_ROOT, "apps/cli/src/main.ts"),
       fileExists(filePath) {
+        // Build the suffix with path.join rather than embedding "/": the real
+        // path is separator-native, so a hardcoded forward slash mid-string
+        // never matched on Windows and detection fell through to "unknown".
         return (
           filePath.endsWith(`${path.sep}package.json`) ||
-          filePath.endsWith(`${path.sep}apps/cli/src/main.ts`) ||
+          filePath.endsWith(path.join(path.sep, "apps", "cli", "src", "main.ts")) ||
           filePath.endsWith(`${path.sep}.git`)
         );
       },

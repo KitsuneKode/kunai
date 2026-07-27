@@ -174,6 +174,23 @@ function linkSignals(signals: readonly AbortSignal[]): AbortSignal {
   return controller.signal;
 }
 
+/**
+ * How long cleanup will wait for a cancelled reader before moving on.
+ *
+ * `ReadableStreamDefaultReader.cancel()` resolves only once the underlying
+ * source acknowledges it, and a source that has stopped producing may never do
+ * so — which is exactly the situation on the stall path. Awaiting it unbounded
+ * meant the stall deadline fired, cleanup began, and the download then hung
+ * forever on the cancel itself: the one failure the deadline exists to bound
+ * became unbounded. Cancel is best-effort cleanup and the error is already in
+ * hand, so give it a moment and continue regardless.
+ */
+const READER_CANCEL_GRACE_MS = 250;
+
+async function cancelReaderBounded(reader: { cancel: () => Promise<unknown> }): Promise<void> {
+  await Promise.race([reader.cancel().catch(() => {}), Bun.sleep(READER_CANCEL_GRACE_MS)]);
+}
+
 function abortReason(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason;
   return new DownloadError("DOWNLOAD_ABORTED", "Download aborted", { retryable: false });
@@ -294,7 +311,7 @@ async function streamResponseToFile(input: {
       }, bytes);
     }
   } catch (error) {
-    await reader.cancel().catch(() => {});
+    await cancelReaderBounded(reader);
     await handle.close().catch(() => {});
     await cleanupPartial(input.destinationPath);
     stall.clear();

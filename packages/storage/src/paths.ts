@@ -32,8 +32,21 @@ export interface KunaiPaths {
  * makes the `platform` option untrustworthy in tests, which is precisely where
  * Windows layout has to be verified from a Linux CI runner.
  */
-function joinerFor(platform: StoragePlatform): (...segments: string[]) => string {
+export function joinerFor(platform: StoragePlatform): (...segments: string[]) => string {
   return platform === "win32" ? win32Path.join : posixPath.join;
+}
+
+/**
+ * Same joiner keyed by a Node platform string, for callers that carry
+ * `NodeJS.Platform` (the installer layout and package-inspection paths both do).
+ * Exported so those callers stop reaching for `node:path` directly: `node:path`
+ * always follows the *host*, so any function that accepts a target platform and
+ * then joins with it silently disagrees with itself off that platform.
+ */
+export function joinerForNodePlatform(
+  platform: NodeJS.Platform,
+): (...segments: string[]) => string {
+  return joinerFor(platform === "win32" ? "win32" : "linux");
 }
 
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {

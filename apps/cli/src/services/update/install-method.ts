@@ -21,7 +21,11 @@ export type DetectInstallMethodInput = {
 };
 
 export function detectInstallMethod(input: DetectInstallMethodInput = {}): InstallMethod {
-  const path = input.platform === "win32" ? win32 : posix;
+  // Default to the host, not to posix. Falling back to posix meant that on
+  // Windows — where `platform` is usually not passed — `path.join` produced
+  // `C:\repo/package.json`, so the source-checkout probes below never matched a
+  // real checkout and every source install reported as "unknown".
+  const path = (input.platform ?? process.platform) === "win32" ? win32 : posix;
   const cwd = path.normalize(input.cwd ?? process.cwd());
   const entrypoint = path.normalize(input.entrypoint ?? process.argv[1] ?? "");
   const normalizedEntrypoint = entrypoint.replaceAll("\\", "/");

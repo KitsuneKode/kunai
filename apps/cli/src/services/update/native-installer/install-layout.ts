@@ -2,7 +2,7 @@ import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
+import { getKunaiPaths, joinerForNodePlatform, type StoragePlatform } from "@kunai/storage";
 
 import { parseCanonicalVersion, type CanonicalVersion } from "../version";
 
@@ -45,7 +45,15 @@ function defaultLauncherPath(platform: NodeJS.Platform = process.platform): stri
   return join(binDir, "kunai");
 }
 
-function binaryFileName(platform: NodeJS.Platform = process.platform): string {
+/**
+ * The launcher's filename on a given platform.
+ *
+ * Exported because it is a real cross-platform contract, not an internal
+ * detail: Windows resolves executables through PATHEXT, so a launcher named
+ * `kunai` with no extension is invisible to PATH lookup there. Anything that
+ * constructs or seeds a launcher path has to agree with this.
+ */
+export function binaryFileName(platform: NodeJS.Platform = process.platform): string {
   return platform === "win32" ? "kunai.exe" : "kunai";
 }
 
@@ -71,18 +79,37 @@ export function getInstallLayoutPaths(
   const dataDir = overrides.dataDir ?? kunai.dataDir;
   const cacheDir = overrides.cacheDir ?? kunai.cacheDir;
   const configDir = overrides.configDir ?? kunai.configDir;
+  // Join for `platform`, not for the host. `node:path` always follows the host,
+  // so asking for a Linux layout from Windows returned `\data\kunai\versions` —
+  // the storage dirs above were already resolved for the target platform, and
+  // the separators then contradicted them.
+  const joinFor = joinerForNodePlatform(platform);
 
   return {
     dataDir,
     cacheDir,
     configDir,
-    versionsDir: join(dataDir, "versions"),
-    locksDir: join(dataDir, "locks"),
-    transactionsDir: join(dataDir, "transactions"),
-    stagingRoot: join(cacheDir, "staging"),
+    versionsDir: joinFor(dataDir, "versions"),
+    locksDir: joinFor(dataDir, "locks"),
+    transactionsDir: joinFor(dataDir, "transactions"),
+    stagingRoot: joinFor(cacheDir, "staging"),
     launcherPath: overrides.launcherPath ?? defaultLauncherPath(platform),
     binaryFileName: binaryFileName(platform),
   };
+}
+
+/**
+ * Joiner matching the layout's own platform, inferred from the directories it
+ * already carries.
+ *
+ * These helpers receive a layout, not a platform, and used `node:path` — which
+ * follows the host. Given a Linux layout on Windows they produced
+ * `\data\kunai\versions\1.2.3\kunai`, contradicting the very layout passed in.
+ * A Windows layout is rooted at a drive (`C:\…`) or a UNC path; nothing else is.
+ */
+function joinerForLayoutPath(anyLayoutDir: string): (...segments: string[]) => string {
+  const isWindowsLayout = /^[A-Za-z]:[\\/]/.test(anyLayoutDir) || anyLayoutDir.startsWith("\\\\");
+  return joinerForNodePlatform(isWindowsLayout ? "win32" : "linux");
 }
 
 /** Absolute path for a versioned binary: `{dataDir}/versions/{semver}/kunai`. */
@@ -91,7 +118,11 @@ export function versionBinaryPath(
   version: string,
 ): string {
   const canonical = requireCanonicalVersion(version);
-  return join(layout.versionsDir, canonical, layout.binaryFileName);
+  return joinerForLayoutPath(layout.versionsDir)(
+    layout.versionsDir,
+    canonical,
+    layout.binaryFileName,
+  );
 }
 
 /** Staging directory for a download: `{cacheDir}/staging/{semver}/`. */
@@ -100,7 +131,7 @@ export function stagingDirForVersion(
   version: string,
 ): string {
   const canonical = requireCanonicalVersion(version);
-  return join(layout.stagingRoot, canonical);
+  return joinerForLayoutPath(layout.stagingRoot)(layout.stagingRoot, canonical);
 }
 
 /**
@@ -155,7 +186,7 @@ export function lockFilePath(
   version: string,
 ): string {
   const canonical = requireCanonicalVersion(version);
-  return join(layout.locksDir, `${canonical}.lock`);
+  return joinerForLayoutPath(layout.locksDir)(layout.locksDir, `${canonical}.lock`);
 }
 
 /** Per-version metadata sidecar: `{dataDir}/versions/{semver}/version.json`. */
@@ -164,7 +195,7 @@ export function versionMetadataPath(
   version: string,
 ): string {
   const canonical = requireCanonicalVersion(version);
-  return join(layout.versionsDir, canonical, "version.json");
+  return joinerForLayoutPath(layout.versionsDir)(layout.versionsDir, canonical, "version.json");
 }
 
 /** Install transaction record: `{dataDir}/transactions/{id}.json`. */
@@ -175,7 +206,7 @@ export function transactionFilePath(
   if (!/^[A-Za-z0-9._-]+$/.test(id)) {
     throw new Error(`Invalid install transaction id: ${id}`);
   }
-  return join(layout.transactionsDir, `${id}.json`);
+  return joinerForLayoutPath(layout.transactionsDir)(layout.transactionsDir, `${id}.json`);
 }
 
 /** True when `execPath` lives under the versioned store. */

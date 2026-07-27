@@ -10,9 +10,14 @@ import {
   formatDoctorReportText,
 } from "@/services/update/native-installer/doctor";
 import {
+  binaryFileName,
   getInstallLayoutPaths,
   versionBinaryPath,
 } from "@/services/update/native-installer/install-layout";
+
+// PATH lookup on Windows goes through PATHEXT, so a bare `kunai` file is never
+// a candidate there. Seed the launcher under the name the platform really uses.
+const LAUNCHER_NAME = binaryFileName();
 import { beginInstallTransaction } from "@/services/update/native-installer/transaction";
 import { writeInstalledVersionMetadata } from "@/services/update/native-installer/version-metadata";
 import type { CapabilitySnapshot } from "@/ui";
@@ -53,7 +58,7 @@ async function makeRoot() {
     dataDir: join(root, "data"),
     cacheDir: join(root, "cache"),
     configDir: join(root, "config"),
-    launcherPath: join(root, "bin", "kunai"),
+    launcherPath: join(root, "bin", LAUNCHER_NAME),
     platform: process.platform === "win32" ? "win32" : "linux",
   });
   await mkdir(layout.versionsDir, { recursive: true });
@@ -146,7 +151,7 @@ async function seedLegacyManifestAndStaleState(
   await mkdir(join(layout.stagingRoot, "2.0.0"), { recursive: true });
   await writeFile(join(layout.stagingRoot, "2.0.0", "partial.bin"), "partial");
 
-  await writeFile(join(root, "bin", "kunai"), "launcher-stub");
+  await writeFile(join(root, "bin", LAUNCHER_NAME), "launcher-stub");
 }
 
 describe("buildDoctorReport", () => {

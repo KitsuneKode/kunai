@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { joinerForNodePlatform } from "@kunai/storage";
+
 import { writeInstallManifest, type WriteInstallManifestInput } from "./install-manifest";
 import { checkInstall, getInstallDiagnostics, installLatest } from "./native-installer";
 import { DEFAULT_DL_BASE } from "./native-installer/install-layout";
@@ -89,6 +91,7 @@ export async function inspectPackageInstall(
   ports: PackageInspectionPorts = defaultInspectionPorts,
 ): Promise<PackageInstallEvidence | null> {
   if (!isPackageInspectionPorts(ports)) return null;
+  const joinFor = joinerForNodePlatform(ports.platform);
   try {
     let packageRoot: string;
     let launcherPath: string;
@@ -102,16 +105,16 @@ export async function inspectPackageInstall(
       const prefix = prefixResult.stdout.trim();
       if (!packageRoot || !prefix) return null;
       launcherPath =
-        ports.platform === "win32" ? join(prefix, "kunai.cmd") : join(prefix, "bin", "kunai");
+        ports.platform === "win32" ? joinFor(prefix, "kunai.cmd") : joinFor(prefix, "bin", "kunai");
     } else {
-      packageRoot = join(ports.bunGlobalDir(), "node_modules");
-      launcherPath = join(
+      packageRoot = joinFor(ports.bunGlobalDir(), "node_modules");
+      launcherPath = joinFor(
         ports.bunGlobalBinDir(),
         ports.platform === "win32" ? "kunai.exe" : "kunai",
       );
     }
 
-    const packagePath = join(packageRoot, "@kitsunekode", "kunai", "package.json");
+    const packagePath = joinFor(packageRoot, "@kitsunekode", "kunai", "package.json");
     const metadata = JSON.parse(await ports.readText(packagePath)) as {
       readonly name?: unknown;
       readonly version?: unknown;

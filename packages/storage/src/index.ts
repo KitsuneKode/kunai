@@ -17,7 +17,7 @@ export type {
   DatabaseMaintenanceResult,
   MaintenanceDatabaseKind,
 } from "./maintenance";
-export { getKunaiPaths } from "./paths";
+export { getKunaiPaths, joinerFor, joinerForNodePlatform } from "./paths";
 export type { KunaiPathOptions, KunaiPaths, StoragePlatform } from "./paths";
 export { openKunaiDatabase } from "./sqlite";
 export type { KunaiDatabase, OpenDatabaseOptions } from "./sqlite";

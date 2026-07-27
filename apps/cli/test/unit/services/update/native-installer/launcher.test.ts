@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readlink, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +26,92 @@ describe("launcher", () => {
     await updateLauncher({ launcherPath, versionPath, platform: "linux" });
     const target = await readlink(launcherPath);
     expect(target).toBe(versionPath);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /**
+   * Windows activation copies rather than symlinks, because a running `.exe`
+   * cannot be replaced in place. These cases pass `platform: "win32"` so they
+   * run everywhere -- the copy path uses no Windows-only syscall, and the
+   * suites that seed with `symlink()` are POSIX-gated and could never cover it.
+   * Activation on Windows was previously untested in either direction.
+   */
+  test("Windows activation copies the versioned binary to the launcher path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-"));
+    const versionPath = join(root, "versions", "1.0.0", "kunai.exe");
+    const launcherPath = join(root, "bin", "kunai.exe");
+    await mkdir(join(root, "versions", "1.0.0"), { recursive: true });
+    await writeFile(versionPath, "V1-BINARY");
+
+    await updateLauncher({ launcherPath, versionPath, platform: "win32" });
+
+    expect(await Bun.file(launcherPath).text()).toBe("V1-BINARY");
+    // A copy, not a link: the version store must survive launcher removal.
+    await rm(launcherPath, { force: true });
+    expect(await Bun.file(versionPath).text()).toBe("V1-BINARY");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows re-activation renames the old launcher aside and installs the new one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-upgrade-"));
+    const launcherPath = join(root, "bin", "kunai.exe");
+    const v1 = join(root, "versions", "1.0.0", "kunai.exe");
+    const v2 = join(root, "versions", "2.0.0", "kunai.exe");
+    await mkdir(join(root, "versions", "1.0.0"), { recursive: true });
+    await mkdir(join(root, "versions", "2.0.0"), { recursive: true });
+    await writeFile(v1, "V1-BINARY");
+    await writeFile(v2, "V2-BINARY");
+
+    await updateLauncher({ launcherPath, versionPath: v1, platform: "win32" });
+    await updateLauncher({ launcherPath, versionPath: v2, platform: "win32" });
+
+    expect(await Bun.file(launcherPath).text()).toBe("V2-BINARY");
+
+    // The rename-aside is what lets an upgrade replace a *running* exe; it must
+    // actually happen, and it must then be reclaimable rather than accumulating.
+    const asides = await readdir(join(root, "bin"));
+    expect(asides.some((entry) => entry.startsWith("kunai.exe.old."))).toBe(true);
+
+    const removed = await removeLauncherCopyAsides(launcherPath);
+    expect(removed.length).toBeGreaterThan(0);
+    expect(await readdir(join(root, "bin"))).toEqual(["kunai.exe"]);
+    expect(await Bun.file(launcherPath).text()).toBe("V2-BINARY");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows activation round-trips into an ownership check the installer trusts", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-owned-"));
+    const versionsDir = join(root, "versions");
+    const versionPath = join(versionsDir, "1.0.0", "kunai.exe");
+    const launcherPath = join(root, "bin", "kunai.exe");
+    await mkdir(join(versionsDir, "1.0.0"), { recursive: true });
+    await writeFile(versionPath, "OWNED-BINARY");
+
+    await updateLauncher({ launcherPath, versionPath, platform: "win32" });
+
+    // Activation and ownership are separate code paths that have to agree:
+    // a launcher this installer just wrote must be one it will later manage.
+    const sha = createHash("sha256").update("OWNED-BINARY").digest("hex");
+    expect(
+      await inspectLauncherOwnership({
+        launcherPath,
+        versionsDir,
+        expectedSha256: sha,
+        platform: "win32",
+      }),
+    ).toBe("managed");
+    expect(
+      await removeLauncherIfVersioned({
+        launcherPath,
+        versionsDir,
+        expectedSha256: sha,
+        platform: "win32",
+      }),
+    ).toBe(true);
+    expect(existsSync(launcherPath)).toBe(false);
 
     await rm(root, { recursive: true, force: true });
   });
