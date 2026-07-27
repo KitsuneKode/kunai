@@ -195,8 +195,6 @@ jobs:
     # to a real `winget`, which sat for minutes per package.
     timeout-minutes: 8
 
-    # Promote this job to blocking only after the native mpv named-pipe smoke
-    # exists and the Windows parity backlog in repo-infrastructure.md is empty.
     steps:
       - uses: actions/checkout@v5
         with:
@@ -214,6 +212,12 @@ jobs:
         # surfacing as an unexplained job cancellation with no failing step.
         timeout-minutes: 5
         run: bun run --cwd apps/cli test
+
+      - name: Test Windows storage lifecycle
+        # SQLite handles and temp-directory teardown have Windows-specific
+        # locking semantics that the Linux package leg cannot exercise.
+        timeout-minutes: 2
+        run: bun run --cwd packages/storage test
 
       # The Linux legs build and smoke a binary; Windows did not, and that gap
       # shipped a kunai.exe that exited 0 printing nothing — `import.meta.main`

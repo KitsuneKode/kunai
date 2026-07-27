@@ -493,7 +493,7 @@ shows what you're watching:
 | ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.   | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
 | **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)             | Downloads still work; integrity check is skipped.                                    |
-| **chafa**           | Optional richer poster previews (Sixel/ANSI) in terminals without Kitty graphics.              | Built-in half-block poster fallback still works.                                     |
+| **chafa**           | Optional richer text-mode poster previews in terminals without a usable graphics protocol.     | Built-in sixel or half-block rendering still works.                                  |
 | **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                 | Posters work but may fail on unusual formats.                                        |
 | **Discord desktop** | Rich Presence via local Unix-socket / named-pipe IPC — shows "Watching Kunai" on your profile. | No Discord integration.                                                              |
 | **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                          | Half-block fallback (chafa optional for richer output).                              |
@@ -504,8 +504,8 @@ shows what you're watching:
 | ---------------------- | -------------------- | ---------------------------------------------- |
 | Kitty                  | Native               | Best quality, no extra tools                   |
 | Ghostty                | Kitty-compatible     | Same as Kitty                                  |
-| WezTerm                | Sixel via chafa      | Optional `chafa`; half-block works without it  |
-| Windows Terminal 1.22+ | Sixel via chafa      | Optional `chafa`; half-block works without it  |
+| WezTerm                | Built-in Sixel       | No external renderer                           |
+| Windows Terminal 1.22+ | Built-in Sixel       | No external renderer                           |
 | Everything else        | Half-block (default) | Built-in; optional `chafa` for richer previews |
 | Non-TTY / unsupported  | None                 | No posters                                     |
 
@@ -600,7 +600,7 @@ missing; everything else keeps working.
 
 **No poster previews.**
 Kitty and Ghostty render natively. Elsewhere Kunai uses a built-in **half-block**
-fallback; **chafa** is optional for richer Sixel/ANSI output. Check `/diagnostics`
+fallback; **chafa** is optional for richer text-mode output. Check `/diagnostics`
 for the detected renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging.
 
 **How do I update?**

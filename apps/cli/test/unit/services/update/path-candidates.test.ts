@@ -61,4 +61,23 @@ describe("findKunaiPathCandidates", () => {
       }),
     ).toHaveLength(1);
   });
+
+  test("normalizes whitespace and quoted Windows PATH directories", () => {
+    const directory = "C:\\Program Files\\Kunai";
+    expect(
+      findKunaiPathCandidates({
+        pathValue: `  "${directory}" ; C:\\missing `,
+        pathExt: ".EXE",
+        platform: "win32",
+        fileExists: (path) => path.toLowerCase() === `${directory}\\kunai.exe`.toLowerCase(),
+      }),
+    ).toEqual([
+      {
+        path: `${directory}\\kunai.exe`,
+        directory,
+        rank: 0,
+        extension: ".exe",
+      },
+    ]);
+  });
 });

@@ -25,7 +25,12 @@ export function findKunaiPathCandidates(input: {
   const seenCandidates = new Set<string>();
   const seenDirectories = new Set<string>();
 
-  for (const directory of input.pathValue.split(isWindows ? ";" : ":")) {
+  for (const rawDirectory of input.pathValue.split(isWindows ? ";" : ":")) {
+    const trimmedDirectory = rawDirectory.trim();
+    const directory =
+      isWindows && trimmedDirectory.startsWith('"') && trimmedDirectory.endsWith('"')
+        ? trimmedDirectory.slice(1, -1)
+        : trimmedDirectory;
     if (!directory) continue;
 
     const normalizedDirectory = path.normalize(directory);

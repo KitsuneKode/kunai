@@ -18,7 +18,7 @@ Setup, provider runtime notes, and troubleshooting live in [quickstart.md](./qui
 
 Examples below use `bun run dev --` for copy-paste safety in development.
 
-Source installs require Bun during beta. The CLI uses Bun runtime APIs directly, so installing dependencies with npm and running under plain Node is not a supported source path. The preferred future path for non-developer onboarding is a packaged binary.
+Source installs require Bun during beta. The CLI uses Bun runtime APIs directly, so installing dependencies with npm and running under plain Node is not a supported source path. Compiled binaries are the preferred end-user path and embed the Bun runtime.
 
 ---
 
@@ -145,12 +145,13 @@ These are useful for docs parity so users do not search for a `--history` flag.
 
 ### Update checks
 
-Kunai may run a cached background update check at startup. The check is non-blocking, records diagnostics, and never runs package-manager or installer commands. `/ update` performs a manual check and shows guidance based on the detected install method:
+Kunai may run a cached background update check at startup. The check is non-blocking and records diagnostics. A versioned native binary install may invoke Kunai's internal checksum-verified transactional installer; npm, Bun, and source channels never run package-manager commands in the background. `/update` performs a manual check and shows guidance based on the detected install method:
 
 - source checkout: `git pull`, then refresh dependencies/build as needed
 - Bun global install: `bun update --global @kitsunekode/kunai`
 - npm global install: `npm install -g @kitsunekode/kunai`
-- packaged binary: download the latest release manually
+- packaged binary: `kunai upgrade` performs a checksum-verified transactional
+  install; background auto-apply can stage it for the next restart
 
 Automatic checks can be snoozed for seven days or disabled from the `/ update` panel. Manual `/ update` remains available even when automatic checks are disabled.
 

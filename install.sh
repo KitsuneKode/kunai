@@ -532,10 +532,24 @@ detect_musl() {
 }
 
 path_hint() {
-	local dir="$1"
+	local dir="$1" shell_name rc_file
 	case ":$PATH:" in
 	*":$dir:"*) info "kunai is on PATH ($dir)." ;;
-	*) warn "Add to PATH: export PATH=\"$dir:\$PATH\"" ;;
+	*)
+		warn "$dir is not on PATH yet."
+		info "Current shell: export PATH=\"$dir:\$PATH\""
+		shell_name="$(basename "${SHELL:-sh}")"
+		case "$shell_name" in
+		zsh) rc_file="~/.zshrc" ;;
+		bash) rc_file="~/.bashrc" ;;
+		fish)
+			info "Persist for fish: fish_add_path $dir"
+			return
+			;;
+		*) rc_file="~/.profile" ;;
+		esac
+		info "Persist it: add 'export PATH=\"$dir:\$PATH\"' to $rc_file, then open a new shell."
+		;;
 	esac
 }
 
@@ -869,11 +883,9 @@ install_optional_deps() {
 	local pkgs=()
 	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
 	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
-	# Defaults to yes: chafa is the sixel encoder. Without it a sixel-capable
-	# terminal silently falls back to half-block, which fits two pixels per cell
-	# -- roughly a hundredth of the pixels -- so posters look blocky for no
-	# reason the user can see. Posters still work without it; they just look bad.
-	ask "Install chafa (sharp terminal posters)?" y && pkgs+=(chafa)
+	# Sixel and half-block are encoded in-process. chafa is useful only as an
+	# optional richer text-mode fallback (including tmux/screen without passthrough).
+	ask "Install chafa (richer text-mode poster fallback)?" n && pkgs+=(chafa)
 	((${#pkgs[@]} == 0)) && return
 
 	if have brew; then

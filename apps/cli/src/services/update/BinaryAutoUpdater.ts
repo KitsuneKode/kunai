@@ -1,6 +1,6 @@
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 
-import { readInstallManifest } from "./install-manifest";
+import { isVersionedBinaryManifest, readInstallManifest } from "./install-manifest";
 import { installLatest, type InstallLatestResult } from "./native-installer/install-latest";
 import { resolveLatestVersion } from "./resolve-latest-version";
 import { shouldRunUpdateCheck, updateCheckCachePatch } from "./update-check-cache";
@@ -50,13 +50,18 @@ type BinaryAutoUpdateDeps = {
   readonly config: Pick<ConfigService, "getRaw" | "update" | "save">;
   readonly currentVersion: string;
   readonly now?: () => number;
+  readonly readInstallManifest?: typeof readInstallManifest;
+  readonly getPendingRestartVersion?: (currentVersion: string) => Promise<string | null>;
+  readonly resolveLatestVersion?: typeof resolveLatestVersion;
+  readonly installLatest?: typeof installLatest;
 };
 
 const BACKGROUND_INTERVAL_MS = 30 * 60 * 1000;
-let intervalHandle: ReturnType<typeof setInterval> | null = null;
-let lastBackgroundRun = 0;
 
 export class BinaryAutoUpdater {
+  private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private lastBackgroundRun = 0;
+
   constructor(private readonly deps: BinaryAutoUpdateDeps) {}
 
   async runOnce(options: { force?: boolean } = {}): Promise<BinaryAutoUpdateResult> {
@@ -68,18 +73,20 @@ export class BinaryAutoUpdater {
     });
     if (gate) return gate;
 
-    const manifest = await readInstallManifest();
-    if (manifest?.method !== "binary" && !manifest?.versionedPath) {
+    const manifest = await (this.deps.readInstallManifest ?? readInstallManifest)();
+    if (!manifest || !isVersionedBinaryManifest(manifest)) {
       return { status: "disabled" };
     }
 
-    const pending = await getPendingRestartVersion(this.deps.currentVersion);
+    const pending = await (this.deps.getPendingRestartVersion ?? getPendingRestartVersion)(
+      this.deps.currentVersion,
+    );
     if (pending) {
       return { status: "pending-restart", version: pending };
     }
 
     try {
-      const latest = await resolveLatestVersion("binary");
+      const latest = await (this.deps.resolveLatestVersion ?? resolveLatestVersion)("binary");
       if (!latest) {
         throw new Error("Could not resolve latest version");
       }
@@ -93,7 +100,9 @@ export class BinaryAutoUpdater {
         return { status: "up-to-date" };
       }
 
-      const result: InstallLatestResult = await installLatest({ version: latest });
+      const result: InstallLatestResult = await (this.deps.installLatest ?? installLatest)({
+        version: latest,
+      });
       if (result.status === "installed") {
         return { status: "installed", version: result.version };
       }
@@ -114,23 +123,23 @@ export class BinaryAutoUpdater {
     }
   }
 
-  startBackground(): void {
-    void this.runOnce().catch(() => {});
-    if (intervalHandle) return;
-    intervalHandle = setInterval(() => {
+  startBackground(options: { readonly runImmediately?: boolean } = {}): void {
+    if (options.runImmediately !== false) void this.runOnce().catch(() => {});
+    if (this.intervalHandle) return;
+    this.intervalHandle = setInterval(() => {
       const now = Date.now();
-      if (now - lastBackgroundRun < BACKGROUND_INTERVAL_MS) return;
-      lastBackgroundRun = now;
+      if (now - this.lastBackgroundRun < BACKGROUND_INTERVAL_MS) return;
+      this.lastBackgroundRun = now;
       void this.runOnce().catch(() => {});
     }, BACKGROUND_INTERVAL_MS);
-    intervalHandle.unref?.();
+    this.intervalHandle.unref?.();
   }
 
   /** Stop future background update checks. Idempotent; used during shutdown. */
   stopBackground(): void {
-    if (!intervalHandle) return;
-    clearInterval(intervalHandle);
-    intervalHandle = null;
+    if (!this.intervalHandle) return;
+    clearInterval(this.intervalHandle);
+    this.intervalHandle = null;
   }
 
   async setAutoApply(enabled: boolean): Promise<void> {

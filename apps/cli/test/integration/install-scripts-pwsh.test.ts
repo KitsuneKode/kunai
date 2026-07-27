@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 
 import {
   createInstallerSandbox,
@@ -132,10 +132,10 @@ describePwsh("install.ps1 dry-run", () => {
     try {
       // Deliberately no -SkipDeps: this case exists to prove the dependency plan
       // is reached. -DryRun keeps it a plan, so no winget process is spawned.
-      const result = runInstallPs1(["-DryRun", "-Yes", "-Version", "9.8.7"], {
-        ...sandbox.env,
-        PATH: `${sandbox.root}${delimiter}${process.env.PATH ?? ""}`,
-      });
+      const result = runInstallPs1(
+        ["-DryRun", "-Yes", "-Version", "9.8.7"],
+        withCommandPath(sandbox.env, sandbox.root),
+      );
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("winget install --id mpv.net -e");
@@ -171,6 +171,7 @@ describePwsh("install.ps1 release asset failures", () => {
 
           expect(result.status).toBe(0);
           expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
+          expect(result.stdout).toContain("PATH activation is environment-managed");
           expect(evidence.requests).toEqual([
             "/releases/latest",
             "/download/v9.8.7/SHA256SUMS",
@@ -577,10 +578,10 @@ describePwsh("install.ps1 package activeVersion", () => {
         windows: "@echo off\r\nexit /b 17\r\n",
       });
 
-      const result = runInstallPs1(["-Method", "npm", "-Yes", "-Version", "4.5.6"], {
-        ...sandbox.env,
-        PATH: `${shimDir}${delimiter}${process.env.PATH ?? ""}`,
-      });
+      const result = runInstallPs1(
+        ["-Method", "npm", "-Yes", "-Version", "4.5.6"],
+        withCommandPath(sandbox.env, shimDir),
+      );
 
       expect(result.status).not.toBe(0);
       expect(`${result.stderr}${result.stdout}`).toContain("exit code 17");

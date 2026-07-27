@@ -71,6 +71,10 @@ export function createInstallerSandbox(name: string) {
       KUNAI_DATA_DIR: dataDir,
       KUNAI_CONFIG_DIR: configDir,
       KUNAI_CACHE_DIR: cacheDir,
+      // Redirecting filesystem roots does not redirect HKCU\Environment. Every
+      // successful binary fixture used to append this temporary bin directory
+      // to the developer's real User PATH and then delete it during cleanup.
+      KUNAI_SKIP_PATH_UPDATE: "1",
     } as NodeJS.ProcessEnv,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };

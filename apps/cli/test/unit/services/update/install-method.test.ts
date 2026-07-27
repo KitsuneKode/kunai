@@ -150,6 +150,25 @@ describe("install method detection", () => {
     ).toBe("bun-global");
   });
 
+  test("matches Windows package paths and script extensions case-insensitively", () => {
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint:
+          "C:\\USERS\\K\\APPDATA\\ROAMING\\NPM\\NODE_MODULES\\@KITSUNEKODE\\KUNAI\\DIST\\KUNAI.JS",
+        platform: "win32",
+      }).kind,
+    ).toBe("npm-global");
+
+    expect(
+      detectInstallMethod({
+        cwd: "C:\\Users\\k",
+        entrypoint: "C:\\Users\\k\\scripts\\kunai.TS",
+        platform: "win32",
+      }).kind,
+    ).toBe("unknown");
+  });
+
   test("detects Windows source checkouts with Windows path operations", () => {
     const cwd = "C:\\Users\\k\\src\\kunai";
     const sourceFiles = new Set([

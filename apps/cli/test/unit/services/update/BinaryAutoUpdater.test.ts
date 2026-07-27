@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { BinaryAutoUpdater, resolveAutoUpdateGate } from "@/services/update/BinaryAutoUpdater";
+import type { InstallManifest } from "@/services/update/install-manifest";
 
 function updater(
   raw: Record<string, unknown> = { updateChecksEnabled: false, autoApplyBinaryUpdates: false },
@@ -24,6 +25,101 @@ describe("BinaryAutoUpdater.stopBackground", () => {
     // Restarting after stop must be possible (interval handle was cleared).
     instance.startBackground();
     instance.stopBackground();
+  });
+
+  test("can arm the interval without duplicating an already-completed startup check", () => {
+    let manifestReads = 0;
+    const instance = new BinaryAutoUpdater({
+      config: {
+        getRaw: () =>
+          ({
+            updateChecksEnabled: true,
+            autoApplyBinaryUpdates: true,
+            updateSnoozedUntil: 0,
+            updateCheckIntervalDays: 7,
+            lastUpdateCheckAt: 0,
+            lastUpdateCheckFailedAt: 0,
+          }) as never,
+        update: async () => {},
+        save: async () => {},
+      },
+      currentVersion: "0.3.0",
+      readInstallManifest: async () => {
+        manifestReads += 1;
+        return binaryManifest();
+      },
+    });
+
+    instance.startBackground({ runImmediately: false });
+    instance.stopBackground();
+    expect(manifestReads).toBe(0);
+  });
+});
+
+describe("BinaryAutoUpdater.runOnce", () => {
+  const enabled = {
+    updateChecksEnabled: true,
+    autoApplyBinaryUpdates: true,
+    updateSnoozedUntil: 0,
+    updateCheckIntervalDays: 7,
+    lastUpdateCheckAt: 0,
+    lastUpdateCheckFailedAt: 0,
+  };
+
+  test("downloads and activates a newer native binary through the transactional installer", async () => {
+    const patches: unknown[] = [];
+    let installedVersion = "";
+    const instance = new BinaryAutoUpdater({
+      config: {
+        getRaw: () => enabled as never,
+        update: async (patch) => {
+          patches.push(patch);
+        },
+        save: async () => {},
+      },
+      currentVersion: "0.3.0",
+      now: () => 123_000,
+      readInstallManifest: async () => binaryManifest(),
+      getPendingRestartVersion: async () => null,
+      resolveLatestVersion: async () => "0.4.0",
+      installLatest: async (options) => {
+        installedVersion = options?.version ?? "";
+        return {
+          status: "installed",
+          version: options?.version ?? "",
+          versionPath: "C:\\Users\\k\\AppData\\Local\\kunai\\versions\\0.4.0\\kunai.exe",
+        };
+      },
+    });
+
+    await expect(instance.runOnce()).resolves.toEqual({ status: "installed", version: "0.4.0" });
+    expect(installedVersion).toBe("0.4.0");
+    expect(patches).toContainEqual(
+      expect.objectContaining({ lastUpdateCheckAt: 123_000, lastKnownLatestVersion: "0.4.0" }),
+    );
+  });
+
+  test("refuses auto-apply when another install method merely contains a versioned path", async () => {
+    let resolvedLatest = false;
+    const instance = new BinaryAutoUpdater({
+      config: {
+        getRaw: () => enabled as never,
+        update: async () => {},
+        save: async () => {},
+      },
+      currentVersion: "0.3.0",
+      readInstallManifest: async () => ({
+        ...binaryManifest(),
+        method: "npm-global",
+      }),
+      resolveLatestVersion: async () => {
+        resolvedLatest = true;
+        return "0.4.0";
+      },
+    });
+
+    await expect(instance.runOnce()).resolves.toEqual({ status: "disabled" });
+    expect(resolvedLatest).toBe(false);
   });
 });
 
@@ -95,3 +191,18 @@ describe("resolveAutoUpdateGate", () => {
     ).toBeNull();
   });
 });
+
+function binaryManifest(): InstallManifest {
+  return {
+    schemaVersion: 1,
+    method: "binary",
+    activeVersion: "0.3.0",
+    preferredChannel: "stable",
+    launcherPath: "C:\\Users\\k\\AppData\\Local\\kunai\\bin\\kunai.exe",
+    versionedPath: "C:\\Users\\k\\AppData\\Local\\kunai\\versions\\0.3.0\\kunai.exe",
+    managedPaths: [],
+    downloadBaseUrl: "https://github.com/KitsuneKode/kunai/releases/download",
+    installedAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:00:00.000Z",
+  };
+}

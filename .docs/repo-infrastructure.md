@@ -125,13 +125,12 @@ Compiled binaries never ship on npm; `pkg:check` enforces an allowlist and size 
 
 ### Windows parity
 
-`windows-cli` is an intentionally non-blocking `windows-latest` signal. It runs the
-workspace typecheck and the CLI unit/integration suite, including a Windows-only
-assertion for the mpv named-pipe endpoint. It becomes a required check only when:
-
-- a native mpv named-pipe smoke test exercises connect, command, and close;
-- the first Windows runs have no remaining platform-specific failures; and
-- the backlog below is empty.
+`windows-cli` is a blocking `windows-latest` job. It runs the workspace
+typecheck, the CLI unit/integration suite, the storage package suite (including
+Windows SQLite teardown), and a compiled Windows-binary smoke.
+The mpv endpoint suite always checks the Windows pipe spelling; its native
+bind/connect/command tests run when `mpv` is present and otherwise report a
+skip because mpv is a user-installed runtime dependency.
 
 Closed: the parity leg now builds a Windows host binary and smoke-tests
 `--version` / `--help` on it. That gap had shipped a `kunai.exe` which exited 0
@@ -144,21 +143,20 @@ the failure mode exits 0, so an exit-code check alone would not have caught it.
 
 Open Windows parity backlog:
 
-- Add a native mpv named-pipe smoke; the current test locks endpoint construction,
-  but does not launch mpv or prove `Bun.connect` interoperability. This is how
-  the endpoint shipped as `//./pipe/...`, a spelling mpv accepts silently and
-  never binds — every connect failed, playback looked dead, and the session fell
-  back and launched additional mpv processes for a stream already playing. The
-  endpoint is now `\\.\pipe\...` and the unit test takes `platform` as a
-  parameter so Linux CI checks the Windows contract too, but nothing yet proves
-  interoperability against a real mpv.
-- Promote `windows-cli` to a required check. It is still `continue-on-error`,
-  which is why the failures above were invisible on green runs.
+- Decide whether CI should install mpv so
+  `test/integration/mpv-ipc-endpoint-native.test.ts` is required rather than
+  skipped. The test already launches real mpv and proves bind, connect, command,
+  and close on any host where mpv is installed; the unit contract still checks
+  the Windows spelling from every platform.
 - Windows-only test isolation is easy to get wrong in ways POSIX hides. Two
   shared helpers exist for the cases already found — `test/helpers/temp-store.ts`
   (close database handles before removing a temp dir; Windows refuses to delete
   open files) and `test/helpers/storage-env.ts` (redirect storage roots on every
   platform, not just via `XDG_*`, which Windows ignores).
+- Native rollback activation/refusal still has POSIX-only symlink fixtures. The
+  install transaction and launcher-copy paths now run on Windows, but rollback
+  needs equivalent copy-and-rename transaction cases before release-grade
+  updater parity is complete.
 
 **Local pipeline verification**
 

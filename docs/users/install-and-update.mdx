@@ -41,6 +41,11 @@ curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh |
 
 If a release asset is missing or empty, the installer prints recovery options (`--method npm`, `--method bun`, `--method source`, or pin `--version X.Y.Z`).
 
+If `~/.local/bin` is not already on `PATH`, the installer prints the current-shell
+`export` plus the correct persistent command for bash, zsh, fish, or a generic
+profile. It reports the actual PATH winner but does not rewrite shell startup
+files automatically.
+
 Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`.
 
 </Tab>
@@ -50,7 +55,11 @@ Supported binary targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-a
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 ```
 
-Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, adds that directory to your **User** PATH, and records the install channel in `%APPDATA%\kunai\install.json`.
+Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`.
+
+Open a new terminal after installation if `kunai` is not visible yet. The
+installer also prints the resolved PATH winner so an older npm/Bun shim cannot
+silently shadow the native binary.
 
 Supported binary targets: `windows-x64`, `windows-arm64`.
 
@@ -136,27 +145,27 @@ Manual check from the shell:
 
 The update panel shows install-method-aware guidance:
 
-| Install method | Typical update path |
-| --- | --- |
+| Install method   | Typical update path                                           |
+| ---------------- | ------------------------------------------------------------- |
 | Binary (default) | `kunai upgrade` or background auto-apply (restart to pick up) |
-| Source checkout | Pull the repository, refresh dependencies/build as needed |
-| Bun global | `bun update --global @kitsunekode/kunai` or `kunai upgrade` |
-| npm global | `npm install -g @kitsunekode/kunai` or `kunai upgrade` |
+| Source checkout  | Pull the repository, refresh dependencies/build as needed     |
+| Bun global       | `bun update --global @kitsunekode/kunai` or `kunai upgrade`   |
+| npm global       | `npm install -g @kitsunekode/kunai` or `kunai upgrade`        |
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
 ## Platform support matrix (0.3.0)
 
-| Target | Status |
-| --- | --- |
-| `linux-x64`, `linux-arm64` (glibc) | **Supported** |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported** |
-| `darwin-x64`, `darwin-arm64` | **Beta** |
-| `windows-x64` | **Beta** |
-| `windows-arm64` | **Experimental** |
-| WSL | Linux binary + Linux mpv/PATH/data — not Windows-native |
-| FreeBSD / other BSD | **Unsupported** binary — npm/bun/source only |
-| Code signing / notarization | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
+| Target                                        | Status                                                                     |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                              |
+| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                              |
+| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                   |
+| `windows-x64`                                 | **Beta**                                                                   |
+| `windows-arm64`                               | **Experimental**                                                           |
+| WSL                                           | Linux binary + Linux mpv/PATH/data — not Windows-native                    |
+| FreeBSD / other BSD                           | **Unsupported** binary — npm/bun/source only                               |
+| Code signing / notarization                   | Not in beta scope — see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 ### Alpine / musl quick start
 
@@ -169,13 +178,13 @@ kunai --setup
 
 ### Windows-native vs WSL
 
-| Concern | Windows-native | WSL |
-| --- | --- | --- |
-| Installer | `install.ps1` | Linux `install.sh` inside the distro |
-| Binary | `kunai.exe` under `%LOCALAPPDATA%\kunai\bin` | `~/.local/bin/kunai` (Linux) |
-| Player | Windows `mpv.exe` on User PATH | Linux `mpv` on WSL PATH |
-| Config / data | `%APPDATA%\kunai`, `%LOCALAPPDATA%\kunai` | `~/.config/kunai`, `~/.local/share/kunai` |
-| Protocol handler | Not registered — use `kunai --open` | Linux-only registration available |
+| Concern          | Windows-native                               | WSL                                       |
+| ---------------- | -------------------------------------------- | ----------------------------------------- |
+| Installer        | `install.ps1`                                | Linux `install.sh` inside the distro      |
+| Binary           | `kunai.exe` under `%LOCALAPPDATA%\kunai\bin` | `~/.local/bin/kunai` (Linux)              |
+| Player           | Windows `mpv.exe` on User PATH               | Linux `mpv` on WSL PATH                   |
+| Config / data    | `%APPDATA%\kunai`, `%LOCALAPPDATA%\kunai`    | `~/.config/kunai`, `~/.local/share/kunai` |
+| Protocol handler | Not registered — use `kunai --open`          | Linux-only registration available         |
 
 Do not point a Windows-native Kunai at WSL `mpv`, or a WSL Kunai at Windows PATH entries.
 

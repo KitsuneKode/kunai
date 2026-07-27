@@ -23,7 +23,10 @@ param(
   # is what automated environments want: winget can sit for minutes on package
   # downloads or agreement prompts, and a test asserting Kunai's own install has
   # no business waiting for it.
-  [switch]$SkipDeps = $([bool]($env:KUNAI_SKIP_DEPS -match '^(?i:1|true|yes|y)$'))
+  [switch]$SkipDeps = $([bool]($env:KUNAI_SKIP_DEPS -match '^(?i:1|true|yes|y)$')),
+  # Useful for managed/test environments that own PATH themselves. Without
+  # this seam an otherwise sandboxed installer still writes HKCU\Environment.
+  [switch]$SkipPathUpdate = $([bool]($env:KUNAI_SKIP_PATH_UPDATE -match '^(?i:1|true|yes|y)$'))
 )
 
 $ErrorActionPreference = 'Stop'
@@ -519,12 +522,21 @@ function Add-UserPath([string]$Dir) {
   # it visible are both Windows-only; there is no persistent equivalent to
   # update elsewhere, and reading the target throws off-Windows.
   if (-not $OnWindows) { return }
+  if ($SkipPathUpdate) {
+    Write-Info "Skipping persistent User PATH update for $Dir."
+    return
+  }
   $current = [Environment]::GetEnvironmentVariable('Path', 'User')
-  if (($current -split ';') -notcontains $Dir) {
-    $next = if ([string]::IsNullOrEmpty($current)) { $Dir } else { "$current;$Dir" }
+  $entries = @($current -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  $alreadyPresent = @($entries | ForEach-Object { $_.Trim().Trim('"').TrimEnd('\\') }) -contains $Dir.TrimEnd('\\')
+  if (-not $alreadyPresent) {
+    # A native install should be the command the user just installed. Put its
+    # directory before older npm/Bun shims while leaving those files and their
+    # package-manager ownership untouched.
+    $next = if ($entries.Count -eq 0) { $Dir } else { (@($Dir) + $entries) -join ';' }
     if ($DryRun) { Write-Info "[dry-run] would add $Dir to User PATH"; return }
     [Environment]::SetEnvironmentVariable('Path', $next, 'User')
-    $env:Path = "$env:Path;$Dir"
+    $env:Path = "$Dir;$env:Path"
     Broadcast-EnvironmentChange
     Write-Info "Added $Dir to your User PATH (new shells pick it up automatically)."
   }
@@ -545,7 +557,7 @@ function Get-KunaiPathCandidates {
   $candidates = New-Object 'System.Collections.Generic.List[string]'
 
   foreach ($pathEntry in ($pathValue -split ';')) {
-    $directory = $pathEntry.Trim()
+    $directory = $pathEntry.Trim().Trim('"')
     if ([string]::IsNullOrWhiteSpace($directory)) { continue }
 
     foreach ($extension in $pathExtensions) {
@@ -685,15 +697,13 @@ function Install-OptionalDeps {
     }
   }
 
-  # Poster quality depends entirely on this. Kunai decodes images in-process and
-  # can always fall back to half-block, but the sharp sixel output people expect
-  # from a modern terminal file manager needs chafa as the encoder — and Windows
-  # Terminal has shipped sixel support since 1.22.
+  # Sixel and half-block are encoded in-process. chafa is only an optional richer
+  # text-mode fallback for terminals that cannot use a graphics protocol.
   if (Test-Cmd 'chafa') { return }
-  $installChafa = $true
+  $installChafa = [bool]$Yes
   if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
-    $reply = Read-Host 'Install chafa (sharper poster previews)? [Y/n]'
-    if ($reply -match '^[Nn]') { $installChafa = $false }
+    $reply = Read-Host 'Install chafa (richer text-mode poster fallback)? [y/N]'
+    if ($reply -match '^[Yy]') { $installChafa = $true }
   }
   if (-not $installChafa) { return }
   if (Test-Cmd 'winget') {
@@ -704,7 +714,7 @@ function Install-OptionalDeps {
     Invoke-OptionalStep 'scoop install chafa' { scoop install chafa }
     return
   }
-  Write-Warn 'No winget/scoop found. Posters will use the built-in half-block renderer.'
+  Write-Warn 'No winget/scoop found. Posters will use built-in sixel or half-block rendering.'
 }
 
 function Install-Binary {
@@ -833,6 +843,12 @@ function Install-Binary {
 
   Add-UserPath $BinDir
   Write-KunaiPathDiagnostic $BinPath
+  if ($SkipPathUpdate) {
+    Write-Info "PATH activation is environment-managed; ensure $BinDir is present before running kunai."
+  }
+  else {
+    Write-Info "PATH activation: new terminals inherit $BinDir. Reopen the terminal if this shell cannot find kunai."
+  }
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
 }
 

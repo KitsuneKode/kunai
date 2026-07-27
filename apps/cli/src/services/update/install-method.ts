@@ -25,10 +25,13 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
   // Windows — where `platform` is usually not passed — `path.join` produced
   // `C:\repo/package.json`, so the source-checkout probes below never matched a
   // real checkout and every source install reported as "unknown".
-  const path = (input.platform ?? process.platform) === "win32" ? win32 : posix;
+  const platform = input.platform ?? process.platform;
+  const path = platform === "win32" ? win32 : posix;
   const cwd = path.normalize(input.cwd ?? process.cwd());
   const entrypoint = path.normalize(input.entrypoint ?? process.argv[1] ?? "");
   const normalizedEntrypoint = entrypoint.replaceAll("\\", "/");
+  const comparableEntrypoint =
+    platform === "win32" ? normalizedEntrypoint.toLowerCase() : normalizedEntrypoint;
   const fileExists = input.fileExists ?? (() => false);
   const managedContext = readManagedPackageContext(input.env);
 
@@ -46,17 +49,17 @@ export function detectInstallMethod(input: DetectInstallMethodInput = {}): Insta
     return { kind: "source", label: "Source checkout" };
   }
 
-  if (normalizedEntrypoint.includes("/.bun/install/global/")) {
+  if (comparableEntrypoint.includes("/.bun/install/global/")) {
     return { kind: "bun-global", label: "Bun global" };
   }
 
-  if (normalizedEntrypoint.includes("/node_modules/@kitsunekode/kunai/")) {
+  if (comparableEntrypoint.includes("/node_modules/@kitsunekode/kunai/")) {
     return { kind: "npm-global", label: "npm global" };
   }
 
   if (
     input.packagedBinary ||
-    (!normalizedEntrypoint.endsWith(".js") && !normalizedEntrypoint.endsWith(".ts"))
+    (!comparableEntrypoint.endsWith(".js") && !comparableEntrypoint.endsWith(".ts"))
   ) {
     return { kind: "binary", label: "Packaged binary" };
   }
