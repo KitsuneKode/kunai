@@ -28,14 +28,24 @@ export function newMpvIpcSessionId(): string {
 /**
  * Per-session mpv IPC location.
  * - Unix: UDS file under the temp dir (Bun.env, not node:os).
- * - Windows: named pipe using `//./pipe/...` so the same path works for mpv and for
- *   `Bun.connect({ unix: path })` (Bun’s supported pipe spelling; see Bun #14329).
+ * - Windows: named pipe in the canonical Win32 spelling, `\\.\pipe\...`.
+ *
+ * The spelling is not cosmetic. mpv accepts only the backslash form for
+ * `--input-ipc-server`; handed `//./pipe/NAME` it starts normally, reports no
+ * error, and simply never creates the pipe. Kunai then failed every connect
+ * attempt, read that as a dead player, and fell back — launching a second and
+ * third mpv for a stream that was already playing. `Bun.connect({ unix })`
+ * accepts either spelling, so the backslash form is the one that satisfies both
+ * ends (verified against mpv on Windows for each combination).
  */
-export function createMpvIpcEndpoint(sessionId: string): MpvIpcEndpoint {
-  if (process.platform === "win32") {
+export function createMpvIpcEndpoint(
+  sessionId: string,
+  platform: NodeJS.Platform = process.platform,
+): MpvIpcEndpoint {
+  if (platform === "win32") {
     return {
       kind: "windows_pipe",
-      path: `//./pipe/kunai-mpv-${ipcPipeSuffix(sessionId)}`,
+      path: `\\\\.\\pipe\\kunai-mpv-${ipcPipeSuffix(sessionId)}`,
     };
   }
   return {
@@ -59,7 +69,11 @@ export function mpvIpcTransportTag(endpoint: MpvIpcEndpoint): "unix" | "pipe" {
 /** Appended to ipc-bootstrap failures (shell diagnostics + PlaybackPhase player notes). */
 export function mpvIpcBootstrapDiagnosticsHintSuffix(): string {
   if (process.platform === "win32") {
-    return " Windows: Bun uses a duplex named pipe (//./pipe/…). Use native Windows mpv on PATH in the same environment as Bun (not WSL↔host split).";
+    // Spell the pipe the way mpv requires. This hint used to print the
+    // forward-slash form, which is precisely the spelling mpv accepts and never
+    // binds -- so the troubleshooting text pointed at the bug as if it were the
+    // fix.
+    return " Windows: Bun uses a duplex named pipe (\\\\.\\pipe\\…). Use native Windows mpv on PATH in the same environment as Bun (not WSL↔host split).";
   }
   return " Unix: IPC is a socket under TMPDIR/TMP; check permissions and stale .sock files.";
 }
