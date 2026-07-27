@@ -173,7 +173,7 @@ test("isOfflineNetworkFailure only matches bounded reliable signatures", () => {
   ).toBe(false);
 });
 
-test("ENOTFOUND stops cross-provider fallback", async () => {
+test("ENOTFOUND from one provider does not stop cross-provider fallback", async () => {
   const attempted: string[] = [];
   const events: Array<{ type: string }> = [];
 
@@ -243,6 +243,8 @@ test("ENOTFOUND stops cross-provider fallback", async () => {
   );
 
   expect(result.result).toBeNull();
-  expect(attempted).toEqual(["vidking"]);
-  expect(events.some((event) => event.type === "provider-fallback-started")).toBe(false);
+  // One unreachable domain is weak evidence; the next provider still gets tried
+  // and the handoff is visible in the event stream.
+  expect(attempted).toContain("rivestream");
+  expect(events.some((event) => event.type === "provider-fallback-started")).toBe(true);
 });

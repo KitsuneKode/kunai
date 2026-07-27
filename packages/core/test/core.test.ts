@@ -1078,7 +1078,7 @@ test("ProviderEngine falls back to the next provider after provider-local networ
   });
 });
 
-test("ProviderEngine stops cross-provider fallback on reliable offline signatures", async () => {
+test("ProviderEngine keeps falling back after a single provider's offline signature", async () => {
   let primaryAttempts = 0;
   let fallbackAttempts = 0;
   const offlineProvider: CoreProviderModule = {
@@ -1144,13 +1144,306 @@ test("ProviderEngine stops cross-provider fallback on reliable offline signature
 
   expect(resolved.result).toBeNull();
   expect(resolved.providerId).toBeNull();
-  expect(primaryAttempts).toBe(1);
-  expect(fallbackAttempts).toBe(0);
-  expect(resolved.attempts).toHaveLength(1);
+  // Offline evidence caps the provider's own budget at 2 attempts, but one
+  // unreachable domain is not proof the uplink is down — fallback still runs.
+  expect(primaryAttempts).toBe(2);
+  expect(fallbackAttempts).toBeGreaterThan(0);
+  expect(resolved.attempts).toHaveLength(2);
   expect(resolved.attempts[0]?.failure).toMatchObject({
     code: "network-error",
     message: "getaddrinfo ENOTFOUND api.example.test",
   });
+});
+
+test("ProviderEngine halts fallback once distinct providers agree the uplink is down", async () => {
+  const attempted: string[] = [];
+  const events: ProviderEngineEvent[] = [];
+
+  const offlineModule = (id: string): CoreProviderModule => ({
+    providerId: id as never,
+    manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
+    async resolve() {
+      attempted.push(id);
+      throw new Error(`getaddrinfo ENOTFOUND ${id}.example.test`);
+    },
+  });
+  const unreached: CoreProviderModule = {
+    providerId: "unreached" as never,
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "unreached",
+      displayName: "Unreached",
+    }),
+    async resolve() {
+      attempted.push("unreached");
+      throw new Error("must not be reached");
+    },
+  };
+
+  const engine = createProviderEngine({
+    modules: [offlineModule("offline-a"), offlineModule("offline-b"), unreached],
+    maxAttempts: 3,
+    retryDelayMs: 0,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["offline-a", "offline-b", "unreached"] as never,
+    undefined,
+    (event) => events.push(event),
+  );
+
+  expect(resolved.result).toBeNull();
+  expect(attempted).not.toContain("unreached");
+  const halted = events.find((event) => event.type === "provider-fallback-halted");
+  expect(halted).toMatchObject({
+    type: "provider-fallback-halted",
+    reason: "offline",
+    fromProviderId: "offline-b",
+    skippedProviderIds: ["unreached"],
+  });
+});
+
+test("ProviderEngine offline evidence resets when a provider reaches the network", async () => {
+  const attempted: string[] = [];
+
+  const offline = (id: string): CoreProviderModule => ({
+    providerId: id as never,
+    manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
+    async resolve() {
+      attempted.push(id);
+      throw new Error(`getaddrinfo ENOTFOUND ${id}.example.test`);
+    },
+  });
+  const reachable: CoreProviderModule = {
+    providerId: "reachable" as never,
+    manifest: defineProviderManifest({
+      ...vidkingManifest,
+      id: "reachable",
+      displayName: "Reachable",
+    }),
+    async resolve() {
+      attempted.push("reachable");
+      throw new Error("HTTP 503 Service Unavailable");
+    },
+  };
+
+  const engine = createProviderEngine({
+    modules: [offline("offline-a"), reachable, offline("offline-b"), offline("offline-c")],
+    maxAttempts: 1,
+    retryDelayMs: 0,
+  });
+
+  await engine.resolveWithFallback(
+    {
+      title: { id: "123", kind: "movie", title: "Demo" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    ["offline-a", "reachable", "offline-b", "offline-c"] as never,
+  );
+
+  // The reachable provider proves the uplink works, so offline-a's evidence is
+  // discarded and offline-b/-c must both fail before the chain halts.
+  expect(attempted).toEqual(["offline-a", "reachable", "offline-b", "offline-c"]);
+});
+
+type HedgeLog = {
+  started: string[];
+  aborted: string[];
+  concurrent: number;
+  peakConcurrent: number;
+};
+
+const hedgeLog = (): HedgeLog => ({
+  started: [],
+  aborted: [],
+  concurrent: 0,
+  peakConcurrent: 0,
+});
+
+function hedgeModule(
+  id: string,
+  behaviour: { readonly delayMs: number; readonly succeeds: boolean },
+  log: HedgeLog,
+): CoreProviderModule {
+  return {
+    providerId: id as never,
+    manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
+    async resolve(input, context) {
+      log.started.push(id);
+      log.concurrent += 1;
+      log.peakConcurrent = Math.max(log.peakConcurrent, log.concurrent);
+      try {
+        // Abort-aware wait: a real provider hands the signal to fetch, so a
+        // cancelled candidate stops immediately rather than running to term.
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, behaviour.delayMs);
+          context.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              log.aborted.push(id);
+              reject(new Error(`${id} aborted`));
+            },
+            { once: true },
+          );
+        });
+      } finally {
+        log.concurrent -= 1;
+      }
+      if (!behaviour.succeeds) throw new Error(`${id} failed`);
+      return {
+        status: "resolved",
+        providerId: id,
+        selectedStreamId: `stream:${id}`,
+        streams: [
+          {
+            id: `stream:${id}`,
+            providerId: id,
+            url: `https://cdn.example/${id}.m3u8`,
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: `trace:${id}`,
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      } as never;
+    },
+  };
+}
+
+const HEDGE_INPUT = {
+  title: { id: "123", kind: "movie", title: "Demo" },
+  mediaKind: "movie",
+  intent: "play",
+  allowedRuntimes: ["direct-http"],
+} as const;
+
+test("hedged fallback returns a faster candidate while the primary is still running", async () => {
+  const log = hedgeLog();
+  const engine = createProviderEngine({
+    modules: [
+      hedgeModule("slow-primary", { delayMs: 5_000, succeeds: true }, log),
+      hedgeModule("fast-hedge", { delayMs: 20, succeeds: true }, log),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 30,
+  });
+
+  const started = Date.now();
+  const resolved = await engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-primary", "fast-hedge"] as never,
+  );
+
+  expect(resolved.providerId).toBe("fast-hedge" as never);
+  // Sequential fallback would have waited out the primary's full 5s.
+  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(log.started).toEqual(["slow-primary", "fast-hedge"]);
+});
+
+test("hedged fallback aborts losing candidates once a winner appears", async () => {
+  const log = hedgeLog();
+  const engine = createProviderEngine({
+    modules: [
+      hedgeModule("slow-primary", { delayMs: 3_000, succeeds: true }, log),
+      hedgeModule("fast-hedge", { delayMs: 20, succeeds: true }, log),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 30,
+  });
+
+  await engine.resolveWithFallback(HEDGE_INPUT as never, ["slow-primary", "fast-hedge"] as never);
+  await Bun.sleep(50);
+
+  expect(log.aborted).toContain("slow-primary");
+});
+
+test("hedged fallback honours the concurrency cap", async () => {
+  const log = hedgeLog();
+  const engine = createProviderEngine({
+    modules: [
+      hedgeModule("a", { delayMs: 400, succeeds: false }, log),
+      hedgeModule("b", { delayMs: 400, succeeds: false }, log),
+      hedgeModule("c", { delayMs: 400, succeeds: false }, log),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 10,
+    maxConcurrentCandidates: 2,
+  });
+
+  const resolved = await engine.resolveWithFallback(HEDGE_INPUT as never, ["a", "b", "c"] as never);
+
+  expect(resolved.result).toBeNull();
+  expect(log.peakConcurrent).toBe(2);
+  // All three eventually run, and attempts come back in candidate order even
+  // though they settle concurrently.
+  expect(resolved.attempts.map((attempt) => attempt.providerId)).toEqual(["a", "b", "c"] as never);
+});
+
+test("hedged fallback still halts on cross-provider offline evidence", async () => {
+  const started: string[] = [];
+  const offline = (id: string): CoreProviderModule => ({
+    providerId: id as never,
+    manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
+    async resolve() {
+      started.push(id);
+      throw new Error(`getaddrinfo ENOTFOUND ${id}.example.test`);
+    },
+  });
+
+  const events: ProviderEngineEvent[] = [];
+  const engine = createProviderEngine({
+    modules: [offline("off-a"), offline("off-b"), offline("off-c")],
+    maxAttempts: 1,
+    hedgeDelayMs: 20,
+    maxConcurrentCandidates: 2,
+  });
+
+  await engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["off-a", "off-b", "off-c"] as never,
+    undefined,
+    (event) => events.push(event),
+  );
+
+  expect(started).not.toContain("off-c");
+  expect(events.some((event) => event.type === "provider-fallback-halted")).toBe(true);
+});
+
+test("hedging stays off by default so provider priority is authoritative", async () => {
+  const log = hedgeLog();
+  const engine = createProviderEngine({
+    modules: [
+      hedgeModule("slow-primary", { delayMs: 60, succeeds: true }, log),
+      hedgeModule("fast-secondary", { delayMs: 1, succeeds: true }, log),
+    ],
+    maxAttempts: 1,
+  });
+
+  const resolved = await engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-primary", "fast-secondary"] as never,
+  );
+
+  expect(resolved.providerId).toBe("slow-primary" as never);
+  expect(log.started).toEqual(["slow-primary"]);
 });
 
 test("ProviderEngine timeout failures preserve partial provider trace events", async () => {
