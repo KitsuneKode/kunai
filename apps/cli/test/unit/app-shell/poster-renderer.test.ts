@@ -11,6 +11,7 @@ import type { ImageCapability } from "@/image";
 import { hasNativeImage } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
+import { fakeChafaProcess } from "../../support/fake-chafa";
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalRuntime = {
@@ -126,12 +127,7 @@ describe("app-shell poster renderer", () => {
   test("returns text result for chafa fallback capability", async () => {
     rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
     rendererTesting.runtime.which = () => "/usr/bin/chafa";
-    rendererTesting.runtime.spawn = () =>
-      ({
-        stdout: new Response("ASCII_PREVIEW\n").body,
-        stderr: new Response("").body,
-        exited: Promise.resolve(0),
-      }) as unknown as Bun.Subprocess;
+    rendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
 
     const result = await renderPoster(pngBytes(), { rows: 3, cols: 6, allowKitty: true });
     expect(result.kind).toBe("text");
@@ -262,12 +258,7 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
     rendererTesting.runtime.which = (command: string) =>
       command === "chafa" ? "/usr/bin/chafa" : null;
-    rendererTesting.runtime.spawn = () =>
-      ({
-        stdout: new Response("JPEG_FALLBACK\n").body,
-        stderr: new Response("").body,
-        exited: Promise.resolve(0),
-      }) as unknown as Bun.Subprocess;
+    rendererTesting.runtime.spawn = () => fakeChafaProcess("JPEG_FALLBACK\n").proc;
     process.stdout.write = (() => true) as typeof process.stdout.write;
 
     // Truncated JPEG SOI — undecodable in-process and unconvertible.
@@ -305,6 +296,64 @@ describe("app-shell poster renderer", () => {
     expect(second.kind).toBe("kitty");
     expect(writes.join("")).not.toContain("d=A");
     expect(writes.join("")).toContain("a=T,f=100");
+  });
+});
+
+describe("chafa encoder stdin", () => {
+  /**
+   * Regression: the shell wrote the image to chafa's stdin only when that stdin
+   * looked like a `WritableStream` (`getWriter`). Bun actually hands back a
+   * `FileSink` (`write`/`end`), so nothing was written and — the part that hurt
+   * — the pipe was never closed. chafa waited on stdin forever, `proc.exited`
+   * never settled, and the poster sat in its loading state until the user quit.
+   *
+   * It only bit machines that *had* chafa: without it the renderer returns early
+   * and half-block paints fine, so installing the better encoder was what made
+   * posters disappear entirely. Both shapes are asserted because the bug was
+   * believing there is only one.
+   */
+  for (const shape of ["sink", "stream"] as const) {
+    test(`sends the image and closes the pipe when stdin is a ${shape}`, async () => {
+      const fake = fakeChafaProcess("SYMBOLS", shape);
+      rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
+      rendererTesting.runtime.which = () => "/usr/bin/chafa";
+      rendererTesting.runtime.spawn = () => fake.proc;
+
+      const jpeg = makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+      const result = await renderPoster(jpeg.buffer as ArrayBuffer, { rows: 4, cols: 8 });
+
+      expect(result).toMatchObject({ kind: "text", placeholder: "SYMBOLS" });
+      // An encoder that is sent nothing, or never sees EOF, hangs forever.
+      expect(fake.state().bytes).toBe(jpeg.byteLength);
+      expect(fake.state().closed).toBe(true);
+    });
+  }
+
+  test("falls back to half-block when the image cannot reach the encoder", async () => {
+    let killed = false;
+    rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
+    rendererTesting.runtime.which = () => "/usr/bin/chafa";
+    rendererTesting.runtime.spawn = () =>
+      ({
+        // Neither shape: the writer cannot hand over the image at all.
+        stdin: null,
+        stdout: new Response("").body,
+        stderr: new Response("").body,
+        exited: new Promise<number>(() => {}),
+        kill: () => {
+          killed = true;
+        },
+      }) as unknown as Bun.Subprocess;
+
+    const result = await renderPoster(
+      makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]).buffer as ArrayBuffer,
+      { rows: 4, cols: 8 },
+    );
+
+    // A poster is decoration: it degrades to the in-process renderer rather
+    // than holding the UI open on a child that will never exit.
+    expect(result.kind).toBe("text");
+    expect(killed).toBe(true);
   });
 });
 

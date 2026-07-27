@@ -12,6 +12,8 @@ import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer"
 import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
+import { fakeChafaProcess } from "../../support/fake-chafa";
+
 const originalFetch = globalThis.fetch;
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
 const originalRendererDetect = posterRendererTesting.runtime.detectImageCapability;
@@ -108,12 +110,7 @@ describe("app-shell image pane cache", () => {
     paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
     posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
     posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () =>
-      ({
-        stdout: new Response("ASCII_PREVIEW\n").body,
-        stderr: new Response("").body,
-        exited: Promise.resolve(0),
-      }) as unknown as Bun.Subprocess;
+    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
 
     const first = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
     undisplayRenderedPosterImages();
@@ -145,12 +142,7 @@ describe("app-shell image pane cache", () => {
     paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
     posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
     posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () =>
-      ({
-        stdout: new Response("ASCII_PREVIEW\n").body,
-        stderr: new Response("").body,
-        exited: Promise.resolve(0),
-      }) as unknown as Bun.Subprocess;
+    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
     const textResult = await fetchPoster("/abc.jpg", { rows: 4, cols: 8, allowKitty: true });
     expect(textResult.kind).toBe("text");
   });

@@ -224,6 +224,65 @@ function isWritableStream(value: unknown): value is WritableStream<Uint8Array> {
   return Boolean(value && typeof (value as WritableStream<Uint8Array>).getWriter === "function");
 }
 
+/** Bun's `FileSink`, which is what a spawned child's piped stdin actually is. */
+type ChildStdinSink = {
+  write: (chunk: Uint8Array) => unknown;
+  end: () => unknown;
+};
+
+function isFileSink(value: unknown): value is ChildStdinSink {
+  const sink = value as ChildStdinSink | null;
+  return Boolean(sink && typeof sink.write === "function" && typeof sink.end === "function");
+}
+
+/**
+ * Send the encoder its image and close the pipe.
+ *
+ * Bun hands a spawned child's piped stdin back as a `FileSink` (`write`/`end`),
+ * not a `WritableStream` (`getWriter`). Testing only for `getWriter` meant this
+ * silently wrote nothing and, worse, never closed the pipe -- chafa sat waiting
+ * on stdin that would never end, `proc.exited` never settled, and the poster
+ * stayed in its loading state forever. The spinner ran until the user quit, and
+ * only on machines that *had* chafa: without it the code returns early and the
+ * half-block fallback paints normally, so installing the better encoder was what
+ * broke posters entirely.
+ *
+ * Closing is the part that must not be skipped, so it happens in `finally`.
+ */
+async function writeImageToEncoder(stdin: unknown, data: ArrayBuffer): Promise<boolean> {
+  const bytes = new Uint8Array(data);
+  try {
+    if (isWritableStream(stdin)) {
+      const writer = stdin.getWriter();
+      try {
+        await writer.write(bytes);
+      } finally {
+        await writer.close().catch(() => {});
+      }
+      return true;
+    }
+    if (isFileSink(stdin)) {
+      try {
+        stdin.write(bytes);
+      } finally {
+        stdin.end();
+      }
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How long the shell will wait on the external encoder before painting without
+ * it. A poster is decoration; the UI must never be hostage to a child process
+ * that does not exit. On timeout the caller falls through to the in-process
+ * half-block renderer, which needs no subprocess at all.
+ */
+const CHAFA_RENDER_TIMEOUT_MS = 3_000;
+
 async function renderChafaSymbols(
   data: ArrayBuffer,
   rows: number,
@@ -247,22 +306,29 @@ async function renderChafaSymbols(
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
   );
 
-  try {
-    const stdin = proc.stdin;
-    if (isWritableStream(stdin)) {
-      const writer = stdin.getWriter();
-      await writer.write(new Uint8Array(data));
-      await writer.close();
-    }
-  } catch {
-    // best-effort
+  if (!(await writeImageToEncoder(proc.stdin, data))) {
+    // Never leave a child blocked on a pipe we are not going to write.
+    proc.kill();
+    debugImage("chafa symbols: could not write image to encoder stdin");
+    return { kind: "none" };
   }
 
-  const [stdoutBuf, stderrBuf, exitCode] = await Promise.all([
-    new Response(proc.stdout as ReadableStream | null).arrayBuffer(),
-    new Response(proc.stderr as ReadableStream | null).arrayBuffer(),
-    proc.exited,
+  const collected = await Promise.race([
+    Promise.all([
+      new Response(proc.stdout as ReadableStream | null).arrayBuffer(),
+      new Response(proc.stderr as ReadableStream | null).arrayBuffer(),
+      proc.exited,
+    ]),
+    Bun.sleep(CHAFA_RENDER_TIMEOUT_MS).then(() => null),
   ]);
+
+  if (!collected) {
+    proc.kill();
+    debugImage(`chafa symbols timed out after ${CHAFA_RENDER_TIMEOUT_MS}ms; using half-block`);
+    return { kind: "none" };
+  }
+
+  const [stdoutBuf, stderrBuf, exitCode] = collected;
 
   if (exitCode !== 0) {
     const stderrText = stderrBuf.byteLength ? new TextDecoder().decode(stderrBuf).trim() : "";
