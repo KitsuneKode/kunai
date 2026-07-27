@@ -136,12 +136,17 @@ test("restore resets in-flight, places contiguous block, and returns restored id
 });
 
 /**
- * Enqueueing several items in one burst — "add whole season" — gives every row
- * the same `added_at`, because that column only has millisecond precision.
+ * Enqueueing several items in one burst — "add whole season" — can give every
+ * row the same `added_at`, because that column only has millisecond precision.
  * `queue_position` is NULL until something reorders, and `priority` defaults to
- * 0, so without a final tiebreak the sort keys tie completely and SQLite may
- * return the set in any order. It returned insertion order on Linux and a
- * different order on macOS, which is how this surfaced.
+ * 0, so the sort keys tie completely and SQLite may return the set in any
+ * order. It returned insertion order on Linux and a different order on macOS,
+ * which is how this surfaced.
+ *
+ * The tie is forced rather than raced. Relying on five inserts landing inside
+ * one millisecond is exactly the kind of timing assumption that passes on one
+ * machine and fails on another — which is the bug this test exists for, so the
+ * test must not reproduce it.
  */
 test("queue order is deterministic when every sort key ties", () => {
   const db = stores.store("queue-tiebreak", "data");
@@ -164,14 +169,17 @@ test("queue order is deterministic when every sort key ties", () => {
     });
   }
 
-  // Precondition: this is only meaningful while the timestamps really do tie.
-  // If enqueue ever gains sub-millisecond precision this still passes, but it
-  // would no longer be exercising the tiebreak.
+  // Collapse every timestamp onto one value: the exact state a fast burst
+  // produces, now guaranteed instead of hoped for.
+  db.query("UPDATE playlist_queue SET added_at = ? WHERE session_id = ?").run(
+    "2026-07-20T09:00:00.000Z",
+    "session",
+  );
   const stamps = db
     .query<{ added_at: string }, []>("SELECT added_at FROM playlist_queue")
     .all()
     .map((row) => row.added_at);
-  expect(new Set(stamps).size).toBeLessThan(stamps.length);
+  expect(new Set(stamps).size).toBe(1);
 
   expect(repo.getAll("session").map((item) => item.titleId)).toEqual(ids);
   expect(repo.getUnplayed("session").map((item) => item.titleId)).toEqual(ids);
