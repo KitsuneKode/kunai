@@ -12,10 +12,18 @@
 [CmdletBinding()]
 param(
   [ValidateSet('binary', 'npm', 'bun', 'source')]
-  [string]$Method = 'binary',
-  [string]$Version = 'latest',
-  [switch]$Yes,
-  [switch]$DryRun
+  [string]$Method = $(if ($env:KUNAI_INSTALL_METHOD) { $env:KUNAI_INSTALL_METHOD } else { 'binary' }),
+  [string]$Version = $(if ($env:KUNAI_INSTALL_VERSION) { $env:KUNAI_INSTALL_VERSION } else { 'latest' }),
+  # `irm ... | iex` cannot pass parameters, so every switch also has an
+  # environment fallback. Matched inline because a param default is evaluated
+  # before any function in this file exists.
+  [switch]$Yes = $([bool]($env:KUNAI_INSTALL_YES -match '^(?i:1|true|yes|y)$')),
+  [switch]$DryRun = $([bool]($env:KUNAI_INSTALL_DRY_RUN -match '^(?i:1|true|yes|y)$')),
+  # Parity with install.sh's --skip-deps. Installs Kunai and nothing else, which
+  # is what automated environments want: winget can sit for minutes on package
+  # downloads or agreement prompts, and a test asserting Kunai's own install has
+  # no business waiting for it.
+  [switch]$SkipDeps = $([bool]($env:KUNAI_SKIP_DEPS -match '^(?i:1|true|yes|y)$'))
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +70,13 @@ function Test-CanonicalVersion([string]$Value) {
 
 function Get-NormalizedVersion([string]$Value) {
   $trimmed = $Value.Trim()
+  # Release tags are not all spelled `vX.Y.Z`. Changesets publishes package tags
+  # as `@scope/name@X.Y.Z`, and a tag in that shape used to fail here as
+  # "Invalid version" — which reads as a bad -Version argument rather than the
+  # tag format it actually is. Take the version off the end of a package tag.
+  if ($trimmed -match '^@?[^@]*@(?<ver>\d+\.\d+\.\d+)$') {
+    $trimmed = $Matches['ver']
+  }
   if ($trimmed.StartsWith('v') -or $trimmed.StartsWith('V')) {
     $trimmed = $trimmed.Substring(1)
   }
@@ -535,6 +550,24 @@ function Get-KunaiPathCandidates {
       }
       if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
 
+      # Report the name as it exists on disk, not as PATHEXT spells it. PATHEXT
+      # is conventionally uppercase (".CMD"), and building the path from it
+      # printed "kunai.CMD" for a file actually named "kunai.cmd". Windows
+      # resolves either, so the shim still worked — but the diagnostic is meant
+      # to be pasted into a shell and compared against `Get-Command kunai -All`,
+      # and a path whose case does not match the real file undermines exactly
+      # that. Case-insensitive de-duplication below is unaffected.
+      try {
+        $onDisk = [System.IO.Directory]::GetFiles(
+          [System.IO.Path]::GetDirectoryName($candidate),
+          [System.IO.Path]::GetFileName($candidate)
+        )
+        if ($onDisk.Length -gt 0) { $candidate = $onDisk[0] }
+      }
+      catch {
+        # Keep the constructed path when the directory cannot be enumerated.
+      }
+
       $canonicalKey = $candidate.ToLowerInvariant()
       if ($seen.ContainsKey($canonicalKey)) { continue }
       $seen[$canonicalKey] = $true
@@ -571,6 +604,10 @@ function Write-KunaiPathDiagnostic {
 }
 
 function Install-OptionalDeps {
+  if ($SkipDeps) {
+    Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl, chafa).'
+    return
+  }
   $installMpv = $true
   if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
     $reply = Read-Host 'Install mpv (required for playback)? [Y/n]'
@@ -578,10 +615,10 @@ function Install-OptionalDeps {
   }
   if ($installMpv) {
     if (Test-Cmd 'winget') {
-      Invoke-Step 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
+      Invoke-OptionalStep 'winget install --id mpv.net -e' { winget install --id mpv.net -e --accept-package-agreements --accept-source-agreements }
     }
     elseif (Test-Cmd 'scoop') {
-      Invoke-Step 'scoop install mpv' { scoop install mpv }
+      Invoke-OptionalStep 'scoop install mpv' { scoop install mpv }
     }
     else {
       Write-Warn 'No winget/scoop found. Install mpv manually: https://mpv.io/installation/'
@@ -593,16 +630,74 @@ function Install-OptionalDeps {
     $reply = Read-Host 'Install yt-dlp (YouTube playback and downloads)? [Y/n]'
     if ($reply -match '^[Nn]') { $installYtDlp = $false }
   }
-  if (-not $installYtDlp) { return }
+  if ($installYtDlp) {
+    if (Test-Cmd 'winget') {
+      Invoke-OptionalStep 'winget install yt-dlp' { winget install yt-dlp --accept-package-agreements --accept-source-agreements }
+    }
+    elseif (Test-Cmd 'scoop') {
+      Invoke-OptionalStep 'scoop install yt-dlp' { scoop install yt-dlp }
+    }
+    else {
+      Write-Warn 'No winget/scoop found. Install yt-dlp manually: https://github.com/yt-dlp/yt-dlp#installation'
+    }
+  }
+
+  # Windows 10+ ships curl.exe in System32, so "is curl present" is the wrong
+  # question here — the bundled build uses Schannel with no nghttp2, so it
+  # reports no HTTP2 feature. Providers that negotiate HTTP/2 fall back or fail
+  # against that build, so offer the full winget/scoop curl when the one on PATH
+  # cannot do HTTP/2.
+  $curlNeedsUpgrade = $false
+  if (Test-Cmd 'curl') {
+    try {
+      $curlFeatures = (& curl.exe --version 2>$null) -join "`n"
+      $curlNeedsUpgrade = -not ($curlFeatures -match 'HTTP2')
+    }
+    catch { $curlNeedsUpgrade = $true }
+  }
+  else {
+    $curlNeedsUpgrade = $true
+  }
+  if ($curlNeedsUpgrade) {
+    $installCurl = $true
+    if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
+      Write-Warn 'The curl on PATH has no HTTP/2 support (Windows ships a Schannel build).'
+      $reply = Read-Host 'Install full curl with HTTP/2 (recommended for providers)? [Y/n]'
+      if ($reply -match '^[Nn]') { $installCurl = $false }
+    }
+    if ($installCurl) {
+      if (Test-Cmd 'winget') {
+        Invoke-OptionalStep 'winget install curl' { winget install --id cURL.cURL -e --accept-package-agreements --accept-source-agreements }
+      }
+      elseif (Test-Cmd 'scoop') {
+        Invoke-OptionalStep 'scoop install curl' { scoop install curl }
+      }
+      else {
+        Write-Warn 'No winget/scoop found. Install curl manually: https://curl.se/windows/'
+      }
+    }
+  }
+
+  # Poster quality depends entirely on this. Kunai decodes images in-process and
+  # can always fall back to half-block, but the sharp sixel output people expect
+  # from a modern terminal file manager needs chafa as the encoder — and Windows
+  # Terminal has shipped sixel support since 1.22.
+  if (Test-Cmd 'chafa') { return }
+  $installChafa = $true
+  if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
+    $reply = Read-Host 'Install chafa (sharper poster previews)? [Y/n]'
+    if ($reply -match '^[Nn]') { $installChafa = $false }
+  }
+  if (-not $installChafa) { return }
   if (Test-Cmd 'winget') {
-    Invoke-Step 'winget install yt-dlp' { winget install yt-dlp --accept-package-agreements --accept-source-agreements }
+    Invoke-OptionalStep 'winget install chafa' { winget install --id hpjansson.Chafa -e --accept-package-agreements --accept-source-agreements }
     return
   }
   if (Test-Cmd 'scoop') {
-    Invoke-Step 'scoop install yt-dlp' { scoop install yt-dlp }
+    Invoke-OptionalStep 'scoop install chafa' { scoop install chafa }
     return
   }
-  Write-Warn 'No winget/scoop found. Install yt-dlp manually: https://github.com/yt-dlp/yt-dlp#installation'
+  Write-Warn 'No winget/scoop found. Posters will use the built-in half-block renderer.'
 }
 
 function Install-Binary {
@@ -751,6 +846,36 @@ function Invoke-Step([string]$Description, [scriptblock]$Action) {
   $exitCode = $global:LASTEXITCODE
   if ($null -ne $exitCode -and $exitCode -ne 0) {
     throw "$Description failed with exit code $exitCode."
+  }
+  Write-Host 'Done.' -ForegroundColor Green
+}
+
+# Optional dependencies must never fail the Kunai install.
+#
+# They are installed *after* Kunai is already on disk with its manifest written,
+# so throwing here reported a completed install as a failure. winget makes that
+# easy to hit: asked to install a package that is already present it prints "No
+# available upgrade found" and exits -1978335189, which is not an error for our
+# purposes at all. Rather than enumerate winget's status codes, treat every
+# optional step as best-effort and tell the user what to run by hand.
+function Invoke-OptionalStep([string]$Description, [scriptblock]$Action) {
+  if ($DryRun) {
+    Write-Info "[dry-run] $Description"
+    return
+  }
+
+  $global:LASTEXITCODE = $null
+  try {
+    & $Action
+  }
+  catch {
+    Write-Warn "$Description did not complete: $($_.Exception.Message)"
+    return
+  }
+  $exitCode = $global:LASTEXITCODE
+  if ($null -ne $exitCode -and $exitCode -ne 0) {
+    Write-Warn "$Description reported exit code $exitCode (Kunai itself is installed)."
+    return
   }
   Write-Host 'Done.' -ForegroundColor Green
 }

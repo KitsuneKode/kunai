@@ -869,7 +869,11 @@ install_optional_deps() {
 	local pkgs=()
 	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
 	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
-	ask "Install chafa (terminal poster previews)?" n && pkgs+=(chafa)
+	# Defaults to yes: chafa is the sixel encoder. Without it a sixel-capable
+	# terminal silently falls back to half-block, which fits two pixels per cell
+	# -- roughly a hundredth of the pixels -- so posters look blocky for no
+	# reason the user can see. Posters still work without it; they just look bad.
+	ask "Install chafa (sharp terminal posters)?" y && pkgs+=(chafa)
 	((${#pkgs[@]} == 0)) && return
 
 	if have brew; then
