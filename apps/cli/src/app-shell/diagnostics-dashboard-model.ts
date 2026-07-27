@@ -38,6 +38,25 @@ function sectionFor(severity: DiagnosticSeverity): DiagnosticsSectionId {
 }
 
 /**
+ * How many content rows the diagnostics panel may draw.
+ *
+ * Deliberately derived from the overlay's own height rather than
+ * `listMaxVisible`, which is a list-picker budget — inheriting it made the
+ * panel scroll at 18 of 49 rows while most of the terminal sat empty.
+ *
+ * One row is reserved per section heading. On a terminal too small to satisfy
+ * that, the panel still draws a row rather than collapsing to nothing.
+ */
+export function diagnosticsVisibleRows(input: {
+  readonly contentRows: number;
+  readonly chromeRows: number;
+  readonly sectionCount: number;
+}): number {
+  const available = Math.floor(input.contentRows - input.chromeRows - input.sectionCount);
+  return Math.max(1, available);
+}
+
+/**
  * Group health rows by what the user must do about them.
  *
  * Grouping by subsystem — the previous shape — put a broken integration, a

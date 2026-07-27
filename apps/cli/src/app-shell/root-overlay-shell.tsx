@@ -56,6 +56,11 @@ import {
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, type ResolvedAppCommand } from "./commands";
+import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
+
+/** The ContextStrip line drawn above the panel, inside the content area. */
+const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
+
 import { buildDiagnosticsPanelInput, buildDiagnosticsSpanModel } from "./diagnostics-panel-source";
 import {
   resolveDiagnosticsExpandedSpanIds,
@@ -900,7 +905,21 @@ export function RootOverlayShell({
       listMaxVisible,
     };
   }, [cols, rows, commandMode, overlayHostChromeRows, overlayPanelKind]);
-  const maxLines = overlayLayout.listMaxVisible;
+  // Diagnostics is a dashboard, not a picker. `listMaxVisible` is a list-picker
+  // budget, and inheriting it made the panel scroll inside a small box while
+  // most of the terminal sat empty.
+  const maxLines =
+    overlay.type === "diagnostics"
+      ? diagnosticsVisibleRows({
+          // `contentRows` already excludes root chrome and the footer. The one
+          // row still to account for is the ContextStrip drawn above the panel.
+          contentRows: overlayLayout.contentRows,
+          chromeRows: DIAGNOSTICS_CONTEXT_STRIP_ROWS,
+          // Section headings are ordinary lines in the panel array, so they are
+          // already inside this budget and must not be reserved twice.
+          sectionCount: 0,
+        })
+      : overlayLayout.listMaxVisible;
   const notifPageSize = overlayLayout.listMaxVisible;
   const historyView = useMemo(
     () =>
@@ -2269,7 +2288,9 @@ export function RootOverlayShell({
           overlay.type === "provider_picker"
             ? "Type to filter · Enter switch · Esc closes"
             : overlay.type === "diagnostics"
-              ? "↑/↓ scroll · Space toggle span · e export · Esc closes"
+              ? // The footer actions row already carries export/close/commands.
+                // Repeating them here was the second of two competing footers.
+                "↑/↓ scroll · Space toggle span"
               : overlay.type === "notifications"
                 ? notificationActionDedupKey
                   ? "Enter runs · Esc returns"

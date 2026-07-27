@@ -24,13 +24,45 @@ describe("diagnostics-panel-lines", () => {
     });
 
     const sectionHeaders = lines.filter((line) => line.detail === "").map((line) => line.label);
+    // Health is grouped by actionability rather than as one flat block, and a
+    // group with no rows is omitted — nothing is broken in this fixture, so
+    // there is no "Needs attention" heading.
     expect(sectionHeaders).toEqual([
       "─── Verdict",
-      "─── Health",
+      "─── Not measured yet",
+      "─── Healthy",
       "─── Current Playback Evidence",
       "─── Developer Evidence",
       "─── Export And Report",
     ]);
+  });
+
+  test("a real fault leads the health sections", () => {
+    const lines = buildLines({
+      state: {
+        ...createInitialState("vidking", "allanime", {
+          anime: { audio: "original", subtitle: "en" },
+          series: { audio: "original", subtitle: "en" },
+          movie: { audio: "original", subtitle: "en" },
+        }),
+        playbackProblem: {
+          stage: "mpv",
+          severity: "recoverable",
+          cause: "expired-stream",
+          userMessage: "The stream expired.",
+          recommendedAction: "refresh",
+          secondaryActions: ["diagnostics"],
+        },
+      },
+      recentEvents: [],
+    });
+
+    const healthHeaders = lines
+      .filter((line) => line.detail === "")
+      .map((line) => line.label)
+      .filter((label) => label.startsWith("─── ") && !label.includes("Evidence"));
+
+    expect(healthHeaders[0]).toBe("─── Needs attention");
   });
 
   test("verdict row uses plain-language label and next action", () => {

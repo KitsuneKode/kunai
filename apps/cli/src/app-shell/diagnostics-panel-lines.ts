@@ -6,6 +6,7 @@ import {
   type DiagnosticsSubsystem,
 } from "@/services/diagnostics/diagnostics-insight";
 
+import { buildDiagnosticsSections } from "./diagnostics-dashboard-model";
 import {
   buildDiagnosticsPanelModel,
   flattenDiagnosticsPanelSpans,
@@ -64,10 +65,15 @@ export function buildDiagnosticsPanelLinesFromInsight({
     reason: insight.likelyCause,
     recommendedActionLabel: insight.sessionVerdict.primaryActionLabel,
   } as DiagnosticsHealthRow);
-  const healthLines = insight.healthRows.map((row) => healthRowToPanelLine(row));
+  // Grouped by actionability rather than by subsystem, so the thing the user
+  // must act on leads and "not measured yet" cannot be mistaken for a fault.
+  const healthSections = buildDiagnosticsSections(insight.healthRows);
+  const healthLines = healthSections.flatMap((section) =>
+    section.rows.map((row) => healthRowToPanelLine(row)),
+  );
   const verdictLines: readonly ShellPanelLine[] = shouldRenderVerdictRow(
     verdictDetail,
-    healthLines.map((line) => line.detail),
+    healthLines.map((line) => line.detail ?? ""),
   )
     ? [
         { label: "─── Verdict", detail: "", tone: "info" },
@@ -77,8 +83,10 @@ export function buildDiagnosticsPanelLinesFromInsight({
 
   return [
     ...verdictLines,
-    { label: "─── Health", detail: "", tone: "info" },
-    ...healthLines,
+    ...healthSections.flatMap((section) => [
+      { label: `─── ${section.title}`, detail: "", tone: "info" as const },
+      ...section.rows.map((row) => healthRowToPanelLine(row)),
+    ]),
     { label: "─── Current Playback Evidence", detail: "", tone: "info" },
     ...buildCurrentPlaybackLines(insight),
     ...buildDecisionTimelineLines(insight, developerMode),
