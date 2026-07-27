@@ -237,7 +237,73 @@ One real question this section raises and §4.1 answers with data rather than
 opinion: whether vidlink earns its place in the registry at a 100% recent failure
 rate.
 
-## 7. Release readiness
+## 7. Truthful state propagation
+
+The loop being fast is not enough if the UI lies about what it is doing. There is
+a confirmed instance of this, and it shares a root cause with everything above:
+**state that the resolve pipeline knows is discarded into prose, which a later
+layer then tries to reverse-engineer.**
+
+### The confirmed defect
+
+`classifyProviderResolveUserState`
+(`apps/cli/src/app/playback/provider-resolve-user-state.ts`) classifies playback
+state by substring-matching a human-readable `issue` string.
+
+`describeProviderResolveAttemptNote`
+(`apps/cli/src/domain/playback/provider-resolve-copy.ts`) emits, on a **healthy
+first attempt**:
+
+- `"Kunai will retry recoverable provider failures before fallback."`
+- `"Fallback remains available if this provider stalls."`
+- `"Final retry for this provider; fallback remains available."`
+
+All three contain `fallback`, so `issue.includes("fallback")` matches and the UI
+renders **"Trying another source"** with the detail _"The previous source did not
+resolve cleanly."_
+
+Observed live: the playback screen shows `✓ Resolving` (Videasy succeeded), step
+`Providers` in progress, `Player` and `Buffering` not started — and
+"Trying another source" in an alarm colour. Nothing failed. The footer
+simultaneously offers `Fallback · Try VidLink`, which is the correct rendering of
+the same fact: fallback is _available_, not _occurring_.
+
+### The other false positives in the same function
+
+| Match                  | Renders                  | Why it is wrong                                                                                                             |
+| ---------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `"could not resolve"`  | "Network looks unstable" | a provider legitimately lacking an episode blames the user's connection                                                     |
+| `elapsedSeconds >= 20` | "Slow source"            | fires at exactly videasy's normal `VIDKING_CYCLE_CANDIDATE_TIMEOUT_MS`, so a healthy in-flight candidate reads as a problem |
+| `"degraded"`           | "Slow source"            | matches provider-health vocabulary, not failure evidence                                                                    |
+
+### The fix
+
+Classification must consume structured state, not prose. The pipeline already
+produces it and throws it away:
+
+- `ProviderFailure.failureClass` — the real reason, already an enum
+- attempt number and `maxAttempts` — already passed to the copy builders
+- whether fallback actually occurred — known to `resolveWithFallback`
+- `ResolveTrace` (§3) — the full record, once wired
+
+`classifyProviderResolveUserState` takes a discriminated union describing what
+actually happened, and returns copy. Copy is derived from state; state is never
+re-derived from copy. The string-matching branches are deleted, not extended.
+
+This is the same defect class as §4.1 (`recentFailureRate` persisted but never
+read) and §4.2 (quarantine using a title-count proxy instead of evidence): the
+truth exists in the system and the consumer uses a guess instead.
+
+### Scope note
+
+The diagnostics panel redesign the user asked for — layout, density, export,
+using the full terminal height — is **not** in this spec. It is a UI design task
+that should follow the repo's prototype-first convention, and it depends on this
+section landing first: redesigning a panel that displays untrustworthy state
+would just make the wrong information prettier. Sequenced as its own project
+after step 5.
+
+## 8. Release readiness
 
 The requirement is that the main providers work well enough that this stops being
 a worry after the current release. That is a verification problem, and the
@@ -281,7 +347,7 @@ These are gates, not nice-to-haves. Each is currently unanswered:
    getting it wrong quarantines healthy endpoints invisibly — the worst possible
    failure mode, since it degrades silently over time rather than failing loudly.
 
-## 8. Testing
+## 9. Testing
 
 - **Privacy:** the `richEvent -> AnalyticsEvent` projection is serialized against
   a fixture session containing known titles, queries, and file paths; output is
@@ -299,7 +365,7 @@ These are gates, not nice-to-haves. Each is currently unanswered:
 - **Ordering:** a user with an explicit full priority list observes byte-identical
   ordering before and after §5.3.
 
-## 9. Sequencing
+## 10. Sequencing
 
 This document is a design of record, deliberately larger than one plan's worth of
 work. Each step below gets its own implementation plan, in the same way the
@@ -318,15 +384,19 @@ blind.
 4. **Candidate racing** (§5.1) — the largest latency win; requires §5.4's
    cancellation cleanup to be correct first.
 5. **Background probing + ordering** (§5.2, §5.3).
-6. **Capability truth** (§6) — independent, can land any time.
-7. **Release gates** (§7) — re-run signoff, decide the hedging default from
+6. **Truthful state propagation** (§7) — delete the prose-matching classifier,
+   feed it structured state. Release-blocking: it currently reports failures
+   that did not happen.
+7. **Capability truth** (§6) — independent, can land any time.
+8. **Release gates** (§8) — re-run signoff, decide the hedging default from
    aggregated `winnerWasHedged`, decide vidlink's fate from §4.1's data.
-8. **Analytics projection** — when telemetry Phase 5 comes up, against the seam
+9. **Analytics projection** — when telemetry Phase 5 comes up, against the seam
    built in step 1.
 
-Steps 0–4 and 7 are the release-blocking path. Steps 5, 6, and 8 can land after.
+Steps 0-4, 6, and 8 are the release-blocking path. Steps 5, 7, and 9 can land
+after. The diagnostics panel redesign follows step 6, as its own project.
 
-## 10. Acceptance
+## 11. Acceptance
 
 - `resolve_traces` is non-empty after a normal session, and prunes.
 - No provider reports `healthy` at a sustained high failure rate.
