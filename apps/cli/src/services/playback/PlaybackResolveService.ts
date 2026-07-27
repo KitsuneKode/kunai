@@ -46,6 +46,7 @@ import type {
   StartupPriority,
 } from "@kunai/types";
 
+import { computeProviderHealthUpdate } from "./provider-health-observation";
 import { resolveEffectiveProviderHealth } from "./provider-health-policy";
 import { resolveProviderTotalDeadlineMs } from "./provider-resolve-budget-policy";
 import { planProviderCandidates } from "./ProviderCandidatePlanner";
@@ -765,28 +766,7 @@ export class PlaybackResolveService {
     if (!this.deps.providerHealth) return;
     try {
       const existing = this.deps.providerHealth.get(delta.providerId);
-      const consecutiveFailures =
-        delta.outcome === "success" || delta.outcome === "stalled"
-          ? 0
-          : (existing?.consecutiveFailures ?? 0) + 1;
-      const status: "healthy" | "degraded" | "down" =
-        consecutiveFailures >= 5 ? "down" : consecutiveFailures >= 2 ? "degraded" : "healthy";
-      const recentFailureRate =
-        existing?.recentFailureRate !== undefined
-          ? existing.recentFailureRate * 0.7 + (delta.outcome === "success" ? 0 : 0.3)
-          : delta.outcome === "success"
-            ? 0
-            : 1;
-      this.deps.providerHealth.set({
-        providerId: delta.providerId,
-        status,
-        checkedAt: delta.at,
-        medianResolveMs: delta.resolveMs,
-        recentFailureRate: Math.max(0, Math.min(1, recentFailureRate)),
-        consecutiveFailures,
-        subtitleSuccessRate: undefined,
-        streamSurvivalRate: undefined,
-      });
+      this.deps.providerHealth.set(computeProviderHealthUpdate(existing, delta));
     } catch {
       // Health persistence is best-effort
     }
