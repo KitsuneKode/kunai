@@ -52,6 +52,7 @@ import {
   type PlaybackTargetRef,
 } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
+import { isProcessEntrypoint } from "@/infra/build/entrypoint";
 import {
   recordContinuationProjectDecision,
   recordContinuationSourceResolution,
@@ -1138,6 +1139,6 @@ export async function startCli(argv = process.argv.slice(2)): Promise<void> {
   await runCli(argv);
 }
 
-if (import.meta.main) {
+if (isProcessEntrypoint(import.meta)) {
   void startCli();
 }
