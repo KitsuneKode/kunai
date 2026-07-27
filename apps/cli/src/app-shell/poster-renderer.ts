@@ -45,16 +45,6 @@ const runtime: PosterRuntime = {
 // on the wire without a meaningful gain at terminal-poster dimensions.
 const APP_SHELL_SIXEL_MAX_COLORS = 64;
 
-/**
- * Sixel is an overlay, not Ink text. `SixelPosterPane` reserves and measures an
- * empty Ink rectangle, then the overlay manager writes the sixel after Ink's
- * frame has committed. Keeping this policy here makes callers use that safe path
- * instead of ever putting sixel escape bytes into the Ink frame.
- */
-export function resolveAppShellPosterCapability(capability: ImageCapability): ImageCapability {
-  return capability;
-}
-
 let nextId = 1;
 function allocId(): number {
   const id = nextId;
@@ -168,6 +158,14 @@ async function renderHalfBlockText(
   return { kind: "text", placeholder: text, rows, cols };
 }
 
+/**
+ * Sixel is an overlay, not Ink text.
+ *
+ * This returns a `sixel` PosterResult rather than escape bytes: `SixelPosterPane`
+ * reserves and measures an empty Ink rectangle, and the overlay manager writes
+ * the pixels after Ink's frame has committed. Sixel bytes placed into the Ink
+ * frame itself would be measured as text and corrupt the layout.
+ */
 function renderSixelOverlay(
   data: ArrayBuffer,
   rows: number,
@@ -406,7 +404,7 @@ export async function renderPoster(
       return await renderTextPoster(data, rows, cols);
     }
     if (!allowKitty) return { kind: "none" };
-    const capability = resolveAppShellPosterCapability(runtime.detectImageCapability());
+    const capability = runtime.detectImageCapability();
     if (!capability.available || capability.renderer === "none") return { kind: "none" };
     if (capability.renderer === "kitty-native") {
       if (supportsKittyPlaceholders(capability.terminal)) {

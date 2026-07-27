@@ -5,7 +5,6 @@ import {
   __testing as rendererTesting,
   hashTitleToColor,
   renderPoster,
-  resolveAppShellPosterCapability,
 } from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
 import { hasNativeImage } from "@/image/native-image";
@@ -239,10 +238,6 @@ describe("app-shell poster renderer", () => {
       reason: "terminal reported sixel support (DA1)",
     };
 
-    test("leaves sixel available for an out-of-band measured pane", () => {
-      expect(resolveAppShellPosterCapability(sixelCapability)).toEqual(sixelCapability);
-    });
-
     test("encodes a sixel overlay instead of placing escape bytes in Ink text", async () => {
       rendererTesting.runtime.detectImageCapability = () => sixelCapability;
       const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
@@ -297,11 +292,6 @@ describe("app-shell poster renderer", () => {
           rendererTesting.APP_SHELL_SIXEL_MAX_COLORS - 1,
         );
       }
-    });
-
-    test("leaves every other renderer untouched", () => {
-      const kitty = capability("kitty-native");
-      expect(resolveAppShellPosterCapability(kitty)).toEqual(kitty);
     });
   });
 
