@@ -1,29 +1,19 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
-import {
-  HistoryRepository,
-  PlaybackEventRepository,
-  openKunaiDatabase,
-  runMigrations,
-} from "@kunai/storage";
+import { HistoryRepository, PlaybackEventRepository } from "@kunai/storage";
 
-const tempDirs: string[] = [];
+import { createTempStoreRegistry } from "../../../helpers/temp-store";
+
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 function makeLedger(): { ledger: PlaybackHistoryLedger; repo: HistoryRepository } {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-ledger-engage-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const dir = stores.dir("ledger-engage");
+  const db = stores.db(dir);
   const repo = new HistoryRepository(db);
   const events = new PlaybackEventRepository(db);
   return { ledger: new PlaybackHistoryLedger(repo, events), repo };

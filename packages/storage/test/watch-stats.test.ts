@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   HistoryRepository,
@@ -9,20 +6,16 @@ import {
   runMigrations,
   WatchStatsRepository,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 function repos(): { history: HistoryRepository; stats: WatchStatsRepository } {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-watch-stats-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store("watch-stats", "data");
   return { history: new HistoryRepository(db), stats: new WatchStatsRepository(db) };
 }
 

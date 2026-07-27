@@ -1,6 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { StreamCandidate } from "@kunai/types";
@@ -28,13 +26,12 @@ import {
   SourceInventoryRepository,
   StreamCacheRepository,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("path resolver is deterministic across supported platforms", () => {
@@ -78,13 +75,13 @@ test("path resolver is deterministic across supported platforms", () => {
 });
 
 test("migrations are idempotent and create expected storage tables", () => {
-  const dir = makeTempDir();
-  const dataDb = openKunaiDatabase(join(dir, "data.sqlite"));
-  const cacheDb = openKunaiDatabase(join(dir, "cache.sqlite"));
+  // Both databases share one directory, as they do in a real install.
+  const dir = stores.dir("storage-migration");
+  const dataDb = stores.db(dir, "data");
+  const cacheDb = stores.db(dir, "cache");
 
+  // `db()` migrates once; migrating a second time is this test's actual subject.
   runMigrations(dataDb, "data");
-  runMigrations(dataDb, "data");
-  runMigrations(cacheDb, "cache");
   runMigrations(cacheDb, "cache");
 
   const dataTables = tableNames(dataDb);
@@ -106,9 +103,6 @@ test("migrations are idempotent and create expected storage tables", () => {
   expect(cacheTables).toContain("resolve_traces");
   expect(cacheTables).toContain("schedule_cache");
   expect(cacheTables).toContain("diagnostic_events");
-
-  dataDb.close();
-  cacheDb.close();
 });
 
 test("schedule cache repository stores and expires catalog payloads by cache key", () => {
@@ -126,8 +120,6 @@ test("schedule cache repository stores and expires catalog payloads by cache key
     repo.get("today:anime:2026-05-15", new Date("2026-05-15T12:30:00.000Z"))?.payloadJson,
   ).toBe(JSON.stringify([{ titleId: "21" }]));
   expect(repo.get("today:anime:2026-05-15", new Date("2026-05-15T14:00:00.000Z"))).toBe(undefined);
-
-  db.close();
 });
 
 test("provider endpoint health repository quarantines and expires endpoints", () => {
@@ -152,8 +144,6 @@ test("provider endpoint health repository quarantines and expires endpoints", ()
   expect(repo.isQuarantined("videasy", "1movies", later)).toBe(false);
   expect(repo.deleteExpiredQuarantines(later)).toBe(1);
   expect(repo.get("videasy", "1movies")).toBeUndefined();
-
-  db.close();
 });
 
 test("release progress cache repository stores summaries and due projections", () => {
@@ -218,8 +208,6 @@ test("release progress cache repository stores summaries and due projections", (
   expect(repo.listDue("2026-05-23T12:30:00.000Z", 10).map((row) => row.titleId)).toEqual([
     "anilist:1",
   ]);
-
-  db.close();
 });
 
 test("release progress cache repository prunes stale derived projections only", () => {
@@ -259,8 +247,6 @@ test("release progress cache repository prunes stale derived projections only", 
   expect([...repo.getByTitleIds(["anilist:old", "anilist:fresh"]).keys()]).toEqual([
     "anilist:fresh",
   ]);
-
-  db.close();
 });
 
 test("ttl and stream cache key helpers encode compatibility inputs", () => {
@@ -319,8 +305,6 @@ test("history repository round trips latest progress", () => {
   expect(repo.listRecent(1)[0]?.key).toContain("tmdb:1");
   expect(repo.listByTitle("tmdb:1")).toHaveLength(1);
   expect(repo.listLatestByTitle()).toMatchObject([{ titleId: "tmdb:1", episode: 2 }]);
-
-  db.close();
 });
 
 test("history repository lists one latest row per title", () => {
@@ -360,8 +344,6 @@ test("history repository lists one latest row per title", () => {
     { titleId: "tmdb:1", episode: 6, completed: true },
     { titleId: "tmdb:2", completed: false },
   ]);
-
-  db.close();
 });
 
 test("history repository keeps legacy progress without external ids compatible", () => {
@@ -385,8 +367,6 @@ test("history repository keeps legacy progress without external ids compatible",
 
   expect(progress?.externalIds).toBeUndefined();
   expect(progress?.positionSeconds).toBe(12);
-
-  db.close();
 });
 
 test("stream cache repository returns hits and prunes expired entries", () => {
@@ -402,8 +382,6 @@ test("stream cache repository returns hits and prunes expired entries", () => {
 
   const expired = repo.get("stream:key", new Date("2026-04-29T00:06:00.000Z"));
   expect(expired).toBeUndefined();
-
-  db.close();
 });
 
 test("provider health, inventory, and trace repositories round trip typed data", () => {
@@ -460,8 +438,6 @@ test("provider health, inventory, and trace repositories round trip typed data",
   });
   expect(traceRepo.get("trace-1")?.title.title).toBe("Example");
   expect(traceRepo.listRecent(1)).toHaveLength(1);
-
-  db.close();
 });
 
 test("download jobs repository supports queue lifecycle", () => {
@@ -534,8 +510,6 @@ test("download jobs repository supports queue lifecycle", () => {
   expect(done?.posterUrl).toBe("https://img.example/poster.jpg");
   expect(done?.thumbnailPath).toBe("/tmp/example.thumbnail.jpg");
   expect(done?.introSkipJson).toBe(JSON.stringify({ openings: [] }));
-
-  db.close();
 });
 
 test("download jobs repository finds one blocking episode intent without scanning lists", () => {
@@ -567,8 +541,6 @@ test("download jobs repository finds one blocking episode intent without scannin
   expect(
     repo.findBlockingEpisodeIntent({ titleId: "tmdb:series", season: 1, episode: 3 }),
   ).toBeUndefined();
-
-  db.close();
 });
 
 test("offline asset manifest stores one durable playable identity without provider secrets", () => {
@@ -600,8 +572,6 @@ test("offline asset manifest stores one durable playable identity without provid
   expect(second.filePath).toBe("/tmp/movie-new.mp4");
   expect(JSON.stringify(second)).not.toContain("streamUrl");
   expect(JSON.stringify(second)).not.toContain("headers");
-
-  db.close();
 });
 
 test("offline asset refresh preserves explicit user protection", () => {
@@ -628,8 +598,6 @@ test("offline asset refresh preserves explicit user protection", () => {
   expect(refreshed.id).toBe(first.id);
   expect(refreshed.protected).toBe(true);
   expect(refreshed.state).toBe("repairable");
-
-  db.close();
 });
 
 test("offline assets repository projects only the next ready asset after each cursor", () => {
@@ -667,7 +635,6 @@ test("offline assets repository projects only the next ready asset after each cu
   ]);
 
   expect(projected.map((asset) => [asset.titleId, asset.episode])).toEqual([["anilist:1", 6]]);
-  db.close();
 });
 
 test("offline title policies and maintenance jobs persist explicit bounded authority", () => {
@@ -721,8 +688,6 @@ test("offline title policies and maintenance jobs persist explicit bounded autho
     now: "2026-04-29T00:02:00.000Z",
   });
   expect(retry.id).not.toBe(initial.id);
-
-  db.close();
 });
 
 test("download jobs repository preserves repairable sidecar status without losing completed video", () => {
@@ -781,8 +746,6 @@ test("download jobs repository preserves repairable sidecar status without losin
   expect(completedWithNotes?.artifactStatus).toBe("optional-missing");
   expect(completedWithNotes?.repairMetadataJson).toBeUndefined();
   expect(repo.listCompleted(10).map((job) => job.id)).toContain("job-sidecar");
-
-  db.close();
 });
 
 test("download jobs repository keeps legacy artifact rows compatible with repair metadata", () => {
@@ -811,25 +774,17 @@ test("download jobs repository keeps legacy artifact rows compatible with repair
 
   repo.markArtifactValidated("job-legacy", "not-applicable", "2026-04-29T00:01:00.000Z");
   expect(repo.get("job-legacy")?.artifactStatus).toBe("not-applicable");
-
-  db.close();
 });
 
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-storage-"));
-  tempDirs.push(dir);
-  return dir;
-}
+const TEMP_NAME = "storage";
 
 function migratedDataDb() {
-  const db = openKunaiDatabase(join(makeTempDir(), "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store(TEMP_NAME, "data");
   return db;
 }
 
 function migratedCacheDb() {
-  const db = openKunaiDatabase(join(makeTempDir(), "cache.sqlite"));
-  runMigrations(db, "cache");
+  const db = stores.store(TEMP_NAME, "cache");
   return db;
 }
 
@@ -852,8 +807,6 @@ test("ListRepository: migration seeds default watchlist and favorites", () => {
   expect(lists.length).toBeGreaterThanOrEqual(2);
   expect(lists.some((l) => l.id === "watchlist" && l.kind === "watchlist")).toBe(true);
   expect(lists.some((l) => l.id === "favorites" && l.kind === "favorites")).toBe(true);
-
-  db.close();
 });
 
 test("ListRepository: createList + getList roundtrip", () => {
@@ -867,8 +820,6 @@ test("ListRepository: createList + getList roundtrip", () => {
 
   const found = repo.getList(list.id);
   expect(found?.id).toBe(list.id);
-
-  db.close();
 });
 
 test("ListRepository: addItem + getItems + removeItem", () => {
@@ -890,8 +841,6 @@ test("ListRepository: addItem + getItems + removeItem", () => {
   repo.removeItem(item.id);
   const after = repo.getItems("watchlist");
   expect(after.some((i) => i.id === item.id)).toBe(false);
-
-  db.close();
 });
 
 test("ListRepository: toggleItem adds then removes on second call", () => {
@@ -906,8 +855,6 @@ test("ListRepository: toggleItem adds then removes on second call", () => {
   const second = repo.toggleItem("watchlist", input);
   expect(second).toBe("removed");
   expect(repo.isInList("watchlist", "tmdb:42")).toBe(false);
-
-  db.close();
 });
 
 test("ListRepository: deleteList cascades to list_items", () => {
@@ -921,8 +868,6 @@ test("ListRepository: deleteList cascades to list_items", () => {
   repo.deleteList(list.id);
   expect(repo.getList(list.id)).toBeUndefined();
   expect(repo.getItems(list.id).length).toBe(0);
-
-  db.close();
 });
 
 test("ListRepository: getListsForTitle returns all lists containing title", () => {
@@ -937,8 +882,6 @@ test("ListRepository: getListsForTitle returns all lists containing title", () =
   expect(lists.length).toBe(2);
   expect(lists.some((l) => l.id === "watchlist")).toBe(true);
   expect(lists.some((l) => l.id === custom.id)).toBe(true);
-
-  db.close();
 });
 
 test("ListRepository: isInList returns false for absent title", () => {
@@ -946,8 +889,6 @@ test("ListRepository: isInList returns false for absent title", () => {
   const repo = new ListRepository(db);
 
   expect(repo.isInList("watchlist", "tmdb:nothere")).toBe(false);
-
-  db.close();
 });
 
 // ─── QueueRepository ────────────────────────────────────────────────────────
@@ -976,8 +917,6 @@ test("QueueRepository: enqueue + peekNext returns first by priority DESC addedAt
 
   const next = repo.peekNext(sid);
   expect(next?.title).toBe("High");
-
-  db.close();
 });
 
 test("QueueRepository: markPlayed excludes item from getUnplayed", () => {
@@ -1001,8 +940,6 @@ test("QueueRepository: markPlayed excludes item from getUnplayed", () => {
   const all = repo.getAll(sid);
   expect(all.length).toBe(1);
   expect(all[0]!.playedAt).toBeDefined();
-
-  db.close();
 });
 
 test("QueueRepository: clear removes all items for session", () => {
@@ -1028,8 +965,6 @@ test("QueueRepository: clear removes all items for session", () => {
 
   repo.clear(sid);
   expect(repo.getAll(sid).length).toBe(0);
-
-  db.close();
 });
 
 test("QueueRepository: clearPlayed only removes played items", () => {
@@ -1057,8 +992,6 @@ test("QueueRepository: clearPlayed only removes played items", () => {
   const remaining = repo.getAll(sid);
   expect(remaining.length).toBe(1);
   expect(remaining[0]!.title).toBe("B");
-
-  db.close();
 });
 
 test("QueueRepository: getLastActivity returns latest addedAt across sessions", () => {
@@ -1077,8 +1010,6 @@ test("QueueRepository: getLastActivity returns latest addedAt across sessions", 
   const activity = repo.getLastActivity();
   expect(typeof activity).toBe("string");
   expect(activity!.length).toBeGreaterThan(0);
-
-  db.close();
 });
 
 function makeStreamCandidate(): StreamCandidate {

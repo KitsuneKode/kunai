@@ -1,17 +1,13 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { CatalogCrosswalkRepository, openKunaiDatabase, runMigrations } from "../src/index";
 import type { KunaiDatabase } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterAll(() => {
-  for (const dir of tempDirs) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("CatalogCrosswalkRepository: round-trips a graph by source id", () => {
@@ -32,8 +28,6 @@ test("CatalogCrosswalkRepository: round-trips a graph by source id", () => {
   expect(hit?.tmdbId).toBe("13916");
   expect(hit?.confidence).toBe("high");
   expect(repo.get("anilist", "404404")).toBeUndefined();
-
-  db.close();
 });
 
 test("CatalogCrosswalkRepository: expired rows are not returned", () => {
@@ -44,8 +38,6 @@ test("CatalogCrosswalkRepository: expired rows are not returned", () => {
   repo.put("tmdb", "13916", { tmdbId: "13916", confidence: "high", source: "arm" }, monthAgo);
 
   expect(repo.get("tmdb", "13916")).toBeUndefined();
-
-  db.close();
 });
 
 test("CatalogCrosswalkRepository: caches definitive misses as empty graphs", () => {
@@ -58,14 +50,9 @@ test("CatalogCrosswalkRepository: caches definitive misses as empty graphs", () 
   expect(miss).toBeDefined();
   expect(miss?.tmdbId).toBeUndefined();
   expect(miss?.confidence).toBe("low");
-
-  db.close();
 });
 
 function migratedCacheDb(): KunaiDatabase {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-crosswalk-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "cache.sqlite"));
-  runMigrations(db, "cache");
+  const db = stores.store("crosswalk", "cache");
   return db;
 }

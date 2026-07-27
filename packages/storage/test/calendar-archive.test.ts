@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   CalendarArchiveRepository,
@@ -9,20 +6,16 @@ import {
   runMigrations,
   type KunaiDatabase,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 function cacheDb(): KunaiDatabase {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-cal-archive-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "cache.sqlite"));
-  runMigrations(db, "cache");
+  const db = stores.store("cal-archive", "cache");
   return db;
 }
 

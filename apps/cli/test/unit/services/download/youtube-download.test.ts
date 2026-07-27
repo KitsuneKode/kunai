@@ -11,6 +11,7 @@ import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai
 
 describe("DownloadService youtube argv contract", () => {
   let tempDir: string;
+  let db: ReturnType<typeof openKunaiDatabase>;
   let repo: DownloadJobsRepository;
   let spawnSpy: ReturnType<typeof spyOn>;
   let whichSpy: ReturnType<typeof spyOn>;
@@ -18,7 +19,7 @@ describe("DownloadService youtube argv contract", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "kunai-youtube-download-"));
-    const db = openKunaiDatabase(join(tempDir, "data.sqlite"));
+    db = openKunaiDatabase(join(tempDir, "data.sqlite"));
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
@@ -36,6 +37,9 @@ describe("DownloadService youtube argv contract", () => {
     spawnSpy.mockRestore();
     whichSpy.mockRestore();
     runYtDlpSpy.mockRestore();
+    // Close before removing: Windows refuses to delete a file that still has an
+    // open handle, and SQLite in WAL mode keeps `-shm` mapped until close().
+    db.close();
     rmSync(tempDir, { recursive: true, force: true });
     mock.restore();
     configureYoutubeProvider({});

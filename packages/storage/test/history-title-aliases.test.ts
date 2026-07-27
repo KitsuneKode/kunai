@@ -1,7 +1,4 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   externalIdsToAliases,
@@ -10,13 +7,12 @@ import {
   runMigrations,
 } from "../src/index";
 import type { KunaiDatabase } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterAll(() => {
-  for (const dir of tempDirs) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("HistoryTitleAliasRepository: any alias resolves to the canonical title id", () => {
@@ -36,8 +32,6 @@ test("HistoryTitleAliasRepository: any alias resolves to the canonical title id"
   expect(repo.lookupTitleId("provider:allanime", "bxCKTnota29uSRnZw")).toBe("1535");
   expect(repo.lookupTitleId("tmdb", "99999")).toBeUndefined();
   expect(repo.listByTitleId("1535")).toHaveLength(5);
-
-  db.close();
 });
 
 test("HistoryTitleAliasRepository: re-upserting an alias repoints it to the new title id", () => {
@@ -52,8 +46,6 @@ test("HistoryTitleAliasRepository: re-upserting an alias repoints it to the new 
 
   expect(repo.lookupTitleId("tmdb", "13916")).toBe("1535");
   expect(repo.listByTitleId("tmdb:13916")).toHaveLength(0);
-
-  db.close();
 });
 
 test("HistoryTitleAliasRepository: reassignTitleId moves every alias during a merge", () => {
@@ -68,8 +60,6 @@ test("HistoryTitleAliasRepository: reassignTitleId moves every alias during a me
 
   expect(repo.lookupTitleId("tmdb", "13916")).toBe("1535");
   expect(repo.lookupTitleId("imdb", "tt0877057")).toBe("1535");
-
-  db.close();
 });
 
 test("externalIdsToAliases maps the full external id bag including provider natives", () => {
@@ -123,14 +113,9 @@ test("HistoryRepository.upsertProgress writes alias rows for every known externa
   expect(aliases.lookupTitleId("tmdb", "13916")).toBe("1535");
   expect(aliases.lookupTitleId("mal", "1535")).toBe("1535");
   expect(aliases.lookupTitleId("anilist", "1535")).toBe("1535");
-
-  db.close();
 });
 
 function migratedDataDb(): KunaiDatabase {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-title-aliases-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store("title-aliases", "data");
   return db;
 }

@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   FollowedTitleRepository,
@@ -11,13 +8,12 @@ import {
   PlaylistsRepository,
   runMigrations,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("QueueRepository: queue sessions can be marked recoverable and restored", () => {
@@ -46,8 +42,6 @@ test("QueueRepository: queue sessions can be marked recoverable and restored", (
   const recoverable = repo.listRecoverableQueueSessions();
   expect(recoverable).toHaveLength(1);
   expect(recoverable[0]?.itemCount).toBe(1);
-
-  db.close();
 });
 
 test("QueueRepository: startup recovery only exposes prior active sessions with pending items", () => {
@@ -82,8 +76,6 @@ test("QueueRepository: startup recovery only exposes prior active sessions with 
   expect(repo.listRecoverableQueueSessions().map((session) => session.id)).toEqual([
     "previous-session",
   ]);
-
-  db.close();
 });
 
 test("QueueRepository: restore moves recoverable queue items into the current session", () => {
@@ -122,8 +114,6 @@ test("QueueRepository: restore moves recoverable queue items into the current se
   expect(restored).toHaveLength(1);
   expect(repo.getUnplayed("current-session")).toHaveLength(1);
   expect(repo.getQueueSession("previous-session")?.status).toBe("closed");
-
-  db.close();
 });
 
 test("NotificationRepository: upsert dedupes and dismiss hides active rows", () => {
@@ -155,8 +145,6 @@ test("NotificationRepository: upsert dedupes and dismiss hides active rows", () 
   // Active is now defined by archive state (read/archive model); archive hides the row.
   repo.archive("new-playable-episode:tmdb:1:1:2:vidking", "2026-05-17T00:02:00.000Z");
   expect(repo.listActive()).toHaveLength(0);
-
-  db.close();
 });
 
 test("FollowedTitleRepository stores explicit follow and mute preferences", () => {
@@ -180,8 +168,6 @@ test("FollowedTitleRepository stores explicit follow and mute preferences", () =
     updatedAt: "2026-05-17T00:01:00.000Z",
   });
   expect(repo.get("tmdb:1")?.preference).toBe("muted");
-
-  db.close();
 });
 
 test("PlaylistsRepository stores durable playlist items without progress copies", () => {
@@ -209,14 +195,9 @@ test("PlaylistsRepository stores durable playlist items without progress copies"
 
   expect(repo.listItems("playlist-1")[0]?.title).toBe("Example");
   expect(JSON.stringify(repo.listItems("playlist-1")[0])).not.toContain("positionSeconds");
-
-  db.close();
 });
 
 function migratedDataDb() {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-attention-storage-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store("attention-storage", "data");
   return db;
 }

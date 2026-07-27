@@ -12,13 +12,14 @@ const originalFetch = globalThis.fetch;
 
 describe("DownloadService", () => {
   let tempDir: string;
+  let db: ReturnType<typeof openKunaiDatabase>;
   let repo: DownloadJobsRepository;
   let spawnSpy: ReturnType<typeof spyOn>;
   let whichSpy: ReturnType<typeof spyOn>;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "kunai-download-service-"));
-    const db = openKunaiDatabase(join(tempDir, "data.sqlite"));
+    db = openKunaiDatabase(join(tempDir, "data.sqlite"));
     runMigrations(db, "data");
     repo = new DownloadJobsRepository(db);
     spawnSpy = spyOn(Bun, "spawn");
@@ -29,6 +30,9 @@ describe("DownloadService", () => {
     globalThis.fetch = originalFetch;
     spawnSpy.mockRestore();
     whichSpy.mockRestore();
+    // Close before removing: Windows refuses to delete a file that still has an
+    // open handle, and SQLite in WAL mode keeps `-shm` mapped until close().
+    db.close();
     rmSync(tempDir, { recursive: true, force: true });
     mock.restore();
   });

@@ -1,23 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { NotificationRepository, openKunaiDatabase, runMigrations } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-notifications-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store("notifications", "data");
   return new NotificationRepository(db);
 }
 

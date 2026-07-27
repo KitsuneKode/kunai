@@ -1,7 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { DiagnosticsStoreImpl } from "@/services/diagnostics/DiagnosticsStoreImpl";
 import {
@@ -11,15 +8,15 @@ import {
   SourceInventoryService,
   type SourceInventoryCacheInput,
 } from "@/services/playback/SourceInventoryService";
-import { openKunaiDatabase, runMigrations, SourceInventoryRepository } from "@kunai/storage";
+import { SourceInventoryRepository } from "@kunai/storage";
 import type { ProviderResolveResult } from "@kunai/types";
 
-const tempDirs: string[] = [];
+import { createTempStoreRegistry } from "../../../helpers/temp-store";
+
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 describe("SourceInventoryService", () => {
@@ -246,11 +243,7 @@ describe("SourceInventoryService", () => {
 });
 
 function migratedCacheDb() {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-source-inventory-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "cache.sqlite"));
-  runMigrations(db, "cache");
-  return db;
+  return stores.db(stores.dir("source-inventory"), "cache");
 }
 
 function makeResolveResult(): ProviderResolveResult {

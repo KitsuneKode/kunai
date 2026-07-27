@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   DiagnosticEventsRepository,
@@ -9,13 +6,12 @@ import {
   runMigrations,
   type KunaiDatabase,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("diagnostic events repository stores redacted cache events and lists recent rows", () => {
@@ -55,8 +51,6 @@ test("diagnostic events repository stores redacted cache events and lists recent
       },
     }),
   ]);
-
-  db.close();
 });
 
 test("diagnostic events repository lists current-session rows only", () => {
@@ -96,8 +90,6 @@ test("diagnostic events repository lists current-session rows only", () => {
     "live-2",
     "live-1",
   ]);
-
-  db.close();
 });
 
 test("diagnostic event pruning is bounded to diagnostic rows only", () => {
@@ -127,19 +119,12 @@ test("diagnostic event pruning is bounded to diagnostic rows only", () => {
     "runtime.event.2",
   ]);
   expect(count(db, "stream_cache")).toBe(1);
-
-  db.close();
 });
 
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-diagnostics-repo-"));
-  tempDirs.push(dir);
-  return dir;
-}
+const TEMP_NAME = "diagnostics-repo";
 
 function migratedCacheDb(): KunaiDatabase {
-  const db = openKunaiDatabase(join(makeTempDir(), "cache.sqlite"));
-  runMigrations(db, "cache");
+  const db = stores.store(TEMP_NAME, "cache");
   return db;
 }
 

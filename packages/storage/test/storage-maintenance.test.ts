@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   openKunaiDatabase,
@@ -9,13 +6,12 @@ import {
   runMigrations,
   type KunaiDatabase,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("cache maintenance prunes disposable expired rows without touching durable data tables", () => {
@@ -59,20 +55,12 @@ test("cache maintenance prunes disposable expired rows without touching durable 
   expect(count(cacheDb, "resolve_traces")).toBe(2);
   expect(count(cacheDb, "provider_health")).toBe(1);
   expect(count(cacheDb, "diagnostic_events")).toBe(1);
-
-  dataDb.close();
-  cacheDb.close();
 });
 
-function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-storage-maintenance-"));
-  tempDirs.push(dir);
-  return dir;
-}
+const TEMP_NAME = "storage-maintenance";
 
 function migratedDb(database: "data" | "cache"): KunaiDatabase {
-  const db = openKunaiDatabase(join(makeTempDir(), `${database}.sqlite`));
-  runMigrations(db, database);
+  const db = stores.store(TEMP_NAME, database);
   return db;
 }
 

@@ -1,7 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import {
   openKunaiDatabase,
@@ -9,13 +6,12 @@ import {
   YoutubeMetadataCacheRepository,
   type KunaiDatabase,
 } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 test("YoutubeMetadataCacheRepository respects TTL and purge helpers", () => {
@@ -44,14 +40,9 @@ test("YoutubeMetadataCacheRepository respects TTL and purge helpers", () => {
   expect(repo.get("expired", "2026-05-17T00:00:00.000Z")).toBeNull();
   expect(repo.purgeAll()).toBe(1);
   expect(repo.get("fresh", "2026-05-17T00:00:00.000Z")).toBeNull();
-
-  db.close();
 });
 
 function openCacheDb(): KunaiDatabase {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-youtube-metadata-cache-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "cache.sqlite"));
-  runMigrations(db, "cache");
+  const db = stores.store("youtube-metadata-cache", "cache");
   return db;
 }

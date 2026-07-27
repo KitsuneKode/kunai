@@ -1,24 +1,17 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { openKunaiDatabase, QueueRepository, runMigrations } from "../src/index";
+import { createTempStoreRegistry } from "./helpers/temp-store";
 
-const tempDirs: string[] = [];
+const stores = createTempStoreRegistry();
 const NOW = "2026-07-20T12:00:00.000Z";
 
 afterEach(() => {
-  for (const dir of tempDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  stores.cleanup();
 });
 
 function createRepo(): QueueRepository {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-queue-lifecycle-"));
-  tempDirs.push(dir);
-  const db = openKunaiDatabase(join(dir, "data.sqlite"));
-  runMigrations(db, "data");
+  const db = stores.store("queue-lifecycle", "data");
   const repo = new QueueRepository(db);
   repo.createQueueSession({
     id: "session",

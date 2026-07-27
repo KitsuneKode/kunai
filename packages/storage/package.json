@@ -5,7 +5,8 @@
   "description": "Local Kunai storage paths, SQLite migrations, repositories, and cache policy helpers.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./test/helpers/temp-store.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
