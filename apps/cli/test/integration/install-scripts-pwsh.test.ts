@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -555,7 +555,10 @@ describeWindows("install.ps1 PATH diagnostics", () => {
 
           expect(result.status).toBe(0);
           expect(existsSync(npmShimPath)).toBe(true);
-          expect(result.stdout).toContain(`PATH winner: ${npmShimPath}`);
+          // GitHub's Windows runner exposes the temp root as RUNNER~1 while
+          // .NET's directory enumeration expands it to runneradmin. Both name
+          // the same file, so compare against the canonical on-disk spelling.
+          expect(result.stdout).toContain(`PATH winner: ${realpathSync.native(npmShimPath)}`);
           expect(result.stdout).toContain(`Planned native path: ${nativePath}`);
           expect(result.stdout).toContain("npm uninstall -g @kitsunekode/kunai");
         },

@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // Verify the published npm tarball stays small and never includes compiled binaries.
 
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   assertNpmPackBudgets,
@@ -142,17 +142,35 @@ export function verifyNpmPackDryRun(stdout: string): NpmPackDryRun {
 }
 
 function main(): void {
-  const result = Bun.spawnSync(["npm", "pack", "--dry-run", "--ignore-scripts"], {
-    cwd: NPM_PUBLISH_ROOT,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      ...process.env,
-      // Keep verification hermetic: npm otherwise writes to the user's cache,
-      // which is unavailable in sandboxes and unnecessary for a dry pack.
-      npm_config_cache: join(tmpdir(), "kunai-npm-pack-cache"),
-    },
-  });
+  const args = ["pack", "--dry-run", "--ignore-scripts"];
+  let command = [Bun.which("npm") ?? "npm", ...args];
+  if (process.platform === "win32") {
+    const node = Bun.which("node");
+    const npm = Bun.which("npm");
+    const npmCli = npm ? join(dirname(npm), "node_modules", "npm", "bin", "npm-cli.js") : null;
+    // npm is a .cmd shim on Windows. Executing its JS entrypoint with the
+    // resolved Node binary avoids shell/shim ambiguity in Bun.spawnSync.
+    if (node && npmCli && existsSync(npmCli)) command = [node, npmCli, ...args];
+  }
+
+  const cacheDirectory = mkdtempSync(join(tmpdir(), "kunai-npm-pack-cache-"));
+  const result = (() => {
+    try {
+      return Bun.spawnSync(command, {
+        cwd: NPM_PUBLISH_ROOT,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...process.env,
+          // Keep verification hermetic: npm otherwise writes to the user's cache,
+          // which is unavailable in sandboxes and unnecessary for a dry pack.
+          npm_config_cache: cacheDirectory,
+        },
+      });
+    } finally {
+      rmSync(cacheDirectory, { recursive: true, force: true });
+    }
+  })();
   const decoder = new TextDecoder();
   const output = `${decoder.decode(result.stdout)}${decoder.decode(result.stderr)}`;
   if (result.exitCode !== 0) {

@@ -19,7 +19,7 @@ const RELEASE_TARBALL = join(REPO_ROOT, ".release-candidate/kunai-npm.tgz");
  * installs Node, so coverage there is unchanged.
  */
 function nodeAvailable(): boolean {
-  return spawnSync("node", ["--version"], { encoding: "utf8" }).status === 0;
+  return Bun.which("node") !== null && Bun.which("npm") !== null;
 }
 
 const describeWithNode = nodeAvailable() ? describe : describe.skip;
@@ -64,7 +64,7 @@ describeWithNode("npm pack guard with binaries on disk", () => {
         encoding: "utf8",
       });
       const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-      expect(result.status).toBe(0);
+      expect(result.status, output).toBe(0);
       expect(output).toContain("[pkg:check] ok");
       expect(output).not.toContain("dist/bin/");
 

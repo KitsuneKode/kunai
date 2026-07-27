@@ -540,13 +540,13 @@ path_hint() {
 		info "Current shell: export PATH=\"$dir:\$PATH\""
 		shell_name="$(basename "${SHELL:-sh}")"
 		case "$shell_name" in
-		zsh) rc_file="~/.zshrc" ;;
-		bash) rc_file="~/.bashrc" ;;
+		zsh) rc_file="$HOME/.zshrc" ;;
+		bash) rc_file="$HOME/.bashrc" ;;
 		fish)
 			info "Persist for fish: fish_add_path $dir"
 			return
 			;;
-		*) rc_file="~/.profile" ;;
+		*) rc_file="$HOME/.profile" ;;
 		esac
 		info "Persist it: add 'export PATH=\"$dir:\$PATH\"' to $rc_file, then open a new shell."
 		;;
