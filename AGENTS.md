@@ -170,6 +170,7 @@ Single-context: root `CONTEXT.md` plus ADRs in `.docs/adr/`. See [docs/agents/do
 - [.plans/search-service.md](.plans/search-service.md): deferred search/provider decoupling
 - [.plans/yt-provider.md](.plans/yt-provider.md): deferred YouTube provider research
 - [.plans/provider-hardening.md](.plans/provider-hardening.md): provider research, hardening, and scraper capability roadmap
+- [.plans/provider-resolve-hardening-handoff.md](.plans/provider-resolve-hardening-handoff.md): follow-on slices after hedged fallback — cache/health defects, health recovery, latency-aware ordering
 - [.plans/repo-infrastructure.md](.plans/repo-infrastructure.md): completed CI, Husky, lint-staged, and template guardrail status
 - [.plans/sakura-rollout.md](.plans/sakura-rollout.md): Sakura theme migration — sliced multi-agent rollout, release gate, doc cleanup
 - [.plans/kitsune-design-system-and-recommendations.md](.plans/kitsune-design-system-and-recommendations.md): implemented design-token and `/discover` status plus remaining polish
