@@ -1,5 +1,4 @@
 import { afterEach, expect, test } from "bun:test";
-import { join } from "node:path";
 
 import type { StreamCandidate } from "@kunai/types";
 

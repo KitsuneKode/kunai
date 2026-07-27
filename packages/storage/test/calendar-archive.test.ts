@@ -1,11 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import {
-  CalendarArchiveRepository,
-  openKunaiDatabase,
-  runMigrations,
-  type KunaiDatabase,
-} from "../src/index";
+import { CalendarArchiveRepository, type KunaiDatabase } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();

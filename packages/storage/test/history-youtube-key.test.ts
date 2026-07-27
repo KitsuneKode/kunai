@@ -1,11 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import {
-  createHistoryKey,
-  HistoryRepository,
-  openKunaiDatabase,
-  runMigrations,
-} from "../src/index";
+import { createHistoryKey, HistoryRepository } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();

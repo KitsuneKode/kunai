@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { openKunaiDatabase, QueueRepository, runMigrations } from "../src/index";
+import { QueueRepository } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();

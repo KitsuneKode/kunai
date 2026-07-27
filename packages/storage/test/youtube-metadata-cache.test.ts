@@ -1,11 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import {
-  openKunaiDatabase,
-  runMigrations,
-  YoutubeMetadataCacheRepository,
-  type KunaiDatabase,
-} from "../src/index";
+import { YoutubeMetadataCacheRepository, type KunaiDatabase } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();

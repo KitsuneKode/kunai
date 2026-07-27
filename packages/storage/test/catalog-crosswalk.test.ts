@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 
-import { CatalogCrosswalkRepository, openKunaiDatabase, runMigrations } from "../src/index";
+import { CatalogCrosswalkRepository } from "../src/index";
 import type { KunaiDatabase } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 

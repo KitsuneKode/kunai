@@ -1,11 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import {
-  DiagnosticEventsRepository,
-  openKunaiDatabase,
-  runMigrations,
-  type KunaiDatabase,
-} from "../src/index";
+import { DiagnosticEventsRepository, type KunaiDatabase } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
 const stores = createTempStoreRegistry();

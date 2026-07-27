@@ -1,11 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 
-import {
-  externalIdsToAliases,
-  HistoryTitleAliasRepository,
-  openKunaiDatabase,
-  runMigrations,
-} from "../src/index";
+import { externalIdsToAliases, HistoryTitleAliasRepository } from "../src/index";
 import type { KunaiDatabase } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 

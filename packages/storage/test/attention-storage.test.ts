@@ -3,10 +3,8 @@ import { afterEach, expect, test } from "bun:test";
 import {
   FollowedTitleRepository,
   NotificationRepository,
-  openKunaiDatabase,
   QueueRepository,
   PlaylistsRepository,
-  runMigrations,
 } from "../src/index";
 import { createTempStoreRegistry } from "./helpers/temp-store";
 
