@@ -156,10 +156,16 @@ describe("panel-data", () => {
       recentEvents: [],
     });
 
+    // The problem is reported on its own subsystem row. It used to be repeated
+    // verbatim as a Verdict row above it; that duplicate is now suppressed when
+    // a single health row already says the same thing.
+    const playback = lines.find((line) => line.label === "Playback");
+    expect(playback?.detail).toContain("stream expired");
+    expect(playback?.detail).toMatch(/refresh source/i);
+    expect(playback?.tone).toBe("warning");
+
     const verdict = lines.find((line) => line.label === "Verdict");
-    expect(verdict?.detail).toContain("stream expired");
-    expect(verdict?.detail).toMatch(/refresh source|Refresh source/i);
-    expect(verdict?.tone).toBe("warning");
+    expect(verdict).toBeUndefined();
   });
 
   test("buildDiagnosticsPanelLines surfaces direct provider trace summary", () => {

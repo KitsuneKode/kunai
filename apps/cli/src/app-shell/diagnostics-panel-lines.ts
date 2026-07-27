@@ -25,6 +25,25 @@ const HEALTH_SUBSYSTEM_LABELS: Record<DiagnosticsSubsystem, string> = {
   memory: "Memory",
 };
 
+/**
+ * Whether the Verdict row adds anything beyond the health rows below it.
+ *
+ * When exactly one subsystem is unhealthy, the verdict is that subsystem's
+ * message restated — and the overlay header renders it a third time, so a
+ * single Discord failure filled three lines of a panel that only had room for
+ * eighteen.
+ */
+export function shouldRenderVerdictRow(
+  verdictDetail: string,
+  healthDetails: readonly string[],
+): boolean {
+  if (!verdictDetail) return false;
+  // An empty row detail is contained in every string, so it would hide every
+  // verdict rather than deduplicate one.
+  const covering = healthDetails.filter((detail) => detail && verdictDetail.includes(detail));
+  return covering.length !== 1;
+}
+
 export function buildDiagnosticsPanelLinesFromInsight({
   insight,
   developerMode = false,
@@ -37,22 +56,29 @@ export function buildDiagnosticsPanelLinesFromInsight({
 }): readonly ShellPanelLine[] {
   const verdictTone = severityToTone(insight.sessionVerdict.severity);
 
+  // Same de-duplication as the health rows: the verdict frequently restates its
+  // own cause ("unavailable · unavailable"), which buries the one line the user
+  // opened this panel to read.
+  const verdictDetail = formatHealthRowDetail({
+    label: insight.sessionVerdict.label,
+    reason: insight.likelyCause,
+    recommendedActionLabel: insight.sessionVerdict.primaryActionLabel,
+  } as DiagnosticsHealthRow);
+  const healthLines = insight.healthRows.map((row) => healthRowToPanelLine(row));
+  const verdictLines: readonly ShellPanelLine[] = shouldRenderVerdictRow(
+    verdictDetail,
+    healthLines.map((line) => line.detail),
+  )
+    ? [
+        { label: "─── Verdict", detail: "", tone: "info" },
+        { label: "Verdict", detail: verdictDetail, tone: verdictTone },
+      ]
+    : [];
+
   return [
-    { label: "─── Verdict", detail: "", tone: "info" },
-    {
-      label: "Verdict",
-      // Same de-duplication as the health rows: the verdict frequently restates
-      // its own cause ("unavailable · unavailable"), which buries the one line
-      // the user opened this panel to read.
-      detail: formatHealthRowDetail({
-        label: insight.sessionVerdict.label,
-        reason: insight.likelyCause,
-        recommendedActionLabel: insight.sessionVerdict.primaryActionLabel,
-      } as DiagnosticsHealthRow),
-      tone: verdictTone,
-    },
+    ...verdictLines,
     { label: "─── Health", detail: "", tone: "info" },
-    ...insight.healthRows.map((row) => healthRowToPanelLine(row)),
+    ...healthLines,
     { label: "─── Current Playback Evidence", detail: "", tone: "info" },
     ...buildCurrentPlaybackLines(insight),
     ...buildDecisionTimelineLines(insight, developerMode),
