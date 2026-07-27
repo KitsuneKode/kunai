@@ -133,12 +133,32 @@ assertion for the mpv named-pipe endpoint. It becomes a required check only when
 - the first Windows runs have no remaining platform-specific failures; and
 - the backlog below is empty.
 
+Closed: the parity leg now builds a Windows host binary and smoke-tests
+`--version` / `--help` on it. That gap had shipped a `kunai.exe` which exited 0
+printing nothing — inside a compiled Windows binary `import.meta.main` is false
+for the entry module (Bun compares `import.meta.path`, spelled with backslashes,
+against a forward-slash main specifier), so the startup call behind the guard
+never ran. `isProcessEntrypoint` in `apps/cli/src/infra/build/entrypoint.ts` now
+answers that question, and the smoke asserts real output rather than exit 0 —
+the failure mode exits 0, so an exit-code check alone would not have caught it.
+
 Open Windows parity backlog:
 
 - Add a native mpv named-pipe smoke; the current test locks endpoint construction,
-  but does not launch mpv or prove `Bun.connect` interoperability.
-- Add Windows compiled-binary build and smoke coverage; the parity leg currently
-  validates source execution only.
+  but does not launch mpv or prove `Bun.connect` interoperability. This is how
+  the endpoint shipped as `//./pipe/...`, a spelling mpv accepts silently and
+  never binds — every connect failed, playback looked dead, and the session fell
+  back and launched additional mpv processes for a stream already playing. The
+  endpoint is now `\\.\pipe\...` and the unit test takes `platform` as a
+  parameter so Linux CI checks the Windows contract too, but nothing yet proves
+  interoperability against a real mpv.
+- Promote `windows-cli` to a required check. It is still `continue-on-error`,
+  which is why the failures above were invisible on green runs.
+- Windows-only test isolation is easy to get wrong in ways POSIX hides. Two
+  shared helpers exist for the cases already found — `test/helpers/temp-store.ts`
+  (close database handles before removing a temp dir; Windows refuses to delete
+  open files) and `test/helpers/storage-env.ts` (redirect storage roots on every
+  platform, not just via `XDG_*`, which Windows ignores).
 
 **Local pipeline verification**
 

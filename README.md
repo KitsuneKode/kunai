@@ -11,14 +11,21 @@ One fullscreen, keyboard-driven terminal session.
 &nbsp;![kinds](https://img.shields.io/badge/anime%20%C2%B7%20series%20%C2%B7%20movies-c98bff)
 &nbsp;[![license](https://img.shields.io/badge/license-MIT-968a98)](LICENSE)
 
-```bash
-# Self-contained binary — no Bun/Node needed (mpv still required for playback)
-# Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+Self-contained binary — no Bun or Node needed (mpv is still required for playback).
 
-# Windows (PowerShell)
+**Linux / macOS**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
 irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
 ```
+
+Then:
 
 ```bash
 kunai --setup && kunai -S "Dune"

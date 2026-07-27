@@ -108,3 +108,51 @@ Start with:
 Command behavior should route through the canonical command registry and shared
 picker/overlay surfaces. Avoid adding provider-specific or player-specific
 policy inside render-only shell components.
+
+## Windows-Specific Failure Modes
+
+Windows breaks in ways POSIX hides, and several of these presented as something
+other than a platform bug. Check here before assuming the logic is wrong.
+
+**The CLI does nothing and exits 0.** In a `bun build --compile` binary on
+Windows, `import.meta.main` is false for the entry module — Bun compares
+`import.meta.path` (`B:\~BUN\root\main.js`) against the main specifier
+(`B:/~BUN/root/main.js`) and the separators disagree. Any `if (import.meta.main)`
+startup guard silently never fires. Use `isProcessEntrypoint`
+(`apps/cli/src/infra/build/entrypoint.ts`). Running from source hides this
+completely, so only a compiled-artifact smoke catches it.
+
+**Playback works but the session falls back and launches more mpv.** mpv accepts
+only the Win32 spelling for `--input-ipc-server`. Given `//./pipe/NAME` it starts
+normally, logs nothing, and never creates the pipe; every `Bun.connect` then
+fails, the player reads as dead, and fallback launches another mpv on top of one
+already playing. The endpoint must be `\.\pipe\NAME`
+(`apps/cli/src/infra/player/mpv-ipc-endpoint.ts`). `Bun.connect` accepts either
+spelling, so only the mpv side constrains this.
+
+**Posters look chunky rather than sharp.** Sixel output needs `chafa`; without it
+detection falls back to the built-in half-block renderer. Windows Terminal has
+supported sixel since 1.22, but nothing in the environment reports a version, so
+the DA1 probe (`apps/cli/src/image/probe.ts`) is the only thing that can confirm
+it — if the probe times out, capability drops to half-block even when chafa is
+present. `KUNAI_IMAGE_PROTOCOL=sixel` forces it; `kunai doctor` reports the
+resolved renderer and the reason it was chosen.
+
+**Providers behave differently than on Linux.** The `curl.exe` Windows ships in
+System32 is a Schannel build with no HTTP/2 (`curl --version` lists no `HTTP2`
+feature). Provider paths that negotiate HTTP/2 degrade against it; the winget
+`cURL.cURL` build has it.
+
+**Tests fail in teardown after passing.** `rmSync` on a directory holding an open
+SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does
+not, and retrying never helps because the handle is held for the process
+lifetime. Close first: `test/helpers/temp-store.ts`.
+
+**Tests read real user data.** `XDG_*` variables are Linux-only in
+`getKunaiPaths`; on Windows the roots come from `LOCALAPPDATA`/`APPDATA`. A test
+overriding only `XDG_CACHE_HOME` isolates nothing there. Use
+`test/helpers/storage-env.ts`.
+
+**Text fixtures stop matching.** `.gitattributes` pins the working tree to LF.
+Without it a Windows clone checks files out CRLF, which breaks `\n`-anchored
+parsers and makes bash reject `install.sh` lines.

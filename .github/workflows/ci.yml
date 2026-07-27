@@ -180,15 +180,20 @@ jobs:
         run: bunx turbo run test --summarize
 
   windows-cli:
-    name: Windows CLI parity (non-blocking)
+    name: Windows CLI parity
     needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
     runs-on: windows-latest
-    continue-on-error: true
-    # The suite is seconds of real work; anything approaching this is a hang,
-    # not slow tests. Windows minutes bill at 2x, and continue-on-error means a
-    # hang reports green, so a generous limit is spent silently.
-    timeout-minutes: 12
+    # Blocking. It was `continue-on-error: true` while the Windows suite could
+    # not pass, and that is exactly how a kunai.exe which exited 0 printing
+    # nothing reached main: the job that would have caught it was advisory. The
+    # suite is green on Windows now, so a red result here is a real regression.
+    #
+    # The suite is ~2 minutes of real work on Windows; anything approaching this
+    # limit is a hang, not slow tests. Windows minutes bill at 2x, so the bound
+    # stays tight deliberately: the last hang here was install.ps1 shelling out
+    # to a real `winget`, which sat for minutes per package.
+    timeout-minutes: 8
 
     # Promote this job to blocking only after the native mpv named-pipe smoke
     # exists and the Windows parity backlog in repo-infrastructure.md is empty.
@@ -207,8 +212,36 @@ jobs:
       - name: Test CLI
         # Step-level bound so a wedged suite is attributed here rather than
         # surfacing as an unexplained job cancellation with no failing step.
-        timeout-minutes: 8
+        timeout-minutes: 5
         run: bun run --cwd apps/cli test
+
+      # The Linux legs build and smoke a binary; Windows did not, and that gap
+      # shipped a kunai.exe that exited 0 printing nothing — `import.meta.main`
+      # is false for the entry module inside a compiled Windows binary, so the
+      # startup call never ran. Source execution cannot catch that class of bug:
+      # only a compiled artifact can.
+      - name: Build Windows host binary
+        timeout-minutes: 10
+        run: bun run build:binary:host
+
+      - name: Smoke test Windows binary
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $exe = "apps/cli/dist/bin/kunai-windows-x64.exe"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+
+          $version = (& $exe --version 2>&1 | Out-String).Trim()
+          Write-Host "kunai --version => '$version'"
+          if ($LASTEXITCODE -ne 0) { throw "--version exited $LASTEXITCODE" }
+          # The empty-output failure mode exits 0, so asserting the exit code is
+          # not enough — require the real version line.
+          if ($version -notmatch '^kunai\s+v?\d') { throw "--version did not print a kunai version" }
+
+          $help = (& $exe --help 2>&1 | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "--help exited $LASTEXITCODE" }
+          if ($help.Length -eq 0) { throw "--help printed nothing" }
+          Write-Host "Windows binary smoke ok"
 
   installer-lint:
     name: Installer script lint
