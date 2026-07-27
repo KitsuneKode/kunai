@@ -55,7 +55,58 @@ type Box = {
   readonly pixels: Uint32Array;
   readonly offset: number;
   readonly length: number;
+  /** Widest channel spread in this box, and the channel it belongs to. */
+  readonly spread: number;
+  readonly channel: 0 | 1 | 2;
 };
+
+/**
+ * Measure a box's widest channel once, at the moment it is created.
+ *
+ * All three channels are tracked in a single pass: the pixels are already in
+ * cache, and reading them three times costs three times as much for no extra
+ * information. The result is stored on the box because a split only changes the
+ * two boxes it produces — re-measuring every surviving box on every iteration
+ * made palette building O(colours x pixels x 3) when it is naturally linear.
+ */
+function measureBox(
+  pixels: Uint32Array,
+  offset: number,
+  length: number,
+): { spread: number; channel: 0 | 1 | 2 } {
+  let minR = 255;
+  let maxR = 0;
+  let minG = 255;
+  let maxG = 0;
+  let minB = 255;
+  let maxB = 0;
+
+  for (let p = offset; p < offset + length; p += 1) {
+    const packed = pixels[p] as number;
+    const r = packed & 0xff;
+    const g = (packed >>> 8) & 0xff;
+    const b = (packed >>> 16) & 0xff;
+    if (r < minR) minR = r;
+    if (r > maxR) maxR = r;
+    if (g < minG) minG = g;
+    if (g > maxG) maxG = g;
+    if (b < minB) minB = b;
+    if (b > maxB) maxB = b;
+  }
+
+  // Ties resolve to the lowest channel index, matching a plain 0,1,2 scan.
+  const spreadR = maxR - minR;
+  const spreadG = maxG - minG;
+  const spreadB = maxB - minB;
+  if (spreadR >= spreadG && spreadR >= spreadB) return { spread: spreadR, channel: 0 };
+  if (spreadG >= spreadB) return { spread: spreadG, channel: 1 };
+  return { spread: spreadB, channel: 2 };
+}
+
+function createBox(pixels: Uint32Array, offset: number, length: number): Box {
+  const { spread, channel } = measureBox(pixels, offset, length);
+  return { pixels, offset, length, spread, channel };
+}
 
 function channelAt(packed: number, channel: 0 | 1 | 2): number {
   return (packed >>> (channel * 8)) & 0xff;
@@ -73,30 +124,18 @@ function channelAt(packed: number, channel: 0 | 1 | 2): number {
 function medianCut(pixels: Uint32Array, maxColors: number): Rgb[] {
   if (pixels.length === 0) return [{ r: 0, g: 0, b: 0 }];
 
-  let boxes: Box[] = [{ pixels, offset: 0, length: pixels.length }];
+  const boxes: Box[] = [createBox(pixels, 0, pixels.length)];
 
   while (boxes.length < maxColors) {
     let target = -1;
     let targetSpread = 0;
-    let targetChannel: 0 | 1 | 2 = 0;
 
     for (let i = 0; i < boxes.length; i += 1) {
       const box = boxes[i] as Box;
       if (box.length < 2) continue;
-      for (const channel of [0, 1, 2] as const) {
-        let min = 255;
-        let max = 0;
-        for (let p = box.offset; p < box.offset + box.length; p += 1) {
-          const value = channelAt(box.pixels[p] as number, channel);
-          if (value < min) min = value;
-          if (value > max) max = value;
-        }
-        const spread = max - min;
-        if (spread > targetSpread) {
-          targetSpread = spread;
-          target = i;
-          targetChannel = channel;
-        }
+      if (box.spread > targetSpread) {
+        targetSpread = box.spread;
+        target = i;
       }
     }
 
@@ -104,16 +143,20 @@ function medianCut(pixels: Uint32Array, maxColors: number): Rgb[] {
     if (target === -1 || targetSpread === 0) break;
 
     const box = boxes[target] as Box;
+    const targetChannel = box.channel;
     const slice = box.pixels.subarray(box.offset, box.offset + box.length);
     slice.sort((a, b) => channelAt(a, targetChannel) - channelAt(b, targetChannel));
 
+    // Replace the box in place with its two halves. Order matters: selection
+    // resolves ties to the lowest index, so appending instead would change
+    // which box splits next, and with it the palette.
     const half = box.length >> 1;
-    boxes = [
-      ...boxes.slice(0, target),
-      { pixels: box.pixels, offset: box.offset, length: half },
-      { pixels: box.pixels, offset: box.offset + half, length: box.length - half },
-      ...boxes.slice(target + 1),
-    ];
+    boxes.splice(
+      target,
+      1,
+      createBox(box.pixels, box.offset, half),
+      createBox(box.pixels, box.offset + half, box.length - half),
+    );
   }
 
   return boxes.map((box) => {
@@ -165,18 +208,25 @@ export function quantize(
   height: number,
   maxColors: number,
 ): QuantizedImage {
-  const opaque: number[] = [];
-  for (let i = 0; i < width * height; i += 1) {
+  // Packed straight into the typed array the palette builder wants. A `number[]`
+  // of every opaque pixel plus a `Uint32Array.from` copy is two allocations the
+  // size of the image, on a path that already blocks the shell while it runs.
+  const pixelCount = width * height;
+  const opaque = new Uint32Array(pixelCount);
+  let opaqueCount = 0;
+  for (let i = 0; i < pixelCount; i += 1) {
     if ((rgba[i * 4 + 3] as number) < ALPHA_VISIBILITY_THRESHOLD) continue;
-    opaque.push(
+    opaque[opaqueCount] =
       (rgba[i * 4] as number) |
-        ((rgba[i * 4 + 1] as number) << 8) |
-        ((rgba[i * 4 + 2] as number) << 16),
-    );
+      ((rgba[i * 4 + 1] as number) << 8) |
+      ((rgba[i * 4 + 2] as number) << 16);
+    opaqueCount += 1;
   }
 
   // One register is spent on transparency, so the palette gets the rest.
-  const palette = medianCut(Uint32Array.from(opaque), Math.max(1, maxColors - 1));
+  // `subarray` is a view, and median cut sorts its ranges in place — which is
+  // exactly what it wants, and why this must not be a copy.
+  const palette = medianCut(opaque.subarray(0, opaqueCount), Math.max(1, maxColors - 1));
   const map = buildMapper(palette);
 
   const indices = new Uint8Array(width * height);
