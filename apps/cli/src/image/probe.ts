@@ -66,6 +66,22 @@ export function canProbeTerminal(
   return true;
 }
 
+/**
+ * How long to wait for the DA1 reply before giving up.
+ *
+ * This budget decides poster quality, not just detection latency. When the probe
+ * times out, Windows Terminal falls back to half-block — the chunky
+ * two-pixels-per-cell renderer — even on 1.22+ where sixel is supported and
+ * chafa is installed, because name-based detection cannot know the version and
+ * refuses to guess. Windows consoles round-trip the query through conhost and
+ * answer noticeably slower than a Unix pty, and 100 ms was tight enough to lose
+ * the race on a cold start. Paid once per process, and only when the terminal
+ * really has nothing to say.
+ */
+function defaultProbeTimeoutMs(): number {
+  return process.platform === "win32" ? 400 : 100;
+}
+
 /** Windows consoles that speak VT sequences and can therefore answer a query. */
 function isWindowsConsoleEnv(env: NodeJS.ProcessEnv): boolean {
   return env.OS === "Windows_NT" || env.WT_SESSION !== undefined || env.ConEmuANSI !== undefined;
@@ -137,7 +153,7 @@ export async function probeTerminalGraphics(
       stdin.on("data", onData);
 
       // A terminal that answers nothing must cost this once, not block startup.
-      timer = setTimeout(() => finish(null), options.timeoutMs ?? 100);
+      timer = setTimeout(() => finish(null), options.timeoutMs ?? defaultProbeTimeoutMs());
       stdout.write(KITTY_QUERY + DA1_QUERY);
     });
   } catch (error) {

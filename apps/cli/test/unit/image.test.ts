@@ -21,6 +21,8 @@ import {
 } from "@/image/renderers/chafa";
 import { NonPngError, renderKittyNative } from "@/image/renderers/kitty";
 
+import { storageRootEnv } from "../helpers/storage-env";
+
 const DEFAULT_OPTIONS: ImageRenderOptions = { size: "30x18", maxRows: 18, debug: false };
 
 const originalFetch = globalThis.fetch;
@@ -559,7 +561,7 @@ describe("chafa renderers", () => {
 describe("poster cache", () => {
   test("reuses the same cache file for the same poster path", async () => {
     await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
+      const restoreEnv = setEnv(storageRootEnv(dir));
       let fetchCalls = 0;
       setFetchMock(async () => {
         fetchCalls += 1;
@@ -579,7 +581,7 @@ describe("poster cache", () => {
 
   test("treats zero-byte cache files as invalid", async () => {
     await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
+      const restoreEnv = setEnv(storageRootEnv(dir));
       try {
         const url = cacheTesting.buildPosterUrl("/zero.jpg");
         const cachePath = cacheTesting.buildCachePath(url, "/zero.jpg");
@@ -605,7 +607,7 @@ describe("poster cache", () => {
 
   test("returns null on failed fetch", async () => {
     await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
+      const restoreEnv = setEnv(storageRootEnv(dir));
       setFetchMock(async () => new Response(null, { status: 404 }));
       try {
         const result = await getCachedPoster("/missing.jpg");
@@ -618,7 +620,7 @@ describe("poster cache", () => {
 
   test("uses atomic write helper for poster cache", async () => {
     await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
+      const restoreEnv = setEnv(storageRootEnv(dir));
       let writtenTarget: string | null = null;
       let writtenData: ArrayBuffer | null = null;
       const originalAtomic = cacheTesting.atomicWrite;
@@ -645,7 +647,7 @@ describe("poster cache", () => {
 
   test("returns null when atomic write fails", async () => {
     await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({ XDG_CACHE_HOME: dir });
+      const restoreEnv = setEnv(storageRootEnv(dir));
       const originalAtomic = cacheTesting.atomicWrite;
       cacheTesting.atomicWrite = async () => {
         throw new Error("atomic write failed");
@@ -689,7 +691,7 @@ describe("displayPoster", () => {
       const restoreEnv = setEnv({
         KUNAI_IMAGE_PROTOCOL: "kitty",
         KITTY_WINDOW_ID: "1",
-        XDG_CACHE_HOME: dir,
+        ...storageRootEnv(dir),
       });
       const restoreTty = mockStdoutIsTty(true);
       const restoreWhich = mockBunWhich(null);
