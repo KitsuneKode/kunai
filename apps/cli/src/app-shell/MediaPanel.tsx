@@ -80,7 +80,13 @@ function PosterSlot({
   return (
     <Box width={width} minHeight={13} justifyContent="center" alignItems="center">
       {poster.kind !== "none" ? (
-        <PosterOutput poster={poster} />
+        <PosterOutput
+          poster={poster}
+          // Playback telemetry renders every second. The pane itself still
+          // repaints when it commits, but unrelated timer frames must not resend
+          // a large Sixel payload and make Windows Terminal blink.
+          repaintAfterInkRender={placementSlot !== "playing-rail"}
+        />
       ) : (
         <SakuraPetal mode="placeholder" active={active} />
       )}

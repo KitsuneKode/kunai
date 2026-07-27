@@ -62,7 +62,7 @@ describe("sixel overlay placement", () => {
     expect(writes).toHaveLength(1);
   });
 
-  test("does not repaint an unchanged overlay after an unrelated Ink commit", async () => {
+  test("repaints a collision-sensitive overlay after an Ink frame", async () => {
     const writes: string[] = [];
     overlayTesting.runtime.isWindows = () => false;
     overlayTesting.runtime.write = (text) => {
@@ -70,6 +70,27 @@ describe("sixel overlay placement", () => {
     };
     const manager = new SixelOverlayManager();
     const overlay = { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" };
+
+    manager.register("playing-rail", overlay);
+    await Bun.sleep(5);
+    manager.afterInkRender();
+    await Bun.sleep(5);
+
+    expect(writes).toHaveLength(2);
+  });
+
+  test("does not repaint a high-frequency overlay after unrelated Ink frames", async () => {
+    const writes: string[] = [];
+    overlayTesting.runtime.isWindows = () => false;
+    overlayTesting.runtime.write = (text) => {
+      writes.push(text);
+    };
+    const manager = new SixelOverlayManager();
+    const overlay = {
+      rect: { x: 1, y: 2, width: 3, height: 4 },
+      sixel: "pixels",
+      repaintAfterInkRender: false,
+    };
 
     manager.register("playing-rail", overlay);
     await Bun.sleep(5);

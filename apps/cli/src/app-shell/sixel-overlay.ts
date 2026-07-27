@@ -10,6 +10,8 @@ export type SixelRect = {
 type SixelOverlay = {
   readonly rect: SixelRect;
   readonly sixel: string;
+  /** Repaint after any Ink frame that may have rewritten this blank slot. */
+  readonly repaintAfterInkRender?: boolean;
 };
 
 const ESC = "\x1b";
@@ -38,7 +40,12 @@ function sameRect(a: SixelRect, b: SixelRect): boolean {
 }
 
 function sameOverlay(a: SixelOverlay | undefined, b: SixelOverlay): boolean {
-  return a !== undefined && a.sixel === b.sixel && sameRect(a.rect, b.rect);
+  return (
+    a !== undefined &&
+    a.sixel === b.sixel &&
+    (a.repaintAfterInkRender ?? true) === (b.repaintAfterInkRender ?? true) &&
+    sameRect(a.rect, b.rect)
+  );
 }
 
 function moveTo(rect: Pick<SixelRect, "x" | "y">): string {
@@ -97,9 +104,13 @@ export class SixelOverlayManager {
    */
   afterInkRender(): void {
     for (const [id, overlay] of this.desired) {
+      if (overlay.repaintAfterInkRender !== false) {
+        this.dirty.add(id);
+        this.scheduleFlush();
+        continue;
+      }
       if (!sameOverlay(this.shown.get(id), overlay)) {
         this.scheduleFlush();
-        return;
       }
     }
     for (const id of this.shown.keys()) {
