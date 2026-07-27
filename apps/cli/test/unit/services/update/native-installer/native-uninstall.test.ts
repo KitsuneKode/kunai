@@ -35,7 +35,17 @@ async function makeRoot(platform: "linux" | "win32" = "linux") {
     cacheDir: join(root, "cache"),
     configDir: join(root, "config"),
     launcherPath: join(root, "bin", platform === "win32" ? "kunai.exe" : "kunai"),
-    platform,
+    // Join for the *host*, deliberately, because this helper then materialises
+    // the layout on the real filesystem. `getInstallLayoutPaths` formats paths
+    // for a target platform, and a win32 join is a *relative* path on POSIX:
+    // `\tmp\…` has no leading slash and a backslash is a legal filename
+    // character, so `mkdir` created a literal `\tmp\…` tree under the CWD and
+    // left it in the repo — the temp-root cleanup never saw those directories.
+    //
+    // The Windows behaviour under test is `nativeUninstall`'s launcher
+    // ownership check, which takes its own `platform` argument and does not
+    // depend on the layout's separators. The `.exe` launcher name above is what
+    // makes this a Windows layout for that purpose.
   });
   await mkdir(layout.versionsDir, { recursive: true });
   await mkdir(layout.locksDir, { recursive: true });
