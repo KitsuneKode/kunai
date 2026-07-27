@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { StructuredLogger } from "@/infra/logger/StructuredLogger";
-import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 
 describe("StructuredLogger", () => {
   test("retains child context in captured output", () => {
@@ -64,7 +64,8 @@ describe("StructuredLogger", () => {
 
   test("sanitizes log messages and context before serializing captured output", () => {
     const lines: string[] = [];
-    const home = process.env.HOME ?? "/home/tester";
+    // Mirrors production's resolver: `HOME` alone is unset on Windows.
+    const home = resolveRedactionHomeDir() ?? "/home/tester";
     const logger = new StructuredLogger({
       debug: true,
       write: (line) => lines.push(line),

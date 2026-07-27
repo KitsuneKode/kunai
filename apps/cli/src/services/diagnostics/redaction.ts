@@ -3,6 +3,24 @@ export type RedactionOptions = {
   readonly maxStringLength?: number;
 };
 
+/**
+ * The user's home directory, for collapsing local paths to `~`.
+ *
+ * `HOME` is a Unix convention. Windows sets `USERPROFILE` and frequently has no
+ * `HOME` at all, so every caller that read `process.env.HOME` alone passed
+ * `undefined` there -- and an undefined `homeDir` makes path redaction a no-op,
+ * so diagnostic events, debug traces, and issue reports carried the user's real
+ * home path. This is the one resolver; callers must not re-derive it.
+ */
+export function resolveRedactionHomeDir(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const key of ["HOME", "USERPROFILE"] as const) {
+    const value = env[key];
+    // A one-character "home" (`/`) would rewrite every slash in every path.
+    if (typeof value === "string" && value.length > 1) return value;
+  }
+  return undefined;
+}
+
 const DEFAULT_MAX_STRING_LENGTH = 1_000;
 
 const SENSITIVE_KEYS = new Set([

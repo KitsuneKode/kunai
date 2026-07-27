@@ -64,7 +64,7 @@ import {
   AsyncDurableDiagnosticsSink,
   type DurableDiagnosticsSinkOptions,
 } from "../services/diagnostics/DurableDiagnosticsSink";
-import { redactDiagnosticValue } from "../services/diagnostics/redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "../services/diagnostics/redaction";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
@@ -144,7 +144,7 @@ export function bootstrapCoreInfra(options?: ContainerOptions): CoreInfra {
     debug,
     console: () => !isInteractiveShellMounted(),
     file: debug ? join(process.cwd(), "logs.txt") : undefined,
-    sanitize: (value) => redactDiagnosticValue(value, { homeDir: process.env.HOME }),
+    sanitize: (value) => redactDiagnosticValue(value, { homeDir: resolveRedactionHomeDir() }),
   });
   initLogger(debug || process.env.KITSUNE_DEBUG === "1", logger);
   const sessionId = createCorrelationId("session");

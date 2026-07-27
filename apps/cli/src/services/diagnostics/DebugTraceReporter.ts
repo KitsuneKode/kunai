@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 
 import type { DiagnosticCategory, DiagnosticEventInput } from "./diagnostic-event";
 import { normalizeDiagnosticEvent } from "./diagnostic-event";
-import { redactDiagnosticValue } from "./redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "./redaction";
 import { pruneOldDiagnosticFiles } from "./retention";
 
 export type DebugTraceReporterOptions = {
@@ -33,7 +33,7 @@ export class DebugTraceReporter {
 
     const normalized = normalizeDiagnosticEvent(event);
     const redacted = redactDiagnosticValue(normalized, {
-      homeDir: process.env.HOME,
+      homeDir: resolveRedactionHomeDir(),
     });
     appendFileSync(this.options.filePath, `${JSON.stringify(redacted)}\n`, "utf8");
   }

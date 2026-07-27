@@ -1,3 +1,5 @@
+import { resolveRedactionHomeDir } from "./redaction";
+
 export type BundleRedactionOptions = {
   /** Absolute home directory to collapse to `~` (e.g. `/home/ada`). */
   readonly homeDir?: string;
@@ -70,14 +72,7 @@ export function redactBundleValue(value: unknown, options: BundleRedactionOption
 export function resolveBundleRedactionOptions(
   env: NodeJS.ProcessEnv = process.env,
 ): BundleRedactionOptions {
-  // Windows sets USERPROFILE, not HOME. Reading HOME alone left homeDir
-  // undefined on Windows, so no path was ever collapsed to `~` and the username
-  // fallback below never ran -- support bundles shipped full user paths.
-  const readEnv = (key: string): string | undefined => {
-    const value = env[key];
-    return typeof value === "string" && value.length > 1 ? value : undefined;
-  };
-  const homeDir = readEnv("HOME") ?? readEnv("USERPROFILE");
+  const homeDir = resolveRedactionHomeDir(env);
   const username =
     (typeof env.USER === "string" && env.USER.length > 0 ? env.USER : undefined) ??
     (typeof env.USERNAME === "string" && env.USERNAME.length > 0 ? env.USERNAME : undefined) ??

@@ -4,7 +4,7 @@ import type {
   DiagnosticEventInput,
   DiagnosticsStore,
 } from "@/services/diagnostics/DiagnosticsStore";
-import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 
 const MAX_EVENTS = 500;
 const MAX_MESSAGE_LENGTH = 500;
@@ -42,7 +42,7 @@ export class DiagnosticsStoreImpl implements DiagnosticsStore {
 
 function redactEventInput(event: DiagnosticEventInput): DiagnosticEventInput {
   const redacted = redactDiagnosticValue(event, {
-    homeDir: process.env.HOME,
+    homeDir: resolveRedactionHomeDir(),
     maxStringLength: 1_000,
   }) as DiagnosticEventInput;
 

@@ -7,7 +7,7 @@ import { normalizeDiagnosticEvent } from "./diagnostic-event";
 import { buildDiagnosticsBundle } from "./DiagnosticsBundleBuilder";
 import type { DiagnosticsService } from "./DiagnosticsService";
 import type { DiagnosticsStore } from "./DiagnosticsStore";
-import { redactDiagnosticValue } from "./redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "./redaction";
 
 export interface DurableDiagnosticsSink {
   enqueue(event: DiagnosticEvent): void;
@@ -61,7 +61,7 @@ export class DiagnosticsServiceImpl implements DiagnosticsService {
         ? event
         : { ...event, sessionId: this.deps.sessionId };
     const redactedEvent = redactDiagnosticValue(withSession, {
-      homeDir: process.env.HOME,
+      homeDir: resolveRedactionHomeDir(),
     }) as DiagnosticEventInput;
     const normalizedEvent = normalizeDiagnosticEvent(redactedEvent, this.deps.now?.().getTime());
     this.deps.store.record(normalizedEvent);

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
+import { resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { buildDiagnosticsSupportBundle } from "@/services/diagnostics/support-bundle";
+
+/** Mirrors production.s home resolution; `HOME` alone is unset on Windows. */
+const TEST_HOME = resolveRedactionHomeDir() ?? "/home/kunai-test";
 
 describe("IssueReportBuilder", () => {
   test("builds a redacted GitHub issue draft from the support bundle", () => {
@@ -17,7 +21,7 @@ describe("IssueReportBuilder", () => {
           operation: "provider.resolve",
           providerId: "vidking",
           message: "Provider failed for https://cdn.example/video.m3u8?token=secret",
-          context: { path: `${process.env.HOME ?? "/home/user"}/.config/kunai/config.json` },
+          context: { path: `${TEST_HOME}/.config/kunai/config.json` },
         },
       ],
     });
@@ -32,7 +36,7 @@ describe("IssueReportBuilder", () => {
     expect(draft.body).toContain("Provider failed for https://redacted-host/video.m3u8");
     expect(draft.body).not.toContain("secret");
     expect(draft.body).not.toContain("cdn.example");
-    expect(draft.body).not.toContain(process.env.HOME ?? "__missing_home__");
+    expect(draft.body).not.toContain(TEST_HOME);
     expect(draft.body).toContain("kunai-diagnostics-report.json");
     expect(draft.issueUrl).toStartWith("https://github.com/example/kunai/issues/new?");
     expect(draft.issueUrl).toContain("Provider+failed");

@@ -14,6 +14,10 @@ import {
   mapFailureToRecommendedAction,
   mapSeverityToHealthLabel,
 } from "@/services/diagnostics/diagnostic-event-helpers";
+import { resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
+
+/** Mirrors production's home resolution; `HOME` alone is unset on Windows. */
+const TEST_HOME = resolveRedactionHomeDir() ?? "/home/kunai-test";
 
 describe("diagnostic-event-helpers", () => {
   test("builds a redacted structured envelope", () => {
@@ -42,7 +46,7 @@ describe("diagnostic-event-helpers", () => {
       context: {
         streamUrl: "https://cdn.example/stream.m3u8?token=secret",
         authorization: "Bearer secret",
-        home: `${process.env.HOME}/secret/file`,
+        home: `${TEST_HOME}/secret/file`,
       },
     });
 
@@ -57,7 +61,7 @@ describe("diagnostic-event-helpers", () => {
     expect(event.spanId).toBe("span-1");
     expect(JSON.stringify(event)).not.toContain("token=secret");
     expect(JSON.stringify(event)).not.toContain("Bearer secret");
-    expect(JSON.stringify(event)).not.toContain(`${process.env.HOME}/secret`);
+    expect(JSON.stringify(event)).not.toContain(`${TEST_HOME}/secret`);
   });
 
   test("maps failure classes to recommended actions", () => {

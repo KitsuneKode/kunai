@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
+import { resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import {
   applySupportBundleSizeBudget,
   buildDiagnosticsSupportBundle,
   DEFAULT_SUPPORT_BUNDLE_MAX_BYTES,
 } from "@/services/diagnostics/support-bundle";
+
+/** Mirrors production's home resolution; `HOME` alone is unset on Windows. */
+const TEST_HOME = resolveRedactionHomeDir() ?? "/home/kunai-test";
 
 describe("DiagnosticsSupportBundle", () => {
   test("builds layered summary and section metadata", () => {
@@ -243,7 +247,7 @@ describe("DiagnosticsSupportBundle", () => {
           level: "warn",
           operation: "download.capacity.start",
           message: "Download paused before start because free space is reserved",
-          context: { titleId: "anilist:1", outputPath: `${process.env.HOME}/secret/show.mkv` },
+          context: { titleId: "anilist:1", outputPath: `${TEST_HOME}/secret/show.mkv` },
         },
         {
           timestamp: 2,
@@ -261,7 +265,7 @@ describe("DiagnosticsSupportBundle", () => {
       latestOperation: "offline-runway.evaluate",
       context: { target: 2, enqueued: 1 },
     });
-    expect(JSON.stringify(bundle)).not.toContain(`${process.env.HOME}/secret`);
+    expect(JSON.stringify(bundle)).not.toContain(`${TEST_HOME}/secret`);
   });
 
   test("exports a redacted resolve work graph from local ledgers", () => {

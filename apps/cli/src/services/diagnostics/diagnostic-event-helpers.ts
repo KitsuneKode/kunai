@@ -1,6 +1,6 @@
 import type { DiagnosticCategory, DiagnosticEventInput } from "./diagnostic-event";
 import type { DiagnosticSeverity, RecommendedAction } from "./diagnostics-insight";
-import { redactDiagnosticValue } from "./redaction";
+import { redactDiagnosticValue, resolveRedactionHomeDir } from "./redaction";
 
 export const DIAGNOSTIC_SPAN_FAMILIES = [
   "playback.startup",
@@ -91,7 +91,7 @@ export function buildDiagnosticEvent(input: BuildDiagnosticEventInput): Diagnost
       subject: input.subject,
       ...input.context,
     }),
-    { homeDir: process.env.HOME },
+    { homeDir: resolveRedactionHomeDir() },
   ) as Record<string, unknown>;
 
   return redactDiagnosticValue(
@@ -111,7 +111,7 @@ export function buildDiagnosticEvent(input: BuildDiagnosticEventInput): Diagnost
       episode: input.episode,
       context: envelopeContext,
     }),
-    { homeDir: process.env.HOME },
+    { homeDir: resolveRedactionHomeDir() },
   ) as DiagnosticEventInput;
 }
 
