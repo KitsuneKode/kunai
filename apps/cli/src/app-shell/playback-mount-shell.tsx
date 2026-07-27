@@ -167,7 +167,12 @@ export function buildPlaybackRootLoadingShellState(
     autoskipPaused: state.autoskipSessionPaused,
     autoplayPaused: state.autoplaySessionPaused,
     isSeriesPlayback,
-    latestIssue: state.playbackNote,
+    // `playbackNote` is advisory copy ("Recoverable provider failures retry
+    // before fallback."), emitted at the *start* of a healthy resolve. It is
+    // not an issue and must not reach the issue channel — it previously did,
+    // and substring-matching it lit "Trying another source" over successful
+    // resolves. Alarm state comes from `problem` below, which is structured.
+    problem: state.playbackProblem,
     currentPosition: activePlaybackTelemetrySnapshot?.positionSeconds,
     duration: activePlaybackTelemetrySnapshot?.durationSeconds,
     bufferHealth:

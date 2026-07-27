@@ -1,4 +1,5 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
+import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
@@ -191,25 +192,39 @@ export function getProviderResolveWaitPresentation(input: {
   readonly elapsedSeconds: number;
   readonly fallbackAvailable?: boolean;
   readonly latestIssue?: string | null;
+  /** Structured resolve problem. Authoritative for alarm state. */
+  readonly problem?: PlaybackProblem | null;
+  /** True only once fallback to another provider has actually started. */
+  readonly fallbackInProgress?: boolean;
   readonly stageDetail?: string;
   readonly dominantPhaseLabel?: string;
 }): ProviderResolveWaitPresentation {
   const fallbackHint = input.fallbackAvailable ? "f fallback · " : "";
   const issue = normalizeLoadingIssue(input.latestIssue);
 
-  if (issue) {
-    const classified = classifyProviderResolveUserState({
-      issue,
-      elapsedSeconds: input.elapsedSeconds,
-    });
+  // Classify from structured state only. `latestIssue` is advisory copy and is
+  // rendered verbatim as a fallback message — never pattern-matched, because
+  // the healthy-path note mentions "fallback" and used to trip the alarm path.
+  //
+  // `elapsedSeconds` is deliberately withheld here: the dedicated slow-source
+  // branch below owns that case and offers richer affordances (source picker,
+  // diagnostics). Passing it would preempt that branch with a weaker footer.
+  const classified = classifyProviderResolveUserState({
+    problem: input.problem,
+    fallbackInProgress: input.fallbackInProgress,
+  });
+
+  if (classified) {
     return {
-      message: classified
-        ? input.stageDetail
-          ? `${input.stageDetail} · ${classified.title}`
-          : classified.title
-        : input.stageDetail
-          ? `${input.stageDetail} · Issue: ${issue}`
-          : `Issue: ${issue}`,
+      message: input.stageDetail ? `${input.stageDetail} · ${classified.title}` : classified.title,
+      tone: "warning",
+      footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
+    };
+  }
+
+  if (issue) {
+    return {
+      message: input.stageDetail ? `${input.stageDetail} · Issue: ${issue}` : `Issue: ${issue}`,
       tone: "warning",
       footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
     };

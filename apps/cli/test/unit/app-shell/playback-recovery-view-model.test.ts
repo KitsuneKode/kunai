@@ -48,12 +48,35 @@ describe("buildPlaybackRecoveryViewModel", () => {
     const model = buildPlaybackRecoveryViewModel(
       baseState({
         operation: "resolving",
-        latestIssue: "Provider/CDN may be degraded. Try fallback or open diagnostics.",
+        // Structured evidence, not prose. Advisory copy that merely mentions
+        // "fallback" or "degraded" must never open this panel.
+        problem: {
+          stage: "provider-resolve",
+          severity: "recoverable",
+          cause: "provider-timeout",
+          userMessage: "The provider timed out while resolving the stream.",
+          recommendedAction: "refresh",
+          secondaryActions: ["try-next-provider", "diagnostics"],
+        },
         fallbackAvailable: true,
       }),
     );
     expect(model?.state.kind).toBe("info");
     expect(model?.state.title).toBe("Slow source");
+  });
+
+  test("advisory copy mentioning fallback does not open the recovery panel", () => {
+    // Regression: the healthy-path note is emitted at the start of every
+    // successful resolve and contains the word "fallback".
+    expect(
+      buildPlaybackRecoveryViewModel(
+        baseState({
+          operation: "resolving",
+          latestIssue: "Recoverable provider failures retry before fallback.",
+          fallbackAvailable: true,
+        }),
+      ),
+    ).toBeNull();
   });
 
   test("no source available keeps diagnostics but does not offer next", () => {

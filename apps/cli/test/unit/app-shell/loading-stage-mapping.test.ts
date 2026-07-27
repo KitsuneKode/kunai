@@ -100,12 +100,28 @@ describe("provider resolve wait presentation", () => {
     expect(result.message).toBe("Resolving direct link…");
   });
 
-  test("latestIssue takes priority over elapsed degradation", () => {
+  test("a structured problem takes priority over elapsed degradation", () => {
+    const result = getProviderResolveWaitPresentation({
+      elapsedSeconds: 36,
+      problem: {
+        stage: "provider-resolve",
+        severity: "recoverable",
+        cause: "provider-timeout",
+        userMessage: "The provider timed out while resolving the stream.",
+        recommendedAction: "refresh",
+        secondaryActions: ["try-next-provider", "diagnostics"],
+      },
+    });
+    expect(result.message).toBe("Slow source");
+    expect(result.tone).toBe("warning");
+  });
+
+  test("prose without a structured problem is shown verbatim, never diagnosed", () => {
     const result = getProviderResolveWaitPresentation({
       elapsedSeconds: 36,
       latestIssue: "vidking: CDN request timed out",
     });
-    expect(result.message).toBe("Slow source");
+    expect(result.message).toBe("Issue: vidking: CDN request timed out");
     expect(result.tone).toBe("warning");
   });
 

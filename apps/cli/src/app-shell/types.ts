@@ -1,5 +1,6 @@
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
+import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { ReleaseFilter, WatchFilter } from "@/domain/search/SearchIntent";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -249,6 +250,12 @@ export type LoadingShellState = {
   /** What plays after this — the next episode, else the Up Next queue head. */
   upNextLabel?: string;
   latestIssue?: string | null;
+  /**
+   * Structured resolve/playback problem. Authoritative for alarm UI.
+   * Prefer this over `latestIssue`, which carries advisory prose that must
+   * never be pattern-matched to infer failure.
+   */
+  problem?: PlaybackProblem | null;
   stopHint?: string;
   controlHint?: string;
   /** Inventory + autoplay/autoskip facts for the playing context strip. */

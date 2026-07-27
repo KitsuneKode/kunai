@@ -31,8 +31,11 @@ export function buildPlaybackRecoveryViewModel(
     issue.includes("no source") ||
     issue.includes("source unavailable") ||
     issue.includes("quality variants unavailable");
-  const degraded = issue.includes("degraded") || issue.includes("fallback");
-  const classified = classifyProviderResolveUserState({ issue: state.latestIssue });
+  // Deliberately NOT derived from `issue`. The healthy-path advisory note
+  // contains the word "fallback", so substring-matching it opened the recovery
+  // panel over successful resolves. Degradation is now structured evidence.
+  const degraded = state.problem?.severity === "recoverable";
+  const classified = classifyProviderResolveUserState({ problem: state.problem });
 
   if (!stalled && !didNotStart && !noSource && !degraded && !classified) return null;
 

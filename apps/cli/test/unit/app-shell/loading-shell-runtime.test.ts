@@ -93,7 +93,31 @@ describe("loading shell runtime policy", () => {
       footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
     });
 
-    // latestIssue takes priority over elapsed-based degradation
+    // A structured problem takes priority over elapsed-based degradation.
+    // A real CDN timeout arrives as `cause: "provider-timeout"`, not as prose
+    // to be pattern-matched.
+    expect(
+      getProviderResolveWaitPresentation({
+        elapsedSeconds: 36,
+        fallbackAvailable: true,
+        problem: {
+          stage: "provider-resolve",
+          severity: "recoverable",
+          cause: "provider-timeout",
+          userMessage: "The provider timed out while resolving the stream.",
+          recommendedAction: "refresh",
+          secondaryActions: ["try-next-provider", "diagnostics"],
+        },
+      }),
+    ).toEqual({
+      message: "Slow source",
+      tone: "warning",
+      footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
+    });
+
+    // With only prose and no structured problem, the message is shown verbatim
+    // rather than being guessed at. Inventing a diagnosis from a string is the
+    // defect this contract exists to prevent.
     expect(
       getProviderResolveWaitPresentation({
         elapsedSeconds: 36,
@@ -101,7 +125,7 @@ describe("loading shell runtime policy", () => {
         latestIssue: "vidking: CDN request timed out",
       }),
     ).toEqual({
-      message: "Slow source",
+      message: "Issue: vidking: CDN request timed out",
       tone: "warning",
       footerTask: "Playback bootstrap  ·  f fallback · q / Esc cancel",
     });
