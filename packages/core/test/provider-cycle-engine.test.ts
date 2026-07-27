@@ -77,6 +77,82 @@ test("runProviderCycle retries a timed out candidate before moving to the next o
   ]);
 });
 
+test("allowTransientCandidateRetry grants an attempt beyond the normal budget", async () => {
+  const attempts: string[] = [];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    candidateTimeoutMs: 5,
+    retryDelayMs: 0,
+    maxAttemptsPerCandidate: 2,
+    allowTransientCandidateRetry: true,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      await Bun.sleep(20);
+      return { streamId: candidate.id };
+    },
+  });
+
+  // 2 budgeted attempts + 1 transient retry. The flag previously consumed part
+  // of the budget instead of extending it, so it never granted anything.
+  expect(attempts).toHaveLength(3);
+  expect(result.stopReason).toBe("exhausted");
+  expect(
+    result.events.filter(
+      (event) =>
+        event.type === "retry:scheduled" && event.attributes?.reason === "transient-endpoint",
+    ),
+  ).toHaveLength(1);
+});
+
+test("allowTransientCandidateRetry is not spent on non-transient failures", async () => {
+  const attempts: string[] = [];
+
+  await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    retryDelayMs: 0,
+    maxAttemptsPerCandidate: 2,
+    allowTransientCandidateRetry: true,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      throw createProviderCycleFailureError(candidate, {
+        failureClass: "candidate-parse",
+        message: "Missing stream field",
+        retryable: false,
+        at: "2026-05-19T00:00:00.000Z",
+      });
+    },
+  });
+
+  expect(attempts).toHaveLength(1);
+});
+
+test("transient retries wait by default instead of re-firing instantly", async () => {
+  const startedAt: number[] = [];
+
+  await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidates[0]!],
+    candidateTimeoutMs: 5,
+    maxAttemptsPerCandidate: 2,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      startedAt.push(Date.now());
+      await Bun.sleep(20);
+      return { streamId: candidate.id };
+    },
+  });
+
+  expect(startedAt).toHaveLength(2);
+  // No explicit retryDelayMs, so the transient default applies — retrying a
+  // timeout with zero delay only reproduces the timeout.
+  expect(startedAt[1]! - startedAt[0]!).toBeGreaterThanOrEqual(700);
+});
+
 test("runProviderCycle streams source events to an external observer", async () => {
   const observed: string[] = [];
   await runProviderCycle({

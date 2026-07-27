@@ -48,6 +48,13 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
 const DEFAULT_MAX_ATTEMPTS_PER_CANDIDATE = 2;
 const DEFAULT_CANDIDATE_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRY_DELAY_MS = 0;
+/**
+ * Re-firing a candidate the instant it timed out just reproduces the timeout —
+ * the endpoint has had no time to recover. Callers that say nothing about retry
+ * delay get this for transient failures; an explicit `retryDelayMs` still wins,
+ * so tests and tuned providers keep full control.
+ */
+const DEFAULT_TRANSIENT_RETRY_DELAY_MS = 750;
 
 export class ProviderCycleFailureError extends Error {
   constructor(readonly failure: ProviderCycleFailure) {
@@ -106,7 +113,10 @@ export async function runProviderCycle<TResolved>(
   const maxAttemptsPerCandidate =
     input.maxAttemptsPerCandidate ?? DEFAULT_MAX_ATTEMPTS_PER_CANDIDATE;
   const candidateTimeoutMs = input.candidateTimeoutMs ?? DEFAULT_CANDIDATE_TIMEOUT_MS;
-  const retryDelayMs = input.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const retryDelayMs = input.retryDelayMs;
+  // An extra attempt *on top of* the normal budget. Carving it out of the
+  // budget instead made the flag inert at every call site.
+  const transientRetryBudget = input.allowTransientCandidateRetry === true ? 1 : 0;
 
   let skippedQuarantined = 0;
   let attemptedCandidates = 0;
@@ -130,7 +140,12 @@ export async function runProviderCycle<TResolved>(
 
     attemptedCandidates += 1;
 
-    for (let attemptNumber = 1; attemptNumber <= maxAttemptsPerCandidate; attemptNumber++) {
+    let transientRetriesUsed = 0;
+    for (
+      let attemptNumber = 1;
+      attemptNumber <= maxAttemptsPerCandidate + transientRetryBudget;
+      attemptNumber++
+    ) {
       if (input.signal?.aborted) {
         return {
           attempts,
@@ -229,21 +244,23 @@ export async function runProviderCycle<TResolved>(
           };
         }
 
-        if (!failure.retryable || attemptNumber >= maxAttemptsPerCandidate) {
+        if (!failure.retryable || attemptNumber >= maxAttemptsPerCandidate + transientRetriesUsed) {
           if (
-            input.allowTransientCandidateRetry === true &&
-            attemptNumber < 2 &&
+            failure.retryable &&
+            transientRetriesUsed < transientRetryBudget &&
             (failure.failureClass === "candidate-timeout" ||
               failure.failureClass === "candidate-network")
           ) {
+            transientRetriesUsed += 1;
             emit(
               createCycleTraceEvent("retry:scheduled", candidate, now(), {
                 attempt: attemptNumber,
                 reason: "transient-endpoint",
               }),
             );
-            if (retryDelayMs > 0) {
-              await sleepWithAbort(retryDelayMs, input.signal);
+            const transientDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
+            if (transientDelayMs > 0) {
+              await sleepWithAbort(transientDelayMs, input.signal);
             }
             continue;
           }
@@ -253,8 +270,9 @@ export async function runProviderCycle<TResolved>(
         emit(
           createCycleTraceEvent("retry:scheduled", candidate, now(), { attempt: attemptNumber }),
         );
-        if (retryDelayMs > 0) {
-          await sleepWithAbort(retryDelayMs, input.signal);
+        const nextDelayMs = retryDelayForFailureClass(retryDelayMs, failure.failureClass);
+        if (nextDelayMs > 0) {
+          await sleepWithAbort(nextDelayMs, input.signal);
         }
       }
     }
@@ -277,6 +295,17 @@ export async function runProviderCycle<TResolved>(
     fallbackRequested: false,
     cancelled: false,
   };
+}
+
+function retryDelayForFailureClass(
+  explicitDelayMs: number | undefined,
+  failureClass: ProviderCycleFailureClass,
+): number {
+  if (explicitDelayMs !== undefined) return explicitDelayMs;
+  if (failureClass === "candidate-timeout" || failureClass === "candidate-network") {
+    return DEFAULT_TRANSIENT_RETRY_DELAY_MS;
+  }
+  return DEFAULT_RETRY_DELAY_MS;
 }
 
 function orderCycleCandidates(
