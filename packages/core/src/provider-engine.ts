@@ -13,6 +13,10 @@ import type {
 import { isProviderResolveResultResolved } from "@kunai/types";
 
 import { DEFAULT_CONSECUTIVE_OFFLINE_THRESHOLD, OfflineEvidenceTracker } from "./offline-evidence";
+import {
+  guardEndpointHealthAgainstCancellation,
+  ProviderAttemptTimeoutError,
+} from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
 import { resolveProviderIdAlias } from "./provider-id-aliases";
 import type { CoreProviderModule } from "./provider-sdk";
@@ -215,7 +219,11 @@ export class ProviderEngine {
       },
       fetch: resolveFetchPort(this.fetch, providerId),
       auth: this.auth,
-      endpointHealth: this.endpointHealth,
+      // Same rule as the attempt path: a cancelled caller must not leave
+      // failure evidence against an endpoint that was merely interrupted.
+      endpointHealth: this.endpointHealth
+        ? guardEndpointHealthAgainstCancellation(this.endpointHealth, signal)
+        : undefined,
       titleBridge: this.titleBridge,
     });
   }
@@ -652,7 +660,12 @@ export class ProviderEngine {
       },
       fetch: resolveFetchPort(this.fetch, module.providerId),
       auth: this.auth,
-      endpointHealth: this.endpointHealth,
+      // Cancelling an attempt says nothing about the endpoint. Hedged fallback
+      // aborts every losing candidate, so an unguarded port would let the
+      // provider's own catch blocks quarantine healthy-but-slower endpoints.
+      endpointHealth: this.endpointHealth
+        ? guardEndpointHealthAgainstCancellation(this.endpointHealth, attemptSignal)
+        : undefined,
       titleBridge: this.titleBridge,
       emit: (event) => traceEvents.push(event),
     });
@@ -666,7 +679,9 @@ export class ProviderEngine {
         operation,
         new Promise<ProviderResolveResult | null>((_, reject) => {
           timeout = setTimeout(() => {
-            attemptController.abort(new Error("provider resolve timeout"));
+            // Typed so the health guard can tell "this endpoint was too slow"
+            // (real evidence) from "we cancelled this attempt" (not evidence).
+            attemptController.abort(new ProviderAttemptTimeoutError());
             const failure: ProviderFailure = {
               providerId: module.providerId,
               code: "timeout",

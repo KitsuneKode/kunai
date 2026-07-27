@@ -1579,3 +1579,115 @@ test("summarizeProviderTraceEvents prefers canonical cycle events over provider-
     }),
   ]);
 });
+
+/**
+ * Mirrors the shape every real scraper uses: endpoint health is recorded from
+ * inside the provider's own catch block, which an abort lands in just like a
+ * genuine error would.
+ */
+function healthReportingModule(
+  id: string,
+  behaviour: { readonly delayMs: number; readonly succeeds: boolean },
+  recorded: Array<{ endpoint: string; class: string }>,
+): CoreProviderModule {
+  return {
+    providerId: id as never,
+    manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
+    async resolve(input, context) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, behaviour.delayMs);
+          context.signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(new Error(`${id} aborted`));
+            },
+            { once: true },
+          );
+        });
+      } catch (error) {
+        // Exactly the videasy ordering: report, then propagate.
+        context.endpointHealth?.recordFailure(id as never, `${id}-endpoint`, {
+          class: "server-error",
+          titleId: input.title.id,
+          at: context.now(),
+        });
+        throw error;
+      }
+      if (!behaviour.succeeds) throw new Error(`${id} failed`);
+      return {
+        status: "resolved",
+        providerId: id,
+        selectedStreamId: `stream:${id}`,
+        streams: [
+          {
+            id: `stream:${id}`,
+            providerId: id,
+            url: `https://cdn.example/${id}.m3u8`,
+            protocol: "hls",
+            confidence: 0.9,
+            cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+          },
+        ],
+        subtitles: [],
+        trace: {
+          id: `trace:${id}`,
+          startedAt: context.now(),
+          title: input.title,
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+      } as never;
+    },
+  };
+}
+
+function recordingEndpointHealth(recorded: Array<{ endpoint: string; class: string }>) {
+  return {
+    shouldTry: () => true,
+    recordSuccess: () => {},
+    recordFailure: (_providerId: never, endpoint: string, info: { class: string }) => {
+      recorded.push({ endpoint, class: info.class });
+    },
+  };
+}
+
+test("a hedge loser does not leave endpoint-health evidence against itself", async () => {
+  const recorded: Array<{ endpoint: string; class: string }> = [];
+  const engine = createProviderEngine({
+    modules: [
+      healthReportingModule("slow-primary", { delayMs: 5_000, succeeds: true }, recorded),
+      healthReportingModule("fast-hedge", { delayMs: 20, succeeds: true }, recorded),
+    ],
+    maxAttempts: 1,
+    hedgeDelayMs: 30,
+    endpointHealth: recordingEndpointHealth(recorded) as never,
+  });
+
+  const output = await engine.resolveWithFallback(
+    HEDGE_INPUT as never,
+    ["slow-primary", "fast-hedge"] as never,
+  );
+
+  expect(output.providerId).toBe("fast-hedge" as never);
+  // slow-primary was cancelled because it lost a race we started. Recording a
+  // server-error for it quarantines a healthy endpoint for an hour.
+  expect(recorded).toEqual([]);
+});
+
+test("a genuine attempt timeout is still recorded as endpoint evidence", async () => {
+  const recorded: Array<{ endpoint: string; class: string }> = [];
+  const engine = createProviderEngine({
+    modules: [healthReportingModule("too-slow", { delayMs: 5_000, succeeds: true }, recorded)],
+    maxAttempts: 1,
+    attemptTimeoutMs: 20,
+    endpointHealth: recordingEndpointHealth(recorded) as never,
+  });
+
+  await engine.resolveWithFallback(HEDGE_INPUT as never, ["too-slow"] as never);
+
+  expect(recorded).toEqual([{ endpoint: "too-slow-endpoint", class: "server-error" }]);
+});

@@ -1,6 +1,7 @@
 export * from "./cache-policy";
 export * from "./provider-failure-classifier";
 export * from "./offline-evidence";
+export * from "./provider-attempt-cancellation";
 export * from "./embed-url";
 export * from "./provider-id-aliases";
 export * from "./provider-engine";
