@@ -247,6 +247,75 @@ jobs:
           if ($help.Length -eq 0) { throw "--help printed nothing" }
           Write-Host "Windows binary smoke ok"
 
+  macos-cli:
+    name: macOS CLI parity
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
+    # Apple Silicon deliberately, not `macos-13`/Intel. `macos-14` is the arm64
+    # runner, and darwin-arm64 is the majority Mac target — an Intel-only leg
+    # would green-light the binary most Mac users actually download.
+    runs-on: macos-14
+    # Blocking, for the same reason the Windows leg is. Before this job, macOS
+    # had no CI coverage at all: `release.yml` smokes the darwin binaries, but
+    # that is release time, so every macOS regression stayed invisible on main
+    # until a release was already being cut.
+    #
+    # macOS minutes bill at 10x, so the bound is tight on purpose. The suite is
+    # a couple of minutes of real work; anything near this limit is a hang.
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: macos-cli
+
+      - name: Typecheck workspaces
+        run: bun run typecheck
+
+      # macOS runs the POSIX suites that Windows skips, but against BSD
+      # userland rather than GNU: `sed -i`, `date`, `readlink`, and `mktemp`
+      # all take different flags there. install.sh is the macOS bootstrap too,
+      # so a GNU-only flag in it is a broken install for every Mac user and
+      # the Linux leg cannot see it.
+      - name: Test CLI
+        timeout-minutes: 6
+        run: bun run --cwd apps/cli test
+
+      - name: Test storage lifecycle
+        # APFS is case-insensitive by default while ext4 is not, so path and
+        # temp-directory handling can diverge from the Linux leg here.
+        timeout-minutes: 3
+        run: bun run --cwd packages/storage test
+
+      # Same rationale as the Windows binary smoke: source execution cannot
+      # catch entrypoint and embedding bugs that only exist once Bun has
+      # compiled a single-file executable.
+      - name: Build macOS host binary
+        timeout-minutes: 10
+        run: bun run build:binary:host
+
+      - name: Smoke test macOS binary
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          bin="apps/cli/dist/bin/kunai-darwin-arm64"
+          [ -x "$bin" ] || { echo "missing or non-executable $bin" >&2; exit 1; }
+
+          version="$("$bin" --version 2>&1)"
+          echo "kunai --version => '$version'"
+          # The failure mode this exists to catch exits 0 and prints nothing,
+          # so asserting the exit code alone is not enough.
+          printf '%s' "$version" | grep -Eq '^kunai[[:space:]]+v?[0-9]' || {
+            echo "--version did not print a kunai version" >&2; exit 1; }
+
+          help="$("$bin" --help 2>&1)"
+          [ -n "$help" ] || { echo "--help printed nothing" >&2; exit 1; }
+          echo "macOS binary smoke ok"
+
   installer-lint:
     name: Installer script lint
     needs: changes
