@@ -21,13 +21,24 @@ Do not run plans concurrently. They touch overlapping files (`PlaybackResolveSer
 | 0   | _(done)_ truthful state propagation — commit `94189298`                      | —          | ✅ shipped            |
 | 0   | _(done)_ in-flight provider hardening — commit `d79dcc7e`                    | —          | ✅ shipped            |
 | 1   | _(done)_ [`resolve-telemetry-spine`](2026-07-28-resolve-telemetry-spine.md)  | —          | ✅ shipped            |
-| 2   | [`candidate-racing`](2026-07-28-candidate-racing.md)                         | 1          | **Yes**               |
+| 2   | _(engine landed, off)_ [`candidate-racing`](2026-07-28-candidate-racing.md)  | 1          | **Yes**               |
 | 3   | [`health-recovery-and-ordering`](2026-07-28-health-recovery-and-ordering.md) | 1          | No                    |
 | 4   | [`history-actions-and-download`](2026-07-28-history-actions-and-download.md) | —          | No                    |
 | 5   | [`diagnostics-dashboard`](2026-07-28-diagnostics-dashboard.md)               | 1          | No                    |
 | 6   | Release gates (below)                                                        | 1, 2       | **Yes**               |
 
 Plan 4 has no dependencies and can be run at any point, including first if a quick visible win is wanted.
+
+### Plan 2 status
+
+`runProviderCycle` now accepts `hedgeDelayMs` and races candidates when it is set (commit `438f04a5`). No caller sets it, so runtime behaviour is unchanged.
+
+Two deviations from the plan as written, both deliberate:
+
+- **Task 1 was skipped as redundant.** It specified a new `withCancellationAwareEndpointHealth` wrapper, but `guardEndpointHealthAgainstCancellation` in `provider-attempt-cancellation.ts` already implements exactly that rule against the same `EndpointHealthPort` type, and is already tested for all five cases the task listed. A second copy of the highest-risk rule in the resolve loop is a liability, so the racing loop reuses the existing one.
+- **The plan's racing body would have quarantined healthy endpoints.** It hardcoded `class: "server-error"` and dropped `titleId`, where the sequential path calls `classifyEndpointFailureFromCycleFailure` — which deliberately returns `null` for `candidate-blocked`. As written, every videasy session guard would have been persisted as endpoint evidence. The implemented version classifies identically to the sequential path, passes `titleId` through, honours `shouldStopAfterFailure`, and records real per-candidate timings.
+
+Tasks 3 (enable on videasy) and 4 (verify) are **deferred pending a traced baseline**: `resolve_traces` is empty until a playback runs, and the plan's own constraint is that enabling racing is a measured decision.
 
 ## Why this order
 
