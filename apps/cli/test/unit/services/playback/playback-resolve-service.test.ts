@@ -81,6 +81,46 @@ function createEmptyProviderResult(providerId: ProviderId): ProviderResolveResul
   };
 }
 
+function createResolvedProviderResult(
+  providerId: ProviderId = "fallback" as ProviderId,
+): ProviderResolveResult {
+  return {
+    status: "resolved",
+    providerId,
+    selectedStreamId: `stream:${providerId}:1`,
+    streams: [
+      {
+        id: `stream:${providerId}:1`,
+        providerId,
+        url: `https://${providerId}.example/stream.m3u8`,
+        protocol: "hls",
+        confidence: 0.9,
+        cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+      },
+    ],
+    subtitles: [],
+    trace: {
+      id: `trace:${providerId}`,
+      startedAt: new Date().toISOString(),
+      title: { id: "12345", kind: "movie", title: "Test Movie" },
+      cacheHit: false,
+      steps: [],
+      failures: [],
+    },
+    failures: [],
+  };
+}
+
+function createResolvedEngineOutput(
+  providerId: ProviderId = "fallback" as ProviderId,
+): ProviderEngineResolveOutput {
+  return {
+    result: createResolvedProviderResult(providerId),
+    providerId,
+    attempts: [{ providerId, result: undefined }],
+  };
+}
+
 function createManifest(providerId: ProviderId, mediaKinds: readonly string[]) {
   return {
     id: providerId,
@@ -224,6 +264,89 @@ test("PlaybackResolveService degrades to a live resolve when the cache read fail
   });
 
   expect(result.cacheStatus).toBe("miss");
+});
+
+test("PlaybackResolveService degrades through shared stream and inventory cache failures", async () => {
+  const cache = createMemoryCache(null);
+  cache.get = async () => {
+    throw new Error("cache database unavailable");
+  };
+  const inventoryCalls: string[] = [];
+  const service = new PlaybackResolveService({
+    engine: createMockEngine(createResolvedEngineOutput()),
+    cacheStore: cache,
+    sourceInventory: {
+      get: async () => {
+        inventoryCalls.push("get");
+        throw new Error("shared cache database unavailable");
+      },
+      set: async () => {
+        inventoryCalls.push("set");
+        throw new Error("shared cache database unavailable");
+      },
+      delete: async () => {
+        inventoryCalls.push("delete");
+        throw new Error("shared cache database unavailable");
+      },
+    },
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.stream?.url).toBe("https://fallback.example/stream.m3u8");
+  expect(result.cacheStatus).toBe("miss");
+  expect(inventoryCalls).toEqual(["get", "set"]);
+});
+
+test("PlaybackResolveService continues when stale inventory deletion fails", async () => {
+  const deferredInventory: ProviderResolveResult = {
+    ...createResolvedProviderResult("primary" as ProviderId),
+    selectedStreamId: "stream:primary:deferred",
+    streams: [
+      {
+        id: "stream:primary:deferred",
+        providerId: "primary" as ProviderId,
+        deferredLocator: "opaque:deferred",
+        protocol: "dash",
+        confidence: 0.9,
+        cachePolicy: { ttlClass: "stream-manifest", scope: "local", keyParts: [] },
+      },
+    ],
+  };
+  let deletes = 0;
+  const service = new PlaybackResolveService({
+    engine: createMockEngine(createResolvedEngineOutput()),
+    cacheStore: createMemoryCache(null),
+    sourceInventory: {
+      get: async () => deferredInventory,
+      set: async () => {},
+      delete: async () => {
+        deletes += 1;
+        throw new Error("shared cache database unavailable");
+      },
+    },
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(deletes).toBe(1);
+  expect(result.stream?.url).toBe("https://fallback.example/stream.m3u8");
 });
 
 test("PlaybackResolveService preserves a cached stream when its health probe is cancelled", async () => {

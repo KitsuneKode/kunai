@@ -9,7 +9,7 @@ import type {
   SubtitleTrack,
   TitleInfo,
 } from "@/domain/types";
-import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek } from "@/mpv";
@@ -606,8 +606,7 @@ export class PersistentMpvSession {
           command: "ipc-bootstrap",
           error: `IPC endpoint was not ready after ${waitedMs}ms at ${ipcServerCliArg(this.ipcEndpoint)}.${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
         });
-        proc.kill("SIGTERM");
-        await this.handleProcessTermination({ code: 1, signal: null });
+        await this.terminateAfterIpcBootstrapFailure(proc);
         return;
       }
 
@@ -655,8 +654,7 @@ export class PersistentMpvSession {
           command: "ipc-bootstrap",
           error: `${message} (${totalMs}ms total)${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
         });
-        proc.kill("SIGTERM");
-        await this.handleProcessTermination({ code: 1, signal: null });
+        await this.terminateAfterIpcBootstrapFailure(proc);
         return;
       }
 
@@ -1193,6 +1191,26 @@ export class PersistentMpvSession {
   ): Promise<boolean> {
     if (!target) return true;
     return Promise.race([target.exited.then(() => true), Bun.sleep(timeoutMs).then(() => false)]);
+  }
+
+  private async terminateAfterIpcBootstrapFailure(target: MpvProcess): Promise<void> {
+    const exit = await terminateMpvProcess(target);
+    if (!exit.exited) {
+      // Keep the child registered and the cycle unresolved. A later real
+      // process exit will run handleProcessTermination; allowing fallback now
+      // would knowingly stack another mpv over a still-live process.
+      this.alive = false;
+      this.currentCycleOptions().onPlaybackEvent?.({
+        type: "ipc-command-failed",
+        command: "terminate",
+        error: "mpv did not exit after forced bootstrap teardown",
+      });
+      return;
+    }
+    await this.handleProcessTermination({
+      code: exit.exitCode ?? 1,
+      signal: exit.signal,
+    });
   }
 
   private async closeIpcSession(): Promise<void> {

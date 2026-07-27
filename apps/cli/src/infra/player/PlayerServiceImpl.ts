@@ -18,6 +18,7 @@ import {
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
+import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 
 import {
@@ -43,9 +44,14 @@ import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./Player
 
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
+  private persistentSessionCreation: Promise<PersistentMpvSession> | null = null;
+  private persistentSessionEpoch = 0;
+  private persistentSessionRelease: Promise<void> | null = null;
   private deferredMaterializedCleanups: Array<() => Promise<void>> = [];
   private activeHlsRelay: HlsRelayHandle | null = null;
   private shuttingDown = false;
+  /** One app playback intent owns the mpv handoff at a time. */
+  private playbackInFlight = false;
 
   constructor(
     private deps: {
@@ -56,6 +62,8 @@ export class PlayerServiceImpl implements PlayerService {
       config: ConfigService;
       mpv?: MpvRuntimeOptions;
       presentation?: PlayerPresentationPort;
+      /** Deterministic process-boundary seam for player lifecycle tests. */
+      launchMpv?: typeof launchMpv;
     },
   ) {}
 
@@ -75,24 +83,85 @@ export class PlayerServiceImpl implements PlayerService {
     if (options.abortSignal?.aborted) {
       throw new PlaybackAbortedError("playback aborted");
     }
+    if (this.playbackInFlight) {
+      throw new PlaybackAbortedError("playback already in progress");
+    }
 
-    const materialized = await materializePlaybackMediaForPlayback(stream, (reason, detail) => {
-      // Falling through to the direct URL is fine, but a CDN that blocks our
-      // fetch must not be invisible — it is the first thing to look at when a
-      // stream plays in a browser yet fails here.
-      if (reason !== "fetch-failed" && reason !== "http-error") return;
+    this.playbackInFlight = true;
+    try {
+      return await this.playOwned(stream, options);
+    } finally {
+      this.playbackInFlight = false;
+    }
+  }
+
+  private async playOwned(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
+    let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
+      null;
+    const materialized = await materializePlaybackMediaForPlayback(
+      stream,
+      (reason, detail, httpStatus) => {
+        if (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus)) {
+          terminalHlsFailure = { detail, httpStatus };
+          return;
+        }
+        // Falling through to the direct URL is fine, but a CDN that blocks our
+        // fetch must not be invisible — it is the first thing to look at when a
+        // stream plays in a browser yet fails here.
+        if (reason !== "fetch-failed" && reason !== "http-error") return;
+        this.deps.diagnostics.record(
+          buildPlaybackDiagnosticEvent({
+            operation: "mpv.hls-manifest.materialize-skipped",
+            status: "failed",
+            severity: "degraded",
+            failureClass: "http",
+            message: "HLS manifest prefetch failed — using the direct stream URL",
+            correlation: options.correlation,
+            context: { reason, detail: detail?.slice(0, 160), streamHost: safeUrlHost(stream.url) },
+          }),
+        );
+      },
+    );
+    if (terminalHlsFailure !== null) {
+      const failure = terminalHlsFailure as {
+        readonly detail?: string;
+        readonly httpStatus?: number;
+      };
+      this.deps.logger.warn("HLS stream rejected before MPV launch", {
+        streamHost: safeUrlHost(stream.url),
+        httpStatus: failure.httpStatus ?? null,
+      });
       this.deps.diagnostics.record(
         buildPlaybackDiagnosticEvent({
-          operation: "mpv.hls-manifest.materialize-skipped",
+          operation: "mpv.hls-manifest.rejected",
           status: "failed",
-          severity: "degraded",
+          severity: "recoverable",
           failureClass: "http",
-          message: "HLS manifest prefetch failed — using the direct stream URL",
+          message: "HLS manifest rejected before player launch",
           correlation: options.correlation,
-          context: { reason, detail: detail?.slice(0, 160), streamHost: safeUrlHost(stream.url) },
+          context: {
+            detail: failure.detail?.slice(0, 160),
+            httpStatus: failure.httpStatus ?? null,
+            streamHost: safeUrlHost(stream.url),
+          },
         }),
       );
-    });
+      await materialized.cleanup();
+      return {
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "error",
+        resultSource: "unknown",
+        playerExitedCleanly: false,
+        playerExitCode: null,
+        playerExitSignal: null,
+        socketPathCleanedUp: true,
+        lastNonZeroPositionSeconds: 0,
+        lastNonZeroDurationSeconds: 0,
+        suspectedDeadStream: true,
+        streamRejectedBeforePlayerLaunch: true,
+      };
+    }
     let playbackStream = materialized.stream;
     if (materialized.kind === "dash-mpd") {
       options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });
@@ -236,13 +305,44 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   async releasePersistentSession(): Promise<void> {
-    if (!this.persistentSession) {
+    // Invalidate a create() already awaiting IPC before observing its result.
+    // Otherwise shutdown/recovery can see `persistentSession === null`, return,
+    // and let that late create publish a live mpv after teardown completed.
+    this.persistentSessionEpoch += 1;
+    if (this.persistentSessionRelease) {
+      await this.persistentSessionRelease;
+      return;
+    }
+
+    const release = this.releasePersistentSessionOwned();
+    this.persistentSessionRelease = release;
+    try {
+      await release;
+    } finally {
+      if (this.persistentSessionRelease === release) {
+        this.persistentSessionRelease = null;
+      }
+    }
+  }
+
+  private async releasePersistentSessionOwned(): Promise<void> {
+    const pendingCreation = this.persistentSessionCreation;
+    let session = this.persistentSession;
+    if (!session && pendingCreation) {
+      session = await pendingCreation.catch(() => null);
+    }
+
+    if (!session) {
       this.stopActiveHlsRelay("session-release");
       await this.flushDeferredMaterializedCleanups();
       return;
     }
-    await this.persistentSession.close();
-    this.persistentSession = null;
+    if (session.isAlive()) {
+      await session.close();
+    }
+    if (this.persistentSession === session) {
+      this.persistentSession = null;
+    }
     this.deps.playerControl.setActive(null);
     this.stopActiveHlsRelay("session-release");
     await this.flushDeferredMaterializedCleanups();
@@ -278,6 +378,32 @@ export class PlayerServiceImpl implements PlayerService {
     onPlayerReady?: () => void;
     onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   }): Promise<PlaybackResult> {
+    if (this.shuttingDown) {
+      throw new PlaybackAbortedError("player shutting down");
+    }
+    if (this.playbackInFlight) {
+      throw new PlaybackAbortedError("playback already in progress");
+    }
+
+    this.playbackInFlight = true;
+    try {
+      return await this.playLocalOwned(options);
+    } finally {
+      this.playbackInFlight = false;
+    }
+  }
+
+  private async playLocalOwned(options: {
+    source: LocalPlaybackSource;
+    attach?: boolean;
+    startAt?: number;
+    policy?: LocalPlaybackPolicyInput;
+    onPlayerReady?: () => void;
+    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  }): Promise<PlaybackResult> {
+    // Local playback is one-shot. Retire an idle autoplay-chain process first
+    // so only the local player owns controls and a visible mpv window.
+    await this.releasePersistentSession();
     const subtitlePath = await this.resolveReadableSubtitlePath(
       options.source.subtitlePath ?? null,
     );
@@ -300,7 +426,7 @@ export class PlayerServiceImpl implements PlayerService {
     });
 
     const policy = resolveLocalPlaybackPolicy(options.policy ?? {});
-    const result = await launchMpv({
+    const result = await (this.deps.launchMpv ?? launchMpv)({
       url: options.source.filePath,
       urlKind: "local",
       headers: {},
@@ -315,6 +441,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipIntro: policy.skipIntro,
       skipPreview: policy.skipPreview,
       skipCredits: policy.skipCredits,
+      onControlReady: (control) => this.deps.playerControl.setActive(control),
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
       mpv: {
@@ -349,7 +476,7 @@ export class PlayerServiceImpl implements PlayerService {
     urlKind: "remote" | "local",
   ): Promise<PlaybackResult> {
     await this.releasePersistentSession();
-    return await launchMpv({
+    return await (this.deps.launchMpv ?? launchMpv)({
       url: stream.url,
       urlKind,
       headers: stream.headers ?? {},
@@ -425,7 +552,8 @@ export class PlayerServiceImpl implements PlayerService {
     };
 
     if (!this.persistentSession) {
-      this.persistentSession = await PersistentMpvSession.create({
+      const creationEpoch = this.persistentSessionEpoch;
+      const creation = PersistentMpvSession.create({
         stream,
         options: sharedOptions,
         mpv: {
@@ -435,7 +563,25 @@ export class PlayerServiceImpl implements PlayerService {
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.deps.playerControl.setActive(control),
       });
-      const result = await this.persistentSession.waitForCurrentPlayback();
+      this.persistentSessionCreation = creation;
+      let created: PersistentMpvSession;
+      try {
+        created = await creation;
+      } finally {
+        if (this.persistentSessionCreation === creation) {
+          this.persistentSessionCreation = null;
+        }
+      }
+      if (
+        this.shuttingDown ||
+        options.abortSignal?.aborted ||
+        creationEpoch !== this.persistentSessionEpoch
+      ) {
+        if (created.isAlive()) await created.close();
+        throw new PlaybackAbortedError("playback aborted during player startup");
+      }
+      this.persistentSession = created;
+      const result = await created.waitForCurrentPlayback();
       if (this.persistentSession && !this.persistentSession.isReusable()) {
         await this.releasePersistentSession();
       }

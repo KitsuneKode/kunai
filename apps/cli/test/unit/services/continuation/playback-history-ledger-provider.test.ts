@@ -44,3 +44,20 @@ test("sub-engage checkpoint does not invent lastWatchedAt on net-new row", () =>
   expect(row?.positionSeconds).toBe(15);
   expect(row?.lastWatchedAt).toBeUndefined();
 });
+
+test("finalize preserves anime absolute episode identity", () => {
+  const { ledger, repo } = makeLedger();
+  const absoluteEpisode = { season: 1, episode: 3, absoluteEpisode: 27 };
+
+  ledger.start({ title, episode: absoluteEpisode, mediaKind: "anime", providerId: "allanime" }, 0);
+  ledger.onProgress(45, 1_400);
+  ledger.finalize({ positionSeconds: 45, durationSeconds: 1_400, completed: false });
+
+  expect(repo.getProgress(title, absoluteEpisode)).toMatchObject({
+    mediaKind: "anime",
+    season: 1,
+    episode: 3,
+    absoluteEpisode: 27,
+    positionSeconds: 45,
+  });
+});

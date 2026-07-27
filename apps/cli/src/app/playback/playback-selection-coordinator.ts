@@ -118,6 +118,19 @@ export class PlaybackSelectionCoordinator {
     ]);
   }
 
+  /**
+   * Pin an automatic recovery choice to this episode only. A failover is runtime
+   * evidence that the previous source failed for one playback intent, not a user
+   * preference that should silently replace the title-wide default.
+   */
+  async applyAutomaticSourceFailover(
+    providerId: string,
+    episode: EpisodeInfo,
+    sourceId: string,
+  ): Promise<void> {
+    await this.applyEpisodeSelection(providerId, episode, { sourceId, streamId: null });
+  }
+
   clearEpisode(providerId: string, episode: EpisodeInfo): void {
     this.episodeByKey.delete(this.episodeKey(providerId, episode));
   }

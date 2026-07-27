@@ -31,9 +31,10 @@ export function shouldMaterializeHlsManifestForHost(url: string): boolean {
 
 /**
  * Why materialization was skipped. Materializing is an optimization (rewrite
- * host-root segment paths so ffmpeg/mpv parses large playlists), never a
- * requirement, so every failure falls through to the direct URL. Reporting the
- * reason keeps a fingerprint-blocked CDN visible instead of silently degrading.
+ * host-root segment paths so ffmpeg/mpv parses large playlists). Transport
+ * failures fall through because mpv may negotiate them differently, while a
+ * terminal HTTP response is surfaced to the player boundary so it can reject a
+ * known-dead URL before opening a black player window.
  */
 export type HlsMaterializeSkipReason =
   | "not-hls"
@@ -42,9 +43,13 @@ export type HlsMaterializeSkipReason =
   | "http-error"
   | "not-needed";
 
+export function isTerminalHlsHttpStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403 || status === 404 || status === 410;
+}
+
 export async function materializeHlsManifestForPlayback(
   stream: StreamInfo,
-  onSkipped?: (reason: HlsMaterializeSkipReason, detail?: string) => void,
+  onSkipped?: (reason: HlsMaterializeSkipReason, detail?: string, httpStatus?: number) => void,
 ): Promise<MaterializedHlsManifest | null> {
   const manifestUrl = stream.url;
   if (!manifestUrl?.startsWith("http") || !isHlsPlaylistUrl(manifestUrl)) {
@@ -81,7 +86,7 @@ export async function materializeHlsManifestForPlayback(
   }
 
   if (!response.ok) {
-    onSkipped?.("http-error", `HTTP ${response.status}`);
+    onSkipped?.("http-error", `HTTP ${response.status}`, response.status);
     return null;
   }
 

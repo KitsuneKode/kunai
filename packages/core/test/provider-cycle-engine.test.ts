@@ -298,7 +298,7 @@ test("classifyProviderCycleError keeps blocked and parse failures non-retryable"
   });
 });
 
-test("endpoint health learns from parse and blocked cycle failures", () => {
+test("endpoint health learns from parse failures but not ambiguous provider blocks", () => {
   const base = {
     providerId: "allanime",
     candidateId: "source:kiwi",
@@ -312,10 +312,38 @@ test("endpoint health learns from parse and blocked cycle failures", () => {
   ).toBe("server-error");
   expect(
     classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-blocked" }),
-  ).toBe("server-error");
+  ).toBeNull();
   expect(
     classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-empty" }),
   ).toBeNull();
+});
+
+test("provider-wide blocked evidence does not poison endpoint health", async () => {
+  const endpointFailures: string[] = [];
+  const candidate = candidates[0];
+  if (!candidate) throw new Error("missing provider-cycle fixture");
+
+  await runProviderCycle({
+    providerId: "allanime",
+    candidates: [candidate],
+    maxAttemptsPerCandidate: 1,
+    endpointHealth: {
+      shouldTry: () => true,
+      recordSuccess: () => {},
+      recordFailure: (_providerId, _endpoint, info) => endpointFailures.push(info.class),
+    },
+    now: fixedClock(),
+    async resolveCandidate(selected) {
+      throw createProviderCycleFailureError(selected, {
+        failureClass: "candidate-blocked",
+        message: "Provider session guard rejected this request",
+        retryable: false,
+        at: "2026-05-19T00:00:00.000Z",
+      });
+    },
+  });
+
+  expect(endpointFailures).toEqual([]);
 });
 
 function fixedClock(): () => string {

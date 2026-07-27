@@ -17,7 +17,7 @@ export type MaterializedPlaybackMedia = MaterializedDeferredMedia & {
 
 export async function materializePlaybackMediaForPlayback(
   stream: StreamInfo,
-  onHlsSkipped?: (reason: HlsMaterializeSkipReason, detail?: string) => void,
+  onHlsSkipped?: (reason: HlsMaterializeSkipReason, detail?: string, httpStatus?: number) => void,
 ): Promise<MaterializedPlaybackMedia> {
   const deferred = await materializeDeferredMediaForPlayback(stream);
   if (stream.deferredLocator) {

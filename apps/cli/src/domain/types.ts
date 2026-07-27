@@ -213,6 +213,8 @@ export interface PlaybackResult {
   readonly lastReliableProgressSeconds?: number;
   /** True when mpv reported EOF but telemetry suggests the network stream died early. */
   readonly suspectedDeadStream?: boolean;
+  /** True when a terminal manifest response rejected this stream before mpv was launched. */
+  readonly streamRejectedBeforePlayerLaunch?: boolean;
 }
 
 export interface PlaybackTimingSegment {

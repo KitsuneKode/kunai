@@ -56,4 +56,19 @@ describe("PlaybackSelectionCoordinator", () => {
       streamId: null,
     });
   });
+
+  test("automatic failover stays episode-local and does not replace the title default", async () => {
+    const coordinator = await createCoordinator();
+    await coordinator.applyManualSourcePick("videasy", ep, "source:yoru");
+    await coordinator.applyAutomaticSourceFailover("videasy", ep, "source:neon");
+
+    expect(coordinator.getEffective("videasy", ep)).toEqual({
+      sourceId: "source:neon",
+      streamId: null,
+    });
+    expect(coordinator.getEffective("videasy", ep2)).toEqual({
+      sourceId: "source:yoru",
+      streamId: null,
+    });
+  });
 });

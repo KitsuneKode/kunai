@@ -3,7 +3,10 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 import type { StreamInfo } from "@/domain/types";
-import { materializeHlsManifestForPlayback } from "@/services/playback/hls-manifest-materializer";
+import {
+  isTerminalHlsHttpStatus,
+  materializeHlsManifestForPlayback,
+} from "@/services/playback/hls-manifest-materializer";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -12,6 +15,33 @@ afterEach(async () => {
 });
 
 describe("hls manifest materializer", () => {
+  test("classifies only terminal client responses as pre-player rejection", () => {
+    expect(isTerminalHlsHttpStatus(401)).toBe(true);
+    expect(isTerminalHlsHttpStatus(403)).toBe(true);
+    expect(isTerminalHlsHttpStatus(404)).toBe(true);
+    expect(isTerminalHlsHttpStatus(410)).toBe(true);
+    expect(isTerminalHlsHttpStatus(429)).toBe(false);
+    expect(isTerminalHlsHttpStatus(503)).toBe(false);
+    expect(isTerminalHlsHttpStatus(undefined)).toBe(false);
+  });
+
+  test("reports the HTTP status when a manifest request is rejected", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("forbidden", { status: 403 })) as unknown as typeof fetch;
+    const skipped: Array<{ reason: string; detail?: string; status?: number }> = [];
+    try {
+      const result = await materializeHlsManifestForPlayback(
+        createHlsStream(),
+        (reason, detail, status) => skipped.push({ reason, detail, status }),
+      );
+      expect(result).toBeNull();
+      expect(skipped).toEqual([{ reason: "http-error", detail: "HTTP 403", status: 403 }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("skips materialize for fingerprint-relay CDN hosts", async () => {
     const stream: StreamInfo = {
       url: "https://vault-06.uwucdn.top/path/index.m3u8",
@@ -74,3 +104,12 @@ describe("hls manifest materializer", () => {
     }
   });
 });
+
+function createHlsStream(): StreamInfo {
+  return {
+    url: "https://light.goldweather.net/token/index.m3u8",
+    headers: { Referer: "https://player.example/" },
+    title: "Test",
+    timestamp: Date.now(),
+  };
+}

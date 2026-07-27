@@ -1,6 +1,6 @@
 # Provider Resolve Hardening — Handoff
 
-Status: ready to implement. Three independent slices, ordered by risk.
+Status: Slice A implemented on `fix/windows-parity`; Slices B and C remain.
 Prereq: commits `2707bb21`, `f8f6cfda`, `7f1ce6d5`, `6247cf05` on `fix/windows-parity`.
 
 ## Context you need
@@ -26,7 +26,14 @@ race.** Worth a comment on the function; do not "improve" it into async.
 
 ---
 
-## Slice A — small confirmed defects
+## Slice A — small confirmed defects (implemented)
+
+All four defects are covered by regression tests. One audit recommendation was
+corrected during implementation: `candidate-blocked` remains outside endpoint
+health because the current class also represents provider-wide session guards
+and regional WAF responses. Only endpoint-scoped parse evidence maps to
+`server-error`; quarantining an endpoint requires evidence the contract can
+actually attribute to that endpoint.
 
 Each is 1–5 lines. All four verified by reading the code; none are speculative.
 

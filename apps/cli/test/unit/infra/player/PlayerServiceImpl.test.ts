@@ -5,6 +5,7 @@ import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { PlayerPlaybackEvent, PlayerOptions } from "@/infra/player/PlayerService";
 import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
+import type { launchMpv } from "@/mpv";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 
 function createPlaybackResult(): PlaybackResult {
@@ -34,7 +35,11 @@ function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
 
 function createService(
   events: DiagnosticEventInput[],
-  overrides: { presentation?: { isInteractiveShellMounted: () => boolean } } = {},
+  overrides: {
+    presentation?: { isInteractiveShellMounted: () => boolean };
+    playerControl?: { setActive: (control: unknown) => void };
+    launchMpv?: typeof launchMpv;
+  } = {},
 ) {
   const loggerEntries: Array<{
     readonly message: string;
@@ -67,6 +72,45 @@ function createService(
 }
 
 describe("PlayerServiceImpl diagnostics", () => {
+  test("rejects a terminal HLS response before spawning MPV", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launches = 0;
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      launchMpv: (async () => {
+        launches += 1;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("forbidden", { status: 403 })) as unknown as typeof fetch;
+
+    try {
+      const result = await service.play(
+        createStream({ url: "https://light.goldweather.net/token/index.m3u8" }),
+        { url: "https://light.goldweather.net/token/index.m3u8", displayTitle: "Episode 1" },
+      );
+
+      expect(launches).toBe(0);
+      expect(result).toMatchObject({
+        endReason: "error",
+        suspectedDeadStream: true,
+        streamRejectedBeforePlayerLaunch: true,
+        watchedSeconds: 0,
+      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          operation: "mpv.hls-manifest.rejected",
+          message: "HLS manifest rejected before player launch",
+        }),
+      );
+      expect(events.some((event) => event.operation === "mpv.launch.started")).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("suppresses stderr launch chrome when interactive shell is mounted", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events, {
@@ -207,6 +251,154 @@ describe("PlayerServiceImpl diagnostics", () => {
 });
 
 describe("PlayerServiceImpl shutdown", () => {
+  test("local playback retires a persistent player and owns the active controls", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const lifecycle: string[] = [];
+    const activeControls: unknown[] = [];
+    const result = createPlaybackResult();
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      playerControl: {
+        setActive: (control) => activeControls.push(control),
+      },
+      launchMpv: async (options) => {
+        lifecycle.push("launch-local");
+        options.onControlReady?.({ id: "local" } as never);
+        options.onControlReady?.(null);
+        return result;
+      },
+    });
+    (
+      service as unknown as {
+        persistentSession: {
+          isAlive(): boolean;
+          close(): Promise<void>;
+        };
+      }
+    ).persistentSession = {
+      isAlive: () => true,
+      async close() {
+        lifecycle.push("close-persistent");
+      },
+    };
+
+    await expect(
+      service.playLocal({
+        source: {
+          kind: "local",
+          jobId: "job-1",
+          titleId: "title-1",
+          titleName: "Offline episode",
+          mediaKind: "series",
+          providerId: "provider-1",
+          season: 1,
+          episode: 2,
+          filePath: "C:\\media\\episode-2.mkv",
+        },
+      }),
+    ).resolves.toMatchObject({ endReason: "quit" });
+
+    expect(lifecycle).toEqual(["close-persistent", "launch-local"]);
+    expect(activeControls).toEqual([null, { id: "local" }, null]);
+  });
+
+  test("release waits for and closes a persistent player still being created", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    let resolveCreation!: (session: unknown) => void;
+    let closed = false;
+    const creation = new Promise<unknown>((resolve) => {
+      resolveCreation = resolve;
+    });
+    (
+      service as unknown as {
+        persistentSessionCreation: Promise<unknown>;
+      }
+    ).persistentSessionCreation = creation;
+
+    const release = service.releasePersistentSession();
+    await Bun.sleep(0);
+    expect(closed).toBe(false);
+
+    resolveCreation({
+      isAlive: () => true,
+      async close() {
+        closed = true;
+      },
+    });
+    await release;
+
+    expect(closed).toBe(true);
+  });
+
+  test("coalesces concurrent persistent-session releases", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    let resolveClose!: () => void;
+    let closeCalls = 0;
+    (
+      service as unknown as {
+        persistentSession: {
+          isAlive(): boolean;
+          close(): Promise<void>;
+        };
+      }
+    ).persistentSession = {
+      isAlive: () => true,
+      async close() {
+        closeCalls += 1;
+        await new Promise<void>((resolve) => {
+          resolveClose = resolve;
+        });
+      },
+    };
+
+    const first = service.releasePersistentSession();
+    const second = service.releasePersistentSession();
+    await Bun.sleep(0);
+    expect(closeCalls).toBe(1);
+
+    resolveClose();
+    await Promise.all([first, second]);
+    expect(closeCalls).toBe(1);
+  });
+
+  test("rejects a concurrent handoff instead of spawning a second player", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+    });
+    let resolvePlayback!: (result: PlaybackResult) => void;
+    let launches = 0;
+    (
+      service as unknown as {
+        playOneShotStream: () => Promise<PlaybackResult>;
+      }
+    ).playOneShotStream = async () => {
+      launches += 1;
+      return await new Promise<PlaybackResult>((resolve) => {
+        resolvePlayback = resolve;
+      });
+    };
+
+    const first = service.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+    });
+    await Bun.sleep(0);
+
+    await expect(
+      service.play(createStream(), {
+        url: "https://cdn.example/show/episode.mp4",
+        displayTitle: "Episode 2",
+      }),
+    ).rejects.toThrow("playback already in progress");
+    expect(launches).toBe(1);
+
+    resolvePlayback(createPlaybackResult());
+    await expect(first).resolves.toMatchObject({ endReason: "quit" });
+  });
+
   test("play rejects when shutting down or aborted", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);

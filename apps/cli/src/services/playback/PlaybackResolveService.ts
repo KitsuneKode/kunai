@@ -55,7 +55,7 @@ import {
   decideResolveResultCommit,
   type ResolveCancellationReason,
 } from "./ResolveResultCommitPolicy";
-import type { SourceInventoryService } from "./SourceInventoryService";
+import type { SourceInventoryCacheInput, SourceInventoryService } from "./SourceInventoryService";
 import { StreamHealthService } from "./StreamHealthService";
 import type { TitlePlaybackSourceService } from "./TitlePlaybackSourceService";
 import type {
@@ -373,19 +373,19 @@ export class PlaybackResolveService {
       qualityPreference: input.qualityPreference,
       startupPriority: input.startupPriority,
     };
-    const inventoryResult = await this.deps.sourceInventory?.get(inventoryInput);
+    const inventoryResult = await this.readSourceInventory(inventoryInput);
     if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
       if (
         isVideasyFamilyProvider(input.providerId) &&
         isOrgOnlyProviderResolveResult(inventoryResult)
       ) {
-        await this.deps.sourceInventory?.delete(inventoryInput);
+        await this.deleteSourceInventory(inventoryInput);
         input.onFeedback?.({
           note: "Stale ORG-only cache cleared — try o source or purge episode cache",
         });
         input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
       } else if (providerResultHasDeferredStream(inventoryResult)) {
-        await this.deps.sourceInventory?.delete(inventoryInput);
+        await this.deleteSourceInventory(inventoryInput);
       } else {
         const inventoryStream = providerResolveResultToStreamInfo({
           result: inventoryResult,
@@ -434,14 +434,14 @@ export class PlaybackResolveService {
           }
           // A cancelled probe is not a failed one — keep the entry.
           if (!health.cancelled) {
-            await this.deps.sourceInventory?.delete(inventoryInput);
+            await this.deleteSourceInventory(inventoryInput);
           }
         } else if (
           inventoryResult.streams.some((stream) =>
             isBlockedStreamUrl(stream.url, input.blockedStreamUrls),
           )
         ) {
-          await this.deps.sourceInventory?.delete(inventoryInput);
+          await this.deleteSourceInventory(inventoryInput);
         }
       }
     }
@@ -633,7 +633,7 @@ export class PlaybackResolveService {
 
       if (stream) {
         if (!providerResultHasDeferredStream(engineResult.result)) {
-          await this.deps.sourceInventory?.set(
+          await this.persistSourceInventory(
             { ...inventoryInput, providerId: engineResult.providerId ?? input.providerId },
             engineResult.result,
           );
@@ -893,6 +893,41 @@ export class PlaybackResolveService {
       await this.deps.cacheStore.delete(cacheKey);
     } catch {
       // A cache fault must not prevent the live provider path from recovering.
+    }
+  }
+
+  /**
+   * Source inventory shares the disposable cache database with stream cache.
+   * Its production service already records and absorbs repository failures;
+   * keep the orchestration boundary defensive too so an alternate port cannot
+   * turn a cache-only fault into a playback failure.
+   */
+  private async readSourceInventory(
+    input: SourceInventoryCacheInput,
+  ): Promise<ProviderResolveResult | null> {
+    try {
+      return (await this.deps.sourceInventory?.get(input)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async deleteSourceInventory(input: SourceInventoryCacheInput): Promise<void> {
+    try {
+      await this.deps.sourceInventory?.delete(input);
+    } catch {
+      // Cache invalidation is best-effort; live provider resolution still works.
+    }
+  }
+
+  private async persistSourceInventory(
+    input: SourceInventoryCacheInput,
+    inventory: ProviderResolveResult,
+  ): Promise<void> {
+    try {
+      await this.deps.sourceInventory?.set(input, inventory);
+    } catch {
+      // Inventory persistence is a performance feature, never a playback gate.
     }
   }
 }

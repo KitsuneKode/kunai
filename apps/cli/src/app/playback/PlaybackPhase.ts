@@ -41,6 +41,7 @@ import {
   animeEpisodeCatalogCacheKey,
   buildPlaybackEpisodePickerOptions,
 } from "@/app/playback/playback-episode-picker";
+import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import {
   resolvePlaylistAutoNextCountdown,
@@ -2248,16 +2249,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerId: resolvedProviderId,
             });
             const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
-            const episodeIdentity =
-              title.type === "series"
-                ? {
-                    season: currentEpisode.season,
-                    episode: currentEpisode.episode,
-                    ...(currentEpisode.absoluteEpisode !== undefined
-                      ? { absoluteEpisode: currentEpisode.absoluteEpisode }
-                      : {}),
-                  }
-                : undefined;
+            const episodeIdentity = episodeIdentityForHistory(title, currentEpisode);
             const titleIdentity = {
               id: title.id,
               kind: persistedKind,
@@ -2418,7 +2410,10 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               selectedStreamId: preparedStream.providerResolveResult?.selectedStreamId,
             });
             invalidateRecentEpisodeStream(currentEpisode);
-            if (result.suspectedDeadStream === true) {
+            if (
+              result.suspectedDeadStream === true &&
+              result.streamRejectedBeforePlayerLaunch !== true
+            ) {
               container.titleProviderHealth.recordFailure(
                 title.id,
                 invalidateProviderId,
@@ -2549,7 +2544,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
 
               if (failoverPlan.kind === "advance-source") {
-                await selectionCoordinator.applyManualSourcePick(
+                await selectionCoordinator.applyAutomaticSourceFailover(
                   resolvedProviderId,
                   currentEpisode,
                   failoverPlan.sourceId,
@@ -3651,10 +3646,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stateManager.getState().videoMeta,
           ),
         },
-        episode:
-          title.type === "series"
-            ? { season: episode.season, episode: episode.episode }
-            : undefined,
+        episode: episodeIdentityForHistory(title, episode),
         providerId: ledgerProviderId,
         posterUrl: title.posterUrl,
         mediaKind: persistedKind,

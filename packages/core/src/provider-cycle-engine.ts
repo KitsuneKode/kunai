@@ -411,11 +411,17 @@ export function classifyEndpointFailureFromCycleFailure(
     case "candidate-network":
       return "transient";
     case "candidate-parse":
-    case "candidate-blocked":
-      // A malformed response or a repeated block is an endpoint-side fault.
-      // ProviderEndpointHealthService applies its distinct-title guard before
-      // escalating this to a quarantine, so one title's quirk stays harmless.
+      // A malformed response is endpoint evidence. ProviderEndpointHealthService
+      // still applies its distinct-title guard before escalating it.
       return "server-error";
+    case "candidate-blocked":
+      // "Blocked" is not endpoint-scoped evidence. It currently includes
+      // provider-wide session guards, regional WAF/Cloudflare responses, and
+      // endpoint-local 403s. Persisting all of those as a server error can
+      // quarantine a healthy mirror after two titles merely because the user
+      // has no valid provider session. Keep it out of endpoint health until the
+      // failure contract carries an explicit endpoint-scoped reason.
+      return null;
     default:
       return null;
   }

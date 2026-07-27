@@ -126,17 +126,26 @@ completely, so only a compiled-artifact smoke catches it.
 only the Win32 spelling for `--input-ipc-server`. Given `//./pipe/NAME` it starts
 normally, logs nothing, and never creates the pipe; every `Bun.connect` then
 fails, the player reads as dead, and fallback launches another mpv on top of one
-already playing. The endpoint must be `\.\pipe\NAME`
+already playing. The endpoint must be `\\.\pipe\NAME`
 (`apps/cli/src/infra/player/mpv-ipc-endpoint.ts`). `Bun.connect` accepts either
 spelling, so only the mpv side constrains this.
 
-**Posters look chunky rather than sharp.** Sixel output needs `chafa`; without it
-detection falls back to the built-in half-block renderer. Windows Terminal has
-supported sixel since 1.22, but nothing in the environment reports a version, so
-the DA1 probe (`apps/cli/src/image/probe.ts`) is the only thing that can confirm
-it — if the probe times out, capability drops to half-block even when chafa is
-present. `KUNAI_IMAGE_PROTOCOL=sixel` forces it; `kunai doctor` reports the
-resolved renderer and the reason it was chosen.
+**mpv opens a black window and exits with zero progress.** Check
+`mpv.hls-manifest.rejected` first. Kunai probes ordinary HLS manifests before
+launch and treats HTTP 401/403/404/410 as stream-scoped terminal evidence: it
+must advance the source without spawning mpv or degrading whole-provider
+health. Fetch/TLS failures and retryable HTTP responses may still fall through
+because mpv can negotiate them differently from Bun.
+
+**Posters look chunky rather than sharp.** Sixel is encoded in-process and does
+not need `chafa`, but Windows Terminal exposes no version environment variable.
+The DA1 probe (`apps/cli/src/image/probe.ts`) is therefore the only automatic way
+to confirm sixel support; if it times out, capability falls back to half-block.
+`KUNAI_IMAGE_PROTOCOL=sixel` forces it; `kunai doctor` reports the resolved
+renderer and the reason it was chosen. `chafa` only improves text-mode fallback.
+The Now Playing rail intentionally uses half-block on Sixel terminals because
+its one-second telemetry frames otherwise replay and blink the framebuffer;
+browse and post-play should still use sharp Sixel output.
 
 **Providers behave differently than on Linux.** The `curl.exe` Windows ships in
 System32 is a Schannel build with no HTTP/2 (`curl --version` lists no `HTTP2`

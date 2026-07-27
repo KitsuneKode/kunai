@@ -855,7 +855,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
             },
           ]);
         }
-        container.binaryAutoUpdater.startBackground();
+        // The startup check above already ran and produced the user-facing
+        // notification. Arm only the interval here so startup never performs
+        // the same ownership/network checks twice.
+        container.binaryAutoUpdater.startBackground({ runImmediately: false });
         return;
       }
 
