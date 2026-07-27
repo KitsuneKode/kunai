@@ -373,6 +373,40 @@ describe("storage writability", () => {
     expect(text).toContain("cache: /var/cache/kunai (writable, missing)");
   });
 
+  test("probes the layout it was given, not the machine's real directories", async () => {
+    // Regression: the probe re-derived paths from getKunaiPaths(), so it
+    // reached past the caller's layout to the real user profile. That made the
+    // report depend on the machine running it — and turned every doctor test
+    // red on a CI runner whose home directory is not writable.
+    const root = await mkdtemp(join(tmpdir(), "kunai-doctor-layout-"));
+    made.push(root);
+    const layout = getInstallLayoutPaths({
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      configDir: join(root, "config"),
+      launcherPath: join(root, "bin", LAUNCHER_NAME),
+    });
+
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: "",
+      platform: process.platform === "win32" ? "win32" : "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+
+    for (const store of report.storage) {
+      expect(store.path.startsWith(root)).toBe(true);
+    }
+    expect(report.storage.map((s) => s.path)).toEqual([
+      layout.configDir,
+      layout.dataDir,
+      layout.cacheDir,
+    ]);
+  });
+
   test("the real probe reports a writable temp directory", async () => {
     // Exercises the default (non-injected) probe against a directory that
     // genuinely exists, so the access() path itself is covered.

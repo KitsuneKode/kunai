@@ -123,16 +123,19 @@ export type BuildDoctorReportInput = {
  * diagnostic into a second bug report. A missing directory is not a failure —
  * Kunai creates these lazily — so the parent is checked instead, since that is
  * what the creation will actually need.
+ *
+ * Paths come from the layout the report was built with, never from
+ * `getKunaiPaths()` directly. Re-deriving them ignored the caller's layout and
+ * reached past a temp directory to the real user profile, which made the report
+ * depend on the machine running it rather than on what it was asked about.
  */
 async function probeStorageWritability(
-  platform: NodeJS.Platform,
+  layout: InstallLayoutPaths,
 ): Promise<readonly DoctorStorageInfo[]> {
-  const { getKunaiPaths } = await import("@kunai/storage");
-  const paths = getKunaiPaths({ platform: platform === "win32" ? "win32" : "linux" });
   const targets: ReadonlyArray<{ label: DoctorStorageInfo["label"]; path: string }> = [
-    { label: "config", path: paths.configDir },
-    { label: "data", path: paths.dataDir },
-    { label: "cache", path: paths.cacheDir },
+    { label: "config", path: layout.configDir },
+    { label: "data", path: layout.dataDir },
+    { label: "cache", path: layout.cacheDir },
   ];
 
   const results: DoctorStorageInfo[] = [];
@@ -581,7 +584,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     transactions,
     platform: platformInfo,
     dependencies,
-    storage: await (input.probeStorage ?? (() => probeStorageWritability(platform)))(),
+    storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
   return {
