@@ -332,14 +332,32 @@ let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt
   null;
 let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
 let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
-let retrySleep: (ms: number) => Promise<void> = (ms) => Bun.sleep(ms);
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return Bun.sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return Promise.race([
+    Bun.sleep(ms),
+    new Promise<void>((resolve) => {
+      const onAbort = () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }),
+  ]);
+}
+
+let retrySleep: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
+  sleepAbortable(ms, signal);
 
 export function setAllMangaCryptoMaterialForTest(material: AllMangaCryptoMaterial | null): void {
   cryptoMaterialOverrideForTest = material;
 }
 
-export function setAllMangaRetrySleepForTest(sleep: ((ms: number) => Promise<void>) | null): void {
-  retrySleep = sleep ?? ((ms) => Bun.sleep(ms));
+export function setAllMangaRetrySleepForTest(
+  sleep: ((ms: number, signal?: AbortSignal) => Promise<void>) | null,
+): void {
+  retrySleep = sleep ?? sleepAbortable;
 }
 
 /**
@@ -574,7 +592,7 @@ export function clearAllMangaProviderCachesForTest(): void {
   akDeferredRegistry.clear();
   cachedCryptoMaterial = null;
   cryptoMaterialOverrideForTest = null;
-  retrySleep = (ms) => Bun.sleep(ms);
+  retrySleep = (ms, signal) => sleepAbortable(ms, signal);
 }
 
 type AbortSignalConstructorWithAny = typeof AbortSignal & {
@@ -785,7 +803,7 @@ export async function resolveEpisodeSources(opts: {
       rateLimitRetries += 1;
       if (rateLimitRetries > 2) return [];
       rawText = null;
-      await retrySleep(3_200);
+      await retrySleep(3_200, signal);
       continue;
     }
 
@@ -794,7 +812,7 @@ export async function resolveEpisodeSources(opts: {
       if (staleRefreshes > 2) return [];
       rawText = null;
       material = await refreshAllMangaCryptoMaterial(context, ua, signal);
-      await retrySleep(400);
+      await retrySleep(400, signal);
       continue;
     }
 

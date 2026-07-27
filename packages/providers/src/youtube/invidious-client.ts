@@ -1,4 +1,7 @@
+import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { markInvidiousInstanceFailure, pickInvidiousInstance } from "./invidious-instance-pool";
+
+const INVIDIOUS_FETCH_TIMEOUT_MS = 15_000;
 
 export type InvidiousSearchItem =
   | InvidiousSearchVideo
@@ -160,7 +163,7 @@ async function requestInvidiousJson<T>(
   const url = `${instance}${path.startsWith("/") ? path : `/${path}`}`;
   try {
     const response = await fetch(url, {
-      signal: options.signal,
+      signal: directStreamFetchSignal(options.signal, INVIDIOUS_FETCH_TIMEOUT_MS),
       headers: { Accept: "application/json" },
     });
     if (!response.ok) {

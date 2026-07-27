@@ -1,3 +1,7 @@
+import { directStreamFetchSignal } from "../shared/direct-stream-source";
+
+const PIPED_FETCH_TIMEOUT_MS = 15_000;
+
 export type PipedSearchItem = {
   readonly url?: string;
   readonly title?: string;
@@ -30,7 +34,7 @@ export async function pipedSearch(
   const base = options.apiBaseUrl.slice(0, baseEnd);
   const params = new URLSearchParams({ q: query, filter: "videos" });
   const response = await fetch(`${base}/search?${params.toString()}`, {
-    signal: options.signal,
+    signal: directStreamFetchSignal(options.signal, PIPED_FETCH_TIMEOUT_MS),
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {

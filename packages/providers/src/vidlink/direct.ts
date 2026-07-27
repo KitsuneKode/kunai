@@ -24,6 +24,26 @@ const VIDLINK_ORIGIN = "https://vidlink.pro";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
 const VIDLINK_FETCH_TIMEOUT_MS = 20_000;
+const ENC_DEC_CACHE_TTL_MS = 30 * 60_000;
+/**
+ * Cap on memoized enc-dec results. Entries are tiny, but an unbounded
+ * module-level Map grows for the whole process lifetime, and a long browsing
+ * session touches many titles. Evicts oldest-first via Map insertion order.
+ */
+const ENC_DEC_CACHE_MAX_ENTRIES = 256;
+
+const encDecCache = new Map<number, { result: string; expiresAt: number }>();
+
+function rememberEncDecResult(tmdbId: number, result: string): void {
+  // Refresh insertion order so re-encrypted ids are treated as recently used.
+  encDecCache.delete(tmdbId);
+  encDecCache.set(tmdbId, { result, expiresAt: Date.now() + ENC_DEC_CACHE_TTL_MS });
+  while (encDecCache.size > ENC_DEC_CACHE_MAX_ENTRIES) {
+    const oldest = encDecCache.keys().next();
+    if (oldest.done) break;
+    encDecCache.delete(oldest.value);
+  }
+}
 
 interface VidlinkCaption {
   readonly url: string;
@@ -166,6 +186,9 @@ async function encryptTmdbId(
   tmdbId: number,
   signal: AbortSignal | undefined,
 ): Promise<string> {
+  const cached = encDecCache.get(tmdbId);
+  if (cached && Date.now() < cached.expiresAt) return cached.result;
+
   const maxAttempts = 2;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -181,6 +204,9 @@ async function encryptTmdbId(
       if (!data?.result) {
         throw new Error("enc-dec.app did not return an encrypted id");
       }
+      // TTL runs from when the value was received, not from when the request
+      // started — a slow request must not shorten its own cache lifetime.
+      rememberEncDecResult(tmdbId, data.result);
       return data.result;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));

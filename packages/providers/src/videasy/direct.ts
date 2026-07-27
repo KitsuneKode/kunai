@@ -1705,11 +1705,17 @@ async function tryVidkingServer(opts: {
           });
           emitRetryIfNeeded(events, context, f, sourceId, attempt, maxAttempts);
         } catch (error) {
+          // No local `signal.aborted` guard here on purpose. Cancellation is
+          // filtered by the engine's EndpointHealthPort wrapper
+          // (packages/core/src/provider-attempt-cancellation.ts), which can tell
+          // a cancel apart from this attempt's own timeout via
+          // ProviderAttemptTimeoutError. A bare `aborted` check cannot, so it
+          // would also discard genuine timeout evidence that feeds the
+          // transient cooldown.
           endpointHealth.recordFailure(server, {
             class: isVideasyTimeoutError(error) ? "transient" : "server-error",
             titleId,
           });
-          if (context.signal?.aborted) throw error;
           const timedOut = isVideasyTimeoutError(error);
           const f: ProviderFailure = {
             providerId: VIDEOSY_PROVIDER_ID,
@@ -1881,12 +1887,28 @@ export async function decodeVideasyGuardedPayload(
   return decrypted;
 }
 
+const VIDKING_WASM_INIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Instantiate the Videasy WASM module, memoized for the process lifetime.
+ *
+ * The timeout guards a hung instantiation only. Two properties matter and are
+ * easy to get wrong:
+ *
+ * 1. The timer is always cleared once the race settles. An uncleared timer
+ *    fires after every call — including successful ones — and if it also nulls
+ *    the memo, the module is re-instantiated on every subsequent resolve.
+ * 2. Only a *failed* attempt clears the memo, so a later call retries instead
+ *    of inheriting a permanently rejected promise. A successful module is
+ *    never discarded.
+ */
 async function loadWasmExports(): Promise<WasmExports> {
-  if (wasmExportsPromise) {
-    return wasmExportsPromise;
+  const existing = wasmExportsPromise;
+  if (existing) {
+    return existing;
   }
 
-  wasmExportsPromise = (async () => {
+  const attempt = (async () => {
     const loader = await import("@assemblyscript/loader");
     const wasmBuffer = await Bun.file(videasyWasm).arrayBuffer();
     const module = await loader.instantiate(wasmBuffer, {
@@ -1895,11 +1917,31 @@ async function loadWasmExports(): Promise<WasmExports> {
         abort: () => {},
       },
     });
-
     return module.exports as unknown as WasmExports;
   })();
 
-  return await wasmExportsPromise;
+  wasmExportsPromise = attempt;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Videasy WASM init timed out after 10s")),
+      VIDKING_WASM_INIT_TIMEOUT_MS,
+    );
+  });
+
+  try {
+    return await Promise.race([attempt, timeout]);
+  } catch (error) {
+    // Drop the memo only if *this* attempt is the one still cached, so a
+    // concurrent caller that already installed a fresh attempt is not evicted.
+    if (wasmExportsPromise === attempt) {
+      wasmExportsPromise = null;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function decodeVidkingPayload(
