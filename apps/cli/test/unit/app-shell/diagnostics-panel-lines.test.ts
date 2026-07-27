@@ -57,12 +57,12 @@ describe("diagnostics-panel-lines", () => {
       recentEvents: [],
     });
 
-    const healthHeaders = lines
+    const firstHealthHeader = lines
       .filter((line) => line.detail === "")
       .map((line) => line.label)
-      .filter((label) => label.startsWith("─── ") && !label.includes("Evidence"));
+      .find((label) => label.startsWith("─── ") && !label.includes("Evidence"));
 
-    expect(healthHeaders[0]).toBe("─── Needs attention");
+    expect(firstHealthHeader).toBe("─── Needs attention");
   });
 
   test("verdict row uses plain-language label and next action", () => {
