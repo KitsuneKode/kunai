@@ -24,7 +24,7 @@ Do not run plans concurrently. They touch overlapping files (`PlaybackResolveSer
 | 2   | _(engine landed, off)_ [`candidate-racing`](2026-07-28-candidate-racing.md)  | 1          | **Yes**               |
 | 3   | [`health-recovery-and-ordering`](2026-07-28-health-recovery-and-ordering.md) | 1          | No                    |
 | 4   | [`history-actions-and-download`](2026-07-28-history-actions-and-download.md) | —          | No                    |
-| 5   | [`diagnostics-dashboard`](2026-07-28-diagnostics-dashboard.md)               | 1          | No                    |
+| 5   | _(done)_ [`diagnostics-dashboard`](2026-07-28-diagnostics-dashboard.md)      | 1          | ✅ shipped            |
 | 6   | Release gates (below)                                                        | 1, 2       | **Yes**               |
 
 Plan 4 has no dependencies and can be run at any point, including first if a quick visible win is wanted.

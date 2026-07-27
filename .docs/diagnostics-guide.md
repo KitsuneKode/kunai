@@ -175,6 +175,31 @@ touched.**
 Use `/clear-cache` for stale URLs; use `/reset-provider-health` when the problem
 is skipped/down providers rather than cached streams.
 
+## The Diagnostics Panel
+
+Health rows are grouped by **what you must act on**, not by subsystem:
+`Needs attention`, then `Not measured yet`, then `Healthy`. A group with no rows
+is omitted entirely, so a clean session shows one short block instead of three
+headings and a lot of nothing.
+
+The split exists because "unknown" is not a fault. A subsystem with no data yet
+(`Provider — Unknown · no resolve telemetry yet`) previously sat in the same
+visual channel as a real failure, so nothing stood out. Anything `degraded`,
+`recoverable`, or `blocked` is a fault; only `unknown` is unknown. The mapping
+in `diagnostics-dashboard-model.ts` is exhaustive over `DiagnosticSeverity`, so
+adding a severity without deciding where it belongs is a type error.
+
+The `Verdict` row is suppressed when exactly one health row already says the
+same thing. A single Discord failure used to render three times — header,
+verdict, and its own row — in a panel with room for eighteen lines.
+
+The panel is sized from the terminal via `diagnosticsVisibleRows`, not from
+`listMaxVisible`, which is a list-picker budget that made the dashboard scroll
+at 18 of 49 rows while most of the screen sat empty. Section headings are
+ordinary lines in the panel array and are not reserved for twice.
+
+Export stays one key away: `e` from the overlay, or `/export-diagnostics`.
+
 ## Resolve Traces
 
 Every resolve — prefetch, recent-stream reuse, and fresh or fallback resolve —
