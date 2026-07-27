@@ -201,6 +201,25 @@ export class PlaybackResolveCoordinator {
       return;
     }
 
+    if (event.type === "provider-kind-skipped") {
+      this.deps.diagnostics.record({
+        ...input.correlation,
+        category: "provider",
+        operation: "provider.kind.skipped",
+        level: "debug",
+        message: `Provider excluded from fallback — does not support ${event.requestedMediaKind}: ${event.providerId}`,
+        providerId: event.providerId,
+        titleId: input.title.id,
+        season: input.episode.season,
+        episode: input.episode.episode,
+        context: {
+          requestedMediaKind: event.requestedMediaKind,
+          supportedMediaKinds: event.supportedMediaKinds,
+        },
+      });
+      return;
+    }
+
     if (event.type === "provider-health-skipped") {
       this.deps.diagnostics.record({
         ...input.correlation,
@@ -292,6 +311,64 @@ export class PlaybackResolveCoordinator {
               failureCode: engineEvent.failure.code,
               failureMessage: engineEvent.failure.message,
               retryable: engineEvent.failure.retryable,
+              at: engineEvent.at,
+            },
+          }),
+        );
+        return;
+      }
+
+      if (engineEvent.type === "provider-hedge-started") {
+        this.deps.diagnostics.record(
+          buildDiagnosticEvent({
+            category: "provider",
+            operation: "provider.resolve.hedge",
+            stage: "fallback",
+            status: "progress",
+            severity: "healthy",
+            recommendedAction: "none",
+            spanFamily: "provider.resolve",
+            message: `Hedging ${engineEvent.toProviderId} alongside ${engineEvent.fromProviderId}`,
+            level: "debug",
+            correlation: input.correlation,
+            providerId: engineEvent.toProviderId,
+            titleId: input.title.id,
+            season: input.episode.season,
+            episode: input.episode.episode,
+            context: {
+              fromProviderId: engineEvent.fromProviderId,
+              toProviderId: engineEvent.toProviderId,
+              hedgeDelayMs: engineEvent.hedgeDelayMs,
+              at: engineEvent.at,
+            },
+          }),
+        );
+        return;
+      }
+
+      if (engineEvent.type === "provider-fallback-halted") {
+        this.deps.diagnostics.record(
+          buildDiagnosticEvent({
+            category: "provider",
+            operation: "provider.resolve.fallback-halted",
+            stage: "fallback",
+            status: "failed",
+            severity: "recoverable",
+            failureClass: "offline",
+            recommendedAction: "wait",
+            spanFamily: "provider.resolve",
+            message: `Fallback halted after offline evidence from ${engineEvent.fromProviderId}`,
+            level: "warn",
+            correlation: input.correlation,
+            providerId: engineEvent.fromProviderId,
+            titleId: input.title.id,
+            season: input.episode.season,
+            episode: input.episode.episode,
+            context: {
+              reason: engineEvent.reason,
+              skippedProviderIds: engineEvent.skippedProviderIds,
+              failureCode: engineEvent.failure.code,
+              failureMessage: engineEvent.failure.message,
               at: engineEvent.at,
             },
           }),
@@ -447,6 +524,24 @@ function providerEngineEventContext(event: ProviderEngineEvent): Record<string, 
         failureCode: event.failure.code,
         failureMessage: event.failure.message,
         retryable: event.failure.retryable,
+        at: event.at,
+      };
+    case "provider-hedge-started":
+      return {
+        phase: "hedge-started",
+        fromProviderId: event.fromProviderId,
+        toProviderId: event.toProviderId,
+        hedgeDelayMs: event.hedgeDelayMs,
+        at: event.at,
+      };
+    case "provider-fallback-halted":
+      return {
+        phase: "fallback-halted",
+        fromProviderId: event.fromProviderId,
+        skippedProviderIds: event.skippedProviderIds,
+        reason: event.reason,
+        failureCode: event.failure.code,
+        failureMessage: event.failure.message,
         at: event.at,
       };
   }

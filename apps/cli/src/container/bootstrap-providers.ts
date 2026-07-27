@@ -11,6 +11,7 @@ import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolve
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import {
   resolveProviderAttemptTimeoutMs,
+  resolveProviderHedgeDelayMs,
   resolveProviderMaxAttempts,
 } from "../services/playback/provider-resolve-budget-policy";
 import { StreamHealthService } from "../services/playback/StreamHealthService";
@@ -95,6 +96,7 @@ export async function bootstrapProviders(
     modules: providerModules,
     attemptTimeoutMs: resolveProviderAttemptTimeoutMs(config.startupPriority),
     maxAttempts: resolveProviderMaxAttempts(config.startupPriority),
+    hedgeDelayMs: resolveProviderHedgeDelayMs(config.startupPriority),
     fetch: createProviderFetchPort,
     endpointHealth,
     titleBridge: titleBridgePort,
