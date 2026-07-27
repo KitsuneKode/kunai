@@ -631,3 +631,82 @@ describe("PlaybackResolveCoordinator", () => {
     );
   });
 });
+
+describe("hedge outcome reporting", () => {
+  function collectingDiagnostics(sink: unknown[]): DiagnosticsService {
+    return {
+      record: (event: unknown) => sink.push(event),
+      getRecent: () => [],
+      getSnapshot: () => [],
+      clear: () => {},
+      buildSupportBundle: () => {
+        throw new Error("not needed");
+      },
+    } as unknown as DiagnosticsService;
+  }
+
+  const hedgeEvent = (from: string, to: string): ProviderEngineEvent => ({
+    type: "provider-hedge-started",
+    fromProviderId: from as ProviderId,
+    toProviderId: to as ProviderId,
+    at: new Date().toISOString(),
+    hedgeDelayMs: 5_000,
+  });
+
+  function outcomeEvent(events: unknown[]) {
+    return events.find(
+      (event) => (event as { operation?: string }).operation === "provider.resolve.hedge-outcome",
+    ) as { message: string; context: Record<string, unknown> } | undefined;
+  }
+
+  test("reports a win when the hedged provider produced the stream", async () => {
+    const events: unknown[] = [];
+    const coordinator = new PlaybackResolveCoordinator({
+      // The engine result resolves via "fallback", which is the hedged one here.
+      engine: createObservedMockEngine(createProviderResult("https://f.example/s.m3u8"), [
+        hedgeEvent("vidking", "fallback"),
+      ]),
+      cacheStore: createMemoryCache(null),
+      diagnostics: collectingDiagnostics(events),
+    });
+
+    await coordinator.resolve(input());
+
+    const outcome = outcomeEvent(events);
+    expect(outcome?.context.winnerWasHedged).toBe(true);
+    expect(outcome?.context.hedgesStarted).toBe(1);
+    expect(outcome?.context.hedgeDelayMs).toBe(5_000);
+    expect(outcome?.message).toContain("won the resolve");
+  });
+
+  test("reports no benefit when the original candidate still won", async () => {
+    const events: unknown[] = [];
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createObservedMockEngine(createProviderResult("https://f.example/s.m3u8"), [
+        // The hedge went to a provider that did not end up winning.
+        hedgeEvent("fallback", "someone-else"),
+      ]),
+      cacheStore: createMemoryCache(null),
+      diagnostics: collectingDiagnostics(events),
+    });
+
+    await coordinator.resolve(input());
+
+    const outcome = outcomeEvent(events);
+    expect(outcome?.context.winnerWasHedged).toBe(false);
+    expect(outcome?.message).toContain("did not change the outcome");
+  });
+
+  test("stays silent when no hedge fired, so sequential resolves add no noise", async () => {
+    const events: unknown[] = [];
+    const coordinator = new PlaybackResolveCoordinator({
+      engine: createObservedMockEngine(createProviderResult("https://f.example/s.m3u8"), []),
+      cacheStore: createMemoryCache(null),
+      diagnostics: collectingDiagnostics(events),
+    });
+
+    await coordinator.resolve(input());
+
+    expect(outcomeEvent(events)).toBeUndefined();
+  });
+});

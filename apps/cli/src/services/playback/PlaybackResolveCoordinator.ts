@@ -75,6 +75,7 @@ export class PlaybackResolveCoordinator {
       },
     });
     this.recordProviderTimeline(input, result);
+    this.recordHedgeOutcome(input, result, events);
 
     return {
       ...result,
@@ -398,6 +399,69 @@ export class PlaybackResolveCoordinator {
         }),
       );
     }
+  }
+
+  /**
+   * Did hedging actually earn its cost on this resolve?
+   *
+   * The per-hedge trace events say a hedge *happened*; they cannot say whether
+   * it helped. That distinction is the whole justification for the feature:
+   * hedging is on by default, it makes the user's provider order advisory, and
+   * it puts a second provider under load on every slow resolve. Without a win
+   * rate the only observable is the cost.
+   *
+   * Emitted once per resolve, and only when a hedge fired, so a sequential
+   * resolve stays silent. Aggregating `winnerWasHedged` over these events is
+   * what answers "should hedging stay on, and at what delay?".
+   */
+  private recordHedgeOutcome(
+    input: PlaybackResolveInput,
+    result: PlaybackResolveOutput,
+    events: readonly PlaybackResolveEvent[],
+  ): void {
+    if (!this.deps.diagnostics) return;
+
+    const hedges = events.flatMap((event) =>
+      event.type === "provider-engine-event" && event.event.type === "provider-hedge-started"
+        ? [event.event]
+        : [],
+    );
+    if (hedges.length === 0) return;
+
+    const hedgedProviders = hedges.map((hedge) => hedge.toProviderId);
+    const winner = result.providerId ?? null;
+    const winnerWasHedged = winner !== null && hedgedProviders.includes(winner);
+
+    this.deps.diagnostics.record(
+      withDiagnosticCorrelation(input.correlation, {
+        ...buildDiagnosticEvent({
+          category: "provider",
+          operation: "provider.resolve.hedge-outcome",
+          stage: "fallback",
+          status: winner ? "succeeded" : "failed",
+          severity: "healthy",
+          recommendedAction: "none",
+          spanFamily: "provider.resolve",
+          level: "debug",
+          message: winnerWasHedged
+            ? `Hedged provider ${winner} won the resolve`
+            : `Hedging did not change the outcome (winner: ${winner ?? "none"})`,
+          correlation: input.correlation,
+          ...(winner ? { providerId: winner } : {}),
+          titleId: input.title.id,
+          season: input.episode.season,
+          episode: input.episode.episode,
+          context: {
+            hedgesStarted: hedges.length,
+            hedgedProviders,
+            firstCandidateId: hedges[0]?.fromProviderId ?? null,
+            winnerProviderId: winner,
+            winnerWasHedged,
+            hedgeDelayMs: hedges[0]?.hedgeDelayMs ?? null,
+          },
+        }),
+      }),
+    );
   }
 
   private recordProviderTimeline(input: PlaybackResolveInput, result: PlaybackResolveOutput): void {
