@@ -100,7 +100,7 @@ Use `apps/relay-server/README.md` for Vercel deployment and security notes.
 Providers share a persisted endpoint-health gate on `ProviderRuntimeContext.endpointHealth`:
 
 - **route-dead** (HTTP 404/410): quarantine ~24h in `provider_endpoint_health` (cache DB).
-- **server-error** (persistent 5xx across ≥2 distinct titles): quarantine ~1h.
+- **server-error** (persistent 5xx): quarantine ~1h, triggered by failures across ≥2 distinct titles **or** ≥3 consecutive failures on a single title. The single-title trigger exists because normal viewing stays on one title, so the distinct-title rule alone never fired in practice. A success clears the streak.
 - **transient** (timeout/network): in-memory cooldown only; never persisted.
 
 `runProviderCycle` skips quarantined candidates (`source:skipped`, reason `quarantined`) and records failures/successes by class. Videasy seeds deprecated routes (`1movies`, Sanji) into the gate; runtime quarantine can still learn new dead endpoints. A pinned title source is cleared when its endpoint is quarantined. Resolve-gate stream probes allow slow CDN timeouts (unverified) but fail on definitive 4xx/5xx; playback preflight re-resolves the same provider once with `intent: "refresh"` before cross-provider fallback.

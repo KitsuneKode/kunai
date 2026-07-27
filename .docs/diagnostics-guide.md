@@ -175,6 +175,42 @@ touched.**
 Use `/clear-cache` for stale URLs; use `/reset-provider-health` when the problem
 is skipped/down providers rather than cached streams.
 
+## Resolve Traces
+
+Every resolve — prefetch, recent-stream reuse, and fresh or fallback resolve —
+writes one row to `resolve_traces` in the cache database. Traces are recorded
+after the cancel guard, so a resolve the user abandoned is not filed as a
+success, and a trace with no attempts means nothing was resolved live.
+
+Traces carry title ids, endpoints, and failure detail so a slow or failed
+resolve can be explained after the fact, and they **never leave the machine**.
+This is separate from opt-in product analytics, whose wire format deliberately
+cannot represent any of those fields. Retention is owned by the repository and
+the shared storage maintenance pass; traces are short-lived debugging evidence,
+not an archive.
+
+Writing a trace is best-effort by design: a storage fault must never fail a
+playback. The tradeoff is that a schema regression would be silent, so the
+sink-to-schema path is covered by
+`apps/cli/test/integration/resolve-trace-persistence.test.ts`.
+
+Inspect them on a **copy**, never the live database:
+
+```bash
+cp ~/.cache/kunai/kunai-cache.sqlite /tmp/kunai-shadow.sqlite
+sqlite3 /tmp/kunai-shadow.sqlite "select count(*) from resolve_traces;"
+```
+
+### Provider health metrics
+
+`recentFailureRate` is an exponentially weighted moving average over recent
+outcomes, paired with an `observations` count so a consumer can tell a rate
+backed by two samples from one backed by fifty. A provider is demoted to
+`degraded` at a rate of 0.75 or above once at least 4 outcomes back it, so one
+bad attempt cannot demote a working provider. The rate demotes but never
+promotes: a `down` provider stays down until its TTL or a real success heals
+it. Rows written before `observations` existed are exempt from demotion.
+
 ## Latency Triage Order
 
 Use `--debug-json` when reproducing provider/playback issues: active-runtime
