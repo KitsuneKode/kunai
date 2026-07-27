@@ -261,6 +261,44 @@ describe("app-shell poster renderer", () => {
       if (result.kind === "sixel") expect(result.sixel.startsWith("\x1bP0;1;0q")).toBe(true);
     });
 
+    test("uses stable Ink text when sixel is disabled for a frequently repainting surface", async () => {
+      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
+      rendererTesting.runtime.which = () => null;
+      const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+      const result = await renderPoster(png.buffer as ArrayBuffer, {
+        rows: 4,
+        cols: 8,
+        allowKitty: true,
+        allowSixel: false,
+        placementSlot: "playing-rail",
+      });
+
+      expect(result.kind).toBe("text");
+      if (result.kind === "text") expect(result.placeholder).not.toContain("\x1bP");
+    });
+
+    test("bounds the interactive palette to keep ConPTY payloads responsive", async () => {
+      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
+      const pixels: number[] = [];
+      for (let index = 0; index < 80; index++) {
+        pixels.push(index * 3, (index * 7) % 256, (index * 11) % 256);
+      }
+      const png = makeRgbPng(80, 1, pixels);
+      const result = await renderPoster(png.buffer as ArrayBuffer, {
+        rows: 4,
+        cols: 8,
+        placementSlot: "browse-preview",
+      });
+
+      expect(result.kind).toBe("sixel");
+      if (result.kind === "sixel") {
+        const paletteDefinitions = result.sixel.match(/#\d+;2;/g) ?? [];
+        expect(paletteDefinitions.length).toBeLessThanOrEqual(
+          rendererTesting.APP_SHELL_SIXEL_MAX_COLORS - 1,
+        );
+      }
+    });
+
     test("leaves every other renderer untouched", () => {
       const kitty = capability("kitty-native");
       expect(resolveAppShellPosterCapability(kitty)).toEqual(kitty);

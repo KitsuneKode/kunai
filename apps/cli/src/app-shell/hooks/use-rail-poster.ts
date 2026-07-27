@@ -1,4 +1,8 @@
-import type { PosterResult, PosterState } from "../poster-types";
+import {
+  suppressPosterWhileNavigating,
+  type PosterResult,
+  type PosterState,
+} from "../poster-types";
 import { usePosterPreview } from "../use-poster-preview";
 import { useSettledValue } from "./use-settled-value";
 
@@ -41,7 +45,7 @@ export function useRailPoster(
     // The settled url already absorbs the navigation burst.
     debounceMs: 16,
   });
-  const displayPoster = navigating && poster.kind === "text" ? POSTER_NONE : poster;
+  const displayPoster = navigating && suppressPosterWhileNavigating(poster) ? POSTER_NONE : poster;
   // Never spin mid-navigation: the settled url has not caught up, so a spinner
   // here would fire on every ↑/↓ — the thing the settle debounce exists to stop.
   return { poster: displayPoster, posterState, spinner: spinner && !navigating, navigating };

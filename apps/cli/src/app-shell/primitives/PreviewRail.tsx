@@ -4,7 +4,7 @@ import React from "react";
 import type { PosterResult } from "../poster-types";
 import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
-import { PosterOutput } from "../sixel-poster-pane";
+import { PosterOutput } from "../SixelPosterPane";
 import {
   getPreviewPosterLabel,
   visiblePreviewFacts,

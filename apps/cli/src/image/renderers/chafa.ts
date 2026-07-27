@@ -28,25 +28,6 @@ async function runChafa(args: string[]): Promise<void> {
   throw new Error(message);
 }
 
-export async function renderChafaSixels(
-  filePath: string,
-  options: ImageRenderOptions,
-): Promise<void> {
-  await runChafa([
-    "--format",
-    "sixels",
-    "--size",
-    options.size,
-    "--animate",
-    "off",
-    "--polite",
-    "on",
-    "--margin-bottom",
-    "1",
-    filePath,
-  ]);
-}
-
 export async function renderChafaSymbols(
   filePath: string,
   options: ImageRenderOptions,

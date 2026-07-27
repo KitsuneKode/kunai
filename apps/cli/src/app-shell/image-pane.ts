@@ -141,6 +141,8 @@ export type PosterFetchOptions = {
   cols: number;
   variant?: "preview" | "detail";
   allowKitty?: boolean;
+  /** Disable framebuffer Sixel on frequently repainting Ink surfaces. */
+  allowSixel?: boolean;
   /** Chafa symbols inside Ink — does not claim Kitty placements. */
   inkEmbedded?: boolean;
   placementSlot?: KittyPlacementSlot;
@@ -154,10 +156,22 @@ export type PosterFetchOptions = {
  */
 function posterCacheKey(
   url: string,
-  { rows, cols, variant = "preview", inkEmbedded = false, placementSlot }: PosterFetchOptions,
+  {
+    rows,
+    cols,
+    variant = "preview",
+    allowSixel = true,
+    inkEmbedded = false,
+    placementSlot,
+  }: PosterFetchOptions,
 ): { readonly key: string; readonly resolved: string; readonly rendererKey: string } {
   const resolved = resolvePosterUrl(url, { cols, variant });
-  const rendererKey = inkEmbedded ? "ink-embedded" : runtime.detectImageCapability().renderer;
+  const detectedRenderer = runtime.detectImageCapability().renderer;
+  const rendererKey = inkEmbedded
+    ? "ink-embedded"
+    : detectedRenderer === "sixel" && !allowSixel
+      ? "sixel-text-fallback"
+      : detectedRenderer;
   // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
   const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
   return { key: `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}`, resolved, rendererKey };
@@ -190,6 +204,7 @@ export async function fetchPoster(
     cols,
     variant = "preview",
     allowKitty = true,
+    allowSixel = true,
     inkEmbedded = false,
     placementSlot,
     signal,
@@ -206,6 +221,7 @@ export async function fetchPoster(
     rows,
     cols,
     variant,
+    allowSixel,
     inkEmbedded,
     placementSlot,
   });
@@ -250,6 +266,7 @@ export async function fetchPoster(
             rows,
             cols,
             allowKitty,
+            allowSixel,
             inkEmbedded,
             placementSlot,
             signal,
@@ -276,7 +293,11 @@ export async function fetchPoster(
   try {
     return await task;
   } finally {
-    posterInflight.delete(key);
+    // A second abort-capable caller may have replaced this key while the first
+    // task was still running. Only the task that currently owns the slot may
+    // clear it; otherwise a late caller misses the newer work and redundantly
+    // fetches/encodes the same poster again.
+    if (posterInflight.get(key) === task) posterInflight.delete(key);
   }
 }
 

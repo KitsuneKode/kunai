@@ -33,7 +33,7 @@ import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import type { PlaybackRecommendationRailItem } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";

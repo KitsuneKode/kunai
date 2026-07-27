@@ -50,13 +50,16 @@ function moveTo(rect: Pick<SixelRect, "x" | "y">): string {
  * Owns sixel overlays that live above Ink's text frame.
  *
  * Ink is responsible for reserving every registered rectangle with blank cells;
- * this manager is responsible for repainting the sixel after every Ink commit
- * and for explicitly clearing rectangles that are removed or moved. This is the
- * same ownership split Yazi uses for its `shown` and collision handling.
+ * this manager paints changed pixels after an Ink commit. Removed and moved
+ * panes are already cleared by that commit; erasing them again afterward would
+ * overwrite the new Ink frame. Same-rectangle image replacement is the one
+ * case that still needs an atomic clear before the new pixels.
  */
 export class SixelOverlayManager {
   private readonly desired = new Map<string, SixelOverlay>();
-  private readonly shown = new Map<string, SixelRect>();
+  private readonly shown = new Map<string, SixelOverlay>();
+  /** Slots whose owning Ink component committed and may have cleared pixels. */
+  private readonly dirty = new Set<string>();
   private flushQueued = false;
   private flushing = false;
   private redrawRequested = false;
@@ -68,18 +71,48 @@ export class SixelOverlayManager {
     this.scheduleFlush();
   }
 
-  unregister(id: string): void {
-    if (!this.desired.delete(id)) return;
+  /**
+   * Register from the measured pane's post-commit effect. Even when its pixels
+   * and rectangle are unchanged, that specific Ink render may have cleared the
+   * reserved cells. Repaint the slot without clearing it first. Unrelated Ink
+   * commits never call this method because the memoized pane does not rerender.
+   */
+  commit(id: string, overlay: SixelOverlay): void {
+    this.desired.set(id, overlay);
+    this.dirty.add(id);
     this.scheduleFlush();
   }
 
-  /** Called from Ink's onRender hook; deferral ensures Ink writes first. */
-  afterInkRender(): void {
+  unregister(id: string): void {
+    if (!this.desired.delete(id)) return;
+    this.dirty.delete(id);
     this.scheduleFlush();
+  }
+
+  /**
+   * Called from Ink's onRender hook. Component registration already runs after
+   * the commit and schedules a paint when pixels or geometry changed. Repainting
+   * every unchanged overlay here made one-second playback telemetry blink the
+   * poster continuously on ConPTY.
+   */
+  afterInkRender(): void {
+    for (const [id, overlay] of this.desired) {
+      if (!sameOverlay(this.shown.get(id), overlay)) {
+        this.scheduleFlush();
+        return;
+      }
+    }
+    for (const id of this.shown.keys()) {
+      if (!this.desired.has(id)) {
+        this.scheduleFlush();
+        return;
+      }
+    }
   }
 
   clear(): void {
     this.desired.clear();
+    this.dirty.clear();
     this.scheduleFlush();
   }
 
@@ -87,6 +120,7 @@ export class SixelOverlayManager {
   discard(): void {
     this.desired.clear();
     this.shown.clear();
+    this.dirty.clear();
     this.redrawRequested = false;
   }
 
@@ -114,11 +148,20 @@ export class SixelOverlayManager {
     runtime.write(`${SAVE_CURSOR}${move}${content}${RESTORE_CURSOR}`);
   }
 
-  private erase(rect: SixelRect): void {
-    const line = " ".repeat(rect.width);
+  /**
+   * Build one cursor-locked erase payload for a whole rectangle. In particular,
+   * do not acquire the ConPTY workaround once per row: that left the terminal
+   * visibly blanking a poster from top to bottom before its replacement arrived.
+   */
+  private eraseContent(rect: SixelRect): string {
+    const line = `${RESET_ATTRIBUTES}${" ".repeat(rect.width)}`;
+    const output: string[] = [];
     for (let row = 0; row < rect.height; row++) {
-      this.writeAt({ ...rect, y: rect.y + row, height: 1 }, `${line}${RESET_ATTRIBUTES}`);
+      if (row > 0) output.push(moveTo({ x: rect.x, y: rect.y + row }));
+      output.push(line);
     }
+    output.push(RESET_ATTRIBUTES);
+    return output.join("");
   }
 
   private flush(): void {
@@ -128,18 +171,30 @@ export class SixelOverlayManager {
     }
     this.flushing = true;
     try {
-      // Sixel has no delete command. Erase a removed or moved image before
-      // painting its replacement, otherwise it remains visible below Ink.
-      for (const [id, rect] of this.shown) {
+      // Effects run after Ink committed the frame that removed or moved the
+      // reserved pane. Ink has therefore already cleared the old cells. A late
+      // explicit erase here would punch holes through the newly rendered UI.
+      for (const [id, shown] of this.shown) {
         const next = this.desired.get(id);
-        if (!next || !sameRect(rect, next.rect)) {
-          this.erase(rect);
+        if (!next || !sameRect(shown.rect, next.rect)) {
           this.shown.delete(id);
         }
       }
       for (const [id, overlay] of this.desired) {
-        this.writeAt(overlay.rect, overlay.sixel);
-        this.shown.set(id, overlay.rect);
+        const shown = this.shown.get(id);
+        if (shown && shown.sixel !== overlay.sixel) {
+          // Sixel's transparent background mode does not clear pixels that the
+          // replacement leaves untouched. Clear and paint in one cursor lock so
+          // a previous title cannot flash through or ghost around the new one.
+          this.writeAt(
+            overlay.rect,
+            `${this.eraseContent(overlay.rect)}${moveTo(overlay.rect)}${overlay.sixel}`,
+          );
+        } else if (!shown || this.dirty.has(id)) {
+          this.writeAt(overlay.rect, overlay.sixel);
+        }
+        this.shown.set(id, overlay);
+        this.dirty.delete(id);
       }
     } catch (error) {
       debugImage(`sixel overlay failed: ${error instanceof Error ? error.message : String(error)}`);

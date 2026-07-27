@@ -16,19 +16,19 @@ import {
   formatExternalOpenFallbackNote,
   noteForExternalOpenFailure,
 } from "@/app-shell/external-open-fallback";
+import { openSessionProviderPicker } from "@/app-shell/provider-picker-overlay";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
-import { applyProviderPickerSelection } from "@/app/playback/playback-provider-switch";
 import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
-import { resolveProviderLaneFromMetadata, shellModeToProviderLane } from "@/domain/provider-lane";
+import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import {
@@ -77,7 +77,6 @@ import type { MediaKind } from "@kunai/types";
 
 import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
-import { openProviderPicker } from "./picker-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
 
@@ -1016,41 +1015,7 @@ async function handleDiagnostics(container: Container): Promise<"handled"> {
 }
 
 async function handleProviderPicker(container: Container): Promise<"handled"> {
-  const { stateManager, providerRegistry } = container;
-  const state = stateManager.getState();
-  const fromProviderId = state.provider;
-  const picked = await withOverlay(
-    stateManager,
-    {
-      type: "provider_picker",
-      currentProvider: fromProviderId,
-      lane: shellModeToProviderLane(state.mode),
-    },
-    () =>
-      openProviderPicker({
-        currentProvider: fromProviderId,
-        providers: providerRegistry
-          .getAll()
-          .map((p) => p.metadata)
-          .filter((p) => {
-            if (state.mode === "youtube") return p.isYoutubeProvider;
-            if (state.mode === "anime") return p.isAnimeProvider;
-            return !p.isAnimeProvider && !p.isYoutubeProvider;
-          }),
-        actionContext: buildPickerActionContext({
-          container,
-          taskLabel: "Choose provider",
-          allowed: ["settings", "history", "diagnostics", "help", "about", "quit"],
-        }),
-      }),
-  );
-  if (picked) {
-    await applyProviderPickerSelection({
-      container,
-      pickedProviderId: picked,
-      reason: "provider-picker-switch",
-    });
-  }
+  await openSessionProviderPicker(container);
   return "handled";
 }
 

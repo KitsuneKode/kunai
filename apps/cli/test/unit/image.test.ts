@@ -14,11 +14,7 @@ import {
 } from "@/image/capability";
 import { ensurePngBytes, __testing as convertTesting } from "@/image/convert";
 import { isPngBytes } from "@/image/png";
-import {
-  __testing as chafaTesting,
-  renderChafaSixels,
-  renderChafaSymbols,
-} from "@/image/renderers/chafa";
+import { __testing as chafaTesting, renderChafaSymbols } from "@/image/renderers/chafa";
 import { NonPngError, renderKittyNative } from "@/image/renderers/kitty";
 
 import { storageRootEnv } from "../helpers/storage-env";
@@ -510,32 +506,6 @@ describe("renderKittyNative", () => {
 });
 
 describe("chafa renderers", () => {
-  test("builds the expected sixel command", async () => {
-    let captured: string[] = [];
-    const restoreSpawn = mockBunSpawn((cmd) => {
-      captured = cmd;
-    });
-    try {
-      await renderChafaSixels("/tmp/poster.jpg", DEFAULT_OPTIONS);
-      expect(captured).toEqual([
-        "chafa",
-        "--format",
-        "sixels",
-        "--size",
-        "30x18",
-        "--animate",
-        "off",
-        "--polite",
-        "on",
-        "--margin-bottom",
-        "1",
-        "/tmp/poster.jpg",
-      ]);
-    } finally {
-      restoreSpawn();
-    }
-  });
-
   test("builds the expected symbols command", async () => {
     let captured: string[] = [];
     const restoreSpawn = mockBunSpawn((cmd) => {

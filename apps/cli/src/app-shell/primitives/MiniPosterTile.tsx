@@ -3,7 +3,7 @@ import React from "react";
 
 import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import { palette } from "../shell-theme";
-import { PosterOutput } from "../sixel-poster-pane";
+import { PosterOutput } from "../SixelPosterPane";
 import { usePosterPreview } from "../use-poster-preview";
 
 function initialsOf(title: string): string {

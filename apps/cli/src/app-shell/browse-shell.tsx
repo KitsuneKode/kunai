@@ -107,6 +107,7 @@ import {
 } from "./layout-policy";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
+import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import {
@@ -1902,14 +1903,14 @@ export function BrowseShell<T>({
                   <PreviewRail
                     model={previewRailModel}
                     width={previewWidth}
-                    // While navigating, suppress the heavy chafa color block: the
-                    // companion shares output lines with the (shifting) list, so Ink
-                    // re-emits the whole block on every keystroke. Kitty posters are
-                    // a tiny placeholder drawn out-of-band, so they are left in place
-                    // (suppressing them would orphan the on-screen image). reserveRows
-                    // keeps the slot height fixed so the placeholder -> image swap on
-                    // settle does not reflow the panel.
-                    poster={navigating && poster.kind === "text" ? undefined : poster}
+                    // While navigating, suppress framebuffer-heavy text and sixel.
+                    // Sixel is out-of-band, but unlike Kitty it has no independent
+                    // delete command; unmounting hands its stale rectangle back to
+                    // the overlay manager immediately. reserveRows keeps the slot
+                    // stable while the settled poster replaces it.
+                    poster={
+                      navigating && suppressPosterWhileNavigating(poster) ? undefined : poster
+                    }
                     reserveRows={PREVIEW_POSTER_ROWS}
                   />
                 ) : (

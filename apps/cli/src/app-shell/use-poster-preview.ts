@@ -19,6 +19,8 @@ export const POSTER_SPINNER_DELAY_MS = 150;
 type PosterPreviewState = {
   readonly poster: PosterResult;
   readonly posterState: PosterState;
+  /** Input identity that produced `poster`; used to hide stale sixel overlays. */
+  readonly sourceKey: string | null;
   /**
    * True only when this fetch missed the cache AND has been pending past
    * POSTER_SPINNER_DELAY_MS. Surfaces show a spinner on this, never on
@@ -31,11 +33,12 @@ type PosterPreviewAction =
   | { type: "reset"; posterState: PosterState }
   | { type: "loading" }
   | { type: "spinner" }
-  | { type: "resolved"; result: PosterResult };
+  | { type: "resolved"; result: PosterResult; sourceKey?: string };
 
 const initialPosterPreviewState: PosterPreviewState = {
   poster: { kind: "none" },
   posterState: "idle",
+  sourceKey: null,
   spinner: false,
 };
 
@@ -45,14 +48,24 @@ function posterPreviewReducer(
 ): PosterPreviewState {
   switch (action.type) {
     case "reset":
-      return { poster: { kind: "none" }, posterState: action.posterState, spinner: false };
+      return {
+        poster: { kind: "none" },
+        posterState: action.posterState,
+        sourceKey: null,
+        spinner: false,
+      };
     case "loading":
       // Already loading: return the SAME reference so React bails out of the
       // re-render. Without this, holding ↑/↓ dispatches "loading" on every
       // keystroke and each new object forces an extra render during navigation.
       if (state.posterState === "loading") return state;
       // Preserve previous poster while loading to avoid flash when switching episodes
-      return { poster: state.poster, posterState: "loading", spinner: false };
+      return {
+        poster: state.poster,
+        posterState: "loading",
+        sourceKey: state.sourceKey,
+        spinner: false,
+      };
     case "spinner":
       // Only a still-pending fetch may raise the spinner: the arming timer can
       // outlive the resolve it was armed for.
@@ -62,11 +75,53 @@ function posterPreviewReducer(
       return {
         poster: action.result,
         posterState: action.result.kind === "none" ? "unavailable" : "ready",
+        sourceKey: action.sourceKey ?? null,
         spinner: false,
       };
     default:
       return state;
   }
+}
+
+function posterRequestKey(
+  url: string | undefined,
+  options: {
+    readonly rows: number;
+    readonly cols: number;
+    readonly variant: "preview" | "detail";
+    readonly allowKitty: boolean;
+    readonly allowSixel: boolean;
+    readonly inkEmbedded: boolean;
+    readonly placementSlot: KittyPlacementSlot | undefined;
+  },
+): string | null {
+  if (!url) return null;
+  return JSON.stringify([
+    url,
+    options.rows,
+    options.cols,
+    options.variant,
+    options.allowKitty ? "kitty" : "no-kitty",
+    options.allowSixel ? "sixel" : "no-sixel",
+    options.inkEmbedded ? "ink" : "terminal",
+    options.placementSlot ?? "unslotted",
+  ]);
+}
+
+function visiblePosterPreviewState(
+  state: PosterPreviewState,
+  currentSourceKey: string | null,
+): PosterPreviewState {
+  if (state.poster.kind !== "sixel" || state.sourceKey === currentSourceKey) return state;
+  // Sixel is a framebuffer overlay, so retaining a result from the previous
+  // URL/geometry visibly paints stale pixels. Text and Kitty keep their existing
+  // warm-transition policy; the overlay path must instead unmount and unregister.
+  return {
+    poster: { kind: "none" },
+    posterState: currentSourceKey === null ? "idle" : "loading",
+    sourceKey: state.sourceKey,
+    spinner: false,
+  };
 }
 
 /**
@@ -94,6 +149,7 @@ export function usePosterPreview(
     debounceMs = 120,
     variant = "preview",
     allowKitty = true,
+    allowSixel = true,
     inkEmbedded = false,
     preserveTerminalImages = false,
     placementSlot,
@@ -104,6 +160,7 @@ export function usePosterPreview(
     debounceMs?: number;
     variant?: "preview" | "detail";
     allowKitty?: boolean;
+    allowSixel?: boolean;
     inkEmbedded?: boolean;
     /** When true, never delete Kitty placements (chafa mini-tiles alongside a hero). */
     preserveTerminalImages?: boolean;
@@ -119,6 +176,15 @@ export function usePosterPreview(
   // never cached, so the retry genuinely refetches.
   const retryAttempted = useRef<string | null>(null);
   const [retryToken, bumpRetryToken] = useReducer((token: number) => token + 1, 0);
+  const requestKey = posterRequestKey(url, {
+    rows,
+    cols,
+    variant,
+    allowKitty,
+    allowSixel,
+    inkEmbedded,
+    placementSlot,
+  });
 
   useEffect(() => {
     const geometryChanged =
@@ -170,7 +236,15 @@ export function usePosterPreview(
       // Do NOT global-wipe before fetch. Slot registration replaces the previous
       // imageId for this slot; siblings keep their placements.
       dispatch({ type: "loading" });
-      const fetchOptions = { rows, cols, variant, allowKitty, inkEmbedded, placementSlot };
+      const fetchOptions = {
+        rows,
+        cols,
+        variant,
+        allowKitty,
+        allowSixel,
+        inkEmbedded,
+        placementSlot,
+      };
       // Arm the spinner only for a genuine cache miss. A cached poster paints on
       // the next frame, so spinning for it would flash on every revisit — the
       // exact "spinner on every navigation move" this policy exists to avoid.
@@ -183,7 +257,9 @@ export function usePosterPreview(
         .then((result) => {
           if (cancelled || abort.signal.aborted) return undefined;
           if (result.kind === "none") scheduleRetryIfFirstFailure();
-          startTransition(() => dispatch({ type: "resolved", result }));
+          startTransition(() =>
+            dispatch({ type: "resolved", result, sourceKey: requestKey ?? undefined }),
+          );
           return undefined;
         })
         .catch(() => {
@@ -209,22 +285,31 @@ export function usePosterPreview(
     };
   }, [
     allowKitty,
+    allowSixel,
     cols,
     debounceMs,
     enabled,
     inkEmbedded,
     placementSlot,
     preserveTerminalImages,
+    requestKey,
     retryToken,
     rows,
     url,
     variant,
   ]);
 
-  return { poster: state.poster, posterState: state.posterState, spinner: state.spinner };
+  const visibleState = visiblePosterPreviewState(state, enabled ? requestKey : null);
+  return {
+    poster: visibleState.poster,
+    posterState: visibleState.posterState,
+    spinner: visibleState.spinner,
+  };
 }
 
 export const __testing = {
   initialPosterPreviewState,
+  posterRequestKey,
   posterPreviewReducer,
+  visiblePosterPreviewState,
 };

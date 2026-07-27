@@ -119,12 +119,14 @@ when it paints over it.
 ## Implemented placement model
 
 1. `apps/cli/src/app-shell/sixel-overlay.ts` owns every desired and shown
-   rectangle, erases removed/moved rectangles with spaces, and redraws desired
-   overlays after each Ink commit.
+   rectangle. The Ink commit clears removed/moved panes before their effects run;
+   erasing those rectangles afterward would overwrite the new UI. Same-slot
+   replacement clear + paint remains one cursor-locked payload so ConPTY cannot
+   expose a row-by-row erase or stale title pixels.
 2. Its Windows path copies Yazi's move workaround: save cursor, issue the same
    absolute move three times with cursor-show escapes, wait 1 ms, write pixels,
    then hide and restore the cursor.
-3. `apps/cli/src/app-shell/sixel-poster-pane.tsx` uses Ink
+3. `apps/cli/src/app-shell/SixelPosterPane.tsx` uses Ink
    `measureElement()` in an effect to get the actual layout rectangle. Kunai's
    alternate screen means those coordinates are viewport coordinates; CSI 6n is
    unnecessary.
@@ -134,6 +136,14 @@ when it paints over it.
 5. `launchSessionApp` schedules the post-frame overlay flush from Ink's
    `onRender` callback. Ink invokes that callback before writing, so the manager
    deliberately defers to the next task before painting.
+6. Navigable preview surfaces unregister Sixel while selection is unsettled,
+   and `usePosterPreview` keys a resolved overlay to URL plus geometry so a stale
+   title cannot remount during the replacement fetch. The interactive encoder
+   uses a bounded 64-colour palette to reduce main-thread and PTY pressure.
+7. The high-frequency Now Playing rail keeps the measured Sixel output. The
+   memoized poster pane marks its slot dirty only when it renders; unrelated
+   one-second telemetry commits do not resend a large framebuffer payload, while
+   navigation commits repaint an unchanged cached poster that Ink may have cleared.
 
 ## Cross-platform warning
 

@@ -53,6 +53,7 @@ import {
   buildPlaybackSubtitleStatusLine,
   type PlaybackRootContentHandlers,
 } from "./playback-mount-shell";
+import { suppressPosterWhileNavigating } from "./poster-types";
 import { AppHeader } from "./primitives/AppHeader";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { SakuraPetal } from "./primitives/SakuraPetal";
@@ -82,7 +83,7 @@ import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import { sixelOverlayManager } from "./sixel-overlay";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import {
   buildStatsView,
   STATS_KINDS,
@@ -1345,10 +1346,11 @@ function ListShell<T>({
     debounceMs: 16,
     placementSlot: "browse-preview",
   });
-  // Suppress the heavy chafa block while navigating (the companion shares output
-  // lines with the shifting list, so Ink re-emits it every keystroke). Kitty
-  // posters are tiny out-of-band placeholders, so leave them in place.
-  const showHeavyPoster = poster.kind !== "none" && !(navigating && poster.kind === "text");
+  // Sixel must be unregistered while the selection is moving; otherwise each
+  // Ink commit repaints the previous title through ConPTY. Kitty owns an
+  // independent placement and can remain until the settled selection replaces it.
+  const showHeavyPoster =
+    poster.kind !== "none" && !(navigating && suppressPosterWhileNavigating(poster));
 
   const windowStart = getWindowStart(index, filteredOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, filteredOptions.length);

@@ -7,9 +7,9 @@ Use this doc when changing terminal poster previews, capability detection, the s
 | Area                                                 | Role                                                                                                                                                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/cli/src/image/`                                | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
-| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics + chafa **symbols** stdin path for non-Kitty capability; returns `PosterResult` (`kitty`, `text`, or `none`)                                                      |
+| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics, measured Sixel overlays, and text fallbacks; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                        |
 | `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, discovery 0–2, browse-preview, …); per-slot delete so siblings coexist                                                                                                   |
-| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ slot for Kitty)                                                      |
+| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                |
 | `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                |
 | `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
 
@@ -23,7 +23,8 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to `chafa` symbols (or half-block). `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
 - **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. The app shell renders sixel as a measured post-frame overlay, never as Ink text.
 - **Half-block is the universal floor.** It decodes in-process and needs no external binary, which is what makes posters work on Windows at all — `chafa` is effectively never installed there.
-- **Ink app shell**: sixel posters reserve a blank measured Ink rectangle. A shared overlay manager uses absolute cursor movement to draw after each Ink frame, erases moved/removed rectangles with spaces, and applies Yazi's three-move ConPTY workaround on Windows. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) still use text renderers for Kitty.
+- **Ink app shell**: sixel posters reserve a blank measured Ink rectangle. A shared overlay manager uses absolute cursor movement to draw changed images after an Ink frame and applies Yazi's three-move ConPTY workaround on Windows. Removal and movement rely on the Ink commit that changed the pane; same-slot image replacement clears and paints atomically so old pixels cannot flash through. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) still use text renderers for Kitty.
+- **Now Playing**: unrelated one-second playback telemetry does not resend the framebuffer payload. The memoized poster pane explicitly marks its slot dirty when that pane actually commits, so navigation redraws the unchanged cached poster instead of leaving it invisible.
 
 Details live in `apps/cli/src/image/capability.ts`.
 
@@ -58,12 +59,15 @@ back to auto with a debug line.
 
 ## Tools
 
-- **`chafa`** _(optional)_: Sixel/symbols output for non-Kitty terminals; required for forced `sixel` / `symbols`. When absent, the half-block renderer takes over — posters degrade in fidelity but never disappear.
+- **`chafa`** _(optional)_: richer symbols output for text-mode fallbacks; required only for forced `symbols`. Sixel and half-block are encoded in-process. When chafa is absent, posters still use sixel where supported or half-block elsewhere.
 - **`magick` (ImageMagick 7+)** _(optional, last resort)_: PNG passes through untouched and JPEG (all of TMDB) decodes in-process, so `magick` is no longer on the hot path. It is only reached for formats the in-process decoder cannot read (WebP, AVIF). The CLI invokes `magick` only (not other binary names).
 
 ## App-shell `PosterResult` kinds
 
 - **`kitty`**: Kitty graphics protocol + placeholder grid for Ink layout.
+- **`sixel`**: In-process encoded pixels + dimensions and a named overlay id;
+  `SixelPosterPane` reserves/measures the Ink rectangle and the overlay manager
+  writes the payload after the frame.
 - **`text`**: chafa symbols _or_ in-process half-block output as placeholder text. The app shell prefers chafa (symbol selection and dithering give higher fidelity) and falls back to half-block, so this kind covers every terminal without kitty graphics.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
@@ -108,6 +112,20 @@ Headless CI cannot assert framebuffer graphics. After image changes, smoke local
 3. Expect: next-up hero art **and** up to 3 discovery thumbs visible together (no blank slots racing).
 4. Change selection / leave post-play — no ghost images left on the browse screen.
 5. Optional: uninstall `magick` temporarily and confirm JPEG thumbs still show as chafa text rather than empty.
+
+## Manual Windows Terminal Sixel smoke (not CI)
+
+Use Windows Terminal 1.22+ and force the path with
+`KUNAI_IMAGE_PROTOCOL=sixel bun run dev`:
+
+1. Hold Up/Down through search or history results. The prior poster should be
+   erased while the selection is moving, not repeatedly flash over the new row.
+2. Rest on a new title. Its poster should appear once in the same fixed slot;
+   no pixels from the prior title should remain around it.
+3. Resize while a poster is visible. The image must follow the measured slot
+   without overwriting the adjacent list.
+4. Exit the surface and the app. No Sixel pixels should remain in the primary
+   terminal buffer.
 
 ## Debugging
 

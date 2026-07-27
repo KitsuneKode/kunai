@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { __testing } from "@/app-shell/use-poster-preview";
 
-const { posterPreviewReducer, initialPosterPreviewState } = __testing;
+const {
+  posterPreviewReducer,
+  initialPosterPreviewState,
+  posterRequestKey,
+  visiblePosterPreviewState,
+} = __testing;
 
 describe("usePosterPreview reducer", () => {
   test("reset to idle clears poster", () => {
@@ -64,6 +69,54 @@ describe("usePosterPreview reducer", () => {
     });
     expect(next.posterState).toBe("ready");
     expect(next.poster.kind).toBe("kitty");
+  });
+
+  test("hides a sixel result when the requested title changes", () => {
+    const resolved = posterPreviewReducer(initialPosterPreviewState, {
+      type: "resolved",
+      result: {
+        kind: "sixel",
+        sixel: "old-pixels",
+        rows: 4,
+        cols: 8,
+        overlayId: "browse-preview",
+      },
+      sourceKey: "old-title",
+    });
+
+    expect(visiblePosterPreviewState(resolved, "old-title")).toBe(resolved);
+    expect(visiblePosterPreviewState(resolved, "new-title")).toMatchObject({
+      poster: { kind: "none" },
+      posterState: "loading",
+      spinner: false,
+    });
+  });
+
+  test("includes geometry in the sixel request identity", () => {
+    const base = {
+      variant: "preview" as const,
+      allowKitty: true,
+      allowSixel: true,
+      inkEmbedded: false,
+      placementSlot: "browse-preview" as const,
+    };
+    expect(posterRequestKey("poster.jpg", { ...base, rows: 4, cols: 8 })).not.toBe(
+      posterRequestKey("poster.jpg", { ...base, rows: 6, cols: 8 }),
+    );
+  });
+
+  test("distinguishes stable text fallback from framebuffer sixel", () => {
+    const base = {
+      rows: 4,
+      cols: 8,
+      variant: "preview" as const,
+      allowKitty: true,
+      inkEmbedded: false,
+      placementSlot: "playing-rail" as const,
+    };
+    expect(posterRequestKey("poster.jpg", { ...base, allowSixel: true })).not.toBe(
+      posterRequestKey("poster.jpg", { ...base, allowSixel: false }),
+    );
   });
 });
 

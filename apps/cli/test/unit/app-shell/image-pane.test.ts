@@ -13,6 +13,7 @@ import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
 import { fakeChafaProcess } from "../../support/fake-chafa";
+import { makeRgbPng } from "../../support/image-fixtures";
 
 const originalFetch = globalThis.fetch;
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
@@ -48,6 +49,16 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       available: true,
       dependency: "chafa",
       reason: "test symbols",
+    };
+  }
+  if (renderer === "sixel") {
+    return {
+      terminal: "windows-terminal",
+      protocol: "sixel",
+      renderer: "sixel",
+      available: true,
+      dependency: "none",
+      reason: "test sixel",
     };
   }
   return {
@@ -145,6 +156,80 @@ describe("app-shell image pane cache", () => {
     posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
     const textResult = await fetchPoster("/abc.jpg", { rows: 4, cols: 8, allowKitty: true });
     expect(textResult.kind).toBe("text");
+  });
+
+  test("memoizes encoded sixel for repeated visits to the same title and slot", async () => {
+    let fetchCalls = 0;
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+    setFetchMock(async () => {
+      fetchCalls += 1;
+      return new Response(png, { status: 200 });
+    });
+    paneTesting.runtime.detectImageCapability = () => cap("sixel");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("sixel");
+
+    const first = await fetchPoster("/sixel-cache.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+    const revisited = await fetchPoster("/sixel-cache.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+
+    expect(first.kind).toBe("sixel");
+    expect(revisited).toBe(first);
+    expect(fetchCalls).toBe(1);
+  });
+
+  test("an older abort-capable render cannot evict a newer in-flight render", async () => {
+    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+    const responders: Array<(response: Response) => void> = [];
+    let fetchCalls = 0;
+    setFetchMock(
+      () =>
+        new Promise<Response>((resolve) => {
+          fetchCalls += 1;
+          responders.push(resolve);
+        }),
+    );
+    paneTesting.runtime.detectImageCapability = () => cap("sixel");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("sixel");
+
+    const firstAbort = new AbortController();
+    const first = fetchPoster("/sixel-race.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+      signal: firstAbort.signal,
+    });
+    const second = fetchPoster("/sixel-race.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+      signal: new AbortController().signal,
+    });
+    expect(fetchCalls).toBe(2);
+
+    firstAbort.abort();
+    responders[0]?.(new Response(png, { status: 200 }));
+    await first;
+
+    // This caller has no signal, so it should join the newer task. Before the
+    // ownership check in both inflight maps, completion of `first` deleted the
+    // `second` entry and this became a third fetch/encode of identical input.
+    const joined = fetchPoster("/sixel-race.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+    expect(fetchCalls).toBe(2);
+
+    responders[1]?.(new Response(png, { status: 200 }));
+    const [secondResult, joinedResult] = await Promise.all([second, joined]);
+    expect(joinedResult).toBe(secondResult);
   });
 });
 

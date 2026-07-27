@@ -5,7 +5,7 @@ import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { palette } from "./shell-theme";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
 
 const POSTER_ROWS = 8;

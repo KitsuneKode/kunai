@@ -14,7 +14,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
 import { palette, semanticToneColor } from "./shell-theme";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 

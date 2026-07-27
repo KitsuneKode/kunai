@@ -101,7 +101,10 @@ export async function fetchPosterSource(
   try {
     return await task;
   } finally {
-    sourceInflight.delete(resolved);
+    // Preserve a newer abort-capable leader registered for the same URL. An
+    // unconditional delete here made the source layer look idle while that
+    // newer fetch was still running.
+    if (sourceInflight.get(resolved) === task) sourceInflight.delete(resolved);
   }
 }
 

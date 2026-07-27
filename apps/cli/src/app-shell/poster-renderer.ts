@@ -40,6 +40,11 @@ const runtime: PosterRuntime = {
   spawn: (command, options) => Bun.spawn(command, options),
 };
 
+// Interactive overlays are encoded on the JS thread and replayed through the
+// PTY after Ink frames. 256 colours roughly doubles both encode time and bytes
+// on the wire without a meaningful gain at terminal-poster dimensions.
+const APP_SHELL_SIXEL_MAX_COLORS = 64;
+
 /**
  * Sixel is an overlay, not Ink text. `SixelPosterPane` reserves and measures an
  * empty Ink rectangle, then the overlay manager writes the sixel after Ink's
@@ -169,7 +174,10 @@ function renderSixelOverlay(
   cols: number,
   placementSlot?: KittyPlacementSlot,
 ): PosterResult {
-  const sixel = renderSixelFromBytes(new Uint8Array(data), pixelBudgetForCells(cols, rows));
+  const sixel = renderSixelFromBytes(new Uint8Array(data), {
+    ...pixelBudgetForCells(cols, rows),
+    maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+  });
   if (!sixel) return { kind: "none" };
   return {
     kind: "sixel",
@@ -378,6 +386,7 @@ export async function renderPoster(
     rows,
     cols,
     allowKitty = true,
+    allowSixel = true,
     inkEmbedded = false,
     placementSlot,
     signal,
@@ -385,6 +394,7 @@ export async function renderPoster(
     rows: number;
     cols: number;
     allowKitty?: boolean;
+    allowSixel?: boolean;
     inkEmbedded?: boolean;
     placementSlot?: KittyPlacementSlot;
     signal?: AbortSignal;
@@ -414,6 +424,7 @@ export async function renderPoster(
       return await renderTextPoster(data, rows, cols);
     }
     if (capability.renderer === "sixel") {
+      if (!allowSixel) return await renderTextPoster(data, rows, cols);
       return renderSixelOverlay(data, rows, cols, placementSlot);
     }
     // half-block: capability-faithful in-process rendering, no chafa spawn.
@@ -443,5 +454,6 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 }
 
 export const __testing = {
+  APP_SHELL_SIXEL_MAX_COLORS,
   runtime,
 };

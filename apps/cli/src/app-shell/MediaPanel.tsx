@@ -20,7 +20,7 @@ import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { measureColumns, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette } from "./shell-theme";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
 
 const SYNOPSIS_MAX_LINES = 3;
@@ -50,6 +50,7 @@ function PosterSlot({
   active,
   placementSlot,
   allowKitty = true,
+  allowSixel = true,
 }: {
   readonly url?: string;
   readonly width: number;
@@ -57,6 +58,8 @@ function PosterSlot({
   readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
   /** When false, render chafa inside Ink so a sibling owns the Kitty budget. */
   readonly allowKitty?: boolean;
+  /** Allow the measured Sixel overlay; unchanged frames are deduplicated by its manager. */
+  readonly allowSixel?: boolean;
 }) {
   const innerCols = Math.max(10, width - 2);
   const useKitty = allowKitty;
@@ -69,6 +72,7 @@ function PosterSlot({
     variant: "detail",
     debounceMs: 120,
     allowKitty: useKitty,
+    allowSixel,
     inkEmbedded: !useKitty,
     preserveTerminalImages: false,
     placementSlot,
@@ -154,6 +158,7 @@ export const MediaPanel = React.memo(function MediaPanel({
   active = true,
   placementSlot,
   allowKitty = true,
+  allowSixel = true,
 }: {
   readonly model: MediaPanelModel;
   readonly railWidth: number;
@@ -163,6 +168,8 @@ export const MediaPanel = React.memo(function MediaPanel({
   readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
   /** Prefer hero Kitty on post-play when next-up owns the primary slot. */
   readonly allowKitty?: boolean;
+  /** Permit framebuffer Sixel output. Keep false on high-frequency surfaces. */
+  readonly allowSixel?: boolean;
 }) {
   const innerWidth = Math.max(12, railWidth - 3);
   const synopsisLines = model.synopsis
@@ -186,6 +193,7 @@ export const MediaPanel = React.memo(function MediaPanel({
         active={active}
         placementSlot={placementSlot}
         allowKitty={allowKitty}
+        allowSixel={allowSixel}
       />
 
       {/* Header: badge + title + secondary line */}

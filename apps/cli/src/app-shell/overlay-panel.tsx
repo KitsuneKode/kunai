@@ -9,7 +9,7 @@ import { useSettledValue } from "./hooks/use-settled-value";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
 import { PosterInitialBlock } from "./poster-initial-block";
-import type { PosterResult } from "./poster-types";
+import { suppressPosterWhileNavigating, type PosterResult } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import {
@@ -20,7 +20,7 @@ import {
   wrapText,
 } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
-import { PosterOutput } from "./sixel-poster-pane";
+import { PosterOutput } from "./SixelPosterPane";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -185,8 +185,9 @@ export function OverlayPanel({
     debounceMs: 16,
     placementSlot: "overlay-picker",
   });
-  // Suppress the heavy chafa block while navigating; Kitty (out-of-band) stays.
-  const pickerPosterSuppressed = pickerNavigating && pickerPoster.kind === "text";
+  // Sixel shares the same collision-sensitive rectangle as Ink text and must
+  // not keep repainting the previous episode while the selection is moving.
+  const pickerPosterSuppressed = pickerNavigating && suppressPosterWhileNavigating(pickerPoster);
   // Two-pane episode picker: dense list (left) + anchored preview rail (right).
   // The rail hides first on narrow terminals (spec: responsive). When shown it
   // takes a fixed column so the list width — and every row — stays stable.
