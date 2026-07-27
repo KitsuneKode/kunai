@@ -34,6 +34,7 @@ import {
 } from "@kunai/storage";
 
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
+import { resolveDownloadOutputPath } from "./download-path-naming";
 import {
   estimateBytesForDownloadQuality,
   streamMeetsDownloadQualityFloor,
@@ -1405,23 +1406,17 @@ export class DownloadService {
     const configuredBase = input.outputDirectory?.trim() || this.deps.config.downloadPath.trim();
     const baseDir =
       configuredBase.length > 0 ? configuredBase : this.resolveDefaultDownloadDirectory();
-    const titleName = sanitizePathPart(input.title.name) || "Untitled";
-    const yearSuffix = normalizeYear(input.title.year);
+    const isMovie = input.title.type === "movie" || !input.episode;
 
-    if (input.title.type === "movie" || !input.episode) {
-      const movieFolder = yearSuffix ? `${titleName} (${yearSuffix})` : titleName;
-      const movieFile = yearSuffix
-        ? `${titleName} (${yearSuffix})${DOWNLOAD_FILE_EXT}`
-        : `${titleName}${DOWNLOAD_FILE_EXT}`;
-      return join(baseDir, movieFolder, movieFile);
-    }
-
-    const season = Math.max(1, Math.trunc(input.episode.season));
-    const episode = Math.max(1, Math.trunc(input.episode.episode));
-    const seriesFolder = yearSuffix ? `${titleName} (${yearSuffix})` : titleName;
-    const seasonFolder = `Season ${String(season).padStart(2, "0")}`;
-    const episodeFile = `${titleName} - S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}${DOWNLOAD_FILE_EXT}`;
-    return join(baseDir, seriesFolder, seasonFolder, episodeFile);
+    return resolveDownloadOutputPath({
+      baseDir,
+      titleName: input.title.name,
+      year: normalizeYear(input.title.year),
+      extension: DOWNLOAD_FILE_EXT,
+      ...(isMovie || !input.episode
+        ? {}
+        : { season: input.episode.season, episode: input.episode.episode }),
+    });
   }
 
   private resolveDefaultDownloadDirectory(): string {
@@ -1473,17 +1468,6 @@ export class DownloadService {
     const requiredGB = requiredBytes / (1024 * 1024 * 1024);
     return `Download paused because the offline safety reserve needs ${requiredGB.toFixed(1)}GB available on the download volume.`;
   }
-}
-
-function sanitizePathPart(value: string): string {
-  return value
-    .trim()
-    .replaceAll(/[<>:"/\\|?*]+/g, " ")
-    .split("")
-    .filter((char) => char.charCodeAt(0) >= 32)
-    .join("")
-    .replaceAll(/\s+/g, " ")
-    .replaceAll(/[. ]+$/g, "");
 }
 
 function normalizeYear(value: string | undefined): string | null {

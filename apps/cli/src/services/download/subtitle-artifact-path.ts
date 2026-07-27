@@ -29,7 +29,10 @@ export function resolveSubtitleArtifactPath(params: {
   readonly subtitleUrl: string;
   readonly contentType?: string | null;
 }): string {
-  const base = params.videoOutputPath.replace(/\.[^./]+$/, "");
+  // The character class must exclude `\` as well as `/`: on Windows a download
+  // directory containing a dot (`D:\Media\Anime.Shows\ep`) would otherwise let
+  // the match run back across the separator and eat part of the directory name.
+  const base = params.videoOutputPath.replace(/\.[^./\\]+$/, "");
   const fromUrl = extFromSubtitleUrl(params.subtitleUrl);
   if (fromUrl) return `${base}${fromUrl}`;
 
