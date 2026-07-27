@@ -35,6 +35,13 @@ describe("ProviderCandidatePlanner", () => {
       hasCompatibleFallback: true,
       skippedFallbackProviders: [
         {
+          reason: "media-kind",
+          providerId: "series-only",
+          requestedMediaKind: "anime",
+          supportedMediaKinds: ["series", "movie"],
+        },
+        {
+          reason: "health",
           providerId: "anime-down",
           effectiveHealth: expect.objectContaining({
             effectiveStatus: "down",

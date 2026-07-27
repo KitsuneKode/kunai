@@ -27,10 +27,23 @@ export type ProviderCandidatePlannerInput = {
   } | null;
 };
 
-export type SkippedFallbackProvider = {
-  readonly providerId: ProviderId;
-  readonly effectiveHealth: EffectiveProviderHealth;
-};
+/**
+ * Why a provider never made it into the candidate list. Every exclusion carries
+ * a reason so a short candidate list is explainable rather than mysterious —
+ * media-kind drops used to vanish without a trace.
+ */
+export type SkippedFallbackProvider =
+  | {
+      readonly reason: "health";
+      readonly providerId: ProviderId;
+      readonly effectiveHealth: EffectiveProviderHealth;
+    }
+  | {
+      readonly reason: "media-kind";
+      readonly providerId: ProviderId;
+      readonly requestedMediaKind: MediaKind;
+      readonly supportedMediaKinds: readonly MediaKind[];
+    };
 
 export type ProviderCandidatePlan = {
   readonly candidateIds: readonly ProviderId[];
@@ -45,7 +58,16 @@ export function planProviderCandidates(
   const skippedFallbackProviders: SkippedFallbackProvider[] = [];
   const compatibleFallbackIds = input.modules
     .filter((module) => module.providerId !== input.primaryProviderId)
-    .filter((module) => module.manifest.mediaKinds.includes(input.mediaKind))
+    .filter((module) => {
+      if (module.manifest.mediaKinds.includes(input.mediaKind)) return true;
+      skippedFallbackProviders.push({
+        reason: "media-kind",
+        providerId: module.providerId,
+        requestedMediaKind: input.mediaKind,
+        supportedMediaKinds: module.manifest.mediaKinds,
+      });
+      return false;
+    })
     .filter((module) => {
       if (input.ignoreProviderHealth === true) return true;
       const stored = input.getProviderHealth?.(module.providerId);
@@ -53,6 +75,7 @@ export function planProviderCandidates(
       if (!isProviderFallbackEligible(effective)) {
         if (effective)
           skippedFallbackProviders.push({
+            reason: "health",
             providerId: module.providerId,
             effectiveHealth: effective,
           });

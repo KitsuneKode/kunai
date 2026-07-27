@@ -37,6 +37,7 @@ import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";
 import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 import type {
+  MediaKind,
   ProviderHealthDelta,
   ProviderId,
   ProviderResolveInput,
@@ -149,6 +150,12 @@ export type PlaybackResolveEvent =
       readonly storedStatus: string;
       readonly consecutiveFailures?: number;
       readonly healedByTtl: boolean;
+    }
+  | {
+      readonly type: "provider-kind-skipped";
+      readonly providerId: string;
+      readonly requestedMediaKind: MediaKind;
+      readonly supportedMediaKinds: readonly MediaKind[];
     };
 
 export type PlaybackResolveInput = {
@@ -492,6 +499,17 @@ export class PlaybackResolveService {
     }
 
     for (const skipped of candidatePlan.skippedFallbackProviders) {
+      if (skipped.reason === "media-kind") {
+        // Diagnostics only: a user in anime mode does not need to be told that
+        // every TMDB-catalog provider was filtered out, but a trace does.
+        input.onEvent?.({
+          type: "provider-kind-skipped",
+          providerId: skipped.providerId,
+          requestedMediaKind: skipped.requestedMediaKind,
+          supportedMediaKinds: skipped.supportedMediaKinds,
+        });
+        continue;
+      }
       input.onEvent?.({
         type: "provider-health-skipped",
         providerId: skipped.providerId,
@@ -501,8 +519,11 @@ export class PlaybackResolveService {
         healedByTtl: skipped.effectiveHealth.healedByTtl,
       });
     }
-    if (candidatePlan.skippedFallbackProviders.length > 0) {
-      const skippedNames = candidatePlan.skippedFallbackProviders
+    const healthSkippedProviders = candidatePlan.skippedFallbackProviders.filter(
+      (skipped) => skipped.reason === "health",
+    );
+    if (healthSkippedProviders.length > 0) {
+      const skippedNames = healthSkippedProviders
         .map((skipped) => {
           const name =
             this.deps.engine.getManifest(skipped.providerId)?.displayName ?? skipped.providerId;
