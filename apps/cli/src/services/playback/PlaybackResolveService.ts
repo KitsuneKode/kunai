@@ -289,23 +289,21 @@ export class PlaybackResolveService {
     }
 
     const cacheKey = this.buildCacheKey(input, input.providerId);
-    let cachedStream =
-      (await this.deps.cacheStore.get(cacheKey)) ??
-      (input.providerId === "videasy"
-        ? await this.deps.cacheStore.get(this.buildCacheKey(input, "vidking"))
-        : null);
+    // Cache reads are best-effort: a failing store (disk full, corrupt DB) must
+    // degrade to a live resolve rather than take the whole playback down.
+    let cachedStream = await this.readCachedStream(input, cacheKey);
     let cacheBecameStale = false;
     if (cachedStream?.deferredLocator) {
-      await this.deps.cacheStore.delete(cacheKey);
+      await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
     } else if (cachedStream && isBlockedStreamUrl(cachedStream.url, input.blockedStreamUrls)) {
-      await this.deps.cacheStore.delete(cacheKey);
+      await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
     } else if (cachedStream && !cachedStreamMatchesSelection(cachedStream, input)) {
-      await this.deps.cacheStore.delete(cacheKey);
+      await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
       input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
@@ -327,7 +325,7 @@ export class PlaybackResolveService {
 
       if (health.checked) {
         if (!health.healthy) {
-          await this.deps.cacheStore.delete(cacheKey);
+          await this.deleteCachedStream(cacheKey);
           input.onEvent?.({ type: "cache-stale", providerId: input.providerId });
           cacheBecameStale = true;
           // Fall through to refetch below
@@ -434,7 +432,10 @@ export class PlaybackResolveService {
               cacheProvenance: "revalidated",
             };
           }
-          await this.deps.sourceInventory?.delete(inventoryInput);
+          // A cancelled probe is not a failed one — keep the entry.
+          if (!health.cancelled) {
+            await this.deps.sourceInventory?.delete(inventoryInput);
+          }
         } else if (
           inventoryResult.streams.some((stream) =>
             isBlockedStreamUrl(stream.url, input.blockedStreamUrls),
@@ -823,6 +824,13 @@ export class PlaybackResolveService {
   ): Promise<{
     readonly healthy: boolean;
     readonly checked: boolean;
+    /**
+     * The probe was cut short by the caller rather than finishing. Callers must
+     * not read this as evidence the stream is bad: a cancelled probe learned
+     * nothing, and discarding the entry on it throws away a good stream and
+     * turns the next play into a cache miss.
+     */
+    readonly cancelled?: boolean;
     readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
     readonly ageMs?: number;
   }> {
@@ -836,12 +844,13 @@ export class PlaybackResolveService {
       const policy = await healthService.check(stream, checkOptions);
       if (!policy.checked) return policy;
       if (options.signal?.aborted) {
-        return { healthy: false, checked: true, strategy: policy.strategy };
+        return { healthy: false, checked: false, cancelled: true, strategy: policy.strategy };
       }
-      return {
-        ...policy,
-        healthy: await this.deps.streamHealth(stream.url, stream.headers, options.signal),
-      };
+      const healthy = await this.deps.streamHealth(stream.url, stream.headers, options.signal);
+      if (options.signal?.aborted) {
+        return { healthy: false, checked: false, cancelled: true, strategy: policy.strategy };
+      }
+      return { ...policy, healthy };
     }
     return healthService.check(stream, checkOptions);
   }
@@ -862,6 +871,29 @@ export class PlaybackResolveService {
       selectedSourceId: selection.selectedSourceId,
       selectedStreamId: selection.selectedStreamId,
     });
+  }
+
+  /** Cache reads are best-effort; playback can still resolve live without SQLite. */
+  private async readCachedStream(
+    input: PlaybackResolveInput,
+    cacheKey: string,
+  ): Promise<StreamInfo | null> {
+    try {
+      const cached = await this.deps.cacheStore.get(cacheKey);
+      if (cached || input.providerId !== "videasy") return cached;
+      return await this.deps.cacheStore.get(this.buildCacheKey(input, "vidking"));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Cache invalidation is best-effort for the same reason as cache reads. */
+  private async deleteCachedStream(cacheKey: string): Promise<void> {
+    try {
+      await this.deps.cacheStore.delete(cacheKey);
+    } catch {
+      // A cache fault must not prevent the live provider path from recovering.
+    }
   }
 }
 

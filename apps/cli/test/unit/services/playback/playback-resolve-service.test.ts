@@ -205,6 +205,60 @@ test("PlaybackResolveService falls back to engine on cache miss", async () => {
   expect((observedResolveInput as ProviderResolveInput | null)?.startupPriority).toBe("fast");
 });
 
+test("PlaybackResolveService degrades to a live resolve when the cache read fails", async () => {
+  const cache = createMemoryCache(null);
+  cache.get = async () => {
+    throw new Error("cache database unavailable");
+  };
+  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+  const service = new PlaybackResolveService({ engine, cacheStore: cache });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "primary",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.cacheStatus).toBe("miss");
+});
+
+test("PlaybackResolveService preserves a cached stream when its health probe is cancelled", async () => {
+  const cached = { ...stream, timestamp: Date.now() - 3 * 60 * 60 * 1000 };
+  const cache = createMemoryCache(cached);
+  let deletes = 0;
+  cache.delete = async () => {
+    deletes++;
+  };
+  const controller = new AbortController();
+  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: cache,
+    streamHealth: async () => {
+      controller.abort();
+      return true;
+    },
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    forceHealthCheck: true,
+    signal: controller.signal,
+  });
+
+  expect(deletes).toBe(0);
+  expect(result.cacheStatus).toBe("hit");
+});
+
 test("PlaybackResolveService does not cache deferred media locators", async () => {
   const cache = createMemoryCache(null);
   const engine = createMockEngine({
