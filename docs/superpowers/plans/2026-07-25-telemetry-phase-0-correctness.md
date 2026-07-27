@@ -1,5 +1,16 @@
 # Telemetry Phase 0 — Correctness and Pollution Fixes Implementation Plan
 
+> **STATUS: LANDED 2026-07-25.** All six tasks are implemented and committed
+> (`96055d37`, `a236726f`, `6922527e`, `b1e5f1b1`, `692410c5`, `f800c728`).
+> The unchecked boxes below are historical and were never ticked during
+> execution — verified against the code, not the checkboxes:
+> `apps/telemetry-ingest/src/payload-validation.ts` exists,
+> `PUBLIC_METRICS_CACHE_CONTROL` is exported from `src/snapshot.ts`,
+> `telemetryRetryAfter` is in `packages/config/src/types.ts:139`, and
+> `TELEMETRY_RETRY_BACKOFF_MS` is in `TelemetryService.ts:17`.
+> Do not re-execute this plan. Per `.plans/plan-implementation-truth.md`,
+> code wins over plan status.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the three correctness defects in the existing telemetry pipeline — unvalidated `version`/`os`/`arch` on ingest, silent permanent loss of a failed daily ping, and a missing CDN revalidation header — without any schema change or config migration.
