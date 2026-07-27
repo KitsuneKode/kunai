@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -80,7 +81,12 @@ const execTest = NODE_BIN && process.platform !== "win32" ? test : test.skip;
 
 beforeAll(() => {
   if (!NODE_BIN) return;
-  workDir = mkdtempSync(join(tmpdir(), "kunai-launcher-"));
+  // realpath, not the raw mkdtemp path. On macOS `/var` is a symlink to
+  // `/private/var`, so `tmpdir()` hands back `/var/folders/...` while anything
+  // that resolves the path — as the launcher does when it records an absolute
+  // package root — reports `/private/var/folders/...`. Comparing the two fails
+  // only on macOS. Resolving here is a no-op on Linux and Windows.
+  workDir = realpathSync(mkdtempSync(join(tmpdir(), "kunai-launcher-")));
 
   const nodeBin = NODE_BIN;
   noBunPath = join(workDir, "no-bun-bin");

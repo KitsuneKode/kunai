@@ -81,13 +81,18 @@ async function spawnAndSignal(
     existsSync(transcript) ? readFileSync(transcript, "utf8").trim() : "<no transcript captured>";
 
   const dataDbPath = join(shadow.data, "kunai", "kunai-data.sqlite");
-  const startupDeadline = Date.now() + 15_000;
+  // A cold CLI boot on a loaded CI runner is slow, and macOS runners are the
+  // slowest of the three. This is a deadline, not a sleep: a fast machine still
+  // proceeds the moment both files appear, so raising it costs nothing when
+  // boot is quick and only buys headroom when it is not.
+  const startupTimeoutMs = 45_000;
+  const startupDeadline = Date.now() + startupTimeoutMs;
   while (Date.now() < startupDeadline && !(existsSync(pidFile) && existsSync(dataDbPath))) {
     await Bun.sleep(100);
   }
   if (!existsSync(pidFile) || !existsSync(dataDbPath)) {
     throw new Error(
-      `CLI did not reach a booted state within 15s ` +
+      `CLI did not reach a booted state within ${startupTimeoutMs}ms ` +
         `(pidFile=${existsSync(pidFile)}, dataDb=${existsSync(dataDbPath)}).\n` +
         `--- transcript ---\n${readTranscript()}`,
     );
