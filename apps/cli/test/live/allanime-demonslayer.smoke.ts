@@ -9,7 +9,7 @@ import {
 } from "./provider-smoke";
 
 const profile = createProviderSmokeProfile("allanime");
-const args = process.argv.slice(1);
+const args = process.argv.slice(2);
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
