@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import type { ProviderCycleCandidate } from "@kunai/types";
 
 import {
+  classifyEndpointFailureFromCycleFailure,
   classifyProviderCycleError,
   createProviderCycleFailureError,
   runProviderCycle,
@@ -295,6 +296,26 @@ test("classifyProviderCycleError keeps blocked and parse failures non-retryable"
     failureClass: "candidate-network",
     retryable: true,
   });
+});
+
+test("endpoint health learns from parse and blocked cycle failures", () => {
+  const base = {
+    providerId: "allanime",
+    candidateId: "source:kiwi",
+    message: "failed",
+    retryable: false,
+    at: "2026-05-19T00:00:00.000Z",
+  } as const;
+
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-parse" }),
+  ).toBe("server-error");
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-blocked" }),
+  ).toBe("server-error");
+  expect(
+    classifyEndpointFailureFromCycleFailure({ ...base, failureClass: "candidate-empty" }),
+  ).toBeNull();
 });
 
 function fixedClock(): () => string {

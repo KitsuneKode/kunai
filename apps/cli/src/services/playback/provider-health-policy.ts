@@ -23,7 +23,12 @@ export function resolveEffectiveProviderHealth(
   if (!stored) return undefined;
 
   const checkedAtMs = Date.parse(stored.checkedAt);
-  const ageMs = Number.isFinite(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : 0;
+  // Corrupt persistence must fail open. Treating it as freshly checked pins a
+  // down provider out of fallback forever; an unknown timestamp is no evidence
+  // of a recent failure.
+  const ageMs = Number.isFinite(checkedAtMs)
+    ? Math.max(0, now.getTime() - checkedAtMs)
+    : Number.POSITIVE_INFINITY;
   const effectiveStatus = resolveEffectiveStatus(stored.status, ageMs);
 
   return {

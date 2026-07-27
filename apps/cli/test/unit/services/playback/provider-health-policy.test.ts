@@ -56,6 +56,13 @@ describe("provider-health-policy", () => {
     expect(isProviderFallbackEligible(effective)).toBe(true);
   });
 
+  test("a corrupt health timestamp fails open instead of pinning a provider down", () => {
+    const effective = resolveEffectiveProviderHealth(health("down", "not-a-date", 7), NOW);
+    expect(effective?.effectiveStatus).toBe("healthy");
+    expect(effective?.healedByTtl).toBe(true);
+    expect(isProviderFallbackEligible(effective)).toBe(true);
+  });
+
   test("formatProviderHealthPickerLabelSuffix only surfaces actionable states", () => {
     const down = resolveEffectiveProviderHealth(health("down", "2026-06-23T11:00:00.000Z", 3), NOW);
     expect(formatProviderHealthPickerLabelSuffix(down ?? undefined, NOW)).toContain("down");

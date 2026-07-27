@@ -410,6 +410,12 @@ export function classifyEndpointFailureFromCycleFailure(
     case "candidate-timeout":
     case "candidate-network":
       return "transient";
+    case "candidate-parse":
+    case "candidate-blocked":
+      // A malformed response or a repeated block is an endpoint-side fault.
+      // ProviderEndpointHealthService applies its distinct-title guard before
+      // escalating this to a quarantine, so one title's quirk stays harmless.
+      return "server-error";
     default:
       return null;
   }
