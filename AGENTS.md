@@ -166,6 +166,7 @@ Single-context: root `CONTEXT.md` plus ADRs in `.docs/adr/`. See [docs/agents/do
 - [.plans/turborepo-and-package-boundaries.md](.plans/turborepo-and-package-boundaries.md): monorepo migration order, package ownership, legacy quarantine, Zod, SQLite, and tsgo decisions
 - [.plans/persistent-shell-implementation.md](.plans/persistent-shell-implementation.md): migration order for the persistent shell and canonical runtime
 - [.plans/ink-migration.md](.plans/ink-migration.md): terminal UI rewrite plan
+- [.plans/sixel-in-ink.md](.plans/sixel-in-ink.md): sixel placement inside the Ink shell — encoder done, placement not; yazi's `move_lock` + collision model written up
 - [.plans/search-service.md](.plans/search-service.md): deferred search/provider decoupling
 - [.plans/yt-provider.md](.plans/yt-provider.md): deferred YouTube provider research
 - [.plans/provider-hardening.md](.plans/provider-hardening.md): provider research, hardening, and scraper capability roadmap
