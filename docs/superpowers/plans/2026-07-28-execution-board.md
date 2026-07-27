@@ -20,7 +20,7 @@ Do not run plans concurrently. They touch overlapping files (`PlaybackResolveSer
 | --- | ---------------------------------------------------------------------------- | ---------- | --------------------- |
 | 0   | _(done)_ truthful state propagation — commit `94189298`                      | —          | ✅ shipped            |
 | 0   | _(done)_ in-flight provider hardening — commit `d79dcc7e`                    | —          | ✅ shipped            |
-| 1   | [`resolve-telemetry-spine`](2026-07-28-resolve-telemetry-spine.md)           | —          | **Yes**               |
+| 1   | _(done)_ [`resolve-telemetry-spine`](2026-07-28-resolve-telemetry-spine.md)  | —          | ✅ shipped            |
 | 2   | [`candidate-racing`](2026-07-28-candidate-racing.md)                         | 1          | **Yes**               |
 | 3   | [`health-recovery-and-ordering`](2026-07-28-health-recovery-and-ordering.md) | 1          | No                    |
 | 4   | [`history-actions-and-download`](2026-07-28-history-actions-and-download.md) | —          | No                    |
@@ -108,12 +108,12 @@ rm -rf 'apps/cli/\tmp\kunai-uninstall-yGVQtd'
 
 Five capabilities in this codebase were built, tested, and never called:
 
-| Capability               | State found                                                   |
-| ------------------------ | ------------------------------------------------------------- |
-| `ResolveTraceRepository` | schema, migration, repo, pruning — instantiated only in tests |
-| `recentFailureRate`      | persisted every resolve, read by nothing                      |
-| `medianResolveMs`        | persisted every resolve, read by nothing                      |
-| Endpoint quarantine      | failures recorded, `quarantined_until` never set              |
-| `getMediaActions`        | full per-surface policy, called only by its own test          |
+| Capability               | State found                                                   | Now                                   |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------------- |
+| `ResolveTraceRepository` | schema, migration, repo, pruning — instantiated only in tests | wired via `ResolveTraceSink` (plan 1) |
+| `recentFailureRate`      | persisted every resolve, read by nothing                      | gates effective status (plan 1)       |
+| `medianResolveMs`        | persisted every resolve, read by nothing                      | still unread — plan 3                 |
+| Endpoint quarantine      | failures recorded, `quarantined_until` never set              | single-title trigger added (plan 1)   |
+| `getMediaActions`        | full per-surface policy, called only by its own test          | still uncalled — plan 4               |
 
 Worth naming as a systemic thing rather than five coincidences: the expensive part — schema, storage, retention, tests — gets built, and the cheap last wire is skipped, so the feature reads as present in code review and is absent at runtime. When adding a capability, the acceptance criterion is a runtime observation, not a passing test.
