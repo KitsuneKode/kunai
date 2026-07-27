@@ -361,6 +361,7 @@ export const providerHealthSchema = z.object({
   checkedAt: z.iso.datetime(),
   medianResolveMs: z.number().nonnegative().optional(),
   recentFailureRate: z.number().min(0).max(1).optional(),
+  observations: z.number().int().nonnegative().optional(),
   consecutiveFailures: z.number().int().nonnegative().optional(),
   subtitleSuccessRate: z.number().min(0).max(1).optional(),
   streamSurvivalRate: z.number().min(0).max(1).optional(),

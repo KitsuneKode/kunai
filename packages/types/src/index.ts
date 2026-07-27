@@ -385,6 +385,11 @@ export interface ProviderHealth {
   readonly checkedAt: string;
   readonly medianResolveMs?: number;
   readonly recentFailureRate?: number;
+  /**
+   * How many outcomes back `recentFailureRate`. A rate derived from one or two
+   * attempts is not evidence; consumers gate on this before acting.
+   */
+  readonly observations?: number;
   readonly consecutiveFailures?: number;
   readonly subtitleSuccessRate?: number;
   readonly streamSurvivalRate?: number;
