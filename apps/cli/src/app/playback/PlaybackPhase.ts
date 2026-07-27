@@ -125,7 +125,7 @@ import {
   type RecentPlaybackStreamProvenance,
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
-import { createResolveTraceStub } from "@/app/playback/resolve-trace";
+import { createResolveTraceStub, finalizeResolveTrace } from "@/app/playback/resolve-trace";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
 import {
@@ -226,6 +226,7 @@ import {
 } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
+import type { ProviderFailure } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
 export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
@@ -1757,6 +1758,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (stream && resolveController.signal.aborted && !context.signal.aborted) {
             stream = null;
           }
+
+          // Every resolve path — prefetch, recent-stream reuse, and fresh or
+          // fallback resolve — converges here, so each is recorded exactly
+          // once. Recorded after the cancel guard above so an abandoned
+          // resolve is not filed as a success. An empty `resolveAttempts` is
+          // itself the signal that nothing was resolved live.
+          container.resolveTraceSink.record(
+            finalizeResolveTrace(resolveTrace, {
+              endedAt: new Date().toISOString(),
+              selectedProviderId: resolvedProviderId ?? currentProvider.metadata.id,
+              selectedStreamId: stream?.providerResolveResult?.streams?.[0]?.id,
+              cacheHit: streamProvenance === "cache",
+              failures: resolveAttempts
+                .map((attempt) => attempt.failure)
+                .filter((failure): failure is ProviderFailure => failure !== undefined),
+            }),
+          );
 
           // TypeScript cannot narrow `stream` across the conditional mutation above.
           if (!stream) {

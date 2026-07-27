@@ -1,44 +1,88 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
-import { createResolveTraceStub } from "@/app/playback/resolve-trace";
+import { createResolveTraceStub, finalizeResolveTrace } from "@/app/playback/resolve-trace";
+import type { TitleInfo } from "@/domain/types";
+import type { ProviderFailure } from "@kunai/types";
 
-test("createResolveTraceStub maps anime mode into shared title identity", () => {
-  const trace = createResolveTraceStub({
-    title: {
-      id: "123",
-      type: "series",
-      name: "Example Anime",
-      year: "2024",
-    },
-    episode: { season: 1, episode: 4 },
-    providerId: "anikai",
-    mode: "anime",
-    startedAt: new Date("2026-04-29T00:00:00.000Z"),
+const title: TitleInfo = { id: "550", name: "Fight Club", type: "movie", year: "1999" };
+
+function started() {
+  return createResolveTraceStub({ title, providerId: "videasy", mode: "series" });
+}
+
+describe("finalizeResolveTrace", () => {
+  test("stamps the outcome onto the started trace", () => {
+    const trace = started();
+    const endedAt = "2026-07-28T12:00:05.000Z";
+
+    const finished = finalizeResolveTrace(trace, {
+      endedAt,
+      selectedProviderId: "videasy",
+      selectedStreamId: "stream-1",
+      cacheHit: false,
+      failures: [],
+    });
+
+    expect(finished.id).toBe(trace.id);
+    expect(finished.endedAt).toBe(endedAt);
+    expect(finished.selectedStreamId).toBe("stream-1");
+    expect(finished.cacheHit).toBe(false);
   });
 
-  expect(trace.id).toBe("resolve-1777420800000-anikai-123");
-  expect(trace.title.kind).toBe("anime");
-  expect(trace.title.anilistId).toBe("123");
-  expect(trace.title.tmdbId).toBeUndefined();
-  expect(trace.episode?.episode).toBe(4);
-  expect(trace.steps[0]?.stage).toBe("provider");
-});
+  test("keeps the failures that explain a fallback", () => {
+    const failures: readonly ProviderFailure[] = [
+      {
+        providerId: "videasy",
+        code: "timeout",
+        message: "candidate timed out",
+        retryable: false,
+        at: "2026-07-28T12:00:03.000Z",
+      },
+    ];
 
-test("createResolveTraceStub maps series mode into shared title identity", () => {
-  const trace = createResolveTraceStub({
-    title: {
-      id: "987",
-      type: "series",
-      name: "Example Series",
-      year: "2025",
-    },
-    providerId: "vidking",
-    mode: "series",
-    startedAt: new Date("2026-04-29T00:00:00.000Z"),
+    const finished = finalizeResolveTrace(started(), {
+      endedAt: "2026-07-28T12:00:05.000Z",
+      selectedProviderId: "vidlink",
+      cacheHit: false,
+      failures,
+    });
+
+    expect(finished.failures).toHaveLength(1);
+    // The provider that actually won, not the one first attempted.
+    expect(finished.selectedProviderId).toBe("vidlink");
   });
 
-  expect(trace.title.kind).toBe("series");
-  expect(trace.title.tmdbId).toBe("987");
-  expect(trace.title.year).toBe(2025);
-  expect(trace.cacheHit).toBe(false);
+  test("falls back to the originally attempted provider when none is given", () => {
+    const finished = finalizeResolveTrace(started(), {
+      endedAt: "2026-07-28T12:00:05.000Z",
+      cacheHit: true,
+      failures: [],
+    });
+
+    expect(finished.selectedProviderId).toBe("videasy");
+  });
+
+  test("does not mutate the trace it was given", () => {
+    const trace = started();
+
+    finalizeResolveTrace(trace, {
+      endedAt: "2026-07-28T12:00:05.000Z",
+      cacheHit: true,
+      failures: [],
+    });
+
+    expect(trace.endedAt).toBeUndefined();
+    expect(trace.cacheHit).toBe(false);
+  });
+
+  test("keeps the steps recorded while resolving", () => {
+    const finished = finalizeResolveTrace(started(), {
+      endedAt: "2026-07-28T12:00:05.000Z",
+      cacheHit: false,
+      failures: [],
+    });
+
+    expect(finished.steps).toHaveLength(1);
+    expect(finished.startedAt).toBeTruthy();
+  });
 });

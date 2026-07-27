@@ -1,5 +1,5 @@
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
-import type { ProviderId, ResolveTrace } from "@kunai/types";
+import type { ProviderFailure, ProviderId, ResolveTrace } from "@kunai/types";
 
 export function createResolveTraceStub({
   title,
@@ -47,5 +47,33 @@ export function createResolveTraceStub({
       },
     ],
     failures: [],
+  };
+}
+
+/**
+ * Stamp the outcome onto a trace started by `createResolveTraceStub`.
+ *
+ * Returns a new object; the input is never mutated, so a caller holding the
+ * started trace for its id keeps a stable value.
+ */
+export function finalizeResolveTrace(
+  trace: ResolveTrace,
+  outcome: {
+    readonly endedAt: string;
+    readonly selectedProviderId?: string;
+    readonly selectedStreamId?: string;
+    readonly cacheHit: boolean;
+    readonly failures: readonly ProviderFailure[];
+  },
+): ResolveTrace {
+  return {
+    ...trace,
+    endedAt: outcome.endedAt,
+    selectedProviderId: (outcome.selectedProviderId ?? trace.selectedProviderId) as
+      | ProviderId
+      | undefined,
+    selectedStreamId: outcome.selectedStreamId ?? trace.selectedStreamId,
+    cacheHit: outcome.cacheHit,
+    failures: outcome.failures,
   };
 }
