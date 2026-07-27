@@ -4,12 +4,12 @@ import { __testing as overlayTesting, SixelOverlayManager } from "@/app-shell/si
 
 const originalIsWindows = overlayTesting.runtime.isWindows;
 const originalWrite = overlayTesting.runtime.write;
-const originalSleep = overlayTesting.runtime.sleep;
+const originalSettleConPty = overlayTesting.runtime.settleConPty;
 
 afterEach(() => {
   overlayTesting.runtime.isWindows = originalIsWindows;
   overlayTesting.runtime.write = originalWrite;
-  overlayTesting.runtime.sleep = originalSleep;
+  overlayTesting.runtime.settleConPty = originalSettleConPty;
 });
 
 describe("sixel overlay placement", () => {
@@ -38,5 +38,25 @@ describe("sixel overlay placement", () => {
     await Bun.sleep(5);
 
     expect(writes).toHaveLength(1);
+  });
+
+  test("settles the ConPTY cursor without yielding between move and pixels", async () => {
+    const writes: string[] = [];
+    let settleCalls = 0;
+    overlayTesting.runtime.isWindows = () => true;
+    overlayTesting.runtime.write = (text) => {
+      writes.push(text);
+    };
+    overlayTesting.runtime.settleConPty = () => {
+      settleCalls++;
+    };
+    const manager = new SixelOverlayManager();
+    manager.register("preview", { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" });
+
+    await Bun.sleep(5);
+
+    expect(settleCalls).toBe(1);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).toContain("pixels");
   });
 });

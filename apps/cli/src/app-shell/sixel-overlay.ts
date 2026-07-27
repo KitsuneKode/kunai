@@ -18,13 +18,19 @@ const RESTORE_CURSOR = `${ESC}8`;
 const SHOW_CURSOR = `${ESC}[?25h`;
 const HIDE_CURSOR = `${ESC}[?25l`;
 const RESET_ATTRIBUTES = `${ESC}[0m`;
+const conPtySettleCell = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
 
 const runtime = {
   isWindows: (): boolean => process.platform === "win32",
   write: (text: string): void => {
     process.stdout.write(text);
   },
-  sleep: (milliseconds: number): Promise<void> => Bun.sleep(milliseconds),
+  settleConPty: (): void => {
+    // Yazi sleeps while holding its exclusive TTY lock. `Bun.sleep()` would
+    // yield JavaScript here, letting Ink write a frame between cursor movement
+    // and sixel bytes. Block for this one millisecond to preserve that lock.
+    Atomics.wait(conPtySettleCell, 0, 0, 1);
+  },
 };
 
 function sameRect(a: SixelRect, b: SixelRect): boolean {
@@ -89,11 +95,11 @@ export class SixelOverlayManager {
     this.flushQueued = true;
     setTimeout(() => {
       this.flushQueued = false;
-      void this.flush();
+      this.flush();
     }, 0);
   }
 
-  private async writeAt(rect: SixelRect, content: string): Promise<void> {
+  private writeAt(rect: SixelRect, content: string): void {
     const move = moveTo(rect);
     if (runtime.isWindows()) {
       // ConPTY can lose one of these moves. This is Yazi's deliberately
@@ -101,21 +107,21 @@ export class SixelOverlayManager {
       runtime.write(
         `${SAVE_CURSOR}${move}${SHOW_CURSOR}${move}${SHOW_CURSOR}${move}${SHOW_CURSOR}`,
       );
-      await runtime.sleep(1);
+      runtime.settleConPty();
       runtime.write(`${content}${HIDE_CURSOR}${RESTORE_CURSOR}`);
       return;
     }
     runtime.write(`${SAVE_CURSOR}${move}${content}${RESTORE_CURSOR}`);
   }
 
-  private async erase(rect: SixelRect): Promise<void> {
+  private erase(rect: SixelRect): void {
     const line = " ".repeat(rect.width);
     for (let row = 0; row < rect.height; row++) {
-      await this.writeAt({ ...rect, y: rect.y + row, height: 1 }, `${line}${RESET_ATTRIBUTES}`);
+      this.writeAt({ ...rect, y: rect.y + row, height: 1 }, `${line}${RESET_ATTRIBUTES}`);
     }
   }
 
-  private async flush(): Promise<void> {
+  private flush(): void {
     if (this.flushing) {
       this.redrawRequested = true;
       return;
@@ -127,12 +133,12 @@ export class SixelOverlayManager {
       for (const [id, rect] of this.shown) {
         const next = this.desired.get(id);
         if (!next || !sameRect(rect, next.rect)) {
-          await this.erase(rect);
+          this.erase(rect);
           this.shown.delete(id);
         }
       }
       for (const [id, overlay] of this.desired) {
-        await this.writeAt(overlay.rect, overlay.sixel);
+        this.writeAt(overlay.rect, overlay.sixel);
         this.shown.set(id, overlay.rect);
       }
     } catch (error) {
