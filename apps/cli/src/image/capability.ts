@@ -250,10 +250,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     });
   }
   if (probe?.sixel) {
-    // No chafa check: the encoder is in process. This branch used to fall
-    // through to half-block whenever chafa was missing, which on Windows -- where
-    // it effectively always is -- meant a terminal that had just *told us* it
-    // does sixel still got two pixels per cell.
     return buildCapability({
       terminal,
       protocol: "sixel",
@@ -275,8 +271,8 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     );
   }
 
-  // WezTerm's sixel support is long-standing and version-independent, so it is
-  // safe to prefer the higher-fidelity path by name even without a probe reply.
+  // WezTerm supports sixel; app-shell placement reserves and redraws a measured
+  // overlay after every Ink frame, so it no longer has to fall back to text.
   if (terminal === "wezterm") {
     return buildCapability({
       terminal,

@@ -14,6 +14,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
 import { palette, semanticToneColor } from "./shell-theme";
+import { PosterOutput } from "./sixel-poster-pane";
 import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -170,7 +171,7 @@ export function DetailsPaneUI({
       <Box flexDirection="column" flexGrow={1}>
         <Box marginBottom={1}>
           {poster.kind !== "none" ? (
-            <Text>{poster.placeholder}</Text>
+            <PosterOutput poster={poster} />
           ) : primary.posterPath && spinner ? (
             <SakuraPetal mode="loading" />
           ) : (
@@ -309,7 +310,7 @@ function DetailPosterSlot({
   if (poster.kind !== "none") {
     return (
       <Box minHeight={posterRows}>
-        <Text>{poster.placeholder}</Text>
+        <PosterOutput poster={poster} />
       </Box>
     );
   }

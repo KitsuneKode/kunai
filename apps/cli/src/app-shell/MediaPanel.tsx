@@ -20,6 +20,7 @@ import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { measureColumns, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { PosterOutput } from "./sixel-poster-pane";
 import { usePosterPreview } from "./use-poster-preview";
 
 const SYNOPSIS_MAX_LINES = 3;
@@ -75,7 +76,7 @@ function PosterSlot({
   return (
     <Box width={width} minHeight={13} justifyContent="center" alignItems="center">
       {poster.kind !== "none" ? (
-        <Text>{poster.placeholder}</Text>
+        <PosterOutput poster={poster} />
       ) : (
         <SakuraPetal mode="placeholder" active={active} />
       )}

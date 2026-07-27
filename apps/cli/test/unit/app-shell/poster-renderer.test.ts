@@ -229,7 +229,7 @@ describe("app-shell poster renderer", () => {
     expect(writes.join("")).toContain("U=1");
   });
 
-  describe("sixel is never used from inside the Ink tree", () => {
+  describe("sixel uses the measured overlay path", () => {
     const sixelCapability: ImageCapability = {
       terminal: "windows-terminal",
       protocol: "sixel",
@@ -239,28 +239,26 @@ describe("app-shell poster renderer", () => {
       reason: "terminal reported sixel support (DA1)",
     };
 
-    // Sixel paints at the cursor and does not reflow, and Ink rewrites its whole
-    // frame on every commit. Emitting it from the tree would leave the poster
-    // erased or smeared, so the shell must degrade — even though the terminal
-    // genuinely supports sixel and the one-shot path uses it.
-    test("degrades to chafa symbols when chafa is available", () => {
-      rendererTesting.runtime.which = () => "/usr/bin/chafa";
-      expect(resolveAppShellPosterCapability(sixelCapability)).toMatchObject({
-        terminal: "windows-terminal",
-        protocol: "symbols",
-        renderer: "chafa-symbols",
-        available: true,
-      });
+    test("leaves sixel available for an out-of-band measured pane", () => {
+      expect(resolveAppShellPosterCapability(sixelCapability)).toEqual(sixelCapability);
     });
 
-    test("degrades to half-block when chafa is not installed", () => {
-      rendererTesting.runtime.which = () => null;
-      expect(resolveAppShellPosterCapability(sixelCapability)).toMatchObject({
-        protocol: "half-block",
-        renderer: "half-block",
-        dependency: "none",
-        available: true,
+    test("encodes a sixel overlay instead of placing escape bytes in Ink text", async () => {
+      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
+      const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
+      const result = await renderPoster(png.buffer as ArrayBuffer, {
+        rows: 4,
+        cols: 8,
+        allowKitty: true,
+        placementSlot: "browse-preview",
       });
+      expect(result).toMatchObject({
+        kind: "sixel",
+        rows: 4,
+        cols: 8,
+        overlayId: "browse-preview",
+      });
+      if (result.kind === "sixel") expect(result.sixel.startsWith("\x1bP0;1;0q")).toBe(true);
     });
 
     test("leaves every other renderer untouched", () => {

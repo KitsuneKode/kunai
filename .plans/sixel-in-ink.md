@@ -1,20 +1,21 @@
 # Sixel inside the Ink shell
 
-Status: **not implemented**. The encoder exists and is tested; placement does not.
+Status: **implemented; requires Windows Terminal framebuffer smoke testing**.
 
 ## Where things stand
 
-| Piece                                          | State                                                |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| Sixel encoder (`apps/cli/src/image/sixel.ts`)  | Done — median cut, transparency, RLE bands, 14 tests |
-| One-shot renderer (`image/renderers/sixel.ts`) | Done — owns the cursor, writes directly              |
-| Capability detection picks `sixel`             | Done — on any DA1 sixel reply, no chafa needed       |
-| **Placement inside the Ink tree**              | **Missing — this is the whole remaining problem**    |
+| Piece                                          | State                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| Sixel encoder (`apps/cli/src/image/sixel.ts`)  | Done — median cut, transparency, RLE bands, 14 tests         |
+| One-shot renderer (`image/renderers/sixel.ts`) | Done — owns the cursor, writes directly                      |
+| Capability detection picks `sixel`             | Done — DA1 replies and WezTerm select the in-process encoder |
+| Sixel overlay manager                          | Done — owns measured slots, redraw, and space erasure        |
+| **Windows Terminal framebuffer smoke**         | **Required before release**                                  |
 
-`resolveAppShellPosterCapability` in `apps/cli/src/app-shell/poster-renderer.ts`
-downgrades `sixel` to a text renderer for the shell. Until placement exists that
-downgrade is load-bearing: without it, sixel bytes land in a frame Ink is also
-painting, and the result is corrupted text (see "Known symptom" below).
+`SixelPosterPane` reserves a blank Ink rectangle and uses Ink's
+`measureElement()` after layout to register its absolute cell rectangle. The
+overlay manager paints sixel only after Ink has written its frame; sixel bytes
+never enter Ink's text output.
 
 ## Known symptom this must fix
 
@@ -115,33 +116,30 @@ mechanism that prevents the corruption we are seeing.** Drawing the image and
 hoping the TUI stays away is not a design; the TUI has to tell the image layer
 when it paints over it.
 
-## What to build
+## Implemented placement model
 
-1. **A placement module** owning: the shown cell `Rect`, `show`, `hide`, and
-   `erase(region)`. One image at a time, matching yazi.
-2. **`moveLock(x, y, write)`** with the ConPTY branch above. Everything that
-   writes graphics goes through it — including the Kitty path, which currently
-   writes to `process.stdout` directly.
-3. **Absolute position for the poster region.** The hard part: Ink does not
-   expose where a component landed on screen. Options, cheapest first:
-   - Render the poster pane as a fixed-size box at a layout position we compute
-     ourselves, rather than asking Ink where it ended up.
-   - Query the cursor with CSI 6n immediately after Ink commits the frame.
-   - Patch into Ink's output pipeline to learn the frame origin.
-4. **Collision handling.** Ink repaints the whole frame on every commit, so the
-   naive reading is "collide every frame". Either erase-and-repaint after each
-   commit (yazi repaints on redraw too), or reserve the region so Ink never
-   emits cells there.
-5. **Only then** remove the downgrade in `resolveAppShellPosterCapability`.
+1. `apps/cli/src/app-shell/sixel-overlay.ts` owns every desired and shown
+   rectangle, erases removed/moved rectangles with spaces, and redraws desired
+   overlays after each Ink commit.
+2. Its Windows path copies Yazi's move workaround: save cursor, issue the same
+   absolute move three times with cursor-show escapes, wait 1 ms, write pixels,
+   then hide and restore the cursor.
+3. `apps/cli/src/app-shell/sixel-poster-pane.tsx` uses Ink
+   `measureElement()` in an effect to get the actual layout rectangle. Kunai's
+   alternate screen means those coordinates are viewport coordinates; CSI 6n is
+   unnecessary.
+4. The pane is a fixed-size empty `Box`. Ink owns that blank rectangle on every
+   frame and the overlay manager repaints pixels after it, which is the collision
+   contract for the shell.
+5. `launchSessionApp` schedules the post-frame overlay flush from Ink's
+   `onRender` callback. Ink invokes that callback before writing, so the manager
+   deliberately defers to the next task before painting.
 
 ## Cross-platform warning
 
-`detectImageCapability` now selects `sixel` on any DA1 sixel reply, with no chafa
-requirement. That changes Linux and macOS behaviour too — foot, WezTerm, and
-`xterm -ti vt340` all answer that query. If the corruption above is caused by
-sixel escaping into the frame, it will bite there as well, not only on Windows.
-Consider reverting the detection half until placement lands; the encoder and its
-tests stand on their own.
+Auto-detection selects sixel only when the terminal explicitly reports it (or
+when WezTerm is identified). `KUNAI_IMAGE_PROTOCOL=half-block` remains the
+stable comparison path; `KUNAI_IMAGE_PROTOCOL=sixel` forces a manual smoke.
 
 ## References
 

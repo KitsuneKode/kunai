@@ -3,6 +3,7 @@ import React from "react";
 
 import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import { palette } from "../shell-theme";
+import { PosterOutput } from "../sixel-poster-pane";
 import { usePosterPreview } from "../use-poster-preview";
 
 function initialsOf(title: string): string {
@@ -68,8 +69,8 @@ export function MiniPosterTile({
     return <Text color={placeholderColor}>{initialsOf(title)}</Text>;
   }
 
-  if (poster.kind !== "none" && poster.placeholder) {
-    return <Text>{poster.placeholder}</Text>;
+  if (poster.kind !== "none") {
+    return <PosterOutput poster={poster} />;
   }
 
   // Tiles never signal load state. A rail of these all flipping initials → "…" →

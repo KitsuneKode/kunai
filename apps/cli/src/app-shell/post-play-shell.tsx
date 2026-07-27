@@ -33,6 +33,7 @@ import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { PosterOutput } from "./sixel-poster-pane";
 import type { PlaybackRecommendationRailItem } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useViewportPolicy } from "./use-viewport-policy";
@@ -365,7 +366,7 @@ function NextUpHeroCard({
       <Box flexDirection="row" marginTop={1}>
         <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
           {poster.kind !== "none" ? (
-            <Text>{poster.placeholder}</Text>
+            <PosterOutput poster={poster} />
           ) : spinner ? (
             <SakuraPetal mode="loading" />
           ) : (

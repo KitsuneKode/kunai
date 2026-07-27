@@ -21,9 +21,9 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|sixel|symbols|half-block` (invalid values fall back to auto with optional debug log). Overrides are resolved before every heuristic below and always win.
 - **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
 - **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to `chafa` symbols (or half-block). `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
-- **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; probe-confirmed sixel + `chafa` → sixel; WezTerm + `chafa` → sixel; otherwise **half-block**.
+- **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. The app shell renders sixel as a measured post-frame overlay, never as Ink text.
 - **Half-block is the universal floor.** It decodes in-process and needs no external binary, which is what makes posters work on Windows at all — `chafa` is effectively never installed there.
-- **Ink app shell**: non-Kitty sixel capabilities are normalized to `chafa` symbols before rendering so poster output stays inside Ink's layout instead of corrupting or shifting the interactive shell. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) also stay on text renderers, since a real placement would fight Ink's layout.
+- **Ink app shell**: sixel posters reserve a blank measured Ink rectangle. A shared overlay manager uses absolute cursor movement to draw after each Ink frame, erases moved/removed rectangles with spaces, and applies Yazi's three-move ConPTY workaround on Windows. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) still use text renderers for Kitty.
 
 Details live in `apps/cli/src/image/capability.ts`.
 

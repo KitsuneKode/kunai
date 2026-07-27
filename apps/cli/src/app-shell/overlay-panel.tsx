@@ -20,6 +20,7 @@ import {
   wrapText,
 } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
+import { PosterOutput } from "./sixel-poster-pane";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
@@ -106,7 +107,7 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
     <Box flexDirection="column" width={width} marginLeft={2} flexShrink={0}>
       <Box height={6} width={width}>
         {poster.kind !== "none" ? (
-          <Text>{poster.placeholder}</Text>
+          <PosterOutput poster={poster} />
         ) : spinner ? (
           <SakuraPetal mode="loading" />
         ) : (

@@ -10,6 +10,8 @@ import {
 import { decodeToRgba, encodeNativePng } from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
+import { pixelBudgetForCells } from "@/image/renderers/sixel";
+import { renderSixelFromBytes } from "@/image/sixel";
 
 import {
   clearKittyPlacementRegistry,
@@ -39,37 +41,13 @@ const runtime: PosterRuntime = {
 };
 
 /**
- * Sixel cannot be used from inside the Ink tree, whatever the terminal supports.
- *
- * Sixel paints at the cursor and does not reflow. Ink rewrites its whole frame
- * on every commit, so a sixel poster would be erased by the next render — and
- * unlike Kitty, sixel has no Unicode-placeholder mechanism to anchor an image to
- * text cells, which is the only reason the Kitty path works here.
- *
- * Doing this properly means owning the region: reserve it in the layout, place
- * with absolute cursor addressing, and repaint after every frame — what yazi
- * does with `move_lock` + `shown_store` + `image_erase`. That is a real piece of
- * work and is tracked separately; until then the shell degrades to a text
- * renderer, which is correct rather than corrupt.
- *
- * The one-shot poster path (`image/index.ts`) does own the cursor, and gets true
- * in-process sixel.
+ * Sixel is an overlay, not Ink text. `SixelPosterPane` reserves and measures an
+ * empty Ink rectangle, then the overlay manager writes the sixel after Ink's
+ * frame has committed. Keeping this policy here makes callers use that safe path
+ * instead of ever putting sixel escape bytes into the Ink frame.
  */
 export function resolveAppShellPosterCapability(capability: ImageCapability): ImageCapability {
-  if (!capability.available || capability.renderer !== "sixel") return capability;
-  // `runtime.which`, not `isChafaAvailable()`: that lives behind capability.ts's
-  // own seam and memoises, so this module would be deciding a fallback it cannot
-  // observe or override. `renderChafaSymbols` below already resolves chafa this
-  // way, and the two must agree or the fallback names a renderer that then
-  // declines to run.
-  const fallback = runtime.which("chafa") ? "chafa-symbols" : "half-block";
-  return {
-    ...capability,
-    protocol: fallback === "chafa-symbols" ? "symbols" : "half-block",
-    renderer: fallback,
-    dependency: fallback === "chafa-symbols" ? "chafa" : "none",
-    reason: `${capability.reason}; Ink cannot host sixel, using ${fallback}`,
-  };
+  return capability;
 }
 
 let nextId = 1;
@@ -183,6 +161,23 @@ async function renderHalfBlockText(
   }).trimEnd();
   if (!text) return { kind: "none" };
   return { kind: "text", placeholder: text, rows, cols };
+}
+
+function renderSixelOverlay(
+  data: ArrayBuffer,
+  rows: number,
+  cols: number,
+  placementSlot?: KittyPlacementSlot,
+): PosterResult {
+  const sixel = renderSixelFromBytes(new Uint8Array(data), pixelBudgetForCells(cols, rows));
+  if (!sixel) return { kind: "none" };
+  return {
+    kind: "sixel",
+    sixel,
+    rows,
+    cols,
+    overlayId: placementSlot ?? `sixel-${allocId()}`,
+  };
 }
 
 async function renderKitty(
@@ -417,6 +412,9 @@ export async function renderPoster(
     }
     if (capability.renderer === "chafa-symbols") {
       return await renderTextPoster(data, rows, cols);
+    }
+    if (capability.renderer === "sixel") {
+      return renderSixelOverlay(data, rows, cols, placementSlot);
     }
     // half-block: capability-faithful in-process rendering, no chafa spawn.
     const viaHalfBlock = await renderHalfBlockText(data, rows, cols);

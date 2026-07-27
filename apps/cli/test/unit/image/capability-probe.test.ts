@@ -25,10 +25,7 @@ afterEach(() => {
 });
 
 describe("image capability with a terminal probe", () => {
-  // The reason this work exists: Windows Terminal gained sixel in 1.22, but
-  // nothing in the environment reports a version, so every WT user was handed
-  // half-block. Asking the terminal is the only way to know.
-  test("a Windows Terminal that reports sixel gets sixel, not half-block", () => {
+  test("a Windows Terminal that reports sixel selects the overlay renderer", () => {
     withChafa(true);
     const env = { WT_SESSION: "1", TERM: "xterm-256color" };
 
@@ -42,9 +39,7 @@ describe("image capability with a terminal probe", () => {
     expect(probed.renderer).toBe("sixel");
   });
 
-  // Terminals the name heuristics have never heard of (foot, contour, mlterm,
-  // xterm -ti vt340) were all funnelled into half-block.
-  test("an unrecognised terminal that reports sixel gets sixel", () => {
+  test("an unrecognised terminal that reports sixel selects the overlay renderer", () => {
     withChafa(true);
     probeTesting.setProbed({ sixel: true, kittyGraphics: false });
     expect(detectImageCapability({ TERM: "foot" }).protocol).toBe("sixel");
@@ -58,11 +53,7 @@ describe("image capability with a terminal probe", () => {
     expect(capability.dependency).toBe("none");
   });
 
-  // A terminal that answers the sixel query gets sixel, encoder installed or
-  // not. This used to fall back to half-block whenever chafa was missing —
-  // which on Windows is essentially always, so a terminal that had just told us
-  // it does sixel still got two pixels per cell. The encoder is in process now.
-  test("sixel is taken on the probe answer alone, with no chafa on PATH", () => {
+  test("a sixel reply selects the in-process renderer without chafa", () => {
     withChafa(false);
     probeTesting.setProbed({ sixel: true, kittyGraphics: false });
     const capability = detectImageCapability({ WT_SESSION: "1", TERM: "xterm-256color" });

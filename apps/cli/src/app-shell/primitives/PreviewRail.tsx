@@ -4,6 +4,7 @@ import React from "react";
 import type { PosterResult } from "../poster-types";
 import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
+import { PosterOutput } from "../sixel-poster-pane";
 import {
   getPreviewPosterLabel,
   visiblePreviewFacts,
@@ -49,7 +50,7 @@ export function PreviewRail({
           reads as "art pending" instead of two letters floating in empty space. */}
       {hasPosterImage ? (
         <Box minHeight={reserveRows} justifyContent="center">
-          <Text>{poster.placeholder}</Text>
+          <PosterOutput poster={poster} />
         </Box>
       ) : (
         <Box

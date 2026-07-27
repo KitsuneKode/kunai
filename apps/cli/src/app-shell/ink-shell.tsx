@@ -81,6 +81,8 @@ import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./sh
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
+import { sixelOverlayManager } from "./sixel-overlay";
+import { PosterOutput } from "./sixel-poster-pane";
 import {
   buildStatsView,
   STATS_KINDS,
@@ -1187,6 +1189,9 @@ export async function launchSessionApp(container: Container) {
   rootShellInk = render(<AppRoot container={container} />, {
     exitOnCtrlC: false,
     alternateScreen: true,
+    // Ink invokes this before writing the frame. The manager defers its paint
+    // to the next task, so sixel lands after the frame rather than inside it.
+    onRender: () => sixelOverlayManager.afterInkRender(),
   });
   rootShellExitPromise = rootShellInk.waitUntilExit();
 
@@ -1215,6 +1220,7 @@ export async function shutdownSessionApp(): Promise<void> {
   ink.cleanup();
   await exitPromise.catch(() => {});
   deleteAllKittyImages();
+  sixelOverlayManager.discard();
 }
 
 type ListShellActionResult = {
@@ -1567,7 +1573,7 @@ function ListShell<T>({
                   <LocalSection title="Current Selection" tone="success" marginTop={0}>
                     {showHeavyPoster ? (
                       <Box flexDirection="column" marginBottom={1}>
-                        <Text>{poster.placeholder}</Text>
+                        <PosterOutput poster={poster} />
                       </Box>
                     ) : selectedOption?.previewImageUrl && posterSpinner && !navigating ? (
                       // Only a settled selection whose artwork genuinely missed

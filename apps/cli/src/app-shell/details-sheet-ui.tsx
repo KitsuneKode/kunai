@@ -5,6 +5,7 @@ import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { palette } from "./shell-theme";
+import { PosterOutput } from "./sixel-poster-pane";
 import { usePosterPreview } from "./use-poster-preview";
 
 const POSTER_ROWS = 8;
@@ -22,7 +23,7 @@ function SheetPoster({ url, title }: { readonly url?: string; readonly title: st
   if (poster.kind !== "none") {
     return (
       <Box minHeight={POSTER_ROWS}>
-        <Text>{poster.placeholder}</Text>
+        <PosterOutput poster={poster} />
       </Box>
     );
   }
