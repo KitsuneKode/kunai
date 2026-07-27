@@ -1,11 +1,6 @@
 export type ImageProtocol = "kitty" | "sixel" | "symbols" | "half-block" | "none";
 
-export type ImageRendererId =
-  | "kitty-native"
-  | "chafa-sixel"
-  | "chafa-symbols"
-  | "half-block"
-  | "none";
+export type ImageRendererId = "kitty-native" | "sixel" | "chafa-symbols" | "half-block" | "none";
 
 export type TerminalId =
   | "kitty"

@@ -39,7 +39,7 @@ describe("image capability with a terminal probe", () => {
     capabilityTesting.resetMemo();
     const probed = detectImageCapability(env);
     expect(probed.protocol).toBe("sixel");
-    expect(probed.renderer).toBe("chafa-sixel");
+    expect(probed.renderer).toBe("sixel");
   });
 
   // Terminals the name heuristics have never heard of (foot, contour, mlterm,
@@ -58,14 +58,17 @@ describe("image capability with a terminal probe", () => {
     expect(capability.dependency).toBe("none");
   });
 
-  // Detected sixel with no encoder is a real state, and "unverifiable" would be
-  // the wrong explanation for it.
-  test("sixel without chafa stays on half-block and says why", () => {
+  // A terminal that answers the sixel query gets sixel, encoder installed or
+  // not. This used to fall back to half-block whenever chafa was missing —
+  // which on Windows is essentially always, so a terminal that had just told us
+  // it does sixel still got two pixels per cell. The encoder is in process now.
+  test("sixel is taken on the probe answer alone, with no chafa on PATH", () => {
     withChafa(false);
     probeTesting.setProbed({ sixel: true, kittyGraphics: false });
     const capability = detectImageCapability({ WT_SESSION: "1", TERM: "xterm-256color" });
-    expect(capability.protocol).toBe("half-block");
-    expect(capability.reason).toContain("chafa");
+    expect(capability.protocol).toBe("sixel");
+    expect(capability.renderer).toBe("sixel");
+    expect(capability.dependency).toBe("none");
   });
 
   test("a terminal that reports nothing keeps the previous behaviour", () => {

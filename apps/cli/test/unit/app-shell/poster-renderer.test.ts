@@ -229,22 +229,43 @@ describe("app-shell poster renderer", () => {
     expect(writes.join("")).toContain("U=1");
   });
 
-  test("normalizes Windows Terminal sixel capability to Ink-safe chafa symbols", () => {
-    expect(
-      resolveAppShellPosterCapability({
-        terminal: "windows-terminal",
-        protocol: "sixel",
-        renderer: "chafa-sixel",
-        available: true,
-        dependency: "chafa",
-        reason: "Windows Terminal detected with chafa",
-      }),
-    ).toMatchObject({
+  describe("sixel is never used from inside the Ink tree", () => {
+    const sixelCapability: ImageCapability = {
       terminal: "windows-terminal",
-      protocol: "symbols",
-      renderer: "chafa-symbols",
+      protocol: "sixel",
+      renderer: "sixel",
       available: true,
-      reason: "Windows Terminal detected with chafa; using Ink-safe chafa symbols",
+      dependency: "none",
+      reason: "terminal reported sixel support (DA1)",
+    };
+
+    // Sixel paints at the cursor and does not reflow, and Ink rewrites its whole
+    // frame on every commit. Emitting it from the tree would leave the poster
+    // erased or smeared, so the shell must degrade — even though the terminal
+    // genuinely supports sixel and the one-shot path uses it.
+    test("degrades to chafa symbols when chafa is available", () => {
+      rendererTesting.runtime.which = () => "/usr/bin/chafa";
+      expect(resolveAppShellPosterCapability(sixelCapability)).toMatchObject({
+        terminal: "windows-terminal",
+        protocol: "symbols",
+        renderer: "chafa-symbols",
+        available: true,
+      });
+    });
+
+    test("degrades to half-block when chafa is not installed", () => {
+      rendererTesting.runtime.which = () => null;
+      expect(resolveAppShellPosterCapability(sixelCapability)).toMatchObject({
+        protocol: "half-block",
+        renderer: "half-block",
+        dependency: "none",
+        available: true,
+      });
+    });
+
+    test("leaves every other renderer untouched", () => {
+      const kitty = capability("kitty-native");
+      expect(resolveAppShellPosterCapability(kitty)).toEqual(kitty);
     });
   });
 

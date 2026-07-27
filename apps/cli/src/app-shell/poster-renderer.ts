@@ -38,17 +38,37 @@ const runtime: PosterRuntime = {
   spawn: (command, options) => Bun.spawn(command, options),
 };
 
+/**
+ * Sixel cannot be used from inside the Ink tree, whatever the terminal supports.
+ *
+ * Sixel paints at the cursor and does not reflow. Ink rewrites its whole frame
+ * on every commit, so a sixel poster would be erased by the next render — and
+ * unlike Kitty, sixel has no Unicode-placeholder mechanism to anchor an image to
+ * text cells, which is the only reason the Kitty path works here.
+ *
+ * Doing this properly means owning the region: reserve it in the layout, place
+ * with absolute cursor addressing, and repaint after every frame — what yazi
+ * does with `move_lock` + `shown_store` + `image_erase`. That is a real piece of
+ * work and is tracked separately; until then the shell degrades to a text
+ * renderer, which is correct rather than corrupt.
+ *
+ * The one-shot poster path (`image/index.ts`) does own the cursor, and gets true
+ * in-process sixel.
+ */
 export function resolveAppShellPosterCapability(capability: ImageCapability): ImageCapability {
-  if (!capability.available || capability.renderer !== "chafa-sixel") return capability;
-  const reason =
-    capability.terminal === "windows-terminal"
-      ? "Windows Terminal detected with chafa; using Ink-safe chafa symbols"
-      : `${capability.reason}; using Ink-safe chafa symbols`;
+  if (!capability.available || capability.renderer !== "sixel") return capability;
+  // `runtime.which`, not `isChafaAvailable()`: that lives behind capability.ts's
+  // own seam and memoises, so this module would be deciding a fallback it cannot
+  // observe or override. `renderChafaSymbols` below already resolves chafa this
+  // way, and the two must agree or the fallback names a renderer that then
+  // declines to run.
+  const fallback = runtime.which("chafa") ? "chafa-symbols" : "half-block";
   return {
     ...capability,
-    protocol: "symbols",
-    renderer: "chafa-symbols",
-    reason,
+    protocol: fallback === "chafa-symbols" ? "symbols" : "half-block",
+    renderer: fallback,
+    dependency: fallback === "chafa-symbols" ? "chafa" : "none",
+    reason: `${capability.reason}; Ink cannot host sixel, using ${fallback}`,
   };
 }
 

@@ -175,16 +175,14 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   if (override === "sixel") {
-    if (!hasChafa) {
-      return noneCapability(terminal, "KUNAI_IMAGE_PROTOCOL=sixel requires chafa");
-    }
+    // Sixel is encoded in process now, so this no longer needs chafa on PATH.
     return buildCapability({
       terminal,
       protocol: "sixel",
-      renderer: "chafa-sixel",
+      renderer: "sixel",
       available: true,
-      dependency: "chafa",
-      reason: "forced sixel output via chafa",
+      dependency: "none",
+      reason: "forced sixel output",
     });
   }
 
@@ -251,20 +249,19 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       reason: "terminal answered the kitty graphics query",
     });
   }
-  if (probe?.sixel && hasChafa) {
+  if (probe?.sixel) {
+    // No chafa check: the encoder is in process. This branch used to fall
+    // through to half-block whenever chafa was missing, which on Windows -- where
+    // it effectively always is -- meant a terminal that had just *told us* it
+    // does sixel still got two pixels per cell.
     return buildCapability({
       terminal,
       protocol: "sixel",
-      renderer: "chafa-sixel",
+      renderer: "sixel",
       available: true,
-      dependency: "chafa",
+      dependency: "none",
       reason: "terminal reported sixel support (DA1)",
     });
-  }
-  if (probe?.sixel && !hasChafa) {
-    // Detection found sixel but the encoder is missing. Say so explicitly:
-    // "unverifiable" would be a lie now, and chafa is the one thing to install.
-    return halfBlockCapability(terminal, "terminal reports sixel, but chafa is not installed");
   }
 
   // No probe answer. Windows Terminal only gained sixel in 1.22, and nothing in
@@ -279,15 +276,15 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   // WezTerm's sixel support is long-standing and version-independent, so it is
-  // safe to prefer the higher-fidelity path when chafa is present.
-  if (terminal === "wezterm" && hasChafa) {
+  // safe to prefer the higher-fidelity path by name even without a probe reply.
+  if (terminal === "wezterm") {
     return buildCapability({
       terminal,
       protocol: "sixel",
-      renderer: "chafa-sixel",
+      renderer: "sixel",
       available: true,
-      dependency: "chafa",
-      reason: "WezTerm detected with chafa",
+      dependency: "none",
+      reason: "WezTerm detected",
     });
   }
 

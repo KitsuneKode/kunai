@@ -178,11 +178,18 @@ function Get-IsoNow {
   return (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 }
 
+# Kunai publishes 64-bit binaries only: Bun has no 32-bit compile target, so
+# there is no x86 or 32-bit ARM build to fall back to. This used to return 'x64'
+# for anything that was not arm64, which handed a 32-bit machine a binary it
+# cannot load and reported the failure as a corrupt download. Name the real
+# reason instead.
 function Get-WindowsArch {
-  if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) {
-    return 'arm64'
+  $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  switch ($arch) {
+    ([System.Runtime.InteropServices.Architecture]::X64) { return 'x64' }
+    ([System.Runtime.InteropServices.Architecture]::Arm64) { return 'arm64' }
   }
-  return 'x64'
+  throw "Unsupported architecture: $arch. Kunai ships 64-bit builds only (x64, arm64). Install from source with Bun instead: https://github.com/KitsuneKode/kunai#install"
 }
 
 function Get-ReleaseAssetName {

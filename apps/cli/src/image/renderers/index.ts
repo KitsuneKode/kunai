@@ -1,8 +1,9 @@
 import type { ImageCapability, ImageRenderOptions } from "../types";
-import { renderChafaSixels, renderChafaSymbols } from "./chafa";
+import { renderChafaSymbols } from "./chafa";
 import { renderHalfBlock } from "./half-block";
 import { renderKittyNative } from "./kitty";
 import { renderNoop } from "./noop";
+import { renderSixel } from "./sixel";
 
 export async function renderPosterFile(
   filePath: string,
@@ -12,8 +13,8 @@ export async function renderPosterFile(
   switch (capability.renderer) {
     case "kitty-native":
       return renderKittyNative(filePath, options);
-    case "chafa-sixel":
-      return renderChafaSixels(filePath, options);
+    case "sixel":
+      return renderSixel(filePath, options);
     case "chafa-symbols":
       return renderChafaSymbols(filePath, options);
     case "half-block":

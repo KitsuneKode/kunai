@@ -262,9 +262,31 @@ Inside the shell, `/` opens the command palette from anywhere.
 | **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
 | **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
 | **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
-| **chafa**       | Optional             | Richer poster previews in non-Kitty terminals; half-block fallback works without it     |
+| **chafa**       | Optional             | Extra fidelity for text-mode posters. Sixel and half-block need nothing installed       |
 | **ImageMagick** | Optional             | Broader poster format support. `sudo pacman -S imagemagick`                             |
 | **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                            |
+
+### Poster quality
+
+Kunai picks the best renderer your terminal actually reports, asking it directly
+at startup rather than guessing from `TERM`:
+
+| Renderer       | Fidelity                     | Needs   | Terminals                                              |
+| -------------- | ---------------------------- | ------- | ------------------------------------------------------ |
+| Kitty graphics | true colour, full resolution | nothing | kitty, Ghostty                                         |
+| Sixel          | full resolution, 256 colours | nothing | Windows Terminal ≥1.22, WezTerm, foot, xterm -ti vt340 |
+| chafa symbols  | text approximation           | `chafa` | anything truecolour, and inside tmux/screen            |
+| Half-block     | text approximation           | nothing | everywhere — the universal fallback                    |
+
+Sixel is encoded in-process, so it needs no external binary. Windows Terminal
+does not implement the Kitty protocol, so sixel is the sharp path there.
+
+Text renderers fit two pixels per character cell, which is roughly a hundredth
+of the pixels sixel gives you — that difference is what "blocky posters" is.
+Inside the persistent shell, sixel currently degrades to a text renderer: it
+paints at the cursor and does not reflow, so it cannot be hosted in the Ink
+layout yet. Force a specific path with `KUNAI_IMAGE_PROTOCOL=kitty|sixel|symbols|half-block`,
+or disable posters with `KUNAI_POSTER=0`.
 
 If mpv is missing, Kunai won't start playback — setup and browsing remain available.
 Everything else is optional and detected automatically — the setup wizard

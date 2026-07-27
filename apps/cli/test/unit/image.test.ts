@@ -309,12 +309,12 @@ describe("detectImageCapability", () => {
     }
   });
 
-  test("selects chafa-sixel for WezTerm with chafa", () => {
+  test("selects sixel for WezTerm", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich("/usr/bin/chafa");
     try {
       const capability = detectImageCapability({ TERM_PROGRAM: "WezTerm" } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("chafa-sixel");
+      expect(capability.renderer).toBe("sixel");
     } finally {
       restoreWhich();
       restoreTty();
@@ -339,28 +339,33 @@ describe("detectImageCapability", () => {
     restoreTty();
   });
 
-  test("forces chafa-sixel when KUNAI_IMAGE_PROTOCOL=sixel", () => {
+  test("forces sixel when KUNAI_IMAGE_PROTOCOL=sixel", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich("/usr/bin/chafa");
     try {
       const capability = detectImageCapability({
         KUNAI_IMAGE_PROTOCOL: "sixel",
       } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("chafa-sixel");
+      expect(capability.renderer).toBe("sixel");
     } finally {
       restoreWhich();
       restoreTty();
     }
   });
 
-  test("forces none when KUNAI_IMAGE_PROTOCOL=sixel without chafa", () => {
+  test("still forces sixel without chafa, because the encoder is in process", () => {
     const restoreTty = mockStdoutIsTty(true);
     const restoreWhich = mockBunWhich(null);
     try {
       const capability = detectImageCapability({
         KUNAI_IMAGE_PROTOCOL: "sixel",
       } as NodeJS.ProcessEnv);
-      expect(capability.renderer).toBe("none");
+      // Sixel used to resolve to "none" here: it was implemented by shelling out
+      // to chafa, so no chafa meant no sixel. Kunai encodes it itself now, which
+      // is what makes sharp posters reachable on Windows, where chafa is
+      // effectively never installed.
+      expect(capability.renderer).toBe("sixel");
+      expect(capability.dependency).toBe("none");
     } finally {
       restoreWhich();
       restoreTty();
@@ -778,13 +783,15 @@ describe("ensurePngBytes (magick)", () => {
       spawnOpts = options as { signal?: AbortSignal };
       const outArg = cmd[2];
       const out = typeof outArg === "string" && outArg.startsWith("png:") ? outArg.slice(4) : "";
-      if (out) {
-        void Bun.write(out, minimalPng);
-      }
+      // `exited` must not resolve before the output file exists. Firing the
+      // write off with `void` raced the read that follows and made this test
+      // fail intermittently — a real process has finished writing by the time it
+      // reports exit, and the fake has to keep that promise.
+      const written = out ? Bun.write(out, minimalPng) : Promise.resolve(0);
       return {
         stdout: new Response("").body,
         stderr: new Response("").body,
-        exited: Promise.resolve(0),
+        exited: written.then(() => 0),
       } as unknown as Bun.Subprocess;
     };
     try {
