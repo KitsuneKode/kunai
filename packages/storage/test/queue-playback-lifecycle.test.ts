@@ -134,3 +134,51 @@ test("restore resets in-flight, places contiguous block, and returns restored id
   ]);
   expect(repo.getQueueSession("old")?.status).toBe("closed");
 });
+
+/**
+ * Enqueueing several items in one burst — "add whole season" — gives every row
+ * the same `added_at`, because that column only has millisecond precision.
+ * `queue_position` is NULL until something reorders, and `priority` defaults to
+ * 0, so without a final tiebreak the sort keys tie completely and SQLite may
+ * return the set in any order. It returned insertion order on Linux and a
+ * different order on macOS, which is how this surfaced.
+ */
+test("queue order is deterministic when every sort key ties", () => {
+  const db = stores.store("queue-tiebreak", "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "session",
+    status: "active",
+    createdAt: "2026-07-20T09:00:00.000Z",
+    updatedAt: "2026-07-20T09:00:00.000Z",
+  });
+
+  const ids = ["first", "second", "third", "fourth", "fifth"];
+  for (const titleId of ids) {
+    repo.enqueue({
+      title: titleId,
+      mediaKind: "series",
+      titleId,
+      source: "manual",
+      sessionId: "session",
+    });
+  }
+
+  // Precondition: this is only meaningful while the timestamps really do tie.
+  // If enqueue ever gains sub-millisecond precision this still passes, but it
+  // would no longer be exercising the tiebreak.
+  const stamps = db
+    .query<{ added_at: string }, []>("SELECT added_at FROM playlist_queue")
+    .all()
+    .map((row) => row.added_at);
+  expect(new Set(stamps).size).toBeLessThan(stamps.length);
+
+  expect(repo.getAll("session").map((item) => item.titleId)).toEqual(ids);
+  expect(repo.getUnplayed("session").map((item) => item.titleId)).toEqual(ids);
+  expect(repo.peekNext("session")?.titleId).toBe("first");
+
+  // Repeated reads must agree with each other, not merely be plausible.
+  for (let i = 0; i < 5; i += 1) {
+    expect(repo.getAll("session").map((item) => item.titleId)).toEqual(ids);
+  }
+});

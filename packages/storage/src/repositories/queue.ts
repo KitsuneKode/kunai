@@ -175,6 +175,25 @@ function mapQueueSessionRow(row: QueueSessionRow): QueueSessionRecord {
   };
 }
 
+/**
+ * Canonical queue ordering.
+ *
+ * `rowid` is the load-bearing part. Without it the first three keys tie
+ * completely for items enqueued in the same millisecond — `queue_position` is
+ * NULL until something reorders the list, `priority` defaults to 0, and
+ * `added_at` only has millisecond precision — and SQLite is then free to return
+ * a tied set in any order. It does: the same three inserts came back in
+ * insertion order on Linux and in a different order on macOS, so "add whole
+ * season" could produce an arbitrary queue.
+ *
+ * `playlist_queue` is not WITHOUT ROWID, so `rowid` is a stable insertion
+ * counter and the natural tiebreak. Kept in one place because all three read
+ * paths must agree — a peek that disagrees with the list it is peeking into is
+ * its own bug.
+ */
+const QUEUE_ORDER_BY =
+  "COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC, rowid ASC";
+
 export class QueueRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -224,7 +243,7 @@ export class QueueRepository {
     return this.db
       .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ?
-         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
+         ORDER BY ${QUEUE_ORDER_BY}`,
       )
       .all(sessionId)
       .map(mapQueueRow);
@@ -238,7 +257,7 @@ export class QueueRepository {
     return this.db
       .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
-         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC`,
+         ORDER BY ${QUEUE_ORDER_BY}`,
       )
       .all(sessionId)
       .map(mapQueueRow);
@@ -248,7 +267,7 @@ export class QueueRepository {
     const row = this.db
       .query<QueueEntryRow, [string]>(
         `SELECT * FROM playlist_queue WHERE session_id = ? AND played_at IS NULL
-         ORDER BY COALESCE(queue_position, 2147483647) ASC, priority DESC, added_at ASC LIMIT 1`,
+         ORDER BY ${QUEUE_ORDER_BY} LIMIT 1`,
       )
       .get(sessionId);
     return row === null ? undefined : mapQueueRow(row);
