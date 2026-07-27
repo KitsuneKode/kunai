@@ -11,6 +11,7 @@ import type {
   ProviderTraceEvent,
 } from "@kunai/types";
 
+import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
 import { isOfflineNetworkFailure } from "./provider-failure-classifier";
 
 export interface ProviderCycleEngineOptions {
@@ -35,6 +36,18 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleId?: string;
   readonly allowTransientCandidateRetry?: boolean;
+  /**
+   * When > 0, start the next candidate alongside the current one after this
+   * delay and take whichever resolves first. Absent or <= 0 keeps the strictly
+   * sequential walk.
+   *
+   * Off by default: racing multiplies outbound requests to the sites being
+   * scraped, so enabling it is a measured decision per provider, not a global
+   * default. Raced candidates get a single attempt each — racing buys breadth
+   * instead of the sequential path's depth, so `maxAttemptsPerCandidate` and
+   * `allowTransientCandidateRetry` do not apply while racing.
+   */
+  readonly hedgeDelayMs?: number;
   readonly resolveCandidate: (
     candidate: ProviderCycleCandidate,
     context: ProviderCycleCandidateContext,
@@ -117,6 +130,19 @@ export async function runProviderCycle<TResolved>(
   // An extra attempt *on top of* the normal budget. Carving it out of the
   // budget instead made the flag inert at every call site.
   const transientRetryBudget = input.allowTransientCandidateRetry === true ? 1 : 0;
+
+  const hedgeDelayMs = Math.max(0, input.hedgeDelayMs ?? 0);
+  if (hedgeDelayMs > 0) {
+    return runProviderCycleRaced({
+      input,
+      hedgeDelayMs,
+      candidateTimeoutMs,
+      now,
+      emit,
+      events,
+      attempts,
+    });
+  }
 
   let skippedQuarantined = 0;
   let attemptedCandidates = 0;
@@ -295,6 +321,261 @@ export async function runProviderCycle<TResolved>(
     fallbackRequested: false,
     cancelled: false,
   };
+}
+
+/**
+ * Race a provider's own source candidates.
+ *
+ * Mirrors `ProviderEngine.resolveHedged` one layer down: the next candidate
+ * launches after `hedgeDelayMs` while the current one is still in flight, the
+ * first success wins, and the losers are aborted immediately.
+ *
+ * Each candidate gets its own `AbortController`, and its endpoint-health writes
+ * go through `guardEndpointHealthAgainstCancellation` so a loser's abort cannot
+ * be recorded as a failure. Without that guard this would steadily quarantine
+ * the slower half of a perfectly healthy candidate pool, invisibly.
+ *
+ * Failures are classified exactly as the sequential path classifies them, so a
+ * provider-wide session guard stays unattributed to the endpoint that happened
+ * to surface it.
+ *
+ * Each raced candidate is attempted once. Retrying inside a race would compete
+ * with the candidates already in flight for the same win.
+ */
+async function runProviderCycleRaced<TResolved>(args: {
+  readonly input: RunProviderCycleInput<TResolved>;
+  readonly hedgeDelayMs: number;
+  readonly candidateTimeoutMs: number;
+  readonly now: () => string;
+  readonly emit: (event: ProviderTraceEvent) => void;
+  readonly events: ProviderTraceEvent[];
+  readonly attempts: ProviderCycleAttempt[];
+}): Promise<ProviderCycleResult<TResolved>> {
+  const { input, now, emit, events, attempts } = args;
+
+  type Settled =
+    | { readonly kind: "success"; readonly index: number; readonly selected: TResolved }
+    | { readonly kind: "failure"; readonly index: number; readonly error: unknown };
+
+  interface InFlight {
+    readonly candidate: ProviderCycleCandidate;
+    readonly controller: AbortController;
+    readonly settled: Promise<Settled>;
+    readonly startedAt: string;
+  }
+
+  let skippedQuarantined = 0;
+  const eligible = orderCycleCandidates(input.candidates).filter((candidate) => {
+    const endpoint = candidate.serverId;
+    if (!endpoint || !input.endpointHealth) return true;
+    if (input.endpointHealth.shouldTry(input.providerId, endpoint)) return true;
+    skippedQuarantined += 1;
+    emit(
+      createCycleTraceEvent("source:skipped", candidate, now(), {
+        reason: "quarantined",
+        endpoint,
+      }),
+    );
+    return false;
+  });
+
+  const inFlight = new Map<number, InFlight>();
+  let nextIndex = 0;
+
+  const abortAll = (reason?: unknown) => {
+    for (const entry of inFlight.values()) entry.controller.abort(reason);
+    inFlight.clear();
+  };
+
+  const launchNext = (): boolean => {
+    const candidate = eligible[nextIndex];
+    if (!candidate) return false;
+
+    const index = nextIndex++;
+    const controller = new AbortController();
+    const startedAt = now();
+    emit(createCycleTraceEvent("source:start", candidate, startedAt, { attempt: 1 }));
+
+    const endpoint = candidate.serverId;
+    const health = input.endpointHealth
+      ? guardEndpointHealthAgainstCancellation(input.endpointHealth, controller.signal)
+      : undefined;
+
+    const settled: Promise<Settled> = resolveCandidateWithTimeout({
+      candidate,
+      attempt: 1,
+      candidateTimeoutMs: args.candidateTimeoutMs,
+      parentSignal: controller.signal,
+      now,
+      emit,
+      resolveCandidate: input.resolveCandidate,
+    }).then(
+      (selected): Settled => {
+        if (endpoint && health) health.recordSuccess(input.providerId, endpoint);
+        return { kind: "success", index, selected };
+      },
+      (error): Settled => {
+        if (endpoint && health) {
+          const failureClass = classifyEndpointFailureFromCycleFailure(
+            toCycleFailure(candidate, error, now),
+          );
+          if (failureClass) {
+            health.recordFailure(input.providerId, endpoint, {
+              class: failureClass,
+              titleId: input.titleId,
+              at: now(),
+            });
+          }
+        }
+        return { kind: "failure", index, error };
+      },
+    );
+
+    inFlight.set(index, { candidate, controller, settled, startedAt });
+    return true;
+  };
+
+  const onParentAbort = () => abortAll(input.signal?.reason);
+  input.signal?.addEventListener("abort", onParentAbort, { once: true });
+
+  try {
+    launchNext();
+
+    while (inFlight.size > 0) {
+      if (input.signal?.aborted) break;
+
+      let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+      const racers: Array<Promise<Settled | "hedge">> = [...inFlight.values()].map(
+        (entry) => entry.settled,
+      );
+      if (nextIndex < eligible.length) {
+        racers.push(
+          new Promise<"hedge">((resolve) => {
+            hedgeTimer = setTimeout(() => resolve("hedge"), args.hedgeDelayMs);
+          }),
+        );
+      }
+
+      const outcome = await Promise.race(racers);
+      if (hedgeTimer) clearTimeout(hedgeTimer);
+
+      if (outcome === "hedge") {
+        launchNext();
+        continue;
+      }
+
+      const entry = inFlight.get(outcome.index);
+      inFlight.delete(outcome.index);
+      if (!entry) continue;
+
+      const endedAt = now();
+
+      if (outcome.kind === "success") {
+        attempts.push({
+          candidate: entry.candidate,
+          attempt: 1,
+          startedAt: entry.startedAt,
+          endedAt,
+        });
+        emit(createCycleTraceEvent("source:success", entry.candidate, endedAt, { attempt: 1 }));
+        abortAll();
+        return {
+          selected: outcome.selected,
+          selectedCandidate: entry.candidate,
+          attempts,
+          events,
+          stopReason: "resolved",
+          fallbackRequested: false,
+          cancelled: false,
+        };
+      }
+
+      const failure = input.signal?.aborted
+        ? createCancelledFailure(entry.candidate, now)
+        : toCycleFailure(entry.candidate, outcome.error, now);
+      attempts.push({
+        candidate: entry.candidate,
+        attempt: 1,
+        startedAt: entry.startedAt,
+        endedAt,
+        failure,
+      });
+      emit(
+        createCycleTraceEvent("source:failed", entry.candidate, endedAt, {
+          attempt: 1,
+          failureClass: failure.failureClass,
+        }),
+      );
+
+      if (failure.failureClass === "candidate-user-cancelled") {
+        abortAll();
+        return {
+          attempts,
+          events,
+          stopReason: "cancelled",
+          fallbackRequested: false,
+          cancelled: true,
+        };
+      }
+
+      if (failure.failureClass === "candidate-network" && !failure.retryable) {
+        abortAll();
+        return {
+          attempts,
+          events,
+          stopReason: "network-offline",
+          fallbackRequested: false,
+          cancelled: false,
+        };
+      }
+
+      // A provider-wide guard is not answered by hammering the rest of the
+      // pool, so it ends the race exactly as it ends the sequential walk.
+      if (input.shouldStopAfterFailure?.(failure, entry.candidate)) {
+        abortAll();
+        return {
+          attempts,
+          events,
+          stopReason: "exhausted",
+          fallbackRequested: false,
+          cancelled: false,
+        };
+      }
+
+      if (inFlight.size === 0) launchNext();
+    }
+
+    if (input.signal?.aborted) {
+      return {
+        attempts,
+        events,
+        stopReason: "cancelled",
+        fallbackRequested: false,
+        cancelled: true,
+      };
+    }
+
+    if (eligible.length === 0 && skippedQuarantined > 0) {
+      return {
+        attempts,
+        events,
+        stopReason: "all-quarantined",
+        fallbackRequested: false,
+        cancelled: false,
+      };
+    }
+
+    return {
+      attempts,
+      events,
+      stopReason: "exhausted",
+      fallbackRequested: false,
+      cancelled: false,
+    };
+  } finally {
+    input.signal?.removeEventListener("abort", onParentAbort);
+    abortAll();
+  }
 }
 
 function retryDelayForFailureClass(
