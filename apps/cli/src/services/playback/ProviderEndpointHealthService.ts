@@ -10,6 +10,14 @@ import type {
 const HOUR_MS = 60 * 60 * 1000;
 const ROUTE_DEAD_QUARANTINE_MS = 24 * HOUR_MS;
 const SERVER_ERROR_QUARANTINE_MS = 1 * HOUR_MS;
+
+/**
+ * Consecutive `server-error` failures on a single endpoint that justify a
+ * quarantine on their own. The two-distinct-titles rule exists to avoid
+ * blacklisting an endpoint over one title's quirk, but normal viewing stays on
+ * one title, so that rule alone never fired in practice.
+ */
+const SINGLE_TITLE_QUARANTINE_FAILURES = 3;
 const TRANSIENT_COOLDOWN_MS = 60_000;
 
 export type EndpointHealthSeed = {
@@ -75,6 +83,7 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
     const quarantinedUntil = resolveQuarantineUntil({
       failureClass: info.class,
       distinctTitleIds,
+      consecutiveFailures,
       now,
     });
 
@@ -142,13 +151,18 @@ function mergeDistinctTitleIds(
 function resolveQuarantineUntil(input: {
   readonly failureClass: Exclude<EndpointFailureClass, "transient">;
   readonly distinctTitleIds: readonly string[];
+  readonly consecutiveFailures: number;
   readonly now: Date;
 }): string | undefined {
   if (input.failureClass === "route-dead") {
     return new Date(input.now.getTime() + ROUTE_DEAD_QUARANTINE_MS).toISOString();
   }
 
-  if (input.failureClass === "server-error" && input.distinctTitleIds.length >= 2) {
+  if (
+    input.failureClass === "server-error" &&
+    (input.distinctTitleIds.length >= 2 ||
+      input.consecutiveFailures >= SINGLE_TITLE_QUARANTINE_FAILURES)
+  ) {
     return new Date(input.now.getTime() + SERVER_ERROR_QUARANTINE_MS).toISOString();
   }
 
