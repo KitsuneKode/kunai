@@ -83,6 +83,24 @@ const USER_AGENT =
 
 const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
 
+let curlSupportsHttp2: boolean | null = null;
+
+function detectCurlHttp2Support(): boolean {
+  if (curlSupportsHttp2 !== null) return curlSupportsHttp2;
+  try {
+    const proc = Bun.spawnSync(["curl", "--version"]);
+    if (proc.exitCode === 0) {
+      const features = proc.stdout.toString();
+      curlSupportsHttp2 = /\bHTTP2\b/i.test(features);
+    } else {
+      curlSupportsHttp2 = false;
+    }
+  } catch {
+    curlSupportsHttp2 = false;
+  }
+  return curlSupportsHttp2;
+}
+
 /** Cache episode lists per AniList ID. TTL 30 minutes (episode data is stable). */
 const episodeCache = new TTLCache<string, unknown>(1_800_000);
 /** Cache source responses per episode+category. TTL 5 minutes. */
@@ -1256,10 +1274,11 @@ async function fetchMiruroPipeBody(
   // Curl exists to clear Cloudflare challenges; for plain HTTP errors it rarely
   // changes the answer, so keep every curl attempt inside the candidate budget.
   const curlMaxTime = "8";
+  const hasCurlHttp2 = detectCurlHttp2Support();
   const args = [
     curlPath,
     "-sS",
-    "--http2",
+    ...(hasCurlHttp2 ? ["--http2"] : []),
     "-L",
     "--max-redirs",
     "3",
