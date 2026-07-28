@@ -142,6 +142,33 @@ Overlay behavior should stay disciplined:
 - pickers should preserve their local filter, selection, and scroll state when command overlays open and close above them
 - overlays and pickers should be windowed to the viewport, not allowed to push content into terminal scrollback
 
+### Title control is the one action policy
+
+`app-shell/title-control/title-control-actions.ts` is the single source of
+truth for which actions a surface offers. Surfaces are `browse`, `library`,
+`loading`, `playing`, `post-play`, and `history`. The per-surface lists are
+**allow-lists**: an action omitted from a surface is filtered out before its
+`when()` predicate runs, so adding an action to a surface means adding it to
+that surface's list.
+
+A capability switched off in config removes its actions outright rather than
+disabling them — a permanently greyed row with an unchangeable reason is noise
+on every menu. `downloadsEnabled` is the first of these, and it now applies on
+every surface rather than only where a second policy happened to check it.
+
+`domain/media/media-action-policy.ts` holds only the `MediaActionId`
+vocabulary shared with `MediaActionRouter`. It does not decide what a surface
+offers; a second policy that did was removed after it was found to have no
+callers.
+
+History is a special case worth knowing about. The shell's action handlers
+resolve the session's current title, which over a history row is whatever sits
+highlighted in the list behind the overlay. So the history overlay _picks_ from
+the menu without running it (`pickTitleControlShellAction`) and re-dispatches
+row-scoped actions through `MediaActionRouter` with that row's media item. The
+`history` allow-list is therefore deliberately narrow: it carries only actions
+that can be aimed at a row.
+
 ## Picker Filtering
 
 - filterable pickers are the default for season, episode, provider, subtitle, history, and settings flows

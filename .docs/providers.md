@@ -65,6 +65,25 @@ User-control semantics:
 - fallback provider: stop the active provider and let global fallback choose the next compatible provider
 - cancel: abort resolution without marking the provider unhealthy
 
+### Fallback ordering
+
+The provider the user selected always leads the candidate list. The order of
+the _fallbacks_ behind it is a tie-break, applied in
+`services/playback/provider-ordering.ts`:
+
+1. configured priority, which is authoritative and preserved exactly whenever
+   health is equal
+2. effective health, so a `degraded` provider sorts below a healthy one
+3. `medianResolveMs`, which only ever separates providers that health has
+   already tied
+
+Predictable ordering is a real UX property, so this must never become a speed
+sort — a user whose priority list already covers their providers sees no
+change. `unknown` health ranks alongside `healthy` because no data is not
+evidence of being broken, and an unmeasured latency sorts after a measured one
+for the same reason. Hedging amplifies the effect: whichever candidate is
+ordered first gets the head start.
+
 ### Provider Geo Relay
 
 Kunai supports an optional user-owned provider RPC relay for regions where
