@@ -4,6 +4,7 @@ import {
   resolveEffectiveProviderHealth,
   type EffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
+import { orderProviderCandidates } from "@/services/playback/provider-ordering";
 import type { MediaKind, ProviderHealth, ProviderId } from "@kunai/types";
 
 export type ProviderCandidatePlannerModule = {
@@ -56,6 +57,9 @@ export function planProviderCandidates(
 ): ProviderCandidatePlan {
   const now = input.now ?? (() => new Date());
   const skippedFallbackProviders: SkippedFallbackProvider[] = [];
+  // Captured during eligibility filtering so ordering reuses the same verdict
+  // instead of resolving effective health a second time.
+  const effectiveHealthById: Record<string, EffectiveProviderHealth | undefined> = {};
   const compatibleFallbackIds = input.modules
     .filter((module) => module.providerId !== input.primaryProviderId)
     .filter((module) => {
@@ -72,6 +76,7 @@ export function planProviderCandidates(
       if (input.ignoreProviderHealth === true) return true;
       const stored = input.getProviderHealth?.(module.providerId);
       const effective = resolveEffectiveProviderHealth(stored, now());
+      effectiveHealthById[module.providerId] = effective;
       if (!isProviderFallbackEligible(effective)) {
         if (effective)
           skippedFallbackProviders.push({
@@ -98,8 +103,13 @@ export function planProviderCandidates(
   // stays deterministic until a provider is explicitly selected.
   void input.suggestion;
 
+  // The selected provider leads regardless of how it ranks; only the order we
+  // fall back through is health- and latency-aware.
   return {
-    candidateIds: [input.primaryProviderId, ...compatibleFallbackIds],
+    candidateIds: [
+      input.primaryProviderId,
+      ...orderProviderCandidates(compatibleFallbackIds, effectiveHealthById),
+    ],
     hasCompatibleFallback,
     skippedFallbackProviders,
   };

@@ -145,6 +145,71 @@ describe("ProviderCandidatePlanner", () => {
       skippedFallbackProviders: [],
     });
   });
+
+  test("orders fallbacks by health, leaving the selected provider first", () => {
+    // The primary is the user's explicit choice for this resolve and leads even
+    // when a fallback is measurably healthier.
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary" as ProviderId,
+      mediaKind: "series",
+      recoveryMode: "fallback-first",
+      now,
+      modules: [
+        module("primary", ["series"]),
+        module("wobbly", ["series"]),
+        module("solid", ["series"]),
+      ],
+      getProviderHealth: (providerId) =>
+        providerId === "wobbly"
+          ? {
+              providerId,
+              status: "degraded",
+              checkedAt: "2026-06-23T11:59:00.000Z",
+              consecutiveFailures: 1,
+            }
+          : undefined,
+    });
+
+    expect(plan.candidateIds).toEqual(["primary", "solid", "wobbly"]);
+  });
+
+  test("latency breaks a tie between equally healthy fallbacks", () => {
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary" as ProviderId,
+      mediaKind: "series",
+      recoveryMode: "fallback-first",
+      now,
+      modules: [
+        module("primary", ["series"]),
+        module("slow", ["series"]),
+        module("fast", ["series"]),
+      ],
+      getProviderHealth: (providerId) => ({
+        providerId,
+        status: "healthy",
+        checkedAt: "2026-06-23T11:59:00.000Z",
+        medianResolveMs: providerId === "slow" ? 8_000 : 600,
+      }),
+    });
+
+    expect(plan.candidateIds).toEqual(["primary", "fast", "slow"]);
+  });
+
+  test("configured order survives when health gives no reason to reorder", () => {
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary" as ProviderId,
+      mediaKind: "series",
+      recoveryMode: "fallback-first",
+      now,
+      modules: [
+        module("primary", ["series"]),
+        module("second", ["series"]),
+        module("third", ["series"]),
+      ],
+    });
+
+    expect(plan.candidateIds).toEqual(["primary", "second", "third"]);
+  });
 });
 
 function module(providerId: string, mediaKinds: readonly MediaKind[]) {
