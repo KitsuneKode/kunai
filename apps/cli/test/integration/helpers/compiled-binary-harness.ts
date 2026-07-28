@@ -8,6 +8,9 @@ import {
   COMPILED_SMOKE_SCENARIO_IDS,
   type CompiledSmokeScenarioId,
 } from "@/app/compiled-smoke/scenarios";
+import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+
+import { storageRootEnv } from "../../helpers/storage-env";
 
 const CLI_ROOT = resolve(import.meta.dirname, "../../..");
 const REPO_ROOT = resolve(CLI_ROOT, "../..");
@@ -25,11 +28,7 @@ export type CompiledSmokeRunResult = {
   readonly stderr: string;
 };
 
-export function resolveHostBinary(): string {
-  return GLIBC_BIN;
-}
-
-export function createCompiledSmokeProfile(): {
+export type CompiledSmokeProfile = {
   readonly root: string;
   readonly home: string;
   readonly binDir: string;
@@ -37,23 +36,40 @@ export function createCompiledSmokeProfile(): {
   readonly configDir: string;
   readonly dataDir: string;
   readonly cacheDir: string;
+  readonly paths: KunaiPaths;
+  readonly env: Record<string, string>;
   readonly evidencePath: string;
   cleanup: () => void;
-} {
+};
+
+function hostStoragePlatform(): StoragePlatform {
+  if (process.platform === "darwin") return "darwin";
+  if (process.platform === "win32") return "win32";
+  return "linux";
+}
+
+export function resolveHostBinary(): string {
+  return GLIBC_BIN;
+}
+
+export function createCompiledSmokeProfile(): CompiledSmokeProfile {
   const root = mkdtempSync(join(tmpdir(), "kunai-compiled-smoke-"));
   const home = join(root, "home");
+  const env = storageRootEnv(home);
+  const paths = getKunaiPaths({
+    platform: hostStoragePlatform(),
+    homeDir: home,
+    env,
+  });
   const binDir = join(root, "bin");
   const shimDir = join(root, "shim");
-  const configDir = join(home, ".config");
-  const dataDir = join(home, ".local", "share");
-  const cacheDir = join(home, ".cache");
-  mkdirSync(join(configDir, "kunai"), { recursive: true });
-  mkdirSync(join(dataDir, "kunai"), { recursive: true });
-  mkdirSync(join(cacheDir, "kunai"), { recursive: true });
+  mkdirSync(paths.configDir, { recursive: true });
+  mkdirSync(paths.dataDir, { recursive: true });
+  mkdirSync(paths.cacheDir, { recursive: true });
   mkdirSync(binDir, { recursive: true });
   mkdirSync(shimDir, { recursive: true });
   writeFileSync(
-    join(configDir, "kunai", "config.json"),
+    paths.configPath,
     `${JSON.stringify({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
@@ -90,9 +106,11 @@ exec ${JSON.stringify(GLIBC_BIN)} "$@"
     home,
     binDir,
     shimDir,
-    configDir,
-    dataDir,
-    cacheDir,
+    configDir: paths.configDir,
+    dataDir: paths.dataDir,
+    cacheDir: paths.cacheDir,
+    paths,
+    env,
     evidencePath,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
@@ -109,7 +127,7 @@ function readEvidence(path: string): Record<string, unknown>[] {
 
 export async function runCompiledSmokeScenario(input: {
   readonly scenario: CompiledSmokeScenarioId;
-  readonly profile: ReturnType<typeof createCompiledSmokeProfile>;
+  readonly profile: CompiledSmokeProfile;
   readonly phase?: "seed" | "restore";
   readonly mpvMode?: "normal" | "fail-pre-loaded" | "hold";
   readonly binary?: string;
@@ -124,11 +142,8 @@ export async function runCompiledSmokeScenario(input: {
 
   const env: Record<string, string | undefined> = {
     ...process.env,
-    HOME: input.profile.home,
+    ...input.profile.env,
     PATH: [input.profile.binDir, input.profile.shimDir, "/usr/bin", "/bin"].join(":"),
-    XDG_CONFIG_HOME: input.profile.configDir,
-    XDG_DATA_HOME: input.profile.dataDir,
-    XDG_CACHE_HOME: input.profile.cacheDir,
     KUNAI_COMPILED_SMOKE: "1",
     KUNAI_COMPILED_SMOKE_FIXTURE: FIXTURE_PROVIDER,
     KUNAI_COMPILED_SMOKE_SCENARIO: input.scenario,
@@ -160,7 +175,7 @@ export async function runCompiledSmokeScenario(input: {
     status,
     evidencePath: input.profile.evidencePath,
     evidence: readEvidence(input.profile.evidencePath),
-    dataDbPath: join(input.profile.dataDir, "kunai", "kunai-data.sqlite"),
+    dataDbPath: input.profile.paths.dataDbPath,
     profileRoot: input.profile.root,
     stdout,
     stderr,

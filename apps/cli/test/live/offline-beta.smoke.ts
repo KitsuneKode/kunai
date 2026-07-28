@@ -1,9 +1,11 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
+import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
 
+import { storageRootEnv } from "../helpers/storage-env";
 import {
   buildOfflineBetaSmokeReport,
   buildOfflineBetaSmokeSkippedReport,
@@ -44,18 +46,31 @@ function readOptIn():
   return { mediaUrl, subtitleUrl };
 }
 
+function hostStoragePlatform(): StoragePlatform {
+  if (process.platform === "darwin") return "darwin";
+  if (process.platform === "win32") return "win32";
+  return "linux";
+}
+
 function createIsolatedProfile(): OfflineBetaProfile {
   const rootDir = mkdtempSync(join(tmpdir(), "kunai-live-offline-beta-"));
+  const env = storageRootEnv(rootDir);
+  const paths = getKunaiPaths({
+    platform: hostStoragePlatform(),
+    homeDir: rootDir,
+    env,
+  });
+  mkdirSync(paths.configDir, { recursive: true });
+  mkdirSync(paths.dataDir, { recursive: true });
+  mkdirSync(paths.cacheDir, { recursive: true });
   const profile = {
     rootDir,
-    configHome: join(rootDir, "config"),
-    dataHome: join(rootDir, "data"),
-    cacheHome: join(rootDir, "cache"),
+    configHome: paths.configDir,
+    dataHome: paths.dataDir,
+    cacheHome: paths.cacheDir,
     downloadDir: join(rootDir, "downloads"),
   };
-  process.env.XDG_CONFIG_HOME = profile.configHome;
-  process.env.XDG_DATA_HOME = profile.dataHome;
-  process.env.XDG_CACHE_HOME = profile.cacheHome;
+  Object.assign(process.env, env);
   process.on("exit", () => {
     rmSync(rootDir, { force: true, recursive: true });
   });

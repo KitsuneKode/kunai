@@ -4,10 +4,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import { buildPtyCommand } from "../helpers/pty-command";
+import { storageRootEnv } from "../helpers/storage-env";
 
-// Real-process shutdown coverage: spawn the CLI against an isolated shadow XDG
+// Real-process shutdown coverage: spawn the CLI against an isolated shadow
 // profile, deliver a signal, and assert the conventional exit status plus a
 // readable data store afterwards. Never touches the live user profile.
 //
@@ -16,6 +19,9 @@ import { buildPtyCommand } from "../helpers/pty-command";
 // propagates shell-style signal exit statuses (128+sig). The wrapper shell
 // writes its own PID before exec-ing bun — exec preserves the PID — so the
 // test can signal the CLI process directly.
+//
+// Isolation must use storageRootEnv (HOME + XDG), not XDG alone: darwin
+// getKunaiPaths ignores XDG and writes under $HOME/Library/....
 
 const repoRoot = resolve(import.meta.dir, "../../../..");
 const tempRoots: string[] = [];
@@ -40,23 +46,37 @@ afterEach(() => {
   }
 });
 
-function createShadowProfile(): { root: string; config: string; data: string; cache: string } {
+function hostStoragePlatform(): StoragePlatform {
+  return process.platform === "darwin" ? "darwin" : "linux";
+}
+
+function createShadowProfile(): {
+  readonly root: string;
+  readonly env: Record<string, string>;
+  readonly paths: KunaiPaths;
+} {
   const root = mkdtempSync(join(tmpdir(), "kunai-shutdown-shadow-"));
   tempRoots.push(root);
-  const dirs = {
-    root,
-    config: join(root, "config"),
-    data: join(root, "data"),
-    cache: join(root, "cache"),
-  };
-  mkdirSync(join(dirs.config, "kunai"), { recursive: true });
-  mkdirSync(join(dirs.data, "kunai"), { recursive: true });
-  mkdirSync(join(dirs.cache, "kunai"), { recursive: true });
+  const env = storageRootEnv(root);
+  const paths = getKunaiPaths({
+    platform: hostStoragePlatform(),
+    homeDir: root,
+    env,
+  });
+  mkdirSync(paths.configDir, { recursive: true });
+  mkdirSync(paths.dataDir, { recursive: true });
+  mkdirSync(paths.cacheDir, { recursive: true });
   writeFileSync(
-    join(dirs.config, "kunai", "config.json"),
+    paths.configPath,
     `${JSON.stringify({ onboardingVersion: 2, downloadOnboardingDismissed: true })}\n`,
   );
-  return dirs;
+  return { root, env, paths };
+}
+
+function shellEnvAssignments(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
 }
 
 async function spawnAndSignal(
@@ -65,11 +85,9 @@ async function spawnAndSignal(
   const shadow = createShadowProfile();
   const pidFile = join(shadow.root, "cli.pid");
   const cliCommand = [
-    `echo $$ > ${pidFile};`,
+    `echo $$ > ${JSON.stringify(pidFile)};`,
     "exec env",
-    `XDG_CONFIG_HOME=${shadow.config}`,
-    `XDG_DATA_HOME=${shadow.data}`,
-    `XDG_CACHE_HOME=${shadow.cache}`,
+    shellEnvAssignments(shadow.env),
     "bun apps/cli/src/main.ts",
   ].join(" ");
   // Capture the transcript instead of discarding it. When the CLI fails to boot
@@ -88,7 +106,7 @@ async function spawnAndSignal(
   const readTranscript = (): string =>
     existsSync(transcript) ? readFileSync(transcript, "utf8").trim() : "<no transcript captured>";
 
-  const dataDbPath = join(shadow.data, "kunai", "kunai-data.sqlite");
+  const dataDbPath = shadow.paths.dataDbPath;
   // A cold CLI boot on a loaded CI runner is slow, and macOS runners are the
   // slowest of the three. This is a deadline, not a sleep: a fast machine still
   // proceeds the moment both files appear, so raising it costs nothing when
@@ -100,7 +118,8 @@ async function spawnAndSignal(
   if (!existsSync(pidFile) || !existsSync(dataDbPath)) {
     throw new Error(
       `CLI did not reach a booted state within ${startupTimeoutMs}ms ` +
-        `(pidFile=${existsSync(pidFile)}, dataDb=${existsSync(dataDbPath)}).\n` +
+        `(pidFile=${existsSync(pidFile)}, dataDb=${existsSync(dataDbPath)}, ` +
+        `dataDbPath=${dataDbPath}).\n` +
         `--- transcript ---\n${readTranscript()}`,
     );
   }

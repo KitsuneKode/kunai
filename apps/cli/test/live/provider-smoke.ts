@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,10 @@ import {
   summarizeProviderTraceEvents,
   type ProviderTraceEventSummary,
 } from "@kunai/core";
+import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
 import type { ProviderResolveResult, StartupPriority } from "@kunai/types";
+
+import { storageRootEnv } from "../helpers/storage-env";
 
 export type ProviderSmokePayload = {
   readonly ok: boolean;
@@ -51,18 +54,31 @@ export type ProviderSmokeProfile = {
   readonly cacheHome: string;
 };
 
+function hostStoragePlatform(): StoragePlatform {
+  if (process.platform === "darwin") return "darwin";
+  if (process.platform === "win32") return "win32";
+  return "linux";
+}
+
 export function createProviderSmokeProfile(label: string): ProviderSmokeProfile {
   const rootDir = mkdtempSync(join(tmpdir(), `kunai-live-${label}-`));
+  const env = storageRootEnv(rootDir);
+  const paths = getKunaiPaths({
+    platform: hostStoragePlatform(),
+    homeDir: rootDir,
+    env,
+  });
+  mkdirSync(paths.configDir, { recursive: true });
+  mkdirSync(paths.dataDir, { recursive: true });
+  mkdirSync(paths.cacheDir, { recursive: true });
   const profile = {
     rootDir,
-    configHome: join(rootDir, "config"),
-    dataHome: join(rootDir, "data"),
-    cacheHome: join(rootDir, "cache"),
+    configHome: paths.configDir,
+    dataHome: paths.dataDir,
+    cacheHome: paths.cacheDir,
   };
 
-  process.env.XDG_CONFIG_HOME = profile.configHome;
-  process.env.XDG_DATA_HOME = profile.dataHome;
-  process.env.XDG_CACHE_HOME = profile.cacheHome;
+  Object.assign(process.env, env);
 
   process.on("exit", () => {
     rmSync(rootDir, { force: true, recursive: true });

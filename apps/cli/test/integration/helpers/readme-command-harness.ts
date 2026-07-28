@@ -24,9 +24,18 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+
 import { buildPtyCommand } from "../../helpers/pty-command";
+import { storageRootEnv } from "../../helpers/storage-env";
 
 export type ReadmeCommandMode = "fixture-assets" | "published-assets";
+
+function hostStoragePlatform(): StoragePlatform {
+  if (process.platform === "darwin") return "darwin";
+  if (process.platform === "win32") return "win32";
+  return "linux";
+}
 
 export interface ReadmeCommandVerification {
   readonly schemaVersion: 1;
@@ -158,18 +167,24 @@ export type IsolatedReadmeProfile = {
   readonly configDir: string;
   readonly dataDir: string;
   readonly cacheDir: string;
+  readonly paths: KunaiPaths;
+  readonly env: Record<string, string>;
   cleanup: () => void;
 };
 
 export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmeProfile {
   const root = mkdtempSync(join(tmpdir(), `kunai-${label}-`));
   const home = join(root, "home");
+  const env = storageRootEnv(home);
+  const paths = getKunaiPaths({
+    platform: hostStoragePlatform(),
+    homeDir: home,
+    env,
+  });
+  // install.sh defaults BIN_DIR to $HOME/.local/bin on every platform.
   const binDir = join(home, ".local", "bin");
   const shimDir = join(root, "shims");
-  const configDir = join(home, ".config", "kunai");
-  const dataDir = join(home, ".local", "share", "kunai");
-  const cacheDir = join(home, ".cache", "kunai");
-  for (const dir of [home, binDir, shimDir, configDir, dataDir, cacheDir]) {
+  for (const dir of [home, binDir, shimDir, paths.configDir, paths.dataDir, paths.cacheDir]) {
     mkdirSync(dir, { recursive: true });
   }
   return {
@@ -177,9 +192,11 @@ export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmePro
     home,
     binDir,
     shimDir,
-    configDir,
-    dataDir,
-    cacheDir,
+    configDir: paths.configDir,
+    dataDir: paths.dataDir,
+    cacheDir: paths.cacheDir,
+    paths,
+    env,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
@@ -270,20 +287,18 @@ function profileEnv(
   const pathParts = [profile.binDir, profile.shimDir, "/usr/bin", "/bin"];
   return {
     ...process.env,
+    ...profile.env,
     ...extras,
-    HOME: profile.home,
-    USERPROFILE: profile.home,
     KUNAI_BIN_DIR: profile.binDir,
+    // Keep installer overrides aligned with getKunaiPaths so install.sh and the
+    // CLI agree under the shadow HOME on darwin (Library) and linux (XDG).
     KUNAI_CONFIG_DIR: profile.configDir,
     KUNAI_DATA_DIR: profile.dataDir,
     KUNAI_CACHE_DIR: profile.cacheDir,
-    XDG_CONFIG_HOME: join(profile.home, ".config"),
-    XDG_DATA_HOME: join(profile.home, ".local", "share"),
-    XDG_CACHE_HOME: join(profile.home, ".cache"),
     PATH: pathParts.join(":"),
     CI: "1",
     DO_NOT_TRACK: "1",
-    // Avoid host TERM quirks; script(1) still allocates a PTY.
+    // Avoid host TERM quirks; the PTY wrapper still allocates a TTY.
     TERM: "xterm-256color",
   };
 }
