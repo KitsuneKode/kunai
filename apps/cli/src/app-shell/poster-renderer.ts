@@ -1,5 +1,5 @@
 import { detectImageCapability } from "@/image";
-import type { ImageCapability, TerminalId } from "@/image";
+import type { TerminalId } from "@/image";
 import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
 import {

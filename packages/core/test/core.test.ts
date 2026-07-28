@@ -1588,7 +1588,6 @@ test("summarizeProviderTraceEvents prefers canonical cycle events over provider-
 function healthReportingModule(
   id: string,
   behaviour: { readonly delayMs: number; readonly succeeds: boolean },
-  recorded: Array<{ endpoint: string; class: string }>,
 ): CoreProviderModule {
   return {
     providerId: id as never,
@@ -1659,8 +1658,8 @@ test("a hedge loser does not leave endpoint-health evidence against itself", asy
   const recorded: Array<{ endpoint: string; class: string }> = [];
   const engine = createProviderEngine({
     modules: [
-      healthReportingModule("slow-primary", { delayMs: 5_000, succeeds: true }, recorded),
-      healthReportingModule("fast-hedge", { delayMs: 20, succeeds: true }, recorded),
+      healthReportingModule("slow-primary", { delayMs: 5_000, succeeds: true }),
+      healthReportingModule("fast-hedge", { delayMs: 20, succeeds: true }),
     ],
     maxAttempts: 1,
     hedgeDelayMs: 30,
@@ -1681,7 +1680,7 @@ test("a hedge loser does not leave endpoint-health evidence against itself", asy
 test("a genuine attempt timeout is still recorded as endpoint evidence", async () => {
   const recorded: Array<{ endpoint: string; class: string }> = [];
   const engine = createProviderEngine({
-    modules: [healthReportingModule("too-slow", { delayMs: 5_000, succeeds: true }, recorded)],
+    modules: [healthReportingModule("too-slow", { delayMs: 5_000, succeeds: true })],
     maxAttempts: 1,
     attemptTimeoutMs: 20,
     endpointHealth: recordingEndpointHealth(recorded) as never,
