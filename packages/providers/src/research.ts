@@ -65,8 +65,8 @@ export const providerResearchProfiles = [
   },
   {
     providerId: "rivestream",
-    status: "candidate",
-    migrationAction: "implement-from-scratchpad",
+    status: "production",
+    migrationAction: "promote-direct-provider",
     migrationRank: 30,
     dossierPath: ".docs/provider-dossiers/rivestream.md",
     evidencePaths: [
@@ -80,12 +80,13 @@ export const providerResearchProfiles = [
       "Generate secretKey locally, call backendfetch APIs, and expose direct stream variants.",
     subtitleStrategy:
       "Dedicated backendfetch subtitle endpoint returning direct subtitle inventory.",
-    productionGap: "Promote hash-generation fixtures before production registration.",
+    productionGap:
+      "Registered and serving. Hash-generation fixtures remain thin, so a secretKey scheme change would surface as resolve failures rather than a failing test.",
   },
   {
     providerId: "miruro",
-    status: "candidate",
-    migrationAction: "implement-from-scratchpad",
+    status: "production",
+    migrationAction: "promote-direct-provider",
     migrationRank: 40,
     dossierPath: ".docs/provider-dossiers/miruro.md",
     evidencePaths: [
@@ -100,7 +101,7 @@ export const providerResearchProfiles = [
     subtitleStrategy:
       "Provider payload or embedded HLS subtitle tracks; verify English selection through mpv.",
     productionGap:
-      "Keep expanding fixtures around animal server subtitle delivery and dub/source availability.",
+      "Registered and serving. Fixture coverage for animal-server subtitle delivery and dub/source availability is still thin.",
   },
   {
     providerId: "anikai",

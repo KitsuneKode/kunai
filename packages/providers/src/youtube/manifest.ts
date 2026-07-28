@@ -10,7 +10,7 @@ export const youtubeManifest = defineProviderManifest({
   recommended: true,
   mediaKinds: ["video"],
   catalogIdentity: "provider-native",
-  capabilities: ["search", "episode-list", "source-resolve", "quality-ranked"],
+  capabilities: ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
   runtimePorts: [
     {
       runtime: "direct-http",

@@ -10,7 +10,13 @@ export const miruroManifest = defineProviderManifest({
   recommended: false,
   mediaKinds: ["anime"],
   catalogIdentity: "anilist",
-  capabilities: ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
+  capabilities: [
+    "episode-list",
+    "source-resolve",
+    "subtitle-resolve",
+    "multi-source",
+    "quality-ranked",
+  ],
   runtimePorts: [
     {
       runtime: "direct-http",
