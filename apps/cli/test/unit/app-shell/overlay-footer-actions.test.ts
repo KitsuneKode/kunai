@@ -17,9 +17,10 @@ describe("overlay footer actions", () => {
     expect(actions.at(-1)).toMatchObject({ key: "esc", label: "close", action: "quit" });
   });
 
-  test("history footer exposes resume, queue and tab hints", () => {
+  test("history footer exposes resume, actions, queue and tab hints", () => {
     expect(historyFooterActions().map((action) => action.label)).toEqual([
       "resume",
+      "actions",
       "up next",
       "tabs",
       "commands",

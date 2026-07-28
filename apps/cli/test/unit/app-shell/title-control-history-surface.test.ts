@@ -21,17 +21,45 @@ describe("history title-control surface", () => {
     expect(ids).toContain("download");
   });
 
-  test("offers resuming and episode selection, since history rows are resumable", () => {
-    const ids = actionIds({
+  test("offers resume, enabled when the row has a saved position", () => {
+    const actions = buildTitleControlActions({
       surface: "history",
       hasTitle: true,
       hasHistory: true,
+      hasSavedPosition: true,
       titleType: "series",
       downloadsEnabled: true,
     });
 
-    expect(ids).toContain("resume");
-    expect(ids).toContain("pick-episode");
+    expect(actions.find((action) => action.id === "resume")?.enabled).toBe(true);
+  });
+
+  test("offers marking watched, which older surfaces gated away from history", () => {
+    const actions = buildTitleControlActions({
+      surface: "history",
+      hasTitle: true,
+      hasHistory: true,
+      downloadsEnabled: true,
+    });
+
+    expect(actions.find((action) => action.id === "mark-watched")?.enabled).toBe(true);
+    expect(actions.find((action) => action.id === "mark-unwatched")?.enabled).toBe(true);
+  });
+
+  test("omits actions that would target the session instead of the row", () => {
+    // The overlay executes the picked action against the highlighted row, so an
+    // action it cannot target that way must not be offered at all.
+    const ids = actionIds({
+      surface: "history",
+      hasTitle: true,
+      hasHistory: true,
+      downloadsEnabled: true,
+    });
+
+    expect(ids).not.toContain("switch-provider");
+    expect(ids).not.toContain("purge-title-cache");
+    // `play` shares the `resume` shell action and would arrive indistinguishable.
+    expect(ids).not.toContain("play");
   });
 
   test("does not offer playback-only controls", () => {

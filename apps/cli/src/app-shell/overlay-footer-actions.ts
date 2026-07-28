@@ -25,7 +25,7 @@ export function queueFooterActions(): readonly FooterAction[] {
 
 export function historyFooterActions(): readonly FooterAction[] {
   return buildFooterActionsFromBindings("history", {
-    ids: ["history-resume", "history-queue", "history-tab"],
+    ids: ["history-resume", "history-menu", "history-queue", "history-tab"],
     overrides: {
       "history-resume": { primary: true },
     },

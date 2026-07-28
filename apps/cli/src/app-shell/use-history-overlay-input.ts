@@ -7,6 +7,7 @@ import {
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
 import type { Container } from "@/container";
+import type { MediaActionId } from "@/domain/media/media-action-policy";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import {
@@ -51,9 +52,148 @@ export type HistoryOverlayInputContext = {
 
 export type HistoryOverlayInputResult = "handled" | "not-handled";
 
+export type HistoryOverlayKeyOutcome =
+  | "open-title-menu"
+  | "toggle-watched"
+  | "ignore"
+  | "unhandled";
+
+/**
+ * Pure key routing for the history overlay, extracted so the decision can be
+ * tested without mounting Ink.
+ *
+ * `m` opens title control here as it does on every other surface. The watched
+ * toggle it displaced moved to `w`, which is both free and more mnemonic; the
+ * old binding was never registered in `keybindings.ts`, so it appeared in no
+ * help text and no footer.
+ */
+export function resolveHistoryOverlayKey(
+  key: string,
+  state: { readonly hasSelection: boolean },
+): HistoryOverlayKeyOutcome {
+  const normalized = key.toLowerCase();
+  if (normalized === "m") return state.hasSelection ? "open-title-menu" : "ignore";
+  if (normalized === "w") return state.hasSelection ? "toggle-watched" : "ignore";
+  return "unhandled";
+}
+
+/**
+ * What the overlay should do with an action picked from the title-control menu.
+ *
+ * The menu presents, but the shell's own handlers execute against the session's
+ * current title — which over a history row is whatever is highlighted in the
+ * list behind the overlay. So row-scoped actions are re-dispatched through
+ * `MediaActionRouter` with the row's media item instead.
+ */
+export type HistoryRowIntent =
+  | { readonly kind: "media-action"; readonly actionId: MediaActionId; readonly status: string }
+  | { readonly kind: "resume" }
+  | { readonly kind: "delegate" };
+
+export function historyRowIntentForShellAction(action: string): HistoryRowIntent {
+  switch (action) {
+    case "download":
+      return {
+        kind: "media-action",
+        actionId: "download",
+        status: "Queued download from history",
+      };
+    case "mark-watched":
+      return {
+        kind: "media-action",
+        actionId: "mark-watched",
+        status: "Marked watched",
+      };
+    case "mark-unwatched":
+      return {
+        kind: "media-action",
+        actionId: "mark-unwatched",
+        status: "Marked unwatched (resume kept)",
+      };
+    case "resume":
+      return { kind: "resume" };
+    default:
+      // Session-scoped actions (diagnostics) are correct as the shell runs them.
+      return { kind: "delegate" };
+  }
+}
+
 function historyDeleteLabel(entry: RootHistorySelection["entry"]): string {
   const episode = historyEpisodeLabel(entry);
   return episode ? `${entry.title} · ${episode}` : entry.title;
+}
+
+/** Run a row-scoped action through the router and report the outcome inline. */
+function runHistoryRowAction(
+  ctx: HistoryOverlayInputContext,
+  action: {
+    readonly actionId: MediaActionId;
+    readonly item: ReturnType<typeof mediaItemFromHistoryEntry>;
+    readonly status: string;
+    readonly failure: string;
+  },
+): void {
+  void createContainerMediaActionRouter(ctx.container)
+    .run({ actionId: action.actionId, item: action.item, source: "history" })
+    .then((result) => {
+      ctx.setOverlayStatus(result.status === "unsupported" ? result.reason : action.status);
+      ctx.onRedraw();
+      return undefined;
+    })
+    .catch((error: unknown) => {
+      ctx.setOverlayStatus(error instanceof Error ? error.message : action.failure);
+      ctx.onRedraw();
+      return undefined;
+    });
+}
+
+/**
+ * Present title control for a history row and execute the choice against that
+ * row. The menu is picked, not run: the shell's own handlers resolve the
+ * session's current title, which over history is the wrong one.
+ */
+async function openHistoryTitleControlMenu(
+  ctx: HistoryOverlayInputContext,
+  selected: RootHistorySelection,
+): Promise<void> {
+  const { pickTitleControlShellAction } =
+    await import("@/app-shell/title-control/open-title-control-menu");
+  const entry = selected.entry;
+  const shellAction = await pickTitleControlShellAction(ctx.container, "history", {
+    titleName: entry.title,
+    hasTitle: true,
+    canResume: entry.positionSeconds > 0 && !isFinished(entry),
+  });
+  if (!shellAction) {
+    ctx.onRedraw();
+    return;
+  }
+
+  const intent = historyRowIntentForShellAction(shellAction);
+  if (intent.kind === "resume") {
+    ctx.onConfirmSelection(
+      buildRootHistorySelection(
+        selected,
+        ctx.historyPickerContext.nextReleases,
+        ctx.historyPickerContext.projections,
+        { sourcePreference: ctx.sourcePreference },
+      ),
+    );
+    return;
+  }
+  if (intent.kind === "media-action") {
+    runHistoryRowAction(ctx, {
+      actionId: intent.actionId,
+      item: mediaItemFromHistoryEntry(selected.titleId, entry),
+      status: intent.status,
+      failure: "Unable to complete that action",
+    });
+    return;
+  }
+
+  const { handleShellAction } = await import("@/app-shell/workflows");
+  await handleShellAction({ action: shellAction, container: ctx.container });
+  ctx.onRedraw();
 }
 
 /** History overlay key map extracted from root-overlay-shell (Phase 9). */
@@ -144,34 +284,24 @@ export function handleHistoryOverlayInput(
     ctx.setSelectedIndex(() => 0);
     return "handled";
   }
-  if (input.toLowerCase() === "m" && selected) {
-    const entry = selected.entry;
-    const mediaItem = mediaItemFromHistoryEntry(selected.titleId, entry);
-    const watched = isFinished(entry);
-    void createContainerMediaActionRouter(ctx.container)
-      .run({
-        actionId: watched ? "mark-unwatched" : "mark-watched",
-        item: mediaItem,
-        source: "history",
-      })
-      .then((result) => {
-        ctx.setOverlayStatus(
-          result.status === "unsupported"
-            ? result.reason
-            : watched
-              ? "Marked unwatched (resume kept)"
-              : "Marked watched",
-        );
-        ctx.onRedraw();
-        return undefined;
-      })
-      .catch((error: unknown) => {
-        ctx.setOverlayStatus(
-          error instanceof Error ? error.message : "Unable to update watch state",
-        );
-        ctx.onRedraw();
-        return undefined;
+  const keyOutcome = key.return
+    ? "unhandled"
+    : resolveHistoryOverlayKey(input, {
+        hasSelection: Boolean(selected),
       });
+  if (keyOutcome === "ignore") return "handled";
+  if (keyOutcome === "toggle-watched" && selected) {
+    const watched = isFinished(selected.entry);
+    runHistoryRowAction(ctx, {
+      actionId: watched ? "mark-unwatched" : "mark-watched",
+      item: mediaItemFromHistoryEntry(selected.titleId, selected.entry),
+      status: watched ? "Marked unwatched (resume kept)" : "Marked watched",
+      failure: "Unable to update watch state",
+    });
+    return "handled";
+  }
+  if (keyOutcome === "open-title-menu" && selected) {
+    void openHistoryTitleControlMenu(ctx, selected);
     return "handled";
   }
   if (input.toLowerCase() === "q") {

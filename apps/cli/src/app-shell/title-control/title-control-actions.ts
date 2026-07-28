@@ -226,7 +226,7 @@ const ACTION_SPECS: readonly ActionSpec[] = [
       if (ctx.surface === "post-play") {
         return ctx.canResume ? enabled() : disabled("Nothing to resume");
       }
-      if (ctx.surface === "browse" || ctx.surface === "library") {
+      if (ctx.surface === "browse" || ctx.surface === "library" || ctx.surface === "history") {
         return ctx.hasSavedPosition ? enabled() : disabled("No saved position for this title");
       }
       return disabled("Resume is not available while playback is active");
@@ -430,7 +430,10 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     shellAction: "mark-watched",
     when: (ctx) =>
       ctx.hasTitle &&
-      (ctx.surface === "playing" || ctx.surface === "post-play" || ctx.surface === "browse")
+      (ctx.surface === "playing" ||
+        ctx.surface === "post-play" ||
+        ctx.surface === "browse" ||
+        ctx.surface === "history")
         ? enabled()
         : disabled("Select a title to mark watched"),
   },
@@ -441,7 +444,10 @@ const ACTION_SPECS: readonly ActionSpec[] = [
     shellAction: "mark-unwatched",
     when: (ctx) =>
       ctx.hasTitle &&
-      (ctx.surface === "playing" || ctx.surface === "post-play" || ctx.surface === "browse")
+      (ctx.surface === "playing" ||
+        ctx.surface === "post-play" ||
+        ctx.surface === "browse" ||
+        ctx.surface === "history")
         ? enabled()
         : disabled("Select a title to mark unwatched"),
   },
@@ -536,22 +542,13 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "share",
     "diagnostics",
   ],
-  // History rows are resumable catalog entries, not live playback, so this
-  // mirrors `library` rather than `playing`: no stop/quality/cancel, but full
-  // resume, episode selection, and download.
-  history: [
-    "play",
-    "resume",
-    "pick-episode",
-    "switch-provider",
-    "download",
-    "mark-watched",
-    "mark-unwatched",
-    "share",
-    "purge-title-cache",
-    "forget-title-provider-preference",
-    "diagnostics",
-  ],
+  // History rows are resumable catalog entries, not live playback: no
+  // stop/quality/cancel. Deliberately narrower than `library` because the
+  // history overlay executes the picked action against the highlighted row
+  // rather than the session's current title, so only actions that can be
+  // targeted at a row belong here. `play` is excluded because it shares the
+  // `resume` shell action and the two would be indistinguishable on arrival.
+  history: ["resume", "download", "mark-watched", "mark-unwatched", "diagnostics"],
   // Episode navigation belongs here, not just on `playing`. This is an
   // allow-list, so omitting these filtered them out before `when()` ever ran:
   // opening the menu mid-resolve for a series showed only recovery actions and
