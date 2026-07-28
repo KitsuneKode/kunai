@@ -33,6 +33,7 @@ export function buildTitleControlContext(
     readonly hasHistory?: boolean;
     readonly historyFinished?: boolean;
     readonly canResume?: boolean;
+    readonly downloadsEnabled?: boolean;
     readonly providerName?: string;
     readonly resumeAtLabel?: string;
     readonly currentEpisodeName?: string;
@@ -56,6 +57,7 @@ export function buildTitleControlContext(
     isAnime: state.mode === "anime" || title?.isAnime === true,
     hasTitle: options.hasTitle ?? Boolean(title),
     hasTitleProviderPreference: options.hasTitleProviderPreference,
+    downloadsEnabled: options.downloadsEnabled,
     hasHistory: options.hasHistory ?? false,
     hasSavedPosition: options.hasSavedPosition ?? false,
     historyFinished: options.historyFinished ?? false,
@@ -160,6 +162,7 @@ export function buildTitleControlContextFromContainer(
     historyFinished,
     providerName: providerDisplayName,
     hasTitleProviderPreference,
+    downloadsEnabled: container.config.downloadsEnabled,
   });
 }
 

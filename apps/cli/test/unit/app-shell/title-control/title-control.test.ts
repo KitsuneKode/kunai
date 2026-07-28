@@ -96,6 +96,7 @@ describe("buildTitleControlActions", () => {
         },
         providerHealth: { get: () => undefined },
         historyRepository: {},
+        config: { downloadsEnabled: true },
       } as never,
       "browse",
     );

@@ -1,7 +1,13 @@
 import type { ShellAction } from "@/app-shell/types";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
-export type TitleControlSurface = "browse" | "library" | "loading" | "playing" | "post-play";
+export type TitleControlSurface =
+  | "browse"
+  | "library"
+  | "loading"
+  | "playing"
+  | "post-play"
+  | "history";
 
 export type TitleControlActionGroup = "primary" | "providers-data" | "this-title";
 
@@ -115,6 +121,12 @@ export type TitleControlContext = {
   readonly hasTitle?: boolean;
   readonly hasTitleProviderPreference?: boolean;
   readonly hasHistory?: boolean;
+  /**
+   * The downloads capability from config. Omitted means "not stated" and leaves
+   * `download` in place, so a context built without it does not silently lose
+   * an action.
+   */
+  readonly downloadsEnabled?: boolean;
   readonly hasSavedPosition?: boolean;
   readonly historyFinished?: boolean;
   readonly hasNextEpisode?: boolean;
@@ -524,6 +536,22 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
     "share",
     "diagnostics",
   ],
+  // History rows are resumable catalog entries, not live playback, so this
+  // mirrors `library` rather than `playing`: no stop/quality/cancel, but full
+  // resume, episode selection, and download.
+  history: [
+    "play",
+    "resume",
+    "pick-episode",
+    "switch-provider",
+    "download",
+    "mark-watched",
+    "mark-unwatched",
+    "share",
+    "purge-title-cache",
+    "forget-title-provider-preference",
+    "diagnostics",
+  ],
   // Episode navigation belongs here, not just on `playing`. This is an
   // allow-list, so omitting these filtered them out before `when()` ever ran:
   // opening the menu mid-resolve for a series showed only recovery actions and
@@ -600,8 +628,19 @@ function buildAction(spec: ActionSpec, ctx: TitleControlContext): TitleControlAc
   };
 }
 
+/**
+ * A capability turned off in config removes its actions outright rather than
+ * disabling them. A permanently greyed row with an unchangeable reason is noise
+ * on every menu; the setting is where that decision belongs.
+ */
+function isCapabilityAvailable(actionId: TitleControlActionId, ctx: TitleControlContext): boolean {
+  return actionId === "download" ? ctx.downloadsEnabled !== false : true;
+}
+
 /** Pure selector: context-relevant title-control actions for the active surface. */
 export function buildTitleControlActions(ctx: TitleControlContext): readonly TitleControlAction[] {
   const allowed = new Set(SURFACE_ACTION_IDS[ctx.surface]);
-  return ACTION_SPECS.filter((spec) => allowed.has(spec.id)).map((spec) => buildAction(spec, ctx));
+  return ACTION_SPECS.filter(
+    (spec) => allowed.has(spec.id) && isCapabilityAvailable(spec.id, ctx),
+  ).map((spec) => buildAction(spec, ctx));
 }
