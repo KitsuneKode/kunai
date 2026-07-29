@@ -18,6 +18,7 @@ import { __testing as chafaTesting, renderChafaSymbols } from "@/image/renderers
 import { NonPngError, renderKittyNative } from "@/image/renderers/kitty";
 
 import { storageRootEnv } from "../helpers/storage-env";
+import { stubMagickResolution } from "../support/image-binaries";
 
 const DEFAULT_OPTIONS: ImageRenderOptions = { size: "30x18", maxRows: 18, debug: false };
 
@@ -59,10 +60,10 @@ function mockStdoutWrite(): { writes: string[]; restore: () => void } {
 
 function mockBunWhich(result: string | null): () => void {
   capabilityTesting.runtime.which = (cmd: string) => (cmd === "chafa" ? result : Bun.which(cmd));
-  convertTesting.runtime.which = (cmd: string) => (cmd === "magick" ? result : Bun.which(cmd));
+  const restoreMagick = stubMagickResolution(result);
   return () => {
     capabilityTesting.runtime.which = originalWhich;
-    convertTesting.runtime.which = originalConvertWhich;
+    restoreMagick();
   };
 }
 
