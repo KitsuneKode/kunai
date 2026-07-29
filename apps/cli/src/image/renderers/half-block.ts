@@ -10,7 +10,7 @@
 // are conditional; this path always works on any truecolour terminal.
 // =============================================================================
 
-import { decodeImageBytes, type DecodedImage } from "../decode";
+import type { DecodedImage } from "../decode";
 import type { ImageRenderOptions } from "../types";
 
 const UPPER_HALF_BLOCK = "▀";
@@ -170,24 +170,3 @@ function sameColor(a: Rgb | null, b: Rgb | null | undefined): boolean {
   if (a === null || b === null) return a === b;
   return a.r === b.r && a.g === b.g && a.b === b.b;
 }
-
-const runtime = {
-  readFile: (filePath: string): Promise<ArrayBuffer> => Bun.file(filePath).arrayBuffer(),
-  write: (text: string): void => {
-    process.stdout.write(text);
-  },
-};
-
-export async function renderHalfBlock(
-  filePath: string,
-  options: ImageRenderOptions,
-): Promise<void> {
-  const bytes = new Uint8Array(await runtime.readFile(filePath));
-  const image = decodeImageBytes(bytes);
-  if (!image) throw new Error("poster could not be decoded for half-block output");
-  runtime.write(buildHalfBlockOutput(image, options));
-}
-
-export const __testing = {
-  runtime,
-};

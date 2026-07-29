@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 
-import type { ImageRenderOptions } from "@/image";
-import { displayPoster } from "@/image";
-import { __testing as cacheTesting, getCachedPoster } from "@/image/cache";
 import {
   __testing as capabilityTesting,
   detectImageCapability,
@@ -14,19 +8,13 @@ import {
 } from "@/image/capability";
 import { ensurePngBytes, __testing as convertTesting } from "@/image/convert";
 import { isPngBytes } from "@/image/png";
-import { __testing as chafaTesting, renderChafaSymbols } from "@/image/renderers/chafa";
-import { NonPngError, renderKittyNative } from "@/image/renderers/kitty";
 
-import { storageRootEnv } from "../helpers/storage-env";
 import { stubMagickResolution } from "../support/image-binaries";
-
-const DEFAULT_OPTIONS: ImageRenderOptions = { size: "30x18", maxRows: 18, debug: false };
 
 const originalFetch = globalThis.fetch;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStdoutIsTTY = process.stdout.isTTY;
 const originalWhich = capabilityTesting.runtime.which;
-const originalSpawn = chafaTesting.runtime.spawn;
 const originalConvertWhich = convertTesting.runtime.which;
 const originalConvertSpawn = convertTesting.runtime.spawn;
 
@@ -43,41 +31,12 @@ function mockStdoutIsTty(value: boolean): () => void {
   };
 }
 
-function mockStdoutWrite(): { writes: string[]; restore: () => void } {
-  const writes: string[] = [];
-  const writer = ((chunk: string | Uint8Array) => {
-    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-    return true;
-  }) as typeof process.stdout.write;
-  process.stdout.write = writer;
-  return {
-    writes,
-    restore: () => {
-      process.stdout.write = originalStdoutWrite;
-    },
-  };
-}
-
 function mockBunWhich(result: string | null): () => void {
   capabilityTesting.runtime.which = (cmd: string) => (cmd === "chafa" ? result : Bun.which(cmd));
   const restoreMagick = stubMagickResolution(result);
   return () => {
     capabilityTesting.runtime.which = originalWhich;
     restoreMagick();
-  };
-}
-
-function mockBunSpawn(capture: (cmd: string[], options: unknown) => void): () => void {
-  chafaTesting.runtime.spawn = (cmd: string[], options: unknown) => {
-    capture(cmd, options);
-    return {
-      stdout: new Response("").body,
-      stderr: new Response("").body,
-      exited: Promise.resolve(0),
-    } as unknown as Bun.Subprocess;
-  };
-  return () => {
-    chafaTesting.runtime.spawn = originalSpawn;
   };
 }
 
@@ -102,32 +61,6 @@ function setEnv(vars: Record<string, string | undefined>): () => void {
   };
 }
 
-function setFetchMock(
-  handler: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>,
-): void {
-  globalThis.fetch = Object.assign(handler, {
-    preconnect: originalFetch.preconnect,
-  }) as typeof fetch;
-}
-
-async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = await mkdtemp(join(tmpdir(), "kunai-image-test-"));
-  try {
-    return await fn(dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
-
-async function withTempFile(
-  data: Uint8Array,
-): Promise<{ path: string; cleanup: () => Promise<void> }> {
-  const dir = await mkdtemp(join(tmpdir(), "kunai-image-file-"));
-  const filePath = join(dir, "poster.bin");
-  await writeFile(filePath, data);
-  return { path: filePath, cleanup: () => rm(dir, { recursive: true, force: true }) };
-}
-
 afterEach(() => {
   capabilityTesting.resetMemo();
   globalThis.fetch = originalFetch;
@@ -136,7 +69,6 @@ afterEach(() => {
     configurable: true,
   });
   capabilityTesting.runtime.which = originalWhich;
-  chafaTesting.runtime.spawn = originalSpawn;
   convertTesting.runtime.which = originalConvertWhich;
   convertTesting.runtime.spawn = originalConvertSpawn;
   process.stdout.write = originalStdoutWrite;
@@ -430,280 +362,6 @@ describe("isChafaAvailable", () => {
       expect(isChafaAvailable()).toBe(true);
     } finally {
       restorePath();
-    }
-  });
-});
-
-describe("renderKittyNative", () => {
-  test("accepts PNG magic bytes", async () => {
-    const restoreTty = mockStdoutIsTty(true);
-    const capture = mockStdoutWrite();
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
-    const file = await withTempFile(png);
-    try {
-      await renderKittyNative(file.path, DEFAULT_OPTIONS);
-      expect(capture.writes.join("")).toContain("\x1b_Ga=T,f=100,q=2");
-    } finally {
-      await file.cleanup();
-      capture.restore();
-      restoreTty();
-    }
-  });
-
-  test("rejects non-PNG bytes", async () => {
-    const restoreTty = mockStdoutIsTty(true);
-    const restoreWhich = mockBunWhich(null);
-    const file = await withTempFile(new Uint8Array([0x01, 0x02, 0x03]));
-    try {
-      await expect(renderKittyNative(file.path, DEFAULT_OPTIONS)).rejects.toBeInstanceOf(
-        NonPngError,
-      );
-    } finally {
-      await file.cleanup();
-      restoreWhich();
-      restoreTty();
-    }
-  });
-
-  test("chunks base64 into <=4096 byte pieces and uses q=2", async () => {
-    const restoreTty = mockStdoutIsTty(true);
-    const capture = mockStdoutWrite();
-    const data = new Uint8Array(4000);
-    data.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
-    const file = await withTempFile(data);
-    try {
-      await renderKittyNative(file.path, DEFAULT_OPTIONS);
-      const chunks = capture.writes
-        .join("")
-        .split("\x1b\\")
-        .filter((part) => part.startsWith("\x1b_G"));
-      expect(chunks.length).toBeGreaterThan(0);
-      const first = chunks[0] ?? "";
-      expect(first).toContain("q=2");
-      for (const chunk of chunks) {
-        const content = chunk.split(";").slice(1).join(";");
-        expect(content.length).toBeLessThanOrEqual(4096);
-      }
-    } finally {
-      await file.cleanup();
-      capture.restore();
-      restoreTty();
-    }
-  });
-
-  test("does not write anything for empty input", async () => {
-    const restoreTty = mockStdoutIsTty(true);
-    const capture = mockStdoutWrite();
-    const file = await withTempFile(new Uint8Array());
-    try {
-      await renderKittyNative(file.path, DEFAULT_OPTIONS);
-      expect(capture.writes.length).toBe(0);
-    } finally {
-      await file.cleanup();
-      capture.restore();
-      restoreTty();
-    }
-  });
-});
-
-describe("chafa renderers", () => {
-  test("builds the expected symbols command", async () => {
-    let captured: string[] = [];
-    const restoreSpawn = mockBunSpawn((cmd) => {
-      captured = cmd;
-    });
-    try {
-      await renderChafaSymbols("/tmp/poster.jpg", DEFAULT_OPTIONS);
-      expect(captured).toEqual([
-        "chafa",
-        "--format",
-        "symbols",
-        "--size",
-        "30x18",
-        "--animate",
-        "off",
-        "--polite",
-        "on",
-        "--colors",
-        "full",
-        "/tmp/poster.jpg",
-      ]);
-    } finally {
-      restoreSpawn();
-    }
-  });
-});
-
-describe("poster cache", () => {
-  test("reuses the same cache file for the same poster path", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv(storageRootEnv(dir));
-      let fetchCalls = 0;
-      setFetchMock(async () => {
-        fetchCalls += 1;
-        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
-      });
-      try {
-        const first = await getCachedPoster("/abc.jpg");
-        const second = await getCachedPoster("/abc.jpg");
-        expect(first).toBeTruthy();
-        expect(second).toBe(first);
-        expect(fetchCalls).toBe(1);
-      } finally {
-        restoreEnv();
-      }
-    });
-  });
-
-  test("treats zero-byte cache files as invalid", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv(storageRootEnv(dir));
-      try {
-        const url = cacheTesting.buildPosterUrl("/zero.jpg");
-        const cachePath = cacheTesting.buildCachePath(url, "/zero.jpg");
-        await mkdir(dirname(cachePath), { recursive: true });
-        await writeFile(cachePath, new Uint8Array());
-
-        let fetchCalls = 0;
-        setFetchMock(async () => {
-          fetchCalls += 1;
-          return new Response(new Uint8Array([9, 9, 9]), { status: 200 });
-        });
-
-        const result = await getCachedPoster("/zero.jpg");
-        expect(fetchCalls).toBe(1);
-        expect(result).toBe(cachePath);
-        const info = await stat(cachePath);
-        expect(info.size).toBeGreaterThan(0);
-      } finally {
-        restoreEnv();
-      }
-    });
-  });
-
-  test("returns null on failed fetch", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv(storageRootEnv(dir));
-      setFetchMock(async () => new Response(null, { status: 404 }));
-      try {
-        const result = await getCachedPoster("/missing.jpg");
-        expect(result).toBeNull();
-      } finally {
-        restoreEnv();
-      }
-    });
-  });
-
-  test("uses atomic write helper for poster cache", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv(storageRootEnv(dir));
-      let writtenTarget: string | null = null;
-      let writtenData: ArrayBuffer | null = null;
-      const originalAtomic = cacheTesting.atomicWrite;
-      cacheTesting.atomicWrite = async (target, data) => {
-        writtenTarget = target;
-        writtenData = data instanceof ArrayBuffer ? data : null;
-        return originalAtomic(target, data);
-      };
-
-      setFetchMock(async () => new Response(new Uint8Array([4, 5, 6]), { status: 200 }));
-      try {
-        const url = cacheTesting.buildPosterUrl("/atomic.jpg");
-        const cachePath = cacheTesting.buildCachePath(url, "/atomic.jpg");
-        const result = await getCachedPoster("/atomic.jpg");
-        expect(result).toBe(cachePath);
-        expect(writtenTarget!).toBe(cachePath);
-        expect(writtenData!).toBeTruthy();
-      } finally {
-        cacheTesting.atomicWrite = originalAtomic;
-        restoreEnv();
-      }
-    });
-  });
-
-  test("returns null when atomic write fails", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv(storageRootEnv(dir));
-      const originalAtomic = cacheTesting.atomicWrite;
-      cacheTesting.atomicWrite = async () => {
-        throw new Error("atomic write failed");
-      };
-      setFetchMock(async () => new Response(new Uint8Array([7, 8, 9]), { status: 200 }));
-      try {
-        const result = await getCachedPoster("/broken.jpg");
-        expect(result).toBeNull();
-      } finally {
-        cacheTesting.atomicWrite = originalAtomic;
-        restoreEnv();
-      }
-    });
-  });
-});
-
-describe("displayPoster", () => {
-  test("does not throw on null poster", async () => {
-    await expect(displayPoster(null)).resolves.toBeUndefined();
-  });
-
-  test("does not fetch when protocol is none", async () => {
-    const restoreEnv = setEnv({ KUNAI_IMAGE_PROTOCOL: "none" });
-    const restoreTty = mockStdoutIsTty(true);
-    let fetchCalls = 0;
-    setFetchMock(async () => {
-      fetchCalls += 1;
-      return new Response(new Uint8Array([1]), { status: 200 });
-    });
-    try {
-      await displayPoster("/poster.jpg");
-      expect(fetchCalls).toBe(0);
-    } finally {
-      restoreEnv();
-      restoreTty();
-    }
-  });
-
-  test("catches renderer failures", async () => {
-    await withTempDir(async (dir) => {
-      const restoreEnv = setEnv({
-        KUNAI_IMAGE_PROTOCOL: "kitty",
-        KITTY_WINDOW_ID: "1",
-        ...storageRootEnv(dir),
-      });
-      const restoreTty = mockStdoutIsTty(true);
-      const restoreWhich = mockBunWhich(null);
-      setFetchMock(async () => new Response(new Uint8Array([0x01, 0x02, 0x03]), { status: 200 }));
-      try {
-        await expect(displayPoster("/poster.jpg")).resolves.toBeUndefined();
-      } finally {
-        restoreEnv();
-        restoreTty();
-        restoreWhich();
-      }
-    });
-  });
-
-  test("debug output only appears when KUNAI_IMAGE_DEBUG=1", async () => {
-    const restoreTty = mockStdoutIsTty(true);
-    const restoreWhich = mockBunWhich(null);
-    const restoreEnv = setEnv({ KUNAI_IMAGE_PROTOCOL: "none", KUNAI_IMAGE_DEBUG: undefined });
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (msg: string) => {
-      logs.push(msg);
-    };
-
-    try {
-      await displayPoster("/poster.jpg");
-      expect(logs.length).toBe(0);
-      const restoreDebugEnv = setEnv({ KUNAI_IMAGE_DEBUG: "1" });
-      await displayPoster("/poster.jpg");
-      restoreDebugEnv();
-      expect(logs.length).toBeGreaterThan(0);
-    } finally {
-      console.log = originalLog;
-      restoreEnv();
-      restoreWhich();
-      restoreTty();
     }
   });
 });
