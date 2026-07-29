@@ -1,4 +1,4 @@
-# KitsuneSnipe — Provider Agent Workflow
+# Kunai — Provider Agent Workflow
 
 Use this file as the repo-local instruction set for agent-driven provider work.
 

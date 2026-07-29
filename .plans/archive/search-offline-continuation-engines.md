@@ -577,11 +577,7 @@ export type OfflineTitleGroup = {
 };
 
 export type OfflineLibraryAction =
-  | "continue-local"
-  | "episodes"
-  | "watch-next-online"
-  | "download-next"
-  | "manage-files";
+  "continue-local" | "episodes" | "watch-next-online" | "download-next" | "manage-files";
 ```
 
 - [ ] **Step 4: Run tests**

@@ -156,4 +156,3 @@ This pass is considered good when:
 - clean mpv comparison gives actionable signal
 - late subtitles do not delay first playback
 - recovery guidance points to the correct next action
-

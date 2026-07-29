@@ -1153,7 +1153,7 @@ Tasks may be executed in order (1→8). Tasks 1, 3, 4, 6 are fully independent. 
 | Checklist filter  | No cursor — can't see edit position         | Blinking cursor via `LineEditorText`                      |
 | Progress bar      | Hardcoded 40 chars                          | Dynamic: `stdout.columns * 0.45`, capped 12–48            |
 | Loading sections  | "Status" / "Playback" debug labels          | Stripped / "Now playing"                                  |
-| Footer hotkeys    | `[⏭ n] next`                               | `⏭ next` — compact glyph-first                           |
+| Footer hotkeys    | `[⏭ n] next`                                | `⏭ next` — compact glyph-first                            |
 | ResizeBlocker     | No identity                                 | Shows `APP_LABEL` below message                           |
 | BrowseTitle       | Dead export in shell-primitives             | Removed                                                   |
 | InputField hint   | Jumps position at 112-col threshold         | Always below input                                        |

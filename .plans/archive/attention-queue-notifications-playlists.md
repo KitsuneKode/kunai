@@ -493,11 +493,7 @@ Extend `packages/storage/src/repositories/playlist.ts`:
 ```ts
 export type QueueSessionStatus = "active" | "recoverable" | "closed" | "expired";
 export type QueueSessionCloseReason =
-  | "clean-exit"
-  | "explicit-clear"
-  | "crash"
-  | "restored"
-  | "expired";
+  "clean-exit" | "explicit-clear" | "crash" | "restored" | "expired";
 
 export interface QueueSession {
   readonly id: string;
@@ -724,10 +720,7 @@ export type NotificationSignal =
     }
   | {
       readonly type:
-        | "download-completed"
-        | "download-failed"
-        | "presence-issue"
-        | "update-available";
+        "download-completed" | "download-failed" | "presence-issue" | "update-available";
       readonly dedupKey: string;
       readonly title: string;
       readonly detectedAt: string;

@@ -20,14 +20,12 @@ Remaining gap is mostly **verification and messaging** (README / quickstart / di
 
 ## Current state (honest matrix)
 
-
-| Surface                              | Linux                           | macOS             | Windows (native)                                   | WSL (Linux guest)                          |
-| ------------------------------------ | ------------------------------- | ----------------- | -------------------------------------------------- | ------------------------------------------ |
-| One-shot `launchMpv`                 | IPC (Unix socket)               | Same              | IPC (named pipe)                                   | Same as Linux if Bun + mpv run in WSL      |
-| Persistent `PersistentMpvSession`    | Full IPC + bridge               | Full IPC + bridge | Full IPC + default bridge (named pipe)             | Full IPC + bridge if both processes in WSL |
-| Bridge mirror path (`mpvBridgePath`) | Written under Kunai `configDir` | Same              | Same as Linux/macOS once bundled path resolves   | Same as Linux in-guest                     |
-| Package managers (Scoop, etc.)       | N/A                             | N/A               | Affects **PATH** only; does not fix IPC by itself  | User runs Linux binaries → Unix IPC        |
-
+| Surface                              | Linux                           | macOS             | Windows (native)                                  | WSL (Linux guest)                          |
+| ------------------------------------ | ------------------------------- | ----------------- | ------------------------------------------------- | ------------------------------------------ |
+| One-shot `launchMpv`                 | IPC (Unix socket)               | Same              | IPC (named pipe)                                  | Same as Linux if Bun + mpv run in WSL      |
+| Persistent `PersistentMpvSession`    | Full IPC + bridge               | Full IPC + bridge | Full IPC + default bridge (named pipe)            | Full IPC + bridge if both processes in WSL |
+| Bridge mirror path (`mpvBridgePath`) | Written under Kunai `configDir` | Same              | Same as Linux/macOS once bundled path resolves    | Same as Linux in-guest                     |
+| Package managers (Scoop, etc.)       | N/A                             | N/A               | Affects **PATH** only; does not fix IPC by itself | User runs Linux binaries → Unix IPC        |
 
 **WSL:** If the user runs Kunai **inside** WSL, the runtime is Linux; current IPC already applies. No extra work beyond docs (“native Windows vs WSL”). If we ever support **cross-boundary** Windows host ↔ WSL mpv, that is **out of scope** for this plan unless explicitly reopened.
 
@@ -140,7 +138,6 @@ Once transport exists, consider enabling IPC for **one-shot** playback on Window
 
 ## Risk register
 
-
 | Risk                                       | Mitigation                                                                    |
 | ------------------------------------------ | ----------------------------------------------------------------------------- |
 | Bun named-pipe support incomplete or buggy | Phase 0 spike; fallback to `node:net` for pipe only; keep protocol layer pure |
@@ -148,7 +145,6 @@ Once transport exists, consider enabling IPC for **one-shot** playback on Window
 | Antivirus / enterprise blocking pipes      | Diagnostics: clear error string; doc FAQ                                      |
 | CI cannot run real mpv on Windows          | Rely on unit tests + periodic manual release checklist                        |
 | Telemetry semantics drift between OS       | Shared `finalizePlaybackResult` tests with injected samples                   |
-
 
 ---
 
@@ -166,7 +162,7 @@ Once transport exists, consider enabling IPC for **one-shot** playback on Window
 - `apps/cli/src/infra/player/PersistentMpvSession.ts` (endpoint selection)
 - `apps/cli/src/mpv.ts` (`launchMpv` IPC bootstrap)
 - `apps/cli/src/infra/player/kunai-mpv-bridge.ts` (Windows default resolution)
-- `.docs/cli-reference.md`, `.docs/quickstart.md`, `README.md` (accuracy pass)
+- `docs/users/cli-reference.mdx`, `.docs/quickstart.md`, `README.md` (accuracy pass)
 - `apps/cli/test/unit/infra/player/` + possible new transport test module
 
 ---

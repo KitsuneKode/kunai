@@ -246,12 +246,7 @@ Implement exported types and functions in `ProviderAttemptTimeline.ts`:
 ```ts
 export type ProviderAttemptReason = "primary" | "retry" | "fallback" | "manual";
 export type ProviderTimelineStatus =
-  | "idle"
-  | "resolving"
-  | "recovering"
-  | "resolved"
-  | "recovered"
-  | "failed";
+  "idle" | "resolving" | "recovering" | "resolved" | "recovered" | "failed";
 export type ProviderFailureClass =
   | "timeout"
   | "network"
@@ -1039,11 +1034,7 @@ Export:
 
 ```ts
 export type IssueReportCategory =
-  | "provider-failed"
-  | "subtitle-issue"
-  | "download-offline"
-  | "playback-mpv"
-  | "ui-display";
+  "provider-failed" | "subtitle-issue" | "download-offline" | "playback-mpv" | "ui-display";
 
 export function buildIssueReportMarkdown(input: {
   readonly category: IssueReportCategory;

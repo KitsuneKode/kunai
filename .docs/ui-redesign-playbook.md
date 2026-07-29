@@ -1,10 +1,10 @@
-# KitsuneSnipe — UI Redesign Playbook
+# Kunai — UI Redesign Playbook
 
 Use this when executing the shell redesign, not when re-deciding it from scratch.
 
 The product direction is already set by:
 
-- [.docs/product-prd.md](./product-prd.md)
+- [.docs/design-system.md](./design-system.md)
 - [.docs/ux-architecture.md](./ux-architecture.md)
 - [.plans/cli-ux-overhaul.md](../.plans/cli-ux-overhaul.md)
 - [.plans/persistent-shell-implementation.md](../.plans/persistent-shell-implementation.md)

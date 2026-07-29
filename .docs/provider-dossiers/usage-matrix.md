@@ -1,6 +1,6 @@
 # Provider Usage Matrix
 
-This document normalizes and compares behavior across all KitsuneSnipe provider engines to guide the Architecture V2 implementation.
+This document normalizes and compares behavior across all Kunai provider engines to guide the Architecture V2 implementation.
 
 ## Elite Findings & Strategic Adjustments
 

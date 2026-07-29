@@ -169,11 +169,7 @@ Minimum type shape:
 
 ```ts
 export type PlaybackInventoryOptionState =
-  | "selected"
-  | "available"
-  | "failed"
-  | "skipped"
-  | "disabled";
+  "selected" | "available" | "failed" | "skipped" | "disabled";
 
 export interface PlaybackSourceGroupView {
   readonly id: string;

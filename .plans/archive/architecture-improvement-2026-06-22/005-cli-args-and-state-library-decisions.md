@@ -55,9 +55,7 @@ Recommended design:
 
 ```ts
 // apps/cli/src/cli-args.ts
-export type CliArgs = {
-  /* current parseArgs result */
-};
+export type CliArgs = {/* current parseArgs result */};
 
 export function parseCliArgs(argv: readonly string[]): CliArgs;
 export function buildCliHelpText(): string;

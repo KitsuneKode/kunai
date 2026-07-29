@@ -38,12 +38,7 @@ Add an app-shell command dispatch module, for example:
 
 ```ts
 export type AppCommandSource =
-  | "palette"
-  | "footer"
-  | "hotkey"
-  | "post-playback"
-  | "picker"
-  | "runtime";
+  "palette" | "footer" | "hotkey" | "post-playback" | "picker" | "runtime";
 
 export type AppCommandDispatchContext = {
   readonly container: Container;

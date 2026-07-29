@@ -144,5 +144,5 @@ Thread new fields from `PlaybackPhase` where timing is resolved; **do not** thre
 | IntroDB fetch                     | `apps/cli/src/introdb.ts`                                                                             |
 | IntroDB timing source             | `apps/cli/src/infra/timing/IntroDbTimingSource.ts`                                                    |
 | Merge + aggregator + context type | `apps/cli/src/infra/timing/merge-timing.ts`, `PlaybackTimingAggregator.ts`, `PlaybackTimingSource.ts` |
-| Wiring provider id into timing    | `apps/cli/src/app/PlaybackPhase.ts`                                                                   |
+| Wiring provider id into timing    | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                          |
 | Skip application (mpv)            | `apps/cli/src/infra/player/playback-skip.ts`, `PersistentMpvSession.ts`                               |

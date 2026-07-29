@@ -1,4 +1,4 @@
-# KitsuneSnipe — UX Architecture
+# Kunai — UX Architecture
 
 Use this doc when designing terminal interactions, keybindings, panels, command flows, and validation behavior.
 
@@ -13,7 +13,7 @@ Use this doc when designing terminal interactions, keybindings, panels, command 
 
 ## Interaction Model
 
-KitsuneSnipe should behave like a terminal app shell, not a sequence of unrelated prompts.
+Kunai should behave like a terminal app shell, not a sequence of unrelated prompts.
 
 ### Core layout
 

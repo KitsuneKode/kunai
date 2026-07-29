@@ -38,12 +38,7 @@ Add a small runtime resolver layer:
 
 ```ts
 export type ActiveKeyScope =
-  | "global"
-  | "browse"
-  | "player"
-  | "postPlayback"
-  | "overlay"
-  | "editing";
+  "global" | "browse" | "player" | "postPlayback" | "overlay" | "editing";
 
 export type KeybindingResolution =
   | { readonly type: "matched"; readonly binding: KeyBinding }
