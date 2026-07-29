@@ -180,8 +180,7 @@ function dedupeLinks(links: readonly TitleLink[]): TitleLink[] {
 /** AniList externalLinks (+ a MAL link derived from idMal) → TitleLink[]. */
 export function aniListExternalLinks(
   externalLinks:
-    | readonly { readonly site?: string | null; readonly url?: string | null }[]
-    | undefined,
+    readonly { readonly site?: string | null; readonly url?: string | null }[] | undefined,
   idMal: string | undefined,
 ): TitleLink[] {
   const mapped = (externalLinks ?? []).map((link) => ({

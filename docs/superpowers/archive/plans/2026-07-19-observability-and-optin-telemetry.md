@@ -190,7 +190,7 @@ half-built consent path can ever send anything.
       to change it. Default on decline/timeout/non-TTY/CI is **disabled**.
       Honour `DO_NOT_TRACK=1` and `CI=true` as automatic declines.
 - [ ] **Step 6:** `/telemetry` shows current status and toggles it. `/telemetry
-  show` prints the exact JSON that would be sent.
+show` prints the exact JSON that would be sent.
 - [ ] **Step 7:** receiving endpoint — a minimal Vercel function owned by the
       user. It must: accept POST only, validate the payload shape, rate-limit per
       IP, **store no IP address**, and keep only an aggregate daily count of

@@ -32,9 +32,7 @@ Kunai resolves stream URLs, subtitle URLs, and HTTP header values from third-par
 export function buildMpvArgs(
   opts: { url: string; headers: Record<string, string> /* … */ },
   ipcPath: string | null,
-  config?: {
-    /* … */
-  },
+  config?: {/* … */},
 ): string[] {
   const args: string[] = [opts.url]; // <-- provider URL is argv[0], no `--` before it
   if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {

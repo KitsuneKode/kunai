@@ -149,17 +149,17 @@ research dossiers live in [.docs/provider-dossiers/](.docs/provider-dossiers/).
 
 ## Where things are written down
 
-| Folder              | Holds                                                                                            | Authority                      |
-| ------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------ |
-| `.docs/`            | How the system works and why                                                                     | Current, unless code disagrees |
-| `.docs/archive/`    | Finished audits, shipped specs, superseded vision                                                | **None** — history only        |
-| `.plans/`           | Unfinished work only, indexed by [.plans/roadmap.md](.plans/roadmap.md)                          | Intent, not behavior           |
-| `.plans/archive/`   | Landed, superseded, and one-shot plans                                                           | **None** — history only        |
-| `plans/`            | Numbered production-readiness plans from an external audit, board in `plans/README.md`           | Intent                         |
-| `docs/`             | The public docs site (`apps/docs`); provider, command, and flag tables are generated from source | Current, user-facing           |
-| `docs/agents/`      | Issue tracker, triage labels, domain-doc conventions                                             | Current                        |
-| `docs/superpowers/` | Dated spec-driven-development plans and designs                                                  | Historical once landed         |
-| `.design/`          | Brand assets and CLI surface mockups                                                             | Reference                      |
+| Folder              | Holds                                                                                                | Authority                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `.docs/`            | How the system works and why                                                                         | Current, unless code disagrees |
+| `.docs/archive/`    | Finished audits, shipped specs, superseded vision                                                    | **None** — history only        |
+| `.plans/`           | Unfinished work only, indexed by [.plans/roadmap.md](.plans/roadmap.md)                              | Intent, not behavior           |
+| `.plans/archive/`   | Landed, superseded, and one-shot plans                                                               | **None** — history only        |
+| `plans/`            | Numbered production-readiness plans from an external audit, board in `plans/README.md`               | Intent                         |
+| `docs/`             | The public docs site (`apps/docs`); provider, command, and flag tables are generated from source     | Current, user-facing           |
+| `docs/agents/`      | Issue tracker, triage labels, domain-doc conventions                                                 | Current                        |
+| `docs/superpowers/` | The live spec-driven-development wave, indexed by its execution board; `archive/` holds landed pairs | Intent for the live wave only  |
+| `.design/`          | Brand assets and CLI surface mockups                                                                 | Reference                      |
 
 Never cite an `archive/` file as authority for current behavior.
 

@@ -43,9 +43,7 @@ if (shouldAbortLaunchForDefinitivePreflight(preflightResult, ipcSession !== null
     ? await cleanupUnixSocketFile(ipcEndpoint.path)
     : true;
   opts.onControlReady?.(null);
-  return {
-    /* … */
-  };
+  return {/* … */};
 }
 await ipcBootstrap; // …the normal path awaits it; the abort path does not
 ```
