@@ -3,8 +3,11 @@
 > **Canonical trackers live elsewhere.** This file is intentionally thin to avoid
 > drift. For current status use:
 >
-> - [.plans/roadmap.md](.plans/roadmap.md) — what is in flight and what is next
-> - [.plans/plan-implementation-truth.md](.plans/plan-implementation-truth.md) — reconciled plan-vs-code status (code wins)
+> - [.plans/roadmap.md](.plans/roadmap.md) — the only index of active work
+> - [AGENTS.md](AGENTS.md) — routing, boundaries, and which folder owns what
+>
+> When a plan disagrees with the repo, the repo wins. Landed plans live in
+> [.plans/archive/](.plans/archive/README.md) and carry no authority.
 >
 > The old contents of this file described a pre-SQLite / pre-Ink runtime
 > (`history.json`, `stream_cache.json`, fzf binary, "SQLite migration deferred").

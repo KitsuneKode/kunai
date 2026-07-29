@@ -119,4 +119,4 @@ Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● 
 
 ## Migration Note
 
-If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.plans/ink-migration.md).
+If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.plans/archive/ink-migration.md).

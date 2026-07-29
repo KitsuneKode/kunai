@@ -29,26 +29,15 @@ Kunai is a terminal CLI that:
 user input -> Ink shell -> picker -> ProviderEngine resolve -> direct HTTP provider modules -> mpv -> shell
 ```
 
-## Current vs Target
+## Entrypoint
 
-There are currently two architectural truths that must be kept distinct:
+`apps/cli/src/main.ts` is the only runtime entrypoint. It owns the DI container,
+config service, history store, cache store, provider registry, shared shell
+workflows, and the search/playback phases. Package scripts and the build both
+point at it.
 
-- `apps/cli/src/main.ts` is now the default runnable entrypoint and the target runtime for the persistent-shell architecture
-- `apps/cli/index.ts` remains only as a temporary compatibility wrapper into `apps/cli/src/main.ts`
-
-Practical status right now:
-
-- `apps/cli/src/main.ts` owns the DI container, config service, history store, cache store, provider registry, shared shell workflows, and the refactored search/playback phases
-- package scripts and build now point at `apps/cli/src/main.ts`
-- shell-local debug POST instrumentation has been removed from the Ink runtime path
-- `apps/cli/index.ts` still remains runnable for old local habits, but it should not regain orchestration logic
-
-Do not mix these mentally.
-
-When fixing current behavior in the default runtime:
-
-- treat `apps/cli/src/main.ts` and the v2 docs as the primary source of truth
-- migrate missing behavior into `apps/cli/src/main.ts` rather than extending `apps/cli/index.ts`
+The old `apps/cli/index.ts` compatibility wrapper has been **removed**. Do not
+reintroduce a second entrypoint; migrate behavior into `main.ts` instead.
 
 ## Control Flow
 
@@ -56,18 +45,18 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 
 ## Runtime Modules
 
-| Area                  | Files                                                                                   | Responsibility                                                                         |
-| --------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`, `apps/cli/index.ts` wrapper               | Default runtime orchestration in `apps/cli/src/main.ts`; wrapper is compatibility only |
-| DI + provider engine  | `apps/cli/src/container.ts`                                                             | Wires SQLite repos, `createProviderEngine`, resolve/download/presence services         |
-| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                         |
-| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                  |
-| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)     |
-| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                  |
-| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                              |
-| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                    |
-| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                   |
-| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                           |
+| Area                  | Files                                                                                   | Responsibility                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Entry + orchestration | `apps/cli/src/main.ts`, `apps/cli/src/app/*`                                            | The only entrypoint; `app/` holds bootstrap, session, search, playback, discover, post-play, offline phases |
+| DI + provider engine  | `apps/cli/src/container/*` (`container.ts` is a re-export barrel)                       | `bootstrap-providers.ts` builds the engine; also wires SQLite repos, resolve/download/presence services     |
+| Shell UI              | `apps/cli/src/app-shell/*`, `apps/cli/src/session-flow.ts`                              | Ink shell, commands, settings, history, and structured pickers                                              |
+| Search                | `apps/cli/src/search.ts`, `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*` | Search backends, metadata fetches, and routing policy                                                       |
+| Catalog metadata      | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                               | TMDB/Videasy season data and title enrichment (migration target: catalog services)                          |
+| Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking                                                       |
+| Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                   |
+| Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                         |
+| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                        |
+| Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.
 
@@ -82,7 +71,9 @@ Diagnostics note:
 
 ## Provider Model
 
-Active beta providers implement `CoreProviderModule` in `packages/providers/src/*/direct.ts` and are registered in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`. The CLI `ProviderRegistry` is a compatibility wrapper over the engine.
+Active beta providers implement `CoreProviderModule` in `packages/providers/src/*/direct.ts` and are registered in `apps/cli/src/container/bootstrap-providers.ts` — `loadProductionProviderModules()` lazily imports each module, then `createProviderEngine({ modules: [...] })` builds the engine. The CLI `ProviderRegistry` is a compatibility wrapper over the engine.
+
+A module existing under `packages/providers/src/` does **not** make it a production provider; only membership in `loadProductionProviderModules()` does.
 
 Legacy Playwright provider shapes remain under `archive/legacy/apps/cli/src/providers/` for reference only. They are not part of the active beta runtime.
 
@@ -190,7 +181,7 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
-The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
+The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/archive/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
 Automatic storage maintenance is conservative:
 

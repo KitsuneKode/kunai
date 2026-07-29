@@ -1,4 +1,4 @@
-# KitsuneSnipe — Diagnostics Guide
+# Kunai — Diagnostics Guide
 
 Use this when a provider, subtitle, playback, cache, or shell flow behaves differently than expected.
 
@@ -268,7 +268,7 @@ This currently targets Bloodhounds (`tmdb:127529`) and prints a JSON summary wit
 - `m3u8 intercepted`: the playable stream was found.
 - `direct subtitle found`: the embed requested a direct `.vtt`, `.srt`, or subtitle CDN URL.
 - `wyzie search URL captured`: the embed asked Wyzie for subtitle tracks and we captured the request URL.
-- `fetch wyzie subtitles`: KitsuneSnipe is replaying the observed Wyzie request, with only safe request-header keys logged.
+- `fetch wyzie subtitles`: Kunai is replaying the observed Wyzie request, with only safe request-header keys logged.
 - `wyzie response`: HTTP status, success state, and content type from the subtitle lookup.
 - `resolved` with `subtitleCount`: stream resolution finished, including how many subtitle tracks were observed.
 - `Subtitle resolution`: app-level subtitle selection ran after the provider returned stream data.
@@ -290,7 +290,7 @@ If a diagnostic row shows `language: killjoy`, `language: FlowCast`, or
 the normalized language field. The correct representation is a blank/unknown
 language plus `nativeLabel` or source evidence.
 
-Use [.docs/source-inventory-ui-handoff.md](source-inventory-ui-handoff.md) when
+Use [.docs/playback-source-inventory-contract.md](./playback-source-inventory-contract.md) when
 checking whether a picker, history row, download repair row, or post-playback
 surface should render a source, language, subtitle, or quality fact.
 

@@ -933,11 +933,7 @@ Add candidate attention:
 
 ```ts
 type ReleaseReconciliationAttention =
-  | "selected-title"
-  | "offline-enrolled"
-  | "continue-visible"
-  | "visible-stale"
-  | "dormant-history";
+  "selected-title" | "offline-enrolled" | "continue-visible" | "visible-stale" | "dormant-history";
 ```
 
 Tests:

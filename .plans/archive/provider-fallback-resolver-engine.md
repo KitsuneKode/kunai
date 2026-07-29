@@ -139,12 +139,7 @@ export type ProviderCycleFailureClass =
   | "candidate-unknown";
 
 export type ProviderCycleIntent =
-  | "automatic"
-  | "manual-source"
-  | "skip-retry"
-  | "skip-source"
-  | "fallback-provider"
-  | "cancel";
+  "automatic" | "manual-source" | "skip-retry" | "skip-source" | "fallback-provider" | "cancel";
 
 export interface ProviderCycleCandidate {
   readonly id: string;

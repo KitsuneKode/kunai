@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-07-27T18:27:47.972Z",
+  "syncedAt": "2026-07-29T16:31:41.594Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "e54f0f07",
-  "cliSourceFingerprint": "cdd0f675eb4674c6a50b19360638524193f9e5ec36807badda22539f2b42a00a",
-  "docsContentFingerprint": "49fc610992a8abfb3a495805d36c6062da7cb81fe2bc7fee0ae23a06b50268fe",
+  "cliSourceRevision": "41342c9",
+  "cliSourceFingerprint": "956d3031760bc79c103d20e1ec0a6536fa65aecfbbed449598dd0e96d63f126b",
+  "docsContentFingerprint": "0cf763af5f9a6173fbcfa1ff6f3a20a78d533590fc62c3d915c40b8d1aa12d69",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
@@ -78,7 +78,7 @@
       "domain": "www.miruro.bz",
       "recommended": false,
       "mediaKinds": ["anime"],
-      "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "capabilities": ["episode-list", "source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "status": "candidate",
       "notes": [
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
@@ -97,7 +97,7 @@
       "domain": "youtube.com",
       "recommended": true,
       "mediaKinds": ["video"],
-      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
       "status": "production",
       "notes": ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."]
     }

@@ -30,6 +30,7 @@
 ## Task 1: Command Semantics
 
 **Files:**
+
 - Modify: `apps/cli/src/domain/session/command-registry.ts`
 - Create: `apps/cli/test/unit/domain/session/command-registry.test.ts`
 
@@ -124,6 +125,7 @@ git commit -m "Add playback recovery commands"
 ## Task 2: Player Control Recovery Action
 
 **Files:**
+
 - Modify: `apps/cli/src/infra/player/PlayerControlService.ts`
 - Modify: `apps/cli/src/infra/player/PlayerControlServiceImpl.ts`
 - Modify: `apps/cli/test/unit/infra/player/PlayerControlServiceImpl.test.ts`
@@ -208,6 +210,7 @@ git commit -m "Add playback recover control action"
 ## Task 3: Structured Playback Problem Model
 
 **Files:**
+
 - Create: `apps/cli/src/domain/playback/playback-problem.ts`
 - Create: `apps/cli/test/unit/app/playback-problem.test.ts`
 
@@ -262,21 +265,12 @@ Create `apps/cli/src/domain/playback/playback-problem.ts`:
 import type { PlaybackFailureClass } from "@/infra/player/playback-failure-classifier";
 
 export type PlaybackProblemStage =
-  | "provider-resolve"
-  | "stream-open"
-  | "mpv"
-  | "subtitle"
-  | "history";
+  "provider-resolve" | "stream-open" | "mpv" | "subtitle" | "history";
 
 export type PlaybackProblemSeverity = "info" | "recoverable" | "blocking";
 
 export type PlaybackProblemAction =
-  | "wait"
-  | "refresh"
-  | "pick-stream"
-  | "relaunch"
-  | "try-next-provider"
-  | "diagnostics";
+  "wait" | "refresh" | "pick-stream" | "relaunch" | "try-next-provider" | "diagnostics";
 
 export interface PlaybackProblem {
   readonly stage: PlaybackProblemStage;
@@ -302,7 +296,8 @@ export function buildProviderResolveProblem({
       stage: "provider-resolve",
       severity: "blocking",
       cause: "missing-chromium",
-      userMessage: "Playwright Chromium is not installed. Install it before embed providers can resolve streams.",
+      userMessage:
+        "Playwright Chromium is not installed. Install it before embed providers can resolve streams.",
       recommendedAction: "diagnostics",
       secondaryActions: [],
     };
@@ -432,6 +427,7 @@ git commit -m "Add structured playback problem model"
 ## Task 4: Recovery Policy Guidance
 
 **Files:**
+
 - Modify: `apps/cli/src/infra/player/playback-failure-classifier.ts`
 - Create: `apps/cli/test/unit/infra/player/playback-failure-classifier.test.ts`
 
@@ -503,6 +499,7 @@ git commit -m "Prefer staged playback recovery guidance"
 ## Task 5: Combined Streams Picker
 
 **Files:**
+
 - Modify: `apps/cli/src/app/source-quality.ts`
 - Modify: `apps/cli/test/unit/app/source-quality.test.ts`
 
@@ -518,7 +515,9 @@ test("buildStreamPickerOptions combines source quality audio and subtitle detail
       providerId: "vidking",
       selectedStreamId: "stream-1080-en",
       selectedSourceId: "server-2",
-      sources: [{ id: "server-2", label: "Server 2", host: "vid", kind: "embed", status: "selected" }],
+      sources: [
+        { id: "server-2", label: "Server 2", host: "vid", kind: "embed", status: "selected" },
+      ],
       streams: [
         {
           id: "stream-1080-en",
@@ -584,6 +583,7 @@ git commit -m "Add combined playback stream picker options"
 ## Task 6: Playback Phase Recovery Flow
 
 **Files:**
+
 - Modify: `apps/cli/src/app/PlaybackPhase.ts`
 - Modify: `apps/cli/src/app/playback-session-controller.ts`
 - Test: existing playback policy and session-controller tests
@@ -593,13 +593,17 @@ git commit -m "Add combined playback stream picker options"
 Extend the playback session/controller tests to prove:
 
 ```ts
-expect(createPlaybackSessionDecision({ controlAction: "recover" }).shouldFallbackProvider).toBe(false);
+expect(createPlaybackSessionDecision({ controlAction: "recover" }).shouldFallbackProvider).toBe(
+  false,
+);
 ```
 
 and:
 
 ```ts
-expect(createPlaybackSessionDecision({ controlAction: "fallback" }).shouldFallbackProvider).toBe(true);
+expect(createPlaybackSessionDecision({ controlAction: "fallback" }).shouldFallbackProvider).toBe(
+  true,
+);
 ```
 
 The exact helper name should match the exported helper already used in `apps/cli/test/unit/app/playback-session-controller.test.ts`.
@@ -646,6 +650,7 @@ git commit -m "Route playback recovery separately from provider fallback"
 ## Task 7: Playback Shell Footer And Command Routing
 
 **Files:**
+
 - Modify: `apps/cli/src/app-shell/ink-shell.tsx`
 - Modify: `apps/cli/src/app-shell/command-router.ts`
 
@@ -654,13 +659,13 @@ git commit -m "Route playback recovery separately from provider fallback"
 Replace the long active playback hint with:
 
 ```ts
-`${canSkip ? "b skip  ·  " : ""}k streams  ·  r recover  ·  / commands`
+`${canSkip ? "b skip  ·  " : ""}k streams  ·  r recover  ·  / commands`;
 ```
 
 If `canSkip` is not available in this component yet, start with:
 
 ```ts
-"k streams  ·  r recover  ·  / commands"
+"k streams  ·  r recover  ·  / commands";
 ```
 
 and leave skip visibility to the mpv OSD state.
@@ -713,6 +718,7 @@ git commit -m "Simplify playback shell shortcuts"
 ## Task 8: Error Propagation And Diagnostics
 
 **Files:**
+
 - Modify: `apps/cli/src/app/PlaybackPhase.ts`
 - Modify: `apps/cli/src/app-shell/panel-data.ts`
 - Modify: `apps/cli/src/domain/session/SessionState.ts`
@@ -803,6 +809,7 @@ git commit -m "Surface structured playback problems"
 ## Task 9: Verification Pass
 
 **Files:**
+
 - Verify only unless failures require fixes.
 
 - [ ] **Step 1: Format**

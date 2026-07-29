@@ -56,10 +56,7 @@ Add a shared policy module near playback resolve services:
 
 ```ts
 export type ProviderWorkLane =
-  | "foreground-playback"
-  | "near-need-prefetch"
-  | "background-inventory"
-  | "manual-diagnostic";
+  "foreground-playback" | "near-need-prefetch" | "background-inventory" | "manual-diagnostic";
 
 export type ProviderWorkLanePolicy = {
   readonly timeoutMs: number;

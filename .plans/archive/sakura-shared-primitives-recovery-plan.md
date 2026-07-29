@@ -989,21 +989,19 @@ function recoveryFooterActions(
 ): readonly FooterAction[] {
   if (!recoveryView) return [];
   return [
-    ...recoveryView.actions.map(
-      (action): FooterAction => ({
-        key: action.shortcut ?? action.id.slice(0, 1),
-        label: action.label.toLowerCase(),
-        action:
-          action.id === "fallback"
-            ? "fallback"
-            : action.id === "sources"
-              ? "streams"
-              : action.id === "diagnostics"
-                ? "diagnostics"
-                : "recover",
-        primary: action.id === "recover",
-      }),
-    ),
+    ...recoveryView.actions.map((action): FooterAction => ({
+      key: action.shortcut ?? action.id.slice(0, 1),
+      label: action.label.toLowerCase(),
+      action:
+        action.id === "fallback"
+          ? "fallback"
+          : action.id === "sources"
+            ? "streams"
+            : action.id === "diagnostics"
+              ? "diagnostics"
+              : "recover",
+      primary: action.id === "recover",
+    })),
     { key: "/", label: "commands", action: "command-mode" },
   ];
 }

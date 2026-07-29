@@ -105,7 +105,7 @@ bun run --cwd apps/cli test:vhs:launch
 
 ## CLI flags
 
-Full tables, mpv passthrough flags, and “in-shell only” behavior are documented in **[cli-reference.md](./cli-reference.md)** (canonical for MDX sites).
+Full tables, mpv passthrough flags, and “in-shell only” behavior are documented in **[docs/users/cli-reference.mdx](../docs/users/cli-reference.mdx)** (generated from `kunai --help`).
 
 Summary:
 
@@ -196,7 +196,7 @@ For internet deployments, see `apps/relay-server/README.md`. Leave
 
 **mpv IPC / bridge on Windows**
 
-Kunai must drive the **same** native `mpv.exe` binary it spawned: IPC uses a Bun duplex **named pipe** (`//./pipe/kunai-mpv-…`), not your WSL Linux socket unless you run Kunai **inside** WSL. Player diagnostics will mention `ipc-bootstrap` with extra hints (`--debug` / `KITSUNE_DEBUG=1` logs structured `ipcTransport` / `bootstrapMs`). See [.docs/cli-reference.md](./cli-reference.md#mpv-bridge-script-persistent-autoplay).
+Kunai must drive the **same** native `mpv.exe` binary it spawned: IPC uses a Bun duplex **named pipe** (`//./pipe/kunai-mpv-…`), not your WSL Linux socket unless you run Kunai **inside** WSL. Player diagnostics will mention `ipc-bootstrap` with extra hints (`--debug` / `KITSUNE_DEBUG=1` logs structured `ipcTransport` / `bootstrapMs`). See [docs/users/cli-reference.mdx](../docs/users/cli-reference.mdx).
 
 **No stream resolved**
 

@@ -1,8 +1,17 @@
 # Kunai Target Runtime Architecture
 
-Use this doc when changing the target runtime shape, monorepo boundaries, package contracts, local daemon, cache architecture, or future web/desktop integration.
+> **This describes direction, not the repo.** It is the companion to
+> [architecture.md](./architecture.md), which is the only doc that describes
+> what exists today. Read this one to avoid re-deriving a decision that was
+> already made — never to learn how the code works now.
+>
+> **Not built:** `apps/web`, `apps/desktop`, `packages/ui-cli`, and the local
+> daemon. Those surfaces are parked per [../.plans/roadmap.md](../.plans/roadmap.md).
+> Sections describing them are intent. Package boundaries, trust boundaries, and
+> storage direction do reflect shipped `packages/*` and are safe to rely on.
 
-This is the target architecture companion to [.docs/architecture.md](./architecture.md), which describes the current CLI runtime.
+Use this doc when changing monorepo boundaries, package contracts, cache
+architecture, or when a proposal touches the parked web/desktop/daemon surfaces.
 
 ## Target Shape
 

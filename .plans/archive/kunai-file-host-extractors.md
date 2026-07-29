@@ -7,6 +7,7 @@ Because the Kunai Web App cannot run `yt-dlp` or Playwright locally, we must bui
 ---
 
 ## 1. The Anatomy of a File Host
+
 When Anikai provides an embed link (e.g., `https://megaup.nl/e/XYZ`), they do not provide the raw video. MegaUp hosts the video, but they wrap it in a player filled with aggressive pop-up ads and invisible click-jackers.
 
 To stop automated scrapers from simply reading the `<video src="...">` tag, file hosts use **JavaScript Packers** (like the classic Dean Edwards `eval(function(p,a,c,k,e,d)...` obfuscator) to dynamically generate the video link only when the page renders.
@@ -14,9 +15,10 @@ To stop automated scrapers from simply reading the `<video src="...">` tag, file
 ---
 
 ## 2. The Extractor Architecture (Client-Side Unpacking)
-You correctly noted: *"Everything ultimately comes here in the browser right?"*
 
-Yes. No matter how much math or obfuscation the file host uses, the browser *must* eventually resolve the raw `.mp4` string to feed it to the video player. We exploit this.
+You correctly noted: _"Everything ultimately comes here in the browser right?"_
+
+Yes. No matter how much math or obfuscation the file host uses, the browser _must_ eventually resolve the raw `.mp4` string to feed it to the video player. We exploit this.
 
 Inside the future `@kunai/providers` package, we will build provider-local file-host extractors. Shared extractor contracts and ranking policy belong in `@kunai/core`; browser or daemon-only execution helpers belong behind runtime ports.
 
@@ -28,7 +30,9 @@ Inside the future `@kunai/providers` package, we will build provider-local file-
 ---
 
 ## 3. The Extraction Fallback Ladder
+
 We will focus our efforts on building custom TypeScript extractors for the top 5 most common file hosts used by Anime sites:
+
 1. `Streamtape`
 2. `Vidstreaming` / `GogoCDN`
 3. `Mp4Upload`
@@ -36,8 +40,9 @@ We will focus our efforts on building custom TypeScript extractors for the top 5
 5. `Doodstream`
 
 **What happens if an obscure file host changes their obfuscation?**
-If `Mp4Upload` breaks our TypeScript extractor tomorrow, the user does not get an error. 
-*   **Web Users:** Kunai intelligently falls back to the *Native Filter*. It silently switches from Anikai to Miruro or Vidking to find a direct HLS stream. 
-*   **CLI/Desktop Users:** The local daemon bypasses the broken TypeScript extractor and falls back to `yt-dlp` (which is maintained globally by a massive open-source community), ripping the `.mp4` flawlessly. 
+If `Mp4Upload` breaks our TypeScript extractor tomorrow, the user does not get an error.
+
+- **Web Users:** Kunai intelligently falls back to the _Native Filter_. It silently switches from Anikai to Miruro or Vidking to find a direct HLS stream.
+- **CLI/Desktop Users:** The local daemon bypasses the broken TypeScript extractor and falls back to `yt-dlp` (which is maintained globally by a massive open-source community), ripping the `.mp4` flawlessly.
 
 By building these lightning-fast, 0-RAM TypeScript extractors, the Web App becomes completely independent. We force the raw video out of Anikai, strip away the malware ads, and serve it seamlessly inside our beautiful `ArtPlayer` UI.
