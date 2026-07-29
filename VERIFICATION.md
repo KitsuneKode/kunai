@@ -6,6 +6,12 @@ This is the single canonical verification checklist for Kunai.
 Add new runtime, UX, provider, and shell verification work here instead of creating per-area
 checklists in other folders.
 
+> A competing checklist had accumulated at
+> `docs/superpowers/plans/END-OF-RUN-VERIFICATION.md`. Its open items had already
+> shipped, so it was archived to `.docs/archive/` rather than merged. If you are
+> mid-run and want a scratch checklist, put it in the plan you are executing —
+> not in a second file that outlives it.
+
 It separates:
 
 - what is already implemented in code

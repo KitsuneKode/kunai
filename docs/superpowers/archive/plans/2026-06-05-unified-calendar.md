@@ -183,11 +183,7 @@ export type CalendarContentKind = "anime" | "series" | "movie";
 export type CalendarReleasePrecision = "timestamp" | "date" | "unknown";
 export type CalendarReleaseStatus = "released" | "upcoming" | "unknown";
 export type CalendarReleaseReason =
-  | "airing-today"
-  | "upcoming-episode"
-  | "movie-release"
-  | "provider-confirmed"
-  | "catalog-only";
+  "airing-today" | "upcoming-episode" | "movie-release" | "provider-confirmed" | "catalog-only";
 
 export type CalendarItem = {
   readonly source: "anilist" | "tmdb";

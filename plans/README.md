@@ -18,8 +18,13 @@ engine, and playback controls.
 Each executor: read the plan fully before starting, run the drift check, honor the
 STOP conditions, and update your row below when done.
 
+> **DONE plans live in [`archive/`](archive/README.md)** and carry no authority —
+> their drift checks are anchored to stale commits. The rows below keep the full
+> history; the files move when a row reaches DONE.
+
 > Note: this `plans/` directory (advisor handoff plans) is separate from the repo's
-> own `.plans/` tracker. Plan 017 cleans up `.plans/`; do not conflate the two.
+> own `.plans/` tracker, which is indexed by [`../.plans/roadmap.md`](../.plans/roadmap.md).
+> Do not conflate the two. Plan 017 cleaned up both and is now archived.
 
 > **Picking this up cold?** Start with [HANDOFF-2026-07-22.md](HANDOFF-2026-07-22.md).
 

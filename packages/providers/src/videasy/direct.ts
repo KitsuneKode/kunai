@@ -49,7 +49,7 @@ import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-h
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
-// `Bun.file()` reads both). See docs/superpowers/plans/2026-06-13-*.
+// `Bun.file()` reads both). See docs/superpowers/archive/plans/2026-06-13-*.
 import videasyWasm from "./assets/module1_patched.wasm" with { type: "file" };
 import { decodeWingsdatabasePayload } from "./crypto";
 import {

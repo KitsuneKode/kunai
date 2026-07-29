@@ -79,13 +79,7 @@ In `apps/cli/src/app-shell/keybindings.ts`, extend the scope union:
 
 ```ts
 export type KeyScope =
-  | "global"
-  | "editing"
-  | "browse"
-  | "search"
-  | "player"
-  | "postPlayback"
-  | "queue";
+  "global" | "editing" | "browse" | "search" | "player" | "postPlayback" | "queue";
 ```
 
 - [ ] **Step 4: Run the collision test**

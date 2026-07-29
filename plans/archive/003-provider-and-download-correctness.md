@@ -39,7 +39,7 @@ sourceEvidence: [
 ],
 ```
 
-`link.url` is only truthy-checked earlier (~`:306`), never validated. This runs inside the big resolve `try` whose `catch` (~`:669`) collapses everything to a single `network-error`. Miruro already guards this pattern — see `resolveMiruroPlaybackHost` in `packages/providers/src/miruro/direct.ts:712-719` (the exemplar to match).
+`link.url` is only truthy-checked earlier (~~`:306`), never validated. This runs inside the big resolve `try` whose `catch` (~~`:669`) collapses everything to a single `network-error`. Miruro already guards this pattern — see `resolveMiruroPlaybackHost` in `packages/providers/src/miruro/direct.ts:712-719` (the exemplar to match).
 
 ### Bug 2 — `apps/cli/src/services/download/DownloadService.ts:1314-1327`
 
