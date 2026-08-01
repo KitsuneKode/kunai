@@ -11,6 +11,7 @@ import { directSmokeArgs } from "./smoke-argv";
 
 const profile = createProviderSmokeProfile("allanime");
 const args = directSmokeArgs();
+const TARGET_PROVIDER = "allanime";
 
 const { createContainer } = await import("@/container");
 const container = await createContainer({ debug: true });
@@ -21,7 +22,7 @@ const fixtureTitleId = args[1] ?? "SJms742bSTrcyJZay";
 
 const search = await searchTitles(query, {
   mode: "anime",
-  providerId: config.animeProvider,
+  providerId: TARGET_PROVIDER,
   animeLanguageProfile: config.animeLanguageProfile,
   searchRegistry,
   providerRegistry,
@@ -32,7 +33,7 @@ const search = await searchTitles(query, {
         ok: false,
         stage: "search",
         query,
-        provider: config.animeProvider,
+        provider: TARGET_PROVIDER,
         ...providerSmokeProfilePayload(profile),
         ...providerSmokeError(error),
       },
@@ -66,14 +67,14 @@ if (!selected) {
   process.exit(1);
 }
 
-const provider = providerRegistry.get(config.animeProvider);
+const provider = providerRegistry.get(TARGET_PROVIDER);
 if (!provider) {
   console.error(
     JSON.stringify(
       {
         ok: false,
         stage: "provider",
-        provider: config.animeProvider,
+        provider: TARGET_PROVIDER,
         reason: "missing_provider",
         ...providerSmokeProfilePayload(profile),
       },

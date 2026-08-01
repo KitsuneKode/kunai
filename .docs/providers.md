@@ -320,7 +320,7 @@ The current Provider SDK migration follows the updated dossiers, not the older l
 
 1. `vidlink` and `rivestream`: primary low-friction movie/series lane for fast CLI startup, broad catalog coverage, and subtitle-rich playback.
 2. `vidking`: high-value Videasy source lane; first-class when a valid attended Videasy session exists, but never a cold-start blocker.
-3. `allanime` / AllManga-compatible client and `miruro`: active anime lane. Keep AllManga aligned with ani-cli parity and harden Miruro through the provider matrix because it exposes useful anime-native source variants, subtitles, seek thumbnails, and intro/outro facts over direct HTTP.
+3. `anidb` (default anime) plus `allanime` / AllManga-compatible client and `miruro`: active anime lane. Prefer AniDB for ani-cli v5 parity; keep AllManga crypto aligned with live mkissa bootstrap and harden Miruro through the provider matrix.
 4. `vidrock`, `rgshows`, `vidapi`, `anikai`, `braflix`, `cineby`, `bitcine`, and `cineby-anime` remain research/candidate paths unless matrix evidence proves they are better than the supported routes.
 
 Quality gate for promotion into the production resolver:
@@ -422,13 +422,16 @@ If the provider has native search or episode listing, export standalone function
 - when fixing this family of providers, check:
   - search GraphQL query shape
   - episode list query shape
-  - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`, ani-cli `fetch_keys`): scrape `mkissa.to` for `epoch` + base64 `partB` + app-JS URL, grep the first 64-hex mask from the first CDN chunks, `key = mask XOR partB`. Bundled constants in `api-client.ts` are fallback only
-  - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16) — since ani-cli 72d7f72 (2026-07-23); the old AES-256-CTR scheme is dead
-  - source-name inventory and ranking
-  - downstream link extraction from decoded source URLs
+  - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=81&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
+  - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
+  - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
+  - downstream link extraction from decoded source URLs — `Mp4` scrapes the embed HTML for `src: "…"` and plays with `Referer: https://www.mp4upload.com` plus mpv `--tls-verify=no`
 
-Parity tip: ani-cli `origin/fix` and `master` currently carry the same script; compare against `master`. The API rate-limits bursts (~3s), so stale-material recovery refetches keys instead of retry-storming epochs.
+Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app**. Kunai keeps AllManga as a secondary anime source and adds `anidb` as the default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
+
+Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
 
 Recommended workflow:
 
@@ -454,6 +457,7 @@ Active providers are registered in `apps/cli/src/container.ts` via `createProvid
 | `vidlink`    | movie, series | direct-http | `packages/providers/src/vidlink/direct.ts`    |
 | `rivestream` | movie, series | direct-http | `packages/providers/src/rivestream/direct.ts` |
 | `videasy`    | movie, series | direct-http | `packages/providers/src/videasy/direct.ts`    |
+| `anidb`      | anime         | direct-http | `packages/providers/src/anidb/direct.ts`      |
 | `allanime`   | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`   |
 | `miruro`     | anime         | direct-http | `packages/providers/src/miruro/direct.ts`     |
 

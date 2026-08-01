@@ -59,8 +59,8 @@ describe("@kunai/config parse boundary", () => {
   });
 
   test("defaults keep Miruro out of the automatic anime fallback lane", () => {
-    expect(DEFAULT_CONFIG.animeProvider).toBe("allanime");
-    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["allanime"]);
+    expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
+    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["anidb", "allanime"]);
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain("miruro");
   });
 });

@@ -1,0 +1,55 @@
+import { defineProviderManifest } from "@kunai/core";
+
+export const ANIDB_PROVIDER_ID = "anidb" as const;
+
+export const anidbManifest = defineProviderManifest({
+  id: ANIDB_PROVIDER_ID,
+  displayName: "AniDB",
+  aliases: ["anidb.app"],
+  description: "Anime streams via anidb.app — ani-cli v5 primary source",
+  domain: "anidb.app",
+  recommended: true,
+  mediaKinds: ["anime"],
+  catalogIdentity: "provider-native",
+  capabilities: ["search", "episode-list", "source-resolve", "multi-source", "quality-ranked"],
+  runtimePorts: [
+    {
+      runtime: "direct-http",
+      operations: ["search", "list-episodes", "resolve-stream", "health-check"],
+      browserSafe: false,
+      relaySafe: false,
+      localOnly: true,
+    },
+  ],
+  cachePolicy: {
+    ttlClass: "stream-manifest",
+    scope: "local",
+    keyParts: [
+      "provider",
+      ANIDB_PROVIDER_ID,
+      "anime",
+      "title",
+      "episode",
+      "audio",
+      "quality",
+      "startup",
+      "source",
+      "stream",
+    ],
+    allowStale: true,
+  },
+  browserSafe: false,
+  relaySafe: false,
+  relayProfile: {
+    upstreamHosts: ["anidb.app", "hls.anidb.app"],
+    defaultHeaders: {
+      Referer: "https://anidb.app/",
+    },
+  },
+  notes: [
+    "Parity with ani-cli v5.0 (2026-08-01): browse search, /api/frontend anime episodes + episode languages, embed → HLS master.",
+    "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
+    "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
+    "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it.",
+  ],
+});

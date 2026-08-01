@@ -9,6 +9,7 @@
     "./experimental": "./src/experimental.ts",
     "./research": "./src/research.ts",
     "./allmanga": "./src/allmanga/direct.ts",
+    "./anidb": "./src/anidb/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",

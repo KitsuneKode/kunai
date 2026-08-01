@@ -8,11 +8,12 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
   // Series automatic lane (2026-07-16): Videasy first (fast seed+neon path), then Rivestream, VidLink.
   provider: "videasy",
-  animeProvider: "allanime",
+  // AniDB is ani-cli v5's primary source; AllManga stays as fallback while mkissa CF churn settles.
+  animeProvider: "anidb",
   youtubeProvider: "youtube",
   providerPriority: ["rivestream", "vidlink"],
   // Miruro remains manually selectable until its pipe mirrors pass the live release gate.
-  animeProviderPriority: ["allanime"],
+  animeProviderPriority: ["anidb", "allanime"],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: {},

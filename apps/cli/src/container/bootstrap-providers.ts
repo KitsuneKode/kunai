@@ -35,6 +35,7 @@ async function loadProductionProviderModules(
     { vidlinkProviderModule },
     { rivestreamProviderModule },
     { allmangaProviderModule },
+    { anidbProviderModule },
     { miruroProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
@@ -42,6 +43,7 @@ async function loadProductionProviderModules(
     import("@kunai/providers/vidlink"),
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/allmanga"),
+    import("@kunai/providers/anidb"),
     import("@kunai/providers/miruro"),
     import("@kunai/providers/youtube"),
   ]);
@@ -51,6 +53,7 @@ async function loadProductionProviderModules(
       videasyProviderModule,
       vidlinkProviderModule,
       rivestreamProviderModule,
+      anidbProviderModule,
       allmangaProviderModule,
       miruroProviderModule,
       youtubeProviderModule,
