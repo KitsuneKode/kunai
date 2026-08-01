@@ -19,6 +19,7 @@ import {
   allmangaProviderModule,
   buildAllmangaCycleCandidates,
   buildAllMangaAaReq,
+  ALLMANGA_BUILD_ID,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
@@ -26,6 +27,7 @@ import {
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
+  deriveKeyFromPartB,
   fetchAllMangaEpisodeCatalog,
   getAllMangaCryptoMaterial,
   gqlPost,
@@ -219,7 +221,7 @@ describe("decodeTobeparsed", () => {
 });
 
 describe("buildAllMangaAaReq", () => {
-  test("builds a versioned AES-GCM attestation blob without buildId", () => {
+  test("builds a versioned AES-GCM attestation blob with buildId + content lane", () => {
     const aaReq = buildAllMangaAaReq(1_700_000_000_000);
     const raw = Buffer.from(aaReq, "base64");
     expect(raw[0]).toBe(1);
@@ -227,10 +229,13 @@ describe("buildAllMangaAaReq", () => {
     // Key must be 32 raw bytes (not SHA-256 of a passphrase).
     expect(Buffer.from(ALLMANGA_KEY_HEX, "hex").length).toBe(32);
 
-    // Round-trip (ani-cli get_aa_req): iv = sha256(`${epoch}:${qh}:${ts}`)[0:12].
     const ts = Math.floor(1_700_000_000_000 / 300_000) * 300_000;
+    const buildId = BUNDLED_ALLMANGA_CRYPTO.buildId;
+    const lane = BUNDLED_ALLMANGA_CRYPTO.contentLane;
     const iv = createHash("sha256")
-      .update(`${BUNDLED_ALLMANGA_CRYPTO.epoch}:${BUNDLED_ALLMANGA_CRYPTO.queryHash}:${ts}`)
+      .update(
+        `${BUNDLED_ALLMANGA_CRYPTO.epoch}:${buildId}:${BUNDLED_ALLMANGA_CRYPTO.queryHash}:${ts}:${lane}`,
+      )
       .digest()
       .subarray(0, 12);
     expect(raw.subarray(1, 13).equals(iv)).toBe(true);
@@ -248,20 +253,17 @@ describe("buildAllMangaAaReq", () => {
       v: 1,
       ts,
       epoch: BUNDLED_ALLMANGA_CRYPTO.epoch,
+      buildId,
       qh: BUNDLED_ALLMANGA_CRYPTO.queryHash,
+      k: lane,
     });
-    expect("buildId" in payload).toBe(false);
   });
 });
 
-describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
+describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
-  const maskBytes = Array.from({ length: 32 }, (_, index) => 0xa0 + index);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const MASK_HEX = maskBytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  const EXPECTED_KEY_HEX = partBBytes
-    .map((byte, index) => (byte ^ (maskBytes[index] ?? 0)).toString(16).padStart(2, "0"))
-    .join("");
+  const EXPECTED_KEY_HEX = deriveKeyFromPartB(PART_B, ALLMANGA_BUILD_ID).toString("hex");
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -278,29 +280,30 @@ describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
 
   function mockCryptoSiteFetch(options: {
     readonly apiResponses: readonly string[];
-    readonly pageStatus?: number;
+    readonly bootstrapStatus?: number;
   }) {
     clearAllMangaProviderCachesForTest();
     const originalFetch = globalThis.fetch;
     let apiCallCount = 0;
-    let pageFetchCount = 0;
+    let bootstrapFetchCount = 0;
     globalThis.fetch = (async (input) => {
       const url = String(input);
-      if (url.startsWith("https://mkissa.to")) {
-        pageFetchCount += 1;
-        if (options.pageStatus && options.pageStatus !== 200) {
-          return new Response("nope", { status: options.pageStatus });
+      if (url.includes("/client-crypto/v1/bootstrap")) {
+        bootstrapFetchCount += 1;
+        if (options.bootstrapStatus && options.bootstrapStatus !== 200) {
+          return new Response(JSON.stringify({ error: "nope" }), {
+            status: options.bootstrapStatus,
+          });
         }
         return new Response(
-          `<html>"epoch":6900,"partB":"${PART_B}"<script src="https://cdn.mkissa.net/all/mk/_app/immutable/entry/app.Test123.js"></html>`,
-          { status: 200 },
+          JSON.stringify({
+            epoch: 6900,
+            partB: PART_B,
+            k: "k7",
+            switchAt: Date.now() + 86_400_000,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
         );
-      }
-      if (url.includes("/entry/app.")) {
-        return new Response(`import "../chunks/a.js"; import "../chunks/b.js";`, { status: 200 });
-      }
-      if (url.includes("/chunks/")) {
-        return new Response(`const mask = "${MASK_HEX}";`, { status: 200 });
       }
       if (url.includes("variables=")) {
         const body =
@@ -314,8 +317,8 @@ describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
       get apiCallCount() {
         return apiCallCount;
       },
-      get pageFetchCount() {
-        return pageFetchCount;
+      get bootstrapFetchCount() {
+        return bootstrapFetchCount;
       },
       [Symbol.dispose]() {
         globalThis.fetch = originalFetch;
@@ -335,25 +338,30 @@ describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
     });
   }
 
-  test("derives the key from site fixtures and caches it", async () => {
+  test("derives the key from bootstrap and caches it", async () => {
     using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON] });
 
     const material = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
+    expect(material?.buildId).toBe("81");
 
     const again = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
     expect(again?.keyHex).toBe(EXPECTED_KEY_HEX);
-    expect(site.pageFetchCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("falls back to bundled material when the scrape fails", async () => {
-    using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON], pageStatus: 500 });
+  test("falls back to bundled material when bootstrap fails", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: [PLAIN_SOURCE_JSON],
+      bootstrapStatus: 500,
+    });
 
     const links = await resolveWithSiteSources();
 
     expect(links.length).toBeGreaterThan(0);
+    expect(site.bootstrapFetchCount).toBeGreaterThan(0);
     expect(site.apiCallCount).toBe(1);
   });
 
@@ -372,8 +380,8 @@ describe("AllManga crypto material (ani-cli fetch_keys parity)", () => {
 
       expect(links.length).toBeGreaterThan(0);
       expect(site.apiCallCount).toBe(2);
-      // Initial derive + exactly one stale re-derivation.
-      expect(site.pageFetchCount).toBe(2);
+      // Initial derive + exactly one stale re-bootstrap.
+      expect(site.bootstrapFetchCount).toBe(2);
       expect(sleeps).toEqual([400]);
     } finally {
       clearAllMangaProviderCachesForTest();
@@ -418,6 +426,65 @@ describe("buildStreamHeaders", () => {
       Referer: "https://allmanga.to",
       "User-Agent": "ua",
     });
+  });
+});
+
+describe("Mp4 / mp4upload source parity (ani-cli b8032b7+)", () => {
+  test("scrapes the embed page and returns the video with mp4upload referer", async () => {
+    clearAllMangaProviderCachesForTest();
+    setAllMangaCryptoMaterialForTest(BUNDLED_ALLMANGA_CRYPTO);
+    const originalFetch = globalThis.fetch;
+    const embedUrl = "https://www.mp4upload.com/embed-abc123.html";
+    const videoUrl = "https://www6.mp4upload.com:282/d/video/file.mp4";
+    globalThis.fetch = (async (input) => {
+      const url = String(input);
+      if (url.includes("variables=")) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              episode: {
+                episodeString: "1",
+                sourceUrls: [{ sourceUrl: embedUrl, sourceName: "Mp4" }],
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url === embedUrl) {
+        return new Response(
+          `<html><script>player.src({ type: "video/mp4", src: "${videoUrl}" });</script></html>`,
+          { status: 200 },
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const links = await resolveEpisodeSources({
+        context: TEST_CONTEXT,
+        apiUrl: "https://api.mkissa.net/api",
+        referer: "https://mkissa.to",
+        ua: "ua",
+        showId: "show-mp4",
+        epStr: "1",
+        mode: "sub",
+      });
+
+      expect(links).toEqual([
+        {
+          url: videoUrl,
+          quality: "Mp4",
+          sourceName: "Mp4",
+          referer: "https://www.mp4upload.com",
+          protocol: "mp4",
+          container: "mp4",
+        },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearAllMangaProviderCachesForTest();
+    }
   });
 });
 

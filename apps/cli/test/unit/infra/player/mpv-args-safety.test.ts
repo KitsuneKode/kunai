@@ -68,6 +68,20 @@ describe("mpv URL safety", () => {
     expect(args.some((arg) => /[\r\n]/.test(arg))).toBe(false);
   });
 
+  test("disables tls-verify for mp4upload referers (ani-cli parity)", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://www6.mp4upload.com/d/file.mp4",
+        headers: { Referer: "https://www.mp4upload.com", "User-Agent": "kunai" },
+        subtitle: null,
+        displayTitle: "Mp4Upload",
+      },
+      null,
+    );
+    expect(args).toContain("--tls-verify=no");
+    expect(args).toContain("--referrer=https://www.mp4upload.com");
+  });
+
   test("skips local subtitle targets on remote playback", () => {
     const args = buildMpvArgs(
       {

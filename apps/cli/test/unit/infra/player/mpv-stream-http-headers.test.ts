@@ -5,6 +5,7 @@ import {
   buildPersistentLoadfileCommand,
   buildPersistentLoadfileOptions,
   normalizeStreamHttpHeaders,
+  shouldDisableMpvTlsVerify,
 } from "@/infra/player/mpv-stream-http-headers";
 
 describe("normalizeStreamHttpHeaders", () => {
@@ -27,6 +28,50 @@ describe("normalizeStreamHttpHeaders", () => {
   });
 });
 
+describe("shouldDisableMpvTlsVerify", () => {
+  test("detects mp4upload by URL or Referer", () => {
+    expect(shouldDisableMpvTlsVerify("https://www6.mp4upload.com/d/file.mp4", {})).toBe(true);
+    expect(
+      shouldDisableMpvTlsVerify("https://cdn.example/file.mp4", {
+        Referer: "https://www.mp4upload.com",
+      }),
+    ).toBe(true);
+    expect(shouldDisableMpvTlsVerify("https://cdn.example/file.mp4", {})).toBe(false);
+  });
+
+  test("leaves other provider streams on default TLS verification", () => {
+    const otherProviders = [
+      {
+        url: "https://cdn.videasy.example/ep.m3u8",
+        headers: { Referer: "https://cineby.at/", "User-Agent": "kunai" },
+      },
+      {
+        url: "https://cdn.vidlink.example/stream.mp4",
+        headers: { Referer: "https://vidlink.pro/", "User-Agent": "kunai" },
+      },
+      {
+        url: "https://cdn.rivestream.example/master.m3u8",
+        headers: { Referer: "https://rivestream.example/watch", "User-Agent": "kunai" },
+      },
+      {
+        url: "https://cdn.miruro.example/episode.m3u8",
+        headers: { Referer: "https://www.miruro.tv/", "User-Agent": "kunai" },
+      },
+      {
+        url: "https://cdn.allanime.example/video.mp4",
+        headers: { Referer: "https://mkissa.to", "User-Agent": "kunai" },
+      },
+    ] as const;
+
+    for (const sample of otherProviders) {
+      expect(shouldDisableMpvTlsVerify(sample.url, sample.headers)).toBe(false);
+      expect(buildPersistentLoadfileOptions(sample.url, 0, sample.headers)["tls-verify"]).toBe(
+        undefined,
+      );
+    }
+  });
+});
+
 describe("buildPersistentLoadfileOptions", () => {
   test("includes file-local HTTP options for autoplay-chain replacements", () => {
     expect(
@@ -41,6 +86,22 @@ describe("buildPersistentLoadfileOptions", () => {
       "user-agent": "kunai",
       "http-header-fields": "Origin: https://www.cineplay.to",
       ytdl: "no",
+      "demuxer-lavf-o-clr": "",
+    });
+  });
+
+  test("disables tls-verify for mp4upload streams (ani-cli parity)", () => {
+    expect(
+      buildPersistentLoadfileOptions("https://www6.mp4upload.com/d/file.mp4", 12, {
+        Referer: "https://www.mp4upload.com",
+        "User-Agent": "kunai",
+      }),
+    ).toEqual({
+      start: "12",
+      referrer: "https://www.mp4upload.com",
+      "user-agent": "kunai",
+      "http-header-fields-clr": "",
+      "tls-verify": "no",
       "demuxer-lavf-o-clr": "",
     });
   });

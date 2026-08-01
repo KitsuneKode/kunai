@@ -22,7 +22,10 @@ import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
-import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-headers";
+import {
+  normalizeStreamHttpHeaders,
+  shouldDisableMpvTlsVerify,
+} from "@/infra/player/mpv-stream-http-headers";
 import {
   buildYoutubeMpvScriptOpts,
   isYoutubeWatchUrl,
@@ -498,6 +501,10 @@ export function buildMpvArgs(
   if (referer) args.push(`--referrer=${referer}`);
   if (userAgent) args.push(`--user-agent=${userAgent}`);
   if (origin) args.push(`--http-header-fields=Origin: ${origin}`);
+  // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
+  if (shouldDisableMpvTlsVerify(opts.url, opts.headers)) {
+    args.push("--tls-verify=no");
+  }
 
   if (opts.subtitle && isAllowedMpvUrl(opts.subtitle, opts.subtitleUrlKind ?? "remote")) {
     args.push(`--sub-file=${opts.subtitle}`);

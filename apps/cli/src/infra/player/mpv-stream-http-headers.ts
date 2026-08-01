@@ -36,12 +36,25 @@ export function normalizeStreamHttpHeaders(
   };
 }
 
+/**
+ * ani-cli plays mp4upload with `--tls-verify=no`. Detect by stream URL or Referer.
+ */
+export function shouldDisableMpvTlsVerify(
+  url: string,
+  headers: Record<string, string> | undefined,
+): boolean {
+  if (/mp4upload\.com/i.test(url)) return true;
+  const { referer } = normalizeStreamHttpHeaders(headers);
+  return Boolean(referer && /mp4upload\.com/i.test(referer));
+}
+
 export type PersistentLoadfileOptions = {
   readonly start: string;
   readonly referrer?: string;
   readonly "user-agent"?: string;
   readonly "http-header-fields"?: string;
   readonly "http-header-fields-clr"?: string;
+  readonly "tls-verify"?: string;
   readonly ytdl?: string;
   readonly "ytdl-raw-options"?: string;
   readonly "demuxer-lavf-o"?: string;
@@ -74,6 +87,9 @@ export function buildPersistentLoadfileOptions(
     loadOptions["http-header-fields"] = `Origin: ${origin}`;
   } else {
     loadOptions["http-header-fields-clr"] = "";
+  }
+  if (shouldDisableMpvTlsVerify(url, headers)) {
+    loadOptions["tls-verify"] = "no";
   }
 
   if (isYoutubeWatchUrl(url) || ytdlOptions?.requiresYtdl) {

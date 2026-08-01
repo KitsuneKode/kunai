@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
+import { createDecipheriv } from "node:crypto";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
 
@@ -15,6 +15,32 @@ import {
 } from "../shared/anime-metadata";
 import { expandHlsMasterPlaylist } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
+import {
+  ALLMANGA_BUILD_ID,
+  ALLMANGA_CRYPTO_MATERIAL_TTL_MS,
+  ALLMANGA_KEY_HEX,
+  ALLMANGA_SITE_ORIGIN,
+  BUNDLED_ALLMANGA_CRYPTO,
+  buildAllMangaAaReq,
+  fetchAllMangaCryptoMaterial,
+  type AllMangaCryptoMaterial,
+} from "./crypto";
+
+export {
+  ALLMANGA_BUILD_ID,
+  ALLMANGA_CONTENT_LANE_EPISODE,
+  ALLMANGA_EPOCH,
+  ALLMANGA_KEY_HEX,
+  ALLMANGA_QUERY_HASH,
+  BUNDLED_ALLMANGA_CRYPTO,
+  buildAllMangaAaReq,
+  buildAllMangaBootToken,
+  currentAllMangaEpochCandidates,
+  deriveKeyFromPartB,
+  deriveMaskKey,
+  hashBuildId,
+  type AllMangaCryptoMaterial,
+} from "./crypto";
 
 export type AllMangaSearchResult = {
   readonly id: string;
@@ -88,48 +114,10 @@ export type AllMangaAkDeferredDescriptor = {
 export type AllMangaSourceLane = "baseline" | "ak-only";
 
 /**
- * AllAnime crypto — aligned with ani-cli master `72d7f72` ("Add AES-256-GCM
- * encryption", 2026-07-23). Upstream now derives the key at runtime
- * (`fetch_keys`): scrape `mkissa.to` for `epoch` + base64 `partB` + the app JS
- * URL, download the first JS chunks from `cdn.mkissa.net`, take the first
- * 64-hex mask, and XOR mask with partB. `getAllMangaCryptoMaterial` ports that
- * flow; the bundled constants below are only a fallback when the scrape fails.
- *
- * Scheme notes:
- * - `tobeparsed` is AES-256-GCM (was AES-256-CTR): base64(0x01 || iv12 || ct || tag16).
- * - `aaReq` carries no buildId anymore (IV string is `epoch:qh:ts`) and the
- *   `x-build-id` header is gone.
- * - API base moved to `api.mkissa.net` with Referer/Origin `https://mkissa.to`.
- * - The API rate-limits bursts ("try again in 3 seconds"), so stale-material
- *   retries refetch keys instead of storming the endpoint.
- *
- * Bundled material last derived: 2026-07-24 (epoch 6885, ani-cli 72d7f72).
+ * AllManga crypto lives in `./crypto.ts` (mkissa buildId `81` + bootstrap).
+ * `tobeparsed` remains AES-256-GCM; API base is `api.mkissa.net` with
+ * Referer/Origin `https://mkissa.to`. Rate-limit bursts still get a soft retry.
  */
-export const ALLMANGA_KEY_HEX = "ff102360a5065bb72fc128f7efa5042dbf4db582e5c58754078265926a76bfd8";
-export const ALLMANGA_QUERY_HASH =
-  "f4662f4b7510b26795dd53ef824a0bf1740fbbc5d1273fab18222ac831bca8d0";
-/** Upstream clock bucket fallback; the live value is scraped from mkissa.to. */
-export const ALLMANGA_EPOCH = 6885;
-
-/** Site page that carries the epoch + partB + app-JS pointer (ani-cli `allanime_refr`). */
-const ALLMANGA_SITE_URL = "https://mkissa.to";
-/** SvelteKit immutable asset base that hosts the app JS with the key mask. */
-const ALLMANGA_CDN_IMMUTABLE_BASE = "https://cdn.mkissa.net/all/mk/_app/immutable";
-/** How long derived crypto material stays trusted before a lazy refetch. */
-const ALLMANGA_CRYPTO_MATERIAL_TTL_MS = 6 * 60 * 60 * 1000;
-
-export type AllMangaCryptoMaterial = {
-  readonly keyHex: string;
-  readonly epoch: number;
-  readonly queryHash: string;
-};
-
-/** Last-known-good material, used only when the live scrape fails. */
-export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
-  keyHex: ALLMANGA_KEY_HEX,
-  epoch: ALLMANGA_EPOCH,
-  queryHash: ALLMANGA_QUERY_HASH,
-};
 
 const HEX: Record<string, string> = {
   "79": "A",
@@ -220,7 +208,8 @@ const HEX: Record<string, string> = {
 
 // ani-cli handles Default/Yt-mp4/S-mp4/Mp4 upstream; Fm-mp4 (filemoon) was
 // removed upstream in b8032b7 and no longer ships a compatible payload.
-const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Luf-Mp4", "Ak"]);
+const KNOWN_SOURCES = new Set(["Default", "Yt-mp4", "S-mp4", "Mp4", "Luf-Mp4", "Ak"]);
+const MP4UPLOAD_REFERER = "https://www.mp4upload.com";
 const akDeferredRegistry = new Map<string, AllMangaAkDeferredDescriptor>();
 let akDeferredCounter = 0;
 
@@ -303,30 +292,8 @@ function extractRawSourcesFromPlaintext(
 }
 
 /**
- * Build the AllAnime `aaReq` attestation (ani-cli `get_aa_req`).
- * Layout: base64(0x01 || iv12 || ciphertext || gcmTag16)
- * where iv = SHA-256(`${epoch}:${qh}:${ts}`)[0:12]
- * and plaintext is `{"v":1,"ts","epoch","qh"}` encrypted with AES-256-GCM.
+ * Build the AllAnime `aaReq` attestation — see `./crypto.ts`.
  */
-export function buildAllMangaAaReq(
-  nowMs: number = Date.now(),
-  material: AllMangaCryptoMaterial = BUNDLED_ALLMANGA_CRYPTO,
-): string {
-  const ts = Math.floor(nowMs / 300_000) * 300_000;
-  const payloadIv = `${material.epoch}:${material.queryHash}:${ts}`;
-  const payload = JSON.stringify({
-    v: 1,
-    ts,
-    epoch: material.epoch,
-    qh: material.queryHash,
-  });
-  const iv = createHash("sha256").update(payloadIv).digest().subarray(0, 12);
-  const key = Buffer.from(material.keyHex, "hex");
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return Buffer.concat([Buffer.from([1]), iv, ciphertext, tag]).toString("base64");
-}
 
 let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt: number } | null =
   null;
@@ -362,9 +329,9 @@ export function setAllMangaRetrySleepForTest(
 
 /**
  * Crypto material for the episode persisted query: cached when fresh, derived
- * live otherwise (ani-cli `fetch_keys`). Falls back to the bundled material
- * when the scrape fails so resolve degrades to a plain AA_CRYPTO_* miss
- * instead of a hard error.
+ * live via mkissa bootstrap otherwise. Falls back to bundled material when
+ * bootstrap fails so resolve degrades to a plain AA_CRYPTO_* miss instead of a
+ * hard error.
  */
 export async function getAllMangaCryptoMaterial(
   context: ProviderRuntimeContext,
@@ -390,8 +357,7 @@ export function refreshAllMangaCryptoMaterial(
       const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
       cachedCryptoMaterial = {
         material: resolved,
-        // A failed scrape falls back to bundled material; retry the scrape
-        // sooner than the normal TTL in that case.
+        // A failed bootstrap falls back to bundled material; retry sooner.
         expiresAt: Date.now() + (material ? ALLMANGA_CRYPTO_MATERIAL_TTL_MS : 60_000),
       };
       return resolved;
@@ -400,74 +366,6 @@ export function refreshAllMangaCryptoMaterial(
       inFlightCryptoMaterial = null;
     });
   return inFlightCryptoMaterial;
-}
-
-/** Port of ani-cli `fetch_keys`: key = first-64-hex-in-JS-chunks XOR base64(partB). */
-async function fetchAllMangaCryptoMaterial(
-  context: ProviderRuntimeContext,
-  ua: string,
-  signal?: AbortSignal,
-): Promise<AllMangaCryptoMaterial | null> {
-  try {
-    const pageRes = await providerFetch(context, ALLMANGA_SITE_URL, {
-      signal: createTimeoutSignal(signal, 12_000),
-      headers: { "User-Agent": ua },
-    });
-    if (!pageRes.ok) return null;
-    const page = await pageRes.text();
-
-    const epoch = Number(/"epoch":(\d+)/.exec(page)?.[1]);
-    const partB = /"partB":"([^"]*)"/.exec(page)?.[1];
-    const appUrl = new RegExp(
-      `${ALLMANGA_CDN_IMMUTABLE_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/entry/app\\.[A-Za-z0-9_.-]+\\.js`,
-    ).exec(page)?.[0];
-    if (!Number.isFinite(epoch) || epoch <= 0 || !partB || !appUrl) return null;
-
-    const appRes = await providerFetch(context, appUrl, {
-      signal: createTimeoutSignal(signal, 12_000),
-      headers: { "User-Agent": ua },
-    });
-    if (!appRes.ok) return null;
-    const appJs = await appRes.text();
-
-    const chunkPaths = [...appJs.matchAll(/"\.\.\/(chunks\/[A-Za-z0-9_.-]+\.js)"/g)]
-      .map((match) => match[1])
-      .filter((path): path is string => Boolean(path))
-      .slice(0, 5);
-    if (chunkPaths.length === 0) return null;
-
-    const chunkBodies = await Promise.all(
-      chunkPaths.map(async (path) => {
-        try {
-          const res = await providerFetch(context, `${ALLMANGA_CDN_IMMUTABLE_BASE}/${path}`, {
-            signal: createTimeoutSignal(signal, 12_000),
-            headers: { "User-Agent": ua },
-          });
-          return res.ok ? await res.text() : "";
-        } catch {
-          return "";
-        }
-      }),
-    );
-
-    let maskHex: string | undefined;
-    for (const body of chunkBodies) {
-      maskHex = /[0-9a-f]{64}/.exec(body)?.[0];
-      if (maskHex) break;
-    }
-    if (!maskHex) return null;
-
-    const partBytes = Buffer.from(partB, "base64");
-    const maskBytes = Buffer.from(maskHex, "hex");
-    if (partBytes.length !== 32 || maskBytes.length !== 32) return null;
-    const key = Buffer.alloc(32);
-    for (let index = 0; index < 32; index += 1) {
-      key[index] = (maskBytes[index] ?? 0) ^ (partBytes[index] ?? 0);
-    }
-    return { keyHex: key.toString("hex"), epoch, queryHash: ALLMANGA_QUERY_HASH };
-  } catch {
-    return null;
-  }
 }
 
 function normalizeShowThumbnail(path: string | undefined): string | undefined {
@@ -760,10 +658,9 @@ export async function resolveEpisodeSources(opts: {
   const cached = sourceCache.get(cacheKey);
   if (cached) return cached;
 
-  // GET with persisted query + aaReq attestation (ani-cli master 72d7f72).
-  // Without aaReq the API returns AA_CRYPTO_MISSING; a rotated key/epoch
-  // returns AA_CRYPTO_STALE/INVALID — recover by re-deriving the key from the
-  // site instead of storming the API (which rate-limits bursts for ~3s).
+  // GET with persisted query + aaReq attestation (mkissa buildId scheme).
+  // Without aaReq the API returns AA_CRYPTO_MISSING; a rotated key/epoch/build
+  // returns AA_CRYPTO_STALE/INVALID/MISSING_BUILD — recover by re-bootstrapping.
   const vars = { showId, translationType: mode, episodeString: epStr };
   const maxAttempts = 5;
 
@@ -787,8 +684,9 @@ export async function resolveEpisodeSources(opts: {
         signal: createTimeoutSignal(signal, 12_000),
         headers: {
           Referer: referer,
-          Origin: "https://mkissa.to",
+          Origin: ALLMANGA_SITE_ORIGIN,
           "User-Agent": ua,
+          "x-build-id": material.buildId || ALLMANGA_BUILD_ID,
         },
       });
       rawText = getRes.ok ? await getRes.text() : null;
@@ -860,8 +758,26 @@ export async function resolveEpisodeSources(opts: {
         url: decoded,
         quality: source.sourceName,
         sourceName: source.sourceName,
-        referer: decoded.includes("tools.fast4speed.rsvp") ? referer : undefined,
+        referer: resolveDirectStreamReferer(decoded, referer),
       });
+      continue;
+    }
+
+    // Mp4 / mp4upload embeds are full https pages (not /clock.json paths).
+    // ani-cli scrapes `src: "…"` and plays with --referrer=https://www.mp4upload.com.
+    if (isMp4UploadSource(source.sourceName, decoded)) {
+      const sourceName = source.sourceName;
+      apiJobs.push(
+        fetchMp4UploadLinks(decoded, referer, ua, context, signal)
+          .then((links) =>
+            links.map((link) => ({
+              ...link,
+              quality: link.quality || sourceName,
+              sourceName: link.sourceName ?? sourceName,
+            })),
+          )
+          .catch(() => [] as StreamLink[]),
+      );
       continue;
     }
 
@@ -1096,8 +1012,12 @@ async function extractRawSources(
   const data = JSON.parse(rawText) as {
     data: { episode: { sourceUrls?: Array<{ sourceUrl: string; sourceName: string }> } };
   };
-  return (data.data.episode?.sourceUrls ?? []).filter((source) =>
-    source.sourceUrl.startsWith("--"),
+  // Hex-encoded `--…` paths (clock.json) and direct https embeds (Mp4 / mp4upload).
+  return (data.data.episode?.sourceUrls ?? []).filter(
+    (source) =>
+      source.sourceUrl.startsWith("--") ||
+      source.sourceUrl.startsWith("http://") ||
+      source.sourceUrl.startsWith("https://"),
   );
 }
 
@@ -1196,6 +1116,58 @@ async function fetchStreamLinks(
     });
   }
   return links;
+}
+
+/**
+ * ani-cli `get_links` mp4upload branch: scrape the embed HTML for `src: "…"`,
+ * then play with referrer https://www.mp4upload.com (+ tls-verify=no at mpv).
+ */
+async function fetchMp4UploadLinks(
+  embedUrl: string,
+  siteReferer: string,
+  ua: string,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<StreamLink[]> {
+  const response = await providerFetch(context, embedUrl, {
+    signal: createTimeoutSignal(signal, 10_000),
+    headers: { Referer: siteReferer, "User-Agent": ua },
+  });
+  if (!response.ok) return [];
+
+  const html = await response.text();
+  // Match ani-cli: sed -nE 's|.*src: "([^"]*)"[[:space:]]*|Mp4Upload >\1|p'
+  const match = /src:\s*"([^"]+)"/.exec(html);
+  const videoUrl = match?.[1]?.trim();
+  if (!videoUrl || !/^https?:\/\//i.test(videoUrl)) return [];
+
+  return [
+    {
+      url: videoUrl,
+      quality: "Mp4",
+      sourceName: "Mp4",
+      referer: MP4UPLOAD_REFERER,
+      protocol: "mp4",
+      container: "mp4",
+    },
+  ];
+}
+
+function isMp4UploadHost(url: string): boolean {
+  const parsed = parseHttpUrl(url);
+  if (!parsed) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === "mp4upload.com" || host.endsWith(".mp4upload.com");
+}
+
+function isMp4UploadSource(sourceName: string, decodedUrl: string): boolean {
+  return sourceName === "Mp4" || isMp4UploadHost(decodedUrl);
+}
+
+function resolveDirectStreamReferer(decodedUrl: string, siteReferer: string): string | undefined {
+  if (decodedUrl.includes("tools.fast4speed.rsvp")) return siteReferer;
+  if (isMp4UploadHost(decodedUrl)) return MP4UPLOAD_REFERER;
+  return undefined;
 }
 
 type AkRawRepresentation = {
