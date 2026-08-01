@@ -27,14 +27,22 @@ describe("kitty placement registry", () => {
     });
 
     registerKittyPlacement("postplay-hero", 10);
+    registerKittyPlacement("postplay-prev", 15);
+    registerKittyPlacement("postplay-next", 16);
     registerKittyPlacement("postplay-discovery-0", 20);
 
     releaseKittySlot("postplay-hero");
 
     expect(deleted).toEqual([10]);
     expect(getKittyPlacement("postplay-hero")).toBeUndefined();
+    expect(getKittyPlacement("postplay-prev")).toBe(15);
+    expect(getKittyPlacement("postplay-next")).toBe(16);
     expect(getKittyPlacement("postplay-discovery-0")).toBe(20);
-    expect(listKittyPlacementSlots()).toEqual(["postplay-discovery-0"]);
+    expect(listKittyPlacementSlots()).toEqual([
+      "postplay-prev",
+      "postplay-next",
+      "postplay-discovery-0",
+    ]);
   });
 
   test("registering a new imageId for a slot deletes the previous one", () => {

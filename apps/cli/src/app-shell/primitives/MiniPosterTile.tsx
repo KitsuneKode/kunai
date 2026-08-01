@@ -22,8 +22,9 @@ function initialsOf(title: string): string {
  *
  * Default: chafa symbols inside Ink (`inkEmbedded`) so scrolling never claims
  * Kitty placements. Pass `allowKitty` + `placementSlot` for post-play discovery
- * multi-image Kitty budgets — then inkEmbedded is off and siblings coexist via
- * the placement registry.
+ * / episode mini-card budgets — then inkEmbedded is off and siblings coexist via
+ * the placement registry. On sixel terminals the same path yields measured
+ * overlays (Windows Terminal), matching the rail/hero graphics path.
  */
 export function MiniPosterTile({
   url,
@@ -34,6 +35,7 @@ export function MiniPosterTile({
   debounceMs = 160,
   placeholderColor = palette.dim,
   allowKitty = false,
+  allowSixel = true,
   placementSlot,
   square = false,
 }: {
@@ -44,24 +46,28 @@ export function MiniPosterTile({
   readonly cols?: number;
   readonly debounceMs?: number;
   readonly placeholderColor?: string;
-  /** When true with placementSlot, use Kitty-native instead of chafa. */
+  /** When true with placementSlot, use Kitty/Sixel instead of chafa. */
   readonly allowKitty?: boolean;
+  /** Permit measured Sixel overlays when the terminal is sixel-capable. */
+  readonly allowSixel?: boolean;
   readonly placementSlot?: KittyPlacementSlot;
   /** Prefer square aspect (channel avatars): cols ≈ rows. */
   readonly square?: boolean;
 }) {
   const tileCols = square ? Math.max(2, Math.min(cols, rows + 1)) : cols;
   const tileRows = square ? Math.max(2, Math.min(rows, tileCols)) : rows;
-  const useKitty = allowKitty && Boolean(placementSlot);
+  // allowKitty gates the framebuffer path (Kitty *or* Sixel) in renderPoster.
+  const useGraphics = allowKitty && Boolean(placementSlot);
   const { poster } = usePosterPreview(url, {
     rows: tileRows,
     cols: tileCols,
     enabled: enabled && Boolean(url),
     variant: "preview",
-    inkEmbedded: !useKitty,
-    allowKitty: useKitty,
-    preserveTerminalImages: !useKitty,
-    placementSlot: useKitty ? placementSlot : undefined,
+    inkEmbedded: !useGraphics,
+    allowKitty: useGraphics,
+    allowSixel: useGraphics && allowSixel,
+    preserveTerminalImages: !useGraphics,
+    placementSlot: useGraphics ? placementSlot : undefined,
     debounceMs,
   });
 

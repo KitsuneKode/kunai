@@ -5,15 +5,16 @@
 //   poster → header (title + badge + secondary) → ── details ── facts
 //          → ── synopsis ── → ── prev/up next ── mini-cards → progress
 //
-// Single named Kitty slot for the poster (placement registry); mini-card thumbnails
-// use chafa MiniPosterTile. Empty poster/thumb slots show the ❀ petal placeholder rather
-// than initials or blank space. Sections use light rose-dim ── label ── rules
-// instead of one long left border.
+// Named Kitty/Sixel slots for the primary poster plus prev/next mini-cards on
+// post-play (and up-next during Now Playing). Empty poster/thumb slots show the
+// ❀ petal placeholder rather than initials or blank space. Sections use light
+// rose-dim ── label ── rules instead of one long left border.
 // =============================================================================
 
 import { Box, Text } from "ink";
 import React from "react";
 
+import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
@@ -25,6 +26,24 @@ import { usePosterPreview } from "./use-poster-preview";
 
 const SYNOPSIS_MAX_LINES = 3;
 const FACT_LABEL_WIDTH = 8;
+/** Episode stills: wide enough for Kitty/Sixel detail without crowding the rail text. */
+const MINI_CARD_THUMB_COLS = 12;
+const MINI_CARD_THUMB_ROWS = 5;
+
+function miniCardPlacementSlot(
+  card: MediaPanelMiniCard,
+  panelSlot: KittyPlacementSlot,
+): KittyPlacementSlot | undefined {
+  if (panelSlot === "postplay-rail") {
+    if (card.kind === "prev") return "postplay-prev";
+    if (card.kind === "next") return "postplay-next";
+    return undefined;
+  }
+  if (panelSlot === "playing-rail" && card.kind === "next") {
+    return "playing-next";
+  }
+  return undefined;
+}
 
 // ── Section divider (── label ──) ──────────────────────────────────────────
 
@@ -128,20 +147,41 @@ function MiniCard({
   title,
   width,
   active,
+  allowKitty,
+  allowSixel,
+  placementSlot,
 }: {
   readonly card: MediaPanelMiniCard;
   readonly title: string;
   readonly width: number;
   readonly active: boolean;
+  readonly allowKitty: boolean;
+  readonly allowSixel: boolean;
+  readonly placementSlot?: KittyPlacementSlot;
 }) {
-  const thumbCols = 8;
+  const thumbCols = Math.min(MINI_CARD_THUMB_COLS, Math.max(8, width - 10));
   const textWidth = Math.max(6, width - thumbCols - 3);
   const accent = card.kind === "resume" ? palette.accent : palette.text;
+  const useGraphics = allowKitty && Boolean(placementSlot);
   return (
     <Box flexDirection="row" flexWrap="nowrap" marginTop={1}>
-      <Box width={thumbCols} minHeight={3} justifyContent="center" alignItems="center">
+      <Box
+        width={thumbCols}
+        minHeight={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
+        justifyContent="center"
+        alignItems="center"
+      >
         {card.thumbUrl ? (
-          <MiniPosterTile url={card.thumbUrl} title={title} cols={thumbCols} rows={3} enabled />
+          <MiniPosterTile
+            url={card.thumbUrl}
+            title={title}
+            cols={thumbCols}
+            rows={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
+            enabled
+            allowKitty={useGraphics}
+            allowSixel={allowSixel}
+            placementSlot={placementSlot}
+          />
         ) : (
           <SakuraPetal mode="placeholder" active={active} bold={false} />
         )}
@@ -236,11 +276,19 @@ export const MediaPanel = React.memo(function MediaPanel({
         </>
       ) : null}
 
-      {/* Prev / up next / resume mini-cards */}
+      {/* Prev / up next / resume mini-cards — Kitty/Sixel when slotted */}
       {model.miniCards.map((card) => (
         <React.Fragment key={card.kind}>
           <SectionLabel label={card.section} width={innerWidth} />
-          <MiniCard card={card} title={model.title} width={innerWidth} active={active} />
+          <MiniCard
+            card={card}
+            title={model.title}
+            width={innerWidth}
+            active={active}
+            allowKitty={allowKitty}
+            allowSixel={allowSixel}
+            placementSlot={miniCardPlacementSlot(card, placementSlot)}
+          />
         </React.Fragment>
       ))}
 

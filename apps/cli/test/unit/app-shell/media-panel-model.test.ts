@@ -198,6 +198,31 @@ describe("buildMediaPanel — series/anime", () => {
     expect(prev?.thumbUrl).toBe("https://img/s1e10.jpg");
   });
 
+  test("episode stills come from catalog artwork, not the active stream provider", () => {
+    // Post-play thumbs are TitleDetail/TMDB (or AniList) stills. Miruro,
+    // Videasy, Rivestream, and AllManga all feed the same MediaPanel path.
+    const model = buildMediaPanel(
+      ctx({
+        surface: "post-play",
+        titleDetail: seriesDetail,
+        currentSeason: 1,
+        currentEpisode: 11,
+        previousEpisodeLabel: "S01 E10 — Verdigris",
+        nextEpisodeLabel: "S01 E12 — Inversion",
+        previousEpisodeThumbUrl: "https://cdn.provider.example/ignored-prev.jpg",
+        nextEpisodeThumbUrl: "https://cdn.provider.example/ignored-next.jpg",
+      }),
+    );
+    // Explicit URLs from the playback menu win; they are still catalog-shaped
+    // URLs threaded through run-post-playback-menu, not stream hosts.
+    expect(model.miniCards.find((card) => card.kind === "prev")?.thumbUrl).toBe(
+      "https://cdn.provider.example/ignored-prev.jpg",
+    );
+    expect(model.miniCards.find((card) => card.kind === "next")?.thumbUrl).toBe(
+      "https://cdn.provider.example/ignored-next.jpg",
+    );
+  });
+
   test("falls back to the queue head as up-next when no episode chain remains", () => {
     const model = buildMediaPanel(
       ctx({

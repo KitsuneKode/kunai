@@ -8,7 +8,7 @@ Use this doc when changing terminal poster previews, capability detection, the s
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/cli/src/image/`                                | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
 | `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics, measured Sixel overlays, and text fallbacks; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                        |
-| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, discovery 0–2, browse-preview, …); per-slot delete so siblings coexist                                                                                                   |
+| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                |
 | `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                |
 | `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                |
 | `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
@@ -100,7 +100,7 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 - Each `usePosterPreview` / `fetchPoster` call that owns Kitty graphics should pass a `placementSlot`.
 - Slot cleanup deletes **only that image id** (`d=I`). Global wipe (`d=A`) is reserved for surface exit, terminal resize (unslotted), and capability loss.
-- Post-play wide budget: hero **or** rail primary Kitty, plus up to **3** discovery cards as Kitty. Mini-cards stay chafa.
+- Post-play wide budget: hero + rail primary + prev/next mini-cards as Kitty/Sixel, plus up to **3** discovery cards. Now Playing may also render the up-next mini-card as Kitty/Sixel (`playing-next`). Unslotted list tiles still use chafa.
 - JPEG/WebP without `magick`: Kitty path falls back to chafa symbols for that slot instead of silent `none`.
 
 ## Manual Ghostty / Kitty smoke (not CI)
@@ -109,7 +109,7 @@ Headless CI cannot assert framebuffer graphics. After image changes, smoke local
 
 1. `KUNAI_IMAGE_DEBUG=1 bun run dev` — confirm capability line shows `kitty-native`.
 2. Play any title with a poster, finish playback → post-play wide (≥120 cols).
-3. Expect: next-up hero art **and** up to 3 discovery thumbs visible together (no blank slots racing).
+3. Expect: next-up hero art, rail primary, prev/next episode stills, **and** up to 3 discovery thumbs visible together (no blank slots racing).
 4. Change selection / leave post-play — no ghost images left on the browse screen.
 5. Optional: uninstall `magick` temporarily and confirm JPEG thumbs still show as chafa text rather than empty.
 

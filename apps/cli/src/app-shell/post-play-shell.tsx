@@ -332,13 +332,17 @@ function NextUpHeroCard({
   readonly contentKind?: ContentKind;
 }) {
   const innerWidth = Math.max(20, width - 4);
-  const posterCols = 10;
+  // Larger hero still so Kitty/Sixel episode art reads sharp next to the rail.
+  const posterCols = Math.min(16, Math.max(12, Math.floor(innerWidth * 0.28)));
+  const posterRows = 6;
   const textWidth = Math.max(8, innerWidth - posterCols - 2);
   const { poster, spinner } = usePosterPreview(artworkUrl, {
-    rows: 4,
+    rows: posterRows,
     cols: posterCols,
     enabled: Boolean(artworkUrl),
     variant: "preview",
+    allowKitty: true,
+    allowSixel: true,
     placementSlot: "postplay-hero",
   });
   // The auto-next countdown ticks on the mpv loading overlay and is cleared
@@ -364,7 +368,7 @@ function NextUpHeroCard({
         {NEXT_UP_HERO_HEADINGS[hero.kind]}
       </Text>
       <Box flexDirection="row" marginTop={1}>
-        <Box width={posterCols} minHeight={4} justifyContent="center" alignItems="center">
+        <Box width={posterCols} minHeight={posterRows} justifyContent="center" alignItems="center">
           {poster.kind !== "none" ? (
             <PosterOutput poster={poster} />
           ) : spinner ? (
