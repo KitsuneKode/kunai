@@ -4,9 +4,9 @@ Status: **In progress** (product direction largely implemented; structural gaps 
 
 Last reconciled: 2026-05-16
 
-Use this plan for **UX model and shell behavior**, not for “start Ink migration” (that baseline is shipped — see [plan-implementation-truth.md](./plan-implementation-truth.md)).
+Use this plan for **UX model and shell behavior**, not for “start Ink migration” (that baseline is shipped — see [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md)).
 
-Product intent: [.docs/product-prd.md](../.docs/product-prd.md)  
+Product intent: [.docs/archive/product-prd.md](../.docs/archive/product-prd.md)  
 Implementation sequencing: [.plans/persistent-shell-implementation.md](./persistent-shell-implementation.md), [.plans/fullscreen-root-shell-redesign.md](./fullscreen-root-shell-redesign.md), [.plans/phase-1.8-single-mounted-content-tree.md](./phase-1.8-single-mounted-content-tree.md)
 
 ## Implementation checkpoint (2026-05-16)
@@ -62,7 +62,7 @@ These are the current decisions and should be treated as the default direction u
 
 ## Problems In The Current UX
 
-> **Note:** The bullets below describe the **pre–persistent-shell** prompt chain. Many are addressed in the Ink runtime; treat [plan-implementation-truth.md](./plan-implementation-truth.md) as the live gap list.
+> **Note:** The bullets below describe the **pre–persistent-shell** prompt chain. Many are addressed in the Ink runtime; treat [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md) as the live gap list.
 
 - The app used to mix raw key reads, `@clack/prompts`, and `fzf`, so the user kept crossing interaction models
 - Important actions are not globally reachable

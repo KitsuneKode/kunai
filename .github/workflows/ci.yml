@@ -390,6 +390,7 @@ jobs:
 
       - name: Verify docs gate
         run: |
+          bun run verify:doc-paths
           bun run --cwd apps/docs generate
           bun run --cwd apps/docs scripts/check-codegen-freshness.ts
           bun run --cwd apps/docs typecheck:app

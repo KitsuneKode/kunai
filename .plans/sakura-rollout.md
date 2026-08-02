@@ -85,7 +85,7 @@ Not a screen — wire the habit loop the product depends on:
 ## Doc cleanup (fold in as slices land)
 
 - `.docs/design-system.md` previously listed `apps/cli/src/design.ts` (does not exist); already dropped in the rewrite.
-- Update [.plans/archive/plan-implementation-truth.md](archive/plan-implementation-truth.md) and [.plans/kitsune-design-system-and-recommendations.md](kitsune-design-system-and-recommendations.md) to point at this rollout and the Sakura contract.
+- Update [.plans/archive/plan-implementation-truth.md](archive/plan-implementation-truth.md) and [.plans/archive/kitsune-design-system-and-recommendations.md](archive/kitsune-design-system-and-recommendations.md) to point at this rollout and the Sakura contract.
 - When aliases are deleted (end of S1), remove the deprecation sections from `tokens.ts` and `shell-theme.ts`.
 
 ## Release gate (the next version)
