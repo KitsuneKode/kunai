@@ -1,13 +1,13 @@
 {
-  "syncedAt": "2026-07-27T18:27:47.972Z",
+  "syncedAt": "2026-08-02T11:39:33.857Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "e54f0f07",
-  "cliSourceFingerprint": "cdd0f675eb4674c6a50b19360638524193f9e5ec36807badda22539f2b42a00a",
+  "cliSourceRevision": "3a66eb20",
+  "cliSourceFingerprint": "5fa66c7f325b72e1715e0d8c400d826d0e4a68860ddb1d6e3e5834234a0a4ac9",
   "docsContentFingerprint": "49fc610992a8abfb3a495805d36c6062da7cb81fe2bc7fee0ae23a06b50268fe",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
-  "providerIds": ["videasy", "vidlink", "rivestream", "allanime", "miruro", "youtube"],
+  "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
     {
       "id": "videasy",
@@ -56,6 +56,24 @@
       "notes": ["Bypasses Playwright entirely by generating the 32-bit MurmurHash signature natively in Node.js."]
     },
     {
+      "id": "anidb",
+      "displayName": "AniDB",
+      "description": "Anime streams via anidb.app — ani-cli v5 primary source",
+      "domain": "anidb.app",
+      "recommended": true,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "status": "active",
+      "notes": [
+        "Parity with ani-cli v5.0 (2026-08-01): browse search",
+        "/api/frontend anime episodes + episode languages",
+        "embed → HLS master.",
+        "Bun/fetch often gets Cloudflare 403 on anidb.app HTML/API; production path uses curl with a Chrome UA (dossier-proven).",
+        "HLS media on hls.anidb.app usually works with native fetch after the embed URL is obtained.",
+        "Sub = Japanese audio (jpn embed); dub = English audio (eng embed) when the languages API exposes it."
+      ]
+    },
+    {
       "id": "allanime",
       "displayName": "AllManga",
       "description": "Anime episodes in sub and dub — the primary anime source",
@@ -68,7 +86,14 @@
         "AllManga-compatible client uses local fetch/decode logic for search",
         "catalog",
         "and source resolution.",
-        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure."
+        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
+        "Source inventory: Default",
+        "Yt-mp4",
+        "S-mp4",
+        "Mp4 (mp4upload scrape)",
+        "Luf-Mp4",
+        "Ak. Filemoon is gone.",
+        "2026-08: mkissa crypto requires buildId=81 + /client-crypto/v1/bootstrap (x-aa-boot). ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -78,7 +103,7 @@
       "domain": "www.miruro.bz",
       "recommended": false,
       "mediaKinds": ["anime"],
-      "capabilities": ["episode-list", "source-resolve", "multi-source", "quality-ranked"],
+      "capabilities": ["episode-list", "source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
       "status": "candidate",
       "notes": [
         "2026-07-16: Browser network on www.miruro.bz/watch/{anilistId}/... uses GET /api/secure/pipe?e=… (200 plain + x-obfuscated). HLS on vault*.ultracloud / owocdn with stream.referer https://kwik.cx/.",
@@ -97,7 +122,7 @@
       "domain": "youtube.com",
       "recommended": true,
       "mediaKinds": ["video"],
-      "capabilities": ["search", "episode-list", "source-resolve", "quality-ranked"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
       "status": "production",
       "notes": ["Metadata via Invidious/Piped; playback via youtube.com watch URLs and mpv ytdl."]
     }
