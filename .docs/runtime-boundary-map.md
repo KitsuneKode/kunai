@@ -16,6 +16,24 @@ Storage persists facts.
 If a module does more than one of those jobs, either extract a seam or document
 why the overlap is temporary.
 
+## Enforced Layering
+
+These are not conventions — `apps/cli/test/unit/architecture/boundary-imports.test.ts`
+fails the build on a new violation. Existing violations are baselined in that
+file with dated `DEBT` entries; adding to a baseline needs a reason in the diff.
+
+| Layer                    | Must not import                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `apps/cli/src/domain`    | `@/app`, `@/app-shell`, `@/services`                                                                  |
+| `apps/cli/src/infra`     | `@/app`, `@/app-shell`                                                                                |
+| `apps/cli/src/services`  | `@/app`, `@/app-shell`                                                                                |
+| `apps/cli/src/app-shell` | providers (`@kunai/providers`, `@/services/providers`) and player runtime (`@/infra/player`, `@/mpv`) |
+| Any non-shell layer      | `ink` directly                                                                                        |
+| Any active runtime root  | `archive/legacy`, `apps/experiments`                                                                  |
+
+The same test also gates workspace dependencies per package, so a new
+`packages/*` dependency edge needs an allowlist entry.
+
 ## Ownership
 
 | Area                          | Owns                                                                                                              | Must not own                                |
@@ -70,14 +88,13 @@ surface it owns.
 
 ### Current confusing names
 
-- `app-shell/workflows.ts` is a migration bucket. New shell flows should move
-  into feature-family files such as `history-workflows.ts`,
-  `picker-workflows.ts`, and `setup-workflows.ts`.
+- `app-shell/workflows/` is a migration bucket split by feature family. New
+  shell flows join an existing family file rather than growing a shared one.
 - `app-shell/ink-shell.tsx` is still both host and surface code. New render
   extraction should move one surface or presenter at a time; do not add more
   policy there.
-- `app/PlaybackPhase.ts` is still the playback state machine plus too much
-  surrounding orchestration. Extract only tested transition slices from it.
+- `app/playback/PlaybackPhase.ts` is still the playback state machine plus too
+  much surrounding orchestration. Extract only tested transition slices from it.
 - `domain/types.ts` is a CLI-domain type bridge, not the package contract. Do
   not move it into `packages/types` until adapter tests cover the conversion.
 
@@ -181,8 +198,8 @@ When removing legacy:
 
 ## Related Docs
 
-- Runtime architecture: [architecture.md](./architecture.md)
-- Target architecture: [architecture-v2.md](./architecture-v2.md)
+- Runtime architecture (what exists): [architecture.md](./architecture.md)
+- Direction (parked surfaces): [architecture-v2.md](./architecture-v2.md)
 - Engineering guide: [engineering-guide.md](./engineering-guide.md)
 - Shell and overlay UX: [ux-architecture.md](./ux-architecture.md)
 - Provider contracts: [providers.md](./providers.md)

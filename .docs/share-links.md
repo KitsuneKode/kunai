@@ -33,14 +33,14 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 
 ## Code map
 
-| Path                                               | Role                                                      |
-| -------------------------------------------------- | --------------------------------------------------------- |
-| `apps/cli/src/domain/share/playback-target-ref.ts` | Model, timestamp helpers, encode/parse codec              |
-| `apps/cli/src/app/share-ref-from-context.ts`       | Build refs from title/session context                     |
-| `apps/cli/src/app/resolve-share-target.ts`         | Container-aware resolver (catalog, search, anime mapping) |
-| `apps/cli/src/app/apply-resolved-share-target.ts`  | Apply resolved targets to bootstrap launch                |
-| `apps/cli/src/app/share-bootstrap-start.ts`        | One-shot shared timestamp mailbox for first play          |
-| `apps/cli/src/app/copy-share-link.ts`              | Clipboard helper                                          |
+| Path                                                        | Role                                                      |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
+| `apps/cli/src/domain/share/playback-target-ref.ts`          | Model, timestamp helpers, encode/parse codec              |
+| `apps/cli/src/app/bootstrap/share-ref-from-context.ts`      | Build refs from title/session context                     |
+| `apps/cli/src/app/bootstrap/resolve-share-target.ts`        | Container-aware resolver (catalog, search, anime mapping) |
+| `apps/cli/src/app/bootstrap/apply-resolved-share-target.ts` | Apply resolved targets to bootstrap launch                |
+| `apps/cli/src/app/bootstrap/share-bootstrap-start.ts`       | One-shot shared timestamp mailbox for first play          |
+| `apps/cli/src/app/bootstrap/copy-share-link.ts`             | Clipboard helper                                          |
 
 ## Surfaces
 

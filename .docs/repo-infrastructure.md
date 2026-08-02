@@ -146,9 +146,9 @@ Release native smoke also executes the advertised Windows ARM64 artifact on a
 Open Windows parity backlog:
 
 - Windows-only test isolation is easy to get wrong in ways POSIX hides. Two
-  shared helpers exist for the cases already found — `test/helpers/temp-store.ts`
+  shared helpers exist for the cases already found — `apps/cli/test/helpers/temp-store.ts`
   (close database handles before removing a temp dir; Windows refuses to delete
-  open files) and `test/helpers/storage-env.ts` (redirect storage roots on every
+  open files) and `apps/cli/test/helpers/storage-env.ts` (redirect storage roots on every
   platform, not just via `XDG_*`, which Windows ignores).
 - Native rollback activation/refusal still has POSIX-only symlink fixtures. The
   install transaction and launcher-copy paths now run on Windows, but rollback

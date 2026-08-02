@@ -63,4 +63,7 @@ Compatibility aliases are allowed:
 
 The 2026-06-25 implementation slice added `playlists`, `up-next`, and `unfollow` command ids; kept legacy aliases; split media actions into Watchlist, Playlist, and Up Next intents; promoted `/provider` in browse command surfaces; and regenerated docs metadata.
 
-Remaining work is tracked in `docs/superpowers/plans/2026-06-25-personal-media-vocabulary-and-keybindings.md`.
+The plan that drove it is archived at
+`docs/superpowers/archive/plans/2026-06-25-personal-media-vocabulary-and-keybindings.md`.
+It carries no authority — the decision above does. Any residual work belongs on
+[`../../.plans/roadmap.md`](../../.plans/roadmap.md), verified against the code first.

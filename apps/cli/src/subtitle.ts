@@ -539,7 +539,7 @@ function mergeTrackObjects<T extends { url: string }>(
 // redeemed it, and one shared key would rate-limit every user at once. Without
 // a key this resolver makes no request and reports `no-key`.
 //
-// Ref: .docs/subtitle-resolver-analysis.md
+// Ref: .docs/archive/subtitle-resolver-analysis.md
 // =============================================================================
 
 const WYZIE_SEARCH = "https://sub.wyzie.io/search";

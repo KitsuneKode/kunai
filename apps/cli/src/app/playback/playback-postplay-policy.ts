@@ -1,5 +1,5 @@
 // Pure post-play decision predicates, extracted verbatim from PlaybackPhase.execute()
-// (Stage 1 of docs/superpowers/plans/2026-06-13-playbackphase-execute-split.md).
+// (Stage 1 of docs/superpowers/archive/plans/2026-06-13-playbackphase-execute-split.md).
 // These take precomputed primitives so they are pure and unit-testable; callers
 // still own when `endedNearNaturalEnd` is computed (no control-flow change).
 
