@@ -59,6 +59,10 @@ jobs:
             docs:
               - 'apps/docs/**'
               - 'docs/**'
+              - '.docs/**'
+              - 'AGENTS.md'
+              - 'CLAUDE.md'
+              - 'scripts/verify-doc-paths.ts'
               - 'apps/cli/src/container.ts'
               - 'apps/cli/src/domain/session/command-registry.ts'
               - 'apps/cli/src/cli-args.ts'
