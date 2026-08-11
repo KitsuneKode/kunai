@@ -4,14 +4,14 @@ Use this doc when changing terminal poster previews, capability detection, the s
 
 ## Code map
 
-| Area                                                 | Role                                                                                                                                                                                                         |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/cli/src/image/`                                | Shared subsystem: `detectImageCapability()`, `displayPoster()`, TMDB poster cache, Kitty/chafa/noop renderers, PNG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout) |
-| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics, measured Sixel overlays, and text fallbacks; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                        |
-| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                |
-| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                |
-| `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                |
-| `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                            |
+| Area                                                 | Role                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/cli/src/image/`                                | Shared subsystem: capability detection (`detectImageCapability()`), PNG/JPEG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout). Ink shell renders from in-memory bytes in `app-shell/poster-renderer.ts` — there is no separate `displayPoster()` / file-cache path |
+| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics, measured Sixel overlays, and text fallbacks; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                                                                                                                       |
+| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                                                                                                               |
+| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                                                                                                               |
+| `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                                                                                                               |
+| `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                                                                                                                           |
 
 Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` file was removed).
 
@@ -34,7 +34,7 @@ Details live in `apps/cli/src/image/capability.ts`.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `KUNAI_POSTER`                  | `0` / `false` disables poster flows                                                                     |
 | `KUNAI_IMAGE_PROTOCOL`          | Force or constrain renderer (see capability module)                                                     |
-| `KUNAI_IMAGE_SIZE`              | Size string for generic `displayPoster()` (default in `index.ts`)                                       |
+| `KUNAI_IMAGE_SIZE`              | Legacy size hint; unused by the Ink poster path (kept for env compatibility)                            |
 | `KUNAI_IMAGE_DEBUG`             | `1` enables `[kunai:image]` debug lines                                                                 |
 | `KUNAI_IMAGE_PROBE`             | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                          |
 | `KUNAI_IMAGE_TRANSPORT`         | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                      |
@@ -134,8 +134,8 @@ Use Windows Terminal 1.22+ and force the path with
 
 ## Tests
 
-- `apps/cli/test/unit/image.test.ts` — subsystem (capability, cache, Kitty, chafa commands, `displayPoster`).
-- `apps/cli/test/unit/app-shell/poster-renderer.test.ts` — renderer result kinds under mocked capability + JPEG fallback.
+- `apps/cli/test/unit/image.test.ts` — capability detection and ImageMagick resolution stubs.
+- `apps/cli/test/unit/app-shell/poster-renderer.test.ts` — renderer result kinds under mocked capability + JPEG fallback (host `magick` isolated).
 - `apps/cli/test/unit/app-shell/image-pane.test.ts` — cache key segregation by renderer + existing poster URL helpers.
 - `apps/cli/test/unit/app-shell/kitty-placement-registry.test.ts` — multi-slot delete isolation.
 - `apps/cli/test/unit/app-shell/use-poster-preview.resize.test.tsx` — unslotted geometry change still emits `d=A`.

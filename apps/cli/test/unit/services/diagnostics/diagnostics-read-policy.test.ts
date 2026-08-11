@@ -192,12 +192,16 @@ describe("diagnostics read policy", () => {
     try {
       runMigrations(db, "cache");
       const repository = new DiagnosticEventsRepository(db);
+      // One clock for both halves. Stamping events on a frozen clock while
+      // prune ran on the real one made this test pass only within the 14-day
+      // retention window of the pinned date, then fail every run after it.
+      const now = () => new Date("2026-07-19T12:00:00.000Z");
       const service = new DiagnosticsServiceImpl({
         sessionId: "session-live",
         store: new DiagnosticsStoreImpl(),
         logger: silentLogger(),
-        durableSink: new AsyncDurableDiagnosticsSink({ repository }),
-        now: () => new Date("2026-07-19T12:00:00.000Z"),
+        durableSink: new AsyncDurableDiagnosticsSink({ repository, now }),
+        now,
       });
 
       service.record({

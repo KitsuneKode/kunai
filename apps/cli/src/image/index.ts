@@ -1,68 +1,16 @@
-import { getCachedPoster } from "./cache";
-import { detectImageCapability, isChafaAvailable } from "./capability";
-import { debugImage } from "./debug";
-import { NonPngError, renderChafaKitty, renderPosterFile } from "./renderers";
-import type { ImageRenderOptions } from "./types";
-
-const DEFAULT_SIZE = "30x18";
-const DEFAULT_MAX_ROWS = 18;
-
-function resolveImageOptions(options: Partial<ImageRenderOptions> = {}): ImageRenderOptions {
-  return {
-    size: options.size ?? process.env.KUNAI_IMAGE_SIZE ?? DEFAULT_SIZE,
-    maxRows: options.maxRows ?? DEFAULT_MAX_ROWS,
-    debug: options.debug ?? process.env.KUNAI_IMAGE_DEBUG === "1",
-  };
-}
-
-export async function displayPoster(
-  posterPath: string | null,
-  options?: Partial<ImageRenderOptions>,
-): Promise<void> {
-  if (!posterPath || posterPath.trim().length === 0) return;
-
-  const resolvedOptions = resolveImageOptions(options);
-  const capability = detectImageCapability();
-
-  if (!capability.available || capability.renderer === "none") {
-    debugImage(`poster skipped: ${capability.reason}`);
-    return;
-  }
-
-  debugImage(
-    `terminal=${capability.terminal} renderer=${capability.renderer} protocol=${capability.protocol} reason=${capability.reason}`,
-  );
-
-  try {
-    const cachedPath = await getCachedPoster(posterPath);
-    if (!cachedPath) return;
-
-    try {
-      await renderPosterFile(cachedPath, capability, resolvedOptions);
-    } catch (error) {
-      if (error instanceof NonPngError) {
-        debugImage("kitty-native skipped: input could not be decoded or converted");
-        if (capability.renderer === "kitty-native" && isChafaAvailable()) {
-          try {
-            await renderChafaKitty(cachedPath, resolvedOptions);
-          } catch (fallbackError) {
-            debugImage(
-              `chafa kitty fallback failed: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`,
-            );
-          }
-        }
-        return;
-      }
-      debugImage(
-        `poster rendering failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  } catch (error) {
-    debugImage(
-      `poster rendering crashed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
+// =============================================================================
+// image/index.ts — terminal image capability surface.
+//
+// This module used to also own `displayPoster`, a file-based one-shot renderer
+// that fetched a poster to the OS cache dir and painted it through
+// `renderPosterFile`. The Ink app shell renders posters from bytes it already
+// holds (`app-shell/poster-renderer.ts`), so nothing in production called that
+// chain -- only its own tests did. It was removed rather than migrated: it was
+// the last caller of ImageMagick that never tried `Bun.Image` first, so keeping
+// it meant keeping a second, slower conversion path alive for no user.
+//
+// What remains here is capability detection, which the shell and `ui.ts` do use.
+// =============================================================================
 
 export {
   detectImageCapability,

@@ -50,7 +50,12 @@ export function applyIsolatedCliProfile(profile: IsolatedCliProfile): void {
 }
 
 export function disposeIsolatedCliProfile(profile: IsolatedCliProfile): void {
-  rmSync(profile.rootDir, { force: true, recursive: true });
+  // Windows refuses to unlink a file that still has an open handle, so anything
+  // that opened a database under this profile must close it before calling here
+  // (see `createIsolatedContainer`). The retries cover the residual case where
+  // the OS has not yet released a handle we already closed — on POSIX, where
+  // unlinking an open file is legal, they never trigger.
+  rmSync(profile.rootDir, { force: true, recursive: true, maxRetries: 10, retryDelay: 50 });
 }
 
 export async function createIsolatedContainer(label: string): Promise<{
@@ -65,6 +70,19 @@ export async function createIsolatedContainer(label: string): Promise<{
   return {
     container,
     profile,
-    dispose: () => disposeIsolatedCliProfile(profile),
+    dispose: () => {
+      // Close before unlinking: the container holds open SQLite handles inside
+      // the profile directory, and on Windows those make the whole tree
+      // undeletable (EBUSY).
+      for (const db of [container.cacheDb, container.dataDb]) {
+        try {
+          db.close();
+        } catch {
+          // Already closed, or never opened — disposal must not mask the real
+          // assertion failure that may have brought us here.
+        }
+      }
+      disposeIsolatedCliProfile(profile);
+    },
   };
 }

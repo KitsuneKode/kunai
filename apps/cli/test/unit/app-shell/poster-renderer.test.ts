@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { clearKittyPlacementRegistry } from "@/app-shell/kitty-placement-registry";
 import {
@@ -11,6 +11,7 @@ import { hasNativeImage } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
 import { fakeChafaProcess } from "../../support/fake-chafa";
+import { stubMagickResolution } from "../../support/image-binaries";
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalRuntime = {
@@ -20,6 +21,15 @@ const originalRuntime = {
 };
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
+
+/**
+ * Restores ImageMagick resolution after each test. Pinned file-wide rather than
+ * in the one test that needs it today: every poster path that cannot decode
+ * in-process falls through to `ensurePngBytes`, so leaving the host's binary
+ * reachable makes any future test here pass or fail on whether the machine
+ * happens to have ImageMagick installed.
+ */
+let restoreMagick: (() => void) | undefined;
 
 function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "none") {
@@ -70,7 +80,15 @@ function captureStdout(): { writes: string[] } {
   return { writes };
 }
 
+beforeEach(() => {
+  // No test in this file asserts anything about ImageMagick, so the poster
+  // chain must behave as it does on a machine without it.
+  restoreMagick = stubMagickResolution(null);
+});
+
 afterEach(() => {
+  restoreMagick?.();
+  restoreMagick = undefined;
   rendererTesting.runtime.detectImageCapability = originalRuntime.detectImageCapability;
   rendererTesting.runtime.which = originalRuntime.which;
   rendererTesting.runtime.spawn = originalRuntime.spawn;
@@ -308,7 +326,9 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.spawn = () => fakeChafaProcess("JPEG_FALLBACK\n").proc;
     process.stdout.write = (() => true) as typeof process.stdout.write;
 
-    // Truncated JPEG SOI — undecodable in-process and unconvertible.
+    // Truncated JPEG SOI: undecodable in-process, and unconvertible because the
+    // file-wide stub pins ImageMagick as absent. Both halves matter — while the
+    // host's real `magick` was still reachable here, this spawned it.
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).buffer;
     const result = await renderPoster(jpeg, {
       rows: 3,
