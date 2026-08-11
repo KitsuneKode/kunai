@@ -5,11 +5,18 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
-import type {
-  PlaybackFailureWaterfallModel,
-  PlaybackFailureWaterfallRow,
-} from "./playback-failure-waterfall";
+import {
+  GUTTER_COLUMN,
+  PETAL_STEP_MS,
+  type PetalPlacement,
+  petalsForFrame,
+  settledFrame,
+} from "./petal-fall";
+import { buildErrorRows, type ErrorRow, type ErrorRowTone, rowText } from "./playback-error-rows";
+import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
+import { reducedMotionEnabled, useFrameTick } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
+import { useShellDimensions } from "./use-viewport-policy";
 
 export type { ErrorScenario } from "@/domain/playback/playback-problem";
 
@@ -59,65 +66,93 @@ export function RootIdleShell({ state }: { state: SessionState }) {
   );
 }
 
-function ScenarioDetail({ scenario }: { scenario: ErrorScenario }) {
-  switch (scenario.kind) {
-    case "provider-timeout":
-      return (
-        <Box flexDirection="column">
-          <Text color={palette.danger}>
-            {"✗  timed out after "}
-            {scenario.elapsedSec}
-            {"s"}
-          </Text>
-          <Text color={palette.dim} dimColor>
-            {scenario.providerName}
-          </Text>
-          <Text color={palette.dim} dimColor>
-            r retry · /fallback for another provider
-          </Text>
-        </Box>
-      );
-    case "stream-broken":
-      return (
-        <Box flexDirection="column">
-          <Text color={palette.danger}>{"✗  stream interrupted"}</Text>
-          <Text color={palette.dim} dimColor>
-            {`attempt ${scenario.attempt} of ${scenario.maxAttempts}`}
-          </Text>
-          <Text color={palette.dim} dimColor>
-            r retry · /recover to refresh the stream
-          </Text>
-        </Box>
-      );
-    case "network-offline":
-      return (
-        <Box flexDirection="column">
-          <Text color={palette.dim}>{"○  offline"}</Text>
-          <Text color={palette.accent}>/library for downloaded titles</Text>
-        </Box>
-      );
-    case "provider-session":
-      return (
-        <Box flexDirection="column">
-          <Text color={palette.danger}>{`●  ${scenario.providerName} session required`}</Text>
-          <Text color={palette.dim} dimColor>
-            /settings · add Videasy session token
-          </Text>
-          <Text color={palette.dim} dimColor>
-            /fallback for another provider
-          </Text>
-        </Box>
-      );
-    case "title-unavailable":
-      return (
-        <Box flexDirection="column">
-          <Text color={palette.dim}>{`◌  ${scenario.title} not found`}</Text>
-          <Text color={palette.dim} dimColor>
-            r retry · /watchlist to save for later
-          </Text>
-        </Box>
-      );
+/** Text begins here; column 0 is the gutter and column 1 is its trailing space. */
+const TEXT_COLUMN = 2;
+/** Chrome around the panel's inner content: border + padding on both sides. */
+const PANEL_CHROME = 6;
+const MIN_PANEL_WIDTH = 30;
+const MAX_PANEL_WIDTH = 76;
+
+type Cell = { readonly ch: string; readonly color: string; readonly bold: boolean };
+
+function toneColor(tone: ErrorRowTone): string {
+  switch (tone) {
+    case "danger-strong":
+    case "danger":
+      return palette.danger;
+    case "accent":
+      return palette.accent;
+    case "text":
+      return palette.text;
+    case "ok":
+      return palette.ok;
+    case "muted":
+      return palette.muted;
+    default:
+      return palette.dim;
   }
+}
+
+/**
+ * Lay a row's text into a cell buffer, then drop this row's petals into it.
+ * Petals are written LAST and only into cells the text left empty, so a petal
+ * can never lengthen the row — which is what makes reflow impossible rather
+ * than merely unlikely.
+ */
+function rowCells(row: ErrorRow, petals: readonly PetalPlacement[], width: number): Cell[] {
+  const cells: Cell[] = [{ ch: "│", color: palette.dangerDim, bold: false }];
+  while (cells.length < TEXT_COLUMN) {
+    cells.push({ ch: " ", color: palette.dim, bold: false });
+  }
+
+  for (const segment of row.segments) {
+    const color = toneColor(segment.tone);
+    const bold = segment.tone === "danger-strong";
+    for (const ch of segment.text) {
+      if (cells.length >= width) break;
+      cells.push({ ch, color, bold });
+    }
+  }
+
+  for (const petal of petals) {
+    if (petal.column >= width) continue;
+    while (cells.length <= petal.column) {
+      cells.push({ ch: " ", color: palette.dim, bold: false });
+    }
+    if (cells[petal.column]?.ch !== " " && petal.column !== GUTTER_COLUMN) continue;
+    cells[petal.column] = { ch: petal.glyph, color: petal.color, bold: true };
+  }
+
+  return cells;
+}
+
+/** Collapse a cell buffer into as few <Text> runs as the colors allow. */
+function ErrorRowLine({
+  row,
+  petals,
+  width,
+}: {
+  readonly row: ErrorRow;
+  readonly petals: readonly PetalPlacement[];
+  readonly width: number;
+}) {
+  const cells = rowCells(row, petals, width);
+  const runs: { text: string; color: string; bold: boolean }[] = [];
+  for (const cell of cells) {
+    const last = runs.at(-1);
+    if (last && last.color === cell.color && last.bold === cell.bold) last.text += cell.ch;
+    else runs.push({ text: cell.ch, color: cell.color, bold: cell.bold });
+  }
+  return (
+    <Text>
+      {runs.map((run, index) => (
+        // eslint-disable-next-line react/no-array-index-key -- runs are positional by construction
+        <Text key={`r-${index}`} color={run.color} bold={run.bold}>
+          {run.text}
+        </Text>
+      ))}
+    </Text>
+  );
 }
 
 export function ErrorShell({
@@ -137,7 +172,12 @@ export function ErrorShell({
   onResolve: () => void;
   onRetry?: () => void;
 }) {
-  const debugExcerpt = debugEnabled ? extractErrorDebugExcerpt(debugError) : null;
+  // Memoized on its inputs, not recomputed per render: it is a dependency of
+  // the row model below, and a fresh object each render would defeat that memo.
+  const debugExcerpt = React.useMemo(
+    () => (debugEnabled ? extractErrorDebugExcerpt(debugError) : null),
+    [debugEnabled, debugError],
+  );
 
   useInput((input, key) => {
     if (key.return || key.escape) {
@@ -149,74 +189,45 @@ export function ErrorShell({
     }
   });
 
+  const rows = React.useMemo(
+    () =>
+      buildErrorRows({ message, scenario, waterfall, debugExcerpt, canRetry: Boolean(onRetry) }),
+    [message, scenario, waterfall, debugExcerpt, onRetry],
+  );
+
+  // Width comes from the terminal alone — never from the petals, or the border
+  // would move frame to frame.
+  const { cols } = useShellDimensions();
+  const width = Math.max(MIN_PANEL_WIDTH, Math.min(cols - PANEL_CHROME, MAX_PANEL_WIDTH));
+
+  const settled = settledFrame(rows.length);
+  const tick = useFrameTick(true, PETAL_STEP_MS, settled);
+  const frame = reducedMotionEnabled() ? settled : tick;
+
+  const rowEndColumns = React.useMemo(
+    () => rows.map((row) => TEXT_COLUMN + [...rowText(row)].length),
+    [rows],
+  );
+  const petals = petalsForFrame({ frame, rowCount: rows.length, rowEndColumns, width });
+
   return (
     <Box
-      flexDirection="row"
+      flexDirection="column"
       marginTop={1}
       borderStyle="round"
       borderColor={palette.danger}
       paddingX={1}
+      width={width + 4}
     >
-      <Text color={palette.danger}>{"│ "}</Text>
-      <Box flexDirection="column" flexGrow={1}>
-        <Text color={palette.danger} bold>
-          Playback failed
-        </Text>
-        {scenario ? (
-          <ScenarioDetail scenario={scenario} />
-        ) : (
-          <Text color={palette.text}>{message}</Text>
-        )}
-        {waterfall ? <FailureWaterfall model={waterfall} /> : null}
-        {debugExcerpt ? (
-          <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={palette.dim}>
-            <Text color={palette.dim} dimColor>
-              debug
-            </Text>
-            <Text color={palette.muted}>{debugExcerpt.message}</Text>
-            {debugExcerpt.topFrame ? (
-              <Text color={palette.dim} dimColor>
-                {debugExcerpt.topFrame}
-              </Text>
-            ) : null}
-          </Box>
-        ) : null}
-        <Box marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            {onRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue"}
-          </Text>
-        </Box>
-      </Box>
-    </Box>
-  );
-}
-
-function FailureWaterfall({ model }: { model: PlaybackFailureWaterfallModel }) {
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text color={palette.dim} dimColor>
-        {model.title}
-        {model.truncated ? "  ·  more in /diagnostics" : ""}
-      </Text>
-      {model.rows.map((row) => (
-        <FailureWaterfallRow row={row} key={`${row.label}:${row.status}:${row.detail ?? ""}`} />
+      {rows.map((row, index) => (
+        <ErrorRowLine
+          // eslint-disable-next-line react/no-array-index-key -- rows are positional by construction
+          key={`row-${index}`}
+          row={row}
+          petals={petals.filter((petal) => petal.row === index)}
+          width={width}
+        />
       ))}
     </Box>
-  );
-}
-
-function FailureWaterfallRow({ row }: { row: PlaybackFailureWaterfallRow }) {
-  const marker = row.status === "succeeded" ? "✓" : row.status === "failed" ? "x" : "·";
-  const color =
-    row.status === "succeeded"
-      ? palette.ok
-      : row.status === "failed"
-        ? palette.danger
-        : palette.dim;
-  return (
-    <Text color={color}>
-      {marker} {row.label}
-      {row.detail ? <Text color={palette.dim}>{`  ·  ${row.detail}`}</Text> : null}
-    </Text>
   );
 }
