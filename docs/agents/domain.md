@@ -8,7 +8,7 @@ Kunai is **single-context**: one `CONTEXT.md` at the repo root, and one system-w
 
 - **`CONTEXT.md`** at the repo root — the glossary / ubiquitous language.
 - **`.docs/adr/`** — read ADRs that touch the area you're about to work in. Note the leading dot: ADRs live in `.docs/adr/`, **not** `docs/adr/`.
-- **`AGENTS.md` → `## Read This First`** — the repo's own routing table into `.docs/*`. `CONTEXT.md` is the vocabulary entry point, not the only one; architecture, runtime boundaries, providers, and UX each have a dedicated deep doc listed there. Follow the pointer relevant to your topic.
+- **`AGENTS.md` → `## Deep docs`** — the repo's own routing table into `.docs/*`. `CONTEXT.md` is the vocabulary entry point, not the only one; architecture, runtime boundaries, providers, and UX each have a dedicated deep doc listed there. Follow the pointer relevant to your topic.
 
 If `CONTEXT.md` doesn't exist yet, **proceed silently**. Don't flag its absence; don't suggest creating it upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates it lazily when terms actually get resolved.
 
@@ -23,7 +23,7 @@ If `CONTEXT.md` doesn't exist yet, **proceed silently**. Don't flag its absence;
 │   │   └── 0001-personal-media-vocabulary.md
 │   ├── architecture.md
 │   ├── runtime-boundary-map.md
-│   └── …                      ← see AGENTS.md § Read This First
+│   └── …                      ← see AGENTS.md § Deep docs
 ├── apps/{cli,docs,relay-server,telemetry-ingest,experiments}
 └── packages/{core,providers,storage,relay,schemas,types,config,design}
 ```

@@ -1,6 +1,6 @@
 # Provider Source Inventory Reliability Hardening Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for parallel provider refactors, or `superpowers:executing-plans` for inline execution. Track each checkbox as it lands. Code wins over this plan if drift is found; update `.plans/plan-implementation-truth.md` when the pass is reconciled.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` for parallel provider refactors, or `superpowers:executing-plans` for inline execution. Track each checkbox as it lands. Code wins over this plan if drift is found; update `.plans/archive/plan-implementation-truth.md` when the pass is reconciled.
 
 **Goal:** Make provider output, fallback behavior, downloads, recommendations, and history reconciliation deterministic enough that the next UI pass can consume rich source data without extra calls or provider-specific guesses.
 
@@ -256,7 +256,7 @@ completed history intact. The naming uses `up-to-date` rather than a separate
 
 **Files**
 
-- Create: `.docs/source-inventory-ui-handoff.md`
+- Create: `.docs/playback-source-inventory-contract.md`
 - Modify: `.docs/diagnostics-guide.md`
 - Modify: `.docs/providers.md`
 

@@ -207,7 +207,7 @@ Source inventory and language normalization:
   inventory. AllManga keeps technical `Sub · Server · mode` labels; Miruro uses
   hybrid character-primary labels with `Sub/Dub · mode` detail.
 - UI handoff rules live in
-  [.docs/source-inventory-ui-handoff.md](./source-inventory-ui-handoff.md).
+  [.docs/playback-source-inventory-contract.md](./playback-source-inventory-contract.md).
 
 ## Provider Types
 

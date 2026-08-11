@@ -18,17 +18,17 @@ and `/random` / `/surprise` discovery surfaces.
 | Recommendation service contract              | `apps/cli/src/services/recommendations/RecommendationService.ts`                                                 | Implemented |
 | TMDB-backed implementation and cache helpers | `apps/cli/src/services/recommendations/RecommendationServiceImpl.ts`                                             | Implemented |
 | SQLite recommendation cache                  | `packages/storage/src/repositories/recommendation-cache.ts`                                                      | Implemented |
-| Shared section builder                       | `apps/cli/src/app/discover-sections.ts`                                                                          | Implemented |
-| Unified discover result loader               | `apps/cli/src/app/discover-results.ts`                                                                           | Implemented |
-| Browse-shell discover loading + SWR          | `apps/cli/src/app-shell/ink-shell.tsx`, `apps/cli/src/app/SearchPhase.ts`                                        | Implemented |
+| Shared section builder                       | `apps/cli/src/app/discover/discover-sections.ts`                                                                 | Implemented |
+| Unified discover result loader               | `apps/cli/src/app/discover/discover-results.ts`                                                                  | Implemented |
+| Browse-shell discover loading + SWR          | `apps/cli/src/app-shell/ink-shell.tsx`, `apps/cli/src/app/search/SearchPhase.ts`                                 | Implemented |
 | Release schedule service + SQLite cache      | `apps/cli/src/services/catalog/CatalogScheduleService.ts`, `packages/storage/src/repositories/schedule-cache.ts` | Implemented |
 | Calendar result loader                       | `apps/cli/src/app/search/calendar-results.ts`                                                                    | Implemented |
-| Random result loader                         | `apps/cli/src/app/random-results.ts`                                                                             | Implemented |
-| Surprise catalog pool                        | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discovery-lists.ts`                | Implemented |
+| Random result loader                         | `apps/cli/src/app/discover/random-results.ts`                                                                    | Implemented |
+| Surprise catalog pool                        | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discover/discovery-lists.ts`       | Implemented |
 | Command routing                              | `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/command-router.ts`                    | Implemented |
-| Search-phase entry                           | `apps/cli/src/app/SearchPhase.ts`                                                                                | Implemented |
+| Search-phase entry                           | `apps/cli/src/app/search/SearchPhase.ts`                                                                         | Implemented |
 | Startup discovery routes                     | `--calendar`, `--random`, `/calendar`, `/random`                                                                 | Implemented |
-| Post-playback nudge/action                   | `apps/cli/src/app/PlaybackPhase.ts`, `apps/cli/src/app-shell/ink-shell.tsx`                                      | Implemented |
+| Post-playback nudge/action                   | `apps/cli/src/app/playback/PlaybackPhase.ts`, `apps/cli/src/app-shell/ink-shell.tsx`                             | Implemented |
 | Startup hint config                          | `discoverShowOnStartup` in config                                                                                | Implemented |
 | Discover mode + item limit config            | `discoverMode`, `discoverItemLimit` in config                                                                    | Implemented |
 | Minimal mode                                 | `minimalMode` in config and shell layout policy                                                                  | Implemented |
@@ -106,5 +106,5 @@ flow.
 ## Related
 
 - [search-service plan](../.plans/search-service.md)
-- [metadata and trending contract](../.plans/metadata-and-trending-contract.md)
+- [metadata and trending contract](../.plans/archive/metadata-and-trending-contract.md)
 - [design system](./design-system.md)

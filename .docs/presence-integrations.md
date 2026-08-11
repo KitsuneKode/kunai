@@ -12,8 +12,8 @@ Presence is implemented as a first-party service seam and is off by default.
 | Discord IPC implementation  | `apps/cli/src/services/presence/discord-ipc-client.ts` | Implemented |
 | Config fields               | `apps/cli/src/services/persistence/ConfigService.ts`   | Implemented |
 | Settings onboarding surface | `apps/cli/src/app-shell/settings/SettingsShell.tsx`    | Implemented |
-| Playback updates            | `apps/cli/src/app/PlaybackPhase.ts`                    | Implemented |
-| Shutdown cleanup            | `apps/cli/src/app/SessionController.ts`                | Implemented |
+| Playback updates            | `apps/cli/src/app/playback/PlaybackPhase.ts`           | Implemented |
+| Shutdown cleanup            | `apps/cli/src/app/session/SessionController.ts`        | Implemented |
 | Diagnostics snapshot        | `apps/cli/src/app-shell/panel-data.ts`                 | Implemented |
 
 ## How Discord Presence Connects

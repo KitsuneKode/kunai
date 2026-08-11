@@ -9,7 +9,7 @@ import { getKunaiPaths } from "@kunai/storage";
 // Embedded so `bun build --compile` single-file binaries carry the Lua bridge.
 // Resolves to a real path in dev/npm-bundle and a `/$bunfs/` path in a compiled
 // binary; `Bun.file()` reads both, and `Bun.write()` (unlike Node `copyFile`)
-// can copy from a `/$bunfs/` source. See docs/superpowers/plans/2026-06-13-*.
+// can copy from a `/$bunfs/` source. See docs/superpowers/archive/plans/2026-06-13-*.
 import bridgeLua from "../../../assets/mpv/kunai-bridge.lua" with { type: "file" };
 
 const SCRIPT_OPTS_ID = "kunai-bridge";

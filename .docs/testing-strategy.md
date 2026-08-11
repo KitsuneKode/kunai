@@ -1,4 +1,4 @@
-# KitsuneSnipe — Testing Strategy
+# Kunai — Testing Strategy
 
 Use this doc when adding tests, refactoring code to improve testability, or deciding what kind of test belongs to a change.
 
@@ -6,11 +6,11 @@ The goal is not "more tests" in the abstract. The goal is confident, maintainabl
 
 ## Repo Test Layout
 
-- keep pure unit tests under `test/unit/`, mirrored by domain or feature area
-- keep cross-module deterministic integration tests under `test/integration/`
-- keep opt-in live provider smoke scripts under `test/live/`
-- keep copyable templates for new contract tests under `test/templates/`
-- keep VHS tapes and captured golden outputs under `test/vhs/` for UI demos and visual regression review
+- keep pure unit tests under `apps/cli/test/unit/`, mirrored by domain or feature area
+- keep cross-module deterministic integration tests under `apps/cli/test/integration/`
+- keep opt-in live provider smoke scripts under `apps/cli/test/live/`
+- keep copyable templates for new contract tests under `apps/cli/test/templates/`
+- keep VHS tapes and captured golden outputs under `apps/cli/test/vhs/` for UI demos and visual regression review
 
 The published npm package already excludes the entire `test/` tree because `package.json` only ships `dist/kunai.js`, `dist/assets/**`, `README.md`, and `LICENSE`. `bun run pkg:check` also rejects compiled binaries and analyze metafiles in the tarball.
 
@@ -49,15 +49,15 @@ worth keeping. Do not add `ink-testing-library` as a dependency.
 
 ### What the local harness provides
 
-| Helper                                  | Use it for                                        | Notes                                                                                                                       |
-| --------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `captureFrame(node, { columns, rows })` | One-shot snapshot at a given width                | Trims trailing blank lines; deterministic.                                                                                  |
-| `captureAllWidths(node)`                | Same node at 72 / 100 / 140                       | Returns `{ narrow, medium, wide }`.                                                                                         |
-| `captureSurface(name, node)`            | Write `.txt` snapshots under `test/__captures__/` | For review diffs and committed goldens.                                                                                     |
-| `captureResizeSequence(node, steps)`    | Simulate `useStdout` resize events                | Emits `stdout.emit("resize")`; Ink reads new `columns` from the stream.                                                     |
-| `countCommits(node, { durationMs })`    | Manual real-time flicker probe                    | Avoid in default unit tests; prefer `simulateTicks` unless you are deliberately probing real timer behavior.                |
-| `simulateTicks(node, { rounds, tick })` | Deterministic flicker probe                       | Replaces `setInterval` with a shim that fires once per `act()` round. No real timers; commit count is exactly `1 + rounds`. |
-| `render(node, { columns, rows })`       | Long-lived handle with `rerender` + `stdin`       | Use this to drive `useInput` from tests, change props, or read frame history.                                               |
+| Helper                                  | Use it for                                                 | Notes                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `captureFrame(node, { columns, rows })` | One-shot snapshot at a given width                         | Trims trailing blank lines; deterministic.                                                                                  |
+| `captureAllWidths(node)`                | Same node at 72 / 100 / 140                                | Returns `{ narrow, medium, wide }`.                                                                                         |
+| `captureSurface(name, node)`            | Write `.txt` snapshots under `apps/cli/test/__captures__/` | For review diffs and committed goldens.                                                                                     |
+| `captureResizeSequence(node, steps)`    | Simulate `useStdout` resize events                         | Emits `stdout.emit("resize")`; Ink reads new `columns` from the stream.                                                     |
+| `countCommits(node, { durationMs })`    | Manual real-time flicker probe                             | Avoid in default unit tests; prefer `simulateTicks` unless you are deliberately probing real timer behavior.                |
+| `simulateTicks(node, { rounds, tick })` | Deterministic flicker probe                                | Replaces `setInterval` with a shim that fires once per `act()` round. No real timers; commit count is exactly `1 + rounds`. |
+| `render(node, { columns, rows })`       | Long-lived handle with `rerender` + `stdin`                | Use this to drive `useInput` from tests, change props, or read frame history.                                               |
 
 ### Settings capture
 
@@ -141,10 +141,10 @@ added the following tests and removed the following dead tests.
 
 | File                                                        | Why it was removed                                                                                                                                                                                  |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/cli/test/unit/app-shell/checklist-shell.test.ts`      | 6 lines; tested only that `useLineEditor` is importable.                                                                                                                                            |
+| `apps/cli/test/unit/app-shell/checklist-shell.test.ts`      | Removed — 6 lines; tested only that `useLineEditor` is importable.                                                                                                                                  |
 | `apps/cli/test/unit/app-shell/discover-shell.test.ts`       | 12 lines; tested a type alias, not behavior. The underlying `DiscoverShell` was also deleted (446 lines of dead code; the help overlay and setup tips advertised it but no caller ever mounted it). |
-| `apps/cli/test/unit/app-shell/loading-shell.test.ts`        | 23 lines; tested `formatLoadingProviderLine` for 3 trivial cases. The same helper is covered more thoroughly by `loading-stage-mapping.test.ts` and `loading-shell-runtime.test.ts`.                |
-| `apps/cli/test/unit/app-shell/loading-shell-layout.test.ts` | 13 lines; same helper as the file above, but only with different test data.                                                                                                                         |
+| `apps/cli/test/unit/app-shell/loading-shell.test.ts`        | Removed — 23 lines; tested `formatLoadingProviderLine` for 3 trivial cases. The same helper is covered more thoroughly by `loading-stage-mapping.test.ts` and `loading-shell-runtime.test.ts`.      |
+| `apps/cli/test/unit/app-shell/loading-shell-layout.test.ts` | Removed — 13 lines; same helper as the file above, but only with different test data.                                                                                                               |
 
 The audit was conservative on removals: anything that asserted non-trivial
 behavior on a real exported helper was kept. The four files above were the
@@ -418,7 +418,7 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 
 ## Manual Smoke Matrix
 
-See also [e2e-regression-matrix.md](./e2e-regression-matrix.md) for the post-play convergence release gate scenarios.
+See also [e2e-regression-matrix.md](./archive/e2e-regression-matrix.md) for the post-play convergence release gate scenarios.
 
 Use these after meaningful shell or startup-route changes. They are not replacements for unit tests; they verify the real terminal experience.
 

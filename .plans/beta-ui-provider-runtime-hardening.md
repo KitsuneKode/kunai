@@ -2,7 +2,7 @@
 
 Status: **In progress** (Tasks 1–7 largely complete; Tasks 8–10 open)
 
-Last reconciled: 2026-05-16 — see [plan-implementation-truth.md](./plan-implementation-truth.md).
+Last reconciled: 2026-05-16 — see [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -138,8 +138,7 @@ type PickerRequest = {
 };
 
 type PickerResult =
-  | { type: "selected"; id: string; value: string }
-  | { type: "cancelled"; id: string };
+  { type: "selected"; id: string; value: string } | { type: "cancelled"; id: string };
 ```
 
 - [x] **Step 2: Add reducer helpers**
@@ -480,7 +479,7 @@ bun run --cwd apps/cli test:vhs:help
 
 - Modify: `README.md`
 - Modify: `.docs/quickstart.md`
-- Modify: `.docs/cli-reference.md`
+- Modify: `docs/users/cli-reference.mdx`
 
 - [x] **Step 1: Document Bun stance**
 

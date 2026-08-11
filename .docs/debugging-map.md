@@ -14,10 +14,10 @@ or diagnostic surface to inspect.
 
 Start with:
 
-- `apps/cli/src/app/PlaybackPhase.ts`
+- `apps/cli/src/app/playback/PlaybackPhase.ts`
 - `apps/cli/src/infra/player/PersistentMpvSession.ts`
 - `apps/cli/src/infra/player/persistent-mpv-runtime.ts`
-- `apps/cli/test/integration/persistent-mpv-session-harness.test.ts`
+- `apps/cli/test/unit/infra/player/persistent-mpv-session-harness.test.ts`
 
 Use this path for mpv launch, first-play readiness, episode transitions,
 property floods before readiness, subtitle cleanup, reconnect-after-load, and
@@ -100,7 +100,7 @@ post-start playback health.
 
 Start with:
 
-- `apps/cli/src/app-shell/command-registry.ts`
+- `apps/cli/src/domain/session/command-registry.ts`
 - `apps/cli/src/app-shell/ink-shell.tsx`
 - `apps/cli/src/app-shell/root-overlay-shell.tsx`
 - `apps/cli/src/app-shell/picker-overlay.tsx`
@@ -155,12 +155,12 @@ feature). Provider paths that negotiate HTTP/2 degrade against it; the winget
 **Tests fail in teardown after passing.** `rmSync` on a directory holding an open
 SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does
 not, and retrying never helps because the handle is held for the process
-lifetime. Close first: `test/helpers/temp-store.ts`.
+lifetime. Close first: `apps/cli/test/helpers/temp-store.ts`.
 
 **Tests read real user data.** `XDG_*` variables are Linux-only in
 `getKunaiPaths`; on Windows the roots come from `LOCALAPPDATA`/`APPDATA`. A test
 overriding only `XDG_CACHE_HOME` isolates nothing there. Use
-`test/helpers/storage-env.ts`.
+`apps/cli/test/helpers/storage-env.ts`.
 
 **Text fixtures stop matching.** `.gitattributes` pins the working tree to LF.
 Without it a Windows clone checks files out CRLF, which breaks `\n`-anchored

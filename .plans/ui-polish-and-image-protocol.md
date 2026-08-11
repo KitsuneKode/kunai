@@ -4,7 +4,7 @@
 
 Last reconciled: 2026-05-16
 
-See also: [.docs/poster-image-rendering.md](../.docs/poster-image-rendering.md), [plan-implementation-truth.md](./plan-implementation-truth.md).
+See also: [.docs/poster-image-rendering.md](../.docs/poster-image-rendering.md), [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md).
 
 **Shipped:** `apps/cli/src/app-shell/image-pane.ts`, `poster-renderer.ts`, `use-poster-preview.ts`, Kitty/text placeholders in browse/playback companions, capability detection in `apps/cli/src/image/`.
 
@@ -52,8 +52,7 @@ Keep the companion pane textual and explain that poster preview needs a terminal
 
 ```ts
 export type PosterResult =
-  | { kind: "kitty"; placeholder: string; rows: number; cols: number }
-  | { kind: "none" };
+  { kind: "kitty"; placeholder: string; rows: number; cols: number } | { kind: "none" };
 
 // LRU-style map: url → PosterResult (capped at 12 entries)
 const posterCache = new Map<string, PosterResult>();

@@ -787,7 +787,7 @@ The current CLI/bootstrap story is too ambiguous:
 - Modify: `apps/cli/src/domain/session/command-registry.ts`
 - Modify: `apps/cli/src/domain/session/SessionState.ts`
 - Modify: `apps/cli/src/app-shell/panel-data.ts`
-- Modify: `.docs/cli-reference.md`
+- Modify: `docs/users/cli-reference.mdx`
 - Test: `apps/cli/test/unit/main-args.test.ts`
 - Test: `apps/cli/test/unit/app-shell/*`
 - Test: `apps/cli/test/unit/app/*`
@@ -887,7 +887,7 @@ Make Kunai easier for users to learn and easier for maintainers to verify.
 
 - [x] Add docs skeletons only after the corresponding feature contracts exist.
 - [x] Keep README short and route users to docs.
-- [x] Move smoke-test commands into `.docs/testing-strategy.md` and keep `.docs/cli-reference.md` focused on user behavior.
+- [x] Move smoke-test commands into `.docs/testing-strategy.md` and keep `docs/users/cli-reference.mdx` focused on user behavior.
 - [x] Document `-S` versus `--jump` / `--quick` behavior explicitly.
 - [x] Document continue/resume startup behavior after Phase 9a lands.
 - [x] Document downloads queue versus offline library behavior after Phase 9a lands.

@@ -6,7 +6,7 @@ Created: 2026-06-12
 This is the current coordination plan for the next Kunai CLI architecture pass.
 It supersedes ad hoc cleanup notes for this pass, but does not delete historical
 research. Older plans remain evidence unless this file or
-`plan-implementation-truth.md` marks them current.
+`.plans/archive/plan-implementation-truth.md` marks them current.
 
 ## Goal
 
@@ -466,7 +466,7 @@ packages/storage
     - Remaining: broader historical-plan classification pass.
     - Keep research.
     - Mark current vs historical plan surfaces.
-    - Update `plan-implementation-truth.md` if statuses change.
+    - Update `.plans/archive/plan-implementation-truth.md` if statuses change.
 
 13. `perf(playback): audit post-play first paint and prefetch timing`
     - Status: In progress

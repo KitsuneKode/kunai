@@ -1,4 +1,4 @@
-# KitsuneSnipe — Provider Intake Playbook
+# Kunai — Provider Intake Playbook
 
 Use this doc when researching a new provider, hardening an existing provider, or debugging provider drift after a site change.
 
@@ -29,7 +29,7 @@ The dossier should answer:
 - what we only suspect
 - what sample titles and flows were tested
 - what network and DOM evidence was observed
-- what runtime contract KitsuneSnipe should implement
+- what runtime contract Kunai should implement
 
 Use the template at [.docs/templates/provider-research-dossier.md](./templates/provider-research-dossier.md).
 
