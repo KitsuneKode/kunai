@@ -16,23 +16,82 @@ Storage persists facts.
 If a module does more than one of those jobs, either extract a seam or document
 why the overlap is temporary.
 
-## Enforced Layering
+## Enforced Invariants
 
-These are not conventions — `apps/cli/test/unit/architecture/boundary-imports.test.ts`
-fails the build on a new violation. Existing violations are baselined in that
-file with dated `DEBT` entries; adding to a baseline needs a reason in the diff.
+These are not conventions. Four test files in
+`apps/cli/test/unit/architecture/` fail the build on a new violation. If you are
+about to argue with one of the rules below, you are about to see a red test.
 
-| Layer                    | Must not import                                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `apps/cli/src/domain`    | `@/app`, `@/app-shell`, `@/services`                                                                  |
-| `apps/cli/src/infra`     | `@/app`, `@/app-shell`                                                                                |
-| `apps/cli/src/services`  | `@/app`, `@/app-shell`                                                                                |
-| `apps/cli/src/app-shell` | providers (`@kunai/providers`, `@/services/providers`) and player runtime (`@/infra/player`, `@/mpv`) |
-| Any non-shell layer      | `ink` directly                                                                                        |
-| Any active runtime root  | `archive/legacy`, `apps/experiments`                                                                  |
+Existing violations are baselined in those files with dated `DEBT` entries.
+Adding to a baseline needs a reason in the diff; the baselines are meant to
+shrink.
 
-The same test also gates workspace dependencies per package, so a new
-`packages/*` dependency edge needs an allowlist entry.
+### Import direction — `boundary-imports.test.ts`
+
+| Layer                    | Must not import                                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/cli/src/domain`    | `@/app`, `@/app-shell`, `@/services`                                                                                              |
+| `apps/cli/src/infra`     | `@/app`, `@/app-shell`, provider implementation packages                                                                          |
+| `apps/cli/src/services`  | `@/app`, `@/app-shell`                                                                                                            |
+| `apps/cli/src/app`       | provider implementation packages                                                                                                  |
+| `apps/cli/src/app-shell` | providers (`@kunai/providers`, `@/services/providers`), player runtime (`@/infra/player`, `@/mpv`), and `@kunai/storage` directly |
+| Any non-shell layer      | `ink` directly                                                                                                                    |
+| Any active runtime root  | `archive/legacy`, `apps/experiments`, the retired history store adapter                                                           |
+
+App phases and infra reach providers through the engine and registry seams, not
+by importing a provider package. `app-shell` reaches storage through services,
+never through `@kunai/storage`.
+
+### Package dependency direction
+
+The same test gates each `packages/*` manifest against this map. It is a strict
+DAG — a new edge needs an allowlist entry, and a cycle is unrepresentable.
+
+```text
+@kunai/types     ← (nothing)
+@kunai/design    ← (nothing)
+@kunai/schemas   ← types
+@kunai/core      ← types
+@kunai/config    ← schemas, types
+@kunai/providers ← core, types
+@kunai/relay     ← core, types
+@kunai/storage   ← core, schemas, types
+```
+
+Note what is absent: `core` does not depend on `schemas`, and `design` depends
+on nothing. Keep it that way unless you are deliberately changing the shape.
+
+### File placement — `filename-convention.test.ts`
+
+- **`apps/cli/src` root is closed.** Only 14 allowlisted flat modules may live
+  there (`main.ts`, `container.ts`, `cli-args.ts`, `aniskip.ts`, `introdb.ts`,
+  `logger.ts`, `menu.ts`, `mpv.ts`, `search.ts`, `session-flow.ts`,
+  `subtitle.ts`, `tmdb.ts`, `ui.ts`, `asset-modules.d.ts`). **A new `.ts` file
+  at the root fails the build** — put it in a layer directory. The allowlist is
+  the legacy flat-module debt, and it only shrinks.
+- New `.ts` files are kebab-case; PascalCase `.ts` is a closed migration
+  allowlist.
+- `.tsx` files are PascalCase, `*-shell.tsx`, or `*-ui.tsx`.
+
+### Declaration/reader parity — `contract-conformance.test.ts`
+
+Kunai's characteristic failure is a declaration nobody reads. These gates catch
+it:
+
+- every registered command is offered by at least one palette context
+- every keybinding scope has a binding and is reachable from `resolveHelpScope`
+- `helpOnly` bindings carry no dead footer metadata
+- declared contract surfaces have a production reader
+- provider manifests declare exactly the capabilities they implement
+
+If you add a command, keybinding scope, capability, or contract surface, wire
+its consumer in the same change.
+
+### Entrypoint — `dev-entrypoint.test.ts`
+
+The root `dev` script launches the CLI source entrypoint directly, with no
+nested package script, and the canonical root-content renderer demand-loads the
+root overlay implementation.
 
 ## Ownership
 

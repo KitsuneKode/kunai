@@ -23,13 +23,14 @@ touches.
 Each of these is enforced or expensive to get wrong. Everything else is
 judgment.
 
-- **Layering is a test, not a convention.**
-  `apps/cli/test/unit/architecture/boundary-imports.test.ts` fails on a new
-  violation: `domain/` imports neither `app`, `app-shell`, nor `services`;
-  `infra/` and `services/` import neither `app` nor `app-shell`; `app-shell`
-  imports no provider or player runtime; nothing outside the shell imports
-  `ink`; no active code imports `archive/legacy` or `apps/experiments`. Details
-  in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
+- **Structure is a test, not a convention.** Four files in
+  `apps/cli/test/unit/architecture/` fail the build on a new violation: import
+  direction between layers, the `packages/*` dependency DAG, filename casing,
+  the closed `apps/cli/src` root (a new flat `.ts` there fails), and
+  declaration/reader parity for commands, keybindings, and provider
+  capabilities. Full rules in
+  [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md#enforced-invariants) —
+  read that section before moving files or adding a package dependency.
 - **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
 - **Production providers are the ones in
   `apps/cli/src/container/bootstrap-providers.ts` →
@@ -69,7 +70,8 @@ Before finishing work:
 bun run typecheck
 bun run lint
 bun run fmt
-bun run verify:doc-paths   # if you touched AGENTS.md or .docs/
+bun run verify:doc-paths      # if you touched AGENTS.md or .docs/
+bun run verify:doc-coverage   # if you added or moved a code directory
 ```
 
 - `bun run test` for tests — never `bun test` directly.
@@ -88,8 +90,7 @@ bun run verify:doc-paths   # if you touched AGENTS.md or .docs/
   the fact. Never leave the terminal in a broken state.
 - **Silent no-ops are the house failure mode** — flags parsed and dropped,
   settings persisted and ignored, capabilities declared and unread. If you add a
-  declaration, add its reader;
-  `apps/cli/test/unit/architecture/contract-conformance.test.ts` gates this.
+  declaration, add its reader; `contract-conformance.test.ts` gates this.
 - **Extract shared logic instead of patching locally.** Duplicated logic across
   files is a design smell. Reshaping existing code to improve the long-term
   design is welcome; mass-renaming for style is not.
@@ -165,11 +166,19 @@ Never cite an `archive/` file as authority for current behavior.
 
 ## Keeping docs honest
 
-The dominant cause of doc rot here is a directory reorganization that leaves
-routing docs pointing at the old layout — silent until an agent looks in the
-wrong place. `bun run verify:doc-paths` turns that into a failure: it checks
-every backticked repo path and relative link in `AGENTS.md`, `.docs/`, and
-`docs/agents/`.
+Doc rot here has two shapes, and each has a check:
+
+- **Docs pointing at code that moved** — the dominant cause, silent until an
+  agent looks in the wrong place. `bun run verify:doc-paths` checks every
+  backticked repo path and relative link in `AGENTS.md`, `.docs/`, and
+  `docs/agents/`.
+- **Code that nothing points at** — a new directory nobody routed, which the
+  next agent misses or reimplements. `bun run verify:doc-coverage` requires
+  every subdirectory of `services/`, `domain/`, `infra/`, `app/`, and
+  `packages/` to appear in [.docs/feature-map.md](.docs/feature-map.md).
+
+Neither check reads source comments, so a `// See docs/...` reference can still
+rot silently. Grep before moving a doc that code cites by path.
 
 When you finish work:
 
