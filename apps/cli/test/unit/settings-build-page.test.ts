@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { buildSettingsPage } from "@/app-shell/settings/build-page";
 import { buildSettingsRegistry } from "@/app-shell/settings/registry";
+import { EMPTY_SYNC_SETTINGS_SNAPSHOT } from "@/app-shell/settings/types";
 import type { Container } from "@/container";
 import { CONFIG_METADATA } from "@/services/persistence/config-metadata";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -15,6 +16,7 @@ test("buildSettingsRegistry includes relay text rows without keep/clear submenu"
   const ctx = {
     config,
     presenceSnapshot: null,
+    syncSnapshot: EMPTY_SYNC_SETTINGS_SNAPSHOT,
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],
@@ -32,6 +34,7 @@ test("buildSettingsPage filters rows by search query", () => {
   const ctx = {
     config,
     presenceSnapshot: null,
+    syncSnapshot: EMPTY_SYNC_SETTINGS_SNAPSHOT,
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],
@@ -46,6 +49,7 @@ test("editable config metadata is represented by registry rows", () => {
   const ctx = {
     config: DEFAULT_CONFIG,
     presenceSnapshot: null,
+    syncSnapshot: EMPTY_SYNC_SETTINGS_SNAPSHOT,
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],

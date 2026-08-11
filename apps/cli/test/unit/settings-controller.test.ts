@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { buildSettingsPage, listSettingsSectionLabels } from "@/app-shell/settings/build-page";
 import { handleSettingsKey } from "@/app-shell/settings/controller";
 import { createSettingsUiState } from "@/app-shell/settings/state";
+import { EMPTY_SYNC_SETTINGS_SNAPSHOT } from "@/app-shell/settings/types";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { Key } from "ink";
@@ -30,6 +31,7 @@ function mockRegistryCtx(config: KitsuneConfig) {
   return {
     config,
     presenceSnapshot: null,
+    syncSnapshot: EMPTY_SYNC_SETTINGS_SNAPSHOT,
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],

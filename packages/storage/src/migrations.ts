@@ -538,6 +538,28 @@ export const dataMigrations: readonly Migration[] = [
         ON playback_queue_sessions(status, last_activity_at DESC);
     `,
   },
+  {
+    id: "027_data_sync_queue",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id TEXT PRIMARY KEY,
+        adapter_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        last_error_kind TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (adapter_id, dedupe_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_due
+        ON sync_queue(next_attempt_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

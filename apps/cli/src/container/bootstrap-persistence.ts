@@ -38,6 +38,7 @@ import {
   ScheduleCacheRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
+  SyncQueueRepository,
   TitleProviderHealthRepository,
   type KunaiDatabase,
 } from "@kunai/storage";
@@ -302,9 +303,18 @@ export async function bootstrapPersistence(
   const TMDB_PUBLIC_KEY = process.env.KUNAI_TMDB_API_KEY ?? "653bb8af90162bd98fc7ee32bcbbfb3d";
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, TMDB_PUBLIC_KEY);
   await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
-  const syncService = new SyncService(anilistAdapter, tmdbAdapter);
 
   const config = await ConfigServiceImpl.load(configStore);
+
+  // Built after config: every push is gated on `config.sync.<adapter>`, so the
+  // service needs a live view of those toggles rather than a snapshot.
+  const syncService = new SyncService({
+    adapters: [anilistAdapter, tmdbAdapter],
+    queue: new SyncQueueRepository(dataDb),
+    config,
+    diagnostics: diagnosticsService,
+  });
+
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
       await import("@/app/playback/videasy-cache-invalidation");

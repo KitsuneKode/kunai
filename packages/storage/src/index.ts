@@ -43,6 +43,16 @@ export type {
   HistoryTitleAliasNs,
 } from "./repositories/history-title-aliases";
 export { CatalogCrosswalkRepository } from "./repositories/catalog-crosswalk";
+export {
+  SYNC_QUEUE_MAX_ATTEMPTS,
+  SyncQueueRepository,
+  syncQueueBackoffMs,
+} from "./repositories/sync-queue";
+export type {
+  SyncQueueEnqueueInput,
+  SyncQueueErrorKind,
+  SyncQueueItem,
+} from "./repositories/sync-queue";
 export type { CatalogCrosswalkSourceNs } from "./repositories/catalog-crosswalk";
 export { PlaybackEventRepository } from "./repositories/playback-events";
 export type {

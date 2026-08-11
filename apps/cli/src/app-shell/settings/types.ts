@@ -1,6 +1,7 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
+import type { ConnectionState } from "@/services/sync/types";
 
 import type { ShellPickerOption } from "../types";
 import type { SectionLayout } from "./layouts";
@@ -11,9 +12,26 @@ export type SettingGate = {
   readonly predicate?: (config: KitsuneConfig) => boolean;
 };
 
+/**
+ * Tracker connection state for the sync page, resolved once when the context is
+ * built. Snapshotting keeps the registry a pure function of its context, so
+ * building a page never reaches into live services mid-render.
+ */
+export type SyncSettingsSnapshot = {
+  readonly connections: Readonly<Record<"anilist" | "tmdb", ConnectionState>>;
+  readonly queue: { readonly pending: number; readonly dead: number };
+};
+
+/** Neutral snapshot for callers with no tracker state (tests, fixtures). */
+export const EMPTY_SYNC_SETTINGS_SNAPSHOT: SyncSettingsSnapshot = {
+  connections: { anilist: { state: "disconnected" }, tmdb: { state: "disconnected" } },
+  queue: { pending: 0, dead: 0 },
+};
+
 export type SettingsRegistryContext = {
   readonly config: KitsuneConfig;
   readonly presenceSnapshot: PresenceSnapshot | null;
+  readonly syncSnapshot: SyncSettingsSnapshot;
   readonly seriesProviderOptions: readonly ShellPickerOption<string>[];
   readonly animeProviderOptions: readonly ShellPickerOption<string>[];
   readonly youtubeProviderOptions: readonly ShellPickerOption<string>[];

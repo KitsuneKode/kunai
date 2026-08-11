@@ -3064,28 +3064,62 @@ async function handleSync(container: Container): Promise<"handled"> {
       | { type: "push-now" }
       | { type: "back" };
 
+    const queueStatus = syncService.getQueueStatus();
+
     const options: ShellOption<SyncAction>[] = [
       ...adapters.map((adapter) => {
-        const connected = adapter.isConnected();
-        const username = adapter.getConnectedUsername();
+        const connection = adapter.getConnection();
+        const gate = container.config.sync[adapter.id];
+        const connected = connection.state === "connected";
+
+        // Say plainly what each tracker can do. TMDB exposes no episode-progress
+        // API, and presenting both as interchangeable "sync" is what made it
+        // look broken rather than limited.
+        const scope = adapter.capabilities.episodeProgress
+          ? "episode progress + lists"
+          : "watchlist + favourites only (no episode progress)";
+
+        const label =
+          connection.state === "needs-reauth"
+            ? `${adapter.displayName}  ·  reconnect needed`
+            : connected
+              ? `${adapter.displayName}  ·  connected${connection.username ? ` as @${connection.username}` : ""}`
+              : `${adapter.displayName}  ·  not connected`;
+
+        const detail =
+          connection.state === "needs-reauth"
+            ? connection.reason
+            : connected
+              ? gate?.enabled
+                ? `${scope} · select to disconnect`
+                : `${scope} · disabled in settings`
+              : `Select to connect · ${scope}`;
+
         return {
-          value: connected
-            ? ({ type: "disconnect", id: adapter.id } as SyncAction)
-            : ({ type: "connect", id: adapter.id } as SyncAction),
-          label: connected
-            ? `${adapter.displayName}  ·  connected${username ? ` as @${username}` : ""}`
-            : `${adapter.displayName}  ·  not connected`,
-          detail: connected ? "Select to disconnect" : "Select to connect",
+          value:
+            connection.state === "connected"
+              ? ({ type: "disconnect", id: adapter.id } as SyncAction)
+              : ({ type: "connect", id: adapter.id } as SyncAction),
+          label,
+          detail,
         };
       }),
-      { value: { type: "push-now" as const }, label: "Sync now" },
+      {
+        value: { type: "push-now" as const },
+        label: "Sync now",
+        detail:
+          queueStatus.pending > 0
+            ? `${queueStatus.pending} pending push${queueStatus.pending === 1 ? "" : "es"}`
+            : "Re-push recent history and retry anything queued",
+      },
       { value: { type: "back" as const }, label: "Back" },
     ];
 
     const connectedCount = adapters.filter((a) => a.isConnected()).length;
     const subtitle =
       connectedCount > 0
-        ? `${connectedCount} service${connectedCount === 1 ? "" : "s"} connected`
+        ? `${connectedCount} service${connectedCount === 1 ? "" : "s"} connected` +
+          (queueStatus.dead > 0 ? ` · ${queueStatus.dead} push(es) gave up` : "")
         : "No sync services connected. Select a service to link your account.";
 
     const picked = await chooseFromListShell({
@@ -3106,26 +3140,18 @@ async function handleSync(container: Container): Promise<"handled"> {
         note: `Syncing ${entries.length} entries…`,
       });
 
-      let connected = 0;
-      let succeeded = 0;
-      let failed = 0;
-      const failures: string[] = [];
-      for (const entry of entries) {
-        const summary = await syncService.pushWatched(entry);
-        connected = Math.max(connected, summary.connected);
-        succeeded += summary.succeeded;
-        failed += summary.failed;
-        failures.push(...summary.failures);
-      }
+      const summary = await syncService.syncNow(entries);
 
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
         note:
-          connected === 0
+          summary.connected === 0
             ? "No services connected."
-            : failed > 0
-              ? `Sync finished with ${failed} failed push(es).${failures[0] ? ` ${failures[0]}` : ""}`
-              : `Synced ${entries.length} entries to ${connected} service${connected === 1 ? "" : "s"}.`,
+            : summary.failed > 0
+              ? `Sync finished with ${summary.failed} failed push(es); they will retry automatically.${summary.failures[0] ? ` ${summary.failures[0]}` : ""}`
+              : summary.succeeded > 0
+                ? `Synced ${summary.succeeded} update${summary.succeeded === 1 ? "" : "s"} to ${summary.connected} service${summary.connected === 1 ? "" : "s"}.`
+                : "Everything already up to date.",
       });
       continue;
     }
@@ -3140,17 +3166,34 @@ async function handleSync(container: Container): Promise<"handled"> {
       });
 
       const controller = new AbortController();
-      const result = await adapter.connect(controller.signal);
+      const result = await adapter.connect({
+        signal: controller.signal,
+        // Adapters must never write to the terminal themselves — the Ink shell
+        // owns stdout, so instructions come back through the feedback line.
+        onPrompt: (note) =>
+          container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note }),
+      });
 
-      if (result.ok) {
+      if (result.status === "ok") {
+        // Connecting is an explicit opt-in; turn the toggles on so the first
+        // finished episode actually scrobbles instead of silently doing nothing.
+        await container.config.update({
+          sync: {
+            ...container.config.sync,
+            [adapter.id]: { enabled: true, trackWatched: true, syncList: true },
+          },
+        });
+        await container.config.save();
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          note: `Connected to ${adapter.displayName}.`,
+          note: result.detail
+            ? `${adapter.displayName}: ${result.detail}`
+            : `Connected to ${adapter.displayName}.`,
         });
       } else {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          note: `Failed: ${result.error}`,
+          note: `Failed: ${result.status === "failed" ? result.error : result.reason}`,
         });
       }
       continue;
@@ -3172,6 +3215,16 @@ async function handleSync(container: Container): Promise<"handled"> {
 
       if (confirm) {
         await adapter.disconnect();
+        // Queued pushes for a disconnected account can never land; dropping them
+        // stops the header sitting on a permanent warning.
+        syncService.forgetAdapterQueue(adapter.id);
+        await container.config.update({
+          sync: {
+            ...container.config.sync,
+            [adapter.id]: { enabled: false, trackWatched: false, syncList: false },
+          },
+        });
+        await container.config.save();
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
           note: `Disconnected from ${adapter.displayName}.`,

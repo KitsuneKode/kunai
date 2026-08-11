@@ -49,6 +49,17 @@ export function buildSettingsRegistryContext(
   return {
     config,
     presenceSnapshot: container.presence.getSnapshot(),
+    syncSnapshot: {
+      connections: {
+        anilist: container.syncService.getAdapter("anilist")?.getConnection() ?? {
+          state: "disconnected",
+        },
+        tmdb: container.syncService.getAdapter("tmdb")?.getConnection() ?? {
+          state: "disconnected",
+        },
+      },
+      queue: container.syncService.getQueueStatus(),
+    },
     seriesProviderOptions: buildSettingsProviderOptions({
       providers: seriesProviderMetadata,
       currentProvider: config.provider,

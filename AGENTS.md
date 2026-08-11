@@ -58,6 +58,7 @@ Kunai is a terminal-first Bun CLI that finds playable direct-provider video stre
 - Read [.docs/repo-infrastructure.md](.docs/repo-infrastructure.md) before changing CI, Husky, lint-staged, issue templates, or PR templates
 - Read [.docs/recommendations-and-discover.md](.docs/recommendations-and-discover.md) before changing `/discover`, recommendation services, or recommendation UI
 - Read [.docs/presence-integrations.md](.docs/presence-integrations.md) before changing Discord Rich Presence or other social status integrations
+- Read [.docs/tracker-sync.md](.docs/tracker-sync.md) before changing AniList/TMDB sync, tracker identity mapping, the sync outbox, or scrobble behavior
 - Read [.docs/share-links.md](.docs/share-links.md) before changing share URLs, `/share`, `/watch`, `kunai open`, or PlaybackTargetRef
 - Read [.docs/download-offline-onboarding.md](.docs/download-offline-onboarding.md) before changing download, offline library, setup, or onboarding behavior
 - Read [.docs/poster-image-rendering.md](.docs/poster-image-rendering.md) before changing terminal poster previews, chafa or Kitty image output, or image capability detection

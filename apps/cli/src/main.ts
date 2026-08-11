@@ -991,16 +991,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     },
   });
   for (const adapter of container.syncService.adapters) {
-    const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
-    if (!ensureConnectedUsername) continue;
+    if (!adapter.isConnected()) continue;
     runBackgroundTask({
       task: `sync.${adapter.id}.identity`,
       category: "runtime",
       diagnostics: container.diagnosticsService,
       logger,
-      run: ensureConnectedUsername,
+      run: adapter.refreshIdentity.bind(adapter),
     });
   }
+  // Drain anything the last session could not deliver (offline scrobbles,
+  // tracker outages). Backoff lives in the queue, so this is cheap when idle.
+  runBackgroundTask({
+    task: "sync.queue.drain",
+    category: "runtime",
+    diagnostics: container.diagnosticsService,
+    logger,
+    run: () => container.syncService.drain(),
+  });
   if (protocolHandoff && !pendingShareLaunch?.trusted) {
     const { confirmProtocolHandoff } = await import("./app-shell/workflows");
     const confirmed = await confirmProtocolHandoff(protocolHandoff);

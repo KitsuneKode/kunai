@@ -1,6 +1,7 @@
 import { buildSettingsPage } from "@/app-shell/settings/build-page";
 import { SettingsOverlay } from "@/app-shell/settings/SettingsOverlay";
 import { createSettingsUiState } from "@/app-shell/settings/state";
+import { EMPTY_SYNC_SETTINGS_SNAPSHOT } from "@/app-shell/settings/types";
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
@@ -23,6 +24,7 @@ const config = {
 const registryCtx = {
   config,
   presenceSnapshot: null,
+  syncSnapshot: EMPTY_SYNC_SETTINGS_SNAPSHOT,
   seriesProviderOptions: [],
   animeProviderOptions: [],
   youtubeProviderOptions: [],

@@ -2336,6 +2336,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               "post-playback",
               context.signal,
             );
+            // Scrobble the persisted row, not the in-flight session values: the
+            // row carries the canonical title id and the enriched external id
+            // bag, which is what the trackers key on. Non-blocking by contract —
+            // the durable queue owns delivery, so an episode boundary never
+            // waits on a tracker round-trip.
+            if (savedHistoryRow) {
+              container.syncService.trackerPush(savedHistoryRow);
+            }
             const providerSuggestion = container.titleProviderHealth.getSwitchSuggestion(
               title.id,
               currentProvider.metadata.id,
