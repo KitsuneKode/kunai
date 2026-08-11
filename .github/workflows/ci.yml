@@ -223,6 +223,14 @@ jobs:
         # Step-level bound so a wedged suite is attributed here rather than
         # surfacing as an unexplained job cancellation with no failing step.
         timeout-minutes: 8
+        env:
+          # Bun's 5s per-test default is too tight only here. The SQLite-backed
+          # suites open a database per test, and the shared temp store registry
+          # pays a synchronous full GC per teardown so Windows actually releases
+          # the file handles; under full-suite load that intermittently pushes
+          # one test over the line, and which test loses moves between runs.
+          # The 8-minute step bound above stays the real hang detector.
+          KUNAI_TEST_TIMEOUT_MS: "20000"
         run: bun run --cwd apps/cli test
 
       - name: Test Windows storage lifecycle
