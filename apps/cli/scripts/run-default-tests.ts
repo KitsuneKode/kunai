@@ -20,6 +20,21 @@ if (process.env.TURBO_HASH) {
 const cwd = join(import.meta.dir, "..");
 const extraArgs = process.argv.slice(2);
 
+/**
+ * Per-test timeout override, in milliseconds.
+ *
+ * Bun's default is 5s, which is ample everywhere except the Windows CI runner:
+ * the SQLite-backed suites open a fresh database per test, and the shared temp
+ * store registry pays a synchronous full GC per teardown to make Windows
+ * actually release the file handles. Under full-suite load that occasionally
+ * pushes a single test past 5s, and *which* test loses varies run to run.
+ *
+ * Raising the bound rather than special-casing tests keeps a genuine hang
+ * failing — the job's own step timeout is the real ceiling.
+ */
+const timeoutMs = process.env.KUNAI_TEST_TIMEOUT_MS;
+const timeoutArgs = timeoutMs ? ["--", `--timeout=${timeoutMs}`] : [];
+
 async function run(cmd: string[]): Promise<number> {
   const proc = Bun.spawn(cmd, {
     cwd,
@@ -38,9 +53,9 @@ if (extraArgs.length > 0) {
   process.exit(await run(cmd));
 }
 
-const unitCode = await run(["bun", "run", "test:unit"]);
+const unitCode = await run(["bun", "run", "test:unit", ...timeoutArgs]);
 if (unitCode !== 0) {
   process.exit(unitCode);
 }
 
-process.exit(await run(["bun", "run", "test:integration"]));
+process.exit(await run(["bun", "run", "test:integration", ...timeoutArgs]));
