@@ -11,6 +11,14 @@ export interface DurableDiagnosticsSinkOptions {
   readonly repository: DiagnosticEventsRepository;
   readonly maxQueueSize?: number;
   readonly onFailure?: (failure: DurableDiagnosticsFailure) => void;
+  /**
+   * Clock used to age out events on prune. Must be the same clock that stamps
+   * the events (`DiagnosticsServiceImpl`'s `now`), or retention is judged
+   * against a different timeline than the timestamps it is comparing: a session
+   * on an injected clock writes an event and prune immediately deletes it as
+   * older than the retention window. Defaults to the real clock.
+   */
+  readonly now?: () => Date;
 }
 
 const DEFAULT_MAX_QUEUE_SIZE = 1_000;
@@ -136,7 +144,8 @@ export class AsyncDurableDiagnosticsSink {
     }
 
     try {
-      this.options.repository.prune();
+      const now = this.options.now?.();
+      this.options.repository.prune(now ? { now } : {});
     } catch (error) {
       this.markFailed("prune", error);
     }
