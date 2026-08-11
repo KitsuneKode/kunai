@@ -53,6 +53,7 @@ import {
 } from "@/domain/media/media-item-adapters";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import { ensureSessionProviderMatchesLane } from "@/domain/session/session-display";
+import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import {
@@ -742,6 +743,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "download") {
+            if (outcome.value) {
+              syncSelectedResultIndex(stateManager, outcome.value);
+            }
             const { downloadSelectedResult } = await import("../../app-shell/workflows");
             await downloadSelectedResult(container);
             continue;
@@ -764,12 +768,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                     providerRegistry,
                     signal: context.signal,
                   });
-              const selectedIndex = stateManager
-                .getState()
-                .searchResults.findIndex((result) => result.id === originalSelected.id);
-              if (selectedIndex >= 0) {
-                stateManager.dispatch({ type: "SELECT_RESULT", index: selectedIndex });
-              }
+              syncSelectedResultIndex(stateManager, originalSelected);
               const title = await enrichSelectedTitleIdentity(
                 container.catalogIdentityService,
                 titleInfoFromSearchResult(
@@ -948,12 +947,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               providerRegistry,
               signal: context.signal,
             });
-        const selectedIndex = stateManager
-          .getState()
-          .searchResults.findIndex((result) => result.id === originalSelected.id);
-        if (selectedIndex >= 0) {
-          stateManager.dispatch({ type: "SELECT_RESULT", index: selectedIndex });
-        }
+        syncSelectedResultIndex(stateManager, originalSelected);
 
         // Convert SearchResult to TitleInfo
         const title = await enrichSelectedTitleIdentity(
@@ -999,6 +993,27 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         }),
       };
     }
+  }
+}
+
+/**
+ * Point `selectedResultIndex` at the row the shell says is highlighted.
+ *
+ * Browse keeps its cursor in local Ink state and only reports it back with the
+ * action that carries a value. Every action that reads the selection out of
+ * session state must call this first: results loads reset the index to 0, so an
+ * unsynced action silently targets the first row rather than the highlighted
+ * one.
+ */
+function syncSelectedResultIndex(
+  stateManager: SessionStateManager,
+  selected: { readonly id: string },
+): void {
+  const selectedIndex = stateManager
+    .getState()
+    .searchResults.findIndex((result) => result.id === selected.id);
+  if (selectedIndex >= 0) {
+    stateManager.dispatch({ type: "SELECT_RESULT", index: selectedIndex });
   }
 }
 
