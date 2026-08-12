@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { normalizeSearchIntent } from "@/domain/search/SearchIntent";
 import { createSearchIntentEngine } from "@/domain/search/SearchIntentEngine";
 import type { SearchResult, ProviderMetadata } from "@/domain/types";
+import { AniListSearchService } from "@/services/search/definitions/anilist";
+import { SEARCH_SERVICE_DEFINITIONS } from "@/services/search/definitions/index";
 import { searchTitles } from "@/services/search/SearchRoutingService";
 
 describe("searchTitles", () => {
@@ -837,6 +839,158 @@ describe("searchTitles", () => {
       filters: { year: 2024, minRating: 7 },
     });
   });
+
+  test("declares AniDB/AniList catalog compatibility in both authorities", () => {
+    const anilistDefinition = SEARCH_SERVICE_DEFINITIONS.find((def) => def.id === "anilist");
+    const anilistService = new AniListSearchService({} as never);
+    const expected = ["anidb", "allanime", "allmanga", "miruro", "hianime"];
+
+    expect(anilistDefinition?.compatibleProviders).toEqual(expected);
+    expect(anilistService.compatibleProviders).toEqual(expected);
+  });
+
+  test("uses explicitly compatible AniList search for advanced AniDB filters", async () => {
+    let defaultCalls = 0;
+    const provider = {
+      metadata: {
+        id: "anidb",
+        name: "AniDB",
+        description: "",
+        recommended: true,
+        isAnimeProvider: true,
+        providerLane: "anime",
+        catalogIdentity: "provider-native",
+        domain: "anidb.app",
+      },
+      search: async () => {
+        throw new Error("advanced AniDB search should use declared AniList compatibility");
+      },
+    } as never;
+    const registry = createSearchRegistry({
+      animeResults: [
+        {
+          id: "151807",
+          type: "series",
+          title: "Solo Leveling",
+          year: "2024",
+          overview: "",
+          posterPath: null,
+          externalIds: { anilistId: "151807" },
+        },
+      ],
+      onDefault: () => {
+        defaultCalls += 1;
+      },
+    });
+
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "solo leveling",
+        mode: "anime",
+        filters: { genres: ["action"], minRating: 7 },
+        sort: "rating",
+      }),
+      {
+        mode: "anime",
+        providerId: "anidb",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: registry as never,
+        providerRegistry: { get: () => provider } as never,
+      },
+    );
+
+    expect(defaultCalls).toBe(0);
+    expect(result.strategy).toBe("registry");
+    expect(result.sourceId).toBe("anilist");
+    expect(result.diagnosis).toBeUndefined();
+    expect(result.results[0]?.externalIds?.anilistId).toBe("151807");
+  });
+
+  test("diagnoses unsupported advanced search instead of falling through to default TMDB", async () => {
+    let defaultCalls = 0;
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "",
+        mode: "anime",
+        filters: { genres: ["action"] },
+        sort: "popular",
+      }),
+      {
+        mode: "anime",
+        providerId: "native-without-catalog",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: {
+          getForProvider: () => undefined,
+          getDefault: () => {
+            defaultCalls += 1;
+            throw new Error("default TMDB fallback must not run");
+          },
+        } as never,
+        providerRegistry: {
+          get: () => ({
+            metadata: {
+              id: "native-without-catalog",
+              name: "Native only",
+              isAnimeProvider: true,
+              providerLane: "anime",
+            },
+          }),
+        } as never,
+      },
+    );
+
+    expect(defaultCalls).toBe(0);
+    expect(result.strategy).toBe("unsupported");
+    expect(result.results).toEqual([]);
+    expect(result.evidence.unsupported).toEqual(["genre action", "sort popular"]);
+    expect(result.diagnosis).toEqual({
+      code: "compatible-catalog-unavailable",
+      providerId: "native-without-catalog",
+      attemptedDefaultFallback: false,
+    });
+  });
+
+  test("diagnoses a provider-native fallback when a text query can still be searched safely", async () => {
+    let defaultCalls = 0;
+    const result = await searchTitles(
+      normalizeSearchIntent({
+        query: "mob",
+        mode: "anime",
+        filters: { year: 2019 },
+        sort: "relevance",
+      }),
+      {
+        mode: "anime",
+        providerId: "native-with-search",
+        animeLanguageProfile: { audio: "original", subtitle: "en" },
+        searchRegistry: {
+          getForProvider: () => undefined,
+          getDefault: () => {
+            defaultCalls += 1;
+            throw new Error("default TMDB fallback must not run");
+          },
+        } as never,
+        providerRegistry: {
+          get: () => ({
+            metadata: { id: "native-with-search", name: "Native search", isAnimeProvider: true },
+            search: async () => [
+              { id: "mob-1", type: "series", title: "Mob Psycho 100", year: "2019" },
+            ],
+          }),
+        } as never,
+        enrichAnimeMetadata: false,
+      },
+    );
+
+    expect(defaultCalls).toBe(0);
+    expect(result.strategy).toBe("provider-native");
+    expect(result.results.map((item) => item.id)).toEqual(["mob-1"]);
+    expect(result.diagnosis).toEqual({
+      code: "provider-native-fallback",
+      providerId: "native-with-search",
+      attemptedDefaultFallback: false,
+    });
+  });
 });
 
 function createSearchRegistry({
@@ -845,12 +999,14 @@ function createSearchRegistry({
   animeResults = [],
   onSearch,
   onProviderResolution,
+  onDefault,
 }: {
   providerResults?: SearchResult[];
   defaultResults?: SearchResult[];
   animeResults?: SearchResult[];
   onSearch?: (query: string, signal?: AbortSignal, intent?: any) => void;
   onProviderResolution?: (providerId: string) => void;
+  onDefault?: () => void;
 }) {
   const providerService = {
     metadata: { id: "tmdb", name: "TMDB", description: "" },
@@ -864,7 +1020,7 @@ function createSearchRegistry({
 
   const animeService = {
     metadata: { id: "anilist", name: "AniList", description: "" },
-    compatibleProviders: ["allanime"],
+    compatibleProviders: ["anidb", "allanime"],
     search: async () => animeResults,
     getTitleDetails: async () => null,
   };
@@ -879,10 +1035,11 @@ function createSearchRegistry({
   return {
     getForProvider(providerId: string) {
       onProviderResolution?.(providerId);
-      if (providerId === "allanime") return animeService;
+      if (providerId === "anidb" || providerId === "allanime") return animeService;
       return providerId === "vidking" ? providerService : undefined;
     },
     getDefault() {
+      onDefault?.();
       return defaultService;
     },
   };

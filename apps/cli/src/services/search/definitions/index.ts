@@ -16,7 +16,7 @@ export const SEARCH_SERVICE_DEFINITIONS: SearchServiceDefinition[] = [
       name: "AniList",
       description: "AniList GraphQL search and advanced anime discovery",
     },
-    compatibleProviders: ["allanime", "allmanga", "miruro", "hianime"],
+    compatibleProviders: ["anidb", "allanime", "allmanga", "miruro", "hianime"],
     factory: createAniListSearchService,
   },
   {

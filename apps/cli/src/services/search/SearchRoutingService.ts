@@ -23,13 +23,31 @@ export type SearchRoutingContext = {
   enrichAnimeMetadata?: boolean;
 };
 
+/**
+ * Why an advanced search could not use a declared compatible catalog. Advanced
+ * search must never silently fall through to the default TMDB catalog, because
+ * that changes the catalog identity of the returned titles without saying so.
+ */
+export type SearchRoutingDiagnosis =
+  | {
+      readonly code: "provider-native-fallback";
+      readonly providerId: string;
+      readonly attemptedDefaultFallback: false;
+    }
+  | {
+      readonly code: "compatible-catalog-unavailable";
+      readonly providerId: string;
+      readonly attemptedDefaultFallback: false;
+    };
+
 export type SearchRoutingResult = {
   readonly results: SearchResult[];
   readonly resolvedLane: ProviderLane;
   readonly sourceId: string;
   readonly sourceName: string;
-  readonly strategy: "provider-native" | "registry";
+  readonly strategy: "provider-native" | "registry" | "unsupported";
   readonly evidence: SearchFilterEvidence;
+  readonly diagnosis?: SearchRoutingDiagnosis;
 };
 
 export type SearchFilterEvidence = {
@@ -82,23 +100,78 @@ export async function searchTitles(
   }
 
   if (advanced) {
-    const searchService =
-      context.searchRegistry.getForProvider(routing.providerId) ??
-      context.searchRegistry.getDefault();
-    const evidence = classifySearchEvidence(intent, searchService.metadata.id, context.mode);
-    const results = applyLocalSearchFilters(
-      await searchService.search(query, context.signal, intent),
-      intent,
-      evidence,
-    );
+    const compatibleSearch = context.searchRegistry.getForProvider(routing.providerId);
+    if (compatibleSearch) {
+      const evidence = classifySearchEvidence(intent, compatibleSearch.metadata.id, context.mode);
+      const results = applyLocalSearchFilters(
+        await compatibleSearch.search(query, context.signal, intent),
+        intent,
+        evidence,
+      );
+      return {
+        results: withResolvedSearchLane(results, resolvedLane),
+        resolvedLane,
+        sourceId: compatibleSearch.metadata.id,
+        sourceName: compatibleSearch.metadata.name,
+        strategy: "registry",
+        evidence,
+      };
+    }
 
+    // No declared compatible catalog. A provider-native search keeps the
+    // provider's own catalog identity, so it is safe; the default TMDB catalog
+    // is not, and is never consulted here.
+    if (provider?.search && query.trim().length > 0) {
+      const evidence = classifySearchEvidence(intent, provider.metadata.id, context.mode);
+      const results =
+        (await provider.search(
+          query,
+          {
+            audioPreference: context.animeLanguageProfile.audio,
+            subtitlePreference: context.animeLanguageProfile.subtitle,
+          },
+          context.signal,
+        )) ?? [];
+      return {
+        results: withResolvedSearchLane(
+          applyLocalSearchFilters(results.map(normalizeProviderSearchResult), intent, evidence),
+          resolvedLane,
+        ),
+        resolvedLane,
+        sourceId: provider.metadata.id,
+        sourceName: provider.metadata.name,
+        strategy: "provider-native",
+        evidence,
+        diagnosis: {
+          code: "provider-native-fallback",
+          providerId: routing.providerId,
+          attemptedDefaultFallback: false,
+        },
+      };
+    }
+
+    // The ambient session mode is not a filter that failed to apply, so it is
+    // only reported when the search deliberately crossed modes — matching how
+    // classifySearchEvidence() treats the mode key on every other path.
+    const unsupported = [
+      ...describeSearchIntentFilters({
+        mode: intent.mode === "all" || intent.mode === context.mode ? undefined : intent.mode,
+        filters: intent.filters,
+        sort: intent.sort,
+      }),
+    ];
     return {
-      results: withResolvedSearchLane(results, resolvedLane),
+      results: [],
       resolvedLane,
-      sourceId: searchService.metadata.id,
-      sourceName: searchService.metadata.name,
-      strategy: "registry",
-      evidence,
+      sourceId: routing.providerId,
+      sourceName: provider?.metadata.name ?? routing.providerId,
+      strategy: "unsupported",
+      evidence: { upstream: [], local: [], unsupported },
+      diagnosis: {
+        code: "compatible-catalog-unavailable",
+        providerId: routing.providerId,
+        attemptedDefaultFallback: false,
+      },
     };
   }
 

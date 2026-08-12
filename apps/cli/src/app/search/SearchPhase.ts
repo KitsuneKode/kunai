@@ -565,6 +565,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               strategy: search.strategy,
               source: search.sourceId,
               filters: search.evidence,
+              diagnosis: search.diagnosis?.code,
             });
             diagnosticsService.record(
               buildSearchDiagnosticEvent({
@@ -579,6 +580,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   strategy: search.strategy,
                   source: search.sourceId,
                   filters: search.evidence,
+                  diagnosis: search.diagnosis?.code,
                 },
               }),
             );
