@@ -181,6 +181,7 @@ export function episodeToCoreIdentity(
   return {
     season: episode.season,
     episode: episode.episode,
+    absoluteEpisode: episode.absoluteEpisode,
     title: episode.name,
     airDate: episode.airDate,
     release: episode.release,

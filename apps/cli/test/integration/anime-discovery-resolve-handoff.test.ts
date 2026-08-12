@@ -163,6 +163,53 @@ describe("anime discovery → resolve handoff (CLI-shaped)", () => {
     { timeout: 60_000 },
   );
 
+  test("anidb handoff uses only AniDB-native search and preserves absolute identity", async () => {
+    const { container, dispose } = await createIsolatedContainer("anidb-handoff");
+    disposers.push(dispose);
+
+    let allMangaCalls = 0;
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      // Keep the deterministic suite off anidb.app: force the fetch path and
+      // answer the browse request from a fixture-shaped response.
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async (input: unknown) => {
+        const url = String(
+          typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+        );
+        if (url.includes("anidb.app/browse")) {
+          return new Response(
+            '<a href="https://anidb.app/anime/solo-leveling-19413" title="Solo Leveling"><article></article></a>',
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected network call: ${url}`);
+      }) as unknown as typeof fetch;
+
+      const { mapped, resolveInput } = await handoffAniListSearchPick(container, {
+        discovery: SOLO_LEVELING,
+        providerId: "anidb",
+        episode: { season: 2, episode: 1, absoluteEpisode: 13 },
+        searchProviderNative: async () => {
+          allMangaCalls += 1;
+          return [];
+        },
+      });
+
+      const nativeAnidbId = mapped.externalIds?.providerNativeIds?.anidb;
+      expect(allMangaCalls).toBe(0);
+      expect(nativeAnidbId).toMatch(/-\d+$/);
+      expect(mapped.externalIds?.providerNativeIds?.allanime).toBeUndefined();
+      expect(resolveInput.title.id).toBe(nativeAnidbId as string);
+      expect(resolveInput.episode).toEqual({ season: 2, episode: 1, absoluteEpisode: 13 });
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
   liveProviderTest(
     "miruro resolves a playable stream after AniList search handoff (Farming Life S2)",
     async () => {
@@ -172,7 +219,7 @@ describe("anime discovery → resolve handoff (CLI-shaped)", () => {
       const { request, resolveInput, title } = await handoffAniListSearchPick(container, {
         discovery: FARMING_LIFE_S2,
         providerId: "miruro",
-        episode: 1,
+        episode: { season: 1, episode: 1 },
       });
 
       expect(title.id).toBe("197824");

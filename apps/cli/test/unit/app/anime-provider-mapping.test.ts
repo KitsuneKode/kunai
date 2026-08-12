@@ -52,6 +52,35 @@ const allanimeProviderRegistry = {
   getCompatible: () => [],
 } as never;
 
+const anidbProviderRegistry = {
+  get: () => ({
+    metadata: {
+      id: "anidb",
+      name: "AniDB",
+      description: "",
+      domain: "anidb.app",
+      recommended: true,
+      isAnimeProvider: true,
+      catalogIdentity: "provider-native" as const,
+    },
+    capabilities: {} as never,
+    canHandle: () => true,
+    resolveStream: async () => null,
+    search: async () => [
+      {
+        id: "solo-leveling-19413",
+        type: "series",
+        title: "Solo Leveling",
+        year: "2024",
+        overview: "",
+        posterPath: null,
+      },
+    ],
+  }),
+  getAll: () => [],
+  getCompatible: () => [],
+} as never;
+
 const miruroProviderRegistry = {
   get: () => ({
     metadata: {
@@ -206,4 +235,65 @@ test("leaves ordinary provider-native anime search results unchanged", async () 
     } as never,
   });
   expect(mapped).toBe(providerNative);
+});
+
+test("AniDB mapping never stores an AllAnime opaque id under providerNativeIds.anidb", async () => {
+  let allMangaCalls = 0;
+  const mapped = await mapAnimeDiscoveryResultToProviderNative(discovery, {
+    mode: "anime",
+    providerId: "anidb",
+    animeLanguageProfile: { audio: "original", subtitle: "en" },
+    providerRegistry: anidbProviderRegistry,
+    searchProviderNative: async () => {
+      allMangaCalls += 1;
+      return [
+        {
+          id: "LrLqaxWbfzjShWbXW",
+          title: "Solo Leveling",
+          type: "series",
+          aniListId: 151807,
+        },
+      ];
+    },
+  });
+
+  expect(allMangaCalls).toBe(0);
+  expect(mapped.id).toBe("solo-leveling-19413");
+  expect(mapped.externalIds?.providerNativeIds?.anidb).toBe("solo-leveling-19413");
+  expect(mapped.externalIds?.providerNativeIds?.allanime).toBeUndefined();
+  expect(mapped.externalIds?.anilistId).toBe("151807");
+});
+
+test("AniDB mapping rejects a non-AniDB native result and retains catalog identity", async () => {
+  const mapped = await mapAnimeDiscoveryResultToProviderNative(discovery, {
+    mode: "anime",
+    providerId: "anidb",
+    animeLanguageProfile: { audio: "original", subtitle: "en" },
+    providerRegistry: {
+      get: () => ({
+        metadata: {
+          id: "anidb",
+          name: "AniDB",
+          description: "",
+          domain: "anidb.app",
+          recommended: true,
+          isAnimeProvider: true,
+          catalogIdentity: "provider-native" as const,
+        },
+        capabilities: {} as never,
+        canHandle: () => true,
+        resolveStream: async () => null,
+        search: async () => [{ id: "LrLqaxWbfzjShWbXW", type: "series", title: "Solo Leveling" }],
+      }),
+      getAll: () => [],
+      getCompatible: () => [],
+    } as never,
+    searchProviderNative: async () => {
+      throw new Error("AllManga search must not run for AniDB");
+    },
+  });
+
+  expect(mapped.id).toBe("151807");
+  expect(mapped.externalIds?.anilistId).toBe("151807");
+  expect(mapped.externalIds?.providerNativeIds?.anidb).toBeUndefined();
 });

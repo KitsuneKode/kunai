@@ -180,8 +180,14 @@ export function resolveProviderTitleIdentity(
       break;
   }
 
-  const resolvedAnilistId = anilistId ?? (catalogIdentity === "anilist" ? resolvedId : undefined);
-  const resolvedTmdbId = tmdbId ?? (catalogIdentity === "tmdb" ? resolvedId : undefined);
+  // A catalog's own id space is numeric. Without this guard an opaque provider
+  // id (e.g. an AllAnime show id) carried on a title with no external ids would
+  // be laundered into the anilistId/tmdbId slot purely because the active
+  // provider declares that catalog identity.
+  const resolvedAnilistId =
+    anilistId ?? (catalogIdentity === "anilist" ? asCatalogId(resolvedId) : undefined);
+  const resolvedTmdbId =
+    tmdbId ?? (catalogIdentity === "tmdb" ? asCatalogId(resolvedId) : undefined);
   const resolvedExternalIds = compactExternalIds({
     anilistId: resolvedAnilistId,
     tmdbId: resolvedTmdbId,
@@ -204,6 +210,12 @@ export function resolveProviderTitleIdentity(
     malId,
     externalIds: resolvedExternalIds,
   };
+}
+
+/** AniList and TMDB ids are numeric; anything else is a foreign id space. */
+function asCatalogId(value: string): string | undefined {
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) ? trimmed : undefined;
 }
 
 function compactExternalIds(externalIds: ProviderExternalIds): ProviderExternalIds | undefined {

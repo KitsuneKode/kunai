@@ -1,7 +1,7 @@
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 import { mergeProviderNativeId } from "@kunai/core";
-import { searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
+import { looksLikeAnidbShowId, searchAllManga, type AllMangaSearchResult } from "@kunai/providers";
 import type { ProviderId } from "@kunai/types";
 
 export type AnimeProviderMappingContext = {
@@ -48,8 +48,10 @@ export async function mapAnimeDiscoveryResultToProviderNative(
   const discoveryAniListId = parseInt(result.id, 10);
   const searchProviderNative = context.searchProviderNative ?? searchAllManga;
 
-  // Tier 1: Direct AniList ID match via API (fast, accurate) — AllAnime opaque id only
-  if (!isNaN(discoveryAniListId)) {
+  // Tier 1: Direct AniList ID match via the AllManga API. This returns AllAnime
+  // opaque ids, so it may only ever populate the allanime id slot — writing one
+  // into another provider's slot pins an id that provider cannot resolve.
+  if (context.providerId === "allanime" && !Number.isNaN(discoveryAniListId)) {
     const animeLang =
       context.animeLanguageProfile.audio === "ja" ||
       context.animeLanguageProfile.audio === "original"
@@ -65,27 +67,19 @@ export async function mapAnimeDiscoveryResultToProviderNative(
         animeLang,
         context.signal,
       ).catch(() => []);
-      const idMatch = matches.find((r) => r.aniListId === discoveryAniListId);
-      if (idMatch)
-        return mergeAniListDiscoveryWithProviderResult(
-          result,
-          idMatch,
-          context.providerId,
-          context,
-        );
-      const titleMatch = chooseProviderSearchMatch(result, matches);
-      if (titleMatch)
-        return mergeAniListDiscoveryWithProviderResult(
-          result,
-          titleMatch,
-          context.providerId,
-          context,
-        );
+      const match =
+        matches.find((candidate) => candidate.aniListId === discoveryAniListId) ??
+        chooseProviderSearchMatch(result, matches);
+      if (match) {
+        return mergeAniListDiscoveryWithProviderResult(result, match, "allanime", context);
+      }
     }
   }
 
-  // Tier 2: Title-based match via provider search (testable via mock)
-  if (!provider?.search) return result;
+  // Tier 2: Title-based match via the active provider's own search. Every match
+  // must be an id the active provider actually owns, otherwise we fail closed to
+  // catalog identity rather than pinning a foreign id.
+  if (!provider?.search) return ensureAniListDiscoveryExternalIds(result);
 
   for (const query of providerSearchQueries(result)) {
     const providerResults = await provider
@@ -101,9 +95,14 @@ export async function mapAnimeDiscoveryResultToProviderNative(
 
     if (!providerResults?.length) continue;
 
+    const owned = providerResults.filter((candidate) =>
+      isValidProviderNativeId(context.providerId, candidate.id),
+    );
+    if (owned.length === 0) continue;
+
     // Try numeric ID match on provider results
     if (!isNaN(discoveryAniListId)) {
-      const idMatch = providerResults.find((r) => r.id === discoveryAniListId.toString());
+      const idMatch = owned.find((r) => r.id === discoveryAniListId.toString());
       if (idMatch) {
         return mergeAniListDiscoveryWithProviderResult(
           result,
@@ -114,12 +113,24 @@ export async function mapAnimeDiscoveryResultToProviderNative(
       }
     }
 
-    const match = chooseProviderSearchMatch(result, providerResults.map(toAllMangaResult));
+    const match = chooseProviderSearchMatch(result, owned.map(toAllMangaResult));
     if (match)
       return mergeAniListDiscoveryWithProviderResult(result, match, context.providerId, context);
   }
 
-  return result;
+  return ensureAniListDiscoveryExternalIds(result);
+}
+
+/**
+ * Does `id` belong to `providerId`'s own id space? Fail closed: a provider-native
+ * id slot must never receive another catalog's id, because resolve trusts it.
+ */
+function isValidProviderNativeId(providerId: string, id: string): boolean {
+  const trimmed = id.trim();
+  if (!trimmed) return false;
+  if (providerId === "anidb") return looksLikeAnidbShowId(trimmed);
+  if (providerId === "allanime") return !/^\d+$/.test(trimmed);
+  return true;
 }
 
 function shouldRemapDiscoveryToProviderNative(result: SearchResult): boolean {
@@ -256,9 +267,11 @@ function mergeAniListDiscoveryWithProviderResult(
     posterSource: discovery.posterPath
       ? discovery.posterSource
       : providerResult.posterUrl
-        ? "AllManga"
+        ? providerId
         : undefined,
-    metadataSource: `${discovery.metadataSource} + allanime search`,
+    // Name the provider that actually supplied the identity; this string is
+    // surfaced to the user as "Metadata source".
+    metadataSource: `${discovery.metadataSource} + ${providerId} search`,
     episodeCount: providerResult.epCount ?? discovery.episodeCount,
   };
 }
