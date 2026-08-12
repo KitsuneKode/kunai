@@ -85,6 +85,12 @@ function createHarness() {
   };
 }
 
+/** The session must never hold more than one pending `loadfile` owner. */
+function pendingLoadOwners(session: PersistentMpvSession): number {
+  const pending = (session as unknown as { pendingFileLoad: unknown }).pendingFileLoad;
+  return pending ? 1 : 0;
+}
+
 async function flushAsyncWork(): Promise<void> {
   await Bun.sleep(0);
   await Bun.sleep(0);
@@ -106,6 +112,63 @@ async function waitForSettled(predicate: () => boolean): Promise<void> {
   }
   throw new Error("Timed out waiting for mpv bootstrap teardown");
 }
+
+describe("PersistentMpvSession single pending load owner", () => {
+  async function createLoadedSession() {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    return { harness, session };
+  }
+
+  test("the initial argv-loaded file has a pending owner that the first file-loaded consumes", async () => {
+    const { harness } = await createLoadedSession();
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+
+    // Consuming the owner clears the loading overlay and drains ready work.
+    expect(harness.commands).toContainEqual(["set_property", "user-data/kunai-loading", ""]);
+    expect(harness.commands).toContainEqual(["set_property", "pause", false]);
+  });
+
+  test("an unowned file-loaded is ignored entirely", async () => {
+    const { harness } = await createLoadedSession();
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    const afterFirst = harness.commands.length;
+
+    // The single owner was consumed; nothing owns this second event.
+    harness.callbacks().onFileLoaded?.({ observedAt: 2 });
+    await flushAsyncWork();
+
+    expect(harness.commands.length).toBe(afterFirst);
+  });
+
+  test("two pending load owners never coexist across a replacement", async () => {
+    const { harness, session } = await createLoadedSession();
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+
+    harness.callbacks().onEndFile?.({ reason: "eof", observedAt: 2 });
+    await flushAsyncWork();
+
+    void session.play(createStream({ url: "https://video.example/episode-2.m3u8" }), {
+      displayTitle: "Episode 2",
+      primarySubtitle: null,
+    });
+    await flushAsyncWork();
+
+    const owners = pendingLoadOwners(session);
+    expect(owners).toBeLessThanOrEqual(1);
+  });
+});
 
 describe("PersistentMpvSession deferred bootstrap resources", () => {
   test("an endpoint wait that resolves after the process died does not open an IPC session", async () => {
