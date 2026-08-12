@@ -1,0 +1,15 @@
+# playback-error · wide (140×45)
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ │ Playback failed                                                            │
+│ │ ✗  timed out after 12s                                                     │
+│ │ allmanga                                                                   │
+│ │ r retry · /fallback for another provider                                   │
+│ │                                                                            │
+│ │ Source attempts  ·  more in /diagnostics                                   │
+│ │ ✓ search  ·  0.4s                                                          │
+│ │ ✓ scrape  ·  1.1s                                                          │
+│ │ x resolve  ·  timed out                                                    │
+│ │                                                                            │
+│ ❀ r retry  ·  Enter / Esc dismiss                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯

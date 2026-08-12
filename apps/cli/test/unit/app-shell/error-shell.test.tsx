@@ -104,6 +104,31 @@ describe("ErrorShell", () => {
     }
   });
 
+  // Partial cover for the input-responsiveness risk. This proves the running
+  // interval does not starve the useInput handler in the React/Ink layer. It
+  // does NOT cover the real-terminal failure mode this repo has hit before —
+  // synchronous stdout writes on a repaint loop blocking stdin — because the
+  // capture harness writes to a buffer, not a TTY. That still needs a hand check.
+  test("r still triggers retry while the petals are mid-fall", async () => {
+    let retried = 0;
+    const handle = render(
+      <ErrorShell
+        {...props}
+        onRetry={() => {
+          retried += 1;
+        }}
+      />,
+      { columns: CAPTURE_WIDTHS.medium },
+    );
+    try {
+      await advance(900);
+      handle.stdin.enqueue("r");
+      expect(retried).toBe(1);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("Enter resolves", () => {
     let resolved = 0;
     const handle = render(
