@@ -565,6 +565,43 @@ describe("PlayerServiceImpl shutdown", () => {
     ).toEqual([null, "local", null]);
   });
 
+  test.each([
+    ["movie", 1, 1, "Dune: Part Two  ·  Movie  ·  local"],
+    ["series", 1, 3, "Dune: Part Two  ·  S01E03  ·  local"],
+    ["anime", 1, 3, "Dune: Part Two  ·  E03  ·  local"],
+    ["video", 1, 1, "Dune: Part Two  ·  Video  ·  local"],
+  ] as const)(
+    "local playback names a %s through the canonical presentation seam",
+    async (mediaKind, season, episode, expected) => {
+      const events: DiagnosticEventInput[] = [];
+      const result = createPlaybackResult();
+      let launchedTitle: string | undefined;
+      const { service } = createService(events, {
+        presentation: { isInteractiveShellMounted: () => true },
+        launchMpv: async (options) => {
+          launchedTitle = options.displayTitle;
+          return result;
+        },
+      });
+
+      await service.playLocal({
+        source: {
+          kind: "local",
+          jobId: "job-1",
+          titleId: "title-1",
+          titleName: "Dune: Part Two",
+          mediaKind,
+          providerId: "provider-1",
+          season,
+          episode,
+          filePath: "/media/file.mkv",
+        },
+      });
+
+      expect(launchedTitle).toBe(expected);
+    },
+  );
+
   test("release waits for and closes a persistent player still being created", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);

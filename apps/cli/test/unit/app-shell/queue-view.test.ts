@@ -43,7 +43,8 @@ describe("buildQueueView", () => {
     const v = buildQueueView({ entries, ...base, selectedId: "2" });
     expect(v.rows.map((r) => r.state)).toEqual(["played", "playing", "pending"]);
     expect(v.rows[1]!.position).toBe(1);
-    expect(v.rows[1]!.episodeLabel).toBe("S02·E08");
+    // Anime hides season unless the caller proves it is meaningful.
+    expect(v.rows[1]!.episodeLabel).toBe("E08");
     expect(v.rows[2]!.episodeLabel).toBe("E03");
     expect(v.selectedIndex).toBe(1);
     expect(v.counts).toEqual({ unplayed: 2, total: 3 });
@@ -61,5 +62,29 @@ describe("buildQueueView", () => {
     const entries = [entry({ id: "m", title: "Film", mediaKind: "movie" })];
     const v = buildQueueView({ entries, ...base });
     expect(v.rows[0]!.episodeLabel).toBe("Movie");
+  });
+
+  test("a legacy movie row with a synthetic season 1 episode 1 still reads as Movie", () => {
+    const entries = [
+      entry({ id: "m", title: "Dune: Part Two", mediaKind: "movie", season: 1, episode: 1 }),
+    ];
+    const v = buildQueueView({ entries, ...base });
+    expect(v.rows[0]!.episodeLabel).toBe("Movie");
+    expect(v.rows[0]!.episodeLabel).not.toContain("S01E01");
+  });
+
+  test("each content kind uses the canonical position label", () => {
+    const entries = [
+      entry({ id: "movie", title: "Film", mediaKind: "movie", season: 1, episode: 1 }),
+      entry({ id: "series", title: "Severance", mediaKind: "series", season: 1, episode: 3 }),
+      entry({ id: "anime", title: "Frieren", mediaKind: "anime", season: 1, episode: 3 }),
+      entry({ id: "video", title: "Trailer", mediaKind: "video", season: 1, episode: 1 }),
+    ];
+    const v = buildQueueView({ entries, ...base });
+    const labels = Object.fromEntries(v.rows.map((row) => [row.id, row.episodeLabel]));
+    expect(labels.movie).toBe("Movie");
+    expect(labels.series).toBe("S01E03");
+    expect(labels.anime).toBe("E03");
+    expect(labels.video).toBe("Video");
   });
 });

@@ -394,8 +394,61 @@ describe("buildNotificationsView projection", () => {
     ]);
 
     const facts = new Map(rail?.preview.facts.map((fact) => [fact.label, fact.value]));
-    expect(facts.get("Episode")).toBe("S01E06");
+    // Anime hides season unless the notice proves it is meaningful.
+    expect(facts.get("Episode")).toBe("E06");
     expect(facts.get("Provider")).toBe("allanime");
+  });
+
+  /**
+   * A notification is often the first place a user reads an item's name, so it
+   * has to agree with the queue, the library and the download toast.
+   */
+  it.each([
+    ["movie", 1, 1, "Movie"],
+    ["series", 1, 6, "S01E06"],
+    ["anime", 1, 6, "E06"],
+    ["video", 1, 1, "Video"],
+  ] as const)(
+    "labels a %s notice with its canonical position",
+    (mediaKind, season, episode, expected) => {
+      const projected = view({
+        records: [
+          rec({
+            dedupKey: "a",
+            itemJson: JSON.stringify({
+              mediaKind,
+              titleId: "tmdb:1",
+              title: "Example",
+              season,
+              episode,
+            }),
+          }),
+        ],
+      });
+
+      const facts = new Map(projected.rail?.preview.facts.map((fact) => [fact.label, fact.value]));
+      expect(facts.get("Episode")).toBe(expected);
+    },
+  );
+
+  it("never renders a legacy synthetic movie notice as S01E01", () => {
+    const projected = view({
+      records: [
+        rec({
+          dedupKey: "a",
+          itemJson: JSON.stringify({
+            mediaKind: "movie",
+            titleId: "tmdb:1",
+            title: "Dune: Part Two",
+            season: 1,
+            episode: 1,
+          }),
+        }),
+      ],
+    });
+
+    const facts = projected.rail?.preview.facts ?? [];
+    expect(facts.some((fact) => fact.value.includes("S01E01"))).toBe(false);
   });
 
   it("enriches missing posterUrl from resolvePosterUrl by titleId", () => {

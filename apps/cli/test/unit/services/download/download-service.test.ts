@@ -37,6 +37,95 @@ describe("DownloadService", () => {
     mock.restore();
   });
 
+  /**
+   * The output path is product identity: repair, resume and library scanning
+   * all look a download up by the exact path that produced it. It therefore
+   * has to come from the same canonical position the UI shows, not from a
+   * second guess about what "movie" means.
+   */
+  describe("output naming derives from canonical media position", () => {
+    test("an anime job is named episode-only, with no season folder", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "tmdb:1", type: "series", name: "Frieren" },
+        episode: { season: 1, episode: 3, name: "Episode 3" },
+        providerId: "allanime",
+        mode: "anime",
+      });
+
+      expect(repo.get(job.id)?.mediaKind).toBe("anime");
+      expect(repo.get(job.id)?.outputPath).toBe(join(tempDir, "Frieren", "Frieren - E03.mp4"));
+    });
+
+    test("a series job keeps the season folder and SxxEyy stem", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "tmdb:2", type: "series", name: "Severance" },
+        episode: { season: 1, episode: 3, name: "Episode 3" },
+        providerId: "vidking",
+        mode: "series",
+      });
+
+      expect(repo.get(job.id)?.mediaKind).toBe("series");
+      expect(repo.get(job.id)?.outputPath).toBe(
+        join(tempDir, "Severance", "Season 01", "Severance - S01E03.mp4"),
+      );
+    });
+
+    test("a movie job is named title-level", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "tmdb:3", type: "movie", name: "Dune Part Two" },
+        providerId: "vidking",
+        mode: "series",
+      });
+
+      const record = repo.get(job.id);
+      expect(record?.mediaKind).toBe("movie");
+      expect(record?.outputPath).toBe(join(tempDir, "Dune Part Two", "Dune Part Two.mp4"));
+      expect(record?.outputPath).not.toContain("S01E01");
+    });
+
+    test("a youtube job is named title-level as a video", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "yt:1", type: "series", name: "Kunai Release Trailer" },
+        providerId: "youtube",
+        mode: "youtube",
+      });
+
+      const record = repo.get(job.id);
+      expect(record?.mediaKind).toBe("video");
+      expect(record?.outputPath).toBe(
+        join(tempDir, "Kunai Release Trailer", "Kunai Release Trailer.mp4"),
+      );
+    });
+  });
+
   test("rejects enqueue when downloads are disabled", async () => {
     const service = buildService({
       repo,
