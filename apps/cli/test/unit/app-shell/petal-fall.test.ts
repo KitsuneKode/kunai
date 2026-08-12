@@ -93,6 +93,10 @@ describe("petalsForFrame", () => {
     expect(frames.length).toBeGreaterThan(0);
   });
 
+  // Asserted on DEPTH, not on the resolved color. `danger` and `dangerDim` both
+  // collapse to "red" on a 16-color terminal, so a color comparison here passes
+  // on a truecolor dev machine and fails in CI for a reason that has nothing to
+  // do with the rule being checked.
   test("no gutter petal uses the mid depth, which would vanish against the idle gutter", () => {
     for (let frame = 0; frame <= settledFrame(ROW_COUNT); frame++) {
       for (const petal of petalsForFrame({
@@ -102,10 +106,27 @@ describe("petalsForFrame", () => {
         width: 76,
       })) {
         if (petal.column === GUTTER_COLUMN) {
-          expect(petal.color).not.toBe(palette.dangerDim);
+          expect(petal.depth).not.toBe("mid");
         }
       }
     }
+  });
+
+  test("each depth maps to its own token, and the gutter never draws the gutter's own color", () => {
+    const seen = new Map<string, string>();
+    for (let frame = 0; frame <= settledFrame(ROW_COUNT); frame++) {
+      for (const petal of petalsForFrame({
+        frame,
+        rowCount: ROW_COUNT,
+        rowEndColumns: rowEnds(),
+        width: 76,
+      })) {
+        seen.set(petal.depth, petal.color);
+      }
+    }
+    expect(seen.get("near")).toBe(palette.danger);
+    expect(seen.get("mid")).toBe(palette.dangerDim);
+    expect(seen.get("far")).toBe(palette.accentDim);
   });
 
   test("only ever uses single-cell bloom glyphs", () => {
@@ -132,7 +153,13 @@ describe("petalsForFrame", () => {
       width: 76,
     });
     expect(placements).toEqual([
-      { row: ROW_COUNT - 1, column: GUTTER_COLUMN, glyph: STATIC_PETAL, color: palette.danger },
+      {
+        row: ROW_COUNT - 1,
+        column: GUTTER_COLUMN,
+        glyph: STATIC_PETAL,
+        color: palette.danger,
+        depth: "near",
+      },
     ]);
   });
 

@@ -14,12 +14,22 @@
 import { BLOOM_FRAMES, STATIC_PETAL } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
+/**
+ * Depth reads as near/mid/far in truecolor. It is carried on the placement
+ * rather than left implicit in the color, because `danger` and `dangerDim`
+ * both collapse to `"red"` on a 16-color terminal — so a resolved color cannot
+ * tell you which depth produced it, and any rule about depth has to be stated
+ * in terms of the depth itself.
+ */
+export type PetalDepth = "near" | "mid" | "far";
+
 /** One petal occupying one cell for one frame. */
 export type PetalPlacement = {
   readonly row: number;
   readonly column: number;
   readonly glyph: string;
   readonly color: string;
+  readonly depth: PetalDepth;
 };
 
 /** Column 0 is the `│` gutter ErrorShell already draws. Text never occupies it. */
@@ -34,12 +44,10 @@ const SPAWN_UNTIL = 15;
 /** Text begins at column 2; a field petal needs one more space of clearance. */
 const TEXT_CLEARANCE = 1;
 
-type LaneDepth = "near" | "mid" | "far";
-
 type Lane = {
   readonly column: number;
   readonly born: number;
-  readonly depth: LaneDepth;
+  readonly depth: PetalDepth;
 };
 
 /**
@@ -61,7 +69,7 @@ const LANES: readonly Lane[] = [
   { column: 0, born: SPAWN_UNTIL, depth: "near" },
 ];
 
-function depthColor(depth: LaneDepth): string {
+function depthColor(depth: PetalDepth): string {
   if (depth === "near") return palette.danger;
   if (depth === "mid") return palette.dangerDim;
   return palette.accentDim;
@@ -91,7 +99,15 @@ export function petalsForFrame(input: {
 
   const restRow = rowCount - 1;
   if (frame >= settledFrame(rowCount)) {
-    return [{ row: restRow, column: GUTTER_COLUMN, glyph: STATIC_PETAL, color: palette.danger }];
+    return [
+      {
+        row: restRow,
+        column: GUTTER_COLUMN,
+        glyph: STATIC_PETAL,
+        color: palette.danger,
+        depth: "near",
+      },
+    ];
   }
 
   const placements: PetalPlacement[] = [];
@@ -118,6 +134,7 @@ export function petalsForFrame(input: {
       column: lane.column,
       glyph: BLOOM_FRAMES[(frame + index) % BLOOM_FRAMES.length] ?? STATIC_PETAL,
       color: depthColor(lane.depth),
+      depth: lane.depth,
     });
   }
 
