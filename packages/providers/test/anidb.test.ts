@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
+import type { ProviderRuntimeContext } from "@kunai/types";
+
 import {
   anidbNumericId,
+  anidbProviderModule,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   looksLikeAnidbShowId,
@@ -194,5 +197,147 @@ describe("anidb search delegation", () => {
       globalThis.fetch = originalFetch;
       Bun.which = originalWhich;
     }
+  });
+});
+
+describe("anidb direct resolve season routing", () => {
+  const CONTEXT: ProviderRuntimeContext = {
+    providerId: "anidb",
+    now: () => new Date().toISOString(),
+  };
+
+  function anidbFetchStub(routes: {
+    readonly browse?: string;
+    readonly episodesByNumericId: Record<string, { id: number; number: number }[]>;
+  }) {
+    return (async (input: unknown) => {
+      const url = String(
+        typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+      );
+      if (url.includes("/browse?")) {
+        return new Response(routes.browse ?? "", { status: 200 });
+      }
+      const episodesMatch = /\/api\/frontend\/anime\/(\d+)\/episodes/.exec(url);
+      if (episodesMatch?.[1]) {
+        return new Response(
+          JSON.stringify({ episodes: routes.episodesByNumericId[episodesMatch[1]] ?? [] }),
+          { status: 200 },
+        );
+      }
+      if (/\/api\/frontend\/episode\/\d+\/languages/.test(url)) {
+        return new Response(
+          JSON.stringify({
+            languages: [
+              { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/embed/")) {
+        return new Response("file: 'https://cdn.example/stream.m3u8'", { status: 200 });
+      }
+      if (url.includes("stream.m3u8")) {
+        return new Response("#EXTM3U\n#EXTINF:4,\nseg0.ts\n", { status: 200 });
+      }
+      throw new Error(`unexpected anidb request: ${url}`);
+    }) as unknown as typeof fetch;
+  }
+
+  async function resolveWithStub(
+    input: Parameters<typeof anidbProviderModule.resolve>[0],
+    stub: typeof fetch,
+  ) {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = stub;
+      return await anidbProviderModule.resolve(input, CONTEXT);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+      clearAnidbCachesForTest();
+    }
+  }
+
+  test("routes a season-2 request to the sibling title and uses cour numbering", async () => {
+    const result = await resolveWithStub(
+      {
+        title: {
+          id: "solo-leveling-19413",
+          kind: "anime",
+          title: "Solo Leveling",
+        },
+        episode: { season: 2, episode: 1, absoluteEpisode: 13 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({
+        browse: [
+          '<a href="/anime/solo-leveling-19413" title="Solo Leveling"><article></article></a>',
+          '<a href="/anime/solo-leveling-season-2-19837" title="Solo Leveling Season 2"><article></article></a>',
+        ].join(""),
+        episodesByNumericId: { "19837": [{ id: 9001, number: 1 }] },
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.trace.steps).toContainEqual(
+      expect.objectContaining({
+        message: "Routed AniDB season identity",
+        attributes: expect.objectContaining({
+          requestedSeason: 2,
+          baseShowId: "solo-leveling-19413",
+          routedShowId: "solo-leveling-season-2-19837",
+          numberingEvidence: "cour",
+          numberingEvidenceReason: "routed-season-sibling",
+          episodeNumber: 1,
+          usedAbsoluteEpisode: false,
+        }),
+      }),
+    );
+    expect(result.externalIds?.providerNativeIds?.anidb).toBe("solo-leveling-season-2-19837");
+  });
+
+  test("an unlabelled title whose catalog lacks the absolute episode falls back to cour numbering", async () => {
+    const result = await resolveWithStub(
+      {
+        title: { id: "plain-show-700", kind: "anime", title: "Plain Show" },
+        episode: { season: 1, episode: 1, absoluteEpisode: 13 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({
+        episodesByNumericId: {
+          "700": [
+            { id: 70001, number: 1 },
+            { id: 70002, number: 2 },
+          ],
+        },
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.trace.steps).toContainEqual(
+      expect.objectContaining({
+        message: "Routed AniDB season identity",
+        attributes: expect.objectContaining({
+          requestedSeason: 1,
+          baseShowId: "plain-show-700",
+          routedShowId: "plain-show-700",
+          numberingEvidence: "cour",
+          numberingEvidenceReason: "absolute-episode-not-in-routed-catalog",
+          episodeNumber: 1,
+          usedAbsoluteEpisode: false,
+        }),
+      }),
+    );
+    expect(result.externalIds?.providerNativeIds?.anidb).toBe("plain-show-700");
   });
 });
