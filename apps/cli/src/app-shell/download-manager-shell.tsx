@@ -1,9 +1,18 @@
 import {
+  buildDownloadManagerLayout,
+  buildDownloadManagerRailModel,
+} from "@/app-shell/download-manager-view";
+import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
+import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import {
   getPickerChromeRows,
   getPickerListMaxVisible,
   ROOT_CHROME_ROWS,
 } from "@/app-shell/layout-policy";
+import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
+import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
+import { mapPosterPreviewState } from "@/app-shell/browse-preview-rail";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
@@ -12,9 +21,10 @@ import { getWindowStart } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
+import { presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
@@ -161,6 +171,9 @@ export function DownloadManagerContent({
   showSelectionHints?: boolean;
 }) {
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
+  // Inside a root-owned overlay the provider's content box is the width budget;
+  // the raw terminal is wider because the frame already spent the difference.
+  const { cols } = useOverlayOrTerminalSize();
   const [activeJobs, setActiveJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [queuedJobs, setQueuedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
@@ -196,11 +209,40 @@ export function DownloadManagerContent({
   }, [container, refresh]);
 
   const allJobs = [...activeJobs, ...queuedJobs, ...completedJobs, ...failedJobs];
+  // Actions target the immediate cursor; only expensive artwork waits for the
+  // selection to settle, so holding an arrow key never spawns a poster render
+  // per row.
+  const selectedJob = allJobs[selectedIndex];
+  const settledPosterUrl = useSettledValue(selectedJob?.posterUrl);
+  const railPoster = useRailPoster(settledPosterUrl, {
+    rows: 12,
+    cols: 30,
+    enabled: buildDownloadManagerLayout(cols).showRail,
+    variant: "preview",
+    placementSlot: "download-manager-preview",
+  });
+
+  // Jobs re-sort as they move between running/queued/completed/failed, so a
+  // bare index silently retargets the cursor at a different download. Relocate
+  // the job the user was actually on by id; only fall back to clamping when
+  // that job is gone.
+  const selectedJobIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    selectedJobIdRef.current = allJobs[selectedIndex]?.id;
+  });
 
   useEffect(() => {
     if (allJobs.length === 0) {
       if (selectedIndex !== 0) setSelectedIndex(0);
       return;
+    }
+    const previousId = selectedJobIdRef.current;
+    if (previousId !== undefined) {
+      const relocated = allJobs.findIndex((job) => job.id === previousId);
+      if (relocated >= 0) {
+        if (relocated !== selectedIndex) setSelectedIndex(relocated);
+        return;
+      }
     }
     if (!Number.isFinite(selectedIndex) || selectedIndex < 0 || selectedIndex >= allJobs.length) {
       const nextIndex = Number.isFinite(selectedIndex)
@@ -208,7 +250,7 @@ export function DownloadManagerContent({
         : 0;
       setSelectedIndex(nextIndex);
     }
-  }, [allJobs.length, selectedIndex]);
+  }, [allJobs, selectedIndex]);
 
   useInput(
     (input, key) => {
@@ -316,7 +358,8 @@ export function DownloadManagerContent({
   );
 
   const { tooSmall, minColumns, minRows } = viewport;
-  const shellWidth = viewport.columns ?? 80;
+  const layout = buildDownloadManagerLayout(cols);
+  const shellWidth = layout.listWidth;
   const queueLayout = computeQueueRowLayout(shellWidth);
 
   if (tooSmall) {
@@ -341,11 +384,16 @@ export function DownloadManagerContent({
     const isSelected = index === selectedIndex;
     const state = queueStatePresentation(job);
     const meta = queueMetaLine(job);
-    const episodeSuffix =
-      job.episode !== undefined
-        ? ` · S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
-        : "";
-    const titleLine = truncateLine(`${job.titleName}${episodeSuffix}`, titleCol);
+    const { positionLabel, kindLabel } = presentMedia({
+      title: job.titleName,
+      mediaKind: job.mediaKind,
+      season: job.season,
+      episode: job.episode,
+    });
+    const titleLine = truncateLine(
+      `${job.titleName} · ${positionLabel ?? kindLabel}`,
+      titleCol,
+    );
 
     return (
       <Box
@@ -432,7 +480,19 @@ export function DownloadManagerContent({
   const windowEnd = Math.min(windowStart + maxVisible, allJobs.length);
   const visibleJobs = allJobs.slice(windowStart, windowEnd);
 
-  return (
+  const railModel = layout.showRail
+    ? buildDownloadManagerRailModel(
+        selectedJob,
+        mapPosterPreviewState({
+          hasPosterPath: Boolean(settledPosterUrl),
+          poster: railPoster.poster,
+          posterState: railPoster.posterState,
+          spinner: railPoster.spinner,
+        }),
+      )
+    : null;
+
+  const list = (
     <Box flexDirection="column">
       {allJobs.length === 0 ? (
         <StateBlock
@@ -503,6 +563,21 @@ export function DownloadManagerContent({
         </Box>
       ) : null}
     </Box>
+  );
+
+  // Narrow and medium layouts stay a plain full-width list — no rail column, no
+  // reserved gutter.
+  if (!railModel) return list;
+
+  return (
+    <MediaListShell
+      columns={layout.columns}
+      listWidth={layout.listWidth}
+      railWidth={layout.railWidth}
+      list={list}
+      railModel={railModel}
+      poster={railPoster.poster}
+    />
   );
 }
 

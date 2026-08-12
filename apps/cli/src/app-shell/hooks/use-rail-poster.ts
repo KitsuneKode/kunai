@@ -1,3 +1,4 @@
+import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import {
   suppressPosterWhileNavigating,
   type PosterResult,
@@ -31,6 +32,12 @@ export function useRailPoster(
     readonly enabled?: boolean;
     readonly variant?: "preview" | "detail";
     readonly allowKitty?: boolean;
+    /**
+     * Which Kitty slot this rail's image occupies. Rails that can be on screen
+     * at the same time must name different slots, otherwise registering one
+     * evicts the other's live placement.
+     */
+    readonly placementSlot?: KittyPlacementSlot;
   },
 ): { poster: PosterResult; posterState: PosterState; spinner: boolean; navigating: boolean } {
   const settledUrl = useSettledValue(url);
@@ -41,7 +48,7 @@ export function useRailPoster(
     enabled: (opts.enabled ?? true) && Boolean(settledUrl),
     variant: opts.variant,
     allowKitty: opts.allowKitty,
-    placementSlot: "browse-preview",
+    placementSlot: opts.placementSlot ?? "browse-preview",
     // The settled url already absorbs the navigation burst.
     debounceMs: 16,
   });

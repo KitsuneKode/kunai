@@ -17,6 +17,7 @@ function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecor
     titleId: "title-1",
     titleName: "Frieren",
     status: "queued",
+    mediaKind: "anime",
     mode: "series",
     providerId: "videasy",
     season: 1,

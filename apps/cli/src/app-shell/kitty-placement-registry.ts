@@ -6,6 +6,7 @@
 
 export type KittyPlacementSlot =
   | "browse-preview"
+  | "download-manager-preview"
   | "postplay-hero"
   | "postplay-rail"
   | "postplay-prev"
