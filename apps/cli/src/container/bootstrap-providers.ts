@@ -4,6 +4,7 @@ import {
   orderProviderModulesByPriority,
   type CoreProviderModule,
   type ProviderEngine,
+  type ProviderPriorityInput,
 } from "@kunai/core";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 
@@ -27,8 +28,13 @@ export type ProviderBootstrap = {
   readonly playbackResolveWork: PlaybackResolveWorkService;
 };
 
-async function loadProductionProviderModules(
-  providerPriority: ReturnType<typeof createProviderPrioritySnapshot>,
+/**
+ * The single production provider list. Exported so contract tests can prove the
+ * configured lane defaults are actually registered without building a second
+ * registry that could drift from this one.
+ */
+export async function loadProductionProviderModules(
+  providerPriority: ProviderPriorityInput,
 ): Promise<readonly CoreProviderModule[]> {
   const [
     { videasyProviderModule },

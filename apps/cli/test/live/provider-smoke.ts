@@ -8,7 +8,9 @@ import { providerResolveResultToStreamInfo } from "@/services/providers/provider
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
 import {
   ProviderResolveFailureError,
+  resolveProviderCatalogIdentity,
   summarizeProviderTraceEvents,
+  type CoreProviderManifest,
   type ProviderTraceEventSummary,
 } from "@kunai/core";
 import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
@@ -144,6 +146,7 @@ export async function resolveProviderSmokeStream({
   readonly container: {
     readonly engine: {
       get(providerId: string): unknown;
+      getManifest(providerId: string): CoreProviderManifest | undefined;
       resolve(
         input: ReturnType<typeof streamRequestToResolveInput>,
         providerId: string,
@@ -162,9 +165,22 @@ export async function resolveProviderSmokeStream({
     throw new Error(`Missing provider module: ${providerId}`);
   }
 
+  // Select title identity exactly the way production does, so a smoke pass
+  // cannot come from an identity shortcut the real app never takes.
+  const manifest = container.engine.getManifest(providerId);
+  if (!manifest) {
+    throw new Error(`Missing provider manifest: ${providerId}`);
+  }
+
   const startedAt = Date.now();
   const result = await container.engine.resolve(
-    streamRequestToResolveInput(request, mode),
+    streamRequestToResolveInput(
+      request,
+      mode,
+      "play",
+      resolveProviderCatalogIdentity(manifest),
+      providerId,
+    ),
     providerId,
   );
   return {

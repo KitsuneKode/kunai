@@ -125,8 +125,15 @@ export function isReleaseProviderSignoffAcceptable(
   assertReleaseProviderSignoffComplete(signoff);
   assertReleaseProviderSignoffRedacted(signoff);
   if (!isReleaseProviderSignoffFresh(signoff.generatedAt, nowMs)) return false;
+  // A different provider succeeding is still a failed release for the
+  // CONFIGURED default, even though some stream played. Substitution is exactly
+  // how signoff went green while the product's real default route was broken.
   return signoff.routes.every(
-    (route) => route.resolved && route.streamReachable === true && route.failureClass === null,
+    (route) =>
+      route.resolved &&
+      route.streamReachable === true &&
+      route.failureClass === null &&
+      route.successfulProvider === route.configuredProvider,
   );
 }
 
