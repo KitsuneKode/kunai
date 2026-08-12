@@ -3,6 +3,7 @@ import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
+import { presentMedia } from "@/domain/media/media-presentation";
 import type {
   EpisodeInfo,
   PlaybackTimingMetadata,
@@ -32,6 +33,7 @@ import {
   type DownloadJobRecord,
   type DownloadJobsRepository,
 } from "@kunai/storage";
+import type { MediaKind } from "@kunai/types";
 
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
@@ -293,14 +295,7 @@ export class DownloadService {
 
     const { subLang, animeLang } = persistLanguageHintsFromEnqueueInput(input);
 
-    const mediaKind =
-      input.mode === "youtube"
-        ? ("video" as const)
-        : input.title.type === "movie"
-          ? ("movie" as const)
-          : input.mode === "anime"
-            ? ("anime" as const)
-            : ("series" as const);
+    const mediaKind = resolveEnqueueMediaKind(input);
 
     this.deps.repo.enqueue({
       id,
@@ -1406,16 +1401,22 @@ export class DownloadService {
     const configuredBase = input.outputDirectory?.trim() || this.deps.config.downloadPath.trim();
     const baseDir =
       configuredBase.length > 0 ? configuredBase : this.resolveDefaultDownloadDirectory();
-    const isMovie = input.title.type === "movie" || !input.episode;
+
+    // The same authority that decides what the user is shown decides what the
+    // file is called, using the same kind enqueue is about to persist.
+    const presentation = presentMedia({
+      title: input.title.name,
+      mediaKind: resolveEnqueueMediaKind(input),
+      season: input.episode?.season,
+      episode: input.episode?.episode,
+    });
 
     return resolveDownloadOutputPath({
       baseDir,
       titleName: input.title.name,
       year: normalizeYear(input.title.year),
       extension: DOWNLOAD_FILE_EXT,
-      ...(isMovie || !input.episode
-        ? {}
-        : { season: input.episode.season, episode: input.episode.episode }),
+      position: presentation.position,
     });
   }
 
@@ -1468,6 +1469,20 @@ export class DownloadService {
     const requiredGB = requiredBytes / (1024 * 1024 * 1024);
     return `Download paused because the offline safety reserve needs ${requiredGB.toFixed(1)}GB available on the download volume.`;
   }
+}
+
+/**
+ * The single derivation of a job's content kind from playback facts.
+ *
+ * Naming and persistence both need it, and they ran a step apart with the
+ * derivation inlined only in the persistence half — so a filename could
+ * disagree with the `mediaKind` stored beside it.
+ */
+function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
+  if (input.mode === "youtube") return "video";
+  if (input.title.type === "movie") return "movie";
+  if (input.mode === "anime") return "anime";
+  return "series";
 }
 
 function normalizeYear(value: string | undefined): string | null {
