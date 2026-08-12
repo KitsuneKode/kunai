@@ -7,6 +7,10 @@
 
 import type { TitleDetail } from "../catalog/title-detail";
 import { videoMetaFromSearchResult } from "../media/video-meta";
+import {
+  INITIAL_PLAYBACK_GENERATION,
+  type PlaybackGeneration,
+} from "../playback/playback-generation";
 import type { PlaybackProblem } from "../playback/playback-problem";
 import type { TrackCapabilityGroup, TrackCapabilitySection } from "../playback/track-capabilities";
 import type {
@@ -171,6 +175,8 @@ export interface SessionState {
   /** Bumped on explicit user provider switches so playback can bypass soft fallbacks and stale streams. */
   readonly providerSwitchSeq: number;
   readonly playbackStatus: PlaybackStatus;
+  /** Freshness identity of the mpv process/cycle that owns `playbackStatus`. */
+  readonly playbackGeneration: PlaybackGeneration;
   readonly playbackError: string | null;
   readonly playbackDetail: string | null;
   readonly playbackNote: string | null;
@@ -227,7 +233,14 @@ export type StateTransition =
   | { type: "SET_SESSION_AUTOSKIP_PAUSED"; paused: boolean }
   | { type: "SET_SESSION_STOP_AFTER_CURRENT"; enabled: boolean }
   | { type: "SET_STREAM"; stream: StreamInfo | null }
-  | { type: "SET_PLAYBACK_STATUS"; status: PlaybackStatus; error?: string }
+  | {
+      type: "SET_PLAYBACK_STATUS";
+      status: PlaybackStatus;
+      error?: string;
+      /** Omitted by lifecycle writers (resolve/loading/idle/error); the current generation is retained. */
+      generation?: PlaybackGeneration;
+      clearFeedback?: boolean;
+    }
   | { type: "SET_PLAYBACK_FEEDBACK"; detail?: string | null; note?: string | null }
   | { type: "SET_WATCH_TIME_SUMMARY"; summary: string | null }
   | { type: "SET_PLAYBACK_PROBLEM"; problem: PlaybackProblem }
@@ -305,6 +318,7 @@ export function createInitialState(
     stream: null,
     providerSwitchSeq: 0,
     playbackStatus: "idle",
+    playbackGeneration: INITIAL_PLAYBACK_GENERATION,
     playbackError: null,
     playbackDetail: null,
     playbackNote: null,
@@ -492,15 +506,17 @@ export function reduceState(state: SessionState, transition: StateTransition): S
 
     case "SET_PLAYBACK_STATUS":
       const keepPlaybackFeedback =
-        transition.status === "loading" ||
-        transition.status === "buffering" ||
-        transition.status === "seeking" ||
-        transition.status === "stalled" ||
-        transition.status === "playing" ||
-        transition.status === "paused";
+        transition.clearFeedback !== true &&
+        (transition.status === "loading" ||
+          transition.status === "buffering" ||
+          transition.status === "seeking" ||
+          transition.status === "stalled" ||
+          transition.status === "playing" ||
+          transition.status === "paused");
       return {
         ...state,
         playbackStatus: transition.status,
+        playbackGeneration: transition.generation ?? state.playbackGeneration,
         playbackError: transition.error ?? null,
         playbackDetail: keepPlaybackFeedback ? state.playbackDetail : null,
         playbackNote: keepPlaybackFeedback ? state.playbackNote : null,
