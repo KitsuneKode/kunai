@@ -13,6 +13,7 @@ function group(
 ): OfflineLibraryShelfGroup {
   return {
     key: `key-${patch.titleId}`,
+    mediaKind: "series",
     label: patch.titleName,
     detail: "detail",
     actionSummary: "actions",

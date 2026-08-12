@@ -7,12 +7,13 @@
 // just "Show" depending on where you looked.
 // =============================================================================
 
+import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import type { QueueEntry } from "@kunai/storage";
 
 /**
- * Display label for a queue entry. Appends a SxxExx tag only for non-movie
- * entries that actually carry an episode. Returns undefined when there is
- * nothing worth showing, so callers can omit the cue entirely.
+ * Display label for a queue entry. Appends the canonical position tag only when
+ * the media-presentation seam says the entry has one. Returns undefined when
+ * there is nothing worth showing, so callers can omit the cue entirely.
  */
 export function formatQueueEntryLabel(
   entry: Pick<QueueEntry, "title" | "mediaKind" | "season" | "episode"> | null | undefined,
@@ -20,9 +21,11 @@ export function formatQueueEntryLabel(
   if (!entry) return undefined;
   const title = entry.title.trim();
   if (!title) return undefined;
-  if (entry.mediaKind !== "movie" && entry.episode !== undefined) {
-    const tag = `S${String(entry.season ?? 1).padStart(2, "0")}E${String(entry.episode).padStart(2, "0")}`;
-    return `${title} · ${tag}`;
-  }
-  return title;
+  const { positionLabel } = presentMedia({
+    title,
+    mediaKind: normalizeMediaKind(entry.mediaKind),
+    season: entry.season,
+    episode: entry.episode,
+  });
+  return positionLabel === null ? title : `${title} · ${positionLabel}`;
 }

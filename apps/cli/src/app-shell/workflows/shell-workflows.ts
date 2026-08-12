@@ -27,6 +27,7 @@ import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { presentMedia } from "@/domain/media/media-presentation";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
@@ -1600,7 +1601,15 @@ export async function enqueueCurrentPlaybackDownload({
         },
       }),
     );
-    const successNote = `Download queued: ${job.titleName} S${String(job.season ?? 1).padStart(2, "0")}E${String(job.episode ?? 1).padStart(2, "0")}`;
+    const queuedPresentation = presentMedia({
+      title: job.titleName,
+      mediaKind: job.mediaKind,
+      season: job.season,
+      episode: job.episode,
+    });
+    const successNote = `Download queued: ${job.titleName} · ${
+      queuedPresentation.positionLabel ?? queuedPresentation.kindLabel
+    }`;
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: successNote,

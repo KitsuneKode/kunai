@@ -47,7 +47,10 @@ test.each([72, 100, 140])("renders queue rows cleanly at %i cols", (cols) => {
   const out = frame(cols);
   expect(out).toContain("UP NEXT");
   expect(out).toContain("The Eminence in Shadow");
-  expect(out).toContain("S02·E08");
+  // Anime rows are episode-only: the stored season is a default slot, not a
+  // fact the user chose.
+  expect(out).toContain("E08");
+  expect(out).not.toContain("S02");
   const detached = out.split("\n").filter((l) => l.trim().length > 0 && /^─+$/.test(l.trim()));
   expect(detached).toHaveLength(0);
 });

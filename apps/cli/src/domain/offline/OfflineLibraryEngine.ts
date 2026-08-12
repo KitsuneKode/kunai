@@ -1,4 +1,9 @@
 import {
+  formatMediaItemCount,
+  presentMedia,
+  type MediaPresentation,
+} from "@/domain/media/media-presentation";
+import {
   formatOfflineLibraryGroupDetail,
   formatOfflineShelfBadge,
   formatOfflineShelfDetail,
@@ -8,7 +13,12 @@ import {
 
 export type OfflineLibraryShelfEntry = {
   readonly jobId: string;
-  readonly episodeLabel: string;
+  /**
+   * Canonical facts, not display text. The library shell used to read season
+   * identity back out of a formatted label with a regex, which meant a movie
+   * stored with a synthetic season 1 rendered a season the user does not have.
+   */
+  readonly presentation: MediaPresentation;
   readonly badge: string;
   readonly detail: string;
   readonly previewImageUrl?: string;
@@ -19,6 +29,8 @@ export type OfflineLibraryShelfGroup = {
   readonly key: string;
   readonly titleId: string;
   readonly titleName: string;
+  /** Authoritative content kind, so the shell never re-derives it from copy. */
+  readonly mediaKind: OfflineLibraryEntry["job"]["mediaKind"];
   readonly label: string;
   readonly detail: string;
   readonly nextPlayableEpisodeLabel?: string;
@@ -46,18 +58,27 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
       const groups = groupOfflineLibraryEntries(entries).map((group) => {
         const shelfEntries = group.entries.map((entry) => ({
           jobId: entry.job.id,
-          episodeLabel: formatEpisodeLabel(entry),
+          presentation: presentMedia({
+            title: entry.job.titleName,
+            mediaKind: entry.job.mediaKind,
+            season: entry.job.season,
+            episode: entry.job.episode,
+          }),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
           detail: formatOfflineShelfDetail(entry.job, entry.status),
           previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
           playable: entry.status === "ready",
         }));
-        const nextPlayableEpisodeLabel = shelfEntries.find((entry) => entry.playable)?.episodeLabel;
+        const nextPlayable = shelfEntries.find((entry) => entry.playable)?.presentation;
+        const nextPlayableEpisodeLabel = nextPlayable
+          ? (nextPlayable.positionLabel ?? nextPlayable.kindLabel)
+          : undefined;
 
         return {
           key: group.key,
           titleId: group.titleId,
           titleName: group.titleName,
+          mediaKind: group.mediaKind,
           label: group.titleName,
           detail: formatOfflineLibraryGroupDetail(group),
           nextPlayableEpisodeLabel,
@@ -89,31 +110,15 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
   };
 }
 
-function formatEpisodeLabel(entry: OfflineLibraryEntry): string {
-  const { job } = entry;
-  if (job.season !== undefined && job.episode !== undefined) {
-    return `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`;
-  }
-  return job.mediaKind === "movie" ? "movie" : "episode";
-}
-
 function formatActionSummary(input: {
   readonly nextPlayableEpisodeLabel?: string;
   readonly issueCount: number;
   readonly entryCount: number;
   readonly mediaKind: OfflineLibraryEntry["job"]["mediaKind"];
 }): string {
-  const itemLabel =
-    input.mediaKind === "movie"
-      ? input.entryCount === 1
-        ? "movie"
-        : "movies"
-      : input.entryCount === 1
-        ? "episode"
-        : "episodes";
   const parts = [
     input.nextPlayableEpisodeLabel ? `Play ${input.nextPlayableEpisodeLabel}` : "No playable files",
-    `inspect ${input.entryCount} ${itemLabel}`,
+    `inspect ${formatMediaItemCount({ mediaKind: input.mediaKind, count: input.entryCount })}`,
     input.issueCount > 0
       ? `repair ${input.issueCount} ${input.issueCount === 1 ? "issue" : "issues"}`
       : null,

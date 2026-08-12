@@ -84,8 +84,10 @@ describe("NotificationsShell", () => {
     expect(frame).toContain("r mark read");
     expect(frame).toContain("x archive");
     expect(frame).toContain("d delete");
-    // Media evidence facts.
-    expect(frame).toContain("S01E06");
+    // Media evidence facts. Anime is episode-only unless the notice proves the
+    // season is meaningful.
+    expect(frame).toContain("E06");
+    expect(frame).not.toContain("S01E06");
     expect(frame).toContain("allanime");
   });
 

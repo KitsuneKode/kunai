@@ -129,6 +129,20 @@ function resolveMediaKindPolicy(mediaKind: MediaKind): MediaKindPolicy {
 }
 
 /**
+ * Narrow a persisted `mediaKind` column to the content-kind union.
+ *
+ * Some stores — the queue table, notification payloads — type this column as a
+ * bare `string`. Casting at each call site would hide the moment an unknown
+ * value appears; routing it through the same table makes the degradation one
+ * explicit, testable decision.
+ */
+export function normalizeMediaKind(value: string | undefined): MediaKind {
+  return value !== undefined && Object.hasOwn(MEDIA_KIND_POLICY, value)
+    ? (value as MediaKind)
+    : "video";
+}
+
+/**
  * The only in-scope authority that decides whether stored season/episode facts
  * are product-visible.
  */

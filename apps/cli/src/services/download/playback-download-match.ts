@@ -1,3 +1,4 @@
+import { presentMedia } from "@/domain/media/media-presentation";
 import type { ContentType } from "@/domain/types";
 import type { DownloadJobRecord } from "@kunai/storage";
 
@@ -35,10 +36,13 @@ export function pickActiveDownloadForPlayback(
 }
 
 export function formatPlaybackDownloadStripe(job: DownloadJobRecord): string {
-  const episodeLabel =
-    job.season !== undefined && job.episode !== undefined
-      ? `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
-      : "movie";
+  const { positionLabel, kindLabel } = presentMedia({
+    title: job.titleName,
+    mediaKind: job.mediaKind,
+    season: job.season,
+    episode: job.episode,
+  });
+  const episodeLabel = positionLabel ?? kindLabel;
   const statusLabel =
     job.status === "running"
       ? `downloading ${job.progressPercent}%`

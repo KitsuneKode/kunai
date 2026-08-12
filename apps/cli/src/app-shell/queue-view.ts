@@ -1,3 +1,4 @@
+import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import type { QueueEntry } from "@/services/storage/storage-read-models";
 
 export type QueueRowState = "playing" | "pending" | "played";
@@ -39,13 +40,19 @@ export type BuildQueueViewInput = {
   readonly stale?: boolean;
 };
 
+/**
+ * The queue column shows the canonical position when there is one, and falls
+ * back to the quiet content-kind label so a movie or video row still says what
+ * it is instead of showing a dash.
+ */
 function episodeLabel(entry: QueueEntry): string {
-  if (entry.mediaKind === "movie") return "Movie";
-  if (entry.season !== undefined && entry.episode !== undefined) {
-    return `S${String(entry.season).padStart(2, "0")}·E${String(entry.episode).padStart(2, "0")}`;
-  }
-  const ep = entry.episode ?? entry.absoluteEpisode;
-  return ep !== undefined ? `E${String(ep).padStart(2, "0")}` : "—";
+  const { positionLabel, kindLabel } = presentMedia({
+    title: entry.title,
+    mediaKind: normalizeMediaKind(entry.mediaKind),
+    season: entry.season,
+    episode: entry.episode ?? entry.absoluteEpisode,
+  });
+  return positionLabel ?? kindLabel;
 }
 
 function sourceLabel(source: string): string {

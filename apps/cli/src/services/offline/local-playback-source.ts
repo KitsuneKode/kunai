@@ -6,7 +6,7 @@ export type LocalPlaybackSource = {
   readonly jobId: string;
   readonly titleId: string;
   readonly titleName: string;
-  readonly mediaKind: "movie" | "series";
+  readonly mediaKind: DownloadJobRecord["mediaKind"];
   readonly providerId: string;
   readonly season?: number;
   readonly episode?: number;
@@ -29,7 +29,7 @@ export function buildLocalPlaybackSource(
     jobId: job.id,
     titleId: job.titleId,
     titleName: job.titleName,
-    mediaKind: job.mediaKind === "movie" ? "movie" : "series",
+    mediaKind: job.mediaKind,
     providerId: job.providerId,
     season: job.season,
     episode: job.episode,
