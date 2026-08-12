@@ -27,7 +27,7 @@ import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
-import { presentMedia } from "@/domain/media/media-presentation";
+import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
@@ -2305,7 +2305,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
       const result = await createContainerMediaActionRouter(container).run({
         actionId,
         item: {
-          mediaKind: pickedItem?.mediaKind ?? "series",
+          mediaKind: normalizeMediaKind(pickedItem?.mediaKind ?? "series"),
           titleId: picked.titleId,
           title: picked.title,
         },

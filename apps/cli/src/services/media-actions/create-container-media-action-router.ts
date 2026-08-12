@@ -4,7 +4,7 @@ import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import {
   buildDefaultDownloadProfile,
   commitDownloadIntent,
-  resolveDownloadIntentEpisodes,
+  resolveDownloadIntentItems,
 } from "@/services/download/DownloadIntentService";
 import type { MediaKind } from "@kunai/types";
 
@@ -108,8 +108,10 @@ export async function queueDownloadFromMediaItem(
   const title = titleInfoFromMediaItemIdentity(item);
   await commitDownloadIntent(container, {
     title,
-    episodes: resolveDownloadIntentEpisodes({
+    mediaKind: item.mediaKind,
+    items: resolveDownloadIntentItems({
       title,
+      mediaKind: item.mediaKind,
       season: item.season,
       episode: item.episode,
     }),
@@ -166,8 +168,9 @@ function upsertAttentionPreference(
   });
 }
 
+/** Watchlist rows only distinguish title-level from episodic content. */
 function normalizeMediaKind(mediaKind: MediaItemIdentity["mediaKind"]): "movie" | "series" {
-  return mediaKind === "movie" ? "movie" : "series";
+  return mediaKind === "movie" || mediaKind === "video" ? "movie" : "series";
 }
 
 function parseNotificationItemJson(itemJson: string | undefined): { titleId?: string } | null {

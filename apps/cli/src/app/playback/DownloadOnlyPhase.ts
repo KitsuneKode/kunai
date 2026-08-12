@@ -2,13 +2,16 @@ import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell"
 import { buildPickerActionContext } from "@/app-shell/workflows";
 import { pickEpisodesToDownload } from "@/app/bootstrap/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/session/Phase";
+import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import {
   buildDefaultDownloadProfile,
   commitDownloadIntent,
   type DownloadConfirmationProfile,
+  type DownloadIntentItem,
 } from "@/services/download/DownloadIntentService";
 import { chooseStartingEpisode } from "@/session-flow";
+import type { MediaKind } from "@kunai/types";
 
 export type DownloadOnlyInput = {
   readonly title: TitleInfo;
@@ -32,12 +35,24 @@ type DownloadOnlyPhaseDependencies = {
   }) => Promise<readonly EpisodeInfo[] | null>;
   readonly confirmProfile?: (args: {
     readonly title: TitleInfo;
-    readonly episodes: readonly EpisodeInfo[];
+    readonly mediaKind: MediaKind;
+    readonly items: readonly DownloadIntentItem[];
     readonly profile: DownloadConfirmationProfile;
     readonly container: PhaseContext["container"];
   }) => Promise<DownloadConfirmationProfile | null>;
   readonly prepareConfirmedTitle?: (title: TitleInfo, context: PhaseContext) => Promise<TitleInfo>;
 };
+
+/**
+ * The one derivation of a download's content kind from playback facts, matching
+ * what `DownloadService.enqueue()` persists. YouTube playback is a video,
+ * anime mode is anime, and otherwise the title's own shape decides.
+ */
+function resolveDownloadOnlyMediaKind(mode: string | undefined, title: TitleInfo): MediaKind {
+  if (mode === "youtube") return "video";
+  if (mode === "anime") return "anime";
+  return title.type === "movie" ? "movie" : "series";
+}
 
 /** Queue a title/episode for download without launching mpv. */
 export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "back"> {
@@ -66,12 +81,17 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     }
 
     const isAnime = state.mode === "anime";
-    let episodes: readonly EpisodeInfo[] | null;
+    // One canonical content kind, derived from playback facts. A movie or a
+    // YouTube video has nothing to pick, so it never reaches the episode
+    // checklist or its first-episode fallback.
+    const mediaKind = resolveDownloadOnlyMediaKind(state.mode, input.title);
+    const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
+    let items: readonly DownloadIntentItem[];
 
-    if (input.title.type === "movie") {
-      episodes = [{ season: 1, episode: 1 }];
+    if (isTitleLevel) {
+      items = [{ kind: "title" }];
     } else {
-      episodes = this.deps.pickEpisodes
+      let episodes = this.deps.pickEpisodes
         ? await this.deps.pickEpisodes({ title: input.title, isAnime, container })
         : await pickEpisodesToDownload({
             title: input.title,
@@ -79,18 +99,20 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
             animeEpisodes: undefined,
             container,
           });
-    }
 
-    if (!episodes || episodes.length === 0) {
-      const single = await pickSingleDownloadEpisodeFallback({
-        title: input.title,
-        isAnime,
-        container,
-      });
-      if (!single) {
-        return { status: "success", value: "back" };
+      if (!episodes || episodes.length === 0) {
+        const single = await pickSingleDownloadEpisodeFallback({
+          title: input.title,
+          isAnime,
+          container,
+        });
+        if (!single) {
+          return { status: "success", value: "back" };
+        }
+        episodes = [single];
       }
-      episodes = [single];
+
+      items = episodes.map((episode) => ({ kind: "episode" as const, episode }));
     }
 
     const proposedProfile = buildDefaultDownloadProfile(container, {
@@ -99,13 +121,15 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     const profile = this.deps.confirmProfile
       ? await this.deps.confirmProfile({
           title: input.title,
-          episodes,
+          mediaKind,
+          items,
           profile: proposedProfile,
           container,
         })
       : await confirmDownloadProfile({
           title: input.title,
-          episodes,
+          mediaKind,
+          items,
           profile: proposedProfile,
           container,
         });
@@ -116,7 +140,8 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
 
     const result = await commitDownloadIntent(container, {
       title: confirmedTitle,
-      episodes,
+      mediaKind,
+      items,
       profile,
     });
     return { status: "success", value: result.queuedCount > 0 ? "queued" : "back" };
@@ -132,10 +157,6 @@ async function pickSingleDownloadEpisodeFallback({
   readonly isAnime: boolean;
   readonly container: PhaseContext["container"];
 }): Promise<EpisodeInfo | null> {
-  if (title.type === "movie") {
-    return { season: 1, episode: 1 };
-  }
-
   const selected = await chooseStartingEpisode({
     currentId: title.id,
     isAnime,
@@ -203,15 +224,18 @@ export function updateDownloadConfirmationProfile(
 
 async function confirmDownloadProfile({
   title,
-  episodes,
+  mediaKind,
+  items,
   profile,
   container,
 }: {
   readonly title: TitleInfo;
-  readonly episodes: readonly EpisodeInfo[];
+  readonly mediaKind: MediaKind;
+  readonly items: readonly DownloadIntentItem[];
   readonly profile: DownloadConfirmationProfile;
   readonly container: PhaseContext["container"];
 }): Promise<DownloadConfirmationProfile | null> {
+  const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
   let draft = profile;
   while (true) {
     const target = draft.outputDirectory ? "configured folder" : "default offline library";
@@ -219,10 +243,18 @@ async function confirmDownloadProfile({
       draft.cleanupPolicy.mode === "cleanup-watched"
         ? `suggest cleanup after ${draft.cleanupPolicy.graceDays} days watched`
         : "keep last watched episode local";
-    const episodeCodes = episodes
-      .map(
-        (episode) =>
-          `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`,
+    const positionCodes = items
+      .flatMap((item) =>
+        item.kind === "episode"
+          ? [
+              presentMedia({
+                title: title.name,
+                mediaKind,
+                season: item.episode.season,
+                episode: item.episode.episode,
+              }).positionLabel ?? [],
+            ].flat()
+          : [],
       )
       .join(", ");
     const profileDetail = [
@@ -245,12 +277,18 @@ async function confirmDownloadProfile({
       "queue" | "runway" | "back" | DownloadConfirmationEditAction
     >({
       title: `Download ${title.name}?`,
-      subtitle: `${episodes.length} ${episodes.length === 1 ? "episode" : "episodes"} · ${episodeCodes} · edits stay local until you queue`,
+      subtitle: [
+        formatMediaItemCount({ mediaKind, count: items.length }),
+        positionCodes || null,
+        "edits stay local until you queue",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       actionContext: buildPickerActionContext({ container, taskLabel: `Download: ${title.name}` }),
       options: [
         // Primary action leads. Settings sit below; Cancel is last (Esc also backs out).
         { value: "queue", label: "Queue download", detail: profileDetail },
-        ...(title.type !== "movie"
+        ...(!isTitleLevel
           ? [
               {
                 value: "runway" as const,
@@ -283,7 +321,7 @@ async function confirmDownloadProfile({
               },
             ]
           : []),
-        ...(title.type !== "movie"
+        ...(!isTitleLevel
           ? [
               {
                 value: "increase-runway" as const,
