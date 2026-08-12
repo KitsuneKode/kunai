@@ -84,6 +84,46 @@ describe("DownloadService", () => {
       );
     });
 
+    test("a new movie job persists no season and no episode", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "tmdb:693134", type: "movie", name: "Dune Part Two" },
+        providerId: "vidking",
+        mode: "series",
+      });
+
+      const record = repo.get(job.id);
+      expect(record?.mediaKind).toBe("movie");
+      expect(record?.season).toBeUndefined();
+      expect(record?.episode).toBeUndefined();
+    });
+
+    test("a new video job persists no season and no episode", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: { id: "yt:1", type: "series", name: "Kunai Release Trailer" },
+        providerId: "youtube",
+        mode: "youtube",
+      });
+
+      const record = repo.get(job.id);
+      expect(record?.mediaKind).toBe("video");
+      expect(record?.season).toBeUndefined();
+      expect(record?.episode).toBeUndefined();
+    });
+
     test("a movie job is named title-level", async () => {
       const service = buildService({
         repo,

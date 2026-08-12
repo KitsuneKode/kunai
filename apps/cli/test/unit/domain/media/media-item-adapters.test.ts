@@ -3,7 +3,10 @@ import { expect, test } from "bun:test";
 import {
   mediaItemFromHistoryEntry,
   mediaItemFromSearchResult,
+  titleInfoFromMediaItemIdentity,
 } from "@/domain/media/media-item-adapters";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
+import type { MediaKind } from "@kunai/types";
 
 test("history entries convert to media identity without provider URLs", () => {
   const item = mediaItemFromHistoryEntry("tmdb:1", {
@@ -46,4 +49,32 @@ test("search results convert to media identity for shared action policy", () => 
     titleId: "tmdb:2",
     title: "Movie",
   });
+});
+
+/**
+ * `TitleInfo.type` is a two-way shape used by provider/playback code; it is not
+ * the content-kind authority. Video must not be silently reshaped into a series
+ * and gain an episode it never had.
+ */
+test.each([
+  ["movie", "movie"],
+  ["video", "movie"],
+  ["series", "series"],
+  ["anime", "series"],
+] as const)("titleInfo for a %s identity uses TitleInfo.type %s", (mediaKind, expected) => {
+  expect(
+    titleInfoFromMediaItemIdentity({
+      mediaKind,
+      titleId: "t1",
+      title: "Example",
+    }).type,
+  ).toBe(expected);
+});
+
+test("MediaItemIdentity accepts every shared MediaKind", () => {
+  const kinds: MediaKind[] = ["movie", "series", "anime", "video"];
+  for (const mediaKind of kinds) {
+    const item: MediaItemIdentity = { mediaKind, titleId: "t1", title: "Example" };
+    expect(item.mediaKind).toBe(mediaKind);
+  }
 });
