@@ -19,7 +19,7 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 Mode defaults at a glance:
 
 - **Movies / series** — Videasy, VidLink, Rivestream (candidate)
-- **Anime** — AllManga-compatible client (`allanime` id), Miruro (candidate)
+- **Anime** — AniDB (`anidb` id, default), AllManga-compatible client (`allanime` id, fallback), Miruro (manually selectable)
 - **YouTube** — dedicated video mode via Invidious search + yt-dlp playback
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only — not registered for production resolve.
@@ -54,16 +54,37 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 </ProviderDocSection>
 
+<ProviderDocSection id="anidb" title="AniDB">
+
+**When to use:** the default anime route (sub and dub). Kunai searches AniDB directly, routes each
+season to its own AniDB title, and resolves streams from that title.
+
+**Config id:** `anidb` for `animeProvider` / `animeProviderPriority`.
+
+```json
+{
+  "animeProvider": "anidb",
+  "animeProviderPriority": ["anidb", "allanime"]
+}
+```
+
+**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl`
+installed for AniDB requests to get past Cloudflare. If a season cannot be matched unambiguously,
+Kunai reports that rather than playing a different season.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="allanime" title="AllManga">
 
-**When to use:** primary anime source (sub and dub). Display name is AllManga; the runtime id is `allanime`.
+**When to use:** fallback anime source (sub and dub) when the AniDB route does not resolve. Display name is AllManga; the runtime id is `allanime`.
 
-**Config id:** `allanime` for `animeProvider` / `animeProviderPriority`.
+**Config id:** `allanime` for `animeProvider` / `animeProviderPriority`. To make it the primary anime
+source instead of the fallback:
 
 ```json
 {
   "animeProvider": "allanime",
-  "animeProviderPriority": ["allanime", "miruro"]
+  "animeProviderPriority": ["allanime", "anidb"]
 }
 ```
 
@@ -119,6 +140,10 @@ Kunai builds a resolve request from your mode, language profiles, and any per-ti
 ### Kunai tries the default provider first
 
 Your `provider` or `animeProvider` config key sets the session default. Startup priority policy may influence first pick.
+
+Falling back to another provider can change the available source inventory (quality ladder, sub/dub
+mix). Title and catalog identity never silently cross to another catalog: an advanced search with no
+compatible catalog is reported as unsupported rather than quietly answered by TMDB.
 </Step>
 <Step>
 ### Provider-local cycling
@@ -147,8 +172,8 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 {
   "provider": "videasy",
   "providerPriority": ["videasy", "vidlink", "rivestream"],
-  "animeProvider": "allanime",
-  "animeProviderPriority": ["allanime", "miruro"]
+  "animeProvider": "anidb",
+  "animeProviderPriority": ["anidb", "allanime"]
 }
 ```
 

@@ -292,7 +292,8 @@ silently harvests browser tokens.
 - Implement provider module in `packages/providers/src/<provider>/direct.ts` implementing `CoreProviderModule`
 - Define manifest in `packages/providers/src/<provider>/manifest.ts` using `defineProviderManifest`
 - Export from `packages/providers/src/index.ts`
-- Register the module in `apps/cli/src/container.ts` — the `createProviderEngine()` call
+- Register the module in `apps/cli/src/container/bootstrap-providers.ts` —
+  `loadProductionProviderModules()` is the single production provider list
 - The `ProviderRegistry` (engine compat wrapper) is built automatically from engine modules
 
 No separate CLI adapter file is needed. The `createProviderFromModule()` factory in `apps/cli/src/services/providers/Provider.ts` creates the CLI `Provider` wrapper with `resolveStream` (calls module), `metadata`, `canHandle`, and optional `search`/`listEpisodes`.
@@ -450,7 +451,13 @@ Recommended workflow:
 
 ## Active Beta Providers
 
-Active providers are registered in `apps/cli/src/container.ts` via `createProviderEngine({ modules: [...] })`.
+Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
+`loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
+it live, and release signoff derives its cases from that list plus the configured lane defaults.
+
+`anidb` is the **default** provider-native anime catalog (`animeProvider: "anidb"`); `allanime` is
+the **fallback** (`animeProviderPriority: ["anidb", "allanime"]`); `miruro` stays manually
+selectable.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |
@@ -465,8 +472,60 @@ Active providers are registered in `apps/cli/src/container.ts` via `createProvid
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **AllAnime (`allanime`)** — `provider-native`. AniList-backed discovery results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is preserved on merge.
+- **AniDB (`anidb`)** — `provider-native`, and the default anime route. Native ids must satisfy
+  `slug-positiveNumericSuffix`; numeric AniList ids and opaque AllAnime ids are not AniDB ids. The
+  AllManga Tier-1 lookup never runs for AniDB, and only a validated AniDB slug may be written to
+  `providerNativeIds.anidb` — otherwise the result keeps its catalog identity.
+- **AllAnime (`allanime`)** — `provider-native`, fallback anime route. AniList-backed discovery
+  results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
+  preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
+
+A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
+`tmdbId` slot even when the active provider declares that catalog identity.
+
+### AniDB catalog search compatibility
+
+Advanced AniDB discovery uses the explicitly declared compatible AniList catalog
+(`compatibleProviders` in `apps/cli/src/services/search/definitions/`), retaining AniList identity
+until a validated AniDB slug is found. It **never** falls through to the default TMDB catalog: when
+no compatible catalog exists, `SearchRoutingService` returns either a diagnosed provider-native
+fallback or an `unsupported` result carrying filter evidence, each with
+`attemptedDefaultFallback: false`.
+
+### AniDB browse parsing
+
+`packages/providers/src/anidb/browse-parser.ts` is the single parser for both markup generations,
+used by search and resolve so they cannot drift apart:
+
+- It captures the complete anchor opening tag first and only then parses and validates `href`;
+  href matching never delimits the attributes used for title extraction.
+- Attribute matching is anchored on a start-or-whitespace boundary, so `data-href`, `xlink:href`
+  and `data-original-title` cannot shadow the real attribute.
+- Title precedence is anchor `title` / `aria-label` → image `alt` → nested text, so a `title`
+  placed after `href` still wins.
+- Legacy relative `/anime/<slug-id>` cards and current absolute `https://anidb.app/anime/<slug-id>`
+  cards both parse; entities decode in a single pass; rows without a positive numeric suffix are
+  rejected; results dedupe by validated slug.
+- Only anchors carrying result-card evidence (a `title`/`aria-label` attribute or nested card
+  markup) become results, so nav, breadcrumb, related-rail and footer links cannot become
+  `results[0]` and pin the wrong show.
+
+### AniDB season routing and episode numbering
+
+AniDB models each season as its own title, so `routeAnidbSeason()` in
+`packages/providers/src/anidb/season-routing.ts` decides identity and numbering from evidence:
+
+- Season 1 retains the base title.
+- Season 2+ searches `<normalized base> Season N` and requires both a matching parsed season and
+  exact/prefix normalized base-title evidence. An ambiguous best score fails closed with a
+  structured `not-found` rather than resolving the wrong title.
+- `absoluteEpisode` survives CLI adaptation but is consumed **only** when the routed title's own
+  resolved AniDB episode catalog contains that exact episode number. A missing season label is not
+  evidence. A season-specific title, an unconfirmed base, and every routed season sibling use the
+  one-based cour episode.
+- The resolve trace records requested season, base id, routed id, route evidence, numbering
+  evidence and reason, episode number, and whether the absolute episode was used.
 
 ### Title identity persistence contract
 

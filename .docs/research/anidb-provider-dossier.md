@@ -22,7 +22,19 @@
 
 ## Known
 
-- Search: `GET /browse?q=%s` HTML; parse `anime/{slug}-{id}` + `alt="title"`
+- Search: `GET /browse?q=%s` HTML
+- Browse parser captures the complete anchor opening tag before separately parsing
+  and validating `href`; it accepts legacy relative `/anime/<slug-id>` cards with
+  image `alt` titles and current absolute `https://anidb.app/anime/<slug-id>` cards
+  where anchor `title`/`aria-label` precedes image `alt` and nested text.
+- Search results require a positive numeric AniDB suffix and carry parsed season
+  evidence.
+- Season 1 retains the base AniDB id. Season 2+ requires a unique normalized-title
+  and explicit-season match; ambiguity fails closed.
+- A missing season label is not absolute-numbering evidence. `absoluteEpisode` is
+  used only when the retained base title's resolved AniDB episode catalog contains
+  that exact episode; otherwise the retained base and every routed season sibling
+  use the one-based cour episode.
 - Episodes: `GET /api/frontend/anime/{numericId}/episodes` → `{episodes:[{id,number,filler}]}`
 - Languages: `GET /api/frontend/episode/{epId}/languages` → `embed_url` per `jpn` / `eng`
 - Embed HTML: `file: 'https://hls.anidb.app/.../master.m3u8'`
@@ -33,7 +45,6 @@
 ## Suspected
 
 - Some regions may need curl-impersonate (ani-cli dies on "Just a moment")
-- Season picker on anime pages exists but is optional for v1
 
 ## Unknown
 
