@@ -154,6 +154,13 @@ export class PersistentMpvSession {
   private mpvUnregister: (() => void) | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
+  /**
+   * Set synchronously by close()/termination, before any await. Bootstrap work
+   * that was already in flight for the outgoing process checks this after each
+   * await, so a late endpoint wait or IPC open cannot install a resource,
+   * publish an event, or activate player control on a retired session.
+   */
+  private retired = false;
   private readonly subtitleManager = new PersistentSubtitleManager();
   private readonly propertyRouter = new PersistentMpvPropertyRouter({
     getActiveCycle: () => this.activeCycle,
@@ -469,6 +476,7 @@ export class PersistentMpvSession {
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
     this.alive = false;
+    this.retired = true;
 
     const target = this.mpv;
 
@@ -599,6 +607,9 @@ export class PersistentMpvSession {
     {
       const ipcBootstrapStarted = Date.now();
       const ready = await this.runtime.waitForIpcEndpoint(this.ipcEndpoint, 5_000);
+      // The session was closed while this wait was outstanding; opening IPC now
+      // would resurrect a process that is already being torn down.
+      if (this.retired) return;
       const waitedMs = Date.now() - ipcBootstrapStarted;
       if (!ready) {
         this.currentCycleOptions().onPlaybackEvent?.({
@@ -610,8 +621,9 @@ export class PersistentMpvSession {
         return;
       }
 
+      let openedIpcSession: MpvIpcSession;
       try {
-        this.ipcSession = await this.runtime.openIpcSession({
+        openedIpcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
@@ -657,6 +669,13 @@ export class PersistentMpvSession {
         await this.terminateAfterIpcBootstrapFailure(proc);
         return;
       }
+
+      if (this.retired) {
+        // Close the handle we just created exactly once and install nothing.
+        await openedIpcSession.close().catch(() => {});
+        return;
+      }
+      this.ipcSession = openedIpcSession;
 
       dbg("mpv-ipc", "ipc-bootstrap-complete", {
         ipcTransport: mpvIpcTransportTag(this.ipcEndpoint),
@@ -1231,6 +1250,7 @@ export class PersistentMpvSession {
 
     this.terminationPromise = (async () => {
       this.alive = false;
+      this.retired = true;
       this.clearReadyWorkFallback();
       this.pendingReadyWork = null;
       this.watchdog?.stop();

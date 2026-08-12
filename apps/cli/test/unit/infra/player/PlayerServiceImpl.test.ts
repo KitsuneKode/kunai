@@ -4,6 +4,7 @@ import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
+import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type {
   PlayerPlaybackEvent,
   PlayerPlaybackEventEnvelope,
@@ -404,6 +405,86 @@ describe("PlayerServiceImpl playback generations", () => {
     expect(published.every((entry) => entry.generation === localGeneration)).toBe(true);
   });
 
+  test("whole-process stop invalidates the process before sending quit", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const published: PlayerPlaybackEventEnvelope[] = [];
+    const order: string[] = [];
+    let activeControl: ActivePlayerControl | null = null;
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      playerControl: {
+        setActive: (control) => {
+          activeControl = control as ActivePlayerControl | null;
+        },
+      },
+      launchMpv: (async (options) => {
+        options.onControlReady?.({
+          id: "one-shot",
+          async stop() {
+            order.push("quit-sent");
+          },
+          async stopCurrentFile() {
+            order.push("stop-sent");
+          },
+        } as never);
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    let raw!: (event: PlayerPlaybackEvent) => void;
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      onGenerationActivated: (generation) => {
+        raw = internals(service).wrapPlaybackEventHandler.bind(service)(generation, (input) =>
+          published.push(input),
+        );
+      },
+    });
+
+    const before = internals(service).currentGeneration;
+    published.length = 0;
+    await activeControl!.stop("user");
+
+    expect(order).toEqual(["quit-sent"]);
+    expect(internals(service).currentGeneration.process).toBeGreaterThan(before.process);
+    raw({ type: "playback-progress", positionSeconds: 1, durationSeconds: 2 });
+    expect(published).toEqual([]);
+  });
+
+  test("current-file stop retires only the cycle, leaving the process reusable", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let activeControl: ActivePlayerControl | null = null;
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      playerControl: {
+        setActive: (control) => {
+          activeControl = control as ActivePlayerControl | null;
+        },
+      },
+      launchMpv: (async (options) => {
+        options.onControlReady?.({
+          id: "one-shot",
+          async stop() {},
+          async stopCurrentFile() {},
+        } as never);
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+    });
+
+    const before = internals(service).currentGeneration;
+    await activeControl!.stopCurrentFile?.("user");
+    const after = internals(service).currentGeneration;
+
+    expect(after.process).toBe(before.process);
+    expect(after.cycle).toBeGreaterThan(before.cycle);
+  });
+
   test("retiring the persistent session does not invalidate the new local generation", async () => {
     const events: DiagnosticEventInput[] = [];
     const activations: PlaybackGeneration[] = [];
@@ -479,7 +560,9 @@ describe("PlayerServiceImpl shutdown", () => {
     ).resolves.toMatchObject({ endReason: "quit" });
 
     expect(lifecycle).toEqual(["close-persistent", "launch-local"]);
-    expect(activeControls).toEqual([null, { id: "local" }, null]);
+    expect(
+      activeControls.map((control) => (control as { id?: string } | null)?.id ?? null),
+    ).toEqual([null, "local", null]);
   });
 
   test("release waits for and closes a persistent player still being created", async () => {

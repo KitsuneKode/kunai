@@ -17,6 +17,23 @@ function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
   };
 }
 
+function createFakeProcess() {
+  let resolveExit!: (code: number) => void;
+  const handle = {
+    exited: new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    }),
+    killed: false,
+    exitCode: null as number | null,
+    kill() {
+      this.killed = true;
+      this.exitCode = 0;
+      resolveExit(0);
+    },
+  };
+  return { handle, endProcess: (code = 0) => resolveExit(code) };
+}
+
 function createHarness() {
   let callbacks!: CapturedCallbacks;
   let resolveExit!: (code: number) => void;
@@ -80,6 +97,131 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
   throw new Error("Timed out waiting for fake mpv lifecycle condition");
 }
+
+/** Bootstrap teardown does real filesystem work, so poll on timer ticks. */
+async function waitForSettled(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 200; i++) {
+    if (predicate()) return;
+    await Bun.sleep(1);
+  }
+  throw new Error("Timed out waiting for mpv bootstrap teardown");
+}
+
+describe("PersistentMpvSession deferred bootstrap resources", () => {
+  test("an endpoint wait that resolves after the process died does not open an IPC session", async () => {
+    let releaseEndpointWait!: (ready: boolean) => void;
+    let waitStarted!: () => void;
+    const waitReached = new Promise<void>((resolve) => {
+      waitStarted = resolve;
+    });
+    let ipcOpens = 0;
+    let terminated = false;
+    const proc = createFakeProcess();
+    const runtime: PersistentMpvSessionRuntime = {
+      which: () => "/usr/bin/mpv",
+      spawn: () => proc.handle,
+      waitForIpcEndpoint: () =>
+        new Promise<boolean>((resolve) => {
+          releaseEndpointWait = resolve;
+          waitStarted();
+        }),
+      async openIpcSession() {
+        ipcOpens += 1;
+        throw new Error("must not open IPC for a dead process");
+      },
+    };
+
+    const creating = PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => {
+          if (event.type === "player-closed") terminated = true;
+        },
+      },
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime,
+    });
+
+    await waitReached;
+    // mpv dies while the endpoint wait is still outstanding.
+    proc.endProcess(1);
+    await waitForSettled(() => terminated);
+
+    releaseEndpointWait(true);
+    const session = await creating;
+    await flushAsyncWork();
+
+    expect(ipcOpens).toBe(0);
+    expect(session.isAlive()).toBe(false);
+  });
+
+  test("an IPC session that opens after the process died is closed exactly once and never installed", async () => {
+    let releaseIpcOpen!: (session: MpvIpcSession) => void;
+    let openStarted!: () => void;
+    const openReached = new Promise<void>((resolve) => {
+      openStarted = resolve;
+    });
+    let closes = 0;
+    let sends = 0;
+    const publicEvents: string[] = [];
+    const controls: unknown[] = [];
+    const proc = createFakeProcess();
+    const staleIpc: MpvIpcSession = {
+      async send(command) {
+        sends += 1;
+        return { ok: true, command, requestId: 1, response: {} } satisfies MpvIpcCommandResult;
+      },
+      sendUnchecked() {
+        sends += 1;
+      },
+      async close() {
+        closes += 1;
+      },
+    };
+    const runtime: PersistentMpvSessionRuntime = {
+      which: () => "/usr/bin/mpv",
+      spawn: () => proc.handle,
+      waitForIpcEndpoint: async () => true,
+      openIpcSession: () =>
+        new Promise<MpvIpcSession>((resolve) => {
+          releaseIpcOpen = resolve;
+          openStarted();
+        }),
+    };
+
+    const creating = PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => publicEvents.push(event.type),
+      },
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: (control) => controls.push(control),
+      runtime,
+    });
+
+    await openReached;
+    proc.endProcess(1);
+    // Wait for termination to actually complete rather than guessing at ticks.
+    await waitForSettled(() => publicEvents.includes("player-closed"));
+
+    publicEvents.length = 0;
+    controls.length = 0;
+    releaseIpcOpen(staleIpc);
+    const session = await creating;
+    await waitForSettled(() => closes > 0);
+
+    expect(closes).toBe(1);
+    expect(sends).toBe(0);
+    expect(publicEvents).toEqual([]);
+    expect(controls).toEqual([]);
+    expect(session.isAlive()).toBe(false);
+  });
+});
 
 describe("PersistentMpvSession fake IPC lifecycle harness", () => {
   test("updates autoskip policy during an active intro without leaving a stale automatic skip", async () => {

@@ -44,7 +44,11 @@ import {
 } from "./playback-failure-classifier";
 import type { PlayerPresentationPort } from "./player-presentation-port";
 import { nonInteractivePlayerPresentation } from "./player-presentation-port";
-import type { MpvRequestedAction, PlayerControlService } from "./PlayerControlService";
+import type {
+  ActivePlayerControl,
+  MpvRequestedAction,
+  PlayerControlService,
+} from "./PlayerControlService";
 import type {
   PlayerOptions,
   PlayerPlaybackEvent,
@@ -102,6 +106,17 @@ export class PlayerServiceImpl implements PlayerService {
    */
   private invalidateProcessGeneration(): void {
     this.currentGeneration = { process: this.currentGeneration.process + 1, cycle: 0 };
+  }
+
+  /**
+   * Retires the current file/cycle while leaving the process number intact, so
+   * the reusable persistent process can still accept the next accepted cycle.
+   */
+  private invalidateCycleGeneration(): void {
+    this.currentGeneration = {
+      process: this.currentGeneration.process,
+      cycle: this.currentGeneration.cycle + 1,
+    };
   }
 
   /**
@@ -452,7 +467,31 @@ export class PlayerServiceImpl implements PlayerService {
   ): void {
     if (!this.isCurrentGeneration(generation)) return;
     this.activeControlGeneration = control ? generation : null;
-    this.deps.playerControl.setActive(control);
+    this.deps.playerControl.setActive(control ? this.guardControlGenerations(control) : null);
+  }
+
+  /**
+   * Stop is authoritative, so it retires its generation *before* the command
+   * leaves for mpv. Otherwise the events mpv emits while quitting — end-file,
+   * a final progress tick, a reconnect completion — would still look current
+   * and could revive a session the user just stopped.
+   */
+  private guardControlGenerations(control: ActivePlayerControl): ActivePlayerControl {
+    return {
+      ...control,
+      stop: async (reason?: string) => {
+        this.invalidateProcessGeneration();
+        await control.stop(reason);
+      },
+      ...(control.stopCurrentFile
+        ? {
+            stopCurrentFile: async (reason?: string) => {
+              this.invalidateCycleGeneration();
+              await control.stopCurrentFile?.(reason);
+            },
+          }
+        : {}),
+    };
   }
 
   /**
