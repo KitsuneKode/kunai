@@ -1200,7 +1200,7 @@ export function BrowseShell<T>({
           return;
         }
         if (input.toLowerCase() === "d" && selectedOption && searchState === "ready") {
-          onResolve("download");
+          onResolve("download", selectedOption.value);
           return;
         }
       }
@@ -1384,7 +1384,9 @@ export function BrowseShell<T>({
       (listFocused && input.toLowerCase() === "d")
     ) {
       if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
-        onResolve("download");
+        // Carry the highlighted row: the download target is read out of session
+        // state, which only tracks the cursor for actions that report it.
+        onResolve("download", selectedOption.value);
       }
       return;
     }
