@@ -27,6 +27,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import {
   ANIDB_REFERER,
   ANIDB_USER_AGENT,
+  chooseAnidbSearchMatch,
   fetchAnidbEpisodes,
   fetchAnidbMalId,
   looksLikeAnidbShowId,
@@ -39,9 +40,14 @@ import { anidbManifest, ANIDB_PROVIDER_ID } from "./manifest";
 export { ANIDB_PROVIDER_ID };
 export {
   anidbNumericId,
+  chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   looksLikeAnidbShowId,
+  parseAnidbBrowseHtml,
+  parseAnidbSeasonEvidence,
   searchAnidb,
+  type AnidbSearchResult,
+  type AnidbSeasonEvidence,
 } from "./client";
 
 function resolveAnidbShowIdFromInput(input: {
@@ -68,8 +74,7 @@ async function resolveAnidbShowId(
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
-  const results = await searchAnidb(query, signal);
-  return results[0]?.id ?? null;
+  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal))?.id ?? null;
 }
 
 function buildStreamHeaders(referer: string): Record<string, string> {
