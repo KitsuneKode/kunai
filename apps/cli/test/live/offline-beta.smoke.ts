@@ -293,7 +293,7 @@ try {
   if (libraryReady) {
     const playPromise = container.player.playLocal({
       source: playable.source,
-      onPlaybackEvent: (event) => {
+      onPlaybackEvent: ({ event }) => {
         if (event.type === "playback-started") {
           playbackStarted = true;
           container.player.killActiveMpvProcessesSync();

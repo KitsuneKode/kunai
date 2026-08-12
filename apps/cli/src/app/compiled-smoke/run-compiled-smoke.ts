@@ -41,7 +41,7 @@ async function playOnce(
     url,
     displayTitle,
     playbackMode,
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
       if (event.type === "playback-started" || event.type === "player-ready") {
         sawPlaybackStart = true;
@@ -140,7 +140,7 @@ async function runQueueManual(container: Container): Promise<number> {
     url: fx.streamUrl,
     displayTitle: fx.claimedTitle,
     playbackMode: "autoplay-chain",
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
       if (event.type === "playback-started") {
         acknowledged = attempt.acknowledgeStarted();
@@ -173,7 +173,7 @@ async function runAutoNext(container: Container): Promise<number> {
     url: fx.firstStreamUrl,
     displayTitle: `${fx.title} Ep1`,
     playbackMode: "autoplay-chain",
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
       if (event.type === "playback-started" || event.type === "player-ready") {
         sawPlaybackStart = true;
@@ -186,7 +186,7 @@ async function runAutoNext(container: Container): Promise<number> {
     url: fx.secondStreamUrl,
     displayTitle: `${fx.title} Ep2`,
     playbackMode: "autoplay-chain",
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
       if (event.type === "playback-started" || event.type === "player-ready") {
         sawPlaybackStart = true;
@@ -227,7 +227,7 @@ async function runFailedHandoff(container: Container): Promise<number> {
     url: fx.streamUrl,
     displayTitle: fx.title,
     playbackMode: "autoplay-chain",
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
       if (event.type === "playback-started") sawStart = true;
     },
@@ -299,7 +299,7 @@ async function runShutdownRestore(container: Container): Promise<number> {
     url: fx.streamUrl,
     displayTitle: fx.title,
     playbackMode: "autoplay-chain",
-    onPlaybackEvent: (event) => {
+    onPlaybackEvent: ({ event }) => {
       appendRuntimeEvidence({ type: "playback-event", event: event.type });
     },
   });

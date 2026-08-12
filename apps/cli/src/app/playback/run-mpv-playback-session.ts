@@ -7,10 +7,16 @@ import {
   shouldAbortPlaybackBeforeLaunch,
 } from "@/app/playback/mpv-session-lifecycle";
 import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
+import type {
+  PlaybackStatusDecision,
+  PlaybackStatusSignal,
+  PlaybackStatusSnapshot,
+} from "@/app/playback/playback-status-policy";
 import {
   formatPlaybackStreamRoute,
   playbackStartupStageForPlayerEvent,
 } from "@/app/playback/policies/startup-stage-policy";
+import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type {
   EpisodeInfo,
   PlaybackResult,
@@ -44,28 +50,34 @@ export type MpvPlaybackSessionHooks = {
   readonly onPresenceStarted: (input: {
     readonly positionSeconds: number;
     readonly durationSeconds: number;
+    readonly snapshot: PlaybackStatusSnapshot;
   }) => void;
   readonly onPresenceProgress: (input: {
     readonly positionSeconds: number;
     readonly durationSeconds: number;
+    readonly snapshot: PlaybackStatusSnapshot;
   }) => void;
   readonly onPresenceSubtitles: (input: {
     readonly positionSeconds: number;
     readonly durationSeconds: number;
     readonly trackCount: number;
+    readonly snapshot: PlaybackStatusSnapshot;
   }) => void;
   readonly onPresencePaused: (input: {
     readonly positionSeconds: number;
     readonly durationSeconds: number;
+    readonly snapshot: PlaybackStatusSnapshot;
   }) => void;
   readonly onPresenceResumed: (input: {
     readonly positionSeconds: number;
     readonly durationSeconds: number;
+    readonly snapshot: PlaybackStatusSnapshot;
   }) => void;
-  readonly setPlaybackStatus: (
-    status: "buffering" | "stalled" | "seeking" | "playing" | "ready" | "finished",
-  ) => void;
-  readonly getPlaybackStatus: () => string;
+  /**
+   * The only way this loop moves playback status. Submits a generation-bearing
+   * signal to the transition policy and reports whether it was accepted.
+   */
+  readonly applyPlaybackStatusSignal: (signal: PlaybackStatusSignal) => PlaybackStatusDecision;
   readonly onTrackChanged: (event: Extract<PlayerPlaybackEvent, { type: "track-changed" }>) => void;
   readonly onShareCopied: NonNullable<PlayerOptions["shareLinkContext"]>["onCopied"];
   readonly onPlayerReady: () => void;
@@ -122,6 +134,8 @@ export async function runMpvPlaybackSession(
   let startupStallFired = false;
   let startupStallArmed = false;
   let confirmedPlaybackStartNotified = false;
+  /** Installed synchronously by `onGenerationActivated`, before any player event. */
+  let activeGeneration: PlaybackGeneration | null = null;
 
   const clearBootstrapStallTimer = () => {
     if (bootstrapStallTimer !== null) {
@@ -136,8 +150,14 @@ export async function runMpvPlaybackSession(
     clearBootstrapStallTimer();
     bootstrapStallTimer = setTimeout(() => {
       if (startupStallFired) return;
+      if (!activeGeneration) return;
+      // An old watchdog must not abort a replacement generation.
+      const decision = hooks.applyPlaybackStatusSignal({
+        kind: "startup-stall",
+        generation: activeGeneration,
+      });
+      if (!decision.accepted) return;
       startupStallFired = true;
-      hooks.setPlaybackStatus("stalled");
       const route = formatPlaybackStreamRoute(stream);
       hooks.onFeedback({
         detail: "Startup stalled — trying next source",
@@ -176,12 +196,32 @@ export async function runMpvPlaybackSession(
         ...input.shareLinkContext,
         onCopied: hooks.onShareCopied,
       },
+      onGenerationActivated: (generation) => {
+        activeGeneration = generation;
+        hooks.applyPlaybackStatusSignal({ kind: "activate", generation, status: "loading" });
+      },
       onPlayerReady: () => {
+        if (!activeGeneration) return;
+        const decision = hooks.applyPlaybackStatusSignal({
+          kind: "player-event",
+          generation: activeGeneration,
+          event: { type: "player-ready" },
+        });
+        if (!decision.accepted) return;
         hooks.onFeedback({ detail: "Player controls ready" });
-        hooks.setPlaybackStatus("ready");
         hooks.onPlayerReady();
       },
-      onPlaybackEvent: (event) => {
+      onPlaybackEvent: ({ generation, event }) => {
+        // Freshness and authority are decided first: a rejected event performs
+        // no startup mark, feedback, presence, history, or track side effect.
+        const decision = hooks.applyPlaybackStatusSignal({
+          kind: "player-event",
+          generation,
+          event,
+        });
+        if (!decision.accepted) return;
+        const snapshot = decision.snapshot;
+
         const startupStage = playbackStartupStageForPlayerEvent(event);
         if (startupStage) hooks.onStartupMark?.(startupStage);
 
@@ -209,14 +249,7 @@ export async function runMpvPlaybackSession(
           );
         }
 
-        if (event.type === "network-buffering") {
-          hooks.setPlaybackStatus("buffering");
-        } else if (event.type === "stream-stalled" || event.type === "ipc-stalled") {
-          hooks.setPlaybackStatus("stalled");
-        } else if (event.type === "seek-stalled") {
-          hooks.setPlaybackStatus("seeking");
-        } else if (event.type === "playback-started") {
-          hooks.setPlaybackStatus("playing");
+        if (event.type === "playback-started") {
           if (!confirmedPlaybackStartNotified) {
             confirmedPlaybackStartNotified = true;
             hooks.onConfirmedPlaybackStart?.();
@@ -224,6 +257,7 @@ export async function runMpvPlaybackSession(
           hooks.onPresenceStarted({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
+            snapshot,
           });
         } else if (event.type === "playback-progress") {
           latestPresencePositionSeconds = event.positionSeconds;
@@ -231,22 +265,26 @@ export async function runMpvPlaybackSession(
           hooks.onPresenceProgress({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
+            snapshot,
           });
         } else if (event.type === "late-subtitles-attached") {
           hooks.onPresenceSubtitles({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
             trackCount: event.trackCount,
+            snapshot,
           });
         } else if (event.type === "playback-paused") {
           hooks.onPresencePaused({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
+            snapshot,
           });
         } else if (event.type === "playback-resumed") {
           hooks.onPresenceResumed({
             positionSeconds: latestPresencePositionSeconds,
             durationSeconds: latestPresenceDurationSeconds,
+            snapshot,
           });
         } else if (event.type === "track-changed") {
           hooks.onTrackChanged(event);
@@ -254,15 +292,24 @@ export async function runMpvPlaybackSession(
       },
     });
 
-    hooks.setPlaybackStatus("finished");
-    if (startupStallFired) {
-      return {
-        ...result,
-        suspectedDeadStream: true,
-        endReason: result.endReason === "eof" ? result.endReason : "error",
-      };
+    // The startup watchdog rewrites the result before completion is applied, so
+    // a watchdog failure completes as `error` rather than briefly as `finished`.
+    const finalResult = startupStallFired
+      ? {
+          ...result,
+          suspectedDeadStream: true,
+          endReason: result.endReason === "eof" ? result.endReason : ("error" as const),
+        }
+      : result;
+
+    if (activeGeneration) {
+      hooks.applyPlaybackStatusSignal({
+        kind: "completed",
+        generation: activeGeneration,
+        endReason: finalResult.endReason,
+      });
     }
-    return result;
+    return finalResult;
   } finally {
     clearBootstrapStallTimer();
   }

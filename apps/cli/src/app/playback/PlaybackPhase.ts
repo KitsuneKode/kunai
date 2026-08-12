@@ -106,6 +106,11 @@ import {
   startFromEpisodeSelection,
 } from "@/app/playback/playback-start-intent";
 import {
+  transitionPlaybackStatus,
+  type PlaybackStatusDecision,
+  type PlaybackStatusSignal,
+} from "@/app/playback/playback-status-policy";
+import {
   applyPlaybackControlTrackSelection,
   buildTrackOverrideDiagnosticContext,
 } from "@/app/playback/playback-track-selection-policy";
@@ -460,6 +465,32 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       context: { ...correlation, reason },
       run: () => context.container.presence.clearPlayback(reason),
     });
+  }
+
+  /**
+   * The single writer of player-driven playback status. Reads the authoritative
+   * snapshot, asks the pure policy, and writes back only when the policy says
+   * the status or generation actually moved.
+   */
+  private applyPlaybackStatusSignal(
+    context: PhaseContext,
+    signal: PlaybackStatusSignal,
+  ): PlaybackStatusDecision {
+    const { stateManager } = context.container;
+    const state = stateManager.getState();
+    const decision = transitionPlaybackStatus(
+      { status: state.playbackStatus, generation: state.playbackGeneration },
+      signal,
+    );
+    if (decision.accepted && decision.statusChanged) {
+      stateManager.dispatch({
+        type: "SET_PLAYBACK_STATUS",
+        status: decision.snapshot.status,
+        generation: decision.snapshot.generation,
+        clearFeedback: decision.clearFeedback,
+      });
+    }
+    return decision;
   }
 
   /** Dispatches the error status to the UI and waits for the user to dismiss it. */
@@ -3817,10 +3848,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             correlation,
           );
         },
-        setPlaybackStatus: (status) => {
-          stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status });
-        },
-        getPlaybackStatus: () => stateManager.getState().playbackStatus,
+        applyPlaybackStatusSignal: (signal) => this.applyPlaybackStatusSignal(context, signal),
         onTrackChanged: (event) => {
           const currentStream = stateManager.getState().stream;
           if (currentStream && event.trackType === "sub" && event.id === 0) {

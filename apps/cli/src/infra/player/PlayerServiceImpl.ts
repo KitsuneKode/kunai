@@ -6,6 +6,11 @@
 
 import { stat } from "node:fs/promises";
 
+import {
+  INITIAL_PLAYBACK_GENERATION,
+  isSamePlaybackGeneration,
+  type PlaybackGeneration,
+} from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -40,7 +45,12 @@ import {
 import type { PlayerPresentationPort } from "./player-presentation-port";
 import { nonInteractivePlayerPresentation } from "./player-presentation-port";
 import type { MpvRequestedAction, PlayerControlService } from "./PlayerControlService";
-import type { PlayerOptions, PlayerPlaybackEvent, PlayerService } from "./PlayerService";
+import type {
+  PlayerOptions,
+  PlayerPlaybackEvent,
+  PlayerPlaybackEventEnvelope,
+  PlayerService,
+} from "./PlayerService";
 
 export class PlayerServiceImpl implements PlayerService {
   private persistentSession: PersistentMpvSession | null = null;
@@ -52,6 +62,14 @@ export class PlayerServiceImpl implements PlayerService {
   private shuttingDown = false;
   /** One app playback intent owns the mpv handoff at a time. */
   private playbackInFlight = false;
+  /**
+   * Freshness identity of the mpv process/cycle this service currently owns.
+   * Every asynchronous boundary captures it and compares before publishing, so
+   * a replaced, stopped, or released session cannot speak through late work.
+   */
+  private currentGeneration: PlaybackGeneration = INITIAL_PLAYBACK_GENERATION;
+  /** Which generation installed the control the app is currently holding. */
+  private activeControlGeneration: PlaybackGeneration | null = null;
 
   constructor(
     private deps: {
@@ -69,7 +87,40 @@ export class PlayerServiceImpl implements PlayerService {
 
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.invalidateProcessGeneration();
     this.stopActiveHlsRelay("session-release");
+  }
+
+  private isCurrentGeneration(generation: PlaybackGeneration): boolean {
+    return isSamePlaybackGeneration(generation, this.currentGeneration);
+  }
+
+  /**
+   * Retires the whole mpv process. Nothing produced by the outgoing process —
+   * IPC opens, endpoint waits, process exit, property callbacks — is current
+   * afterwards, so late work returns instead of publishing.
+   */
+  private invalidateProcessGeneration(): void {
+    this.currentGeneration = { process: this.currentGeneration.process + 1, cycle: 0 };
+  }
+
+  /**
+   * Installs the generation this play owns. Reusing the persistent process
+   * keeps the process number and takes the next cycle; a new OS process takes
+   * the next process number at cycle 1.
+   */
+  private activateGeneration(reuseProcess: boolean): PlaybackGeneration {
+    this.currentGeneration = reuseProcess
+      ? { process: this.currentGeneration.process, cycle: this.currentGeneration.cycle + 1 }
+      : { process: this.currentGeneration.process + 1, cycle: 1 };
+    return this.currentGeneration;
+  }
+
+  /** True when `play()` can hand this stream to the already running mpv process. */
+  private willReusePersistentProcess(options: PlayerOptions): boolean {
+    return (
+      options.playbackMode === "autoplay-chain" && (this.persistentSession?.isReusable() ?? false)
+    );
   }
 
   killActiveMpvProcessesSync(): void {
@@ -87,15 +138,32 @@ export class PlayerServiceImpl implements PlayerService {
       throw new PlaybackAbortedError("playback already in progress");
     }
 
+    // Admission is settled; allocate and publish the generation before the
+    // first await so no consumer can observe an event from an unknown cycle.
+    const reuseProcess = this.willReusePersistentProcess(options);
+    const retiredGeneration = reuseProcess ? null : this.currentGeneration;
+    const generation = this.activateGeneration(reuseProcess);
+    options.onGenerationActivated?.(generation);
+
     this.playbackInFlight = true;
     try {
-      return await this.playOwned(stream, options);
+      return await this.playOwned(stream, options, generation, retiredGeneration);
     } finally {
       this.playbackInFlight = false;
     }
   }
 
-  private async playOwned(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
+  private async playOwned(
+    stream: StreamInfo,
+    options: PlayerOptions,
+    generation: PlaybackGeneration,
+    retiredGeneration: PlaybackGeneration | null,
+  ): Promise<PlaybackResult> {
+    const publish = this.wrapPlaybackEventHandler(
+      generation,
+      options.onPlaybackEvent,
+      options.correlation,
+    );
     let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
       null;
     const materialized = await materializePlaybackMediaForPlayback(
@@ -164,16 +232,16 @@ export class PlayerServiceImpl implements PlayerService {
     }
     let playbackStream = materialized.stream;
     if (materialized.kind === "dash-mpd") {
-      options.onPlaybackEvent?.({ type: "media-materialized", kind: "dash-mpd" });
+      publish({ type: "media-materialized", kind: "dash-mpd" });
     } else if (materialized.kind === "hls-manifest") {
-      options.onPlaybackEvent?.({ type: "media-materialized", kind: "hls-manifest" });
+      publish({ type: "media-materialized", kind: "hls-manifest" });
     }
 
     // Stop any prior cycle relay before starting a new one (autoplay-chain source swaps).
     this.stopActiveHlsRelay("session-release");
     playbackStream = this.maybeStartHlsRelay(playbackStream, options);
 
-    options.onPlaybackEvent?.({ type: "launching-player" });
+    publish({ type: "launching-player" });
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
     if (!presentation.isInteractiveShellMounted()) {
       process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
@@ -217,8 +285,20 @@ export class PlayerServiceImpl implements PlayerService {
       const urlKind = materialized.kind === "none" ? "remote" : "local";
       const result =
         options.playbackMode === "autoplay-chain"
-          ? await this.playAutoplayChainStream(playbackStream, options, urlKind)
-          : await this.playOneShotStream(playbackStream, options, urlKind);
+          ? await this.playAutoplayChainStream(
+              playbackStream,
+              options,
+              urlKind,
+              publish,
+              retiredGeneration,
+            )
+          : await this.playOneShotStream(
+              playbackStream,
+              options,
+              urlKind,
+              publish,
+              retiredGeneration,
+            );
 
       this.deps.logger.info("MPV playback complete", {
         watchedSeconds: result.watchedSeconds,
@@ -308,13 +388,28 @@ export class PlayerServiceImpl implements PlayerService {
     // Invalidate a create() already awaiting IPC before observing its result.
     // Otherwise shutdown/recovery can see `persistentSession === null`, return,
     // and let that late create publish a live mpv after teardown completed.
+    // Generation is invalidated synchronously here, before any await, so this
+    // stays the single release/disposal invalidation authority.
+    const retired = this.currentGeneration;
+    this.invalidateProcessGeneration();
+    await this.retirePersistentSession(retired);
+  }
+
+  /**
+   * Releases the persistent session that `retiredGeneration` owned. The caller
+   * has already moved `currentGeneration` past it, so this must never allocate,
+   * clear, or compare-and-swap the generation that is active now.
+   */
+  private async retirePersistentSession(
+    retiredGeneration: PlaybackGeneration | null,
+  ): Promise<void> {
     this.persistentSessionEpoch += 1;
     if (this.persistentSessionRelease) {
       await this.persistentSessionRelease;
       return;
     }
 
-    const release = this.releasePersistentSessionOwned();
+    const release = this.releasePersistentSessionOwned(retiredGeneration);
     this.persistentSessionRelease = release;
     try {
       await release;
@@ -325,7 +420,9 @@ export class PlayerServiceImpl implements PlayerService {
     }
   }
 
-  private async releasePersistentSessionOwned(): Promise<void> {
+  private async releasePersistentSessionOwned(
+    retiredGeneration: PlaybackGeneration | null,
+  ): Promise<void> {
     const pendingCreation = this.persistentSessionCreation;
     let session = this.persistentSession;
     if (!session && pendingCreation) {
@@ -343,9 +440,30 @@ export class PlayerServiceImpl implements PlayerService {
     if (this.persistentSession === session) {
       this.persistentSession = null;
     }
-    this.deps.playerControl.setActive(null);
+    this.clearActiveControlFor(retiredGeneration);
     this.stopActiveHlsRelay("session-release");
     await this.flushDeferredMaterializedCleanups();
+  }
+
+  /** Publishes a control only while its generation is current, and records the owner. */
+  private setActiveControlFor(
+    generation: PlaybackGeneration,
+    control: Parameters<PlayerControlService["setActive"]>[0],
+  ): void {
+    if (!this.isCurrentGeneration(generation)) return;
+    this.activeControlGeneration = control ? generation : null;
+    this.deps.playerControl.setActive(control);
+  }
+
+  /**
+   * Retirement clears only the control it owned. A replacement that already
+   * installed its own control keeps it.
+   */
+  private clearActiveControlFor(retiredGeneration: PlaybackGeneration | null): void {
+    const owner = this.activeControlGeneration;
+    if (owner && retiredGeneration && !isSamePlaybackGeneration(owner, retiredGeneration)) return;
+    this.activeControlGeneration = null;
+    this.deps.playerControl.setActive(null);
   }
 
   private deferMaterializedCleanup(cleanup: () => Promise<void>): void {
@@ -376,7 +494,8 @@ export class PlayerServiceImpl implements PlayerService {
     startAt?: number;
     policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
-    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+    onGenerationActivated?: (generation: PlaybackGeneration) => void;
+    onPlaybackEvent?: (input: PlayerPlaybackEventEnvelope) => void;
   }): Promise<PlaybackResult> {
     if (this.shuttingDown) {
       throw new PlaybackAbortedError("player shutting down");
@@ -385,30 +504,43 @@ export class PlayerServiceImpl implements PlayerService {
       throw new PlaybackAbortedError("playback already in progress");
     }
 
+    // Order matters and is load-bearing: capture the persistent generation being
+    // retired, install this one-shot generation, publish it — all before the
+    // first await — so retiring the persistent session cannot invalidate it.
+    const retiredPersistentGeneration = this.currentGeneration;
+    const localGeneration = this.activateGeneration(false);
+    options.onGenerationActivated?.(localGeneration);
+
     this.playbackInFlight = true;
     try {
-      return await this.playLocalOwned(options);
+      return await this.playLocalOwned(options, localGeneration, retiredPersistentGeneration);
     } finally {
       this.playbackInFlight = false;
     }
   }
 
-  private async playLocalOwned(options: {
-    source: LocalPlaybackSource;
-    attach?: boolean;
-    startAt?: number;
-    policy?: LocalPlaybackPolicyInput;
-    onPlayerReady?: () => void;
-    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
-  }): Promise<PlaybackResult> {
+  private async playLocalOwned(
+    options: {
+      source: LocalPlaybackSource;
+      attach?: boolean;
+      startAt?: number;
+      policy?: LocalPlaybackPolicyInput;
+      onPlayerReady?: () => void;
+      onGenerationActivated?: (generation: PlaybackGeneration) => void;
+      onPlaybackEvent?: (input: PlayerPlaybackEventEnvelope) => void;
+    },
+    localGeneration: PlaybackGeneration,
+    retiredPersistentGeneration: PlaybackGeneration,
+  ): Promise<PlaybackResult> {
+    const publish = this.wrapPlaybackEventHandler(localGeneration, options.onPlaybackEvent);
     // Local playback is one-shot. Retire an idle autoplay-chain process first
     // so only the local player owns controls and a visible mpv window.
-    await this.releasePersistentSession();
+    await this.retirePersistentSession(retiredPersistentGeneration);
     const subtitlePath = await this.resolveReadableSubtitlePath(
       options.source.subtitlePath ?? null,
     );
     const displayTitle = formatLocalPlaybackTitle(options.source);
-    options.onPlaybackEvent?.({ type: "launching-player" });
+    publish({ type: "launching-player" });
     this.deps.logger.info("Launching local MPV", {
       title: displayTitle,
       filePath: options.source.filePath,
@@ -441,9 +573,9 @@ export class PlayerServiceImpl implements PlayerService {
       skipIntro: policy.skipIntro,
       skipPreview: policy.skipPreview,
       skipCredits: policy.skipCredits,
-      onControlReady: (control) => this.deps.playerControl.setActive(control),
+      onControlReady: (control) => this.setActiveControlFor(localGeneration, control),
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent),
+      onPlaybackEvent: publish,
       mpv: {
         ...this.deps.mpv,
         startupPriority: this.deps.config.startupPriority,
@@ -474,8 +606,11 @@ export class PlayerServiceImpl implements PlayerService {
     stream: StreamInfo,
     options: PlayerOptions,
     urlKind: "remote" | "local",
+    publish: (event: PlayerPlaybackEvent) => void,
+    retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
-    await this.releasePersistentSession();
+    const generation = this.currentGeneration;
+    await this.retirePersistentSession(retiredGeneration);
     return await (this.deps.launchMpv ?? launchMpv)({
       url: stream.url,
       urlKind,
@@ -497,9 +632,9 @@ export class PlayerServiceImpl implements PlayerService {
       skipIntro: options.skipIntro,
       skipPreview: options.skipPreview,
       skipCredits: options.skipCredits,
-      onControlReady: (control) => this.deps.playerControl.setActive(control),
+      onControlReady: (control) => this.setActiveControlFor(generation, control),
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
+      onPlaybackEvent: publish,
       mpv: {
         ...this.deps.mpv,
         startupPriority: this.deps.config.startupPriority,
@@ -511,9 +646,12 @@ export class PlayerServiceImpl implements PlayerService {
     stream: StreamInfo,
     options: PlayerOptions,
     urlKind: "remote" | "local",
+    publish: (event: PlayerPlaybackEvent) => void,
+    retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
+    const generation = this.currentGeneration;
     if (this.persistentSession && !this.persistentSession.isReusable()) {
-      await this.releasePersistentSession();
+      await this.retirePersistentSession(retiredGeneration);
     }
 
     const resumePromptAt = options.resumePromptAt ?? 0;
@@ -543,7 +681,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipCredits: options.skipCredits,
       autoNextEnabled: true,
       onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: this.wrapPlaybackEventHandler(options.onPlaybackEvent, options.correlation),
+      onPlaybackEvent: publish,
       onMpvActionRequest: (action: MpvRequestedAction) => {
         this.deps.playerControl.signalPlaybackAction(action);
       },
@@ -561,7 +699,7 @@ export class PlayerServiceImpl implements PlayerService {
           startupPriority: this.deps.config.startupPriority,
         },
         kitsuneConfig: this.deps.config.getRaw(),
-        onControlReady: (control) => this.deps.playerControl.setActive(control),
+        onControlReady: (control) => this.setActiveControlFor(generation, control),
       });
       this.persistentSessionCreation = creation;
       let created: PersistentMpvSession;
@@ -597,11 +735,19 @@ export class PlayerServiceImpl implements PlayerService {
     return result;
   }
 
+  /**
+   * The single public boundary. Raw `PlayerPlaybackEvent` callbacks live only
+   * below this line; above it every consumer receives an envelope carrying the
+   * generation that produced the event. A retired generation returns here, so
+   * it can publish neither a public event nor a diagnostic.
+   */
   private wrapPlaybackEventHandler(
-    handler: ((event: PlayerPlaybackEvent) => void) | undefined,
+    generation: PlaybackGeneration,
+    handler: ((input: PlayerPlaybackEventEnvelope) => void) | undefined,
     correlation: PlayerOptions["correlation"] = undefined,
   ): (event: PlayerPlaybackEvent) => void {
     return (event) => {
+      if (!this.isCurrentGeneration(generation)) return;
       const failureClass = classifyPlaybackFailureFromEvent(event);
       const diagnosticFailureClass = mapPlaybackFailureToDiagnosticFailure(failureClass);
       this.deps.diagnostics.record(
@@ -621,7 +767,7 @@ export class PlayerServiceImpl implements PlayerService {
           },
         }),
       );
-      handler?.(event);
+      handler?.({ generation, event });
     };
   }
 

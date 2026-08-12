@@ -1,12 +1,43 @@
 import { describe, expect, test } from "bun:test";
 
+import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
-import type { PlayerPlaybackEvent, PlayerOptions } from "@/infra/player/PlayerService";
+import type {
+  PlayerPlaybackEvent,
+  PlayerPlaybackEventEnvelope,
+  PlayerOptions,
+} from "@/infra/player/PlayerService";
 import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
 import type { launchMpv } from "@/mpv";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
+
+/** Reaches the generation seams the service owns privately. */
+type GenerationInternals = {
+  readonly currentGeneration: PlaybackGeneration;
+  wrapPlaybackEventHandler(
+    generation: PlaybackGeneration,
+    handler: ((input: PlayerPlaybackEventEnvelope) => void) | undefined,
+    correlation?: PlayerOptions["correlation"],
+  ): (event: PlayerPlaybackEvent) => void;
+};
+
+function internals(service: PlayerServiceImpl): GenerationInternals {
+  return service as unknown as GenerationInternals;
+}
+
+const LOCAL_SOURCE = {
+  kind: "local" as const,
+  jobId: "job-1",
+  titleId: "title-1",
+  titleName: "Offline episode",
+  mediaKind: "series" as const,
+  providerId: "provider-1",
+  season: 1,
+  episode: 2,
+  filePath: "/media/episode-2.mkv",
+};
 
 function createPlaybackResult(): PlaybackResult {
   return {
@@ -219,26 +250,21 @@ describe("PlayerServiceImpl diagnostics", () => {
     expect(cleaned).toBe(true);
   });
 
-  test("runtime playback events keep diagnostic correlation", () => {
+  test("runtime playback events keep diagnostic correlation and arrive enveloped", () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events);
-    const seen: PlayerPlaybackEvent[] = [];
-    const wrap = (
-      service as unknown as {
-        wrapPlaybackEventHandler: (
-          handler: (event: PlayerPlaybackEvent) => void,
-          correlation: PlayerOptions["correlation"],
-        ) => (event: PlayerPlaybackEvent) => void;
-      }
-    ).wrapPlaybackEventHandler.bind(service);
+    const seen: PlayerPlaybackEventEnvelope[] = [];
+    const generation = internals(service).currentGeneration;
+    const wrap = internals(service).wrapPlaybackEventHandler.bind(service);
 
-    wrap((event) => seen.push(event), {
+    wrap(generation, (input) => seen.push(input), {
       sessionId: "session-1",
       playbackCycleId: "playback-1",
       providerAttemptId: "attempt-1",
     })({ type: "mpv-process-started" });
 
-    expect(seen).toEqual([{ type: "mpv-process-started" }]);
+    // The raw event stays internal; the public value is the envelope.
+    expect(seen).toEqual([{ generation, event: { type: "mpv-process-started" } }]);
     expect(events[0]).toMatchObject({
       sessionId: "session-1",
       playbackCycleId: "playback-1",
@@ -247,6 +273,160 @@ describe("PlayerServiceImpl diagnostics", () => {
       message: "MPV runtime event",
       context: { event: "mpv-process-started" },
     });
+  });
+});
+
+describe("PlayerServiceImpl playback generations", () => {
+  test("play activates a generation synchronously, before the first await", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
+    });
+    const activations: PlaybackGeneration[] = [];
+
+    const playing = service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      onGenerationActivated: (generation) => activations.push(generation),
+    });
+
+    expect(activations).toEqual([{ process: 1, cycle: 1 }]);
+    await playing;
+  });
+
+  test("public play callbacks receive the activated generation with every event", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      launchMpv: (async (options) => {
+        options.onPlaybackEvent?.({ type: "playback-started" });
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+    const activations: PlaybackGeneration[] = [];
+    const published: PlayerPlaybackEventEnvelope[] = [];
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      onGenerationActivated: (generation) => activations.push(generation),
+      onPlaybackEvent: (input) => published.push(input),
+    });
+
+    const generation = activations[0];
+    expect(generation).toBeDefined();
+    expect(published.length).toBeGreaterThan(0);
+    expect(published.every((entry) => entry.generation === generation)).toBe(true);
+    expect(published.map((entry) => entry.event.type)).toContain("playback-started");
+    expect(published.map((entry) => entry.event.type)).toContain("launching-player");
+  });
+
+  test("a retired generation's raw callback cannot publish anything", () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    const published: PlayerPlaybackEventEnvelope[] = [];
+    const stale = internals(service).currentGeneration;
+    const staleRaw = internals(service).wrapPlaybackEventHandler.bind(service)(stale, (input) =>
+      published.push(input),
+    );
+
+    staleRaw({ type: "playback-started" });
+    expect(published).toHaveLength(1);
+
+    const diagnosticsBefore = events.length;
+    service.beginShutdown();
+    void service.releasePersistentSession();
+
+    staleRaw({ type: "playback-progress", positionSeconds: 5, durationSeconds: 10 });
+    expect(published).toHaveLength(1);
+    expect(events.length).toBe(diagnosticsBefore);
+  });
+
+  test("playLocal activates its one-shot generation before retiring the persistent session", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const order: string[] = [];
+    const activations: PlaybackGeneration[] = [];
+    const published: PlayerPlaybackEventEnvelope[] = [];
+    let releaseClose!: () => void;
+    const closeGate = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      launchMpv: (async (options) => {
+        order.push("launch-local");
+        options.onPlaybackEvent?.({ type: "playback-started" });
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+    (
+      service as unknown as { persistentSession: { isAlive(): boolean; close(): Promise<void> } }
+    ).persistentSession = {
+      isAlive: () => true,
+      async close() {
+        order.push("close-persistent");
+        await closeGate;
+      },
+    };
+
+    // Capture a raw callback belonging to the persistent generation being retired.
+    const retired = internals(service).currentGeneration;
+    const retiredRaw = internals(service).wrapPlaybackEventHandler.bind(service)(retired, (input) =>
+      published.push(input),
+    );
+
+    const local = service.playLocal({
+      source: LOCAL_SOURCE,
+      onGenerationActivated: (generation) => activations.push(generation),
+      onPlaybackEvent: (input) => published.push(input),
+    });
+
+    // Activation must already have happened, before the retirement await resolves.
+    expect(activations).toHaveLength(1);
+    expect(order).toEqual(["close-persistent"]);
+
+    // A retained persistent callback firing mid-retirement cannot publish into the local cycle.
+    retiredRaw({ type: "playback-progress", positionSeconds: 1, durationSeconds: 2 });
+    expect(published).toHaveLength(0);
+
+    releaseClose();
+    await local;
+
+    expect(order).toEqual(["close-persistent", "launch-local"]);
+    const localGeneration = activations[0];
+    expect(published.length).toBeGreaterThan(0);
+    expect(published.every((entry) => entry.generation === localGeneration)).toBe(true);
+
+    // And it still cannot publish after the local launch completed.
+    retiredRaw({ type: "playback-progress", positionSeconds: 3, durationSeconds: 4 });
+    expect(published.every((entry) => entry.generation === localGeneration)).toBe(true);
+  });
+
+  test("retiring the persistent session does not invalidate the new local generation", async () => {
+    const events: DiagnosticEventInput[] = [];
+    const activations: PlaybackGeneration[] = [];
+    const { service } = createService(events, {
+      presentation: { isInteractiveShellMounted: () => true },
+      launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
+    });
+    (
+      service as unknown as { persistentSession: { isAlive(): boolean; close(): Promise<void> } }
+    ).persistentSession = {
+      isAlive: () => true,
+      async close() {
+        await Bun.sleep(0);
+      },
+    };
+
+    await service.playLocal({
+      source: LOCAL_SOURCE,
+      onGenerationActivated: (generation) => activations.push(generation),
+    });
+
+    expect(activations).toHaveLength(1);
+    expect(internals(service).currentGeneration).toEqual(activations[0]!);
   });
 });
 
