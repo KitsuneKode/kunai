@@ -545,6 +545,41 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN external_ids_json TEXT;
     `,
   },
+  {
+    id: "028_data_sync_outbox",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        id TEXT PRIMARY KEY,
+        tracker_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        generation INTEGER NOT NULL DEFAULT 1,
+        claim_token TEXT,
+        claimed_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL DEFAULT 'pending',
+        next_attempt_at TEXT NOT NULL,
+        last_error_code TEXT,
+        last_error_detail TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- One live row per tracker intent: a newer payload supersedes in place
+      -- rather than queueing a second delivery for the same thing.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_outbox_tracker_dedupe
+        ON sync_outbox(tracker_id, dedupe_key);
+
+      -- Due-row scan.
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_due
+        ON sync_outbox(state, next_attempt_at ASC);
+
+      -- Expired-claim scan, for leases a dead process never released.
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_claimed
+        ON sync_outbox(state, claimed_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

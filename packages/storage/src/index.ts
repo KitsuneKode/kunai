@@ -142,3 +142,20 @@ export { FollowedTitleRepository } from "./repositories/followed-titles";
 export type { FollowedTitlePreference, FollowedTitleRecord } from "./repositories/followed-titles";
 export { PlaylistsRepository } from "./repositories/playlists";
 export type { UserPlaylistItemRecord, UserPlaylistRecord } from "./repositories/playlists";
+export {
+  DEFAULT_SYNC_CLAIM_LEASE_MS,
+  SYNC_OUTBOX_RETRY_BASE_MS,
+  SYNC_OUTBOX_RETRY_MAX_MS,
+  SyncOutboxRepository,
+} from "./repositories/sync-outbox";
+export type {
+  SyncOutboxClaim,
+  SyncOutboxClaimRef,
+  SyncOutboxCounts,
+  SyncOutboxEnqueueInput,
+  SyncOutboxFailureInput,
+  SyncOutboxItem,
+  SyncOutboxMutationResult,
+  SyncOutboxState,
+  SyncTrackerId,
+} from "./repositories/sync-outbox";

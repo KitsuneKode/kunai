@@ -13,7 +13,8 @@
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test --timeout=30000"
+"test": "bun test test --timeout=30000",
+    "test:file": "bun test"
   },
   "dependencies": {
     "@kunai/core": "workspace:*",
