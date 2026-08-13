@@ -255,8 +255,9 @@ export class DownloadJobsRepository {
       .run(input.streamUrl, JSON.stringify(input.headers), input.providerId ?? null, updatedAt, id);
   }
 
-  markRunning(id: string, updatedAt: string): void {
-    this.db
+  /** Compare-and-set a queued job into running ownership. */
+  markRunning(id: string, updatedAt: string): boolean {
+    const result = this.db
       .query(
         `
           UPDATE download_jobs
@@ -266,10 +267,31 @@ export class DownloadJobsRepository {
               last_heartbeat_at = ?,
               next_retry_at = NULL,
               updated_at = ?
-          WHERE id = ?
+          WHERE id = ? AND status = 'queued'
         `,
       )
       .run(updatedAt, updatedAt, updatedAt, id);
+    return result.changes > 0;
+  }
+
+  /** Acquire an expired running lease using the heartbeat observed by the reader. */
+  claimRunningForRecovery(
+    id: string,
+    observedHeartbeatAt: string | undefined,
+    updatedAt: string,
+  ): boolean {
+    const result = this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET last_heartbeat_at = ?, updated_at = ?
+          WHERE id = ?
+            AND status = 'running'
+            AND last_heartbeat_at IS ?
+        `,
+      )
+      .run(updatedAt, updatedAt, id, observedHeartbeatAt ?? null);
+    return result.changes > 0;
   }
 
   markHeartbeat(id: string, updatedAt: string): void {

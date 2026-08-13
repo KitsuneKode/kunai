@@ -511,6 +511,46 @@ test("download jobs repository supports queue lifecycle", () => {
   expect(done?.introSkipJson).toBe(JSON.stringify({ openings: [] }));
 });
 
+test("download jobs repository claims a queued job exactly once", () => {
+  const db = migratedDataDb();
+  const repo = new DownloadJobsRepository(db);
+  const now = "2026-04-29T00:00:00.000Z";
+
+  repo.enqueue({
+    id: "job-claim",
+    titleId: "tmdb:1",
+    titleName: "Example",
+    mediaKind: "movie",
+    providerId: "vidking",
+    streamUrl: "https://example.com/master.m3u8",
+    headers: {},
+    outputPath: "/tmp/example.mp4",
+    tempPath: "/tmp/example.mp4.tmp.job-claim",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  expect(repo.markRunning("job-claim", "2026-04-29T00:01:00.000Z")).toBe(true);
+  expect(repo.markRunning("job-claim", "2026-04-29T00:01:01.000Z")).toBe(false);
+  expect(repo.get("job-claim")?.attempt).toBe(1);
+  expect(
+    repo.claimRunningForRecovery(
+      "job-claim",
+      "2026-04-29T00:01:00.000Z",
+      "2026-04-29T00:03:00.000Z",
+    ),
+  ).toBe(true);
+  expect(
+    repo.claimRunningForRecovery(
+      "job-claim",
+      "2026-04-29T00:01:00.000Z",
+      "2026-04-29T00:03:01.000Z",
+    ),
+  ).toBe(false);
+  repo.complete("job-claim", "2026-04-29T00:04:00.000Z");
+  expect(repo.markRunning("job-claim", "2026-04-29T00:04:01.000Z")).toBe(false);
+});
+
 test("download jobs repository finds one blocking episode intent without scanning lists", () => {
   const db = migratedDataDb();
   const repo = new DownloadJobsRepository(db);
