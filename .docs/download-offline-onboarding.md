@@ -63,6 +63,40 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 - External subtitle/artwork sidecars are repairable metadata, not proof the video failed. If the video artifact validates but an expected sidecar is missing, the job becomes `repairable` and `/downloads` can retry just the sidecar path without re-running `yt-dlp`.
 - If the stream is hard-subbed or no external subtitle URL exists, subtitle sidecar work is marked not-applicable/expected-missing as appropriate; it should not be reported as a full download failure.
 
+## Canonical Media Presentation
+
+`apps/cli/src/domain/media/media-presentation.ts` is the single authority for how a piece of
+media names itself. It is pure: callers pass what they stored, it answers what the user should
+see. Queue rows, the offline shelf, notifications, the mpv display title, the download
+confirmation, and filesystem naming all consume it instead of re-deriving "is this a movie?".
+
+- Movies are **title-level** downloads. `DownloadIntentService` and `DownloadService` persist a
+  movie (and a video) as one title-level job; only series and anime fall back to an episode slot.
+  A movie displays `Movie` and never a synthetic `S01E01`.
+- Series display `SxxExx`.
+- Anime display episode-only `Exx` unless the season is provably meaningful (a real multi-season
+  identity, not a defaulted slot).
+- Videos keep their own identity rather than borrowing series labels.
+- Legacy movie rows persisted with a placeholder season 1 / episode 1 remain supported and are
+  re-labelled on read. There is no destructive migration.
+- `download-path-naming.ts` consumes `CanonicalMediaPosition` **before** sanitization: it adds
+  path-safe encoding only and never reinterprets content kind.
+
+## Download And Library Layout Ownership
+
+- Inside a root-owned overlay, `OverlayLayoutProvider.contentColumns` is the authoritative width
+  budget. Reading raw terminal columns is what let download rows overflow their frame.
+- Narrow downloads stay full-width and actionable with no companion rail. A wide overlay adds one
+  constrained selected-job rail; the rail is driven by the **settled** selection
+  (`useSettledValue`), so a held arrow key moves the cursor immediately and never spawns a poster
+  render per row.
+- Rails that can be on screen together name different Kitty placement slots
+  (`download-manager-preview`, `browse-preview`, `overlay-picker`, …); sharing a slot evicts the
+  other rail's live placement.
+- The download confirmation's poster identity is **title-level** and draft-independent: editing
+  audio, subtitle, quality, artwork, destination, runway, or cleanup never re-requests artwork or
+  replaces the placement.
+
 ## Desired Offline Behavior
 
 - No aggressive startup network probe.

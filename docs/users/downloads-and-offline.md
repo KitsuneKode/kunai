@@ -63,6 +63,20 @@ Inside a normal session:
 - `/downloads` — queue overlay (queued, running, failed jobs)
 - `/download` during playback — queue the current item for offline
 
+## How Titles Are Labelled
+
+Kunai names a download the way the content is actually shaped, everywhere it appears —
+the queue, the offline library, notifications, the mpv window title, and the file on disk:
+
+- **Movies** are title-level downloads and read as a quiet `Movie`. A movie never shows a
+  made-up `S01E01`.
+- **Series** read as `SxxExx`.
+- **Anime** read as `Exx`, and only show a season when the season is genuinely meaningful.
+- **Videos** (YouTube and similar) keep their own identity rather than borrowing series labels.
+
+Older movie downloads that were saved with a placeholder season 1 / episode 1 keep working
+and are re-labelled on sight — nothing is rewritten or migrated on disk.
+
 ## Safety Rules
 
 - Kunai does not silently delete completed artifacts.

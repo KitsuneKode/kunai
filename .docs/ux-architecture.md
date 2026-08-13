@@ -142,6 +142,36 @@ Overlay behavior should stay disciplined:
 - pickers should preserve their local filter, selection, and scroll state when command overlays open and close above them
 - overlays and pickers should be windowed to the viewport, not allowed to push content into terminal scrollback
 
+### Routed surfaces mount before they load
+
+A surface that owns a route must exist before its I/O starts. The calendar is the reference
+implementation:
+
+- `SearchPhase` does not await a schedule bundle. It increments a monotonic
+  `calendarRequestKey`, clears the ordinary query/result state for the route, and opens the
+  browse shell immediately with that request.
+- `useCalendarRoute` (`apps/cli/src/app-shell/hooks/use-calendar-route.ts`) owns the five states
+  the surface can be in: `loading`, `retrying`, `success`, `empty`, `error`. Route identity comes
+  from the request, never from whether the loaded rows happen to look like calendar rows.
+- Loading and retrying render the existing Sakura loader under the existing reduced-motion policy
+  (`KUNAI_REDUCED_MOTION` / `NO_MOTION`); there is no calendar-specific motion setting.
+- Zero rows are an `empty` calendar, not a fallback to generic browse idle copy. The route keeps
+  its chrome and its keyboard.
+- Failure keeps calendar chrome, shows one bounded sentence (source URLs and tokens stay in
+  structured diagnostics), and offers `r` to retry. Retry reloads in place — the surface does not
+  remount.
+- Every attempt owns one `AbortController` plus a latest-request gate. A superseded, cancelled, or
+  unmounted attempt can never call the acceptance callback, so it can never write results,
+  diagnostics, the route subtitle, or the calendar visit stamp. Esc aborts the in-flight request.
+- Cancellation outranks source outcomes underneath: `loadCalendarResults` settles only the source
+  operations that actually exist, re-checks the signal after `allSettled`, keeps partial success
+  usable, and raises a bounded `AggregateError` when every real source failed.
+  `ResultEnrichmentService.enrichResults()` takes the same signal and refuses to seed its cache
+  from an abandoned attempt.
+- Leaving the schedule for other content (Esc, search, trending, recommendations) releases the
+  route as well as the calendar UI state, so a settled route can never keep rendering ordinary
+  results through calendar chrome.
+
 ### Title control is the one action policy
 
 `app-shell/title-control/title-control-actions.ts` is the single source of
