@@ -220,11 +220,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * NPM_PACK_UNPACKED_BUDGET_BYTES, so moving this number cannot affect what a
  * user installs from npm.
  *
- * Raised from 2_800 on 2026-08-13 for the verified offline media/sidecar
- * provenance handoff plus active cancellation and reconnect generation guards.
- * The previous tree had 388 bytes of headroom; the completed bundle is 2_804 KiB.
+ * Raised from 2_800 on 2026-08-13 for the release-hardening provider work
+ * plus the verified offline media/sidecar provenance handoff and active
+ * cancellation/reconnect generation guards. `main` had only 388 bytes of
+ * headroom before those changes. The added provider code is diagnostics and
+ * bounded-cache machinery: endpoint-aware pipe decoding, a curl truncation
+ * guard, strict catalog-id parsing, and TTL cache size bounds. The step restores
+ * real headroom rather than clearing one change.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_816;
+export const NPM_BUNDLE_BUDGET_KB = 2_880;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -536,6 +536,54 @@ History and continuation use **canonical catalog ids** as the merge key (`anilis
 - **AllAnime bridge** — `resolveAllMangaShowId` reads `providerNativeIds.allanime`, then the durable SQLite `provider_title_bridge` cache (TTL class `provider-metadata`), then in-process search bridge. Bridge results are persisted to both history metadata and the cache adapter injected through `ProviderRuntimeContext.titleBridge`.
 - **Legacy repair** — `HistoryIdentityConsolidator` runs once at CLI bootstrap (catalog-proof rows only; set `KUNAI_HISTORY_IDENTITY_DRY_RUN=1` to log without writing). Continue-watching dedupes display rows by catalog id without DB writes.
 
+### Videasy identity, route caching and Wings transport
+
+- **TMDB identity is complete or it is nothing.** `resolveTmdbCatalogId()` in
+  `packages/providers/src/shared/catalog-id.ts` is the single reader for every
+  TMDB-keyed provider (Videasy and the shared direct-stream source path). It accepts
+  an explicit `title.tmdbId`, an exact `tmdb:` prefix, or a bare `title.id`, each of
+  which must match `^[1-9]\d*$` and be a safe integer. The bare form is load-bearing:
+  `kunai -i 438631 -t movie` and the live provider smokes pass a bare numeric id with
+  no `externalIds`. The old `Number.parseInt` readers accepted `123abc`, `123`,
+  `0`, `-5`, `4.5` and `1e5`.
+- **One owner builds the selected-route cache policy.**
+  `createVideasyRouteCachePolicy({ resolveInput, appId, apiRoute })` is the only
+  builder, and it may only be called once a route has actually answered — `apiRoute`
+  is evidence, not a guess. `createVidkingResultFromPayload()` now **requires** a
+  policy and an `apiRoute` and uses the policy verbatim; it previously named the
+  parameter `_cachePolicy`, discarded it, and rebuilt an equivalent policy internally
+  by re-deriving the route and app id. The selected source records `metadata.apiRoute`
+  so route provenance is read explicitly rather than by positionally parsing
+  `cachePolicy.keyParts`.
+- **The CLI stream-cache key is route-agnostic, and that is deliberate.**
+  `buildApiStreamResolveCacheKey()` in
+  `apps/cli/src/services/cache/stream-resolve-cache.ts` derives its preimage from the
+  manifest `keyParts`, which carry no `apiRoute`. Read, write, and invalidation all
+  use that one key, so they cannot disagree. A stale entry whose route later dies is
+  caught by the cache-revalidation stream-health probe, not by key fragmentation.
+- **Wings transport state is bounded.** Seed and preferred-host entries are keyed per
+  media id and previously grew for the life of the process — expiry alone never freed
+  an entry nobody asked for again. All three maps are now `TTLCache` instances with
+  hard ceilings (`WINGS_TRANSPORT_LIMITS`: 16 seed, 256 preferred-host, 32 failure).
+  `TTLCache` gained an optional `maxEntries` and an injectable clock; it evicts
+  expired entries first and only then the oldest write, and replacing a key never
+  counts as growth.
+- **Seed-race outcomes are classified by cause.** A host is penalized only for a
+  genuine pre-winner failure or timeout. A loser aborted because a peer already won
+  is not evidence, and neither is **caller cancellation** — that last case used to
+  put both Wings hosts in a five-minute penalty box every time a user walked away
+  from a playback. Every transition is covered by deterministic deferred-promise
+  tests in `packages/providers/test/videasy-wings-seed-race.test.ts`. When every host
+  is penalized the transport still races them rather than giving up, which is why
+  host health is asserted directly instead of being inferred from request order.
+- **HTTP 500 stays transient.** Only 404 and 410 are `route-dead`. Many
+  speedracelight servers answer 500 "No streams available" for one title while
+  staying healthy for every other title, so quarantining the endpoint on a 500 would
+  take a working route offline.
+- **`wings-tejo` stays deprecated and unsupported.** It is not in the active flavor
+  list, not eligible, and not scheduled in phase A. Its AES-GCM decoder is not
+  implemented and must not be added for a route product code cannot select.
+
 ### Episode metadata ownership
 
 Default hot path prefers provider-native episode titles:
