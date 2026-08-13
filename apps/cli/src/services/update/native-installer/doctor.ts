@@ -684,7 +684,7 @@ export function formatDoctorReportText(report: DoctorReport): string {
   lines.push("");
   lines.push("Dependencies");
   lines.push(
-    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"}`,
+    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${report.dependencies.curl ? "ok" : "missing"}`,
   );
   lines.push("");
   lines.push("Storage");

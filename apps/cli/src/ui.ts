@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { ImageCapability } from "@/image";
 import { detectImageCapability, isChafaAvailable } from "@/image";
+import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 
 // ── Dependency check ───────────────────────────────────────────────────────
@@ -10,7 +11,7 @@ import { getKunaiPaths } from "@kunai/storage";
 export type CapabilitySeverity = "fatal" | "degraded";
 
 export interface CapabilityIssue {
-  readonly id: "mpv-missing" | "yt-dlp-missing" | "poster-rendering-unavailable";
+  readonly id: "mpv-missing" | "yt-dlp-missing" | "curl-missing" | "poster-rendering-unavailable";
   readonly severity: CapabilitySeverity;
   readonly message: string;
   readonly remediation: readonly string[];
@@ -21,6 +22,12 @@ export interface CapabilitySnapshot {
   /** Optional post-download probe (`ffprobe` on PATH); not required for the queue. */
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
+  /**
+   * A curl the AniDB provider can use — plain `curl` or a curl-impersonate
+   * build. AniDB is the default anime provider and anidb.app sits behind
+   * Cloudflare, so this is a real dependency of the default route, not a nicety.
+   */
+  readonly curl: boolean;
   readonly chafa: boolean;
   readonly magick: boolean;
   readonly image: ImageCapability;
@@ -40,7 +47,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .map((issue) => `${issue.id}:${issue.severity}`)
     .sort()
     .join(",");
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|chafa:${snapshot.chafa ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${snapshot.curl ? "1" : "0"}|chafa:${snapshot.chafa ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -67,15 +74,24 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
  * Prefer this for doctor and other inspection-only callers.
  */
 export async function probeCapabilities(
-  options: { requireYtDlp?: boolean } = {},
+  options: {
+    requireYtDlp?: boolean;
+    /** PATH lookup seam; defaults to the real one. Injected by tests. */
+    which?: (command: string) => string | null;
+  } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
+  const which = options.which ?? ((command: string) => Bun.which(command));
   const issues: CapabilityIssue[] = [];
-  const mpv = Boolean(Bun.which("mpv"));
-  const ffprobe = Boolean(Bun.which("ffprobe"));
-  const ytDlp = Boolean(Bun.which("yt-dlp"));
+  const mpv = Boolean(which("mpv"));
+  const ffprobe = Boolean(which("ffprobe"));
+  const ytDlp = Boolean(which("yt-dlp"));
+  // Ask the provider which binaries it can actually drive: it prefers a
+  // curl-impersonate build over plain curl, so probing for the literal "curl"
+  // would report missing on a host that is fully capable.
+  const curl = resolveAnidbCurl(which) !== null;
   const chafa = isChafaAvailable();
-  const magick = Boolean(Bun.which("magick"));
+  const magick = Boolean(which("magick"));
   const image = detectImageCapability();
 
   if (!mpv) {
@@ -111,6 +127,26 @@ export async function probeCapabilities(
     });
   }
 
+  if (!curl) {
+    issues.push({
+      id: "curl-missing",
+      // Anime is one mode, so this degrades that route rather than blocking the
+      // shell — but it is the *default* anime route, so silence here means the
+      // user sees an empty AniDB search with no explanation.
+      severity: "degraded",
+      message:
+        "curl not found — AniDB (the default anime provider) sits behind Cloudflare and needs it; anime search may return nothing without it.",
+      remediation: [
+        "Arch:   sudo pacman -S curl",
+        "Debian: sudo apt install curl",
+        "Fedora: sudo dnf install curl",
+        "macOS:  brew install curl",
+        "Windows: curl.exe ships with Windows 10 1803+",
+        "Best:   install a curl-impersonate build to match a browser TLS handshake",
+      ],
+    });
+  }
+
   // Posters no longer gate on chafa or ImageMagick: the in-process half-block
   // renderer covers every truecolour terminal (including Windows Terminal
   // without chafa), and the kitty path decodes JPEG/PNG itself. chafa/magick
@@ -120,6 +156,7 @@ export async function probeCapabilities(
     mpv,
     ffprobe,
     ytDlp,
+    curl,
     chafa,
     magick,
     image,
@@ -158,3 +195,7 @@ export async function checkDeps(
 
   return snapshot;
 }
+
+export const __testing = {
+  capabilityFingerprint,
+};

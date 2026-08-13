@@ -7,6 +7,7 @@ import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { resolveTelemetryConsent } from "@/services/telemetry/consent";
 import { ensureInstallId } from "@/services/telemetry/install-id";
+import { probeCapabilities } from "@/ui";
 
 import { runSetupFlow } from "../setup-shell";
 
@@ -67,19 +68,10 @@ export async function runSetupWizard({
     return "skipped";
   }
 
-  const snapshot = container.capabilitySnapshot ?? {
-    mpv: Boolean(Bun.which("mpv")),
-    ffprobe: Boolean(Bun.which("ffprobe")),
-    ytDlp: Boolean(Bun.which("yt-dlp")),
-    chafa: Boolean(Bun.which("chafa")),
-    magick: Boolean(Bun.which("magick")),
-    image: {
-      renderer: "none",
-      terminal: "unknown",
-      available: false,
-    } as import("@/image").ImageCapability,
-    issues: [],
-  };
+  // Probe rather than hand-roll a snapshot: this literal used to duplicate
+  // probeCapabilities and drifted from it, and app-shell may not import the
+  // provider package, so it cannot ask AniDB which curl builds it can drive.
+  const snapshot = container.capabilitySnapshot ?? (await probeCapabilities());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot);

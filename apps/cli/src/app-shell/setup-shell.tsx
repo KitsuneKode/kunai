@@ -243,6 +243,14 @@ function SystemSlide({
       install: "Install ffprobe from your platform media-tools package when needed",
     },
     {
+      name: "curl",
+      status: snapshot.curl ? "ok" : "optional-missing",
+      detail: snapshot.curl
+        ? "Anime search ready"
+        : "Needed by AniDB, the default anime provider — anime search may return nothing",
+      install: "brew install curl  ·  pacman -S curl  ·  apt install curl",
+    },
+    {
       name: snapshot.image.renderer !== "none" ? "posters" : "posters (chafa/kitty)",
       status:
         snapshot.image.renderer !== "none" ? "ok" : snapshot.chafa ? "ok" : "optional-missing",

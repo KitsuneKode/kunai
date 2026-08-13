@@ -10,6 +10,7 @@ const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
   ffprobe: false,
   ytDlp: true,
+  curl: true,
   chafa: true,
   magick: true,
   image: {
