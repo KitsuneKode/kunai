@@ -11,6 +11,7 @@ token, metadata, or support-bundle file.
 - **Effort:** M
 - **Risk:** MED
 - **Planned at:** `207ef937`, 2026-08-14
+- **Completed at:** `fd6f1458`, 2026-08-14
 
 ## Current defect
 
@@ -19,16 +20,16 @@ then retries the rename. If that rename fails, the old target is already gone.
 
 ## Tasks
 
-- [ ] Refactor filesystem operations behind a package-private injected adapter so
+- [x] Refactor filesystem operations behind a package-private injected adapter so
       failure ordering is testable without replacing `process.platform`.
-- [ ] Add `apps/cli/test/unit/infra/fs/atomic-write.test.ts` covering normal replace
+- [x] Add `apps/cli/test/unit/infra/fs/atomic-write.test.ts` covering normal replace
       and the Windows fallback.
-- [ ] Prove a failed replacement leaves the original bytes readable and cleans temp
+- [x] Prove a failed replacement leaves the original bytes readable and cleans temp
       files.
-- [ ] Replace through a same-directory backup; remove it only after success and
+- [x] Replace through a same-directory backup; remove it only after success and
       restore it if installing the temp file fails.
-- [ ] If restoration fails, retain the backup and throw both failure contexts.
-- [ ] Preserve pre-rename `0o600` on POSIX secret writers and all public APIs.
+- [x] If restoration fails, retain the backup and throw both failure contexts.
+- [x] Preserve pre-rename `0o600` on POSIX secret writers and all public APIs.
 
 ## Verification
 
