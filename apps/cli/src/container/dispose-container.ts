@@ -56,6 +56,13 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     await bestEffort(async () => {
       await container.backgroundWorkScheduler.drain();
     });
+    // Sync settles before the databases close, in this order deliberately: the
+    // drain holds outbox rows open against `dataDb`, so closing first would
+    // fault an in-flight claim on a dead handle. Tokens are a separate store —
+    // waiting on them keeps a credential written during shutdown from being
+    // lost — and both run before diagnostics so their final events are flushed.
+    await bestEffort(() => container.syncService.shutdown());
+    await bestEffort(() => container.syncTokenStore.whenIdle());
     await bestEffort(() => container.diagnosticsService.flush());
     await bestEffort(() => handles.dataDb.close());
     await bestEffort(() => handles.cacheDb.close());

@@ -2487,6 +2487,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               engaged: decision.isEngaged,
             });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
+            if (savedHistoryRow) {
+              // Enqueued from the row that was actually persisted, not from the
+              // in-flight result: the outbox must never describe progress the
+              // local history does not have. This only writes SQLite — remote
+              // delivery is the drain's job, so playback never waits on a
+              // tracker, and repeated updates coalesce instead of stacking up.
+              container.syncService.enqueueProgress(savedHistoryRow);
+            }
             enqueueReleaseReconciliation(
               container,
               savedHistoryRow ? [savedHistoryRow] : [],

@@ -994,15 +994,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }
     },
   });
-  for (const adapter of config.offlineMode ? [] : container.syncService.adapters) {
-    const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
-    if (!ensureConnectedUsername) continue;
+  if (!config.offlineMode) {
+    // One task, not one per adapter: identity refresh and delivery share a
+    // cancellation scope, and a single drain means startup cannot race a
+    // scheduler tick or a manual sync for the same outbox rows. Work queued by
+    // a previous session — or left behind by a crash — is redelivered here.
     runBackgroundTask({
-      task: `sync.${adapter.id}.identity`,
-      category: "runtime",
+      task: "sync.startup",
+      category: "sync",
       diagnostics: container.diagnosticsService,
       logger,
-      run: ensureConnectedUsername,
+      run: async (signal?: AbortSignal) => {
+        await container.syncService.refreshIdentities(signal ? { signal } : undefined);
+        await container.syncService.drain(25, signal ? { signal } : undefined);
+      },
     });
   }
   if (protocolHandoff && !pendingShareLaunch?.trusted) {
