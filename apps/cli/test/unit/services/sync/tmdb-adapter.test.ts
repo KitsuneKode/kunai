@@ -164,7 +164,8 @@ describe("TmdbAdapter capabilities", () => {
   const adapter = new TmdbAdapter(tokenStore, "test-key");
 
   /**
-   * TMDB v3 has no episode-progress endpoint. The shipped `pushWatched()`
+   * TMDB v3 has no episode-progress endpoint. The old `pushWatched()`, now
+   * removed,
    * pretended otherwise by POSTing `watchlist: false` — which does not record
    * progress, it removes the title from the watchlist.
    */

@@ -400,11 +400,10 @@ export class SyncService {
     await Promise.all(
       this.adapters.map(async (adapter) => {
         try {
-          await adapter.ensureConnectedUsername?.();
+          await adapter.refreshIdentity({ signal });
         } catch {
           // Identity is presentational; a failure here must not block delivery.
         }
-        void signal;
       }),
     );
   }
@@ -431,13 +430,5 @@ export class SyncService {
     } catch {
       // Shutdown is best-effort: a failing drain must not block disposal.
     }
-  }
-
-  /** @deprecated Compatibility for the current shell; removed with Task 8A. */
-  async pushWatched(entry: HistoryProgress): Promise<SyncPushSummary> {
-    const result = await this.syncNow([entry]);
-    if (result.status === "completed") return result.summary;
-    await this.activeDrain;
-    return this.drain();
   }
 }

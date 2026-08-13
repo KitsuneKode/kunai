@@ -1,14 +1,16 @@
 import { openExternalUrl } from "@/infra/shell/open-external-url";
-import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import type { TrackerOperation } from "./operations";
 import { outcomeForAbortedRequest, startRequestDeadline } from "./request-deadline";
-import type { SyncAdapter, SyncResult } from "./SyncAdapter";
+import type { SyncAdapter, SyncConnectOptions, SyncResult } from "./SyncAdapter";
 import {
+  connectedConnection,
+  disconnectedConnection,
   syncFailed,
   syncNeedsReauth,
   syncOk,
+  type ConnectionState,
   type SyncCapabilities,
   type SyncMutationOptions,
   type SyncOutcome,
@@ -116,11 +118,20 @@ export class TmdbAdapter implements SyncAdapter {
     return this.sessionId !== undefined;
   }
 
-  getConnectedUsername(): string | undefined {
-    return this.accountId;
+  getConnection(): ConnectionState {
+    if (!this.sessionId) return disconnectedConnection();
+    return connectedConnection(this.accountId);
   }
 
-  async connect(signal: AbortSignal): Promise<SyncResult> {
+  /**
+   * TMDB session ids do not expire and carry no separate identity call worth
+   * making on every start: the account id arrives with the session and is
+   * stored beside it. Nothing to refresh, so this is honestly empty rather
+   * than a request that would only ever confirm what is already known.
+   */
+  async refreshIdentity(): Promise<void> {}
+
+  async connect({ signal, onPrompt }: SyncConnectOptions): Promise<SyncResult> {
     try {
       const tokenRes = await fetch(
         `${TMDB_API_BASE}/authentication/token/new?api_key=${this.apiKey}`,
@@ -136,8 +147,7 @@ export class TmdbAdapter implements SyncAdapter {
 
       const requestToken = tokenData.request_token;
       const authorizeUrl = `${TMDB_AUTHENTICATE_BASE}/${requestToken}`;
-      console.log(`\nTMDB authorization URL:\n${authorizeUrl}\n`);
-      console.log("After approving, press Enter to continue…");
+      onPrompt?.(`Approve Kunai at ${authorizeUrl} — then press Enter here.`);
       void openExternalUrl(authorizeUrl);
 
       await this.waitForEnterOrTimeout(signal);
@@ -203,36 +213,6 @@ export class TmdbAdapter implements SyncAdapter {
     await this.tokenStore.patchTmdb(undefined);
   }
 
-  async pushWatched(entry: HistoryProgress): Promise<SyncResult> {
-    if (!this.sessionId || !this.accountId) {
-      return { ok: false, error: "Not connected to TMDB." };
-    }
-
-    const tmdbId = extractTmdbId(entry.titleId);
-    if (!tmdbId) {
-      return { ok: false, error: `Cannot map title ${entry.titleId} to TMDB ID.` };
-    }
-
-    const mediaType = entry.mediaKind === "movie" ? "movie" : "tv";
-
-    try {
-      const res = await fetch(
-        `${TMDB_API_BASE}/account/${this.accountId}/watchlist?api_key=${this.apiKey}&session_id=${this.sessionId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ media_type: mediaType, media_id: tmdbId, watchlist: false }),
-        },
-      );
-      if (!res.ok) {
-        return { ok: false, error: `TMDB watchlist push failed: ${res.status}` };
-      }
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
-  }
-
   private async waitForEnterOrTimeout(signal: AbortSignal): Promise<void> {
     return new Promise<void>((resolve) => {
       let settled = false;
@@ -252,10 +232,4 @@ export class TmdbAdapter implements SyncAdapter {
       });
     });
   }
-}
-
-function extractTmdbId(titleId: string): number | null {
-  const match = /^tmdb:(\d+)$/.exec(titleId);
-  if (match?.[1]) return parseInt(match[1], 10);
-  return null;
 }

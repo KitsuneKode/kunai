@@ -278,12 +278,38 @@ describe("AniListAdapter startup", () => {
     await adapter.init();
 
     expect(adapter.isConnected()).toBe(true);
-    expect(adapter.getConnectedUsername()).toBeUndefined();
+    expect(adapter.getConnection()).toEqual({ state: "connected" });
     expect(fetchCalls).toBe(0);
 
-    await adapter.ensureConnectedUsername();
+    await adapter.refreshIdentity();
 
     expect(fetchCalls).toBe(1);
-    expect(adapter.getConnectedUsername()).toBe("kitsune");
+    expect(adapter.getConnection()).toEqual({ state: "connected", username: "kitsune" });
+  });
+
+  /**
+   * A refused credential and an unreachable network are different states. The
+   * adapter used to drop the access token on any thrown error, so one offline
+   * start silently unlinked the account.
+   */
+  test("keeps the session when identity cannot be fetched, drops it only on refusal", async () => {
+    const savedSession = {
+      load: async () => ({ anilist: { accessToken: "saved-token", userId: 42 } }),
+    } as unknown as SyncTokenStore;
+
+    const offline = new AniListAdapter(savedSession, async () => {
+      throw new Error("network down");
+    });
+    await offline.init();
+    await offline.refreshIdentity();
+    expect(offline.getConnection()).toEqual({ state: "connected" });
+
+    const refused = new AniListAdapter(
+      savedSession,
+      async () => new Response("nope", { status: 401 }),
+    );
+    await refused.init();
+    await refused.refreshIdentity();
+    expect(refused.getConnection()).toEqual({ state: "needs-reauth", reason: "token-rejected" });
   });
 });

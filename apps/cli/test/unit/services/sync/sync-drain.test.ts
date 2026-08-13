@@ -65,9 +65,7 @@ function adapter(
     },
     connect: async () => ({ ok: true }),
     disconnect: async () => {},
-    getConnectedUsername: () => undefined,
-    pushWatched: async () => ({ ok: true }),
-  } as unknown as SyncAdapter;
+  } satisfies SyncAdapter;
   return { adapter: value, calls };
 }
 

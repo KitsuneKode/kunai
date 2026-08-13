@@ -108,15 +108,19 @@ async function main(): Promise<void> {
     await anilist.init();
 
     process.stdout.write("\nA browser window will open for AniList authorization.\n");
-    const connected = await anilist.connect(controller.signal);
+    const connected = await anilist.connect({
+      signal: controller.signal,
+      onPrompt: (note) => process.stdout.write(`${note}\n`),
+    });
     if (!record("anilist connect", connected.ok, connected.ok ? undefined : connected.error)) {
       process.exit(1);
     }
     anilistConnected = true;
+    const connection = anilist.getConnection();
     record(
       "anilist identity",
-      Boolean(anilist.getConnectedUsername()),
-      anilist.getConnectedUsername(),
+      connection.state === "connected",
+      connection.state === "connected" ? connection.username : connection.state,
     );
 
     const target = { tracker: "anilist", anilistId: anilistMediaId, mediaKind: "anime" } as const;
@@ -159,7 +163,10 @@ async function main(): Promise<void> {
       if (tmdbAuth.apiKey) {
         const tmdb = new TmdbAdapter(tokenStore, tmdbAuth.apiKey);
         await tmdb.init();
-        const tmdbConnected = await tmdb.connect(controller.signal);
+        const tmdbConnected = await tmdb.connect({
+          signal: controller.signal,
+          onPrompt: (note) => process.stdout.write(`${note}\n`),
+        });
         if (
           record(
             "tmdb connect",

@@ -1,5 +1,4 @@
 import { openExternalUrl } from "@/infra/shell/open-external-url";
-import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import { resolveAniListAuth, type AniListAuthResolution } from "./auth-contract";
@@ -10,12 +9,15 @@ import {
   startRequestDeadline,
   type RequestDeadline,
 } from "./request-deadline";
-import { resolveAniListIdentity, resolveAniListProgressEpisode } from "./sync-identity";
-import type { SyncAdapter, SyncResult } from "./SyncAdapter";
+import type { SyncAdapter, SyncConnectOptions, SyncResult } from "./SyncAdapter";
 import {
+  connectedConnection,
+  disconnectedConnection,
+  needsReauthConnection,
   syncFailed,
   syncNeedsReauth,
   syncOk,
+  type ConnectionState,
   type SyncCapabilities,
   type SyncMutationOptions,
   type SyncOutcome,
@@ -34,6 +36,14 @@ function outcomeForGraphQlErrors(errors?: { message: string }[]): SyncOutcome | 
     return syncNeedsReauth("token-rejected");
   }
   return syncFailed("remote-error", "remote", first.slice(0, 256));
+}
+
+/** Carries the status so callers can tell "refused" from "could not ask". */
+class AniListHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`AniList API error: ${status}`);
+    this.name = "AniListHttpError";
+  }
 }
 
 function errorCode(error: unknown): string {
@@ -102,6 +112,7 @@ type AniListFetch = (input: string | URL | Request, init?: RequestInit) => Promi
 
 interface ViewerResponse {
   data: { Viewer: { id: number; name: string } };
+  errors?: { message: string }[];
 }
 
 interface MediaListEntryResponse {
@@ -137,6 +148,9 @@ export class AniListAdapter implements SyncAdapter {
   private username: string | undefined;
   private userId: number | undefined;
   private accessToken: string | undefined;
+  private expiresAt: string | undefined;
+  /** Set only when AniList has actually refused the token, never on a timeout. */
+  private reauthReason: string | undefined;
 
   constructor(
     private readonly tokenStore: SyncTokenStore,
@@ -153,22 +167,46 @@ export class AniListAdapter implements SyncAdapter {
     if (tokens.anilist) {
       this.accessToken = tokens.anilist.accessToken;
       this.userId = tokens.anilist.userId;
+      this.expiresAt = tokens.anilist.expiresAt;
     }
   }
 
-  async ensureConnectedUsername(): Promise<void> {
-    if (!this.accessToken || this.username) return;
-    await this.refreshUsername();
+  async refreshIdentity(options?: SyncMutationOptions): Promise<void> {
+    if (!this.accessToken) return;
+    await this.refreshUsername(options);
   }
 
-  private async refreshUsername(): Promise<void> {
+  /**
+   * Fetch the viewer, and treat only a refusal as a refusal.
+   *
+   * This used to drop the access token on any thrown error, so a startup with
+   * no network silently disconnected the account and the user had to reconnect
+   * for a problem that had already gone away. A 401/403 means the credential is
+   * dead; anything else means we could not ask.
+   */
+  private async refreshUsername(options?: SyncMutationOptions): Promise<void> {
     if (!this.accessToken) return;
+    const deadline = startRequestDeadline(options?.signal ?? new AbortController().signal);
     try {
-      const res = await this.gql<ViewerResponse>(`query { Viewer { id name } }`);
+      const res = await this.gql<ViewerResponse>(
+        `query { Viewer { id name } }`,
+        undefined,
+        deadline,
+      );
+      const rejection = outcomeForGraphQlErrors(res.errors);
+      if (rejection?.status === "needs-reauth") {
+        this.reauthReason = rejection.code;
+        return;
+      }
       this.username = res.data.Viewer.name;
       this.userId = res.data.Viewer.id;
-    } catch {
-      this.accessToken = undefined;
+      this.reauthReason = undefined;
+    } catch (error) {
+      if (error instanceof AniListHttpError && (error.status === 401 || error.status === 403)) {
+        this.reauthReason = "token-rejected";
+      }
+    } finally {
+      deadline.release();
     }
   }
 
@@ -176,8 +214,10 @@ export class AniListAdapter implements SyncAdapter {
     return this.accessToken !== undefined;
   }
 
-  getConnectedUsername(): string | undefined {
-    return this.username;
+  getConnection(): ConnectionState {
+    if (!this.accessToken) return disconnectedConnection();
+    if (this.reauthReason) return needsReauthConnection(this.reauthReason, this.username);
+    return connectedConnection(this.username, this.expiresAt);
   }
 
   /**
@@ -198,7 +238,7 @@ export class AniListAdapter implements SyncAdapter {
    * must all be valid before anything is opened or bound, so a misconfiguration
    * is reported here rather than after the user has approved in a browser.
    */
-  async connect(signal: AbortSignal): Promise<SyncResult> {
+  async connect({ signal }: SyncConnectOptions): Promise<SyncResult> {
     const resolution = this.auth ?? resolveAniListAuth();
     const { availability, clientId, clientSecret } = resolution;
     if (!availability.available) {
@@ -317,12 +357,15 @@ export class AniListAdapter implements SyncAdapter {
     }
 
     const seconds = Number(expiresIn);
+    this.expiresAt =
+      Number.isFinite(seconds) && seconds > 0
+        ? new Date(Date.now() + seconds * 1000).toISOString()
+        : undefined;
+    this.reauthReason = undefined;
     await this.tokenStore.patchAniList({
       accessToken,
       userId: this.userId,
-      ...(Number.isFinite(seconds) && seconds > 0
-        ? { expiresAt: new Date(Date.now() + seconds * 1000).toISOString() }
-        : {}),
+      ...(this.expiresAt ? { expiresAt: this.expiresAt } : {}),
     });
 
     return { ok: true };
@@ -332,43 +375,9 @@ export class AniListAdapter implements SyncAdapter {
     this.accessToken = undefined;
     this.username = undefined;
     this.userId = undefined;
+    this.expiresAt = undefined;
+    this.reauthReason = undefined;
     await this.tokenStore.patchAniList(undefined);
-  }
-
-  async pushWatched(entry: HistoryProgress): Promise<SyncResult> {
-    if (!this.accessToken) return { ok: false, error: "Not connected to AniList." };
-    if (!entry.episode) return { ok: true };
-
-    const identity = resolveAniListIdentity(entry);
-    if (!identity) return { ok: false, error: `Cannot map title ${entry.titleId} to AniList ID.` };
-    const mediaId = identity.anilistId;
-
-    const progress = resolveAniListProgressEpisode(entry);
-    if (progress === null) return { ok: true };
-
-    const status = entry.completed && entry.mediaKind === "movie" ? "COMPLETED" : "CURRENT";
-
-    const mutation = `
-      mutation SaveProgress($mediaId: Int, $status: MediaListStatus, $progress: Int) {
-        SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) {
-          id
-        }
-      }
-    `;
-
-    try {
-      const res = await this.gql<MediaListEntryResponse>(mutation, {
-        mediaId,
-        status,
-        progress,
-      });
-      if (res.errors?.length) {
-        return { ok: false, error: res.errors[0]?.message ?? "Unknown AniList error" };
-      }
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: String(e) };
-    }
   }
 
   /**
@@ -504,7 +513,7 @@ export class AniListAdapter implements SyncAdapter {
       body: JSON.stringify({ query, variables }),
       ...(deadline ? { signal: deadline.signal } : {}),
     });
-    if (!res.ok) throw new Error(`AniList API error: ${res.status}`);
+    if (!res.ok) throw new AniListHttpError(res.status);
     return res.json() as Promise<T>;
   }
 }
