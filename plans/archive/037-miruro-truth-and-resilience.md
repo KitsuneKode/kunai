@@ -28,24 +28,24 @@ provider exhaustion.
 ## Tasks
 
 - [ ] Add result-builder tests that default reachability to false/unknown and set it
-  true only when a probe result is passed explicitly.
+      true only when a probe result is passed explicitly.
 - [ ] Thread actual cycle/stream probe evidence into the builder; otherwise omit the
-  attestation.
+      attestation.
 - [ ] Replace `defaultServers` with the canonical try order and test exact ordering,
-  including `bonk` last.
+      including `bonk` last.
 - [ ] Reuse `resolveMiruroAnilistId` everywhere and accept only a proven numeric
-  AniList id.
+      AniList id.
 - [ ] Classify pipe failures distinctly: WAF HTML, decode/key mismatch, unexpected
-  obfuscation version, JSON shape drift, and network timeout. Never log the key or
-  encrypted body.
+      obfuscation version, JSON shape drift, and network timeout. Never log the key or
+      encrypted body.
 - [ ] Isolate pipe decoding behind a versioned internal seam so a captured fixture
-  can prove a rotated key/version. On mismatch, fail loud with a provider diagnostic.
+      can prove a rotated key/version. On mismatch, fail loud with a provider diagnostic.
 - [ ] Treat key derivation as a separate provider-intake investigation. Implement it
-  only if a reproducible first-party script/bootstrap source is documented.
+      only if a reproducible first-party script/bootstrap source is documented.
 - [ ] Add subtitle content-type/extension characterization before changing the
-  current `.vtt`/SRT classification.
+      current `.vtt`/SRT classification.
 - [ ] Keep Miruro manually selectable until its live smoke resolves and probes a
-  reachable stream in the target release region.
+      reachable stream in the target release region.
 
 ## Verification
 

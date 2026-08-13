@@ -17,13 +17,13 @@ Scope: Honest **catalog end-state**, **“coming soon”** (unreleased TMDB epis
 
 ## Data model (`EpisodeAvailability`)
 
-| Field | Meaning |
-| ----- | ------- |
-| `previousEpisode` | Prior **released** episode (TMDB) or provider-derived previous (anime), within existing rules. |
-| `nextEpisode` | Next **released** episode for playback / N-key / autoplay; `null` if none. |
-| `nextSeasonEpisode` | First **released** episode of the next season (season jump); unchanged semantics. |
-| `upcomingNext` | Next catalog episode after the current one that exists but is **not** released yet (TMDB only); `null` if not applicable. Mutually exclusive with having a released `nextEpisode` for the same slot. |
-| `animeNextReleaseUnknown` | `true` when anime mode cannot confirm a catalog-backed next episode but the title is not provably at the last known episode (count / list). |
+| Field                     | Meaning                                                                                                                                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `previousEpisode`         | Prior **released** episode (TMDB) or provider-derived previous (anime), within existing rules.                                                                                                       |
+| `nextEpisode`             | Next **released** episode for playback / N-key / autoplay; `null` if none.                                                                                                                           |
+| `nextSeasonEpisode`       | First **released** episode of the next season (season jump); unchanged semantics.                                                                                                                    |
+| `upcomingNext`            | Next catalog episode after the current one that exists but is **not** released yet (TMDB only); `null` if not applicable. Mutually exclusive with having a released `nextEpisode` for the same slot. |
+| `animeNextReleaseUnknown` | `true` when anime mode cannot confirm a catalog-backed next episode but the title is not provably at the last known episode (count / list).                                                          |
 
 Navigation copy and `explainAutoplayBlockReason` consume these fields.
 

@@ -31,34 +31,34 @@ cannot be selected or needed for pin migration.
 ### Task 1: Active-path correctness
 
 - [ ] Make `resolveTmdbId` accept only a complete positive decimal identity;
-  `123abc`, zero, negative, AniList, and provider-native ids must fail closed.
+      `123abc`, zero, negative, AniList, and provider-native ids must fail closed.
 - [ ] Decide one owner for cache policy. `createVidkingResultFromPayload` currently
-  ignores its passed policy and reconstructs one with `apiRoute`. Either create the
-  route-specific policy before the call or expose an explicit child-policy function;
-  test that read/write/invalidation use the same key.
+      ignores its passed policy and reconstructs one with `apiRoute`. Either create the
+      route-specific policy before the call or expose an explicit child-policy function;
+      test that read/write/invalidation use the same key.
 - [ ] Replace the three Wings Maps with the shared bounded TTL cache or add pruning
-  and maximum sizes. Expired seed/preferred-host entries must be deleted on access;
-  host failure state is host-bounded.
+      and maximum sizes. Expired seed/preferred-host entries must be deleted on access;
+      host failure state is host-bounded.
 
 ### Task 2: Prove seed-race semantics
 
 - [ ] Add deterministic tests for primary wins, fallback wins, genuine pre-winner
-  failure, loser aborted after winner, all fail, and caller abort.
+      failure, loser aborted after winner, all fail, and caller abort.
 - [ ] Keep a host penalty only for a genuine failure before a winner. Intentional
-  loser aborts must not poison health.
+      loser aborts must not poison health.
 - [ ] Change the `won` logic only if these tests expose an incorrect transition.
 
 ### Task 3: Retire dead families separately
 
 - [ ] Add source-contract tests proving deprecated flavor ids normalize for saved
-  pins but are never scheduled as active candidates.
+      pins but are never scheduled as active candidates.
 - [ ] Run the focused Videasy live suite across active Cineby flavors and record the
-  successful endpoints.
+      successful endpoints.
 - [ ] Delete legacy endpoint/WASM/CryptoJS code only when no active resolver, saved-pin
-  migration, fixture, or package export depends on it. Remove dependencies/docs in
-  the same commit.
+      migration, fixture, or package export depends on it. Remove dependencies/docs in
+      the same commit.
 - [ ] Keep `wings-tejo` deprecated or delete the alias. Do not implement AES-GCM for
-  a route that product code cannot select.
+      a route that product code cannot select.
 
 ## Verification
 

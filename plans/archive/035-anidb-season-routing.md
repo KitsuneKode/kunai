@@ -17,9 +17,9 @@ selecting episode N, without confusing season-relative and absolute episode numb
 ## Tasks
 
 - [ ] Capture sanitized show-page fixtures with one season, multiple seasons, split
-  cours, missing labels, and malformed links.
+      cours, missing labels, and malformed links.
 - [ ] Add `listAnidbSeasonLinks(showId)` behind the existing AniDB client seam. Parse
-  only links in the Seasons section and validate each slug with `looksLikeAnidbShowId`.
+      only links in the Seasons section and validate each slug with `looksLikeAnidbShowId`.
 - [ ] Define the numbering rule in tests before implementation:
   - when `absoluteEpisode` is present, use the mapped show id unchanged unless proven
     catalog metadata says otherwise;
@@ -28,9 +28,9 @@ selecting episode N, without confusing season-relative and absolute episode numb
   - on ambiguous/missing season mapping, return a diagnosable unsupported-title or
     not-found failure; never silently resolve S1.
 - [ ] Cache sibling mapping with the show-page TTL and cancellation semantics already
-  used by the client.
+      used by the client.
 - [ ] Emit trace attributes for requested season, selected sibling slug, and numbering
-  axis without leaking stream URLs.
+      axis without leaking stream URLs.
 - [ ] Add an opt-in live S2 fixture after S1 release signoff is green.
 
 ## Verification

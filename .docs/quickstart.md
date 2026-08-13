@@ -31,14 +31,18 @@ sudo pacman -S mpv yt-dlp curl
 sudo apt install mpv yt-dlp curl
 
 # macOS (Homebrew)
-brew install mpv yt-dlp chafa imagemagick
+brew install mpv yt-dlp curl
 ```
 
 Windows options:
 
-- `winget` (recommended): install `mpv` and `yt-dlp`; add `ffprobe` separately if you want post-download validation. Posters need nothing installed.
-- Chocolatey: `choco install mpv yt-dlp chafa imagemagick`
-- Scoop: `scoop install mpv yt-dlp chafa imagemagick`
+- Scoop: `scoop install mpv yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
+- `winget`: install `mpv` and `yt-dlp`; add `ffmpeg` only if you want optional `ffprobe` validation.
+- Chocolatey: `choco install mpv yt-dlp` remains an alternative when Chocolatey is already managed on the machine.
+
+Posters need nothing installed. Kunai's Windows CI provisions mpv from the
+official pinned binary archive rather than relying on a package-manager mirror;
+the commands above are user-install choices, not CI dependencies.
 
 Kunai is Bun-first in beta. A Node/npm-only source checkout is not supported because the CLI uses Bun runtime APIs directly. Packaged binaries are the preferred future path for users who should not need to install Bun manually.
 

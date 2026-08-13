@@ -201,6 +201,5 @@ Keep config flat unless the config model is deliberately refactored:
   - `suppressOfflinePrompt` (or keep `downloadOnboardingDismissed` as the canonical equivalent)
   - `autoSkip`
 
-## Related Plan
-
-Implementation is tracked in [download-offline-onboarding.md](../.plans/download-offline-onboarding.md).
+Current offline follow-up is indexed in [the roadmap](../.plans/roadmap.md). Do
+not reopen the archived onboarding plan to infer current behavior.

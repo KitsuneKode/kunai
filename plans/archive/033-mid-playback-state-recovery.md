@@ -21,15 +21,15 @@ displaying a failure state while video is playing normally.
 ## Tasks
 
 - [ ] Add a table-driven event-sequence test for
-  `started -> buffering -> progress`, `started -> stalled -> progress`,
-  `started -> seeking -> progress`, pause/resume, and repeated progress.
+      `started -> buffering -> progress`, `started -> stalled -> progress`,
+      `started -> seeking -> progress`, pause/resume, and repeated progress.
 - [ ] Extract a small pure playback-status reducer used by the event callback. Treat
-  valid forward progress as `playing` unless the player is explicitly paused.
+      valid forward progress as `playing` unless the player is explicitly paused.
 - [ ] Avoid emitting duplicate status writes when the state does not change.
 - [ ] Clear stale warning copy when recovery is confirmed, while retaining the event
-  in diagnostics.
+      in diagnostics.
 - [ ] Add one render-capture sequence proving the Now Playing surface changes back to
-  playing without an extra keypress.
+      playing without an extra keypress.
 
 ## Verification
 

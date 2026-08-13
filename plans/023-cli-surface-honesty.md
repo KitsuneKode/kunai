@@ -1,5 +1,10 @@
 # 023 — CLI surface honesty: packaging, flags, docs, first run
 
+> **2026-08-14 release reconciliation:** K-16 (`--dry-run` scope) is the
+> release-blocking slice. Recheck every other section against live code before
+> executing it. The old poster-helper installer premise in 023.7 was retired by
+> PR #35; posters have no external dependency.
+
 - **Written against commit**: `01ab215b`
 - **Priority**: P2
 - **Effort**: M
@@ -186,14 +191,13 @@ commands. The gate is "have I shown this once", not "is the issue resolved".
 `doctor.ts:353`, which maps it to a report label. Nothing blocks, prompts or exits:
 `kunai -y` with no yt-dlp boots the full YouTube shell and fails at playback.
 
-Installer parity gaps: `install.sh:818-837` never verifies an optional-dep install
-succeeded and never offers `ffprobe` despite README:262 listing it; `install.ps1` has
-no `-SkipDeps` switch (cf. `install.sh:863`) and no chafa prompt, though
-`ui.ts:118-131` raises a Windows-Terminal-specific chafa issue.
+Installer parity must be re-audited against the current scripts. Poster helpers
+are not part of that audit: the native pipeline has no `chafa` or ImageMagick
+dependency.
 
-**Fix.** Gate remediation on _resolution_, not on having shown it; render a persistent
-capability banner in the shell for any `fatal` issue; add `-SkipDeps` + chafa to
-`install.ps1` and `ffprobe` to `install_optional_deps`.
+**Fix.** Gate remediation on _resolution_, not on having shown it; render a
+persistent capability banner in the shell for any unresolved `fatal` issue.
+Treat optional `ffprobe` setup separately from required playback tools.
 
 ## Done criteria
 

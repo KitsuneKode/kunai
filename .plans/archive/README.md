@@ -36,6 +36,10 @@ in an archived plan, verify it against the code first, then add it to
   landed.
 - **`architecture-improvement-2026-06-22/`, `workboards/`** — completed
   numbered workboards.
+- **2026-08 release reconciliation** — broad playback, offline, diagnostics,
+  image, presence, catalog, and recovery plans whose cores had already landed.
+  Any verified residue is indexed in [`../roadmap.md`](../roadmap.md); the old
+  architecture HTML is a snapshot, not a live board.
 
 ## Rule going forward
 

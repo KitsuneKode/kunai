@@ -7,7 +7,7 @@ answer "where does X live" without grepping the whole tree.
 owning code or the doc in the last column. If a row disagrees with the tree, the
 tree is right — fix the row.
 
-Verified against the tree on 2026-07-29. Paths are checked by
+Verified against the tree on 2026-08-14. Paths are checked by
 `bun run verify:doc-paths`.
 
 ## How a session flows
@@ -42,19 +42,19 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Pickers (episode, provider, source, quality, audio, subtitle) | `apps/cli/src/app-shell/pickers/*`                | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
 | Settings overlay                                              | `apps/cli/src/app-shell/settings/*`               | [ux-architecture.md](./ux-architecture.md)                            |
 | Theme + design tokens                                         | `packages/design`                                 | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / sixel / chafa)                       | `apps/cli/src/image/*`                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)         | `apps/cli/src/image/*`                            | [poster-image-rendering.md](./poster-image-rendering.md)              |
 
 ## Search and catalog
 
-| Feature                               | Owned by                                                                                                        | Docs                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Search routing and backends           | `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*`                                                   | [.plans/search-service.md](../.plans/search-service.md)                                     |
-| Search intent parsing                 | `apps/cli/src/domain/search/*` — `SearchIntentParser` / `SearchIntentEngine` turn raw input into a typed intent | [.plans/search-service.md](../.plans/search-service.md)                                     |
-| TMDB season/episode metadata          | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                                       | [architecture.md](./architecture.md)                                                        |
-| Anime identity / title reconciliation | `apps/cli/src/domain/catalog/*`, `packages/storage` `catalog-crosswalk`                                         | [.plans/catalog-identity-parity.md](../.plans/catalog-identity-parity.md)                   |
-| `/discover`, `/trending`, `/random`   | `apps/cli/src/app/discover/*`, `services/recommendations/*`                                                     | [recommendations-and-discover.md](./recommendations-and-discover.md)                        |
-| `/calendar`, release schedules        | `apps/cli/src/domain/calendar/*`, `services/release-reconciliation/*`                                           | [.plans/catalog-release-schedule-service.md](../.plans/catalog-release-schedule-service.md) |
-| AniList / TMDB account sync           | `apps/cli/src/services/sync/*`                                                                                  | `docs/users/reliability-and-privacy.mdx`                                                    |
+| Feature                               | Owned by                                                                                                        | Docs                                                                 |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Search routing and backends           | `apps/cli/src/services/search/*`, `apps/cli/src/app/search/*`                                                   | [.plans/search-service.md](../.plans/search-service.md)              |
+| Search intent parsing                 | `apps/cli/src/domain/search/*` — `SearchIntentParser` / `SearchIntentEngine` turn raw input into a typed intent | [.plans/search-service.md](../.plans/search-service.md)              |
+| TMDB season/episode metadata          | `apps/cli/src/tmdb.ts`, `apps/cli/src/services/catalog/*`                                                       | [architecture.md](./architecture.md)                                 |
+| Anime identity / title reconciliation | `apps/cli/src/domain/catalog/*`, `packages/storage` `catalog-crosswalk`                                         | [architecture.md](./architecture.md)                                 |
+| `/discover`, `/trending`, `/random`   | `apps/cli/src/app/discover/*`, `services/recommendations/*`                                                     | [recommendations-and-discover.md](./recommendations-and-discover.md) |
+| `/calendar`, release schedules        | `apps/cli/src/domain/calendar/*`, `services/release-reconciliation/*`                                           | [recommendations-and-discover.md](./recommendations-and-discover.md) |
+| AniList / TMDB account sync           | `apps/cli/src/services/sync/*`                                                                                  | `docs/users/reliability-and-privacy.mdx`                             |
 
 ## Providers and resolution
 
@@ -113,14 +113,14 @@ Do not reuse these nouns for anything else.
 
 ## Diagnostics, privacy, distribution
 
-| Feature                               | Owned by                                                                                    | Docs                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `/diagnostics`, `/export-diagnostics` | `apps/cli/src/services/diagnostics/*`, `app-shell/diagnostics/*`                            | [diagnostics-guide.md](./diagnostics-guide.md)                                                      |
-| Debug logging, tracing                | `apps/cli/src/logger.ts`, `infra/tracer/*`, `infra/diagnostics/*`                           | [diagnostics-guide.md](./diagnostics-guide.md)                                                      |
-| Opt-in telemetry                      | `apps/cli/src/services/telemetry/*`, `apps/telemetry-ingest`                                | [telemetry-privacy-contract.md](./telemetry-privacy-contract.md)                                    |
-| Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                          | [presence-integrations.md](./presence-integrations.md)                                              |
-| Update check                          | `apps/cli/src/services/update/*`                                                            | [release-reliability-gate.md](./release-reliability-gate.md)                                        |
-| Installers, binaries, npm packages    | `install.sh`, `install.ps1`, `apps/cli/scripts/build*.ts`, `scripts/publish-npm-release.ts` | [repo-infrastructure.md](./repo-infrastructure.md), [../plans/README.md](../plans/README.md) wave 6 |
+| Feature                               | Owned by                                                                                    | Docs                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `/diagnostics`, `/export-diagnostics` | `apps/cli/src/services/diagnostics/*`, `app-shell/diagnostics/*`                            | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
+| Debug logging, tracing                | `apps/cli/src/logger.ts`, `infra/tracer/*`, `infra/diagnostics/*`                           | [diagnostics-guide.md](./diagnostics-guide.md)                                                                   |
+| Opt-in telemetry                      | `apps/cli/src/services/telemetry/*`, `apps/telemetry-ingest`                                | [telemetry-privacy-contract.md](./telemetry-privacy-contract.md)                                                 |
+| Discord Rich Presence                 | `apps/cli/src/services/presence/*`                                                          | [presence-integrations.md](./presence-integrations.md)                                                           |
+| Update check                          | `apps/cli/src/services/update/*`                                                            | [release-reliability-gate.md](./release-reliability-gate.md)                                                     |
+| Installers, binaries, npm packages    | `install.sh`, `install.ps1`, `apps/cli/scripts/build*.ts`, `scripts/publish-npm-release.ts` | [repo-infrastructure.md](./repo-infrastructure.md), [release-reliability-gate.md](./release-reliability-gate.md) |
 
 ## Cross-cutting plumbing
 

@@ -2,6 +2,10 @@
 node_modules
 .worktrees
 
+# Local diagnostic/audit exports. Current audit truth lives in plans/README.md.
+kunai-diagnostics-report-*
+docs/agents/kunai-audit-handoff.html
+
 
 next-env.d.ts
 .claude

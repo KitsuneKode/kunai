@@ -1,7 +1,10 @@
 # Provider Resolve Hardening — Handoff
 
-Status: Slice A implemented on `fix/windows-parity`; Slices B and C remain.
-Prereq: commits `2707bb21`, `f8f6cfda`, `7f1ce6d5`, `6247cf05` on `fix/windows-parity`.
+Status: Slice A landed; Slices B and C plus measured hedge-delay calibration remain.
+Current source of truth: `provider-resolve-budget-policy.ts` enables a 2.5s hedge
+for `fast`, 5s for `balanced`, and no hedge for `quality-first`. Those defaults
+are reasoned, not yet validated from aggregated `provider.resolve.hedge-outcome`
+events.
 
 ## Context you need
 

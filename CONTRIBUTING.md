@@ -68,11 +68,14 @@ All four checks must pass. If `bun run fmt` makes changes, commit them.
 
 ## Working on providers
 
-Providers live in `apps/cli/src/services/providers/`. Before touching provider code:
+Production provider modules live in `packages/providers/src/` and are live only
+when `apps/cli/src/container/bootstrap-providers.ts` loads them. CLI adapters
+live in `apps/cli/src/services/providers/`. Before touching provider code:
 
 1. Read `.docs/providers.md` for the provider model and constraints.
 2. Read `.docs/provider-intake.md` for the research and hardening process.
-3. Check `apps/experiments/scratchpads/` for existing capture notes on the provider.
+3. Check `.docs/provider-dossiers/` for current provider evidence. Use
+   `apps/experiments/` only as a non-runtime research lab.
 
 When reporting a provider breakage, always include:
 
