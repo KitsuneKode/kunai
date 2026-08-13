@@ -11,6 +11,7 @@ inside Kunai's staging root before deleting anything.
 - **Effort:** S
 - **Risk:** MED
 - **Planned at:** `207ef937`, 2026-08-14
+- **Completed at:** `a13e991d`, 2026-08-14
 
 ## Current defect
 
@@ -20,15 +21,15 @@ outside `stagingRoot`, after which cleanup performs recursive `rm`.
 
 ## Tasks
 
-- [ ] Add table-driven `install-layout.test.ts` cases for POSIX and Windows:
+- [x] Add table-driven `install-layout.test.ts` cases for POSIX and Windows:
       direct children pass; root, sibling-prefix, and traversal paths fail.
-- [ ] Compare fully resolved paths with `node:path`/`node:path.win32`; never use
+- [x] Compare fully resolved paths with `node:path`/`node:path.win32`; never use
       unresolved `startsWith` as the containment decision.
-- [ ] Make `removeStagingAndPruneParents` fail closed before its first `rm` when the
+- [x] Make `removeStagingAndPruneParents` fail closed before its first `rm` when the
       candidate is outside the staging root.
-- [ ] Add a dead-PID transaction cleanup test with a traversal path and an external
+- [x] Add a dead-PID transaction cleanup test with a traversal path and an external
       sentinel; prove cleanup cannot remove the sentinel.
-- [ ] Keep ordinary version/root pruning behavior on valid staging paths.
+- [x] Keep ordinary version/root pruning behavior on valid staging paths.
 
 ## Verification
 
