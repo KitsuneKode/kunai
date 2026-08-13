@@ -1,19 +1,22 @@
 export type DiagnosticLevel = "debug" | "info" | "warn" | "error";
 
-export type DiagnosticCategory =
-  | "session"
-  | "search"
-  | "provider"
-  | "subtitle"
-  | "playback"
-  | "cache"
-  | "ui"
-  | "network"
-  | "runtime"
-  | "presence"
-  | "download"
-  | "offline"
-  | "update";
+export const DIAGNOSTIC_CATEGORIES = [
+  "session",
+  "search",
+  "provider",
+  "subtitle",
+  "playback",
+  "cache",
+  "ui",
+  "network",
+  "runtime",
+  "presence",
+  "download",
+  "offline",
+  "update",
+] as const;
+
+export type DiagnosticCategory = (typeof DIAGNOSTIC_CATEGORIES)[number];
 
 export type DiagnosticEvent = {
   readonly timestamp: number;

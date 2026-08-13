@@ -95,13 +95,15 @@ exported events. Use those IDs to join provider fallback, cache checks, mpv
 runtime events, presence background failures, and debug JSONL rows without
 guessing from timestamps.
 
-Support bundle sections include the latest operation for each active category,
-including `presence` and `download`, so a report can show whether Discord clear
-failed, a download artifact was validated, or a queue failure happened without
-reading the full event log first. Bundles also include `insights` for provider
-resolve, resolve-work graphs, source-inventory cache, post-playback timing, and
-repairable downloads so the common questions are visible without reading every
-event.
+Support bundle sections include the latest operation for every active diagnostic
+category. The section taxonomy is shared with runtime event validation, so new
+categories cannot be accepted by the runtime and then silently omitted from an
+export. This includes `presence` and `download`, so a report can show whether
+Discord clear failed, a download artifact was validated, or a queue failure
+happened without reading the full event log first. Bundles also include
+`insights` for provider resolve, resolve-work graphs, source-inventory cache,
+post-playback timing, and repairable downloads so the common questions are
+visible without reading every event.
 
 Resolve-work insights are local-only. They summarize one physical resolve per
 ledger, joined lanes/intents, cache provenance, provider attempt graph,

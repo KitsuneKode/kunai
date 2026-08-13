@@ -5,7 +5,7 @@ import {
   resolveBundleRedactionOptions,
   type BundleRedactionOptions,
 } from "./bundle-redaction";
-import type { DiagnosticEvent } from "./diagnostic-event";
+import { DIAGNOSTIC_CATEGORIES, type DiagnosticEvent } from "./diagnostic-event";
 import {
   mapFailureToRecommendedAction,
   type DiagnosticFailureClass,
@@ -541,19 +541,8 @@ function formatIssueHeadline(event: DiagnosticEvent): string {
 function buildBundleSections(
   events: readonly DiagnosticEvent[],
 ): Record<string, DiagnosticsBundleSection> {
-  const sectionNames = [
-    "network",
-    "provider",
-    "cache",
-    "playback",
-    "subtitle",
-    "presence",
-    "offline",
-    "download",
-    "runtime",
-  ];
   const sections: Record<string, DiagnosticsBundleSection> = {};
-  for (const name of sectionNames) {
+  for (const name of DIAGNOSTIC_CATEGORIES) {
     const matching = events.filter((event) => event.category === name);
     if (matching.length === 0) continue;
     const latest = matching.at(-1);
