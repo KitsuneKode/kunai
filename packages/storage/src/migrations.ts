@@ -538,6 +538,13 @@ export const dataMigrations: readonly Migration[] = [
         ON playback_queue_sessions(status, last_activity_at DESC);
     `,
   },
+  {
+    id: "027_data_download_job_external_ids",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN external_ids_json TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [
