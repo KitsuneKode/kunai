@@ -167,7 +167,9 @@ export function syncSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] 
       kind: "section",
       id: "section:sync",
       label: "Sync",
-      detail: "Mirror what you watch to AniList and TMDB",
+      // Reachable, and honest about its state: the delivery path is covered by
+      // tests but has not yet been verified against a live tracker account.
+      detail: "Experimental · mirror what you watch to AniList and TMDB",
     },
     {
       kind: "status",
