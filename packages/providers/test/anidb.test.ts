@@ -164,6 +164,15 @@ describe("anidb browse parsing", () => {
     expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
+  test("strips script blocks in linear time on repeated unterminated end tags", () => {
+    // The lazy-body + optional-tail regex this replaced was polynomial here:
+    // each `</script\t` repetition re-scanned to end of input.
+    const hostile = `<a href="/anime/redos-10" title="T"><script>${"</script\t".repeat(40_000)}</a>`;
+    const startedAt = performance.now();
+    expect(parseAnidbBrowseHtml(hostile).map((result) => result.title)).toEqual(["T"]);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   test("never emits terminal control characters, raw or entity-encoded", () => {
     const ESC = String.fromCharCode(27);
     const BEL = String.fromCharCode(7);

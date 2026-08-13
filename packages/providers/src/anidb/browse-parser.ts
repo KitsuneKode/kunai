@@ -150,7 +150,7 @@ function parseAnidbShowIdFromHref(href: string | undefined): string | null {
 function extractAnidbTitle(attrs: string, body: string): string {
   const anchorTitle = extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label");
   const imageAlt = IMAGE_ALT_PATTERN.exec(body)?.[1];
-  const nestedText = body.replace(SCRIPT_BLOCK_PATTERN, " ").replace(/<[^>]+>/g, " ");
+  const nestedText = stripScriptBlocks(body).replace(/<[^>]+>/g, " ");
   const decoded = decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText);
   // A raw ESC/BEL byte in the response body is the other half of the entity
   // vector closed in decodeCodePoint(); `\s` matches neither, so without this
@@ -191,13 +191,49 @@ const ATTRIBUTE_PATTERNS = {
 const IMAGE_ALT_PATTERN = /<img\b[^>]*\salt\s*=\s*["']([^"']*)["']/i;
 
 /**
- * An HTML end tag's name ends at whitespace, `/`, or `>`, and anything up to the
- * `>` is then ignored — so `</script>`, `</script >`, `</script\t\n bar>` and
- * `</script/>` all close a script, while `</scriptfoo>` does not. Matching only
- * `</script>` (or only `</script\s*>`) leaves script source in the anchor body,
- * where it becomes the title.
+ * Removes `<script>…</script>` spans by scanning, not by regex.
+ *
+ * `/<script\b[\s\S]*?<\/script(?:[\s/][^>]*)?>/` is polynomial: the lazy body
+ * advances one character at a time and each position re-scans `[^>]*` to the end,
+ * so input repeating `</script\t` with no `>` degrades quadratically. This runs on
+ * fetched provider markup, so that is a denial-of-service vector, not a nicety.
+ *
+ * Tag-name boundaries follow HTML: a name ends at whitespace, `/`, or `>`, and the
+ * rest of an end tag is ignored — `</script>`, `</script >`, `</script\t\n bar>`
+ * and `</script/>` all close, `</scriptfoo>` does not. An unterminated `<script`
+ * drops the remainder: leaving it would put raw script source in a title.
  */
-const SCRIPT_BLOCK_PATTERN = /<script\b[\s\S]*?<\/script(?:[\s/][^>]*)?>/gi;
+function stripScriptBlocks(body: string): string {
+  const lowered = body.toLowerCase();
+  let out = "";
+  let cursor = 0;
+  for (;;) {
+    const open = indexOfTag(lowered, "<script", cursor);
+    if (open === -1) return out + body.slice(cursor);
+    const openEnd = body.indexOf(">", open);
+    if (openEnd === -1) return `${out + body.slice(cursor, open)} `;
+    const close = indexOfTag(lowered, "</script", openEnd + 1);
+    if (close === -1) return `${out + body.slice(cursor, open)} `;
+    const closeEnd = body.indexOf(">", close);
+    if (closeEnd === -1) return `${out + body.slice(cursor, open)} `;
+    out += `${body.slice(cursor, open)} `;
+    cursor = closeEnd + 1;
+  }
+}
+
+/** `indexOf` for a tag whose name ends at the match — not `<scriptfoo>`. */
+function indexOfTag(lowered: string, tag: string, from: number): number {
+  for (
+    let index = lowered.indexOf(tag, from);
+    index !== -1;
+    index = lowered.indexOf(tag, index + 1)
+  ) {
+    const next = lowered.charCodeAt(index + tag.length);
+    // whitespace, `/`, `>`, or end of input all terminate the tag name.
+    if (Number.isNaN(next) || next === 0x2f || next === 0x3e || next <= 0x20) return index;
+  }
+  return -1;
+}
 
 function extractAttribute(
   attrs: string,
