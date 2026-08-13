@@ -16,7 +16,21 @@ import {
 import { openKunaiDatabase, runMigrations, SyncOutboxRepository } from "@kunai/storage";
 
 const dirs: string[] = [];
+const openDatabases: { close(): void }[] = [];
+
+/**
+ * Windows refuses to delete a file that still has an open handle, so every
+ * database opened here is closed before its directory is removed. Leaving them
+ * open passes on POSIX and fails the whole suite with EBUSY on Windows.
+ */
 afterEach(() => {
+  for (const db of openDatabases.splice(0)) {
+    try {
+      db.close();
+    } catch {
+      // Already closed by the test; removal is what matters.
+    }
+  }
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -24,6 +38,7 @@ function outbox() {
   const dir = mkdtempSync(join(tmpdir(), "kunai-sync-drain-"));
   dirs.push(dir);
   const db = openKunaiDatabase(join(dir, "data.sqlite"));
+  openDatabases.push(db);
   runMigrations(db, "data");
   return new SyncOutboxRepository(db);
 }
