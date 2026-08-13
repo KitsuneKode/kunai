@@ -14,6 +14,7 @@ import type {
   PlayerPlaybackEvent,
   PlayerService,
 } from "@/infra/player/PlayerService";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 const TITLE: TitleInfo = { id: "1396", name: "Test", type: "series" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };
@@ -21,6 +22,18 @@ const STREAM: StreamInfo = {
   url: "https://example.test/stream.m3u8",
   headers: {},
   timestamp: Date.now(),
+};
+const LOCAL_SOURCE: LocalPlaybackSource = {
+  kind: "local",
+  jobId: "job-1",
+  titleId: "1396",
+  titleName: "Test",
+  mediaKind: "series",
+  providerId: "vidking",
+  season: 1,
+  episode: 1,
+  filePath: "/tmp/test.mkv",
+  subtitlePath: "/tmp/test.vtt",
 };
 
 const FINISHED: PlaybackResult = {
@@ -344,5 +357,66 @@ describe("runMpvPlaybackSession completion", () => {
       result: { ...FINISHED, endReason: "error" },
     });
     expect(harness.store.snapshot.status).toBe("error");
+  });
+
+  /** Every hook is a no-op; this test only asserts which player method ran. */
+  function noopSessionHooks() {
+    return new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          property === "applyPlaybackStatusSignal" ? () => ({ accepted: true }) : () => undefined,
+      },
+    ) as Parameters<typeof runMpvPlaybackSession>[0]["hooks"];
+  }
+
+  test("plays a local file through play(), not the playLocal shortcut", async () => {
+    // playLocal() takes a narrow option bag, so routing local files through it
+    // silently dropped resume prompting, autoplay-chain mode, near-EOF
+    // prefetch, the abort signal, merged timing, correlation and track
+    // preferences. Local playback keeps the full PlayerOptions contract.
+    const calls: string[] = [];
+    const seenOptions: PlayerOptions[] = [];
+    const player: PlayerService = {
+      play: async (_stream, options) => {
+        calls.push("remote");
+        seenOptions.push(options);
+        return FINISHED;
+      },
+      releasePersistentSession: async () => undefined,
+      killActiveMpvProcessesSync: () => undefined,
+      beginShutdown: () => undefined,
+      isAvailable: async () => true,
+      playLocal: async () => {
+        calls.push("local");
+        return FINISHED;
+      },
+    };
+
+    const input = {
+      stream: { ...STREAM, url: LOCAL_SOURCE.filePath },
+      title: TITLE,
+      episode: EPISODE,
+      player,
+      playOptions: {},
+      subtitleStatus: "local",
+      startAt: 42,
+      sessionAborted: false,
+      iterationAborted: false,
+      shareLinkContext: {
+        mode: "series" as const,
+        title: TITLE,
+        episode: { season: 1, episode: 1 },
+      },
+      timing: null,
+      localPlaybackSource: LOCAL_SOURCE,
+      hooks: noopSessionHooks(),
+    } as Parameters<typeof runMpvPlaybackSession>[0];
+
+    await runMpvPlaybackSession(input);
+
+    expect(calls).toEqual(["remote"]);
+    expect(seenOptions[0]?.startAt).toBe(42);
+    expect(seenOptions[0]?.shareLinkContext).toBeDefined();
   });
 });

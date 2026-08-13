@@ -51,6 +51,27 @@ export function buildMpvMissingProblem(input: {
   };
 }
 
+/**
+ * The library still advertises a title as downloaded, but nothing playable
+ * resolved for it — a deleted, moved, or truncated artifact.
+ *
+ * Dispatched as a problem rather than playback feedback: the offline bail-out
+ * runs inside a method whose `finally` clears detail and note, so a feedback
+ * note is erased before it renders and the user lands back on results with no
+ * reason given.
+ */
+export function buildOfflineFileUnavailableProblem(): PlaybackProblem {
+  return {
+    stage: "stream-open",
+    severity: "blocking",
+    cause: "offline-file-unavailable",
+    userMessage:
+      "Downloaded file unavailable. Run an integrity check on it in the offline library, or download it again.",
+    recommendedAction: "diagnostics",
+    secondaryActions: ["refresh"],
+  };
+}
+
 export function buildProviderResolveProblem({
   attempts,
 }: {
@@ -288,6 +309,12 @@ export function toErrorScenario(
       };
     case "no-stream":
     case "provider-access":
+    // An unplayable download is the same shape of dead end as a title no
+    // provider can serve: the thing the user asked for is not obtainable right
+    // now. Without this case the switch fell through to `undefined`, and the
+    // shell rendered the bare `⚠ issue · offline-file-unavailable` slug instead
+    // of the error surface every other blocking failure gets.
+    case "offline-file-unavailable":
       return {
         kind: "title-unavailable",
         title: context.title ?? extractUnavailableTitle(problem.userMessage),

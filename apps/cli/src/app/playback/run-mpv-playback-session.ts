@@ -31,6 +31,7 @@ import type {
   PlayerService,
 } from "@/infra/player/PlayerService";
 import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
 export type MpvPlaybackSessionHooks = {
@@ -107,6 +108,7 @@ export type RunMpvPlaybackSessionInput = {
   readonly correlation?: DiagnosticCorrelation;
   readonly shareLinkContext: Omit<NonNullable<PlayerOptions["shareLinkContext"]>, "onCopied">;
   readonly timing: PlaybackTimingMetadata | null;
+  readonly localPlaybackSource?: LocalPlaybackSource;
 };
 
 /**
@@ -182,7 +184,7 @@ export async function runMpvPlaybackSession(
   });
 
   try {
-    const result = await player.play(stream, {
+    const playerOptions: PlayerOptions = {
       ...input.playOptions,
       url: stream.url,
       headers: stream.headers,
@@ -290,7 +292,14 @@ export async function runMpvPlaybackSession(
           hooks.onTrackChanged(event);
         }
       },
-    });
+    };
+    // Local files go through play() like any other source. `stream` already
+    // carries the file path, subtitle sidecar and display title from
+    // buildLocalEpisodeResolution(), while playerOptions carries resume
+    // prompting, the autoplay-chain mode, near-EOF prefetch, the abort signal,
+    // merged timing, correlation and track preferences. Routing local playback
+    // through playLocal() silently dropped every one of those.
+    const result = await player.play(stream, playerOptions);
 
     // The startup watchdog rewrites the result before completion is applied, so
     // a watchdog failure completes as `error` rather than briefly as `finished`.

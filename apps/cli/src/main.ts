@@ -706,7 +706,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
-    requireYtDlp: args.youtube || configJson.defaultMode === "youtube",
+    requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
   });
 
   const { loadCompiledSmokeProviderOverride } =
@@ -830,73 +830,77 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  void container.downloadService.processQueue();
+  if (!config.offlineMode) {
+    void container.downloadService.processQueue();
+  }
   // Background update: binary channel auto-applies; others notify-only.
-  void (async () => {
-    try {
-      const { readInstallManifest } = await import("./services/update/install-manifest");
-      const { detectInstallMethod } = await import("./services/update/install-method");
-      const manifest = await readInstallManifest();
-      const channel = manifest?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
-      const rawConfig = container.config.getRaw();
+  if (!config.offlineMode)
+    void (async () => {
+      try {
+        const { readInstallManifest } = await import("./services/update/install-manifest");
+        const { detectInstallMethod } = await import("./services/update/install-method");
+        const manifest = await readInstallManifest();
+        const channel = manifest?.method ?? detectInstallMethod({ fileExists: existsSync }).kind;
+        const rawConfig = container.config.getRaw();
 
-      if (channel === "binary" && rawConfig.autoApplyBinaryUpdates) {
-        const result = await container.binaryAutoUpdater.runOnce();
-        if (
-          (result.status === "installed" || result.status === "pending-restart") &&
-          "version" in result
-        ) {
-          container.notificationService.recordSignals([
-            {
-              type: "app-update",
-              currentVersion: KUNAI_VERSION,
-              latestVersion: result.version,
-              pendingRestart: result.status === "pending-restart",
-            },
-          ]);
+        if (channel === "binary" && rawConfig.autoApplyBinaryUpdates) {
+          const result = await container.binaryAutoUpdater.runOnce();
+          if (
+            (result.status === "installed" || result.status === "pending-restart") &&
+            "version" in result
+          ) {
+            container.notificationService.recordSignals([
+              {
+                type: "app-update",
+                currentVersion: KUNAI_VERSION,
+                latestVersion: result.version,
+                pendingRestart: result.status === "pending-restart",
+              },
+            ]);
+          }
+          // The startup check above already ran and produced the user-facing
+          // notification. Arm only the interval here so startup never performs
+          // the same ownership/network checks twice.
+          container.binaryAutoUpdater.startBackground({ runImmediately: false });
+          return;
         }
-        // The startup check above already ran and produced the user-facing
-        // notification. Arm only the interval here so startup never performs
-        // the same ownership/network checks twice.
-        container.binaryAutoUpdater.startBackground({ runImmediately: false });
-        return;
-      }
 
-      const result = await container.updateService.checkForUpdate();
-      const signal = updateSignalFromCheck(result);
-      if (signal) container.notificationService.recordSignals([signal]);
-    } catch {
-      // checkForUpdate records its own failures; keep startup fire-and-forget.
-    }
-  })();
-  void (async () => {
-    try {
-      const raw = container.config.getRaw();
-      if (raw.telemetry === "unset") {
-        const { resolveTelemetryConsent } = await import("./services/telemetry/consent");
-        const decision = resolveTelemetryConsent({
-          env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
-          isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-          choice: "timeout",
-        });
-        // Interactive `unset` stays unset (zero network) until setup or `/telemetry`.
-        // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
-        if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-          await container.telemetryService.setStatus("disabled");
-        } else if (decision === "disabled") {
-          // DNT or CI with a TTY still auto-decline.
-          const dntOrCi =
-            Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
-          if (dntOrCi) {
+        const result = await container.updateService.checkForUpdate();
+        const signal = updateSignalFromCheck(result);
+        if (signal) container.notificationService.recordSignals([signal]);
+      } catch {
+        // checkForUpdate records its own failures; keep startup fire-and-forget.
+      }
+    })();
+  if (!config.offlineMode)
+    void (async () => {
+      try {
+        const raw = container.config.getRaw();
+        if (raw.telemetry === "unset") {
+          const { resolveTelemetryConsent } = await import("./services/telemetry/consent");
+          const decision = resolveTelemetryConsent({
+            env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
+            isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+            choice: "timeout",
+          });
+          // Interactive `unset` stays unset (zero network) until setup or `/telemetry`.
+          // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
+          if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
             await container.telemetryService.setStatus("disabled");
+          } else if (decision === "disabled") {
+            // DNT or CI with a TTY still auto-decline.
+            const dntOrCi =
+              Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
+            if (dntOrCi) {
+              await container.telemetryService.setStatus("disabled");
+            }
           }
         }
+        container.telemetryService.pingInBackground();
+      } catch {
+        // Telemetry must never affect startup.
       }
-      container.telemetryService.pingInBackground();
-    } catch {
-      // Telemetry must never affect startup.
-    }
-  })();
+    })();
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",
@@ -990,7 +994,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }
     },
   });
-  for (const adapter of container.syncService.adapters) {
+  for (const adapter of config.offlineMode ? [] : container.syncService.adapters) {
     const ensureConnectedUsername = adapter.ensureConnectedUsername?.bind(adapter);
     if (!ensureConnectedUsername) continue;
     runBackgroundTask({

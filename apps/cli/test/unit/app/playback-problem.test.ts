@@ -2,12 +2,38 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildMpvMissingProblem,
+  buildOfflineFileUnavailableProblem,
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
   toErrorScenario,
 } from "@/domain/playback/playback-problem";
 
 describe("playback problem model", () => {
+  test("maps an unplayable downloaded file to a blocking problem that names the remedy", () => {
+    const problem = buildOfflineFileUnavailableProblem();
+
+    expect(problem).toMatchObject({
+      stage: "stream-open",
+      severity: "blocking",
+      cause: "offline-file-unavailable",
+      recommendedAction: "diagnostics",
+      secondaryActions: ["refresh"],
+    });
+    // The user reached this by launching a title the library still advertises as
+    // downloaded, so the copy has to say what to do rather than only what broke.
+    expect(problem.userMessage).toContain("integrity check");
+  });
+
+  test("renders an unplayable download through the error surface, not a raw slug", () => {
+    // Without a case in `toErrorScenario` this fell through to undefined, and
+    // the shell showed the bare cause slug "offline-file-unavailable" instead of
+    // the error screen every other blocking failure gets.
+    expect(toErrorScenario(buildOfflineFileUnavailableProblem(), { title: "Obsession" })).toEqual({
+      kind: "title-unavailable",
+      title: "Obsession",
+    });
+  });
+
   test("maps missing mpv to a blocking playback dependency problem", () => {
     const problem = buildMpvMissingProblem({
       remediationSummary: "Install mpv to enable playback.",

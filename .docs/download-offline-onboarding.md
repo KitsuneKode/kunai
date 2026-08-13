@@ -122,6 +122,18 @@ confirmation, and filesystem naming all consume it instead of re-deriving "is th
 - Local playback uses the same persisted/session autoskip policy as online playback so intro,
   recap, preview, and credits behavior does not unexpectedly change between streamed and
   downloaded files.
+- `--offline` is a transient runtime override: it sets offline connectivity before startup
+  workers begin, skips download processing, update checks, telemetry, and sync identity work,
+  and opens the local library without provider resolution.
+- An offline-library launch keeps its explicit local-only origin through episode selection and
+  playback. The validated local source is handed to the local mpv path, including local subtitle
+  sidecars, rather than being represented as a remote stream URL.
+- Offline asset lookup uses the same canonical title identity as download enqueue. This covers
+  provider-native anime ids, canonical AniList/TMDB ids, and YouTube ids across download, library,
+  and normal playback surfaces.
+- A `repairable` sidecar status does not make the video unplayable. The library validates the
+  primary video independently and keeps a valid local artifact available while exposing sidecar
+  repair actions.
 - Offline shelf rows are grouped by title and may render the best local preview image:
   cached poster artwork first, then persisted poster URL, then text-only fallback.
 - Offline title rows should surface local facts that are already in SQLite or on disk:

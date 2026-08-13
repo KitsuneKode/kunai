@@ -27,6 +27,37 @@ export type OfflineLibraryGroupAction = {
 
 export type OfflineLibraryActionResult = "continue" | "exit" | "refresh";
 
+/**
+ * Says what repair actually did, including when it did nothing.
+ *
+ * The old copy read "Re-download queued for 0 missing items" whenever a title
+ * was healthy — success phrasing for a no-op, which is what made repair look
+ * broken.
+ */
+export function describeOfflineRepairOutcome(input: {
+  readonly queued: number;
+  readonly repairedMetadata: number;
+  readonly inspected: number;
+}): string {
+  const parts: string[] = [];
+  if (input.queued > 0) {
+    parts.push(`re-download queued for ${input.queued} ${input.queued === 1 ? "item" : "items"}`);
+  }
+  if (input.repairedMetadata > 0) {
+    parts.push(
+      `restored details for ${input.repairedMetadata} ${
+        input.repairedMetadata === 1 ? "item" : "items"
+      }`,
+    );
+  }
+  if (parts.length === 0) {
+    return `Nothing to repair — all ${input.inspected} local ${
+      input.inspected === 1 ? "item is" : "items are"
+    } complete.`;
+  }
+  return `Repair: ${parts.join(" · ")}.`;
+}
+
 async function setOfflineGroupProtection(
   container: Container,
   jobIds: readonly string[],
@@ -89,13 +120,31 @@ export async function routeOfflineLibraryGroupAction(
     for (const entry of repairEntries) {
       container.downloadService.retry(entry.job.id);
     }
+
+    // A "ready" artifact can still be incomplete in the database: a download
+    // interrupted and resumed lands its file but can skip the post-completion
+    // probe, leaving no duration. Repairing only broken *files* meant this
+    // action reported success while doing nothing at all for the far more
+    // common metadata gap.
+    const metadataGaps = entries.filter(
+      (entry) => entry.status === "ready" && !entry.job.durationMs,
+    );
+    const repairedMetadata =
+      metadataGaps.length > 0
+        ? await container.downloadService.repairArtifactMetadata(
+            metadataGaps.map((entry) => entry.job.id),
+          )
+        : 0;
+
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: `Re-download queued for ${repairEntries.length} missing ${
-        repairEntries.length === 1 ? "item" : "items"
-      }`,
+      note: describeOfflineRepairOutcome({
+        queued: repairEntries.length,
+        repairedMetadata,
+        inspected: entries.length,
+      }),
     });
-    void container.downloadService.processQueue();
+    if (repairEntries.length > 0) void container.downloadService.processQueue();
     return "refresh";
   }
 

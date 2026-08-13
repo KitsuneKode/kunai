@@ -10,7 +10,7 @@ export type PlaybackEpisodeEntryContext = {
   readonly titleId: string;
   readonly titleType: "series" | "movie";
   readonly isAnime: boolean;
-  readonly launchSource?: "search" | "history" | "continue";
+  readonly launchSource?: "search" | "history" | "continue" | "offline-library";
   readonly preselectedEpisode?: { readonly season: number; readonly episode: number };
   readonly history: PlaybackHistorySnapshot | null;
   readonly seasonCount?: number;
@@ -37,6 +37,7 @@ function isPlaybackFinished(history: PlaybackHistorySnapshot): boolean {
  */
 export function shouldAutoLaunchPlayback(ctx: PlaybackEpisodeEntryContext): boolean {
   if (ctx.titleType !== "series") return false;
+  if (ctx.launchSource === "offline-library") return Boolean(ctx.preselectedEpisode);
   if (ctx.flags.season || ctx.flags.episode) return true;
   if (ctx.failedProvider) return false;
   if (!ctx.preselectedEpisode) return false;

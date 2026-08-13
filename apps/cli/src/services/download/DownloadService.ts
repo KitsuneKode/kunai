@@ -236,6 +236,44 @@ export class DownloadService {
     );
   }
 
+  /**
+   * Re-derives duration and size for artifacts that are present but incomplete
+   * in the database, returning how many were repaired.
+   *
+   * A download interrupted and resumed lands its file correctly but can miss
+   * the post-completion probe, leaving `duration_ms` null. That is not
+   * cosmetic: duration drives the resume position and the progress bar.
+   * Re-queueing the download to recover a number `ffprobe` reads from the
+   * finished file in milliseconds would mean fetching gigabytes again, so
+   * repair it in place instead.
+   */
+  async repairArtifactMetadata(jobIds: readonly string[]): Promise<number> {
+    let repaired = 0;
+    for (const jobId of jobIds) {
+      const job = this.deps.repo.get(jobId);
+      if (!job?.outputPath) continue;
+      try {
+        const validation = await this.validateCompletedArtifact(job.outputPath);
+        const updatedAt = new Date().toISOString();
+        if (job.fileSize !== validation.fileSize) {
+          this.deps.repo.updateFileSize(jobId, validation.fileSize, updatedAt);
+        }
+        if (validation.durationMs !== undefined && job.durationMs !== validation.durationMs) {
+          this.deps.repo.updateOfflineMetadata(
+            jobId,
+            { durationMs: validation.durationMs },
+            updatedAt,
+          );
+          repaired += 1;
+        }
+      } catch {
+        // A file that cannot be probed is a broken artifact, not a metadata
+        // gap; the artifact-status sweep owns that case and re-downloads it.
+      }
+    }
+    return repaired;
+  }
+
   getEnqueueEligibility(): DownloadEnqueueEligibility {
     const feature = resolveDownloadFeatureState({
       config: this.deps.config,
@@ -724,8 +762,13 @@ export class DownloadService {
         await rm(posterPath, { force: true }).catch(() => {});
       }
     }
-    this.deps.repo.delete(jobId);
+    // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
+    // `ON DELETE SET NULL` with foreign keys enabled, so once the job row is
+    // gone the listener's `deleteByOriginJobId(jobId)` matches nothing and the
+    // asset is orphaned: still `state='ready'`, still advertised as downloaded,
+    // but unplayable because its originJobId is now null.
     this.emit({ type: "deleted", jobId });
+    this.deps.repo.delete(jobId);
   }
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
@@ -945,6 +988,7 @@ export class DownloadService {
         id: job.titleId,
         type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
         name: job.titleName,
+        externalIds: externalIdsFromDownloadJob(job),
       },
       episode:
         job.season !== undefined && job.episode !== undefined
@@ -1483,6 +1527,24 @@ function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
   if (input.title.type === "movie") return "movie";
   if (input.mode === "anime") return "anime";
   return "series";
+}
+
+function externalIdsFromDownloadJob(
+  job: Pick<DownloadJobRecord, "titleId" | "mediaKind" | "mode">,
+): TitleInfo["externalIds"] {
+  const titleId = job.titleId.trim();
+  if (!titleId) return undefined;
+  if (job.mode === "anime" || job.mediaKind === "anime") {
+    const anilistId = titleId.replace(/^anilist:/, "");
+    return /^\d+$/.test(anilistId) ? { anilistId } : undefined;
+  }
+  if (job.mode === "youtube" || job.mediaKind === "video") {
+    return { youtubeId: titleId.replace(/^youtube:/, "") };
+  }
+  if (titleId.startsWith("tmdb:")) {
+    return { tmdbId: titleId.slice("tmdb:".length) };
+  }
+  return undefined;
 }
 
 function normalizeYear(value: string | undefined): string | null {

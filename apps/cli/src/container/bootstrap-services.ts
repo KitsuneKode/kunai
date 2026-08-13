@@ -251,6 +251,21 @@ export function bootstrapServices(input: {
     historyRepository,
     offlineAssetService,
   });
+  downloadService.onEvent((event) => {
+    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
+  });
+  // Repairs libraries damaged before deleteJob emitted ahead of the row delete.
+  // Ownerless assets still read `ready`, so the library advertises titles it
+  // cannot play, and nothing job-driven can reach them. No-op once healthy.
+  const purgedOrphanCount = offlineAssetService.purgeOrphanedAssets();
+  if (purgedOrphanCount > 0) {
+    diagnosticsService.record({
+      category: "offline",
+      operation: "offline.assets.purge-orphans",
+      message: `Removed ${purgedOrphanCount} offline ${purgedOrphanCount === 1 ? "asset" : "assets"} whose download job no longer exists`,
+      context: { purgedOrphanCount },
+    });
+  }
   const offlineMaintenanceService = new OfflineMaintenanceService({
     jobs: offlineMaintenanceJobs,
     assets: offlineAssetService,

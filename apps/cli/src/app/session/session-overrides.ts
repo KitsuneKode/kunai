@@ -9,16 +9,19 @@
 export interface SessionOverrideArgs {
   readonly zen: boolean;
   readonly minimal: boolean;
+  readonly offline?: boolean;
 }
 
 export interface SessionLayoutConfig {
   readonly zenMode: boolean;
   readonly minimalMode: boolean;
+  readonly offlineMode?: boolean;
 }
 
 export type SessionConfigOverrides = Partial<{
   zenMode: boolean;
   minimalMode: boolean;
+  offlineMode: boolean;
 }>;
 
 /**
@@ -34,5 +37,6 @@ export function resolveSessionConfigOverrides(
   const overrides: SessionConfigOverrides = {};
   if (args.zen && !config.zenMode) overrides.zenMode = true;
   if (args.minimal && !config.minimalMode) overrides.minimalMode = true;
+  if (args.offline && !config.offlineMode) overrides.offlineMode = true;
   return overrides;
 }

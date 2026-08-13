@@ -556,7 +556,7 @@ export class DownloadJobsRepository {
   listCompleted(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
-        "SELECT * FROM download_jobs WHERE status IN ('completed', 'completed-with-notes') ORDER BY completed_at DESC LIMIT ?",
+        "SELECT * FROM download_jobs WHERE status IN ('completed', 'completed-with-notes', 'repairable') ORDER BY completed_at DESC LIMIT ?",
       )
       .all(limit)
       .map(mapRow);
@@ -566,6 +566,13 @@ export class DownloadJobsRepository {
     return this.db
       .query<DownloadJobRow, [number]>(
         `
+          -- KNOWN ISSUE: 'repairable' is also returned by listCompleted, so a
+          -- repairable job appears in both result sets and the download manager
+          -- renders it as two rows sharing an id (index-based selection then
+          -- acts on a phantom). It cannot simply be dropped here: the repair
+          -- sweep in DownloadService uses listFailed to find repairable work.
+          -- The fix is a dedicated listRepairable() for the sweep, then removing
+          -- 'repairable' from this clause -- not a one-line edit.
           SELECT * FROM download_jobs
           WHERE status IN ('failed', 'aborted', 'repairable')
           ORDER BY updated_at DESC

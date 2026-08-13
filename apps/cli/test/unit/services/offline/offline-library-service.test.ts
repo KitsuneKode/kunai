@@ -171,6 +171,23 @@ describe("OfflineLibraryService", () => {
     expect(playable.status).toBe("ready");
   });
 
+  test("repairable sidecars do not block playback of a valid video", async () => {
+    const record = job({ status: "repairable", artifactStatus: "expected-missing" });
+    const service = new OfflineLibraryService({
+      downloadService: {
+        getJob: () => record,
+      } as unknown as DownloadService,
+      historyRepository: {} as Pick<
+        HistoryRepository,
+        "upsertProgress" | "getLatestForTitleIdentity"
+      >,
+    });
+
+    const playable = await service.getPlayableSource(record.id);
+
+    expect(playable.status).toBe("ready");
+  });
+
   test("persists offline playback progress to history", async () => {
     const saves: HistoryProgressInput[] = [];
     const service = new OfflineLibraryService({
