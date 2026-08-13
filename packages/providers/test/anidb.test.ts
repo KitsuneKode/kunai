@@ -162,6 +162,30 @@ describe("anidb browse parsing", () => {
     expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
+  test("never emits terminal control characters, raw or entity-encoded", () => {
+    const ESC = String.fromCharCode(27);
+    const BEL = String.fromCharCode(7);
+    // These titles are printed to a terminal. ESC drives cursor movement, screen
+    // clears, and OSC 52 clipboard writes, so a provider must not be able to put
+    // one in a title -- least of all via `&#27;`, which is plain ASCII on the
+    // wire and would otherwise be minted into a real ESC by our own decoder.
+    const html = [
+      `<a href="/anime/raw-11" title="Raw${ESC}[2J${BEL}Title"></a>`,
+      '<a href="/anime/entity-12" title="Entity&#27;[2JTitle"></a>',
+      '<a href="/anime/hexentity-13" title="Hex&#x1b;[2JTitle"></a>',
+    ].join("");
+
+    const titles = parseAnidbBrowseHtml(html).map((result) => result.title);
+    expect(titles).toEqual(["Raw[2JTitle", "Entity&#27;[2JTitle", "Hex&#x1b;[2JTitle"]);
+    const controlCharacters = titles
+      .flatMap((title) => [...title])
+      .filter((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+      });
+    expect(controlCharacters).toEqual([]);
+  });
+
   test("extracts deterministic season evidence", () => {
     expect(parseAnidbSeasonEvidence("Mob Psycho 100 3rd Season")).toEqual({
       seasonNumber: 3,

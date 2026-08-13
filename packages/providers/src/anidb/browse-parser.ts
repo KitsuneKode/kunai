@@ -151,9 +151,29 @@ function extractAnidbTitle(attrs: string, body: string): string {
   const anchorTitle = extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label");
   const imageAlt = IMAGE_ALT_PATTERN.exec(body)?.[1];
   const nestedText = body.replace(SCRIPT_BLOCK_PATTERN, " ").replace(/<[^>]+>/g, " ");
-  return decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText)
-    .replace(/\s+/g, " ")
-    .trim();
+  const decoded = decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText);
+  // A raw ESC/BEL byte in the response body is the other half of the entity
+  // vector closed in decodeCodePoint(); `\s` matches neither, so without this
+  // they would survive into terminal output.
+  return stripControlCharacters(decoded).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Drops C0/C1 controls but keeps tab/LF/CR, which the whitespace collapse below
+ * turns into a single space -- stripping them outright would weld "Foo\nBar"
+ * into "FooBar". Written as a code-point scan rather than a regex: a character
+ * class of raw control characters is exactly what `no-control-regex` forbids,
+ * and the scan reuses the same predicate the entity decoder checks.
+ */
+function stripControlCharacters(value: string): string {
+  let out = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const isCollapsibleWhitespace = codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d;
+    if (isControlCodePoint(codePoint) && !isCollapsibleWhitespace) continue;
+    out += character;
+  }
+  return out;
 }
 
 /**
@@ -202,7 +222,17 @@ function decodeCodePoint(raw: string, codePoint: number): string {
   // otherwise produce an ill-formed title string.
   if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) return raw;
   if (codePoint >= 0xd800 && codePoint <= 0xdfff) return raw;
+  // Refuse to manufacture control characters. `&#27;` is plain ASCII in the
+  // response body, so a provider needs no raw ESC byte to smuggle one -- the
+  // decoder would mint it. These titles are printed straight to a terminal,
+  // where ESC drives cursor movement, screen clears, and OSC 52 clipboard
+  // writes. C0 (0x00-0x1f, 0x7f) and C1 (0x80-0x9f) are left as inert text.
+  if (isControlCodePoint(codePoint)) return raw;
   return String.fromCodePoint(codePoint);
+}
+
+function isControlCodePoint(codePoint: number): boolean {
+  return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
 }
 
 /** Single pass, so `&amp;lt;` decodes to the literal `&lt;` and never to `<`. */
