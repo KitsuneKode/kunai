@@ -28,7 +28,7 @@ import type {
 } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
-import { HealthTracker } from "../shared/provider-cache";
+import { HealthTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
   findLastCycleFailure,
@@ -1367,11 +1367,59 @@ type WingsSeedTransport = {
   readonly seed: string;
 };
 
-const wingsSeedCache = new Map<string, { seed: string; expiresAt: number }>();
-const wingsPreferredHostCache = new Map<number, { apiBase: string; expiresAt: number }>();
+/**
+ * Hard ceilings. Seeds and preferred hosts are keyed per media id, so without a
+ * bound they grow for the lifetime of the process — expiry alone never frees an
+ * entry nobody asks for again. The failure map is host-keyed and naturally tiny;
+ * its bound is a backstop against a future host list, not a live pressure point.
+ */
+export const WINGS_TRANSPORT_LIMITS = {
+  seedEntries: 16,
+  preferredHostEntries: 256,
+  failureEntries: 32,
+} as const;
+
+/** A seed is only valid for the host that issued it, so the pair is the value. */
+const wingsSeedCache = new TTLCache<string, string>(30_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.seedEntries,
+});
+const wingsPreferredHostCache = new TTLCache<number, string>(30_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.preferredHostEntries,
+});
 /** Hosts that recently failed a seed request get skipped for a while (host-level). */
-const wingsHostFailureCache = new Map<string, number>();
+const wingsHostFailureCache = new TTLCache<string, true>(5 * 60_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.failureEntries,
+});
 const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
+
+/** Test seam: the seed race is deterministic only with an injected requester. */
+export function fetchWingsdatabaseSeedForTest(
+  mediaId: number,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<WingsSeedTransport | undefined> {
+  return fetchWingsdatabaseSeed(mediaId, context, signal);
+}
+
+/**
+ * Test seam: which hosts currently carry a failure penalty.
+ *
+ * Request order alone cannot prove this — when every host is penalized the
+ * transport deliberately races them all rather than giving up, so "both hosts
+ * were contacted" is true both when nothing was blamed and when everything was.
+ */
+export function wingsPenalizedHostsForTest(): readonly string[] {
+  return [WINGS_API_BASE, WINGS_API_FALLBACK_BASE].filter((base) =>
+    Boolean(wingsHostFailureCache.get(base)),
+  );
+}
+
+/** Test seam: module-scoped transport state must not leak between test cases. */
+export function clearWingsTransportCachesForTest(): void {
+  wingsSeedCache.clear();
+  wingsPreferredHostCache.clear();
+  wingsHostFailureCache.clear();
+}
 
 function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
   return `${apiBase}\u001f${mediaId}`;
@@ -1391,9 +1439,7 @@ async function fetchWingsdatabaseSeed(
     referer: "https://www.cineby.at/",
   } as const;
 
-  const now = Date.now();
-  const preferred = wingsPreferredHostCache.get(mediaId);
-  const preferredBase = preferred && now < preferred.expiresAt ? preferred.apiBase : undefined;
+  const preferredBase = wingsPreferredHostCache.get(mediaId);
   const bases = preferredBase
     ? [
         preferredBase,
@@ -1405,15 +1451,15 @@ async function fetchWingsdatabaseSeed(
   // fallback stays an indivisible host+seed pair.
   const uncached: string[] = [];
   for (const apiBase of bases) {
-    const cached = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));
-    if (cached && now < cached.expiresAt) {
-      return { apiBase, seed: cached.seed };
+    const cachedSeed = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));
+    if (cachedSeed) {
+      return { apiBase, seed: cachedSeed };
     }
     uncached.push(apiBase);
   }
 
   // Skip recently-failed hosts unless every host is in the penalty box.
-  const healthy = uncached.filter((base) => (wingsHostFailureCache.get(base) ?? 0) <= now);
+  const healthy = uncached.filter((base) => !wingsHostFailureCache.get(base));
   const candidates = healthy.length > 0 ? healthy : uncached;
   if (candidates.length === 0) return undefined;
 
@@ -1440,19 +1486,22 @@ async function fetchWingsdatabaseSeed(
           if (!body.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
         } catch (error) {
-          if (!won) wingsHostFailureCache.set(apiBase, Date.now() + WINGS_HOST_FAILURE_PENALTY_MS);
+          // Three different causes reach this catch and only one is host
+          // evidence. A loser aborted because a peer already won says nothing
+          // about this host, and neither does the *caller* walking away — that
+          // used to poison both hosts for five minutes on every cancelled
+          // playback. A genuine pre-winner failure or timeout is real evidence.
+          if (!won && !effectiveSignal?.aborted) {
+            wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
+          }
           throw error;
         }
       }),
     ).catch(() => undefined);
     if (!winner) return undefined;
 
-    const expiresAt = Date.now() + winner.ttlMs;
-    wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), {
-      seed: winner.seed,
-      expiresAt,
-    });
-    wingsPreferredHostCache.set(mediaId, { apiBase: winner.apiBase, expiresAt });
+    wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), winner.seed, winner.ttlMs);
+    wingsPreferredHostCache.set(mediaId, winner.apiBase, winner.ttlMs);
     wingsHostFailureCache.delete(winner.apiBase);
     return { apiBase: winner.apiBase, seed: winner.seed };
   } finally {

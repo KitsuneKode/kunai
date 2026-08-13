@@ -4,15 +4,38 @@
 
 type CacheEntry<V> = { readonly value: V; readonly expiresAt: number };
 
+export type TTLCacheOptions = {
+  /**
+   * Hard entry ceiling. Without one, a cache keyed by title/media id grows for
+   * the whole session: expiry alone never frees anything, because an entry is
+   * only dropped when something asks for that exact key again.
+   */
+  readonly maxEntries?: number;
+  /** Injectable clock so eviction and expiry are testable without real time. */
+  readonly now?: () => number;
+};
+
 export class TTLCache<K, V> {
   private readonly store = new Map<K, CacheEntry<V>>();
+  private readonly maxEntries?: number;
+  private readonly now: () => number;
 
-  constructor(private readonly defaultTtlMs: number) {}
+  constructor(
+    private readonly defaultTtlMs: number,
+    options: TTLCacheOptions = {},
+  ) {
+    this.maxEntries = options.maxEntries;
+    this.now = options.now ?? Date.now;
+  }
+
+  get size(): number {
+    return this.store.size;
+  }
 
   get(key: K): V | undefined {
     const entry = this.store.get(key);
     if (!entry) return undefined;
-    if (Date.now() >= entry.expiresAt) {
+    if (this.now() >= entry.expiresAt) {
       this.store.delete(key);
       return undefined;
     }
@@ -20,7 +43,13 @@ export class TTLCache<K, V> {
   }
 
   set(key: K, value: V, ttlMs?: number): void {
-    this.store.set(key, { value, expiresAt: Date.now() + (ttlMs ?? this.defaultTtlMs) });
+    // Replacing a key must not count as growth, so evict only after the write.
+    this.store.set(key, { value, expiresAt: this.now() + (ttlMs ?? this.defaultTtlMs) });
+    this.evictIfNeeded();
+  }
+
+  delete(key: K): void {
+    this.store.delete(key);
   }
 
   clear(): void {
@@ -29,9 +58,24 @@ export class TTLCache<K, V> {
 
   /** Remove all entries older than the given TTL. */
   prune(): void {
-    const now = Date.now();
+    const now = this.now();
     for (const [key, entry] of this.store) {
       if (now >= entry.expiresAt) this.store.delete(key);
+    }
+  }
+
+  /** Drop expired entries first; only then fall back to oldest-inserted. */
+  private evictIfNeeded(): void {
+    const limit = this.maxEntries;
+    if (limit === undefined || this.store.size <= limit) return;
+
+    this.prune();
+
+    // `Map` iterates in insertion order, so the first key is the oldest write.
+    while (this.store.size > limit) {
+      const oldest = this.store.keys().next();
+      if (oldest.done) return;
+      this.store.delete(oldest.value);
     }
   }
 }
