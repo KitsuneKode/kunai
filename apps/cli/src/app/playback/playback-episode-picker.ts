@@ -38,6 +38,8 @@ export type PlaybackEpisodePickerInput = {
   watchedEntries?: readonly HistoryProgress[];
   releaseBadges?: ReadonlyMap<string, string>;
   downloadedEpisodes?: ReadonlySet<string>;
+  /** False for offline-library launches; the picker then reads only the local index. */
+  networkAllowed?: boolean;
   loadEpisodes?: typeof fetchEpisodes;
 };
 
@@ -56,6 +58,7 @@ export async function buildPlaybackEpisodePickerOptions({
   watchedEntries = [],
   releaseBadges,
   downloadedEpisodes,
+  networkAllowed = true,
   loadEpisodes = fetchEpisodes,
 }: PlaybackEpisodePickerInput): Promise<PlaybackEpisodePickerOptions> {
   const watchedByEpisode = new Map(
@@ -70,6 +73,34 @@ export async function buildPlaybackEpisodePickerOptions({
       options: [],
       subtitle: "Episode picker is only available for episodic playback",
       initialIndex: 0,
+    };
+  }
+
+  if (!networkAllowed) {
+    const prefix = `${currentEpisode.season}:`;
+    const episodes = [...(downloadedEpisodes ?? [])]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => Number(key.slice(prefix.length)))
+      .filter((episode) => Number.isInteger(episode) && episode > 0)
+      .sort((left, right) => left - right);
+    const options = episodes.map((episode) =>
+      buildEpisodePickerOption({
+        season: currentEpisode.season,
+        episode,
+        label: `Episode ${episode}`,
+        offlineDownloaded: true,
+        current: episode === currentEpisode.episode,
+        history: watchedByEpisode.get(`${currentEpisode.season}:${episode}`),
+      }),
+    );
+    return {
+      subtitle: formatEpisodePickerSubtitle({
+        seriesName: title.name,
+        season: currentEpisode.season,
+        options,
+      }),
+      options,
+      initialIndex: getInitialIndex(options, `${currentEpisode.season}:${currentEpisode.episode}`),
     };
   }
 

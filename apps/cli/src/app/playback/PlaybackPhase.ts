@@ -131,6 +131,7 @@ import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attemp
 import {
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
+  restoreRecentPlaybackStream,
   type RecentPlaybackStreamProvenance,
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
@@ -1316,6 +1317,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 title,
                 currentEpisode,
                 isAnime: isAnimePlayback,
+                networkAllowed: playbackNetworkAllowed,
                 animeEpisodeCount: knownEpisodeCount,
                 animeEpisodes: currentAnimeEpisodes,
                 watchedEntries,
@@ -1544,9 +1546,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               recentPlaybackStreamMatchesProvider(recent, currentProvider.metadata.id) &&
               recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode)
             ) {
-              stream = recent.stream;
-              resolvedProviderId = recent.resolvedProviderId;
-              streamProvenance = recent.provenance;
+              const restored = restoreRecentPlaybackStream(recent);
+              stream = restored.stream;
+              resolvedProviderId = restored.resolvedProviderId;
+              streamProvenance = restored.provenance;
+              run.localPlaybackSource = restored.localPlaybackSource;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "cache",
@@ -2144,12 +2148,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
           const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
-          recentEpisodeStreams.set(episodeKey, {
-            stream: preparedStream,
-            selectedProviderId: currentProvider.metadata.id,
-            resolvedProviderId,
-            provenance: streamProvenance,
-          });
+          if (streamProvenance === "local") {
+            if (run.localPlaybackSource) {
+              recentEpisodeStreams.set(episodeKey, {
+                stream: preparedStream,
+                selectedProviderId: currentProvider.metadata.id,
+                resolvedProviderId,
+                provenance: "local",
+                localPlaybackSource: run.localPlaybackSource,
+              });
+            }
+          } else {
+            recentEpisodeStreams.set(episodeKey, {
+              stream: preparedStream,
+              selectedProviderId: currentProvider.metadata.id,
+              resolvedProviderId,
+              provenance: streamProvenance,
+            });
+          }
           if (recentEpisodeStreams.size > 5) {
             const first = recentEpisodeStreams.keys().next().value;
             if (first !== undefined) recentEpisodeStreams.delete(first);

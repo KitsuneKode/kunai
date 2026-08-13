@@ -157,6 +157,7 @@ export class PersistentReadyWorkExecutor {
           options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
         },
         options.subtitleUrlKind,
+        isCurrent,
       );
     }
     if (!isCurrent()) return;

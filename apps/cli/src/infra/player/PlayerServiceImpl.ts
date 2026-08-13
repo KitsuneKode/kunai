@@ -34,6 +34,7 @@ import {
   type HlsRelayStopReason,
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
+import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
@@ -368,20 +369,19 @@ export class PlayerServiceImpl implements PlayerService {
 
       return result;
     } catch (e) {
+      if (e instanceof PlaybackAbortedError) throw e;
       const errorMessage = e instanceof Error ? e.message : String(e);
-      const actionableHint = errorMessage.toLowerCase().includes("mpv")
-        ? "mpv is required for playback. Install mpv and retry."
-        : "Run / export-diagnostics and / report-issue if this keeps failing.";
+      const launchFailure = classifyMpvLaunchError(e);
       this.deps.logger.error("MPV playback failed", { error: String(e) });
       this.deps.diagnostics.record(
         buildPlaybackDiagnosticEvent({
           operation: "mpv.playback.failed",
           status: "failed",
           severity: "blocked",
-          failureClass: "dependency",
+          failureClass: launchFailure.failureClass,
           message: "MPV playback failed",
           correlation: options.correlation,
-          context: { error: errorMessage, hint: actionableHint },
+          context: { error: errorMessage, hint: launchFailure.hint },
         }),
       );
       return {
@@ -661,7 +661,6 @@ export class PlayerServiceImpl implements PlayerService {
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
     const generation = this.currentGeneration;
-    await this.retirePersistentSession(retiredGeneration);
     const stopOnAbort = () => {
       const active = this.deps.playerControl.getActive?.();
       if (!active) return;
@@ -671,6 +670,10 @@ export class PlayerServiceImpl implements PlayerService {
     };
     options.abortSignal?.addEventListener("abort", stopOnAbort, { once: true });
     try {
+      await this.retirePersistentSession(retiredGeneration);
+      if (options.abortSignal?.aborted) {
+        throw new PlaybackAbortedError("playback aborted before mpv launch");
+      }
       return await (this.deps.launchMpv ?? launchMpv)({
         url: stream.url,
         urlKind,
@@ -693,8 +696,14 @@ export class PlayerServiceImpl implements PlayerService {
         skipPreview: options.skipPreview,
         skipCredits: options.skipCredits,
         onControlReady: (control) => {
+          if (control && options.abortSignal?.aborted) {
+            if (this.isCurrentGeneration(generation)) this.invalidateProcessGeneration();
+            void control.stop("playback-aborted").catch(() => {
+              // Session shutdown retains the process-registry SIGKILL backstop.
+            });
+            return;
+          }
           this.setActiveControlFor(generation, control);
-          if (control && options.abortSignal?.aborted) stopOnAbort();
         },
         onPlayerReady: options.onPlayerReady,
         onPlaybackEvent: publish,

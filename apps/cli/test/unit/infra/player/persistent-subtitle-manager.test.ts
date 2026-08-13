@@ -125,6 +125,33 @@ describe("PersistentSubtitleManager", () => {
     expect(attachedCounts).toEqual([2]);
   });
 
+  test("stops replacement when its generation retires during subtitle removal", async () => {
+    let current = true;
+    const commands: unknown[][] = [];
+    const ipc: MpvIpcSession = {
+      async send(command) {
+        commands.push([...command]);
+        if (command[0] === "sub-remove") current = false;
+        return { ok: true, command, requestId: commands.length, response: {} };
+      },
+      sendUnchecked() {},
+      async close() {},
+    };
+    const manager = new PersistentSubtitleManager();
+    manager.updateTrackList([{ id: 7, type: "sub", external: true }]);
+
+    await manager.replaceSubtitleInventory(
+      ipc,
+      "https://subs.example/main.vtt",
+      [{ url: "https://subs.example/alt.vtt", language: "es" }],
+      undefined,
+      "remote",
+      () => current,
+    );
+
+    expect(commands).toEqual([["sub-remove", 7]]);
+  });
+
   test("uses a longer mpv deadline for remote subtitle attachment", async () => {
     const { ipc, timeouts } = createFakeIpc();
     const manager = new PersistentSubtitleManager();

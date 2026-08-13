@@ -974,6 +974,7 @@ export class PersistentMpvSession {
     subtitleTracks?: readonly SubtitleTrack[],
     onAttached?: (trackCount: number) => void,
     primarySubtitleUrlKind?: MpvUrlKind,
+    isCurrent?: () => boolean,
   ): Promise<void> {
     await this.subtitleManager.replaceSubtitleInventory(
       this.ipcSession,
@@ -981,6 +982,7 @@ export class PersistentMpvSession {
       subtitleTracks,
       onAttached,
       primarySubtitleUrlKind,
+      isCurrent,
     );
   }
 
@@ -1633,6 +1635,7 @@ export class PersistentMpvSession {
           opts.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
         },
         opts.subtitleUrlKind,
+        isCurrent,
       );
       if (!isCurrent()) return;
 
