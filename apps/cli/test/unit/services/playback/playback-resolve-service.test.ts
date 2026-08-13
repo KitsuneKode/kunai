@@ -121,7 +121,11 @@ function createResolvedEngineOutput(
   };
 }
 
-function createManifest(providerId: ProviderId, mediaKinds: readonly string[]) {
+function createManifest(
+  providerId: ProviderId,
+  mediaKinds: readonly string[],
+  catalogIdentity?: string,
+) {
   return {
     id: providerId,
     displayName: providerId,
@@ -136,6 +140,7 @@ function createManifest(providerId: ProviderId, mediaKinds: readonly string[]) {
     browserSafe: true,
     relaySafe: true,
     status: "production",
+    catalogIdentity,
   };
 }
 
@@ -1963,4 +1968,41 @@ test("PlaybackResolveService stops a stalling provider fan-out at its total dead
   expect(outcome).not.toBe("hung");
   expect(observedSignal).not.toBe(controller.signal);
   if (outcome !== "hung") expect(outcome.stream).toBeNull();
+});
+
+test("PlaybackResolveService routes AniDB identity and absolute episode into the production engine", async () => {
+  let observed: ProviderResolveInput | null = null;
+  const engine = createMockEngine(createResolvedEngineOutput("anidb" as ProviderId), {
+    modules: [
+      {
+        providerId: "anidb" as ProviderId,
+        manifest: createManifest("anidb" as ProviderId, ["anime"], "provider-native"),
+      },
+    ],
+    onResolveInput: (input) => {
+      observed = input;
+    },
+  });
+  const service = new PlaybackResolveService({ engine, cacheStore: createMemoryCache(null) });
+
+  await service.resolve({
+    title: {
+      id: "151807",
+      type: "series",
+      name: "Solo Leveling",
+      isAnime: true,
+      externalIds: { anilistId: "151807" },
+    },
+    episode: { season: 2, episode: 1, absoluteEpisode: 13 },
+    mode: "anime",
+    providerId: "anidb",
+    audioPreference: "original",
+    subtitlePreference: "en",
+    signal: new AbortController().signal,
+  });
+
+  const input = observed as ProviderResolveInput | null;
+  expect(input?.title.id).toBe("151807");
+  expect(input?.title.anilistId).toBe("151807");
+  expect(input?.episode).toEqual({ season: 2, episode: 1, absoluteEpisode: 13 });
 });

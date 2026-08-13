@@ -17,7 +17,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { TitleInfo } from "@/domain/types";
 import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
 import {
@@ -26,54 +25,19 @@ import {
   resolveProviderSmokeStream,
 } from "./provider-smoke";
 import {
+  buildReleaseProviderRouteCases,
+  resolveReleaseAnimeSearchTitle,
+  type ReleaseProviderRouteCase,
+} from "./release-provider-routes";
+import {
   buildReleaseProviderSignoff,
   classifyReleaseSignoffFailure,
   redactVolatileSignoffText,
   type ReleaseProviderSignoffRoute,
-  type ReleaseSignoffLane,
 } from "./release-provider-signoff";
 
 const CLI_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
-
-type DefaultRouteFixture = {
-  readonly lane: ReleaseSignoffLane;
-  readonly configuredProvider: string;
-  readonly mode: "series" | "anime";
-  readonly title: TitleInfo;
-  readonly season?: number;
-  readonly episode?: number;
-};
-
-const DEFAULT_ROUTES: readonly DefaultRouteFixture[] = [
-  {
-    lane: "movie",
-    configuredProvider: "videasy",
-    mode: "series",
-    title: { id: "438631", type: "movie", name: "Dune", year: "2021" },
-  },
-  {
-    lane: "series",
-    configuredProvider: "videasy",
-    mode: "series",
-    title: { id: "299167", type: "series", name: "Dutton Ranch", year: "2026" },
-    season: 1,
-    episode: 1,
-  },
-  {
-    lane: "anime",
-    configuredProvider: "allanime",
-    mode: "anime",
-    title: {
-      id: "SJms742bSTrcyJZay",
-      type: "series",
-      name: "Kimetsu no Yaiba",
-      isAnime: true,
-    },
-    season: 1,
-    episode: 1,
-  },
-];
 
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -102,15 +66,26 @@ async function writeArtifact(path: string, payload: unknown): Promise<void> {
   await writeFile(absolute, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
+function requireProvider(
+  container: Awaited<ReturnType<typeof import("@/container").createContainer>>,
+  providerId: string,
+) {
+  const provider = container.providerRegistry.get(providerId);
+  if (!provider) {
+    throw new Error(`Configured release provider is not registered: ${providerId}`);
+  }
+  return provider;
+}
+
 async function resolveRoute(
-  fixture: DefaultRouteFixture,
+  routeCase: ReleaseProviderRouteCase,
   container: Awaited<ReturnType<typeof import("@/container").createContainer>>,
 ): Promise<ReleaseProviderSignoffRoute> {
   const startedAt = Date.now();
   const language =
-    fixture.lane === "anime"
+    routeCase.lane === "anime"
       ? container.config.animeLanguageProfile
-      : fixture.lane === "movie"
+      : routeCase.lane === "movie"
         ? container.config.movieLanguageProfile
         : container.config.seriesLanguageProfile;
 
@@ -122,14 +97,26 @@ async function resolveRoute(
   let streamHeaders: Record<string, string> | undefined;
 
   try {
+    // The anime lane must prove the configured default can FIND the title
+    // itself. A zero-result search throws here and is classified as drift,
+    // without any engine resolve happening.
+    const title =
+      routeCase.lane === "anime"
+        ? await resolveReleaseAnimeSearchTitle(
+            routeCase,
+            requireProvider(container, routeCase.configuredProvider),
+            language,
+          )
+        : routeCase.title;
+
     const resolved = await resolveProviderSmokeStream({
       container,
-      providerId: fixture.configuredProvider,
-      mode: fixture.mode,
+      providerId: routeCase.configuredProvider,
+      mode: routeCase.mode,
       request: {
-        title: fixture.title,
-        ...(fixture.season !== undefined && fixture.episode !== undefined
-          ? { episode: { season: fixture.season, episode: fixture.episode } }
+        title,
+        ...(routeCase.season !== undefined && routeCase.episode !== undefined
+          ? { episode: { season: routeCase.season, episode: routeCase.episode } }
           : {}),
         audioPreference: language.audio,
         subtitlePreference: language.subtitle,
@@ -144,7 +131,7 @@ async function resolveRoute(
       resolved.stream?.url !== undefined && resolved.stream.url !== null
         ? (resolved.result.providerId ??
           resolved.result.trace.selectedProviderId ??
-          fixture.configuredProvider)
+          routeCase.configuredProvider)
         : null;
   } catch (error) {
     resolveError = error;
@@ -174,8 +161,8 @@ async function resolveRoute(
         : null;
 
   return {
-    lane: fixture.lane,
-    configuredProvider: fixture.configuredProvider,
+    lane: routeCase.lane,
+    configuredProvider: routeCase.configuredProvider,
     successfulProvider,
     resolved,
     streamCandidates,
@@ -202,9 +189,19 @@ if (process.env.KUNAI_LIVE_RELEASE_SIGNOFF !== "1") {
   const { createContainer } = await import("@/container");
   const container = await createContainer({ debug: true });
 
+  // Derive the cases from what the product actually defaults to, and prove each
+  // configured default is a registered production module before any network work.
+  const cases = buildReleaseProviderRouteCases(
+    {
+      provider: container.config.provider,
+      animeProvider: container.config.animeProvider,
+    },
+    container.engine.getProviderIds(),
+  );
+
   const routes: ReleaseProviderSignoffRoute[] = [];
-  for (const fixture of DEFAULT_ROUTES) {
-    routes.push(await resolveRoute(fixture, container));
+  for (const routeCase of cases) {
+    routes.push(await resolveRoute(routeCase, container));
   }
 
   const signoff = buildReleaseProviderSignoff({
@@ -215,7 +212,11 @@ if (process.env.KUNAI_LIVE_RELEASE_SIGNOFF !== "1") {
   });
 
   const ok = signoff.routes.every(
-    (route) => route.resolved && route.streamReachable === true && route.failureClass === null,
+    (route) =>
+      route.resolved &&
+      route.streamReachable === true &&
+      route.failureClass === null &&
+      route.successfulProvider === route.configuredProvider,
   );
 
   const report = {

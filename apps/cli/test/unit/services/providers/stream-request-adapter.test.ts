@@ -294,3 +294,28 @@ test("western series stays untouched by dual-lane adaptation", () => {
   expect(input.mediaKind).toBe("series");
   expect(input.title.id).toBe("1396");
 });
+
+test("preserves absoluteEpisode for anime provider resolution", () => {
+  const input = streamRequestToResolveInput(
+    {
+      title: {
+        id: "151807",
+        type: "series",
+        name: "Solo Leveling",
+        isAnime: true,
+        externalIds: { anilistId: "151807" },
+      },
+      episode: { season: 2, episode: 1, absoluteEpisode: 13 },
+      audioPreference: "original",
+      subtitlePreference: "en",
+    },
+    "anime",
+    "play",
+    "provider-native",
+    "anidb",
+  );
+
+  expect(input.episode).toEqual({ season: 2, episode: 1, absoluteEpisode: 13 });
+  expect(input.title.id).toBe("151807");
+  expect(input.title.anilistId).toBe("151807");
+});

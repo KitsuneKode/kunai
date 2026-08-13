@@ -5,6 +5,7 @@ import type { Container } from "@/container";
 import type { SearchResult, TitleInfo } from "@/domain/types";
 import type { StreamRequest } from "@/services/providers/Provider";
 import { streamRequestToResolveInput } from "@/services/providers/stream-request-adapter";
+import { resolveProviderCatalogIdentity } from "@kunai/core";
 import type { searchAllManga } from "@kunai/providers";
 import type { ProviderResolveInput } from "@kunai/types";
 
@@ -14,7 +15,11 @@ export async function handoffAniListSearchPick(
   options: {
     readonly discovery: SearchResult;
     readonly providerId: string;
-    readonly episode?: number;
+    readonly episode?: {
+      readonly season: number;
+      readonly episode: number;
+      readonly absoluteEpisode?: number;
+    };
     readonly searchProviderNative?: typeof searchAllManga;
     readonly signal?: AbortSignal;
   },
@@ -40,15 +45,28 @@ export async function handoffAniListSearchPick(
 
   const request: StreamRequest = {
     title,
-    episode: { season: 1, episode: options.episode ?? 1 },
+    episode: options.episode ?? { season: 1, episode: 1 },
     audioPreference: container.config.animeLanguageProfile.audio,
     subtitlePreference: container.config.animeLanguageProfile.subtitle,
   };
+
+  // Mirror production: resolve input carries the selected provider's manifest
+  // catalog identity and provider id, not an untyped default.
+  const manifest = container.providerRegistry.getManifest(options.providerId);
+  if (!manifest) {
+    throw new Error(`Missing provider manifest: ${options.providerId}`);
+  }
 
   return {
     mapped,
     title,
     request,
-    resolveInput: streamRequestToResolveInput(request, "anime"),
+    resolveInput: streamRequestToResolveInput(
+      request,
+      "anime",
+      "play",
+      resolveProviderCatalogIdentity(manifest),
+      options.providerId,
+    ),
   };
 }

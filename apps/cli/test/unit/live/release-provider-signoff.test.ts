@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import { DEFAULT_CONFIG } from "@kunai/config";
+
+import {
+  buildReleaseProviderRouteCases,
+  resolveReleaseAnimeSearchTitle,
+} from "../../live/release-provider-routes";
 import {
   assertReleaseProviderSignoffComplete,
   assertReleaseProviderSignoffRedacted,
@@ -41,8 +47,8 @@ function baseRoutes(
   };
   const anime: ReleaseProviderSignoffRoute = {
     lane: "anime",
-    configuredProvider: "allanime",
-    successfulProvider: "allanime",
+    configuredProvider: "anidb",
+    successfulProvider: "anidb",
     resolved: true,
     streamCandidates: 1,
     streamReachable: true,
@@ -206,5 +212,92 @@ describe("release provider signoff", () => {
         harness: true,
       }),
     ).toBe("harness-failure");
+  });
+});
+
+describe("release provider route derivation", () => {
+  test("derives signoff providers from production defaults", () => {
+    const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, ["videasy", "anidb", "youtube"]);
+    expect(cases.map((route) => [route.lane, route.configuredProvider])).toEqual([
+      ["movie", "videasy"],
+      ["series", "videasy"],
+      ["anime", "anidb"],
+    ]);
+  });
+
+  test("rejects a configured default missing from production registration", () => {
+    expect(() =>
+      buildReleaseProviderRouteCases({ provider: "videasy", animeProvider: "anidb" }, ["videasy"]),
+    ).toThrow("Configured anime release provider is not registered: anidb");
+  });
+
+  test("rejects a configured series default missing from production registration", () => {
+    expect(() =>
+      buildReleaseProviderRouteCases({ provider: "videasy", animeProvider: "anidb" }, ["anidb"]),
+    ).toThrow("Configured series release provider is not registered: videasy");
+  });
+
+  test("default anime search returning zero is provider drift", async () => {
+    await expect(
+      resolveReleaseAnimeSearchTitle(
+        {
+          lane: "anime",
+          configuredProvider: "anidb",
+          mode: "anime",
+          searchQuery: "Onigiri",
+          expectedTitle: "Onigiri",
+          season: 1,
+          episode: 1,
+        },
+        { search: async () => [] } as never,
+        { audio: "original", subtitle: "en" },
+      ),
+    ).rejects.toThrow('Default anime provider "anidb" search returned zero results for "Onigiri"');
+  });
+
+  test("default anime search selects the provider's own native result", async () => {
+    const title = await resolveReleaseAnimeSearchTitle(
+      {
+        lane: "anime",
+        configuredProvider: "anidb",
+        mode: "anime",
+        searchQuery: "Onigiri",
+        expectedTitle: "Onigiri",
+        season: 1,
+        episode: 1,
+      },
+      {
+        search: async () => [
+          { id: "other-1", type: "series", title: "Onigiri Tabetai" },
+          {
+            id: "onigiri-3942",
+            type: "series",
+            title: "Onigiri",
+            externalIds: { providerNativeIds: { anidb: "onigiri-3942" } },
+          },
+        ],
+      } as never,
+      { audio: "original", subtitle: "en" },
+    );
+
+    expect(title.id).toBe("onigiri-3942");
+    expect(title.externalIds?.providerNativeIds?.anidb).toBe("onigiri-3942");
+  });
+
+  test("release evidence is unacceptable when a different provider succeeds", () => {
+    const signoff = buildReleaseProviderSignoff({
+      generatedAt: "2026-08-11T12:00:00.000Z",
+      commitSha: "abc123",
+      version: "0.3.0",
+      routes: baseRoutes({
+        anime: {
+          configuredProvider: "anidb",
+          successfulProvider: "allanime",
+        },
+      }),
+    });
+    expect(
+      isReleaseProviderSignoffAcceptable(signoff, Date.parse("2026-08-11T13:00:00.000Z")),
+    ).toBe(false);
   });
 });

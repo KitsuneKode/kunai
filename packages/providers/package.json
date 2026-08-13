@@ -21,7 +21,8 @@
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test"
+    "test": "bun test test",
+    "test:file": "bun test"
   },
   "dependencies": {
     "@assemblyscript/loader": "catalog:providers",

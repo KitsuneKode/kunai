@@ -48,7 +48,7 @@ LAUNCH
   -S, --search <query>       Search for a title on launch
   -i, --id <id>              Open a specific title id
   -t, --type <movie|tv>      Content type for --id (tv = series)
-  -a, --anime                Anime mode (AllAnime providers)
+  -a, --anime                Anime mode (AniDB default with provider fallback)
   -y, --youtube              YouTube mode (YouTube provider)
       --continue, --resume   Jump into Continue Watching
       --history              Open watch history

@@ -27,49 +27,61 @@ import { selectReadyStream } from "../shared/startup-selection";
 import {
   ANIDB_REFERER,
   ANIDB_USER_AGENT,
+  anidbNumericId,
+  chooseAnidbSearchMatch,
   fetchAnidbEpisodes,
   fetchAnidbMalId,
   looksLikeAnidbShowId,
+  parseAnidbSeasonEvidence,
   resolveAnidbEpisodeStreams,
   searchAnidb,
+  type AnidbSearchResult,
   type AnidbStreamLink,
 } from "./client";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "./manifest";
+import { routeAnidbSeason } from "./season-routing";
 
 export { ANIDB_PROVIDER_ID };
 export {
   anidbNumericId,
+  chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
   looksLikeAnidbShowId,
+  parseAnidbBrowseHtml,
+  parseAnidbSeasonEvidence,
+  anidbCipherArgs,
+  resolveAnidbCurl,
   searchAnidb,
+  type AnidbSearchResult,
+  type AnidbSeasonEvidence,
 } from "./client";
 
-function resolveAnidbShowIdFromInput(input: {
-  readonly title: {
-    readonly id: string;
-    readonly title?: string;
-    readonly externalIds?: {
-      readonly providerNativeIds?: Record<string, string | undefined>;
-    };
-  };
-}): string | null {
+function directAnidbShowFromInput(input: {
+  readonly title: ProviderResolveInput["title"];
+}): AnidbSearchResult | null {
   const native = input.title.externalIds?.providerNativeIds?.[ANIDB_PROVIDER_ID];
-  if (looksLikeAnidbShowId(native)) return native;
-  if (looksLikeAnidbShowId(input.title.id)) return input.title.id;
-  return null;
+  const id = looksLikeAnidbShowId(native)
+    ? native
+    : looksLikeAnidbShowId(input.title.id)
+      ? input.title.id
+      : null;
+  if (!id) return null;
+  const numericId = anidbNumericId(id);
+  if (numericId === null) return null;
+  const title = input.title.title || id;
+  return { id, title, numericId, seasonEvidence: parseAnidbSeasonEvidence(title) };
 }
 
-async function resolveAnidbShowId(
+async function resolveAnidbShow(
   input: { readonly title: ProviderResolveInput["title"] },
   signal?: AbortSignal,
-): Promise<string | null> {
-  const direct = resolveAnidbShowIdFromInput(input);
+): Promise<AnidbSearchResult | null> {
+  const direct = directAnidbShowFromInput(input);
   if (direct) return direct;
 
   const query = input.title.title?.trim() ?? "";
   if (!query) return null;
-  const results = await searchAnidb(query, signal);
-  return results[0]?.id ?? null;
+  return chooseAnidbSearchMatch(query, await searchAnidb(query, signal));
 }
 
 function buildStreamHeaders(referer: string): Record<string, string> {
@@ -217,7 +229,7 @@ export const anidbProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context) {
-    const showId = await resolveAnidbShowId(input, context.signal);
+    const showId = (await resolveAnidbShow(input, context.signal))?.id;
     if (!showId) return null;
     const episodes = await fetchAnidbEpisodes(showId, context.signal);
     if (episodes.length === 0) return [];
@@ -251,15 +263,31 @@ export const anidbProviderModule: CoreProviderModule = {
       });
     }
 
-    const showId = await resolveAnidbShowId(input, context.signal);
-    if (!showId) {
+    const baseShow = await resolveAnidbShow(input, context.signal);
+    if (!baseShow) {
       return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
         code: "unsupported-title",
-        message: "AniDB requires a provider-native show id or searchable title",
+        message: "AniDB requires a validated provider-native show id or searchable title",
         retryable: false,
       });
     }
 
+    const route = await routeAnidbSeason({
+      base: baseShow,
+      episode: input.episode,
+      search: searchAnidb,
+      episodes: fetchAnidbEpisodes,
+      signal: context.signal,
+    });
+    if (!route) {
+      return createExhaustedResult(input, context, ANIDB_PROVIDER_ID, {
+        code: "not-found",
+        message: `No unambiguous AniDB season route for ${baseShow.id} season ${input.episode?.season ?? 1}`,
+        retryable: false,
+      });
+    }
+
+    const showId = route.routedShowId;
     const startedAt = context.now();
     const events: ProviderTraceEvent[] = [];
     const failures: ProviderFailure[] = [];
@@ -281,7 +309,20 @@ export const anidbProviderModule: CoreProviderModule = {
     const audioMode = resolveAnimeAudioIntent(
       input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
     ).catalogMode;
-    const episodeNumber = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
+    // Numbering is decided by routeAnidbSeason, which only uses absoluteEpisode
+    // when the routed title's own episode catalog confirms it.
+    const episodeNumber = route.episodeNumber;
+    const routeAttributes: Record<string, string | number | boolean | null> = {
+      requestedSeason: route.requestedSeason,
+      baseShowId: route.baseShowId,
+      routedShowId: route.routedShowId,
+      routeEvidence: route.evidence.kind,
+      numberingEvidence: route.numberingEvidence.kind,
+      numberingEvidenceReason:
+        route.numberingEvidence.kind === "cour" ? route.numberingEvidence.reason : null,
+      episodeNumber: route.episodeNumber,
+      usedAbsoluteEpisode: route.usedAbsoluteEpisode,
+    };
 
     try {
       const links = await resolveAnidbEpisodeStreams({
@@ -319,7 +360,7 @@ export const anidbProviderModule: CoreProviderModule = {
         type: "provider:success",
         providerId: ANIDB_PROVIDER_ID,
         message: `Resolved ${streams.length} AniDB stream(s)`,
-        attributes: { sourceId, showId, episodeNumber: String(episodeNumber) },
+        attributes: { sourceId, showId, ...routeAttributes },
       });
 
       return {
@@ -347,6 +388,10 @@ export const anidbProviderModule: CoreProviderModule = {
           startedAt,
           endedAt,
           steps: [
+            createTraceStep("provider", "Routed AniDB season identity", {
+              providerId: ANIDB_PROVIDER_ID,
+              attributes: routeAttributes,
+            }),
             createTraceStep("provider", "Resolved AniDB HLS ladder", {
               providerId: ANIDB_PROVIDER_ID,
               attributes: { streams: streams.length, showId },
