@@ -191,13 +191,12 @@ function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
   };
 }
 
-function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
-  // Only permanent route removal is route-dead. Many speedracelight servers
-  // return HTTP 500 "No streams available" for a single title while staying
-  // healthy for others — do not quarantine the whole endpoint on 500.
-  if (statusCode === 404 || statusCode === 410) return "route-dead";
-  if (statusCode >= 500) return "transient";
-  return "transient";
+export function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
+  // Only permanent route removal is route-dead. Everything else — 500 included —
+  // is transient: many speedracelight servers return HTTP 500 "No streams
+  // available" for a single title while staying healthy for every other title,
+  // so quarantining the endpoint on a 500 would take a working route offline.
+  return statusCode === 404 || statusCode === 410 ? "route-dead" : "transient";
 }
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
