@@ -45,7 +45,7 @@ export function resolvePosterUrl(
   url: string,
   { cols = 18, variant = "preview" }: { cols?: number; variant?: "preview" | "detail" } = {},
 ): string {
-  if (isLocalImagePath(url)) return url.startsWith("file://") ? url.slice("file://".length) : url;
+  if (isLocalImagePath(url)) return localPathFromImageRef(url);
   const resolved = resolveCatalogPosterUrl(url, { tmdbSize: getTmdbSize(cols, variant) });
   return resolved ?? url;
 }
@@ -188,7 +188,35 @@ export async function fetchPosterSource(
   }
 }
 
-function isLocalImagePath(url: string): boolean {
+/**
+ * Whether this poster reference is a path on disk rather than a URL to fetch.
+ *
+ * Windows shapes are load-bearing, not defensive: a downloaded thumbnail is a
+ * `C:\\...` path there, and treating it as remote sent it to `fetch()`, which
+ * failed silently and left every local poster blank on Windows.
+ */
+export function isLocalImagePath(url: string): boolean {
   if (url.startsWith("file://")) return true;
-  return url.startsWith("/") && url.slice(1).includes("/");
+  // A protocol-relative URL is not a path, and it would otherwise satisfy the
+  // POSIX test below.
+  if (url.startsWith("//")) return false;
+  // POSIX absolute path with at least one further segment. A single segment is a
+  // TMDB-relative reference ("/x.jpg"), not a local file.
+  if (url.startsWith("/") && url.slice(1).includes("/")) return true;
+  // Windows drive-absolute, either separator: C:\foo or C:/foo.
+  if (/^[a-zA-Z]:[\\/]/.test(url)) return true;
+  // Windows UNC share: \\server\share.
+  return url.startsWith("\\\\");
+}
+
+/**
+ * Strip a `file://` prefix down to a filesystem path.
+ *
+ * A well-formed Windows file URL is `file:///C:/x`, so removing the scheme
+ * leaves a leading slash that Windows cannot open — `/C:/x` is not a path.
+ */
+export function localPathFromImageRef(url: string): string {
+  if (!url.startsWith("file://")) return url;
+  const withoutScheme = url.slice("file://".length);
+  return /^\/[a-zA-Z]:/.test(withoutScheme) ? withoutScheme.slice(1) : withoutScheme;
 }

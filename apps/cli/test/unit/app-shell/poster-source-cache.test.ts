@@ -6,6 +6,8 @@ import { join } from "node:path";
 import {
   clearPosterSourceCache,
   fetchPosterSource,
+  isLocalImagePath,
+  localPathFromImageRef,
   resolvePosterUrl,
 } from "@/app-shell/poster-source-cache";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
@@ -289,5 +291,45 @@ describe("resolvePosterUrl — geometry policy", () => {
         expect(resolvePosterUrl("/poster.jpg", { cols, variant })).not.toContain("original");
       }
     }
+  });
+});
+
+describe("local path recognition is platform-shaped, not POSIX-only", () => {
+  // Asserted as pure string logic so every platform runs every case. These were
+  // only caught by Windows CI before, and the failure was silent: a Windows
+  // thumbnail path fell through to fetch() and every local poster came back blank.
+  test.each([
+    ["POSIX absolute", "/home/u/.local/share/kunai/downloads/x.jpg"],
+    ["Windows drive backslash", "C:\\Users\\u\\AppData\\Local\\kunai\\x.jpg"],
+    ["Windows drive forward slash", "C:/Users/u/kunai/x.jpg"],
+    ["Windows lowercase drive", "d:\\media\\x.jpg"],
+    ["Windows UNC share", "\\\\server\\share\\x.jpg"],
+    ["file URL", "file:///home/u/x.jpg"],
+    ["Windows file URL", "file:///C:/Users/u/x.jpg"],
+  ])("treats a %s as local", (_label, path) => {
+    expect(isLocalImagePath(path)).toBe(true);
+  });
+
+  test.each([
+    ["https URL", "https://image.tmdb.org/t/p/w342/x.jpg"],
+    ["TMDB relative path", "/x.jpg"],
+    ["bare filename", "x.jpg"],
+    ["protocol-relative URL", "//cdn.example.test/x.jpg"],
+  ])("does not treat a %s as local", (_label, path) => {
+    expect(isLocalImagePath(path)).toBe(false);
+  });
+
+  test("strips the scheme from a Windows file URL down to an openable path", () => {
+    // "/C:/Users/x" is not a path Windows can open, so the leading slash a
+    // well-formed file URL carries has to go.
+    expect(localPathFromImageRef("file:///C:/Users/u/x.jpg")).toBe("C:/Users/u/x.jpg");
+    expect(localPathFromImageRef("file:///home/u/x.jpg")).toBe("/home/u/x.jpg");
+    expect(localPathFromImageRef("/home/u/x.jpg")).toBe("/home/u/x.jpg");
+  });
+
+  test("resolvePosterUrl leaves a Windows path alone instead of treating it as TMDB", () => {
+    const windowsPath = "C:\\Users\\u\\kunai\\downloads\\poster.jpg";
+
+    expect(resolvePosterUrl(windowsPath, { cols: 18 })).toBe(windowsPath);
   });
 });
