@@ -50,6 +50,14 @@ are skipped to avoid unnecessary Discord IPC churn.
 
 Kunai no longer replaces finished playback with a generic "Browsing Kunai" activity.
 
+Presence follows the session's accepted current status rather than raw player
+events. Each update carries the playback generation that produced it, and an
+update from a superseded process or cycle is dropped instead of sent — a late
+event from a replaced or stopped session cannot repaint presence with the
+previous title. Presence therefore agrees with the header, loading shell, and
+diagnostics by construction, because all four read the same authoritative
+status.
+
 ## Binge session indicator
 
 Discord exposes only one timestamp pair per activity, so episode progress and a separate session
