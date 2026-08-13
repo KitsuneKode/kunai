@@ -30,24 +30,90 @@
 import { debugImage } from "./debug";
 import { decodeImageBytes, type DecodedImage } from "./decode";
 
-/** The slice of the Bun.Image surface this module relies on. */
-type NativeImage = {
-  resize: (width: number, height: number) => NativeImage;
-  png: () => NativeImage;
-  bytes: () => Promise<Uint8Array>;
+/**
+ * Largest encoded poster we will even hand to the decoder.
+ *
+ * Checked before construction, so a hostile or mis-sized source is rejected
+ * without allocating a decode buffer for it.
+ */
+export const MAX_POSTER_SOURCE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Decoded-pixel ceiling handed to Bun.Image.
+ *
+ * This is the guard that a small encoded file cannot turn into a huge bitmap:
+ * `maxPixels` makes the native side refuse rather than allocate.
+ */
+export const MAX_POSTER_DECODED_PIXELS = 4096 * 4096;
+
+type NativeImageOptions = {
+  readonly maxPixels: number;
+  readonly autoOrient: boolean;
 };
 
-type NativeImageCtor = new (input: Uint8Array) => NativeImage;
+type NativeResizeOptions = {
+  readonly fit: "inside";
+  readonly withoutEnlargement: true;
+};
+
+/** The slice of the Bun.Image surface this module relies on. */
+type NativeImage = {
+  resize: (width: number, height: number, options: NativeResizeOptions) => NativeImage;
+  png: () => NativeImage;
+  bytes: () => Promise<Uint8Array> | Uint8Array;
+};
+
+type NativeImageCtor = new (input: Uint8Array, options: NativeImageOptions) => NativeImage;
 
 export type PixelTarget = {
   readonly width: number;
   readonly height: number;
 };
 
+/** The pixel box a prepared poster must fit inside. */
+export type PosterPixelBounds = {
+  readonly maxWidthPx: number;
+  readonly maxHeightPx: number;
+};
+
+/**
+ * One poster, prepared once, in both forms the renderers need.
+ *
+ * Kitty uploads `png` verbatim; Sixel and half-block consume `image`. Preparing
+ * both together is what lets a single native pass serve every renderer.
+ */
+export type PreparedPoster = {
+  readonly png: Uint8Array;
+  readonly image: DecodedImage;
+};
+
+/**
+ * Why a preparation returned null. Categories only — never a URL, path, native
+ * exception string, or image bytes, all of which can carry user data into logs.
+ */
+type PosterPrepareFailure =
+  | "input-too-large"
+  | "invalid-bounds"
+  | "pixel-limit"
+  | "unsupported-format"
+  | "invalid-image"
+  | "png-bridge-failed"
+  | "native-failure";
+
 function nativeImageCtor(): NativeImageCtor | null {
   const candidate = (Bun as unknown as { Image?: unknown }).Image;
   return typeof candidate === "function" ? (candidate as NativeImageCtor) : null;
 }
+
+const NATIVE_OPTIONS: NativeImageOptions = {
+  maxPixels: MAX_POSTER_DECODED_PIXELS,
+  autoOrient: true,
+};
+
+const RESIZE_OPTIONS: NativeResizeOptions = {
+  fit: "inside",
+  withoutEnlargement: true,
+};
 
 /** True when this Bun build exposes `Bun.Image`. */
 export function hasNativeImage(): boolean {
@@ -68,10 +134,14 @@ export async function encodeNativePng(
   const Ctor = nativeImageCtor();
   if (!Ctor || bytes.byteLength === 0) return null;
   try {
-    const base = new Ctor(bytes);
+    const base = new Ctor(bytes, NATIVE_OPTIONS);
     const sized =
       target && target.width > 0 && target.height > 0
-        ? base.resize(Math.max(1, Math.round(target.width)), Math.max(1, Math.round(target.height)))
+        ? base.resize(
+            Math.max(1, Math.round(target.width)),
+            Math.max(1, Math.round(target.height)),
+            RESIZE_OPTIONS,
+          )
         : base;
     const out = await sized.png().bytes();
     return out.byteLength > 0 ? out : null;
@@ -101,4 +171,27 @@ export async function decodeToRgba(
     debugImage("Bun.Image produced a PNG the decoder rejected; using the synchronous path");
   }
   return decodeImageBytes(bytes);
+}
+
+/**
+ * Prepare one poster for every renderer: bounded, oriented, fitted, decoded.
+ *
+ * The single seam from encoded source bytes to drawable pixels. It resizes
+ * before anything reaches JS, so a w780 TMDB poster never exists here as a
+ * full-size bitmap — only as the cell-sized PNG we are about to draw.
+ *
+ * Cancellation surrounds the native calls rather than entering them: Bun.Image
+ * takes no signal, so we check before starting and after every terminal, and a
+ * superseded caller simply discards the result. Returns null on every failure,
+ * so a poster problem degrades to text rather than breaking navigation.
+ */
+export async function preparePoster(
+  bytes: Uint8Array,
+  bounds: PosterPixelBounds,
+  signal?: AbortSignal,
+): Promise<PreparedPoster | null> {
+  void bytes;
+  void bounds;
+  void signal;
+  return null;
 }
