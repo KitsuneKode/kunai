@@ -103,6 +103,24 @@ const emptySummary = (pending: number): SyncPushSummary => ({
   failures: [],
 });
 
+/**
+ * Whether the user's per-tracker settings permit this kind of write.
+ *
+ * `trackWatched` and `syncList` were declared on the config port and read by
+ * nothing — settings could toggle them and delivery carried on regardless,
+ * which is the silent no-op this repo gates against. They are checked here,
+ * beside `enabled`, against the same freshly-read config.
+ */
+function allowedByConfig(operation: TrackerOperation, gate: SyncConfigGate): boolean {
+  switch (operation.kind) {
+    case "progress:set":
+      return gate.trackWatched;
+    case "list-membership:set":
+    case "favorite-membership:set":
+      return gate.syncList;
+  }
+}
+
 /** Which capability an operation needs, so gating reads one declaration. */
 function requiredCapability(operation: TrackerOperation): keyof SyncCapabilities {
   switch (operation.kind) {
@@ -381,7 +399,7 @@ export class SyncService {
     // Re-read config here, immediately before the external call, so disabling a
     // tracker stops the very next write instead of the next session.
     const gate = (await this.config.read()).sync[adapter.id];
-    if (!gate?.enabled) {
+    if (!gate?.enabled || !allowedByConfig(operation, gate)) {
       this.outbox.release(claim);
       return { transition: "applied", bucket: "released" };
     }

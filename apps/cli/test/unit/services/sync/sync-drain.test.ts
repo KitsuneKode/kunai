@@ -462,3 +462,77 @@ describe("SyncService pause", () => {
     expect(anilist.calls.length).toBe(1);
   });
 });
+
+/**
+ * `trackWatched` and `syncList` were declared on the config port and read by
+ * nothing: settings could toggle them and delivery carried on regardless.
+ */
+describe("SyncService per-kind config gates", () => {
+  const gated = (overrides: Partial<typeof enabled>) => ({
+    read: async () => {
+      const gate = { ...enabled, ...overrides };
+      return { sync: { pausedUntil: null, anilist: gate, tmdb: gate } };
+    },
+  });
+
+  test("holds progress when the tracker is not tracking watched episodes", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: gated({ trackWatched: false }),
+    });
+
+    service.enqueueOperation({
+      version: 1,
+      kind: "progress:set",
+      target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+      progress: 3,
+      status: "watching",
+    });
+    await service.drain();
+
+    expect(anilist.calls.length).toBe(0);
+    // Held, not dropped: re-enabling must deliver it rather than lose it.
+    expect(repo.counts().pending).toBe(1);
+  });
+
+  test("holds list and favourite writes when list sync is off", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: gated({ syncList: false }),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+
+    expect(anilist.calls.length).toBe(0);
+    expect(repo.counts().pending).toBe(1);
+  });
+
+  /** The gates are per kind, so one being off must not hold the other back. */
+  test("still delivers progress when only list sync is off", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: gated({ syncList: false }),
+    });
+
+    service.enqueueOperation({
+      version: 1,
+      kind: "progress:set",
+      target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+      progress: 3,
+      status: "watching",
+    });
+    await service.drain();
+
+    expect(anilist.calls.length).toBe(1);
+  });
+});

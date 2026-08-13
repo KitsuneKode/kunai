@@ -157,6 +157,14 @@ resolved `SyncAuthAvailability`, and a `SyncStatus` snapshot. It never reads
 internals; a unit test pins that. Controls are gated on declared capabilities,
 so "Send episode progress" is absent for TMDB rather than present and inert.
 
+There is no "Send watchlist and favourites" row yet. The adapters implement
+those writes and the drain honours `syncList`, but nothing in Kunai _produces_
+them: `enqueueListMembership` and `enqueueFavoriteMembership` have no callers
+and `ListsRepository` is not wired into the app. The row appears when a producer
+does. `trackWatched` and `syncList` are both checked in `deliver()` beside
+`enabled`, against the same freshly-read config; a write the settings forbid is
+released and stays queued rather than being dropped.
+
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while
 paused and goes out on resume, so pausing never costs an episode. The drain
