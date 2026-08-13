@@ -8,7 +8,7 @@ import {
   type KittyPayload,
 } from "@/image/kitty-transport";
 
-import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
+import { makeRgbPng } from "../../support/image-fixtures";
 
 const originalWriteFile = transportTesting.runtime.writeFile;
 const originalWrite = transportTesting.runtime.write;

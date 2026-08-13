@@ -111,11 +111,6 @@ type PosterPrepareFailure =
   | "png-bridge-failed"
   | "native-failure";
 
-/** True when this Bun build exposes `Bun.Image`. */
-export function hasNativeImage(): boolean {
-  return nativeImageCtor() !== null;
-}
-
 function reportPrepareFailure(category: PosterPrepareFailure): null {
   debugImage(`poster preparation failed: ${category}`);
   return null;

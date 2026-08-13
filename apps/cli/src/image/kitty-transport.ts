@@ -21,7 +21,6 @@ import { deflateSync } from "node:zlib";
 
 import { detectTerminal } from "./capability";
 import { debugImage } from "./debug";
-import { isPngBytes } from "./png";
 
 export type KittyPayload =
   | { readonly kind: "png"; readonly data: Uint8Array }

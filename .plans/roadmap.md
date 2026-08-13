@@ -44,6 +44,7 @@ lands; leftover polish becomes a row here, not a surviving plan file.
 | Sakura theme rollout        | Remaining surface slices after the token foundation   | [sakura-rollout.md](./sakura-rollout.md)                                               |
 | Loading shell               | Animation redesign + bug fix                          | [loading-shell-redesign.md](./loading-shell-redesign.md)                               |
 | Terminal image protocol     | Flicker hardening, `ink-shell` split                  | [ui-polish-and-image-protocol.md](./ui-polish-and-image-protocol.md)                   |
+| Poster protocol signoff     | Real-terminal and fallback release evidence           | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)               |
 | Sixel in Ink                | Windows Terminal framebuffer smoke                    | [sixel-in-ink.md](./sixel-in-ink.md)                                                   |
 | CLI UX overhaul             | Structural gaps behind the shipped product direction  | [cli-ux-overhaul.md](./cli-ux-overhaul.md)                                             |
 | Hybrid UI contract          | Contract stabilization                                | [hybrid-ui-contract-stabilization.md](./hybrid-ui-contract-stabilization.md)           |

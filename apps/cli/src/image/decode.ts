@@ -11,9 +11,6 @@
 
 import { inflateSync } from "node:zlib";
 
-import { debugImage } from "./debug";
-import { isPngBytes } from "./png";
-
 /** Straight (non-premultiplied) 8-bit RGBA, row-major, `width * height * 4` bytes. */
 export interface DecodedImage {
   readonly width: number;

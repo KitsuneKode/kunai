@@ -5,7 +5,6 @@ import {
   detectImageCapability,
   detectTerminal,
 } from "@/image/capability";
-import { isPngBytes } from "@/image/png";
 
 const originalFetch = globalThis.fetch;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
@@ -29,27 +28,6 @@ function mockBunWhich(result: string | null): () => void {
   capabilityTesting.runtime.which = (cmd: string) => (cmd === "chafa" ? result : Bun.which(cmd));
   return () => {
     capabilityTesting.runtime.which = originalWhich;
-  };
-}
-
-function setEnv(vars: Record<string, string | undefined>): () => void {
-  const previous: Record<string, string | undefined> = {};
-  for (const [key, value] of Object.entries(vars)) {
-    previous[key] = process.env[key];
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
-  }
-  return () => {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
   };
 }
 
