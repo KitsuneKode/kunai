@@ -77,6 +77,16 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       reason: "test sixel",
     };
   }
+  if (renderer === "iterm-inline") {
+    return {
+      terminal: "iterm2",
+      protocol: "iterm-inline",
+      renderer: "iterm-inline",
+      available: true,
+      dependency: "none",
+      reason: "test iterm inline",
+    };
+  }
   return {
     terminal: "unknown",
     protocol: "none",
@@ -300,5 +310,53 @@ describe("poster image helpers", () => {
 
   test("keeps image preview scoped to real terminal graphics protocols", () => {
     expect(isKittyCompatible({ TERM_PROGRAM: "xterm-256color" })).toBe(false);
+  });
+
+  test("an iTerm2 session renders a real inline image, not the text floor", async () => {
+    const png = makeRgbPng(
+      4,
+      4,
+      Array.from({ length: 48 }, (_, index) => (index * 11) % 256),
+    );
+    setFetchMock(async () => new Response(png, { status: 200 }));
+    paneTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+
+    const poster = await fetchPoster("/iterm.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+
+    // Carried as an overlay result, but the payload has to be the iTerm2
+    // protocol rather than sixel bytes -- that is the quality difference.
+    expect(poster.kind).toBe("sixel");
+    if (poster.kind === "sixel") {
+      expect(poster.sixel).toContain("]1337;File=");
+      expect(poster.sixel).toContain("width=8");
+      expect(poster.sixel).toContain("height=4");
+    }
+  });
+
+  test("an iTerm2 poster is memoized like any other overlay", async () => {
+    let fetchCalls = 0;
+    const png = makeRgbPng(
+      4,
+      4,
+      Array.from({ length: 48 }, (_, index) => (index * 11) % 256),
+    );
+    setFetchMock(async () => {
+      fetchCalls += 1;
+      return new Response(png, { status: 200 });
+    });
+    paneTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+
+    const first = await fetchPoster("/iterm-cache.jpg", { rows: 4, cols: 8 });
+    const revisited = await fetchPoster("/iterm-cache.jpg", { rows: 4, cols: 8 });
+
+    expect(first.kind).toBe("sixel");
+    expect(revisited).toBe(first);
+    expect(fetchCalls).toBe(1);
   });
 });

@@ -1,10 +1,17 @@
-export type ImageProtocol = "kitty" | "sixel" | "symbols" | "half-block" | "none";
+export type ImageProtocol = "kitty" | "iterm-inline" | "sixel" | "symbols" | "half-block" | "none";
 
-export type ImageRendererId = "kitty-native" | "sixel" | "chafa-symbols" | "half-block" | "none";
+export type ImageRendererId =
+  | "kitty-native"
+  | "iterm-inline"
+  | "sixel"
+  | "chafa-symbols"
+  | "half-block"
+  | "none";
 
 export type TerminalId =
   | "kitty"
   | "ghostty"
+  | "iterm2"
   | "windows-terminal"
   | "wezterm"
   | "konsole"

@@ -15,6 +15,7 @@ import {
 } from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
+import { buildItermInlineImage } from "@/image/renderers/iterm-inline";
 import { pixelBudgetForCells } from "@/image/renderers/sixel";
 import { renderSixelFromBytes, renderSixelFromImage } from "@/image/sixel";
 
@@ -446,7 +447,7 @@ export async function renderPoster(
 // drawn. The renderers then consume the prepared poster: Kitty takes the PNG,
 // Sixel and half-block take the decoded RGBA. Nothing here re-decodes.
 
-export type PosterRenderer = "kitty-native" | "sixel" | "half-block";
+export type PosterRenderer = "kitty-native" | "iterm-inline" | "sixel" | "half-block";
 
 export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
@@ -507,6 +508,16 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
       bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
     };
   }
+  // Gated on allowSixel for the same reason sixel is: both are measured
+  // overlays written outside Ink's frame, so a surface that repaints constantly
+  // suppresses them together.
+  if (capability.renderer === "iterm-inline" && allowSixel) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "iterm-inline",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
   if (capability.renderer === "sixel" && allowSixel) {
     const budget = pixelBudgetForCells(cols, rows);
     return {
@@ -539,6 +550,19 @@ export async function renderPreparedPoster(
     if (signal?.aborted) return { kind: "none" };
     if (plan.renderer === "kitty-native") {
       return await uploadPreparedKitty(poster, rows, cols, signal);
+    }
+    if (plan.renderer === "iterm-inline") {
+      const escapes = buildItermInlineImage(poster.png, { rows, cols });
+      if (!escapes) return { kind: "none" };
+      // Carried as a sixel result because it is the same kind of thing: escape
+      // bytes the overlay manager writes at a measured rect, erased the same way.
+      return {
+        kind: "sixel",
+        sixel: escapes,
+        rows,
+        cols,
+        overlayId: placementSlot ?? `iterm-${allocId()}`,
+      };
     }
     if (plan.renderer === "sixel") {
       const sixel = renderSixelFromImage(poster.image, {
