@@ -138,6 +138,15 @@ Windows SQLite teardown), provisions native mpv so the real named-pipe IPC
 contract is mandatory, and runs the compiled Windows binary through the plain
 Node npm launcher with Bun absent from the child PATH.
 
+Native mpv provisioning is owned by
+`.github/scripts/provision-windows-mpv.ps1`. CI downloads a pinned official mpv
+Windows archive directly, retries transient transfer failures, verifies its
+checked-in SHA-256 before extraction, then executes `mpv --version`. Do not
+replace this with an unpinned Chocolatey or Scoop install: package-manager feed
+availability is not part of Kunai's Windows parity contract. When upgrading mpv,
+update the version, release URL, and digest together and keep the provisioning
+contract test green.
+
 Closed: the parity leg now builds a Windows host binary and smoke-tests
 `--version` / `--help` through the same Node launcher npm users execute. That
 gap had shipped a `kunai.exe` which exited 0

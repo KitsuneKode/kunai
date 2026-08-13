@@ -105,6 +105,7 @@ jobs:
               - 'README.md'
               - 'packages/**'
               - 'package.json'
+              - '.github/scripts/provision-windows-mpv.ps1'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/installer-matrix.yml'
@@ -228,11 +229,7 @@ jobs:
       - name: Provision native mpv
         shell: pwsh
         timeout-minutes: 8
-        run: |
-          choco install mpvio --yes --no-progress
-          $mpv = (Get-Command mpv.exe -ErrorAction Stop).Source
-          & $mpv --version
-          if ($LASTEXITCODE -ne 0) { throw "mpv --version exited $LASTEXITCODE" }
+        run: ./.github/scripts/provision-windows-mpv.ps1
 
       - name: Typecheck workspaces
         run: bun run typecheck
