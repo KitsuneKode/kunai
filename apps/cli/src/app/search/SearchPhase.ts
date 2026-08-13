@@ -124,10 +124,26 @@ export function searchResultsHaveCachedTitleAliases(
 
 export { describeSearchResultAvailability };
 
+type SearchPhaseDependencies = {
+  readonly searchTitles: typeof searchTitles;
+  readonly openBrowseShell: (
+    input: Parameters<typeof openBrowseShell<SearchResult>>[0],
+  ) => ReturnType<typeof openBrowseShell<SearchResult>>;
+};
+
+const DEFAULT_SEARCH_PHASE_DEPENDENCIES: SearchPhaseDependencies = {
+  searchTitles,
+  openBrowseShell,
+};
+
 export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
   name = "search";
   private hasQueuedStartupReleaseReconciliation = false;
   private hasHealedHistoryMetadata = false;
+
+  constructor(
+    private readonly dependencies: SearchPhaseDependencies = DEFAULT_SEARCH_PHASE_DEPENDENCIES,
+  ) {}
 
   private readLocalBrowseHistory(context: PhaseContext): Record<string, HistoryProgress> {
     const { container } = context;
@@ -340,7 +356,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           let search: Awaited<ReturnType<typeof searchTitles>>;
           try {
             search = await observeOnline(container, "search-error", () =>
-              searchTitles(searchIntent.intent, {
+              this.dependencies.searchTitles(searchIntent.intent, {
                 mode: stateManager.getState().mode,
                 providerId: currentState.provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
@@ -507,7 +523,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
 
-        const outcomePromise = openBrowseShell({
+        const outcomePromise = this.dependencies.openBrowseShell({
           mode: syncedState.mode,
           provider: syncedState.provider,
           settings: container.config.getRaw(),
@@ -670,7 +686,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             let search: Awaited<ReturnType<typeof searchTitles>>;
             try {
               search = await observeOnline(container, "search-error", () =>
-                searchTitles(searchIntent.intent, {
+                this.dependencies.searchTitles(searchIntent.intent, {
                   mode: stateManager.getState().mode,
                   providerId: stateManager.getState().provider,
                   animeLanguageProfile: container.config.animeLanguageProfile,
