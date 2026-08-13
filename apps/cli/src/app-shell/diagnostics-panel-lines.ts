@@ -119,6 +119,7 @@ function buildCurrentPlaybackLines(insight: DiagnosticsInsight): ShellPanelLine[
     { label: "Mode", detail: evidence.mode, tone: "neutral" },
     { label: "Provider", detail: evidence.provider, tone: "neutral" },
     { label: "Playback state", detail: evidence.playbackStatus, tone: "neutral" },
+    { label: "Playback generation", detail: evidence.playbackGeneration, tone: "neutral" },
     { label: "Source", detail: evidence.sourceState, tone: "neutral" },
     { label: "Cache", detail: evidence.cacheState, tone: "neutral" },
     { label: "Subtitles", detail: evidence.subtitleOutcome, tone: "neutral" },

@@ -66,6 +66,25 @@ export function isPlaybackSessionActive(status: PlaybackStatus): boolean {
   );
 }
 
+/**
+ * Narrower than {@link isPlaybackSessionActive}: the session not only exists, it
+ * has left bootstrap and mpv owns a stream. `loading` and `ready` are excluded
+ * precisely because they are the bootstrap states — surfaces that decide whether
+ * to keep showing a loading presentation must not treat them as started, or the
+ * loading shell reports itself as playing while it is still loading.
+ *
+ * `paused` counts: transport is not advancing, but bootstrap is over.
+ */
+export function isPlaybackTransportStarted(status: PlaybackStatus): boolean {
+  return (
+    status === "buffering" ||
+    status === "seeking" ||
+    status === "stalled" ||
+    status === "playing" ||
+    status === "paused"
+  );
+}
+
 export type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 export interface EpisodeNavigationState {

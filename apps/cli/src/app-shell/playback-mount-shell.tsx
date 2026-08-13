@@ -24,6 +24,7 @@ import {
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { SessionState } from "@/domain/session/SessionState";
+import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
@@ -277,12 +278,7 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
   const { state, handlers, canGoNext, canGoPrevious, canToggleAutoplay, canStopAfterCurrent } =
     input;
   useEffect(preloadTracksPanelModules, []);
-  const playbackIsActive =
-    state.playbackStatus === "ready" ||
-    state.playbackStatus === "buffering" ||
-    state.playbackStatus === "seeking" ||
-    state.playbackStatus === "stalled" ||
-    state.playbackStatus === "playing";
+  const playbackIsActive = isPlaybackSessionActive(state.playbackStatus);
   const [telemetrySnapshot, setTelemetrySnapshot] = useState<PlaybackTelemetrySnapshot | null>(
     null,
   );

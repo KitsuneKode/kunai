@@ -1,4 +1,5 @@
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
+import { formatPlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackProblemAction } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
@@ -63,6 +64,8 @@ export type DiagnosticsCurrentPlaybackEvidence = {
   readonly mode: string;
   readonly provider: string;
   readonly playbackStatus: string;
+  /** Formatted current generation, e.g. `process 4 · cycle 9`. */
+  readonly playbackGeneration: string;
   readonly sourceState: string;
   readonly cacheState: string;
   readonly subtitleOutcome: string;
@@ -576,6 +579,7 @@ function buildCurrentPlaybackEvidence(
     mode: state.mode,
     provider: state.provider,
     playbackStatus: state.playbackStatus,
+    playbackGeneration: formatPlaybackGeneration(state.playbackGeneration),
     sourceState: state.stream?.url ? "stream resolved" : "no stream yet",
     cacheState: cacheFallback
       ? "kept cached stream after fresh lookup failed"

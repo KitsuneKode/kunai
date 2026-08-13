@@ -2,7 +2,7 @@ import { isLocalPlaybackStream } from "@/domain/playback/local-playback-stream";
 import { getModeSwitchTarget } from "@/domain/session/mode-target";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
-import type { SessionState } from "./SessionState";
+import { isPlaybackSessionActive, type SessionState } from "./SessionState";
 
 export type AppCommandId =
   | "setup"
@@ -990,13 +990,7 @@ function resolveCommandState(
   );
   const hasResolvedStream = Boolean(state.stream?.url);
   const playbackCanRecover =
-    state.playbackStatus === "loading" ||
-    state.playbackStatus === "ready" ||
-    state.playbackStatus === "buffering" ||
-    state.playbackStatus === "seeking" ||
-    state.playbackStatus === "stalled" ||
-    state.playbackStatus === "playing" ||
-    state.playbackStatus === "error";
+    isPlaybackSessionActive(state.playbackStatus) || state.playbackStatus === "error";
 
   switch (id) {
     case "setup":

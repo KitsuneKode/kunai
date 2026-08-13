@@ -32,3 +32,8 @@ export function isPlaybackGenerationAfter(
   if (candidate.process !== current.process) return candidate.process > current.process;
   return candidate.cycle > current.cycle;
 }
+
+/** Human-readable form for diagnostics surfaces: `process 4 · cycle 9`. */
+export function formatPlaybackGeneration(generation: PlaybackGeneration): string {
+  return `process ${generation.process} · cycle ${generation.cycle}`;
+}

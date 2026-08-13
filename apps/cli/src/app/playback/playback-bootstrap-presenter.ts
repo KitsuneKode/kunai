@@ -1,4 +1,5 @@
 import type { LoadingShellStage, LoadingShellState } from "@/app-shell/types";
+import { isPlaybackTransportStarted, type PlaybackStatus } from "@/domain/session/SessionState";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import {
   formatStartupPhaseBreakdown,
@@ -118,16 +119,14 @@ function dominantPhaseLabelFromEvents(
 }
 
 export function buildPlaybackBootstrapPresentation(input: {
-  readonly playbackStatus: string;
+  readonly playbackStatus: PlaybackStatus;
   readonly playbackDetail?: string | null;
   readonly recentEvents: readonly DiagnosticEvent[];
 }): PlaybackBootstrapPresentation {
   const startupStage = latestPlaybackStartupStage(input.recentEvents);
-  const isActivePlayback =
-    input.playbackStatus === "playing" ||
-    input.playbackStatus === "buffering" ||
-    input.playbackStatus === "seeking" ||
-    input.playbackStatus === "stalled";
+  // Bootstrap-over, not session-exists: `loading` / `ready` must keep the
+  // loading presentation, so this cannot use isPlaybackSessionActive().
+  const isActivePlayback = isPlaybackTransportStarted(input.playbackStatus);
 
   const operation: LoadingShellState["operation"] = isActivePlayback
     ? "playing"
