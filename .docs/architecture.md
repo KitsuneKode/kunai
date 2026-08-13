@@ -160,12 +160,14 @@ Production resolution is browserless by default:
 
 `apps/cli/src/mpv.ts`:
 
-- launches `mpv` detached
-- binds the active one-shot control to the playback abort signal, so shutdown
-  stops the current player instead of waiting for the process-exit backstop
-- writes playback position through a Lua helper
-- polls the position file after exit
-- has a deadline to avoid hanging forever if `mpv` dies badly
+- launches and registers the owned `mpv` child for shutdown backstop cleanup
+- binds the active one-shot control to a playback generation and abort signal,
+  so shutdown stops the current player without clearing a replacement's control
+- connects Bun IPC and derives readiness, progress, EOF, tracks, and playback
+  start from observed player events
+- treats IPC bootstrap failure as an ownership failure: terminate and reap the
+  exact spawned child before provider fallback can create another player
+- keeps socket cleanup and final telemetry bounded after process exit
 
 This is part of the repo's reliability contract. Changes are fine, but recovery under kill signals, EOF, or expired stream URLs needs to remain solid.
 

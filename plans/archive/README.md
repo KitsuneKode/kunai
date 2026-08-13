@@ -9,7 +9,7 @@ commit that is now far behind, and its "Current state" excerpts describe code
 that has since changed.
 
 Archived so far: 001–005, 007, 009, 016–020, 024–029, 031, 033–042,
-044–045, plus the old 2026-07-22 handoff.
+044–045, 047, plus the old 2026-07-22 handoff.
 
 ## Notes worth carrying forward
 

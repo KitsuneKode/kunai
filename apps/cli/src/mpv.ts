@@ -8,6 +8,7 @@ import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc
 import {
   createMpvIpcEndpoint,
   ipcServerCliArg,
+  mpvIpcBootstrapDiagnosticsHintSuffix,
   mpvIpcTransportTag,
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
@@ -18,7 +19,12 @@ import {
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
-import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import {
+  registerMpvProcess,
+  terminateMpvProcess,
+  type MpvChildProcess,
+  type MpvTerminationResult,
+} from "@/infra/player/mpv-process-registry";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
@@ -294,10 +300,10 @@ async function launchMpvInner(
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
     const ready = await waitForMpvIpcEndpoint(ipcEndpoint, 5_000);
-    if (!ready) {
-      notifyPlayerReady();
-      return;
-    }
+    assertOneShotMpvIpcEndpointReady(
+      ready,
+      `IPC endpoint was not ready after ${Date.now() - ipcBootstrapStarted}ms at ${ipcServerCliArg(ipcEndpoint)}.${mpvIpcBootstrapDiagnosticsHintSuffix()}`,
+    );
 
     ipcSession = await openMpvIpcSession({
       endpoint: ipcEndpoint,
@@ -352,7 +358,7 @@ async function launchMpvInner(
       emitPlaybackEvent({ type: "subtitle-inventory-ready", trackCount });
       emitPlaybackEvent({ type: "subtitle-attached", trackCount });
     }
-  })().catch((err) => {
+  })().catch(async (err) => {
     dbg("mpv-ipc", "ipc-bootstrap-failed", {
       endpoint: ipcServerCliArg(ipcEndpoint),
       error: String(err),
@@ -362,6 +368,17 @@ async function launchMpvInner(
       type: "ipc-command-failed",
       command: "bootstrap",
       error: String(err),
+    });
+    await settleOneShotMpvIpcBootstrapFailure({
+      process: mpv,
+      clearOwnedControl: () => opts.onControlReady?.(null),
+      reportTerminationFailure: () => {
+        emitPlaybackEvent({
+          type: "ipc-command-failed",
+          command: "terminate",
+          error: "mpv did not exit after forced bootstrap teardown",
+        });
+      },
     });
   });
 
@@ -421,6 +438,31 @@ export function shouldAbortLaunchForDefinitivePreflight(
   ipcConnected: boolean,
 ): result is Extract<StreamPreflightResult, { status: "unreachable" }> {
   return shouldAbortPlaybackForPreflight(result, ipcConnected);
+}
+
+export function assertOneShotMpvIpcEndpointReady(ready: boolean, detail: string): asserts ready {
+  if (!ready) throw new Error(detail);
+}
+
+/**
+ * A one-shot IPC failure still owns the child it spawned. Do not release the
+ * generation or allow provider fallback until that exact child is reaped.
+ */
+export async function settleOneShotMpvIpcBootstrapFailure(options: {
+  readonly process: MpvChildProcess;
+  readonly terminate?: (process: MpvChildProcess) => Promise<MpvTerminationResult>;
+  readonly clearOwnedControl: () => void;
+  readonly reportTerminationFailure: () => void;
+}): Promise<MpvTerminationResult> {
+  const result = await (options.terminate ?? terminateMpvProcess)(options.process);
+  if (result.exited) {
+    options.clearOwnedControl();
+  } else {
+    // Keep the control/process registry ownership intact. Returning to fallback
+    // here would knowingly stack a second mpv over a still-live first one.
+    options.reportTerminationFailure();
+  }
+  return result;
 }
 
 export async function cleanupAbortedMpvLaunch(options: {
