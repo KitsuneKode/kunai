@@ -1239,6 +1239,38 @@ describe("DownloadService", () => {
     expect(existsSync(job.tempPath)).toBe(false);
   });
 
+  test("preserves a valid published output when recovery persistence fails", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:6", type: "movie", name: "Commit Failure" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    writeFileSync(job.outputPath, "valid-media-that-must-survive");
+    const updateFileSizeSpy = spyOn(repo, "updateFileSize").mockImplementation(() => {
+      throw new Error("simulated SQLite write failure");
+    });
+
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      downloadPath: tempDir,
+    });
+    await expect(recoveryService.processQueue()).rejects.toThrow("simulated SQLite write failure");
+
+    expect(existsSync(job.outputPath)).toBe(true);
+    expect(await Bun.file(job.outputPath).text()).toBe("valid-media-that-must-survive");
+    updateFileSizeSpy.mockRestore();
+  });
+
   test("does not recover a freshly heartbeating job owned by another process", async () => {
     const enqueueService = buildService({
       repo,

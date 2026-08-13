@@ -1389,28 +1389,9 @@ export class DownloadService {
 
       const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
       if (publishedOutput) {
+        let validation: ArtifactValidationResult;
         try {
-          const validation = await this.validateCompletedArtifact(runningJob.outputPath);
-          this.persistValidatedArtifactMetadata(runningJob.id, validation);
-          const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
-            ? buildRepairableSidecarResult(
-                runningJob,
-                "subtitle",
-                "download was recovered after publication; subtitle needs repair",
-              )
-            : { artifact: "subtitle", status: "not-applicable" };
-          this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
-          this.emit({ type: "complete", jobId: runningJob.id });
-          const completed = this.deps.repo.get(runningJob.id);
-          if (completed) await this.deps.onCompletedArtifact?.(completed);
-          this.deps.diagnostics?.record({
-            category: "download",
-            level: "info",
-            operation: "download.recovery.adopted",
-            message: "Recovered a validated download published before shutdown",
-            context: { jobId: runningJob.id, fileSize: validation.fileSize },
-          });
-          continue;
+          validation = await this.validateCompletedArtifact(runningJob.outputPath);
         } catch (error) {
           if (publishedOutput.isFile()) {
             await rm(runningJob.outputPath, { force: true }).catch(() => {});
@@ -1431,6 +1412,29 @@ export class DownloadService {
           );
           continue;
         }
+        // From this point forward the artifact is known-good. Persistence and
+        // notification failures must surface for retry without ever entering
+        // the invalid-artifact cleanup path above.
+        this.persistValidatedArtifactMetadata(runningJob.id, validation);
+        const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
+          ? buildRepairableSidecarResult(
+              runningJob,
+              "subtitle",
+              "download was recovered after publication; subtitle needs repair",
+            )
+          : { artifact: "subtitle", status: "not-applicable" };
+        this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
+        this.emit({ type: "complete", jobId: runningJob.id });
+        const completed = this.deps.repo.get(runningJob.id);
+        if (completed) await this.deps.onCompletedArtifact?.(completed);
+        this.deps.diagnostics?.record({
+          category: "download",
+          level: "info",
+          operation: "download.recovery.adopted",
+          message: "Recovered a validated download published before shutdown",
+          context: { jobId: runningJob.id, fileSize: validation.fileSize },
+        });
+        continue;
       }
       this.rescheduleInterruptedJob(
         runningJob,
