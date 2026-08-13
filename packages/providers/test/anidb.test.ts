@@ -10,6 +10,8 @@ import {
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
+  anidbCipherArgs,
+  resolveAnidbCurl,
   searchAnidb,
 } from "../src/anidb/direct";
 import { anidbManifest, ANIDB_PROVIDER_ID } from "../src/anidb/manifest";
@@ -197,6 +199,59 @@ describe("anidb browse parsing", () => {
       label: "S2",
       normalizedBaseTitle: "demon slayer",
     });
+  });
+});
+
+describe("anidb curl selection", () => {
+  // Parity with ani-cli v5 `dep_ch_failover`. anidb.app is behind Cloudflare,
+  // which fingerprints the TLS handshake, so a browser UA over curl's own
+  // handshake still gets challenged -- and a challenge page parses to zero
+  // search results, which is a release blocker for the default provider.
+  test("prefers the newest curl-impersonate build over plain curl", () => {
+    const present = new Set(["curl", "curl_chrome116", "curl_firefox135"]);
+    expect(resolveAnidbCurl((cmd) => (present.has(cmd) ? `/usr/bin/${cmd}` : null))).toEqual({
+      path: "/usr/bin/curl_firefox135",
+      impersonates: true,
+    });
+  });
+
+  test("falls back through older impersonate builds before plain curl", () => {
+    const present = new Set(["curl", "curl_ff117"]);
+    expect(resolveAnidbCurl((cmd) => (present.has(cmd) ? `/usr/bin/${cmd}` : null))).toEqual({
+      path: "/usr/bin/curl_ff117",
+      impersonates: true,
+    });
+  });
+
+  test("marks plain curl as non-impersonating so cipher flags are applied", () => {
+    expect(resolveAnidbCurl((cmd) => (cmd === "curl" ? "/usr/bin/curl" : null))).toEqual({
+      path: "/usr/bin/curl",
+      impersonates: false,
+    });
+  });
+
+  test("reports no curl at all so the caller can fall back to fetch", () => {
+    expect(resolveAnidbCurl(() => null)).toBeNull();
+  });
+
+  // ani-cli sets cipher flags only on Darwin. Windows curl.exe links Schannel,
+  // which rejects --tls13-ciphers and OpenSSL cipher names outright, so sending
+  // them there fails the request rather than hardening it.
+  test("sends ani-cli's cipher flags on macOS only", () => {
+    expect(anidbCipherArgs(false, "darwin")).toEqual([
+      "--ciphers",
+      expect.stringContaining("ECDHE-ECDSA-AES128-GCM-SHA256"),
+      "--tls13-ciphers",
+      expect.stringContaining("TLS_AES_128_GCM_SHA256"),
+    ]);
+    expect(anidbCipherArgs(false, "win32")).toEqual([]);
+    expect(anidbCipherArgs(false, "linux")).toEqual([]);
+  });
+
+  test("never overrides an impersonate build's own handshake", () => {
+    for (const platform of ["darwin", "win32", "linux"] as const) {
+      expect(anidbCipherArgs(true, platform)).toEqual([]);
+    }
   });
 });
 

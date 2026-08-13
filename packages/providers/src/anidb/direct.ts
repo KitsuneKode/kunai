@@ -49,6 +49,8 @@ export {
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
+  anidbCipherArgs,
+  resolveAnidbCurl,
   searchAnidb,
   type AnidbSearchResult,
   type AnidbSeasonEvidence,

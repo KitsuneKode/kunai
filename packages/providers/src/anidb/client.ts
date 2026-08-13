@@ -43,6 +43,56 @@ export type AnidbStreamLink = {
 };
 
 /**
+ * curl-impersonate builds, most-recent browser first, then plain curl.
+ *
+ * Parity with ani-cli v5's `dep_ch_failover` list. anidb.app sits behind
+ * Cloudflare, which fingerprints the TLS handshake — a browser User-Agent over
+ * curl's own handshake is frequently still challenged, and a challenge page
+ * parses to zero search results. Where an impersonate build exists we use it.
+ */
+const ANIDB_CURL_CANDIDATES = [
+  "curl_firefox135",
+  "curl_chrome136",
+  "curl_chrome116",
+  "curl_ff117",
+  "curl",
+] as const;
+
+/**
+ * ani-cli sets these only on Darwin, and that restriction is load-bearing rather
+ * than incidental: Windows `curl.exe` links Schannel, which rejects
+ * `--tls13-ciphers` and does not understand OpenSSL cipher names, so passing
+ * them there fails the request outright instead of hardening it. Linux curl
+ * already negotiates an acceptable suite unaided.
+ */
+const ANIDB_CIPHERS =
+  "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305";
+const ANIDB_TLS13_CIPHERS =
+  "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256";
+
+/**
+ * An impersonate build already ships a matching handshake, so forcing ani-cli's
+ * list over it would undo the fingerprint it exists to provide.
+ */
+export function anidbCipherArgs(
+  impersonates: boolean,
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
+  if (impersonates || platform !== "darwin") return [];
+  return ["--ciphers", ANIDB_CIPHERS, "--tls13-ciphers", ANIDB_TLS13_CIPHERS];
+}
+
+export function resolveAnidbCurl(
+  which: (command: string) => string | null = Bun.which,
+): { readonly path: string; readonly impersonates: boolean } | null {
+  for (const candidate of ANIDB_CURL_CANDIDATES) {
+    const path = which(candidate);
+    if (path) return { path, impersonates: candidate !== "curl" };
+  }
+  return null;
+}
+
+/**
  * anidb.app HTML/JSON often CF-blocks Bun fetch. Prefer curl with a browser UA
  * (ani-cli uses curl / curl-impersonate; plain curl works on this machine).
  */
@@ -50,8 +100,8 @@ export async function anidbFetchText(
   url: string,
   options: { readonly signal?: AbortSignal; readonly maxTimeSec?: number } = {},
 ): Promise<string> {
-  const curlPath = Bun.which("curl");
-  if (!curlPath) {
+  const curl = resolveAnidbCurl();
+  if (!curl) {
     const response = await fetch(url, {
       headers: { "User-Agent": ANIDB_USER_AGENT, Referer: ANIDB_REFERER },
       signal: options.signal ?? AbortSignal.timeout(15_000),
@@ -68,7 +118,7 @@ export async function anidbFetchText(
 
   const maxTime = String(options.maxTimeSec ?? 12);
   const args = [
-    curlPath,
+    curl.path,
     "-sL",
     "-A",
     ANIDB_USER_AGENT,
@@ -76,6 +126,7 @@ export async function anidbFetchText(
     `Referer: ${ANIDB_REFERER}`,
     "--max-time",
     maxTime,
+    ...anidbCipherArgs(curl.impersonates),
     url,
   ];
   const proc = Bun.spawn(args, {
