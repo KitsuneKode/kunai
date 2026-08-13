@@ -11,6 +11,7 @@
  * Required:
  *   KUNAI_LIVE_SYNC=1                     acknowledge this mutates a real account
  *   KUNAI_ANILIST_CLIENT_ID=…             from anilist.co/settings/developer
+ *   KUNAI_ANILIST_CLIENT_SECRET=…         from the same page; never committed
  *   KUNAI_ANILIST_REDIRECT_URI=…          registered on that application, exactly
  *   KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID=…    a disposable title to mutate
  * Optional:
@@ -95,7 +96,9 @@ async function main(): Promise<void> {
     const auth = resolveAniListAuth();
     if (!record("anilist auth contract resolves", auth.availability.available)) {
       process.stdout.write(
-        "\nSet KUNAI_ANILIST_CLIENT_ID and KUNAI_ANILIST_REDIRECT_URI. The redirect URI must be\n" +
+        `\nreason: ${auth.availability.available ? "" : auth.availability.reason}\n` +
+          "Set KUNAI_ANILIST_CLIENT_ID, KUNAI_ANILIST_CLIENT_SECRET and KUNAI_ANILIST_REDIRECT_URI.\n" +
+          "The redirect URI must be\n" +
           "registered on your AniList application exactly, e.g. http://127.0.0.1:43863/callback\n",
       );
       process.exit(1);

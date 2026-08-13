@@ -53,6 +53,10 @@ function aniListAuthMessage(
       return "Set KUNAI_ANILIST_CLIENT_ID to your AniList application client ID.";
     case "client-id-invalid":
       return "KUNAI_ANILIST_CLIENT_ID is empty or a placeholder.";
+    case "client-secret-missing":
+      return "Set KUNAI_ANILIST_CLIENT_SECRET to your AniList application client secret.";
+    case "client-secret-invalid":
+      return "KUNAI_ANILIST_CLIENT_SECRET is empty or a placeholder.";
     case "callback-missing":
       return "Set KUNAI_ANILIST_REDIRECT_URI to the redirect URI registered on your AniList application.";
     case "callback-not-loopback":
@@ -177,25 +181,37 @@ export class AniListAdapter implements SyncAdapter {
   }
 
   /**
-   * Run the authorization-code flow against the *registered* callback.
+   * Run the authorization-code grant against the *registered* callback.
+   *
+   * AniList's token endpoint requires a client secret, so Kunai asks for the
+   * user's own — from the application they registered themselves. Kunai ships
+   * no credentials and keeps the secret nowhere: it is read from the
+   * environment at connect time and never written to the token file.
+   *
+   * AniList also documents an implicit grant, which would need no secret, and
+   * long-registered clients do use it. This application is answered with
+   * `unsupported_grant_type` for `response_type=token`, so that path is not
+   * available to a newly registered client and is not implemented.
    *
    * The redirect URI is configuration, not something Kunai can invent: AniList
-   * matches it against the client registration exactly. Both it and the client
-   * id must be present and valid before anything is opened or bound, so a
-   * misconfiguration is reported here rather than as an opaque token-exchange
-   * failure after the user has already approved in a browser.
+   * matches it against the client registration exactly. Id, secret and callback
+   * must all be valid before anything is opened or bound, so a misconfiguration
+   * is reported here rather than after the user has approved in a browser.
    */
   async connect(signal: AbortSignal): Promise<SyncResult> {
     const resolution = this.auth ?? resolveAniListAuth();
-    const { availability, clientId } = resolution;
+    const { availability, clientId, clientSecret } = resolution;
     if (!availability.available) {
       return { ok: false, error: aniListAuthMessage(availability.reason) };
     }
-    // The resolution type pairs an available result with a non-null client id,
-    // but that correlation does not survive destructuring — so this stays as a
-    // total guard rather than a non-null assertion.
+    // The resolution type pairs an available result with non-null credentials,
+    // but that correlation does not survive destructuring — so these stay as
+    // total guards rather than non-null assertions.
     if (clientId === null) {
       return { ok: false, error: aniListAuthMessage("client-id-invalid") };
+    }
+    if (clientSecret === null) {
+      return { ok: false, error: aniListAuthMessage("client-secret-invalid") };
     }
 
     const state = createOAuthState();
@@ -220,40 +236,93 @@ export class AniListAdapter implements SyncAdapter {
       const code = result.params.get("code");
       if (!code) return { ok: false, error: "AniList returned no authorization code." };
 
-      const tokenRes = await fetch(`${OAUTH_BASE}/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          grant_type: "authorization_code",
-          client_id: clientId,
-          redirect_uri: availability.redirectUri,
-          code,
-        }),
+      return await this.exchangeCode({
+        code,
+        clientId,
+        clientSecret,
+        redirectUri: availability.redirectUri,
         signal,
       });
-
-      if (!tokenRes.ok) {
-        return { ok: false, error: `Token exchange failed: ${tokenRes.status}` };
-      }
-      return await this.persistToken(tokenRes);
     } finally {
       // Frees the registered port on every path, so a retry can bind it.
       callback.close();
     }
   }
 
-  private async persistToken(tokenRes: Response): Promise<SyncResult> {
-    const tokenData = (await tokenRes.json()) as { access_token: string; expires_in?: number };
-    this.accessToken = tokenData.access_token;
+  /**
+   * Trade the one-time code for a token.
+   *
+   * The failure branch reports the HTTP status and nothing else. AniList echoes
+   * the request back in its error bodies, so forwarding one would put the
+   * client secret into whatever surface shows the message.
+   */
+  private async exchangeCode(input: {
+    readonly code: string;
+    readonly clientId: string;
+    readonly clientSecret: string;
+    readonly redirectUri: string;
+    readonly signal: AbortSignal;
+  }): Promise<SyncResult> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${OAUTH_BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          client_id: input.clientId,
+          client_secret: input.clientSecret,
+          redirect_uri: input.redirectUri,
+          code: input.code,
+        }),
+        signal: input.signal,
+      });
+    } catch {
+      return { ok: false, error: "Could not reach AniList to exchange the authorization code." };
+    }
+
+    if (!response.ok) {
+      const hint =
+        response.status === 400 || response.status === 401
+          ? " Check KUNAI_ANILIST_CLIENT_SECRET and that the redirect URI matches the one registered on your AniList application exactly."
+          : "";
+      return {
+        ok: false,
+        error: `AniList rejected the token exchange (${response.status}).${hint}`,
+      };
+    }
+
+    // The response also carries a refresh token. It is deliberately dropped:
+    // nothing on this branch refreshes, AniList access tokens last a year, and
+    // a stored credential no code path reads is a liability, not a feature.
+    const payload = (await response.json().catch(() => null)) as {
+      access_token?: unknown;
+      expires_in?: unknown;
+    } | null;
+    const accessToken = typeof payload?.access_token === "string" ? payload.access_token : null;
+    if (!accessToken) return { ok: false, error: "AniList returned no access token." };
+
+    const expiresIn = typeof payload?.expires_in === "number" ? String(payload.expires_in) : null;
+    return await this.persistToken(accessToken, expiresIn);
+  }
+
+  private async persistToken(accessToken: string, expiresIn: string | null): Promise<SyncResult> {
+    this.accessToken = accessToken;
+    // Identity doubles as validation: a token AniList will not answer for is
+    // not worth persisting, and `userId` is needed by the token record anyway.
     await this.refreshUsername();
 
     if (!this.userId) {
       return { ok: false, error: "Could not fetch AniList user info after authorization." };
     }
 
+    const seconds = Number(expiresIn);
     await this.tokenStore.patchAniList({
-      accessToken: this.accessToken,
+      accessToken,
       userId: this.userId,
+      ...(Number.isFinite(seconds) && seconds > 0
+        ? { expiresAt: new Date(Date.now() + seconds * 1000).toISOString() }
+        : {}),
     });
 
     return { ok: true };

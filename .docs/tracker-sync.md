@@ -78,8 +78,21 @@ Both trackers fail closed. Availability is resolved once in the container and
 injected, so adapters and settings read one decision rather than each
 interpreting the environment.
 
-**AniList** requires `KUNAI_ANILIST_CLIENT_ID` and `KUNAI_ANILIST_REDIRECT_URI`.
-There is no default for either. The redirect URI must be `http`, a loopback host,
+**AniList** requires `KUNAI_ANILIST_CLIENT_ID`, `KUNAI_ANILIST_CLIENT_SECRET` and
+`KUNAI_ANILIST_REDIRECT_URI`. There is no default for any of them, and Kunai
+ships no credentials: you register your own application at
+[anilist.co/settings/developer](https://anilist.co/settings/developer) and supply
+its id and secret.
+
+The flow is the authorization-code grant, which is why a secret is needed at all.
+AniList also documents an implicit grant — `response_type=token`, no secret — and
+long-registered clients such as MALSync's do use it, but a newly registered
+application is answered with `unsupported_grant_type`, so that path is not
+implemented. The refresh token AniList returns is deliberately discarded:
+access tokens last a year, nothing here refreshes, and a stored credential with
+no reader is a liability.
+
+The redirect URI must be `http`, a loopback host,
 an explicit port, and exactly `/callback` — for example
 `http://127.0.0.1:43863/callback` — and must match what is registered on your
 AniList application character for character. The loopback listener binds that

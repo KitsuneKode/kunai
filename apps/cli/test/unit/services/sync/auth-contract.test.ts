@@ -4,7 +4,16 @@ import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
 import { resolveAniListAuth, resolveTmdbAuth } from "@/services/sync/auth-contract";
 
 const validClientId = "12345";
+const validSecret = "placeholder-not-a-real-secret";
 const validCallback = "http://127.0.0.1:43863/callback";
+
+/** Everything valid; each test invalidates the one input it is about. */
+const env = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+  KUNAI_ANILIST_CLIENT_ID: validClientId,
+  KUNAI_ANILIST_CLIENT_SECRET: validSecret,
+  KUNAI_ANILIST_REDIRECT_URI: validCallback,
+  ...overrides,
+});
 
 /**
  * AniList rejects any redirect_uri that is not registered against the client,
@@ -17,13 +26,11 @@ const validCallback = "http://127.0.0.1:43863/callback";
  * a default and discovering the mismatch remotely.
  */
 describe("resolveAniListAuth", () => {
-  test("resolves when both the client id and an exact loopback callback are set", () => {
-    const resolution = resolveAniListAuth({
-      KUNAI_ANILIST_CLIENT_ID: validClientId,
-      KUNAI_ANILIST_REDIRECT_URI: validCallback,
-    });
+  test("resolves when the client id, secret and an exact loopback callback are set", () => {
+    const resolution = resolveAniListAuth(env());
 
     expect(resolution.clientId).toBe(validClientId);
+    expect(resolution.clientSecret).toBe(validSecret);
     expect(resolution.availability).toEqual({
       available: true,
       redirectUri: validCallback,
@@ -32,27 +39,49 @@ describe("resolveAniListAuth", () => {
   });
 
   test("accepts localhost as well as 127.0.0.1", () => {
-    const resolution = resolveAniListAuth({
-      KUNAI_ANILIST_CLIENT_ID: validClientId,
-      KUNAI_ANILIST_REDIRECT_URI: "http://localhost:43863/callback",
-    });
+    const resolution = resolveAniListAuth(
+      env({ KUNAI_ANILIST_REDIRECT_URI: "http://localhost:43863/callback" }),
+    );
 
     expect(resolution.availability.available).toBe(true);
   });
 
   test("fails closed when the client id is missing, empty, or a placeholder", () => {
     for (const value of [undefined, "", "   ", "your-client-id", "changeme", "xxx"]) {
-      const resolution = resolveAniListAuth({
-        ...(value === undefined ? {} : { KUNAI_ANILIST_CLIENT_ID: value }),
-        KUNAI_ANILIST_REDIRECT_URI: validCallback,
-      });
+      const overrides = env();
+      if (value === undefined) delete overrides.KUNAI_ANILIST_CLIENT_ID;
+      else overrides.KUNAI_ANILIST_CLIENT_ID = value;
+
+      const resolution = resolveAniListAuth(overrides);
       expect(resolution.clientId, String(value)).toBeNull();
       expect(resolution.availability.available).toBe(false);
     }
   });
 
+  /**
+   * AniList's token endpoint refuses an exchange without a secret — that 401 is
+   * what the shipped flow hit. The secret is the user's own, so the only honest
+   * move is to refuse before opening a browser rather than after.
+   */
+  test("fails closed when the client secret is missing, empty, or a placeholder", () => {
+    for (const value of [undefined, "", "   ", "changeme", "todo"]) {
+      const overrides = env();
+      if (value === undefined) delete overrides.KUNAI_ANILIST_CLIENT_SECRET;
+      else overrides.KUNAI_ANILIST_CLIENT_SECRET = value;
+
+      const resolution = resolveAniListAuth(overrides);
+      expect(resolution.clientSecret, String(value)).toBeNull();
+      expect(resolution.availability, String(value)).toEqual({
+        available: false,
+        reason: value === undefined ? "client-secret-missing" : "client-secret-invalid",
+      });
+    }
+  });
+
   test("requires the callback to be configured rather than defaulting one", () => {
-    const resolution = resolveAniListAuth({ KUNAI_ANILIST_CLIENT_ID: validClientId });
+    const overrides = env();
+    delete overrides.KUNAI_ANILIST_REDIRECT_URI;
+    const resolution = resolveAniListAuth(overrides);
 
     expect(resolution.availability).toEqual({ available: false, reason: "callback-missing" });
   });
@@ -64,10 +93,7 @@ describe("resolveAniListAuth", () => {
       "http://127.0.0.1:0/callback",
       "http://127.0.0.1:99999/callback",
     ]) {
-      const resolution = resolveAniListAuth({
-        KUNAI_ANILIST_CLIENT_ID: validClientId,
-        KUNAI_ANILIST_REDIRECT_URI: uri,
-      });
+      const resolution = resolveAniListAuth(env({ KUNAI_ANILIST_REDIRECT_URI: uri }));
       expect(resolution.availability.available, uri).toBe(false);
     }
   });
@@ -78,10 +104,7 @@ describe("resolveAniListAuth", () => {
       "http://0.0.0.0:43863/callback",
       "http://192.168.1.5:43863/callback",
     ]) {
-      const resolution = resolveAniListAuth({
-        KUNAI_ANILIST_CLIENT_ID: validClientId,
-        KUNAI_ANILIST_REDIRECT_URI: uri,
-      });
+      const resolution = resolveAniListAuth(env({ KUNAI_ANILIST_REDIRECT_URI: uri }));
       expect(resolution.availability, uri).toEqual({
         available: false,
         reason: "callback-not-loopback",
@@ -99,22 +122,19 @@ describe("resolveAniListAuth", () => {
       "http://user:pw@127.0.0.1:43863/callback",
       "not a uri",
     ]) {
-      const resolution = resolveAniListAuth({
-        KUNAI_ANILIST_CLIENT_ID: validClientId,
-        KUNAI_ANILIST_REDIRECT_URI: uri,
-      });
+      const resolution = resolveAniListAuth(env({ KUNAI_ANILIST_REDIRECT_URI: uri }));
       expect(resolution.availability.available, uri).toBe(false);
     }
   });
 
   /** Availability reaches settings; a credential must never ride along. */
   test("availability carries no credential value", () => {
-    const { availability } = resolveAniListAuth({
-      KUNAI_ANILIST_CLIENT_ID: "super-secret-client",
-      KUNAI_ANILIST_REDIRECT_URI: validCallback,
-    });
+    const { availability } = resolveAniListAuth(
+      env({ KUNAI_ANILIST_CLIENT_ID: "super-secret-client" }),
+    );
 
     expect(JSON.stringify(availability)).not.toContain("super-secret-client");
+    expect(JSON.stringify(availability)).not.toContain(validSecret);
   });
 });
 

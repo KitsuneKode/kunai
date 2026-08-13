@@ -84,25 +84,26 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
     hostname: url.hostname,
     fetch: (request) => {
       const requestUrl = new URL(request.url);
-      if (requestUrl.pathname !== callbackPath) {
-        return new Response("Not found", { status: 404 });
-      }
+      if (requestUrl.pathname !== callbackPath) return new Response("Not found", { status: 404 });
 
       const params = requestUrl.searchParams;
       if (params.get("error")) {
         settle({ ok: false, reason: "denied" });
         return page(`${options.serviceName} authorization was declined.`);
       }
-      // Compared before the code is read at all, so a mismatched callback never
-      // reaches the token exchange.
+
+      // State is compared before the code is read at all. A callback whose
+      // state does not match did not come from the request we started, and an
+      // absent one is treated the same way: the provider echoes it back, so
+      // missing means this is not our redirect.
       if (params.get("state") !== options.expectedState) {
         settle({ ok: false, reason: "state-mismatch" });
         return page(`${options.serviceName} authorization could not be verified.`);
       }
 
       settle({ ok: true, params });
-      // The completion page is rendered in the user's browser, where it can be
-      // screenshotted, shared, or restored from history — so it echoes nothing.
+      // Shown in the user's browser, where it can be screenshotted, shared, or
+      // restored from history — so it echoes nothing back.
       return page(`${options.serviceName} authorization complete. You can close this tab.`);
     },
   });

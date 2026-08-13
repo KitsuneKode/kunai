@@ -17,6 +17,8 @@ export type AniListAuthAvailability =
       readonly reason:
         | "client-id-missing"
         | "client-id-invalid"
+        | "client-secret-missing"
+        | "client-secret-invalid"
         | "callback-missing"
         | "callback-invalid"
         | "callback-not-loopback";
@@ -41,10 +43,12 @@ export type AniListAuthResolution =
   | {
       readonly availability: Extract<AniListAuthAvailability, { available: true }>;
       readonly clientId: string;
+      readonly clientSecret: string;
     }
   | {
       readonly availability: Extract<AniListAuthAvailability, { available: false }>;
       readonly clientId: null;
+      readonly clientSecret: null;
     };
 
 export type TmdbAuthResolution =
@@ -123,22 +127,44 @@ type AniListCallbackReason = Extract<AniListAuthAvailability, { available: false
 /**
  * Decide whether AniList Connect may be offered at all.
  *
- * Both the client id and the exact registered callback are required, with no
- * default for either: Kunai cannot register a callback on the user's behalf, so
- * guessing one only moves the failure somewhere less legible.
+ * A client *secret* is required because AniList supports only the
+ * authorization-code grant in practice: its authorize endpoint answers
+ * `unsupported_grant_type` to `response_type=token`, so the documented implicit
+ * grant — the one flow that needs no secret — is not actually enabled. The
+ * secret is the user's own, from their own registered application; Kunai ships
+ * none and stores it nowhere.
+ *
+ * The exact registered callback is required for the same reason as the id and
+ * secret: Kunai cannot register one on the user's behalf, so guessing only
+ * moves the failure somewhere less legible.
  */
 export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniListAuthResolution {
+  const unavailable = (
+    reason: Extract<AniListAuthAvailability, { available: false }>["reason"],
+  ): AniListAuthResolution => ({
+    availability: { available: false, reason },
+    clientId: null,
+    clientSecret: null,
+  });
+
   const clientId = meaningful(env.KUNAI_ANILIST_CLIENT_ID);
   if (!clientId) {
-    const reason =
-      env.KUNAI_ANILIST_CLIENT_ID === undefined ? "client-id-missing" : "client-id-invalid";
-    return { availability: { available: false, reason }, clientId: null };
+    return unavailable(
+      env.KUNAI_ANILIST_CLIENT_ID === undefined ? "client-id-missing" : "client-id-invalid",
+    );
+  }
+
+  const clientSecret = meaningful(env.KUNAI_ANILIST_CLIENT_SECRET);
+  if (!clientSecret) {
+    return unavailable(
+      env.KUNAI_ANILIST_CLIENT_SECRET === undefined
+        ? "client-secret-missing"
+        : "client-secret-invalid",
+    );
   }
 
   const callback = validateCallback(env.KUNAI_ANILIST_REDIRECT_URI);
-  if (!callback.ok) {
-    return { availability: { available: false, reason: callback.reason }, clientId: null };
-  }
+  if (!callback.ok) return unavailable(callback.reason);
 
   return {
     availability: {
@@ -147,6 +173,7 @@ export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniLis
       clientIdSource: "environment",
     },
     clientId,
+    clientSecret,
   };
 }
 
