@@ -29,6 +29,7 @@ jobs:
     outputs:
       cli: ${{ steps.filter.outputs.cli }}
       docs: ${{ steps.filter.outputs.docs }}
+      doc-coverage: ${{ steps.filter.outputs.doc-coverage }}
       installer: ${{ steps.filter.outputs.installer }}
       installer-matrix: ${{ steps.installer-matrix.outputs.cells }}
     steps:
@@ -71,6 +72,19 @@ jobs:
               - 'turbo.json'
               - 'package.json'
               - 'bun.lock'
+            # verify:doc-coverage fails when a code area has no route in the
+            # feature map. A new directory arrives as new files, so the trigger
+            # has to be the scanned roots themselves — not just doc paths, or a
+            # pure-code PR would add an unrouted directory and skip the gate
+            # that exists to catch exactly that.
+            doc-coverage:
+              - 'apps/cli/src/services/**'
+              - 'apps/cli/src/domain/**'
+              - 'apps/cli/src/infra/**'
+              - 'apps/cli/src/app/**'
+              - 'packages/**'
+              - '.docs/feature-map.md'
+              - 'scripts/verify-doc-coverage.ts'
             installer:
               - 'apps/cli/scripts/build*.ts'
               - 'apps/cli/src/services/update/**'
@@ -409,6 +423,29 @@ jobs:
           bun run --cwd apps/docs lint
           bun run --cwd apps/docs test
           bun run --cwd apps/docs build:app
+
+  # Deliberately its own job rather than a step in Docs build: the coverage gate
+  # has a much broader trigger (any code directory) than the docs site build, and
+  # folding it in would either run the site build on every service edit or leave
+  # the gate skipped on the PRs most likely to trip it.
+  checks-doc-coverage:
+    name: Docs coverage
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.doc-coverage == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # No `bun install`: verify-doc-coverage.ts imports only node:fs and
+      # node:path, so the workspace install would be pure latency here.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Verify every code area is routed in the feature map
+        run: bun run verify:doc-coverage
 
   build-binaries:
     name: Build linux binaries
