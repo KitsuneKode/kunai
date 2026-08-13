@@ -1,4 +1,3 @@
-import { readdirSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
@@ -66,20 +65,6 @@ const DOWNLOAD_FILE_EXT = ".mp4";
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STALLED_HEARTBEAT_MS = 90_000;
 const STDERR_MAX_BYTES = 64_000;
-const KUNAI_DOWNLOAD_TEMP_SUFFIX =
-  /\.tmp\.[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export function cleanupOrphanedDownloadTempFiles(dir: string): void {
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile() || !KUNAI_DOWNLOAD_TEMP_SUFFIX.test(entry.name)) continue;
-      rmSync(join(dir, entry.name), { force: true });
-    }
-  } catch {
-    // Best effort: an unreadable download directory must not block startup recovery.
-  }
-}
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 
@@ -1387,7 +1372,6 @@ export class DownloadService {
   private async reconcileInterruptedJobs(): Promise<void> {
     const now = new Date().toISOString();
     const nowMs = Date.parse(now);
-    const cleanedDirs = new Set<string>();
     for (const runningJob of this.deps.repo.listRunning(200)) {
       // `running` is a lease, not proof this process owns the job. A second
       // Kunai process may be actively heartbeating it, so recovery is allowed
@@ -1400,11 +1384,6 @@ export class DownloadService {
 
       // Clean up orphaned temp files from crashed processes
       if (runningJob.tempPath) {
-        const dir = dirname(runningJob.tempPath);
-        if (!cleanedDirs.has(dir)) {
-          cleanedDirs.add(dir);
-          cleanupOrphanedDownloadTempFiles(dir);
-        }
         await rm(runningJob.tempPath, { force: true }).catch(() => {});
       }
 

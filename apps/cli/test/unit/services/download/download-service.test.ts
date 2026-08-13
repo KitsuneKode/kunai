@@ -1270,6 +1270,49 @@ describe("DownloadService", () => {
     expect(existsSync(job.tempPath)).toBe(true);
   });
 
+  test("recovering a stale job does not delete a fresh owner's temp file in the same directory", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const stale = await enqueueService.enqueue({
+      title: { id: "tmdb:4", type: "series", name: "Shared Directory" },
+      episode: { season: 1, episode: 1, name: "Stale Owner" },
+      stream: { url: "https://example.com/stale.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+      outputDirectory: tempDir,
+    });
+    const fresh = await enqueueService.enqueue({
+      title: { id: "tmdb:4", type: "series", name: "Shared Directory" },
+      episode: { season: 1, episode: 2, name: "Fresh Owner" },
+      stream: { url: "https://example.com/fresh.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+      outputDirectory: tempDir,
+    });
+    expect(repo.markRunning(stale.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    expect(repo.markRunning(fresh.id, new Date().toISOString())).toBe(true);
+    writeFileSync(stale.outputPath, "valid-stale-output");
+    writeFileSync(stale.tempPath, "stale-temp");
+    writeFileSync(fresh.tempPath, "fresh-temp");
+
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      downloadPath: tempDir,
+    });
+    await recoveryService.processQueue();
+
+    expect(repo.get(stale.id)?.status).toBe("completed");
+    expect(repo.get(fresh.id)?.status).toBe("running");
+    expect(existsSync(stale.tempPath)).toBe(false);
+    expect(existsSync(fresh.tempPath)).toBe(true);
+  });
+
   test("beginShutdown closes work admission before any queue snapshot", async () => {
     const service = buildService({
       repo,
