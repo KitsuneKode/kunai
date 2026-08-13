@@ -42,6 +42,8 @@ recovers a crash-after-rename without redownloading or orphaning a valid artifac
       scheduled according to its retry budget.
 - [x] Add a fresh-lease fixture proving recovery does not interfere with another
       process's active artifact or temp file.
+- [x] Scope temp cleanup to the expired job so one stale row cannot delete a
+      fresh owner's temp artifact in the same directory.
 - [x] Preserve shutdown pause, sidecar repair, progress, and ordinary completion
       behavior.
 
