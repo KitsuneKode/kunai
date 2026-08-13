@@ -100,16 +100,23 @@ The invariant is enforced two ways:
 
 **Parallel jobs** (`.github/workflows/ci.yml`):
 
-| Job              | PR                                                                                    | Main         |
-| ---------------- | ------------------------------------------------------------------------------------- | ------------ |
-| `fmt`            | `turbo run fmt:check --affected`                                                      | full         |
-| `lint`           | `turbo run lint --affected`                                                           | full         |
-| `typecheck`      | `turbo run typecheck --affected`                                                      | full         |
-| `test`           | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
-| `windows-cli`    | root typecheck + CLI tests when CLI paths change                                      | same on main |
-| `build-cli`      | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
-| `build-binaries` | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
-| `checks-docs`    | docs gate when docs paths change                                                      | same         |
+| Job                   | PR                                                                                    | Main         |
+| --------------------- | ------------------------------------------------------------------------------------- | ------------ |
+| `fmt`                 | `turbo run fmt:check --affected`                                                      | full         |
+| `lint`                | `turbo run lint --affected`                                                           | full         |
+| `typecheck`           | `turbo run typecheck --affected`                                                      | full         |
+| `test`                | `turbo run test --affected` (CLI splits into cached `test:unit` + `test:integration`) | full         |
+| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                      | same on main |
+| `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                           | same on main |
+| `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                             | same         |
+| `checks-docs`         | docs gate when docs paths change                                                      | same         |
+| `checks-doc-coverage` | `verify:doc-coverage` when a scanned code root or the feature map changes             | same         |
+
+`checks-doc-coverage` is separate from `checks-docs` on purpose. Its trigger is
+every directory the gate scans (`apps/cli/src/{services,domain,infra,app}`,
+`packages/**`), because a new unrouted directory arrives as new _code_ files and
+would otherwise skip the check meant to catch it. It runs `setup-bun` without
+`bun install` — the script imports only `node:fs` and `node:path`.
 
 Install cache key: `${{ runner.os }}-bun-store-${{ hashFiles('bun.lock') }}` covering
 `~/.bun/install/cache` only (Bun reconstructs `node_modules` from the store).
