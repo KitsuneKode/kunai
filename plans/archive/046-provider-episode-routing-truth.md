@@ -57,4 +57,15 @@ the routing rule to make a live smoke green.
 - A proposed fix touches `packages/providers/src/allmanga/api-client.ts` crypto,
   attestation, or decoder constants.
 
-Status: TODO
+## Result
+
+- `selectProviderEpisodeNumber()` now owns the shared season-relative-first
+  policy used by both AllAnime and Miruro.
+- Provider-package regression tests cover S2E1 with absolute 13, absolute-only
+  requests, and the missing-identity default.
+- The AllAnime live smoke reached its current episode catalog but stream
+  resolution was captcha-gated from the test network. The Miruro live smoke was
+  blocked by Cloudflare WAF on both mirrors. These are classified provider
+  availability failures, not reasons to restore unsafe episode routing.
+
+Status: COMPLETE

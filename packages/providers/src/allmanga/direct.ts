@@ -30,6 +30,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import {
   normalizeProviderDisplayLabel,
@@ -264,7 +265,7 @@ export const allmangaProviderModule: CoreProviderModule = {
 
     try {
       const mode = resolveAnimeAudioIntent(input.preferredAudioLanguage ?? "original").catalogMode;
-      const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
+      const episodeNum = selectProviderEpisodeNumber(input.episode);
 
       // Same GQL catalog as listEpisodes (showCatalogCache, 45s TTL in api-client).
       const detail = await loadAvailableEpisodesDetail(

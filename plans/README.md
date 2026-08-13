@@ -27,7 +27,6 @@ the behavior source of truth; a stale plan is a documentation bug.
 | 030  | Distribution documentation truth                            | TODO after release behavior settles                 |
 | 032  | Sync identity and capability truth                          | TODO; execute after the reliability train           |
 | 043  | Transactional legacy history-key migration                  | TODO; independent data-migration PR                 |
-| 046  | Provider episode routing truth                              | TODO; K-17                                          |
 
 Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
 
@@ -55,16 +54,15 @@ table replaces its status claims.
 | K-14    | FIXED          | PR #37 gives slow installer suites an explicit reachable timeout budget.                                                                                               |
 | K-15    | FIXED          | PR #44 structurally contains recursive staging cleanup.                                                                                                                |
 | K-16    | OPEN           | Global help still promises `--dry-run` changes nothing while the reader only guards protocol install/rollback; plan 023.                                               |
-| K-17    | OPEN           | AllManga and Miruro still prefer `absoluteEpisode`; plan 046.                                                                                                          |
+| K-17    | FIXED          | AllAnime and Miruro now prefer a proven season-relative episode; absolute-only inputs retain absolute routing.                                                         |
 
-Current count after plan 047: **13 fixed, 4 open**.
+Current count after plan 046: **14 fixed, 3 open**.
 
 ## Release-focused train
 
 1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
-2. Execute the release-truth slices together only if the diff stays reviewable:
-   plan 021 K-04/K-08 removal, plan 023 K-16 narrowing, and plan 046 K-17
-   routing. Keep separate commits so any provider change can be reverted alone.
+2. Provider routing plan 046 is complete. Execute plan 021 K-04/K-08 removal
+   and plan 023 K-16 narrowing together only if the diff stays reviewable.
 3. Execute plan 043 as its own migration PR.
 4. Rebase and re-audit the existing `fix/tracker-sync-correctness` worktree,
    then execute plan 032. Do not merge that stale branch as-is.
