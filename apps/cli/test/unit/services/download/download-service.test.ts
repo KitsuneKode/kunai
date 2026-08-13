@@ -971,12 +971,14 @@ describe("DownloadService", () => {
       stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
       providerId: "vidking",
     });
+    writeFileSync(job.outputPath, "last-known-good");
     await service.processQueue();
 
     const reloaded = repo.get(job.id);
     expect(reloaded?.status).toBe("failed");
     expect(reloaded?.failureKind).toBe("artifact-invalid");
     expect(reloaded?.artifactStatus).toBe("invalid-file");
+    expect(await Bun.file(job.outputPath).text()).toBe("last-known-good");
   });
 
   test("uses per-job destination override", async () => {
@@ -1169,6 +1171,103 @@ describe("DownloadService", () => {
     expect(reloaded?.status).toBe("failed");
     expect(reloaded?.failureKind).toBe("ytdlp-config");
     expect(reloaded?.retryCount).toBe(1);
+  });
+
+  test("adopts a valid output published before a crash instead of downloading it again", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:1", type: "movie", name: "Crash Window" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    writeFileSync(job.outputPath, "valid-media-bytes");
+    writeFileSync(job.tempPath, "orphaned-temp-bytes");
+
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      downloadPath: tempDir,
+    });
+    await recoveryService.processQueue();
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(repo.get(job.id)?.fileSize).toBe("valid-media-bytes".length);
+    expect(existsSync(job.outputPath)).toBe(true);
+    expect(existsSync(job.tempPath)).toBe(false);
+  });
+
+  test("removes an invalid published output before retrying an interrupted job", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:2", type: "movie", name: "Empty Crash Window" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    expect(repo.markRunning(job.id, "2026-04-29T00:01:00.000Z")).toBe(true);
+    writeFileSync(job.outputPath, "");
+    writeFileSync(job.tempPath, "orphaned-temp-bytes");
+
+    const recoveryService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      downloadPath: tempDir,
+    });
+    await recoveryService.processQueue();
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(repo.get(job.id)?.status).toBe("queued");
+    expect(repo.get(job.id)?.errorMessage).toBe(
+      "download interrupted after publishing an invalid artifact",
+    );
+    expect(existsSync(job.outputPath)).toBe(false);
+    expect(existsSync(job.tempPath)).toBe(false);
+  });
+
+  test("does not recover a freshly heartbeating job owned by another process", async () => {
+    const enqueueService = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    const job = await enqueueService.enqueue({
+      title: { id: "tmdb:3", type: "movie", name: "Active Elsewhere" },
+      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      providerId: "vidking",
+      mode: "series",
+    });
+    const activeAt = new Date().toISOString();
+    expect(repo.markRunning(job.id, activeAt)).toBe(true);
+    writeFileSync(job.outputPath, "partially-published-by-owner");
+    writeFileSync(job.tempPath, "active-temp-bytes");
+
+    const observingService = buildService({
+      repo,
+      downloadsEnabled: false,
+      ytDlpAvailable: false,
+      downloadPath: tempDir,
+    });
+    await observingService.processQueue();
+
+    expect(repo.get(job.id)?.status).toBe("running");
+    expect(existsSync(job.outputPath)).toBe(true);
+    expect(existsSync(job.tempPath)).toBe(true);
   });
 
   test("beginShutdown closes work admission before any queue snapshot", async () => {

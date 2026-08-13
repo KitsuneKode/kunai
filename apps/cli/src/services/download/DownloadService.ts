@@ -559,7 +559,12 @@ export class DownloadService {
       });
       return null;
     }
-    this.deps.repo.markRunning(next.id, now);
+    if (!this.deps.repo.markRunning(next.id, now)) {
+      this.claimedJobIds.delete(next.id);
+      // Another process won the durable claim after our read. Its update makes
+      // this row ineligible, so continue with the next queued candidate.
+      return this.processNextQueued();
+    }
 
     try {
       const downloaded = await this.executeYtDlpDownload(next);
@@ -646,11 +651,10 @@ export class DownloadService {
     this.queueWorkerRunning = true;
     try {
       if (!this.reconciledStartupJobs) {
-        this.reconcileInterruptedJobs();
         this.resumeEligiblePausedJobs();
         this.reconciledStartupJobs = true;
       }
-      this.reconcileStalledJobs();
+      await this.reconcileInterruptedJobs();
       // Run up to `maxConcurrentDownloads` workers in parallel; each drains the
       // queue (claim → download) until no eligible job remains. The atomic claim
       // in processNextQueued keeps two workers off the same job.
@@ -962,8 +966,11 @@ export class DownloadService {
         throw new Error("download aborted");
       }
 
+      // The temp file is the only artifact yt-dlp owns. Validate it before
+      // publication so an empty/invalid result can never replace a playable
+      // last-known-good output at the stable path.
+      const validation = await this.validateCompletedArtifact(job.tempPath);
       await rename(job.tempPath, job.outputPath);
-      const validation = await this.validateCompletedArtifact(job.outputPath);
       this.persistValidatedArtifactMetadata(job.id, validation);
       return this.deps.repo.get(job.id) ?? job;
     } finally {
@@ -1377,10 +1384,20 @@ export class DownloadService {
     }
   }
 
-  private reconcileInterruptedJobs(): void {
+  private async reconcileInterruptedJobs(): Promise<void> {
     const now = new Date().toISOString();
+    const nowMs = Date.parse(now);
     const cleanedDirs = new Set<string>();
     for (const runningJob of this.deps.repo.listRunning(200)) {
+      // `running` is a lease, not proof this process owns the job. A second
+      // Kunai process may be actively heartbeating it, so recovery is allowed
+      // only after the lease expires. This method runs on every queue pass so
+      // a just-crashed job becomes recoverable once its final heartbeat ages.
+      if (this.activeProcesses.has(runningJob.id)) continue;
+      const heartbeatAt = runningJob.lastHeartbeatAt ?? runningJob.startedAt;
+      const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
+      if (Number.isFinite(heartbeatMs) && nowMs - heartbeatMs < STALLED_HEARTBEAT_MS) continue;
+
       // Clean up orphaned temp files from crashed processes
       if (runningJob.tempPath) {
         const dir = dirname(runningJob.tempPath);
@@ -1388,53 +1405,78 @@ export class DownloadService {
           cleanedDirs.add(dir);
           cleanupOrphanedDownloadTempFiles(dir);
         }
-        rm(runningJob.tempPath, { force: true }).catch(() => {});
+        await rm(runningJob.tempPath, { force: true }).catch(() => {});
       }
-      if (runningJob.retryCount < runningJob.maxAttempts) {
-        this.deps.repo.scheduleRetry(
-          runningJob.id,
-          "download interrupted by previous session shutdown",
-          now,
-          now,
-        );
-      } else {
-        this.deps.repo.fail(
-          runningJob.id,
-          "download interrupted and retry limit reached",
-          false,
-          now,
-          "interrupted",
-        );
+
+      const publishedOutput = await stat(runningJob.outputPath).catch(() => null);
+      if (publishedOutput) {
+        try {
+          const validation = await this.validateCompletedArtifact(runningJob.outputPath);
+          this.persistValidatedArtifactMetadata(runningJob.id, validation);
+          const subtitleResult: DownloadSidecarResult = runningJob.subtitleUrl
+            ? buildRepairableSidecarResult(
+                runningJob,
+                "subtitle",
+                "download was recovered after publication; subtitle needs repair",
+              )
+            : { artifact: "subtitle", status: "not-applicable" };
+          this.persistCompletedDownloadWithSidecarResult(runningJob.id, subtitleResult, now);
+          this.emit({ type: "complete", jobId: runningJob.id });
+          const completed = this.deps.repo.get(runningJob.id);
+          if (completed) await this.deps.onCompletedArtifact?.(completed);
+          this.deps.diagnostics?.record({
+            category: "download",
+            level: "info",
+            operation: "download.recovery.adopted",
+            message: "Recovered a validated download published before shutdown",
+            context: { jobId: runningJob.id, fileSize: validation.fileSize },
+          });
+          continue;
+        } catch (error) {
+          if (publishedOutput.isFile()) {
+            await rm(runningJob.outputPath, { force: true }).catch(() => {});
+          } else {
+            const message = "download output path is not a regular file";
+            this.deps.repo.fail(runningJob.id, message, false, now, "artifact-invalid");
+            this.emit({ type: "failed", jobId: runningJob.id, error: message });
+            continue;
+          }
+          this.deps.logger.warn("Discarded invalid interrupted download artifact", {
+            jobId: runningJob.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.rescheduleInterruptedJob(
+            runningJob,
+            now,
+            "download interrupted after publishing an invalid artifact",
+          );
+          continue;
+        }
       }
+      this.rescheduleInterruptedJob(
+        runningJob,
+        now,
+        "download interrupted by previous session shutdown",
+      );
     }
   }
 
-  private reconcileStalledJobs(): void {
-    const now = Date.now();
-    for (const runningJob of this.deps.repo.listRunning(200)) {
-      if (this.activeProcesses.has(runningJob.id)) continue;
-      const heartbeatAt = runningJob.lastHeartbeatAt ?? runningJob.startedAt;
-      const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
-      if (!Number.isFinite(heartbeatMs)) continue;
-      if (now - heartbeatMs < STALLED_HEARTBEAT_MS) continue;
-      const updatedAt = new Date().toISOString();
-      if (runningJob.retryCount < runningJob.maxAttempts) {
-        this.deps.repo.scheduleRetry(
-          runningJob.id,
-          "download stalled; rescheduling",
-          updatedAt,
-          updatedAt,
-        );
-      } else {
-        this.deps.repo.fail(
-          runningJob.id,
-          "download stalled and retry limit reached",
-          false,
-          updatedAt,
-          "stalled",
-        );
-      }
+  private rescheduleInterruptedJob(
+    job: DownloadJobRecord,
+    updatedAt: string,
+    message: string,
+  ): void {
+    if (job.retryCount < job.maxAttempts) {
+      this.deps.repo.scheduleRetry(job.id, message, updatedAt, updatedAt);
+      return;
     }
+    this.deps.repo.fail(
+      job.id,
+      "download interrupted and retry limit reached",
+      false,
+      updatedAt,
+      "interrupted",
+    );
   }
 
   private startHeartbeat(jobId: string): () => void {
