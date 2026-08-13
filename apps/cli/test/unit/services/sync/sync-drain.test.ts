@@ -1,0 +1,309 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import type { TrackerOperation } from "@/services/sync/operations";
+import type { SyncAdapter } from "@/services/sync/SyncAdapter";
+import { SyncService, type SyncConfigPort } from "@/services/sync/SyncService";
+import { syncFailed, syncNeedsReauth, syncOk, type SyncOutcome } from "@/services/sync/types";
+import { openKunaiDatabase, runMigrations, SyncOutboxRepository } from "@kunai/storage";
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function outbox() {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-sync-drain-"));
+  dirs.push(dir);
+  const db = openKunaiDatabase(join(dir, "data.sqlite"));
+  runMigrations(db, "data");
+  return new SyncOutboxRepository(db);
+}
+
+const enabled = { enabled: true, trackWatched: true, syncList: true };
+const disabled = { enabled: false, trackWatched: false, syncList: false };
+
+function configPort(gate: typeof enabled = enabled) {
+  const state = { anilist: gate, tmdb: gate };
+  const port = {
+    reads: 0,
+    set(next: typeof enabled) {
+      state.anilist = next;
+      state.tmdb = next;
+    },
+    read: async () => {
+      port.reads += 1;
+      return { sync: { anilist: state.anilist, tmdb: state.tmdb } };
+    },
+  };
+  return port satisfies SyncConfigPort & { reads: number };
+}
+
+function adapter(
+  id: "anilist" | "tmdb",
+  apply: (operation: TrackerOperation) => Promise<SyncOutcome> | SyncOutcome = () => syncOk(),
+) {
+  const calls: TrackerOperation[] = [];
+  const value: SyncAdapter = {
+    id,
+    displayName: id,
+    capabilities: {
+      episodeProgress: id === "anilist",
+      watchlistMembership: true,
+      favoriteMembership: true,
+      pullLists: false,
+      rating: false,
+    },
+    isConnected: () => true,
+    getConnection: () => ({ state: "connected" }),
+    refreshIdentity: async () => {},
+    apply: async (operation: TrackerOperation) => {
+      calls.push(operation);
+      return apply(operation);
+    },
+    connect: async () => ({ ok: true }),
+    disconnect: async () => {},
+    getConnectedUsername: () => undefined,
+    pushWatched: async () => ({ ok: true }),
+  } as unknown as SyncAdapter;
+  return { adapter: value, calls };
+}
+
+const anilistFavourite: TrackerOperation = {
+  version: 1,
+  kind: "favorite-membership:set",
+  target: { tracker: "anilist", anilistId: 438631, mediaKind: "anime" },
+  present: true,
+};
+
+describe("SyncService drain", () => {
+  /**
+   * Config is read immediately before each external mutation, not captured at
+   * construction or checked only at enqueue. A user who turns a tracker off
+   * expects the very next write to stop — including work already queued.
+   */
+  test("a tracker disabled after enqueue performs no remote mutation", async () => {
+    const repo = outbox();
+    const config = configPort();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config,
+    });
+
+    expect(service.enqueueOperation(anilistFavourite)).toBe(1);
+    config.set(disabled);
+
+    const summary = await service.drain();
+
+    expect(anilist.calls).toHaveLength(0);
+    expect(repo.counts().pending).toBe(1);
+    expect(summary.skipped).toBe(0);
+    expect(summary.released).toBe(1);
+  });
+
+  /** A disabled tracker parks work; it must not burn the retry budget. */
+  test("a disabled tracker leaves attempts unchanged", async () => {
+    const repo = outbox();
+    const config = configPort(disabled);
+    const service = new SyncService({
+      adapters: [adapter("anilist").adapter],
+      outbox: repo,
+      config,
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+    const [claimed] = repo.claimDue(1, new Date(Date.now() + 60 * 60 * 1000));
+
+    expect(claimed?.attempts).toBe(2);
+  });
+
+  test("delivers a claimed row and removes it on success", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    const summary = await service.drain();
+
+    expect(anilist.calls).toEqual([anilistFavourite]);
+    expect(summary.succeeded).toBe(1);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  /**
+   * A payload that cannot be parsed can never be delivered, so it is
+   * dead-lettered without an adapter call rather than retried forever.
+   */
+  test("dead-letters a corrupt payload without calling the adapter", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    repo.enqueue({ trackerId: "anilist", dedupeKey: "corrupt|x", payload: { version: 99 } });
+    const summary = await service.drain();
+
+    expect(anilist.calls).toHaveLength(0);
+    expect(summary.deadLettered).toBe(1);
+    expect(repo.counts().deadLetter).toBe(1);
+  });
+
+  test("maps each outcome onto its outbox transition", async () => {
+    const cases = [
+      { outcome: syncFailed("boom", "network"), field: "retrying" as const },
+      { outcome: syncFailed("nope", "mapping"), field: "deadLettered" as const },
+      { outcome: syncNeedsReauth("token-rejected"), field: "needsReauth" as const },
+    ];
+
+    for (const { outcome, field } of cases) {
+      const repo = outbox();
+      const service = new SyncService({
+        adapters: [adapter("anilist", () => outcome).adapter],
+        outbox: repo,
+        config: configPort(),
+      });
+      service.enqueueOperation(anilistFavourite);
+
+      const summary = await service.drain();
+
+      expect(summary[field], `${outcome.status}/${field}`).toBe(1);
+      expect(summary.failed).toBe(1);
+    }
+  });
+
+  /**
+   * An adapter that throws rather than returning an outcome must not take the
+   * drain down with it — one broken tracker would otherwise strand every
+   * queued row, including other trackers'.
+   */
+  test("records an adapter that throws as a retryable failure", async () => {
+    const repo = outbox();
+    const service = new SyncService({
+      adapters: [
+        adapter("anilist", () => {
+          throw new Error("network unavailable");
+        }).adapter,
+      ],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    const summary = await service.drain();
+
+    expect(summary.retrying).toBe(1);
+    expect(summary.failures[0]).toContain("adapter-threw");
+    expect(repo.counts().pending).toBe(1);
+  });
+
+  /**
+   * One awaited syncNow owns one drain. A second caller must not be told its
+   * rows were delivered — they were enqueued after the batch was claimed, so
+   * they are still pending and a later drain owns them.
+   */
+  test("a concurrent syncNow reports already-running and leaves its rows pending", async () => {
+    const repo = outbox();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const anilist = adapter("anilist", async () => {
+      await held;
+      return syncOk();
+    });
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    const first = service.drain();
+    await Promise.resolve();
+
+    const second = await service.syncNow([]);
+    expect(second.status).toBe("already-running");
+
+    release();
+    const summary = await first;
+    expect(summary.succeeded).toBe(1);
+    expect(anilist.calls).toHaveLength(1);
+  });
+
+  /** Reconnecting must unpark exactly the rows that were waiting on it. */
+  test("resumeAfterReauth resets only the named tracker", async () => {
+    const repo = outbox();
+    const service = new SyncService({
+      adapters: [adapter("anilist", () => syncNeedsReauth("token-rejected")).adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+    expect(repo.counts().needsReauth).toBe(1);
+
+    expect(service.resumeAfterReauth("tmdb")).toBe(0);
+    expect(service.resumeAfterReauth("anilist")).toBe(1);
+    expect(repo.counts().pending).toBe(1);
+  });
+
+  /** Shutdown stops accepting work rather than queueing what will never drain. */
+  test("stops accepting enqueues after shutdown", async () => {
+    const repo = outbox();
+    const service = new SyncService({
+      adapters: [adapter("anilist").adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    await service.shutdown();
+
+    expect(service.enqueueOperation(anilistFavourite)).toBe(0);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  /**
+   * Capability mismatch is decided from the adapter's own declaration, before
+   * any request — the declaration is the authority, not per-tracker branching
+   * scattered through the drain.
+   */
+  test("dead-letters an operation the adapter does not support", async () => {
+    const repo = outbox();
+    const tmdb = adapter("tmdb");
+    const service = new SyncService({
+      adapters: [tmdb.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    repo.enqueue({
+      trackerId: "tmdb",
+      dedupeKey: "tmdb:movie:550|progress:set",
+      payload: {
+        version: 1,
+        kind: "progress:set",
+        target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+        progress: 2,
+        status: "watching",
+      },
+    });
+
+    const summary = await service.drain();
+
+    expect(tmdb.calls).toHaveLength(0);
+    expect(summary.deadLettered).toBe(1);
+  });
+});

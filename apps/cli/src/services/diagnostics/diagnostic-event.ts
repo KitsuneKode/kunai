@@ -14,6 +14,7 @@ export const DIAGNOSTIC_CATEGORIES = [
   "download",
   "offline",
   "update",
+  "sync",
 ] as const;
 
 export type DiagnosticCategory = (typeof DIAGNOSTIC_CATEGORIES)[number];

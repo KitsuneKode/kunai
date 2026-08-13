@@ -1,6 +1,7 @@
 import type { HistoryProgress } from "@kunai/storage";
 
-import type { SyncCapabilities, TrackerId } from "./types";
+import type { TrackerOperation } from "./operations";
+import type { SyncCapabilities, SyncMutationOptions, SyncOutcome, TrackerId } from "./types";
 
 export type SyncResult = { ok: true } | { ok: false; error: string };
 
@@ -13,6 +14,12 @@ export interface SyncAdapter {
    * UI while no code path delivers it.
    */
   readonly capabilities: SyncCapabilities;
+  /**
+   * Apply one desired-state operation. Implementations converge on the
+   * requested state rather than moving relative to it, because the outbox may
+   * redeliver a row whose response was lost after the remote applied it.
+   */
+  apply(operation: TrackerOperation, options: SyncMutationOptions): Promise<SyncOutcome>;
   isConnected(): boolean;
   getConnectedUsername(): string | undefined;
   ensureConnectedUsername?(): Promise<void>;

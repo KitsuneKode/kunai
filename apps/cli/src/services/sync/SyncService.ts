@@ -1,68 +1,443 @@
-import type { HistoryProgress } from "@kunai/storage";
+import type { HistoryProgress, SyncOutboxClaim, SyncOutboxRepository } from "@kunai/storage";
 
+import type { DiagnosticsService } from "../diagnostics/DiagnosticsService";
+import {
+  parseTrackerOperation,
+  trackerOperationDedupeKey,
+  type TrackerOperation,
+} from "./operations";
+import { SYNC_SHUTDOWN_REASON } from "./request-deadline";
+import {
+  resolveAniListIdentity,
+  resolveAniListProgressEpisode,
+  resolveTmdbIdentity,
+} from "./sync-identity";
 import type { SyncAdapter } from "./SyncAdapter";
+import {
+  syncCancelled,
+  type SyncCapabilities,
+  type SyncMutationOptions,
+  type SyncOutcome,
+  type TrackerId,
+  type TrackerIdSource,
+} from "./types";
 
 export type SyncHealth = "ok" | "warn" | "error" | "disconnected";
 
+export interface SyncConfigGate {
+  readonly enabled: boolean;
+  readonly trackWatched: boolean;
+  readonly syncList: boolean;
+}
+
+/**
+ * Live config, read per mutation. This is a port rather than a snapshot because
+ * a captured value cannot express "the user turned this off a moment ago" — and
+ * queued work outlives the moment it was queued.
+ */
+export interface SyncConfigPort {
+  read(): Promise<{ readonly sync: Readonly<Record<TrackerId, SyncConfigGate>> }>;
+}
+
 export type SyncPushSummary = {
   readonly connected: number;
+  readonly claimed: number;
   readonly succeeded: number;
+  readonly skipped: number;
   readonly failed: number;
+  readonly retrying: number;
+  readonly needsReauth: number;
+  readonly deadLettered: number;
+  readonly released: number;
+  readonly superseded: number;
+  readonly pending: number;
   readonly failures: readonly string[];
 };
 
+export type SyncNowResult =
+  | { readonly status: "completed"; readonly enqueued: number; readonly summary: SyncPushSummary }
+  | { readonly status: "already-running"; readonly enqueued: number };
+
+export interface SyncServiceDeps {
+  readonly adapters: readonly SyncAdapter[];
+  readonly outbox: SyncOutboxRepository;
+  readonly config: SyncConfigPort;
+  readonly diagnostics?: Pick<DiagnosticsService, "record">;
+}
+
+const emptySummary = (pending: number): SyncPushSummary => ({
+  connected: 0,
+  claimed: 0,
+  succeeded: 0,
+  skipped: 0,
+  failed: 0,
+  retrying: 0,
+  needsReauth: 0,
+  deadLettered: 0,
+  released: 0,
+  superseded: 0,
+  pending,
+  failures: [],
+});
+
+/** Which capability an operation needs, so gating reads one declaration. */
+function requiredCapability(operation: TrackerOperation): keyof SyncCapabilities {
+  switch (operation.kind) {
+    case "progress:set":
+      return "episodeProgress";
+    case "list-membership:set":
+      return "watchlistMembership";
+    case "favorite-membership:set":
+      return "favoriteMembership";
+  }
+}
+
+function trackerOf(operation: TrackerOperation): TrackerId {
+  return operation.target.tracker;
+}
+
+/**
+ * Owns durable delivery of tracker writes.
+ *
+ * Playback and shell surfaces enqueue desired state and return; nothing waits on
+ * a remote call. Exactly one drain is active at a time, so a scheduler tick and
+ * a manual "sync now" cannot both claim the same row, and shutdown has a single
+ * thing to cancel and await.
+ */
 export class SyncService {
+  private readonly adaptersById = new Map<TrackerId, SyncAdapter>();
+  private readonly outbox: SyncOutboxRepository;
+  private readonly config: SyncConfigPort;
+  private readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  private readonly shutdownController = new AbortController();
+  private activeDrain: Promise<SyncPushSummary> | null = null;
+  private accepting = true;
   private lastPushFailed = false;
 
-  constructor(
-    private readonly anilist: SyncAdapter,
-    private readonly tmdb: SyncAdapter,
-  ) {}
+  constructor(deps: SyncServiceDeps) {
+    for (const adapter of deps.adapters) this.adaptersById.set(adapter.id, adapter);
+    this.outbox = deps.outbox;
+    this.config = deps.config;
+    this.diagnostics = deps.diagnostics;
+  }
 
   get adapters(): readonly SyncAdapter[] {
-    return [this.anilist, this.tmdb];
+    return [...this.adaptersById.values()];
   }
 
   getConnectedAdapters(): SyncAdapter[] {
-    return [this.anilist, this.tmdb].filter((a) => a.isConnected());
+    return this.adapters.filter((adapter) => adapter.isConnected());
   }
 
   getHealth(): SyncHealth {
-    const connected = this.getConnectedAdapters();
-    if (connected.length === 0) return "disconnected";
-    if (this.lastPushFailed) return "warn";
-    return "ok";
+    if (this.getConnectedAdapters().length === 0) return "disconnected";
+    return this.lastPushFailed ? "warn" : "ok";
   }
 
-  async pushWatched(entry: HistoryProgress): Promise<SyncPushSummary> {
-    const connected = this.getConnectedAdapters();
-    if (connected.length === 0) {
-      return { connected: 0, succeeded: 0, failed: 0, failures: [] };
+  /**
+   * Persist one operation. Returns how many rows were written (0 or 1) so
+   * callers can report an exact count rather than an intention.
+   */
+  enqueueOperation(operation: TrackerOperation): number {
+    if (!this.accepting) return 0;
+    const tracker = trackerOf(operation);
+    if (!this.adaptersById.has(tracker)) return 0;
+
+    this.outbox.enqueue({
+      trackerId: tracker,
+      dedupeKey: trackerOperationDedupeKey(operation),
+      payload: operation,
+    });
+    return 1;
+  }
+
+  /**
+   * Project a persisted history fact into tracker operations.
+   *
+   * Only AniList receives progress, and only when a strict AniList identity and
+   * a cour-relative episode both exist. A title we cannot address is not an
+   * error to retry — there is nothing to deliver.
+   */
+  enqueueProgress(entry: HistoryProgress): number {
+    const identity = resolveAniListIdentity(entry);
+    const progress = resolveAniListProgressEpisode(entry);
+    if (!identity || progress === null) return 0;
+
+    return this.enqueueOperation({
+      version: 1,
+      kind: "progress:set",
+      target: identity,
+      progress,
+      status: entry.completed ? "completed" : "watching",
+      ...(entry.completedAt ? { watchedAt: entry.completedAt } : {}),
+    });
+  }
+
+  enqueueListMembership(input: {
+    readonly source: TrackerIdSource;
+    readonly list: "watchlist";
+    readonly present: boolean;
+  }): number {
+    return this.enqueueForEachTracker(input.source, (target) => ({
+      version: 1,
+      kind: "list-membership:set",
+      target,
+      list: input.list,
+      present: input.present,
+    }));
+  }
+
+  enqueueFavoriteMembership(input: {
+    readonly source: TrackerIdSource;
+    readonly present: boolean;
+  }): number {
+    return this.enqueueForEachTracker(input.source, (target) => ({
+      version: 1,
+      kind: "favorite-membership:set",
+      target,
+      present: input.present,
+    }));
+  }
+
+  private enqueueForEachTracker(
+    source: TrackerIdSource,
+    build: (target: TrackerOperation["target"]) => TrackerOperation,
+  ): number {
+    const targets = [resolveAniListIdentity(source), resolveTmdbIdentity(source)].filter(
+      (target): target is NonNullable<typeof target> => target !== null,
+    );
+    return targets.reduce((count, target) => count + this.enqueueOperation(build(target)), 0);
+  }
+
+  /**
+   * Enqueue then deliver, for an explicit user action.
+   *
+   * A caller arriving while a drain is already running is told so rather than
+   * handed that drain's summary: its rows were enqueued after the batch was
+   * claimed, so reporting them as delivered would be a lie a later drain has to
+   * make true.
+   */
+  async syncNow(entries: readonly HistoryProgress[]): Promise<SyncNowResult> {
+    const enqueued = entries.reduce((count, entry) => count + this.enqueueProgress(entry), 0);
+    if (this.activeDrain) return { status: "already-running", enqueued };
+    return { status: "completed", enqueued, summary: await this.drain() };
+  }
+
+  /**
+   * Deliver one bounded batch. Duplicate callers join the active drain rather
+   * than starting a second one — two drains would race for the same claims.
+   */
+  async drain(limit = 25, options?: SyncMutationOptions): Promise<SyncPushSummary> {
+    if (this.activeDrain) return this.activeDrain;
+    const run = this.drainOnce(limit, options).finally(() => {
+      if (this.activeDrain === run) this.activeDrain = null;
+    });
+    this.activeDrain = run;
+    return run;
+  }
+
+  private async drainOnce(limit: number, options?: SyncMutationOptions): Promise<SyncPushSummary> {
+    const claims = this.outbox.claimDue(limit);
+    if (claims.length === 0) return emptySummary(this.outbox.counts().pending);
+
+    const tally = {
+      succeeded: 0,
+      skipped: 0,
+      retrying: 0,
+      needsReauth: 0,
+      deadLettered: 0,
+      released: 0,
+      superseded: 0,
+    };
+    const failures: string[] = [];
+
+    for (const claim of claims) {
+      const result = await this.deliver(claim, options);
+      if (result.transition === "superseded") tally.superseded += 1;
+      else tally[result.bucket] += 1;
+      if (result.failure) failures.push(result.failure);
     }
 
-    const results = await Promise.all(
-      connected.map(async (adapter) => {
-        try {
-          const result = await adapter.pushWatched(entry);
-          return result.ok
-            ? { ok: true as const }
-            : { ok: false as const, failure: `${adapter.displayName}: ${result.error}` };
-        } catch (error) {
-          return {
-            ok: false as const,
-            failure: `${adapter.displayName}: ${error instanceof Error ? error.message : "sync failed"}`,
-          };
-        }
-      }),
-    );
-    const failures = results.flatMap((result) => (result.ok ? [] : [result.failure]));
-    const summary = {
-      connected: connected.length,
-      succeeded: results.length - failures.length,
-      failed: failures.length,
+    const failed = tally.retrying + tally.needsReauth + tally.deadLettered;
+    this.lastPushFailed = failed > 0;
+
+    return {
+      connected: this.getConnectedAdapters().length,
+      claimed: claims.length,
+      ...tally,
+      failed,
+      pending: this.outbox.counts().pending,
       failures,
     };
-    this.lastPushFailed = summary.failed > 0;
-    return summary;
+  }
+
+  private async deliver(
+    claim: SyncOutboxClaim,
+    options?: SyncMutationOptions,
+  ): Promise<{
+    transition: string;
+    bucket: "succeeded" | "skipped" | "retrying" | "needsReauth" | "deadLettered" | "released";
+    failure?: string;
+  }> {
+    const parsed = parseTrackerOperation(claim.payload);
+    if (!parsed.ok) {
+      // Unparseable rows can never succeed, and the payload is exactly what must
+      // not be logged — only the bounded code is recorded.
+      this.outbox.deadLetter({ item: claim, errorCode: parsed.code });
+      this.diagnostics?.record({
+        category: "sync",
+        message: "Dead-lettered unparseable tracker operation",
+        context: { tracker: claim.trackerId, code: parsed.code },
+      });
+      return { transition: "applied", bucket: "deadLettered", failure: parsed.code };
+    }
+
+    const operation = parsed.operation;
+    const adapter = this.adaptersById.get(trackerOf(operation));
+    if (!adapter) {
+      this.outbox.deadLetter({ item: claim, errorCode: "tracker-unknown" });
+      return { transition: "applied", bucket: "deadLettered", failure: "tracker-unknown" };
+    }
+    if (!adapter.capabilities[requiredCapability(operation)]) {
+      this.outbox.deadLetter({ item: claim, errorCode: "capability-unsupported" });
+      return { transition: "applied", bucket: "deadLettered", failure: "capability-unsupported" };
+    }
+
+    // Re-read config here, immediately before the external call, so disabling a
+    // tracker stops the very next write instead of the next session.
+    const gate = (await this.config.read()).sync[adapter.id];
+    if (!gate?.enabled) {
+      this.outbox.release(claim);
+      return { transition: "applied", bucket: "released" };
+    }
+
+    const outcome = await this.applyWithShutdown(adapter, operation, options);
+    return this.recordOutcome(claim, adapter, outcome);
+  }
+
+  /**
+   * Compose the caller's signal with the service shutdown signal, so an orderly
+   * quit cancels in-flight adapter work rather than waiting it out.
+   */
+  private async applyWithShutdown(
+    adapter: SyncAdapter,
+    operation: TrackerOperation,
+    options?: SyncMutationOptions,
+  ): Promise<SyncOutcome> {
+    if (this.shutdownController.signal.aborted) return syncCancelled("shutdown");
+    const signals = [this.shutdownController.signal];
+    if (options?.signal) signals.push(options.signal);
+    try {
+      return await adapter.apply(operation, { signal: AbortSignal.any(signals) });
+    } catch (error) {
+      return {
+        status: "failed",
+        code: "adapter-threw",
+        kind: "network",
+        retryable: true,
+        detail: error instanceof Error ? error.name : "unknown",
+      };
+    }
+  }
+
+  private recordOutcome(
+    claim: SyncOutboxClaim,
+    adapter: SyncAdapter,
+    outcome: SyncOutcome,
+  ): {
+    transition: string;
+    bucket: "succeeded" | "skipped" | "retrying" | "needsReauth" | "deadLettered" | "released";
+    failure?: string;
+  } {
+    const label = (code: string) => `${adapter.displayName}: ${code}`;
+    switch (outcome.status) {
+      case "ok":
+        return { transition: this.outbox.complete(claim), bucket: "succeeded" };
+      case "skipped":
+        return { transition: this.outbox.complete(claim), bucket: "skipped" };
+      case "cancelled":
+        // Cancellation is not failure: the claim goes back untouched so an
+        // orderly shutdown cannot walk a row toward dead-letter.
+        return { transition: this.outbox.release(claim), bucket: "released" };
+      case "needs-reauth":
+        return {
+          transition: this.outbox.requireReauth({
+            item: claim,
+            errorCode: outcome.code,
+            ...(outcome.detail ? { errorDetail: outcome.detail } : {}),
+          }),
+          bucket: "needsReauth",
+          failure: label(outcome.code),
+        };
+      case "failed":
+        if (outcome.retryable) {
+          return {
+            transition: this.outbox.retry({
+              item: claim,
+              errorCode: outcome.code,
+              ...(outcome.detail ? { errorDetail: outcome.detail } : {}),
+            }),
+            bucket: "retrying",
+            failure: label(outcome.code),
+          };
+        }
+        return {
+          transition: this.outbox.deadLetter({
+            item: claim,
+            errorCode: outcome.code,
+            ...(outcome.detail ? { errorDetail: outcome.detail } : {}),
+          }),
+          bucket: "deadLettered",
+          failure: label(outcome.code),
+        };
+    }
+  }
+
+  async refreshIdentities(options?: SyncMutationOptions): Promise<void> {
+    const signals = [this.shutdownController.signal];
+    if (options?.signal) signals.push(options.signal);
+    const signal = AbortSignal.any(signals);
+    await Promise.all(
+      this.adapters.map(async (adapter) => {
+        try {
+          await adapter.ensureConnectedUsername?.();
+        } catch {
+          // Identity is presentational; a failure here must not block delivery.
+        }
+        void signal;
+      }),
+    );
+  }
+
+  /** Unpark rows that were waiting on this tracker's credentials. */
+  resumeAfterReauth(trackerId: TrackerId): number {
+    return this.outbox.resetNeedsReauth(trackerId);
+  }
+
+  stopAccepting(): void {
+    this.accepting = false;
+  }
+
+  /**
+   * Stop accepting, cancel in-flight work, and wait for the active drain to
+   * settle. Storage is closed by `dispose-container`, after this resolves — a
+   * drain still holding the database would fault on a closed handle.
+   */
+  async shutdown(): Promise<void> {
+    this.stopAccepting();
+    this.shutdownController.abort(SYNC_SHUTDOWN_REASON);
+    try {
+      await this.activeDrain;
+    } catch {
+      // Shutdown is best-effort: a failing drain must not block disposal.
+    }
+  }
+
+  /** @deprecated Compatibility for the current shell; removed with Task 8A. */
+  async pushWatched(entry: HistoryProgress): Promise<SyncPushSummary> {
+    const result = await this.syncNow([entry]);
+    if (result.status === "completed") return result.summary;
+    await this.activeDrain;
+    return this.drain();
   }
 }

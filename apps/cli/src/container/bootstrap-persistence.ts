@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { initLogger } from "@/logger";
+import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -39,6 +40,7 @@ import {
   ScheduleCacheRepository,
   SourceInventoryRepository,
   StreamCacheRepository,
+  SyncOutboxRepository,
   TitleProviderHealthRepository,
   type KunaiDatabase,
 } from "@kunai/storage";
@@ -310,13 +312,6 @@ export async function bootstrapPersistence(
   const queueService = new QueueService(queueRepository, sessionId);
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
-  const syncTokenStore = new SyncTokenStore(paths);
-  const anilistAdapter = new AniListAdapter(syncTokenStore);
-  const TMDB_PUBLIC_KEY = process.env.KUNAI_TMDB_API_KEY ?? "653bb8af90162bd98fc7ee32bcbbfb3d";
-  const tmdbAdapter = new TmdbAdapter(syncTokenStore, TMDB_PUBLIC_KEY);
-  await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
-  const syncService = new SyncService(anilistAdapter, tmdbAdapter);
-
   const config = await ConfigServiceImpl.load(configStore);
   if (config.videasyAppIdMigratedOnLoad) {
     const { invalidateVideasyProviderCaches } =
@@ -328,6 +323,23 @@ export async function bootstrapPersistence(
       reason: "videasyAppId auto-migration",
     });
   }
+
+  // Sync is constructed after config loads: the drain reads live gates through
+  // `SyncConfigPort` on every mutation, so it must close over the real config
+  // service rather than a snapshot taken before it existed.
+  const syncTokenStore = new SyncTokenStore(paths);
+  const anilistAdapter = new AniListAdapter(syncTokenStore);
+  const tmdbAdapter = new TmdbAdapter(
+    syncTokenStore,
+    process.env.KUNAI_TMDB_API_KEY ?? TMDB_API_KEY,
+  );
+  await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
+  const syncService = new SyncService({
+    adapters: [anilistAdapter, tmdbAdapter],
+    outbox: new SyncOutboxRepository(dataDb),
+    config: { read: async () => ({ sync: config.getRaw().sync }) },
+    diagnostics: diagnosticsService,
+  });
 
   return {
     core,
