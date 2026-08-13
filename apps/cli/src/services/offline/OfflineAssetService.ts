@@ -40,6 +40,20 @@ export class OfflineAssetService {
     this.assets.deleteByOriginJobId(jobId);
   }
 
+  /**
+   * Drops assets left ownerless by an earlier delete, returning how many.
+   *
+   * Job deletion once removed the row before the cleanup listener ran, and
+   * `origin_job_id` is `ON DELETE SET NULL`, so the asset survived as `ready`
+   * with no owner — advertised as downloaded, impossible to play. Deletion now
+   * emits first, so this only repairs libraries damaged before that fix; it is
+   * a no-op afterwards. Job-driven validation cannot reach these rows, because
+   * it iterates jobs and these have none.
+   */
+  purgeOrphanedAssets(): number {
+    return this.assets.deleteOrphaned();
+  }
+
   adoptCompletedJob(job: DownloadJobRecord): OfflineAssetRecord | null {
     if (
       job.status !== "completed" &&

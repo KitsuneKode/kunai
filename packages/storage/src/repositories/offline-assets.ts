@@ -248,6 +248,37 @@ export class OfflineAssetsRepository {
     this.db.query("DELETE FROM offline_assets WHERE origin_job_id = ?").run(jobId);
   }
 
+  /**
+   * Removes assets whose owning job no longer exists, returning how many went.
+   *
+   * `origin_job_id` is `ON DELETE SET NULL`, so a job deleted before its cleanup
+   * listener ran leaves the asset behind with a null owner. Such a row still
+   * reads `state='ready'`, so the library keeps advertising the title as
+   * downloaded while nothing can play it: `findReadyJobIdForEpisode` hands back
+   * the null job id and playback bails straight back to the results screen.
+   */
+  deleteOrphaned(): number {
+    const orphans =
+      this.db
+        .query<{ count: number }, []>(
+          "SELECT COUNT(*) AS count FROM offline_assets WHERE origin_job_id IS NULL",
+        )
+        .get()?.count ?? 0;
+    if (orphans === 0) return 0;
+    this.db
+      .query(
+        "DELETE FROM offline_asset_tracks WHERE asset_id IN (SELECT id FROM offline_assets WHERE origin_job_id IS NULL)",
+      )
+      .run();
+    this.db
+      .query(
+        "DELETE FROM offline_asset_artwork WHERE asset_id IN (SELECT id FROM offline_assets WHERE origin_job_id IS NULL)",
+      )
+      .run();
+    this.db.query("DELETE FROM offline_assets WHERE origin_job_id IS NULL").run();
+    return orphans;
+  }
+
   setProtected(id: string, protectedValue: boolean, updatedAt: string): void {
     this.db
       .query("UPDATE offline_assets SET protected = ?, updated_at = ? WHERE id = ?")

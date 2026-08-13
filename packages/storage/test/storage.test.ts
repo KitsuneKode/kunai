@@ -689,6 +689,49 @@ test("offline title policies and maintenance jobs persist explicit bounded autho
   expect(retry.id).not.toBe(initial.id);
 });
 
+test("offline assets repository purges rows whose owning job is gone", () => {
+  const db = migratedDataDb();
+  const jobs = new DownloadJobsRepository(db);
+  const assets = new OfflineAssetsRepository(db);
+  const now = "2026-08-13T00:00:00.000Z";
+
+  jobs.enqueue({
+    id: "job-orphan",
+    titleId: "tmdb:1081003",
+    titleName: "Supergirl",
+    mediaKind: "movie",
+    providerId: "vidking",
+    streamUrl: "https://example.com/master.m3u8",
+    headers: {},
+    outputPath: "/tmp/supergirl.mp4",
+    tempPath: "/tmp/supergirl.mp4.tmp.job-orphan",
+    createdAt: now,
+    updatedAt: now,
+  });
+  assets.upsertPlayable({
+    titleId: "tmdb:1081003",
+    titleName: "Supergirl",
+    mediaKind: "movie",
+    profileKey: "original:en:best",
+    originJobId: "job-orphan",
+    filePath: "/tmp/supergirl.mp4",
+    state: "ready",
+    updatedAt: now,
+  });
+
+  // ON DELETE SET NULL: deleting the job orphans the asset rather than removing
+  // it, and the orphan still reads `ready` so the library keeps offering it.
+  jobs.delete("job-orphan");
+  const orphaned = assets.listTitleAssets("tmdb:1081003");
+  expect(orphaned).toHaveLength(1);
+  expect(orphaned[0]?.originJobId).toBeUndefined();
+  expect(orphaned[0]?.state).toBe("ready");
+
+  expect(assets.deleteOrphaned()).toBe(1);
+  expect(assets.listTitleAssets("tmdb:1081003")).toHaveLength(0);
+  expect(assets.deleteOrphaned()).toBe(0);
+});
+
 test("download jobs repository preserves repairable sidecar status without losing completed video", () => {
   const db = migratedDataDb();
   const repo = new DownloadJobsRepository(db);

@@ -243,6 +243,26 @@ export { playbackStartupStageForPlayerEvent };
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
 
+/**
+ * The next downloaded episode after `current`, or null when nothing is ready.
+ *
+ * The offline launch path must answer episode availability from the library
+ * rather than the catalog: returning null unconditionally reads as "series
+ * finished" downstream, so a downloaded next episode would never autoplay.
+ */
+function nextReadyOfflineEpisode(
+  container: PhaseContext["container"],
+  titleId: string,
+  current: EpisodeInfo,
+): EpisodeInfo | null {
+  if (!titleId) return null;
+  const [next] = container.offlineAssetService.listNextReadyByTitleCursors([
+    { titleId, season: current.season, episode: current.episode },
+  ]);
+  if (next?.season == null || next.episode == null) return null;
+  return { season: next.season, episode: next.episode };
+}
+
 function playbackTimingCacheKey(
   title: TitleInfo,
   episode: EpisodeInfo,
@@ -1308,9 +1328,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }),
           );
           const episodeAvailabilityPromise = isOfflineLaunch
-            ? Promise.resolve({
+            ? // Availability comes from the offline library, not the catalog. An
+              // all-null answer here reads as "series finished" to
+              // playback-result-policy, so downloaded E1 would never advance to
+              // downloaded E2 and `n` would be dead. This keeps the launch free
+              // of TMDB/anime-catalog calls while still answering truthfully.
+              Promise.resolve({
                 previousEpisode: null,
-                nextEpisode: null,
+                nextEpisode: nextReadyOfflineEpisode(
+                  container,
+                  resolveTitleHistoryLookupId(title, playbackMode),
+                  currentEpisode,
+                ),
                 nextSeasonEpisode: null,
                 upcomingNext: null,
                 animeNextReleaseUnknown: false,
@@ -1580,9 +1609,21 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           if (!stream && isOfflineLaunch) {
             workControl.setActive(null);
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
-            this.updatePlaybackFeedback(context, {
-              detail: "Downloaded file unavailable",
-              note: "Return to the offline library and run integrity check or re-download it.",
+            // Not updatePlaybackFeedback: this method's `finally` clears detail
+            // and note, so the explanation was erased before it ever rendered
+            // and the user just landed back on results with no reason given.
+            // playbackProblem survives that teardown.
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_PROBLEM",
+              problem: {
+                stage: "stream-open",
+                severity: "blocking",
+                cause: "offline-file-unavailable",
+                userMessage:
+                  "Downloaded file unavailable. Run an integrity check on it in the offline library, or download it again.",
+                recommendedAction: "diagnostics",
+                secondaryActions: ["refresh"],
+              },
             });
             return { status: "success", value: "back_to_results" };
           }
