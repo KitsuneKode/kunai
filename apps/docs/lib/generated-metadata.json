@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-08-13T07:28:40.555Z",
+  "syncedAt": "2026-08-13T07:35:44.093Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "03fd4e14",
-  "cliSourceFingerprint": "5fa66c7f325b72e1715e0d8c400d826d0e4a68860ddb1d6e3e5834234a0a4ac9",
-  "docsContentFingerprint": "75bee0e944492867346399b194b69655ec2552c5954003f18d4165284c094dd2",
+  "cliSourceRevision": "467a6120",
+  "cliSourceFingerprint": "787c49c9107036b9a9db043a1e17d5edd3b6e529a00e27029dd578c7cd9f970e",
+  "docsContentFingerprint": "5c956bd330ce5c2aed77bd1a3e7b630e4d742242b139b757739e189a6d6f34c8",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -643,7 +643,7 @@
     {
       "short": "-a",
       "long": "--anime",
-      "description": "Anime mode (AllAnime providers)"
+      "description": "Anime mode (AniDB default with provider fallback)"
     },
     {
       "short": "-y",
