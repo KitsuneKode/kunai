@@ -2,7 +2,23 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
+import { resolveAniListIdentity, resolveAniListProgressEpisode } from "./sync-identity";
 import type { SyncAdapter, SyncResult } from "./SyncAdapter";
+import type { SyncCapabilities } from "./types";
+
+/**
+ * Progress, planning and favourites are the three writes this adapter
+ * implements. Pull and rating are deliberately false: no reader or writer for
+ * either exists on this branch, and declaring them would put controls in
+ * settings that do nothing.
+ */
+const ANILIST_CAPABILITIES: SyncCapabilities = {
+  episodeProgress: true,
+  watchlistMembership: true,
+  favoriteMembership: true,
+  pullLists: false,
+  rating: false,
+};
 
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 const OAUTH_BASE = "https://anilist.co/api/v2/oauth";
@@ -19,8 +35,9 @@ interface MediaListEntryResponse {
 }
 
 export class AniListAdapter implements SyncAdapter {
-  readonly id = "anilist";
+  readonly id = "anilist" as const;
   readonly displayName = "AniList";
+  readonly capabilities = ANILIST_CAPABILITIES;
 
   private username: string | undefined;
   private userId: number | undefined;
@@ -132,11 +149,14 @@ export class AniListAdapter implements SyncAdapter {
     if (!this.accessToken) return { ok: false, error: "Not connected to AniList." };
     if (!entry.episode) return { ok: true };
 
-    const mediaId = extractAniListId(entry.titleId);
-    if (!mediaId) return { ok: false, error: `Cannot map title ${entry.titleId} to AniList ID.` };
+    const identity = resolveAniListIdentity(entry);
+    if (!identity) return { ok: false, error: `Cannot map title ${entry.titleId} to AniList ID.` };
+    const mediaId = identity.anilistId;
+
+    const progress = resolveAniListProgressEpisode(entry);
+    if (progress === null) return { ok: true };
 
     const status = entry.completed && entry.mediaKind === "movie" ? "COMPLETED" : "CURRENT";
-    const progress = entry.episode ?? 0;
 
     const mutation = `
       mutation SaveProgress($mediaId: Int, $status: MediaListStatus, $progress: Int) {
@@ -227,12 +247,4 @@ export class AniListAdapter implements SyncAdapter {
     }
     return { port, code };
   }
-}
-
-function extractAniListId(titleId: string): number | null {
-  const match = /^anilist:(\d+)$/.exec(titleId) ?? /^mal:(\d+)$/.exec(titleId);
-  if (match?.[1]) return parseInt(match[1], 10);
-  const tmdbMatch = /^tmdb:(\d+)$/.exec(titleId);
-  if (tmdbMatch?.[1]) return parseInt(tmdbMatch[1], 10);
-  return null;
 }

@@ -3,6 +3,31 @@ import { describe, expect, test } from "bun:test";
 import type { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
 import { AniListAdapter } from "@/services/sync/AniListAdapter";
 
+/**
+ * Capabilities are read, not restated. Settings decides what to offer and the
+ * drain decides what to deliver from these declarations, so an overclaim here
+ * becomes a control the user can operate that does nothing.
+ */
+describe("AniListAdapter capabilities", () => {
+  const adapter = new AniListAdapter({ load: async () => ({}) } as unknown as SyncTokenStore);
+
+  test("claims progress, watchlist and favourite membership only", () => {
+    expect(adapter.capabilities).toEqual({
+      episodeProgress: true,
+      watchlistMembership: true,
+      favoriteMembership: true,
+      pullLists: false,
+      rating: false,
+    });
+  });
+
+  /** Nothing on this branch reads remote lists or writes ratings. */
+  test("claims neither pull nor rating", () => {
+    expect(adapter.capabilities.pullLists).toBe(false);
+    expect(adapter.capabilities.rating).toBe(false);
+  });
+});
+
 describe("AniListAdapter startup", () => {
   test("loads the saved session without fetching identity until explicitly requested", async () => {
     const tokenStore = {

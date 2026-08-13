@@ -7,8 +7,15 @@ const entry = { titleId: "tmdb:1", mediaKind: "movie" } as never;
 
 function adapter(input: Partial<SyncAdapter>): SyncAdapter {
   return {
-    id: input.id ?? "adapter",
+    id: input.id ?? "anilist",
     displayName: input.displayName ?? "Adapter",
+    capabilities: input.capabilities ?? {
+      episodeProgress: true,
+      watchlistMembership: true,
+      favoriteMembership: true,
+      pullLists: false,
+      rating: false,
+    },
     isConnected: input.isConnected ?? (() => true),
     getConnectedUsername: () => undefined,
     connect: async () => ({ ok: true }),

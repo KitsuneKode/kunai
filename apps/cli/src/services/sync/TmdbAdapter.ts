@@ -3,14 +3,30 @@ import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import type { SyncAdapter, SyncResult } from "./SyncAdapter";
+import type { SyncCapabilities } from "./types";
+
+/**
+ * TMDB v3 exposes account watchlist and favourite membership, and nothing that
+ * records how far through a series you are — so `episodeProgress` is false and
+ * no progress operation may be routed here. Pull and rating are unimplemented
+ * on this branch.
+ */
+const TMDB_CAPABILITIES: SyncCapabilities = {
+  episodeProgress: false,
+  watchlistMembership: true,
+  favoriteMembership: true,
+  pullLists: false,
+  rating: false,
+};
 
 const TMDB_API_BASE = "https://api.themoviedb.org/3";
 const TMDB_AUTHENTICATE_BASE = "https://www.themoviedb.org/authenticate";
 const TMDB_TIMEOUT_MS = 90_000;
 
 export class TmdbAdapter implements SyncAdapter {
-  readonly id = "tmdb";
+  readonly id = "tmdb" as const;
   readonly displayName = "TMDB";
+  readonly capabilities = TMDB_CAPABILITIES;
 
   private sessionId: string | undefined;
   private accountId: string | undefined;
