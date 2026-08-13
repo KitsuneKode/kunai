@@ -219,7 +219,10 @@ import {
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
+import {
+  findNextReadyEpisode,
+  offlineAssetTitleIdCandidates,
+} from "@/services/offline/offline-episode-index";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -1319,7 +1322,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 previousEpisode: null,
                 nextEpisode: findNextReadyEpisode(
                   container.offlineAssetService,
-                  resolveTitleHistoryLookupId(title, playbackMode),
+                  offlineAssetTitleIdCandidates(title, playbackMode),
                   currentEpisode,
                 ),
                 nextSeasonEpisode: null,

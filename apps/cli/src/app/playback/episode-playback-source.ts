@@ -1,11 +1,13 @@
 import type { Container } from "@/container";
-import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { PlaybackSourcePreference } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import { findReadyJobIdForEpisode } from "@/services/offline/offline-episode-index";
+import {
+  findReadyJobIdForEpisode,
+  offlineAssetTitleIdCandidates,
+} from "@/services/offline/offline-episode-index";
 import { parseIntroSkipTiming } from "@/services/offline/offline-library";
 
 export type LocalEpisodePlaybackResolution = {
@@ -36,11 +38,10 @@ export async function resolveLocalEpisodePlayback(
   if (options.forceOnline) return null;
 
   const mode = container.stateManager.getState().mode;
-  const lookupTitleId = resolveTitleHistoryLookupId(title, mode);
   const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const jobId = findReadyJobIdForEpisode(
     container.offlineAssetService,
-    lookupTitleId,
+    offlineAssetTitleIdCandidates(title, mode),
     episode.season,
     episode.episode,
     { mediaKind },
