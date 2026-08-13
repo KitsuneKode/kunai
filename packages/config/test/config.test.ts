@@ -58,9 +58,17 @@ describe("@kunai/config parse boundary", () => {
     expect(DEFAULT_CONFIG.providerPriority).not.toContain("videasy");
   });
 
-  test("defaults keep Miruro out of the automatic anime fallback lane", () => {
+  /**
+   * Both AllAnime and Miruro stay registered production modules and remain
+   * manually selectable; neither is in the automatic lane. AllAnime's stream
+   * sources endpoint answers NEED_CAPTCHA on bot/geo-gated networks while its
+   * episode catalog still loads, so as an automatic fallback it can only burn
+   * resolve budget before failing.
+   */
+  test("defaults keep captcha-gated providers out of the automatic anime lane", () => {
     expect(DEFAULT_CONFIG.animeProvider).toBe("anidb");
-    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["anidb", "allanime"]);
+    expect(DEFAULT_CONFIG.animeProviderPriority).toEqual(["anidb"]);
+    expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain("allanime");
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain("miruro");
   });
 });
