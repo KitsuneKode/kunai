@@ -11,8 +11,6 @@
 
 import { inflateSync } from "node:zlib";
 
-import { decode as decodeJpegBytes } from "jpeg-js";
-
 import { debugImage } from "./debug";
 import { isPngBytes } from "./png";
 
@@ -266,31 +264,4 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
     height: header.height,
     rgba: samplesToRgba(samples, header, chunks, sampleStep),
   };
-}
-
-export function decodeJpeg(bytes: Uint8Array): DecodedImage {
-  // `useTArray` keeps the result a Uint8Array instead of a Node Buffer, and
-  // `maxMemoryUsageInMB` bounds a hostile or corrupt file rather than letting
-  // it exhaust the process.
-  const decoded = decodeJpegBytes(bytes, {
-    useTArray: true,
-    maxMemoryUsageInMB: 64,
-    formatAsRGBA: true,
-  });
-  return {
-    width: decoded.width,
-    height: decoded.height,
-    rgba: new Uint8Array(decoded.data.buffer, decoded.data.byteOffset, decoded.data.byteLength),
-  };
-}
-
-/** Decode by content sniffing, not file extension — cached posters are named by URL hash. */
-export function decodeImageBytes(bytes: Uint8Array): DecodedImage | null {
-  if (bytes.byteLength === 0) return null;
-  try {
-    return isPngBytes(bytes) ? decodePng(bytes) : decodeJpeg(bytes);
-  } catch (error) {
-    debugImage(`image decode failed: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
 }

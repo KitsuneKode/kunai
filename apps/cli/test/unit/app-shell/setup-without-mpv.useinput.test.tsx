@@ -11,14 +11,11 @@ const MISSING_MPV: CapabilitySnapshot = {
   ffprobe: false,
   ytDlp: true,
   curl: true,
-  chafa: true,
-  magick: true,
   image: {
     terminal: "unknown",
     protocol: "none",
     renderer: "none",
     available: false,
-    dependency: "none",
     reason: "test fixture",
   },
   issues: [

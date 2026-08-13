@@ -883,9 +883,8 @@ install_optional_deps() {
 	local pkgs=()
 	ask "Install mpv (required for playback)?" y && pkgs+=(mpv)
 	ask "Install yt-dlp (YouTube playback and downloads)?" y && pkgs+=(yt-dlp)
-	# Sixel and half-block are encoded in-process. chafa is useful only as an
-	# optional richer text-mode fallback (including tmux/screen without passthrough).
-	ask "Install chafa (richer text-mode poster fallback)?" n && pkgs+=(chafa)
+	# No poster dependency to offer: every renderer consumes one natively
+	# prepared image, and half-block is the universal in-process floor.
 	((${#pkgs[@]} == 0)) && return
 
 	if have brew; then

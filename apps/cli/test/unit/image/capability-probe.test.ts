@@ -50,7 +50,6 @@ describe("image capability with a terminal probe", () => {
     probeTesting.setProbed({ sixel: false, kittyGraphics: true });
     const capability = detectImageCapability({ TERM: "xterm-256color" });
     expect(capability.protocol).toBe("kitty");
-    expect(capability.dependency).toBe("none");
   });
 
   test("a sixel reply selects the in-process renderer without chafa", () => {
@@ -59,7 +58,6 @@ describe("image capability with a terminal probe", () => {
     const capability = detectImageCapability({ WT_SESSION: "1", TERM: "xterm-256color" });
     expect(capability.protocol).toBe("sixel");
     expect(capability.renderer).toBe("sixel");
-    expect(capability.dependency).toBe("none");
   });
 
   test("a terminal that reports nothing keeps the previous behaviour", () => {

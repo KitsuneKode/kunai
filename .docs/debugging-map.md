@@ -138,11 +138,11 @@ health. Fetch/TLS failures and retryable HTTP responses may still fall through
 because mpv can negotiate them differently from Bun.
 
 **Posters look chunky rather than sharp.** Sixel is encoded in-process and does
-not need `chafa`, but Windows Terminal exposes no version environment variable.
+not need `half-block`, but Windows Terminal exposes no version environment variable.
 The DA1 probe (`apps/cli/src/image/probe.ts`) is therefore the only automatic way
 to confirm sixel support; if it times out, capability falls back to half-block.
 `KUNAI_IMAGE_PROTOCOL=sixel` forces it; `kunai doctor` reports the resolved
-renderer and the reason it was chosen. `chafa` only improves text-mode fallback.
+renderer and the reason it was chosen. `half-block` only improves text-mode fallback.
 The Now Playing rail intentionally uses half-block on Sixel terminals because
 its one-second telemetry frames otherwise replay and blink the framebuffer;
 browse and post-play should still use sharp Sixel output.

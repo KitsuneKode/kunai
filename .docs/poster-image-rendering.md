@@ -4,14 +4,14 @@ Use this doc when changing terminal poster previews, capability detection, the s
 
 ## Code map
 
-| Area                                                 | Role                                                                                                                                                                                                                                                                                                        |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/cli/src/image/`                                | Shared subsystem: capability detection (`detectImageCapability()`), PNG/JPEG helpers, optional ImageMagick (`magick`) conversion via `convert.ts` (subprocess timeout). Ink shell renders from in-memory bytes in `app-shell/poster-renderer.ts` — there is no separate `displayPoster()` / file-cache path |
-| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: Kitty inline graphics, measured Sixel overlays, and text fallbacks; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                                                                                                                       |
-| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                                                                                                               |
-| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                                                                                                               |
-| `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                                                                                                               |
-| `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `chafa`, `magick`, `image` capability; degraded notices for missing tools                                                                                                                                                                                                           |
+| Area                                                 | Role                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/cli/src/image/`                                | Shared subsystem: capability detection (`detectImageCapability()`), the `Bun.Image` preparation seam (`native-image.ts`), and the PNG bridge (`decode.ts`). The old `convert.ts` ImageMagick path and the runtime `jpeg-js` decoder were removed. Ink shell renders from prepared posters in `app-shell/poster-renderer.ts` |
+| `apps/cli/src/app-shell/poster-renderer.ts`          | App-shell rendering: plans one renderer, then draws a `PreparedPoster` — Kitty graphics, iTerm2 inline images, measured Sixel overlays, or half-block text; returns `PosterResult` (`kitty`, `sixel`, `text`, or `none`)                                                                                                    |
+| `apps/cli/src/app-shell/kitty-placement-registry.ts` | Named Kitty slots (`postplay-hero`, `postplay-rail`, `postplay-prev`, `postplay-next`, discovery 0–2, `playing-next`, …); per-slot delete so siblings coexist                                                                                                                                                               |
+| `apps/cli/src/app-shell/image-pane.ts`               | Fetches TMDB/remote bytes or local thumbnail bytes, calls `renderPoster`, LRU cache keyed by URL/path + dimensions + **renderer id** (+ named placement slot for Kitty/Sixel)                                                                                                                                               |
+| `apps/cli/src/app-shell/poster-source-cache.ts`      | Resolves TMDB poster paths, absolute remote URLs, and local `file://` / absolute thumbnail paths without confusing local files for TMDB paths                                                                                                                                                                               |
+| `apps/cli/src/ui.ts`                                 | `checkDeps()` snapshot: `image` capability plus playback tools; posters contribute no dependency                                                                                                                                                                                                                            |
 
 Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` file was removed).
 
@@ -63,7 +63,7 @@ back to auto with a debug line.
 
 ## Tools
 
-- **`chafa`** _(optional)_: richer symbols output for text-mode fallbacks; required only for forced `symbols`. Sixel and half-block are encoded in-process. When chafa is absent, posters still use sixel where supported or half-block elsewhere.
+- **No external poster binary.** Every renderer consumes one natively prepared image; half-block is the universal in-process floor. `chafa` and ImageMagick were retired, and `jpeg-js` is test-support only.
 - **`magick` (ImageMagick 7+)** _(optional, last resort)_: PNG passes through untouched and JPEG (all of TMDB) decodes in-process, so `magick` is no longer on the hot path. It is only reached for formats the in-process decoder cannot read (WebP, AVIF). The CLI invokes `magick` only (not other binary names).
 
 ## App-shell `PosterResult` kinds
@@ -72,7 +72,7 @@ back to auto with a debug line.
 - **`sixel`**: In-process encoded pixels + dimensions and a named overlay id;
   `SixelPosterPane` reserves/measures the Ink rectangle and the overlay manager
   writes the payload after the frame.
-- **`text`**: chafa symbols _or_ in-process half-block output as placeholder text. The app shell prefers chafa (symbol selection and dithering give higher fidelity) and falls back to half-block, so this kind covers every terminal without kitty graphics.
+- **`text`**: in-process half-block output as placeholder text. Covers every terminal without a graphics protocol, and every multiplexer.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.

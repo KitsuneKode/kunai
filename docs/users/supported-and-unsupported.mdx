@@ -49,7 +49,7 @@ Provider availability can change without notice. Fallback chains and recovery ar
 | Network (online playback) | **Yes** for streaming | Use offline library for local files |
 | yt-dlp | No (online only) | Downloads disabled; online playback unaffected |
 | ffprobe | No | Offline duration validation skipped |
-| chafa | No | Optional richer posters; built-in half-block fallback remains |
+| chafa / ImageMagick | Not used | Retired — posters render in process, half-block is the floor |
 | Kitty graphics | No | Best quality when available; otherwise half-block |
 
 ## Downloads and offline
@@ -93,7 +93,7 @@ Exact binary targets and posture:
 | WSL (any distro) | mpv (Linux) | Linux `install.sh` | Uses the **Linux** environment — not Windows-native PATH/mpv/data |
 | FreeBSD / other BSD | Source only | Not published | **Unsupported** binary |
 
-`kunai://` protocol registration is **Linux-only** (including WSL). Poster previews: Kitty when available, otherwise built-in half-block; `chafa` is optional.
+`kunai://` protocol registration is **Linux-only** (including WSL). Poster previews: Kitty on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where reported, otherwise built-in half-block. No external binary is used.
 
 More: [Platforms](/docs/users/platforms), [Install and update](/docs/users/install-and-update).
 

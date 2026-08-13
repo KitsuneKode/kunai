@@ -55,7 +55,6 @@ describe("image capability — iTerm2 inline images", () => {
     expect(capability.protocol).toBe("iterm-inline");
     expect(capability.renderer).toBe("iterm-inline");
     expect(capability.available).toBe(true);
-    expect(capability.dependency).toBe("none");
   });
 
   test("iTerm2 inside tmux stays on text, because we emit no passthrough", () => {

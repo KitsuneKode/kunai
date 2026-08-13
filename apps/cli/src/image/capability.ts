@@ -3,24 +3,15 @@ import { getProbedGraphicsSupport } from "./probe";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
-const PROTOCOL_VALUES = new Set([
-  "auto",
-  "none",
-  "kitty",
-  "iterm",
-  "sixel",
-  "symbols",
-  "half-block",
-] as const);
+const PROTOCOL_VALUES = new Set(["auto", "none", "kitty", "iterm", "sixel", "half-block"] as const);
 
-type ProtocolOverride = "auto" | "none" | "kitty" | "iterm" | "sixel" | "symbols" | "half-block";
+type ProtocolOverride = "auto" | "none" | "kitty" | "iterm" | "sixel" | "half-block";
 
 type CapabilityInput = {
   readonly terminal: TerminalId;
   readonly protocol: ImageProtocol;
   readonly renderer: ImageRendererId;
   readonly available: boolean;
-  readonly dependency: "chafa" | "none";
   readonly reason: string;
 };
 
@@ -30,7 +21,6 @@ function buildCapability(input: CapabilityInput): ImageCapability {
     protocol: input.protocol,
     renderer: input.renderer,
     available: input.available,
-    dependency: input.dependency,
     reason: input.reason,
   };
 }
@@ -46,7 +36,6 @@ function halfBlockCapability(terminal: TerminalId, reason: string): ImageCapabil
     protocol: "half-block",
     renderer: "half-block",
     available: true,
-    dependency: "none",
     reason,
   });
 }
@@ -57,7 +46,6 @@ function noneCapability(terminal: TerminalId, reason: string): ImageCapability {
     protocol: "none",
     renderer: "none",
     available: false,
-    dependency: "none",
     reason,
   });
 }
@@ -140,7 +128,6 @@ const runtime = {
   which: (command: string): string | null => Bun.which(command),
 };
 
-let chafaAvailableMemo: boolean | undefined;
 const capabilityMemo = new Map<string, ImageCapability>();
 
 function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
@@ -169,12 +156,6 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
   ]);
 }
 
-/** True when `chafa` resolves on PATH. Uses the same injectable `runtime.which` as `detectImageCapability` (see `__testing`). */
-export function isChafaAvailable(): boolean {
-  chafaAvailableMemo ??= Boolean(runtime.which("chafa"));
-  return chafaAvailableMemo;
-}
-
 function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   if (!runtime.isStdoutTty()) {
     return noneCapability("unknown", "stdout is not a TTY");
@@ -185,7 +166,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   const terminal = detectTerminal(env);
-  const hasChafa = isChafaAvailable();
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
 
   if (override === "invalid") {
@@ -203,7 +183,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
         protocol: "kitty",
         renderer: "kitty-native",
         available: true,
-        dependency: "none",
         reason: "kitty-compatible terminal requested",
       });
     }
@@ -219,7 +198,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "iterm-inline",
       renderer: "iterm-inline",
       available: true,
-      dependency: "none",
       reason: "forced iTerm2 inline images",
     });
   }
@@ -231,22 +209,7 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "forced sixel output",
-    });
-  }
-
-  if (override === "symbols") {
-    if (!hasChafa) {
-      return noneCapability(terminal, "KUNAI_IMAGE_PROTOCOL=symbols requires chafa");
-    }
-    return buildCapability({
-      terminal,
-      protocol: "symbols",
-      renderer: "chafa-symbols",
-      available: true,
-      dependency: "chafa",
-      reason: "forced symbols output via chafa",
     });
   }
 
@@ -258,19 +221,10 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   // survive a multiplexer without passthrough wrapping. Explicit
   // KUNAI_IMAGE_PROTOCOL overrides are handled above and still win.
   if (isMultiplexed(env)) {
-    return isChafaAvailable()
-      ? buildCapability({
-          terminal,
-          protocol: "symbols",
-          renderer: "chafa-symbols",
-          available: true,
-          dependency: "chafa",
-          reason: "tmux/screen detected; graphics escapes need passthrough, using text output",
-        })
-      : halfBlockCapability(
-          terminal,
-          "tmux/screen detected; graphics escapes need passthrough, using half-block",
-        );
+    return halfBlockCapability(
+      terminal,
+      "tmux/screen detected; graphics escapes need passthrough, using half-block",
+    );
   }
 
   if (terminal === "kitty" || terminal === "ghostty") {
@@ -279,7 +233,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "kitty-compatible terminal detected",
     });
   }
@@ -295,7 +248,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "terminal answered the kitty graphics query",
     });
   }
@@ -309,7 +261,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "iterm-inline",
       renderer: "iterm-inline",
       available: true,
-      dependency: "none",
       reason:
         terminal === "iterm2"
           ? "iTerm2 inline images"
@@ -323,7 +274,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "terminal reported sixel support (DA1)",
     });
   }
@@ -347,7 +297,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "WezTerm detected",
     });
   }
@@ -366,7 +315,6 @@ export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): Ima
 }
 
 function resetMemo(): void {
-  chafaAvailableMemo = undefined;
   capabilityMemo.clear();
 }
 

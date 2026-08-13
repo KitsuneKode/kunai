@@ -200,7 +200,7 @@ export async function runInstall(
     }
 
     if (!skipDeps) {
-      console.log("Optional: install mpv, yt-dlp, and chafa for full functionality.");
+      console.log("Optional: install mpv, yt-dlp, and curl for full functionality.");
     }
 
     console.log(`kunai ${result.version} installed. Run \`kunai\` to start.`);

@@ -1,35 +1,27 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
-import { clearKittyPlacementRegistry } from "@/app-shell/kitty-placement-registry";
+import {
+  clearKittyPlacementRegistry,
+  getKittyPlacement,
+} from "@/app-shell/kitty-placement-registry";
 import {
   __testing as rendererTesting,
+  commitKittyPlacementCandidate,
+  deleteUncommittedKittyCandidate,
   hashTitleToColor,
-  renderPoster,
+  renderPreparedPoster,
+  resolvePosterRenderPlan,
+  type PosterRenderPlan,
 } from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
-import { hasNativeImage } from "@/image/native-image";
+import { preparePoster, type PreparedPoster } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
-import { fakeChafaProcess } from "../../support/fake-chafa";
-import { stubMagickResolution } from "../../support/image-binaries";
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
-const originalRuntime = {
-  detectImageCapability: rendererTesting.runtime.detectImageCapability,
-  which: rendererTesting.runtime.which,
-  spawn: rendererTesting.runtime.spawn,
-};
+const originalDetect = rendererTesting.runtime.detectImageCapability;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
-
-/**
- * Restores ImageMagick resolution after each test. Pinned file-wide rather than
- * in the one test that needs it today: every poster path that cannot decode
- * in-process falls through to `ensurePngBytes`, so leaving the host's binary
- * reachable makes any future test here pass or fail on whether the machine
- * happens to have ImageMagick installed.
- */
-let restoreMagick: (() => void) | undefined;
 
 function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "none") {
@@ -38,7 +30,6 @@ function capability(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "none",
       renderer: "none",
       available: false,
-      dependency: "none",
       reason: "test none",
     };
   }
@@ -48,17 +39,33 @@ function capability(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "half-block",
       renderer: "half-block",
       available: true,
-      dependency: "none",
       reason: "test half-block",
     };
   }
+  if (renderer === "sixel") {
+    return {
+      terminal: "windows-terminal",
+      protocol: "sixel",
+      renderer: "sixel",
+      available: true,
+      reason: "test sixel",
+    };
+  }
+  if (renderer === "iterm-inline") {
+    return {
+      terminal: "iterm2",
+      protocol: "iterm-inline",
+      renderer: "iterm-inline",
+      available: true,
+      reason: "test iterm",
+    };
+  }
   return {
-    terminal: renderer === "kitty-native" ? "kitty" : "unknown",
-    protocol: renderer === "kitty-native" ? "kitty" : "symbols",
-    renderer,
+    terminal: "kitty",
+    protocol: "kitty",
+    renderer: "kitty-native",
     available: true,
-    dependency: renderer === "kitty-native" ? "none" : "chafa",
-    reason: "test",
+    reason: "test kitty",
   };
 }
 
@@ -67,8 +74,28 @@ function forceDirectTransport(): void {
   process.env.KUNAI_IMAGE_TRANSPORT = "direct";
 }
 
-function pngBytes(): Uint8Array {
-  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+function gradient(width: number, height: number): number[] {
+  return Array.from({ length: width * height * 3 }, (_, index) => (index * 23) % 256);
+}
+
+/** A prepared poster, built through the real preparation seam. */
+async function prepared(width = 8, height = 8, rows = 4, cols = 8): Promise<PreparedPoster> {
+  const poster = await preparePoster(makeRgbPng(width, height, gradient(width, height)), {
+    maxWidthPx: cols * 10,
+    maxHeightPx: rows * 20,
+  });
+  if (!poster) throw new Error("fixture failed to prepare");
+  return poster;
+}
+
+function planFor(renderer: PosterRenderPlan["renderer"], rows = 4, cols = 8): PosterRenderPlan {
+  return {
+    renderer,
+    bounds:
+      renderer === "half-block"
+        ? { maxWidthPx: cols, maxHeightPx: rows * 2 }
+        : { maxWidthPx: cols * 10, maxHeightPx: rows * 20 },
+  };
 }
 
 function captureStdout(): { writes: string[] } {
@@ -80,18 +107,8 @@ function captureStdout(): { writes: string[] } {
   return { writes };
 }
 
-beforeEach(() => {
-  // No test in this file asserts anything about ImageMagick, so the poster
-  // chain must behave as it does on a machine without it.
-  restoreMagick = stubMagickResolution(null);
-});
-
 afterEach(() => {
-  restoreMagick?.();
-  restoreMagick = undefined;
-  rendererTesting.runtime.detectImageCapability = originalRuntime.detectImageCapability;
-  rendererTesting.runtime.which = originalRuntime.which;
-  rendererTesting.runtime.spawn = originalRuntime.spawn;
+  rendererTesting.runtime.detectImageCapability = originalDetect;
   process.stdout.write = originalStdoutWrite;
   if (originalTransportEnv === undefined) {
     delete process.env.KUNAI_IMAGE_TRANSPORT;
@@ -102,346 +119,268 @@ afterEach(() => {
   clearKittyPlacementRegistry();
 });
 
-describe("app-shell poster renderer", () => {
-  test("returns kitty result for kitty-native capability", async () => {
-    forceDirectTransport();
+describe("resolvePosterRenderPlan", () => {
+  test("routes a kitty terminal to kitty with a pixel budget", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    const { writes } = captureStdout();
 
-    const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
-    expect(result.kind).toBe("kitty");
-    expect(writes.join("")).toContain("\x1b_Ga=T,f=100,U=1,q=2");
+    const plan = resolvePosterRenderPlan({ rows: 4, cols: 8 });
+
+    expect(plan?.renderer).toBe("kitty-native");
+    expect(plan?.bounds.maxWidthPx).toBeGreaterThan(8);
   });
 
-  test("uploads TMDB JPEG posters to kitty without magick or chafa", async () => {
-    forceDirectTransport();
-    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    rendererTesting.runtime.which = () => null;
-    rendererTesting.runtime.spawn = () => {
-      throw new Error("chafa must not spawn on the kitty path");
-    };
-    const { writes } = captureStdout();
+  test("routes an iTerm2 terminal to inline images", () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("iterm-inline");
 
-    const jpeg = makeRgbJpeg(
-      8,
-      4,
-      Array.from({ length: 8 * 4 * 3 }, (_, i) => i % 256),
-    );
-    const result = await renderPoster(jpeg, {
-      rows: 2,
-      cols: 4,
-      allowKitty: true,
-    });
-    expect(result.kind).toBe("kitty");
-    const out = writes.join("");
-    // Bun.Image re-encodes natively to PNG (f=100), which is both smaller than
-    // deflated RGBA and avoids the synchronous decode+deflate pair. Builds
-    // without Bun.Image fall back to the in-process RGBA path (f=32 + o=z).
-    expect(out).toMatch(hasNativeImage() ? /f=100/ : /f=32,s=8,v=4,o=z/);
-    expect(out).toContain("U=1");
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8 })?.renderer).toBe("iterm-inline");
   });
 
-  test("returns text result for chafa fallback capability", async () => {
-    rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
-    rendererTesting.runtime.which = () => "/usr/bin/chafa";
-    rendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
+  test("routes a sixel terminal to sixel", () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("sixel");
 
-    const result = await renderPoster(pngBytes(), { rows: 3, cols: 6, allowKitty: true });
-    expect(result.kind).toBe("text");
-    if (result.kind === "text") {
-      expect(result.placeholder).toBe("ASCII_PREVIEW");
-    }
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8 })?.renderer).toBe("sixel");
   });
 
-  test("renders half-block text without chafa for half-block capability", async () => {
+  test("half-block bounds double the height, for two pixels per cell row", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("half-block");
-    rendererTesting.runtime.which = () => null;
-    rendererTesting.runtime.spawn = () => {
-      throw new Error("chafa must not spawn on the half-block path");
-    };
 
-    // 2x2 red over blue pixels — real bytes, decoded in-process.
-    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png, {
-      rows: 2,
-      cols: 2,
-      allowKitty: true,
+    const plan = resolvePosterRenderPlan({ rows: 4, cols: 8 });
+
+    expect(plan).toEqual({
+      renderer: "half-block",
+      bounds: { maxWidthPx: 8, maxHeightPx: 8 },
     });
-    expect(result.kind).toBe("text");
-    if (result.kind === "text") {
-      expect(result.placeholder).toContain("▀");
-      expect(result.placeholder).toContain("38;2;");
+  });
+
+  test("an Ink-embedded surface stays on text, where a placement would fight the layout", () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8, inkEmbedded: true })?.renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("suppressing overlays sends sixel and inline images to text, not to nothing", () => {
+    for (const renderer of ["sixel", "iterm-inline"] as const) {
+      rendererTesting.runtime.detectImageCapability = () => capability(renderer);
+
+      // Both are measured overlays outside Ink's frame, so a constantly
+      // repainting surface must fall to text rather than lose the poster.
+      expect(resolvePosterRenderPlan({ rows: 4, cols: 8, allowSixel: false })?.renderer).toBe(
+        "half-block",
+      );
     }
   });
 
-  test("falls back to half-block text when chafa-symbols capability has no chafa binary", async () => {
-    rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
-    rendererTesting.runtime.which = () => null;
+  test("plans nothing when capability is unavailable, so no source is fetched", () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("none");
 
-    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png, {
-      rows: 2,
-      cols: 2,
-      allowKitty: true,
-    });
-    expect(result.kind).toBe("text");
-    if (result.kind === "text") {
-      expect(result.placeholder).toContain("▀");
-    }
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8 })).toBeNull();
   });
 
-  test("inkEmbedded renders half-block text when chafa is missing", async () => {
-    rendererTesting.runtime.which = () => null;
+  test("plans nothing for a degenerate geometry", () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
 
-    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png, {
-      rows: 2,
-      cols: 2,
-      inkEmbedded: true,
-    });
-    expect(result.kind).toBe("text");
-    if (result.kind === "text") {
-      expect(result.placeholder).toContain("▀");
-    }
+    expect(resolvePosterRenderPlan({ rows: 0, cols: 8 })).toBeNull();
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 0 })).toBeNull();
   });
 
-  test("probe-detected kitty on a placeholder-less terminal stays on text renderers", async () => {
+  test("a probe-detected kitty terminal without placeholders stays on text", () => {
     rendererTesting.runtime.detectImageCapability = () => ({
-      terminal: "wezterm",
-      protocol: "kitty",
-      renderer: "kitty-native",
-      available: true,
-      dependency: "none",
-      reason: "terminal answered the kitty graphics query",
+      ...capability("kitty-native"),
+      terminal: "konsole",
     });
-    rendererTesting.runtime.which = () => null;
-    const { writes } = captureStdout();
 
-    const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png, {
-      rows: 2,
-      cols: 2,
-      allowKitty: true,
-    });
-    // WezTerm's opt-in kitty mode has no Unicode placeholders — Ink layout wins.
-    expect(writes.join("")).not.toContain("\x1b_G");
-    expect(result.kind).toBe("text");
+    // Konsole answers the kitty query but implements no Unicode placeholders, so
+    // a placement would leave blank cells where the grid expects an image.
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8 })?.renderer).toBe("half-block");
   });
 
-  test("probe-detected kitty on an unknown terminal still uses kitty placeholders", async () => {
-    forceDirectTransport();
+  test("a probe-detected kitty terminal on an unknown name keeps placeholders", () => {
     probeTesting.setProbed({ sixel: false, kittyGraphics: true });
     rendererTesting.runtime.detectImageCapability = () => ({
+      ...capability("kitty-native"),
       terminal: "unknown",
-      protocol: "kitty",
-      renderer: "kitty-native",
-      available: true,
-      dependency: "none",
-      reason: "terminal answered the kitty graphics query",
-    });
-    const { writes } = captureStdout();
-
-    const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
-    expect(result.kind).toBe("kitty");
-    expect(writes.join("")).toContain("U=1");
-  });
-
-  describe("sixel uses the measured overlay path", () => {
-    const sixelCapability: ImageCapability = {
-      terminal: "windows-terminal",
-      protocol: "sixel",
-      renderer: "sixel",
-      available: true,
-      dependency: "none",
-      reason: "terminal reported sixel support (DA1)",
-    };
-
-    test("encodes a sixel overlay instead of placing escape bytes in Ink text", async () => {
-      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
-      const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-      const result = await renderPoster(png, {
-        rows: 4,
-        cols: 8,
-        allowKitty: true,
-        placementSlot: "browse-preview",
-      });
-      expect(result).toMatchObject({
-        kind: "sixel",
-        rows: 4,
-        cols: 8,
-        overlayId: "browse-preview",
-      });
-      if (result.kind === "sixel") expect(result.sixel.startsWith("\x1bP0;1;0q")).toBe(true);
     });
 
-    test("uses stable Ink text when sixel is disabled for a frequently repainting surface", async () => {
-      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
-      rendererTesting.runtime.which = () => null;
-      const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-      const result = await renderPoster(png, {
-        rows: 4,
-        cols: 8,
-        allowKitty: true,
-        allowSixel: false,
-        placementSlot: "playing-rail",
-      });
-
-      expect(result.kind).toBe("text");
-      if (result.kind === "text") expect(result.placeholder).not.toContain("\x1bP");
-    });
-
-    test("bounds the interactive palette to keep ConPTY payloads responsive", async () => {
-      rendererTesting.runtime.detectImageCapability = () => sixelCapability;
-      const pixels: number[] = [];
-      for (let index = 0; index < 80; index++) {
-        pixels.push(index * 3, (index * 7) % 256, (index * 11) % 256);
-      }
-      const png = makeRgbPng(80, 1, pixels);
-      const result = await renderPoster(png, {
-        rows: 4,
-        cols: 8,
-        placementSlot: "browse-preview",
-      });
-
-      expect(result.kind).toBe("sixel");
-      if (result.kind === "sixel") {
-        const paletteDefinitions = result.sixel.match(/#\d+;2;/g) ?? [];
-        expect(paletteDefinitions.length).toBeLessThanOrEqual(
-          rendererTesting.APP_SHELL_SIXEL_MAX_COLORS - 1,
-        );
-      }
-    });
-  });
-
-  test("returns none when image capability is unavailable", async () => {
-    rendererTesting.runtime.detectImageCapability = () => capability("none");
-    const result = await renderPoster(pngBytes(), { rows: 4, cols: 8, allowKitty: true });
-    expect(result).toEqual({ kind: "none" });
-  });
-
-  test("falls back to text renderers when Kitty payload preparation fails", async () => {
-    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    rendererTesting.runtime.which = (command: string) =>
-      command === "chafa" ? "/usr/bin/chafa" : null;
-    rendererTesting.runtime.spawn = () => fakeChafaProcess("JPEG_FALLBACK\n").proc;
-    process.stdout.write = (() => true) as typeof process.stdout.write;
-
-    // Truncated JPEG SOI: undecodable in-process, and unconvertible because the
-    // file-wide stub pins ImageMagick as absent. Both halves matter — while the
-    // host's real `magick` was still reachable here, this spawned it.
-    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
-    const result = await renderPoster(jpeg, {
-      rows: 3,
-      cols: 6,
-      allowKitty: true,
-      placementSlot: "postplay-hero",
-    });
-    expect(result.kind).toBe("text");
-    if (result.kind === "text") {
-      expect(result.placeholder).toBe("JPEG_FALLBACK");
-    }
-  });
-
-  test("registers placement slot without emitting global delete", async () => {
-    forceDirectTransport();
-    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
-    const { writes } = captureStdout();
-
-    const first = await renderPoster(pngBytes(), {
-      rows: 4,
-      cols: 8,
-      allowKitty: true,
-      placementSlot: "postplay-hero",
-    });
-    const second = await renderPoster(pngBytes(), {
-      rows: 4,
-      cols: 8,
-      allowKitty: true,
-      placementSlot: "postplay-discovery-0",
-    });
-    expect(first.kind).toBe("kitty");
-    expect(second.kind).toBe("kitty");
-    expect(writes.join("")).not.toContain("d=A");
-    expect(writes.join("")).toContain("a=T,f=100");
+    // kitty-over-ssh loses the name but still speaks the protocol.
+    expect(resolvePosterRenderPlan({ rows: 4, cols: 8 })?.renderer).toBe("kitty-native");
   });
 });
 
-describe("chafa encoder stdin", () => {
-  /**
-   * Regression: the shell wrote the image to chafa's stdin only when that stdin
-   * looked like a `WritableStream` (`getWriter`). Bun actually hands back a
-   * `FileSink` (`write`/`end`), so nothing was written and — the part that hurt
-   * — the pipe was never closed. chafa waited on stdin forever, `proc.exited`
-   * never settled, and the poster sat in its loading state until the user quit.
-   *
-   * It only bit machines that *had* chafa: without it the renderer returns early
-   * and half-block paints fine, so installing the better encoder was what made
-   * posters disappear entirely. Both shapes are asserted because the bug was
-   * believing there is only one.
-   */
-  for (const shape of ["sink", "stream"] as const) {
-    test(`sends the image and closes the pipe when stdin is a ${shape}`, async () => {
-      const fake = fakeChafaProcess("SYMBOLS", shape);
-      rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
-      rendererTesting.runtime.which = () => "/usr/bin/chafa";
-      rendererTesting.runtime.spawn = () => fake.proc;
+describe("renderPreparedPoster", () => {
+  test("uploads the prepared PNG to kitty without any external binary", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    const { writes } = captureStdout();
 
-      const jpeg = makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
-      const result = await renderPoster(jpeg, { rows: 4, cols: 8 });
-
-      expect(result).toMatchObject({ kind: "text", placeholder: "SYMBOLS" });
-      // An encoder that is sent nothing, or never sees EOF, hangs forever.
-      expect(fake.state().bytes).toBe(jpeg.byteLength);
-      expect(fake.state().closed).toBe(true);
+    const candidate = await renderPreparedPoster(await prepared(), planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
     });
-  }
 
-  test("falls back to half-block when the image cannot reach the encoder", async () => {
-    let killed = false;
-    rendererTesting.runtime.detectImageCapability = () => capability("chafa-symbols");
-    rendererTesting.runtime.which = () => "/usr/bin/chafa";
-    rendererTesting.runtime.spawn = () =>
-      ({
-        // Neither shape: the writer cannot hand over the image at all.
-        stdin: null,
-        stdout: new Response("").body,
-        stderr: new Response("").body,
-        exited: new Promise<number>(() => {}),
-        kill: () => {
-          killed = true;
-        },
-      }) as unknown as Bun.Subprocess;
+    expect(candidate.kind).toBe("kitty-upload");
+    const escapes = writes.join("");
+    expect(escapes).toContain("f=100"); // PNG, not RGBA
+    expect(escapes).not.toContain("f=32");
+  });
 
-    const result = await renderPoster(
-      makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]),
-      { rows: 4, cols: 8 },
-    );
+  test("a JPEG source reaches kitty as PNG, with no magick and no chafa", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    const { writes } = captureStdout();
+    const poster = await preparePoster(makeRgbJpeg(8, 8, gradient(8, 8)), {
+      maxWidthPx: 80,
+      maxHeightPx: 80,
+    });
 
-    // A poster is decoration: it degrades to the in-process renderer rather
-    // than holding the UI open on a child that will never exit.
-    expect(result.kind).toBe("text");
-    expect(killed).toBe(true);
+    const candidate = await renderPreparedPoster(poster!, planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
+    });
+
+    expect(candidate.kind).toBe("kitty-upload");
+    expect(writes.join("")).toContain("f=100");
+  });
+
+  test("an upload claims no placement slot until it is committed", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    captureStdout();
+
+    const candidate = await renderPreparedPoster(await prepared(), planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
+      placementSlot: "postplay-hero",
+    });
+
+    // Registering inside rendering is what let a superseded upload replace a
+    // live placement, so the slot must still be empty here.
+    expect(getKittyPlacement("postplay-hero")).toBeUndefined();
+
+    if (candidate.kind === "kitty-upload") {
+      commitKittyPlacementCandidate(candidate, "postplay-hero");
+      expect(getKittyPlacement("postplay-hero")).toBe(candidate.imageId);
+    }
+  });
+
+  test("a superseded upload can be dropped without disturbing the live slot", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    captureStdout();
+
+    const live = await renderPreparedPoster(await prepared(), planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
+      placementSlot: "postplay-hero",
+    });
+    if (live.kind !== "kitty-upload") throw new Error("expected an upload");
+    commitKittyPlacementCandidate(live, "postplay-hero");
+
+    const superseded = await renderPreparedPoster(await prepared(), planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
+      placementSlot: "postplay-hero",
+    });
+    if (superseded.kind !== "kitty-upload") throw new Error("expected an upload");
+    deleteUncommittedKittyCandidate(superseded);
+
+    // The uncommitted id owns no slot, so dropping it must leave the committed
+    // one in place rather than releasing the registry entry.
+    expect(getKittyPlacement("postplay-hero")).toBe(live.imageId);
+  });
+
+  test("an aborted upload is discarded rather than returned", async () => {
+    forceDirectTransport();
+    rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
+    captureStdout();
+    const controller = new AbortController();
+    controller.abort();
+
+    const candidate = await renderPreparedPoster(await prepared(), planFor("kitty-native"), {
+      rows: 4,
+      cols: 8,
+      signal: controller.signal,
+    });
+
+    expect(candidate.kind).toBe("none");
+  });
+
+  test("encodes a sixel overlay rather than putting escape bytes in Ink text", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("sixel");
+
+    const candidate = await renderPreparedPoster(await prepared(), planFor("sixel"), {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+
+    expect(candidate.kind).toBe("sixel");
+    if (candidate.kind === "sixel") {
+      expect(candidate.sixel.startsWith("P")).toBe(true);
+      expect(candidate.overlayId).toBe("browse-preview");
+    }
+  });
+
+  test("bounds the interactive sixel palette to keep ConPTY payloads responsive", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("sixel");
+
+    const candidate = await renderPreparedPoster(await prepared(), planFor("sixel"), {
+      rows: 4,
+      cols: 8,
+    });
+
+    if (candidate.kind !== "sixel") throw new Error("expected sixel");
+    const registers = new Set(candidate.sixel.match(/#(\d+);2;/g) ?? []);
+    expect(registers.size).toBeLessThanOrEqual(rendererTesting.APP_SHELL_SIXEL_MAX_COLORS);
+  });
+
+  test("emits an iTerm2 inline image carrying the prepared PNG", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("iterm-inline");
+    const poster = await prepared();
+
+    const candidate = await renderPreparedPoster(poster, planFor("iterm-inline"), {
+      rows: 4,
+      cols: 8,
+    });
+
+    if (candidate.kind !== "sixel") throw new Error("expected an overlay result");
+    expect(candidate.sixel).toContain("]1337;File=");
+    expect(candidate.sixel).toContain(Buffer.from(poster.png).toString("base64"));
+  });
+
+  test("renders half-block text in process, with no external binary", async () => {
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
+
+    const candidate = await renderPreparedPoster(await prepared(), planFor("half-block"), {
+      rows: 4,
+      cols: 8,
+    });
+
+    expect(candidate.kind).toBe("text");
+    if (candidate.kind === "text") {
+      // Two pixels per cell via the upper-half block, with truecolour SGR.
+      expect(candidate.placeholder).toContain("▀");
+      expect(candidate.placeholder).toContain("[38;2;");
+    }
   });
 });
 
 describe("hashTitleToColor", () => {
   test("returns one of the 4 palette colors for any string", () => {
-    const validColors = ["amber", "teal", "purple", "pink"] as const;
-    expect(validColors).toContain(hashTitleToColor("Attack on Titan"));
-    expect(validColors).toContain(hashTitleToColor("Demon Slayer"));
-    expect(validColors).toContain(hashTitleToColor(""));
+    for (const title of ["Dune", "", "a", "Severance", "アニメ"]) {
+      expect(["amber", "teal", "purple", "pink"]).toContain(hashTitleToColor(title));
+    }
   });
 
   test("same title always returns the same color", () => {
-    const color1 = hashTitleToColor("Vinland Saga");
-    const color2 = hashTitleToColor("Vinland Saga");
-    expect(color1).toBe(color2);
+    expect(hashTitleToColor("Dune")).toBe(hashTitleToColor("Dune"));
   });
 
   test("different titles usually return different colors", () => {
-    const titles = ["Attack on Titan", "Demon Slayer", "Frieren", "Solo Leveling", "Berserk"];
-    const colors = titles.map(hashTitleToColor);
-    const unique = new Set(colors);
-    expect(unique.size).toBeGreaterThanOrEqual(2);
+    const colors = new Set(
+      ["Dune", "Severance", "Arcane", "Andor", "Shogun"].map(hashTitleToColor),
+    );
+    expect(colors.size).toBeGreaterThan(1);
   });
 });

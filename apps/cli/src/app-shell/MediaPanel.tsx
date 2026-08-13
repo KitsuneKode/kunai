@@ -75,7 +75,7 @@ function PosterSlot({
   readonly width: number;
   readonly active: boolean;
   readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
-  /** When false, render chafa inside Ink so a sibling owns the Kitty budget. */
+  /** When false, render text inside Ink so a sibling owns the Kitty budget. */
   readonly allowKitty?: boolean;
   /** Allow the measured Sixel overlay; unchanged frames are deduplicated by its manager. */
   readonly allowSixel?: boolean;

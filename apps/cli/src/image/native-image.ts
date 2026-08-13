@@ -19,16 +19,17 @@
 // deflate step.
 //
 // `bun >= 1.3.14` is the supported floor, so Bun.Image is expected to exist and
-// the native path is the normal one — not an opportunistic upgrade. The
-// capability check and the `null` returns remain as a safety net (engines is
-// advisory, and a compiled binary embeds whichever Bun built it), so a build
-// without Bun.Image degrades to the synchronous decoder rather than losing
-// posters. Note `decode.ts` is not made redundant by any of this: Bun.Image has
-// no raw-pixel output, so it is what turns the resized PNG back into pixels.
+// the native path is the only one — there is no longer a JavaScript decoder to
+// fall back to. The capability check and the `null` returns remain as a safety
+// net (engines is advisory, and a compiled binary embeds whichever Bun built
+// it), so a build without Bun.Image degrades to text posters rather than
+// crashing. `decode.ts` is not made redundant by any of this: Bun.Image has no
+// raw-pixel output, so `decodePng` is what turns the resized PNG back into
+// pixels.
 // =============================================================================
 
 import { debugImage } from "./debug";
-import { decodeImageBytes, decodePng, type DecodedImage } from "./decode";
+import { decodePng, type DecodedImage } from "./decode";
 
 /**
  * Largest encoded poster we will even hand to the decoder.
@@ -65,9 +66,19 @@ type NativeImage = {
 
 type NativeImageCtor = new (input: Uint8Array, options: NativeImageOptions) => NativeImage;
 
-export type PixelTarget = {
-  readonly width: number;
-  readonly height: number;
+function nativeImageCtor(): NativeImageCtor | null {
+  const candidate = (Bun as unknown as { Image?: unknown }).Image;
+  return typeof candidate === "function" ? (candidate as NativeImageCtor) : null;
+}
+
+const NATIVE_OPTIONS: NativeImageOptions = {
+  maxPixels: MAX_POSTER_DECODED_PIXELS,
+  autoOrient: true,
+};
+
+const RESIZE_OPTIONS: NativeResizeOptions = {
+  fit: "inside",
+  withoutEnlargement: true,
 };
 
 /** The pixel box a prepared poster must fit inside. */
@@ -79,8 +90,8 @@ export type PosterPixelBounds = {
 /**
  * One poster, prepared once, in both forms the renderers need.
  *
- * Kitty uploads `png` verbatim; Sixel and half-block consume `image`. Preparing
- * both together is what lets a single native pass serve every renderer.
+ * Kitty and iTerm2 send `png` verbatim; Sixel and half-block consume `image`.
+ * Preparing both together is what lets a single native pass serve every renderer.
  */
 export type PreparedPoster = {
   readonly png: Uint8Array;
@@ -100,77 +111,9 @@ type PosterPrepareFailure =
   | "png-bridge-failed"
   | "native-failure";
 
-function nativeImageCtor(): NativeImageCtor | null {
-  const candidate = (Bun as unknown as { Image?: unknown }).Image;
-  return typeof candidate === "function" ? (candidate as NativeImageCtor) : null;
-}
-
-const NATIVE_OPTIONS: NativeImageOptions = {
-  maxPixels: MAX_POSTER_DECODED_PIXELS,
-  autoOrient: true,
-};
-
-const RESIZE_OPTIONS: NativeResizeOptions = {
-  fit: "inside",
-  withoutEnlargement: true,
-};
-
 /** True when this Bun build exposes `Bun.Image`. */
 export function hasNativeImage(): boolean {
   return nativeImageCtor() !== null;
-}
-
-/**
- * Re-encode to PNG natively, optionally resizing first. Returns null when
- * Bun.Image is unavailable or the input cannot be read, so callers fall back.
- *
- * `target` should be the pixel geometry actually being drawn. Resizing here is
- * what keeps the full-size bitmap out of the process entirely.
- */
-export async function encodeNativePng(
-  bytes: Uint8Array,
-  target?: PixelTarget,
-): Promise<Uint8Array | null> {
-  const Ctor = nativeImageCtor();
-  if (!Ctor || bytes.byteLength === 0) return null;
-  try {
-    const base = new Ctor(bytes, NATIVE_OPTIONS);
-    const sized =
-      target && target.width > 0 && target.height > 0
-        ? base.resize(
-            Math.max(1, Math.round(target.width)),
-            Math.max(1, Math.round(target.height)),
-            RESIZE_OPTIONS,
-          )
-        : base;
-    const out = await sized.png().bytes();
-    return out.byteLength > 0 ? out : null;
-  } catch (error) {
-    debugImage(
-      `Bun.Image encode failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return null;
-  }
-}
-
-/**
- * Decode to RGBA at (at most) `target`, off the main thread when possible.
- *
- * The native path resizes first, so the PNG this decodes is already cell-sized.
- * Falls back to the synchronous decoder — which blocks — only when Bun.Image is
- * missing or fails; that is strictly better than today's unconditional block.
- */
-export async function decodeToRgba(
-  bytes: Uint8Array,
-  target?: PixelTarget,
-): Promise<DecodedImage | null> {
-  const png = await encodeNativePng(bytes, target);
-  if (png) {
-    const decoded = decodeImageBytes(png);
-    if (decoded) return decoded;
-    debugImage("Bun.Image produced a PNG the decoder rejected; using the synchronous path");
-  }
-  return decodeImageBytes(bytes);
 }
 
 function reportPrepareFailure(category: PosterPrepareFailure): null {

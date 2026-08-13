@@ -20,7 +20,6 @@ function kittyCapability(): ImageCapability {
     protocol: "kitty",
     renderer: "kitty-native",
     available: true,
-    dependency: "none",
     reason: "test kitty",
   };
 }

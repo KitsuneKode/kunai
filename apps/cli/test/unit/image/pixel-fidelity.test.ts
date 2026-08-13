@@ -12,8 +12,9 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { renderPoster, __testing as rendererTesting } from "@/app-shell/poster-renderer";
+import { renderPreparedPoster, __testing as rendererTesting } from "@/app-shell/poster-renderer";
 import type { ImageCapability } from "@/image";
+import { preparePoster } from "@/image/native-image";
 
 import { makeRgbPng } from "../../support/image-fixtures";
 
@@ -22,7 +23,6 @@ const HALF_BLOCK_CAPABILITY: ImageCapability = {
   protocol: "half-block",
   renderer: "half-block",
   available: true,
-  dependency: "none",
   reason: "pixel fidelity test",
 };
 
@@ -49,17 +49,21 @@ function backgroundColors(text: string): string[] {
 
 async function renderHalfBlock(png: Uint8Array, cols: number, rows: number): Promise<string> {
   const original = rendererTesting.runtime.detectImageCapability;
-  const originalWhich = rendererTesting.runtime.which;
   rendererTesting.runtime.detectImageCapability = () => HALF_BLOCK_CAPABILITY;
-  // No chafa on PATH: force the in-process renderer rather than a subprocess.
-  rendererTesting.runtime.which = () => null;
+  // Prepare at the half-block target: two pixels per cell row is exactly what
+  // the upper-half-block trick encodes.
+  const poster = await preparePoster(png, { maxWidthPx: cols, maxHeightPx: rows * 2 });
   try {
-    const result = await renderPoster(png, { rows, cols, allowKitty: true });
+    if (!poster) return "";
+    const result = await renderPreparedPoster(
+      poster,
+      { renderer: "half-block", bounds: { maxWidthPx: cols, maxHeightPx: rows * 2 } },
+      { rows, cols, allowKitty: true },
+    );
     expect(result.kind).toBe("text");
     return result.kind === "text" ? result.placeholder : "";
   } finally {
     rendererTesting.runtime.detectImageCapability = original;
-    rendererTesting.runtime.which = originalWhich;
   }
 }
 
@@ -103,22 +107,12 @@ describe("half-block pixel fidelity", () => {
     expect(backgroundColors(text)).toEqual(["64,64,64", "200,200,200"]);
   });
 
-  test("an undecodable payload renders nothing rather than garbage", async () => {
-    const original = rendererTesting.runtime.detectImageCapability;
-    const originalWhich = rendererTesting.runtime.which;
-    rendererTesting.runtime.detectImageCapability = () => HALF_BLOCK_CAPABILITY;
-    rendererTesting.runtime.which = () => null;
-    try {
-      const junk = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-      const result = await renderPoster(junk, {
-        rows: 2,
-        cols: 2,
-        allowKitty: true,
-      });
-      expect(result.kind).toBe("none");
-    } finally {
-      rendererTesting.runtime.detectImageCapability = original;
-      rendererTesting.runtime.which = originalWhich;
-    }
+  test("an undecodable payload is rejected before any renderer sees it", async () => {
+    const junk = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    // This used to be the renderer's job. Preparation now owns it, which is the
+    // stronger place for it: nothing undecodable can reach a terminal at all,
+    // rather than each renderer having to fail safely on its own.
+    expect(await preparePoster(junk, { maxWidthPx: 2, maxHeightPx: 4 })).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import { decodePng } from "@/image/decode";
 import {
   __testing as sixelTesting,
   encodeSixel,
   quantize,
-  renderSixelFromBytes,
+  renderSixelFromImage,
 } from "@/image/sixel";
 
 import { makeRgbPng } from "../../support/image-fixtures";
@@ -128,7 +129,7 @@ describe("encodeSixel", () => {
       8,
       Array.from({ length: 4 * 8 * 3 }, (_, i) => (i * 37) % 256),
     );
-    const sixel = renderSixelFromBytes(png, { maxWidth: 4, maxHeight: 8 });
+    const sixel = renderSixelFromImage(decodePng(png), { maxWidth: 4, maxHeight: 8 });
     expect(sixel).not.toBeNull();
     expect(dataBytesAreInRange(sixel as string)).toBe(true);
   });
@@ -153,17 +154,22 @@ describe("encodeSixel", () => {
   });
 });
 
-describe("renderSixelFromBytes", () => {
+describe("renderSixelFromImage", () => {
   test("fits inside the pixel budget without upscaling", () => {
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
-    const sixel = renderSixelFromBytes(png, { maxWidth: 100, maxHeight: 100 });
+    const sixel = renderSixelFromImage(decodePng(png), { maxWidth: 100, maxHeight: 100 });
     // A 2x2 source stays 2x2: upscaling a poster only adds visible blockiness.
     expect(sixel).toContain('"1;1;2;2');
   });
 
-  test("returns null for bytes it cannot decode, so callers can fall back", () => {
-    expect(renderSixelFromBytes(new Uint8Array([1, 2, 3, 4]), { maxWidth: 8, maxHeight: 8 })).toBe(
-      null,
-    );
+  test("returns null for an empty image, so callers can fall back", () => {
+    // Undecodable *bytes* can no longer reach here: preparePoster is the only
+    // way in and it rejects them, so this guards the degenerate decoded case.
+    expect(
+      renderSixelFromImage(
+        { width: 0, height: 0, rgba: new Uint8Array() },
+        { maxWidth: 8, maxHeight: 8 },
+      ),
+    ).toBeNull();
   });
 });

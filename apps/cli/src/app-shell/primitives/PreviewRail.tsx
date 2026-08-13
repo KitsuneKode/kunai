@@ -28,7 +28,7 @@ export function PreviewRail({
 }: {
   readonly model: PreviewRailModel;
   readonly width?: number;
-  /** Rendered poster (chafa/Kitty placeholder). When ready, shown instead of the letter tile. */
+  /** Rendered poster (text or Kitty placeholder). When ready, shown instead of the letter tile. */
   readonly poster?: PosterResult;
   /**
    * Fixed height (in rows) for the poster slot. Both the resolved image and the

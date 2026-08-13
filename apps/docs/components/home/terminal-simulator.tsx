@@ -200,7 +200,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
       addLog("Checking dependencies...", accDelay);
       accDelay += 300;
       addLog("  mpv: OK (0.38.0)", accDelay);
-      addLog("  chafa (kitty graphics): OK", accDelay);
+      addLog("  posters (kitty graphics): OK", accDelay);
       addLog("  sqlite3: OK", accDelay);
       accDelay += 400;
       addLog("Configure default media directories:", accDelay);

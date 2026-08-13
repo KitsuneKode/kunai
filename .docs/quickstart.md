@@ -6,9 +6,10 @@ Use this doc for setup, local execution, and common environment issues. Architec
 
 - Bun `>=1.3.14` for source installs during beta
 - `mpv` in `PATH`
-- Kitty/Ghostty for native Kitty poster previews
-- `chafa` for poster previews in Windows Terminal/WezTerm/other terminals
-- ImageMagick (`magick`) if you want Kitty/Ghostty non-PNG poster conversion
+- No poster dependency: every renderer consumes one natively prepared image.
+  Kitty/Ghostty get native Kitty graphics, iTerm2 and VSCode 1.80+ get inline
+  images, sixel terminals get sixel, and half-block truecolour is the universal
+  floor. `chafa` and ImageMagick are no longer used.
 - `yt-dlp` for YouTube playback and downloads/offline queue (must be on `PATH` for YouTube resolve/play and when downloads are enabled)
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
 - `curl` for anime mode: AniDB is the default anime provider and sits behind
@@ -24,10 +25,10 @@ Install runtime tools:
 
 ```sh
 # Linux (Arch)
-sudo pacman -S mpv yt-dlp chafa imagemagick
+sudo pacman -S mpv yt-dlp curl
 
 # Linux (Debian/Ubuntu)
-sudo apt install mpv yt-dlp chafa imagemagick
+sudo apt install mpv yt-dlp curl
 
 # macOS (Homebrew)
 brew install mpv yt-dlp chafa imagemagick
@@ -35,7 +36,7 @@ brew install mpv yt-dlp chafa imagemagick
 
 Windows options:
 
-- `winget` (recommended): install `mpv`, `yt-dlp`, `chafa` (`winget install hpjansson.Chafa`), and ImageMagick (`winget install ImageMagick.ImageMagick`); add `ffprobe` separately if you want post-download validation
+- `winget` (recommended): install `mpv` and `yt-dlp`; add `ffprobe` separately if you want post-download validation. Posters need nothing installed.
 - Chocolatey: `choco install mpv yt-dlp chafa imagemagick`
 - Scoop: `scoop install mpv yt-dlp chafa imagemagick`
 

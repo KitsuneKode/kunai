@@ -103,7 +103,6 @@
   "dependencies": {
     "commander": "catalog:cli",
     "ink": "catalog:cli",
-    "jpeg-js": "^0.4.4",
     "react": "catalog:"
   },
   "devDependencies": {
@@ -115,7 +114,8 @@
     "@kunai/storage": "workspace:*",
     "@kunai/types": "workspace:*",
     "@types/bun": "catalog:",
-    "@types/react": "catalog:"
+    "@types/react": "catalog:",
+    "jpeg-js": "^0.4.4"
   },
   "peerDependencies": {
     "typescript": "catalog:"

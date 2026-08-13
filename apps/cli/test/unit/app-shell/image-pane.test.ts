@@ -12,14 +12,11 @@ import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer"
 import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
-import { fakeChafaProcess } from "../../support/fake-chafa";
 import { makeRgbPng } from "../../support/image-fixtures";
 
 const originalFetch = globalThis.fetch;
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
 const originalRendererDetect = posterRendererTesting.runtime.detectImageCapability;
-const originalRendererWhich = posterRendererTesting.runtime.which;
-const originalRendererSpawn = posterRendererTesting.runtime.spawn;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
 function setFetchMock(
@@ -53,18 +50,16 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "test kitty",
     };
   }
-  if (renderer === "chafa-symbols") {
+  if (renderer === "half-block") {
     return {
       terminal: "unknown",
-      protocol: "symbols",
-      renderer: "chafa-symbols",
+      protocol: "half-block",
+      renderer: "half-block",
       available: true,
-      dependency: "chafa",
-      reason: "test symbols",
+      reason: "test half-block",
     };
   }
   if (renderer === "sixel") {
@@ -73,7 +68,6 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "test sixel",
     };
   }
@@ -83,7 +77,6 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "iterm-inline",
       renderer: "iterm-inline",
       available: true,
-      dependency: "none",
       reason: "test iterm inline",
     };
   }
@@ -92,7 +85,6 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
     protocol: "none",
     renderer: "none",
     available: false,
-    dependency: "none",
     reason: "test none",
   };
 }
@@ -101,8 +93,6 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   posterRendererTesting.runtime.detectImageCapability = originalRendererDetect;
-  posterRendererTesting.runtime.which = originalRendererWhich;
-  posterRendererTesting.runtime.spawn = originalRendererSpawn;
   process.stdout.write = originalStdoutWrite;
   clearRenderedPosterImages();
 });
@@ -137,21 +127,19 @@ describe("app-shell image pane cache", () => {
     }
   });
 
-  test("chafa text cache survives undisplay for back navigation", async () => {
+  test("half-block text cache survives undisplay for back navigation", async () => {
     let fetchCalls = 0;
     setFetchMock(async () => {
       fetchCalls += 1;
       const png = realPng();
       return new Response(png, { status: 200 });
     });
-    paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
+    paneTesting.runtime.detectImageCapability = () => cap("half-block");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("half-block");
 
-    const first = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+    const first = await fetchPoster("/half-block.jpg", { rows: 4, cols: 8 });
     undisplayRenderedPosterImages();
-    const revisited = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+    const revisited = await fetchPoster("/half-block.jpg", { rows: 4, cols: 8 });
 
     expect(first.kind).toBe("text");
     expect(revisited).toEqual(first);
@@ -176,10 +164,8 @@ describe("app-shell image pane cache", () => {
       expect(kittySecond.imageId).toBe(kittyFirst.imageId);
     }
 
-    paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
+    paneTesting.runtime.detectImageCapability = () => cap("half-block");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("half-block");
     const textResult = await fetchPoster("/abc.jpg", { rows: 4, cols: 8, allowKitty: true });
     expect(textResult.kind).toBe("text");
   });
