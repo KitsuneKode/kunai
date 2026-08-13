@@ -1,11 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readlink, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readlink,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  __testing,
   atomicInstallBinaryFromFile,
   atomicWriteBinary,
   inspectLauncherOwnership,
@@ -78,6 +89,151 @@ describe("launcher", () => {
     expect(removed.length).toBeGreaterThan(0);
     expect(await readdir(join(root, "bin"))).toEqual(["kunai.exe"]);
     expect(await Bun.file(launcherPath).text()).toBe("V2-BINARY");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows activation preserves the working launcher when staging the replacement fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-stage-failure-"));
+    const launcherPath = join(root, "bin", "kunai.exe");
+    const missingVersionPath = join(root, "versions", "2.0.0", "kunai.exe");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(launcherPath, "WORKING-BINARY");
+
+    await expect(
+      updateLauncher({
+        launcherPath,
+        versionPath: missingVersionPath,
+        platform: "win32",
+      }),
+    ).rejects.toThrow();
+
+    expect(await Bun.file(launcherPath).text()).toBe("WORKING-BINARY");
+    expect(await readdir(join(root, "bin"))).toEqual(["kunai.exe"]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows activation restores the working launcher when installing the candidate fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-activate-failure-"));
+    const launcherPath = join(root, "bin", "kunai.exe");
+    const versionPath = join(root, "versions", "2.0.0", "kunai.exe");
+    const candidatePath = `${launcherPath}.candidate`;
+    const asidePath = `${launcherPath}.old.test`;
+    await mkdir(join(root, "bin"), { recursive: true });
+    await mkdir(join(root, "versions", "2.0.0"), { recursive: true });
+    await writeFile(launcherPath, "WORKING-BINARY");
+    await writeFile(versionPath, "NEW-BINARY");
+
+    let renameAttempt = 0;
+    const result = __testing.updateWindowsLauncher(
+      { launcherPath, versionPath },
+      {
+        asidePath,
+        attempts: 1,
+        candidatePath,
+        fs: {
+          chmod,
+          copyFile,
+          rename: async (from, to) => {
+            renameAttempt += 1;
+            if (renameAttempt === 2)
+              throw Object.assign(new Error("activate failed"), { code: "EIO" });
+            await rename(from, to);
+          },
+          rm: (path, options) => rm(path, options),
+        },
+        sleep: async () => {},
+      },
+    );
+
+    await expect(result).rejects.toThrow("activate failed");
+    expect(await Bun.file(launcherPath).text()).toBe("WORKING-BINARY");
+    expect(existsSync(candidatePath)).toBe(false);
+    expect(existsSync(asidePath)).toBe(false);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows activation never deletes the working launcher when it cannot move it aside", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-aside-failure-"));
+    const launcherPath = join(root, "bin", "kunai.exe");
+    const versionPath = join(root, "versions", "2.0.0", "kunai.exe");
+    const candidatePath = `${launcherPath}.candidate`;
+    const asidePath = `${launcherPath}.old.test`;
+    await mkdir(join(root, "bin"), { recursive: true });
+    await mkdir(join(root, "versions", "2.0.0"), { recursive: true });
+    await writeFile(launcherPath, "WORKING-BINARY");
+    await writeFile(versionPath, "NEW-BINARY");
+
+    const result = __testing.updateWindowsLauncher(
+      { launcherPath, versionPath },
+      {
+        asidePath,
+        attempts: 1,
+        candidatePath,
+        fs: {
+          chmod,
+          copyFile,
+          rename: async () => {
+            throw new Error("aside failed");
+          },
+          rm: (path, options) => rm(path, options),
+        },
+        sleep: async () => {},
+      },
+    );
+
+    await expect(result).rejects.toThrow("aside failed");
+    expect(await Bun.file(launcherPath).text()).toBe("WORKING-BINARY");
+    expect(existsSync(candidatePath)).toBe(false);
+    expect(existsSync(asidePath)).toBe(false);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("Windows activation retains the last-known-good aside when restoration fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-win-restore-failure-"));
+    const launcherPath = join(root, "bin", "kunai.exe");
+    const versionPath = join(root, "versions", "2.0.0", "kunai.exe");
+    const candidatePath = `${launcherPath}.candidate`;
+    const asidePath = `${launcherPath}.old.test`;
+    await mkdir(join(root, "bin"), { recursive: true });
+    await mkdir(join(root, "versions", "2.0.0"), { recursive: true });
+    await writeFile(launcherPath, "WORKING-BINARY");
+    await writeFile(versionPath, "NEW-BINARY");
+
+    let renameAttempt = 0;
+    const result = __testing.updateWindowsLauncher(
+      { launcherPath, versionPath },
+      {
+        asidePath,
+        attempts: 1,
+        candidatePath,
+        fs: {
+          chmod,
+          copyFile,
+          rename: async (from, to) => {
+            renameAttempt += 1;
+            if (renameAttempt === 2) throw new Error("activate failed");
+            if (renameAttempt === 3) throw new Error("restore failed");
+            await rename(from, to);
+          },
+          rm: (path, options) => rm(path, options),
+        },
+        sleep: async () => {},
+      },
+    );
+
+    const error = await result.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors.map(String)).toEqual([
+      "Error: activate failed",
+      "Error: restore failed",
+    ]);
+    expect(existsSync(launcherPath)).toBe(false);
+    expect(existsSync(candidatePath)).toBe(false);
+    expect(await Bun.file(asidePath).text()).toBe("WORKING-BINARY");
 
     await rm(root, { recursive: true, force: true });
   });
