@@ -36,6 +36,7 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
     mpv: true,
     ffprobe: true,
     ytDlp: true,
+    curl: true,
     chafa: true,
     magick: true,
     image: {

@@ -11,6 +11,12 @@ Use this doc for setup, local execution, and common environment issues. Architec
 - ImageMagick (`magick`) if you want Kitty/Ghostty non-PNG poster conversion
 - `yt-dlp` for YouTube playback and downloads/offline queue (must be on `PATH` for YouTube resolve/play and when downloads are enabled)
 - `ffprobe` optional—used only for quick validation of finished files, not downloading
+- `curl` for anime mode: AniDB is the default anime provider and sits behind
+  Cloudflare, which frequently blocks Bun's own fetch. Without a `curl` on
+  `PATH`, anime search can come back empty. A curl-impersonate build
+  (`curl_chrome136`, `curl_firefox135`, …) is preferred where available, since it
+  matches a browser TLS handshake; plain `curl` is used otherwise. `kunai doctor`
+  reports this as `curl=ok` / `curl=missing`.
 
 Deeper reference for terminal graphics, env overrides, and testing: [.docs/poster-image-rendering.md](poster-image-rendering.md).
 

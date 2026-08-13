@@ -21,6 +21,7 @@ function emptyCapabilities(): CapabilitySnapshot {
     mpv: true,
     ffprobe: true,
     ytDlp: true,
+    curl: true,
     chafa: true,
     magick: true,
     image: {

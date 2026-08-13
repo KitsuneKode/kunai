@@ -34,7 +34,7 @@ Press `/` and choose diagnostics, or type:
 
 The panel typically includes:
 
-- **Capabilities** — mpv, yt-dlp, ffprobe, poster renderer detection at startup
+- **Capabilities** — mpv, yt-dlp, ffprobe, curl, poster renderer detection at startup
 - **Provider** — resolve stages, failure classes, fallback timeline
 - **Cache** — hit/miss, stale revalidation, stream health events
 - **Subtitles** — attachment evidence and active track
@@ -126,6 +126,7 @@ Recorded once per session:
 
 - mpv found on PATH
 - yt-dlp / ffprobe availability
+- curl availability (needed by AniDB, the default anime provider)
 - Terminal poster support (Kitty vs chafa)
 - Platform opener availability
 
