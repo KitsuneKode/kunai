@@ -8,7 +8,7 @@ work to do.
 commit that is now far behind, and its "Current state" excerpts describe code
 that has since changed.
 
-Archived so far: 001–005, 007, 009, 017, 018, 019, 020, 024, 026, 039.
+Archived so far: 001–005, 007, 009, 017, 018, 019, 020, 024, 026, 039, 041.
 
 ## Notes worth carrying forward
 

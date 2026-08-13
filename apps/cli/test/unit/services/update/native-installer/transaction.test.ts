@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import {
   beginInstallTransaction,
+  cleanupAbandonedTransactions,
   finishInstallTransaction,
   inspectInstallTransaction,
   listInstallTransactions,
@@ -76,6 +77,28 @@ describe("install transaction records", () => {
     const inspection = await inspectInstallTransaction(layout, record.id);
     expect(inspection.status).toBe("present");
     expect(await readdir(layout.transactionsDir)).toEqual(before);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("abandoned traversal records cannot remove an external sentinel", async () => {
+    const { root, layout } = await makeLayout();
+    const external = join(root, "external");
+    const sentinel = join(external, "keep.txt");
+    await mkdir(join(layout.stagingRoot, "1.2.3"), { recursive: true });
+    await mkdir(external, { recursive: true });
+    await Bun.write(sentinel, "keep");
+    const record = await beginInstallTransaction(layout, {
+      kind: "upgrade",
+      version: "1.2.3",
+      pid: 2_147_483_646,
+      stagingDir: `${layout.stagingRoot}/1.2.3/../../../external`,
+      startedAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    expect(await cleanupAbandonedTransactions(layout)).toBe(1);
+    expect(existsSync(sentinel)).toBe(true);
+    expect(await inspectInstallTransaction(layout, record.id)).toEqual({ status: "missing" });
 
     await rm(root, { recursive: true, force: true });
   });

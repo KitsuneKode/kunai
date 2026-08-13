@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   getInstallLayoutPaths,
+  isInsideStagingRoot,
   lockFilePath,
   parseVersionFromExecPath,
   removeStagingAndPruneParents,
@@ -13,6 +14,63 @@ import {
 import type { CanonicalVersion } from "@/services/update/version";
 
 describe("install layout paths", () => {
+  const containmentCases = [
+    {
+      label: "POSIX direct child",
+      path: "/cache/kunai/staging/1.2.3",
+      root: "/cache/kunai/staging",
+      expected: true,
+    },
+    {
+      label: "POSIX root",
+      path: "/cache/kunai/staging",
+      root: "/cache/kunai/staging",
+      expected: false,
+    },
+    {
+      label: "POSIX sibling prefix",
+      path: "/cache/kunai/staging-old/1.2.3",
+      root: "/cache/kunai/staging",
+      expected: false,
+    },
+    {
+      label: "POSIX traversal",
+      path: "/cache/kunai/staging/1.2.3/../../../sentinel",
+      root: "/cache/kunai/staging",
+      expected: false,
+    },
+    {
+      label: "Windows direct child",
+      path: String.raw`C:\cache\kunai\staging\1.2.3`,
+      root: String.raw`C:\cache\kunai\staging`,
+      expected: true,
+    },
+    {
+      label: "Windows root",
+      path: String.raw`C:\cache\kunai\staging`,
+      root: String.raw`C:\cache\kunai\staging`,
+      expected: false,
+    },
+    {
+      label: "Windows sibling prefix",
+      path: String.raw`C:\cache\kunai\staging-old\1.2.3`,
+      root: String.raw`C:\cache\kunai\staging`,
+      expected: false,
+    },
+    {
+      label: "Windows traversal",
+      path: String.raw`C:\cache\kunai\staging\1.2.3\..\..\..\sentinel`,
+      root: String.raw`C:\cache\kunai\staging`,
+      expected: false,
+    },
+  ] as const;
+
+  for (const { label, path, root, expected } of containmentCases) {
+    test(`classifies ${label} structurally`, () => {
+      expect(isInsideStagingRoot(path, root)).toBe(expected);
+    });
+  }
+
   test("derives versioned paths from data dir", () => {
     const layout = getInstallLayoutPaths({
       dataDir: "/data/kunai",
@@ -67,5 +125,20 @@ describe("install layout paths", () => {
     await removeStagingAndPruneParents(staging, stagingRoot);
 
     expect(await readdir(cacheDir)).toEqual([]);
+  });
+
+  test("removeStagingAndPruneParents refuses traversal before recursive removal", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-staging-containment-"));
+    const stagingRoot = join(root, "cache", "staging");
+    const external = join(root, "sentinel");
+    await mkdir(join(stagingRoot, "1.2.3"), { recursive: true });
+    await mkdir(external, { recursive: true });
+    await writeFile(join(external, "keep.txt"), "keep");
+
+    await expect(
+      removeStagingAndPruneParents(`${stagingRoot}/1.2.3/../../../sentinel`, stagingRoot),
+    ).rejects.toThrow("outside the staging root");
+
+    expect(await readdir(external)).toEqual(["keep.txt"]);
   });
 });
