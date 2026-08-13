@@ -44,6 +44,8 @@ recovers a crash-after-rename without redownloading or orphaning a valid artifac
       process's active artifact or temp file.
 - [x] Scope temp cleanup to the expired job so one stale row cannot delete a
       fresh owner's temp artifact in the same directory.
+- [x] Fault-inject recovery persistence failure and prove validated media is
+      preserved rather than misclassified as corrupt.
 - [x] Preserve shutdown pause, sidecar repair, progress, and ordinary completion
       behavior.
 
