@@ -33,15 +33,32 @@ export function reducedMotionEnabled(): boolean {
  * Monotonic frame tick shared by the loader's shimmer/drift. `active` pauses the
  * clock (viewport-freeze) and reduced-motion pins it to 0, so callers can derive
  * any cycle length via modulo without spinning a timer no one can see.
+ *
+ * `stopAfter` bounds the clock: once the tick reaches it, the interval clears
+ * itself and the surface goes permanently still. One-shot animations use this so
+ * a settled surface is not paying for a timer nobody can see either. Omitting it
+ * keeps the original run-forever behavior.
  */
-export function useFrameTick(active = true, intervalMs = FRAME_INTERVAL_MS): number {
+export function useFrameTick(
+  active = true,
+  intervalMs = FRAME_INTERVAL_MS,
+  stopAfter?: number,
+): number {
   const [tick, setTick] = React.useState(0);
   const animate = active && !reducedMotionEnabled();
   React.useEffect(() => {
     if (!animate) return undefined;
-    const timer = setInterval(() => setTick((current) => current + 1), intervalMs);
+    if (stopAfter !== undefined && stopAfter <= 0) return undefined;
+    // Counted outside the state updater: the updater must stay pure, and React
+    // may invoke it more than once per commit.
+    let current = 0;
+    const timer = setInterval(() => {
+      current += 1;
+      setTick(current);
+      if (stopAfter !== undefined && current >= stopAfter) clearInterval(timer);
+    }, intervalMs);
     return () => clearInterval(timer);
-  }, [animate, intervalMs]);
+  }, [animate, intervalMs, stopAfter]);
   return animate ? tick : 0;
 }
 
