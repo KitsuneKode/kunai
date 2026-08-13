@@ -430,7 +430,55 @@ If the provider has native search or episode listing, export standalone function
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
   - downstream link extraction from decoded source URLs — `Mp4` scrapes the embed HTML for `src: "…"` and plays with `Referer: https://www.mp4upload.com` plus mpv `--tls-verify=no`
 
-Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app**. Kunai keeps AllManga as a secondary anime source and adds `anidb` as the default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
+### AllAnime NEED_CAPTCHA (2026-08-13)
+
+The "valid episode catalog, zero extracted streams" symptom is **not** a crypto or
+parity defect. Measured against the production constants (`api.mkissa.net` +
+`https://mkissa.to` referer + build id 81):
+
+- Bootstrap succeeds, `keyHex` and `queryHash` are both 64 chars, the `aaReq`
+  attestation is accepted, and **no** `AA_CRYPTO_*` error is returned.
+- The episode **catalog** query resolves normally (11 episodes for the
+  Demon Slayer fixture, titles and all).
+- The episode **sources** query returns `NEED_CAPTCHA` on every valid host/referer
+  pair — `api.mkissa.net` ← `mkissa.to` and `api.allanime.day` ← `allmanga.to` both
+  return it; `api.allanime.day` ← `allanime.to` is a flat HTTP 403.
+
+That asymmetry — catalog ungated, sources gated — is exactly what produced a full
+episode list next to zero streams.
+
+`NEED_CAPTCHA` was previously unhandled anywhere in the codebase: it fell through
+the retry loop, `rawSources` stayed empty, and the user saw
+`No streams extracted from AllManga for episode N`. It is now
+`AllMangaCaptchaError`, classified as **`blocked` and non-retryable** (a captcha is
+not a network fault and retrying or re-bootstrapping cannot clear it), with a
+message naming the one thing that does help — a user-owned relay in an ungated
+region. It is checked _before_ the crypto-staleness and rate-limit branches so it
+cannot be mistaken for either.
+
+A relay running on the same machine as the client does **not** clear the gate,
+because the egress IP is unchanged; a relay deployed to an ungated region is the
+untested variable. Consequently `allanime` was dropped from the automatic anime
+lane on 2026-08-13 while staying a registered, manually selectable production
+module.
+
+**Do not "fix" this by changing crypto.** Build id 81, the bootstrap, HMAC
+`x-aa-boot`, and AES-256-GCM are all working and verified. The historical
+epoch/partB query construction and AES-CTR decryption must not be restored.
+
+**wixmp referer: current behaviour retained.** Plan 036 proposed attaching the
+mkissa site referer for `repackager.wixmp.com`, gated on a fixture proving the
+current final-stream fallback insufficient. No such fixture can be built from this
+network: the pipeline never reaches source extraction, so there is no live wixmp
+row to characterize. Per that gate, `resolveDirectStreamReferer()` is unchanged.
+mp4upload keeps its dedicated referer and scoped `--tls-verify=no`; TLS
+verification is not broadened to any other host.
+
+Note: ani-cli v5 (2026-08-01) left AllAnime/mkissa for **anidb.app** and deleted its AllAnime code
+entirely, so **there is no upstream parity reference left** for this provider — the "compare against
+ani-cli" step above applies to AniDB only. For mkissa crypto the live JS chunk is the sole source of
+truth. Kunai keeps AllManga as a manually selectable secondary anime source with `anidb` as the
+default anime provider. See [.docs/research/anidb-provider-dossier.md](./research/anidb-provider-dossier.md).
 
 Parity tip: for AniDB compare against local ani-cli `master`. For mkissa crypto, the live JS chunk is the source of truth when ani-cli no longer tracks it. The API rate-limits bursts (~3s), so stale-material recovery re-bootstraps keys instead of retry-storming.
 
@@ -455,9 +503,11 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
-`anidb` is the **default** provider-native anime catalog (`animeProvider: "anidb"`); `allanime` is
-the **fallback** (`animeProviderPriority: ["anidb", "allanime"]`); `miruro` stays manually
-selectable.
+`anidb` is the **default** provider-native anime catalog and, as of 2026-08-13, the **only**
+provider in the automatic anime lane (`animeProvider: "anidb"`,
+`animeProviderPriority: ["anidb"]`). `allanime` and `miruro` both stay registered production
+modules and remain manually selectable; neither runs as an automatic fallback. See
+"AllAnime NEED_CAPTCHA" below and the Miruro pipe contract for why each was demoted.
 
 | ID           | Content Types | Runtime     | Module Location                               |
 | ------------ | ------------- | ----------- | --------------------------------------------- |

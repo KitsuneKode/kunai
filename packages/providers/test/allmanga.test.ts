@@ -24,6 +24,7 @@ import {
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
+  AllMangaCaptchaError,
   clearAllMangaProviderCachesForTest,
   decodeTobeparsed,
   decryptTobeparsedPlaintext,
@@ -383,6 +384,52 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
       // Initial derive + exactly one stale re-bootstrap.
       expect(site.bootstrapFetchCount).toBe(2);
       expect(sleeps).toEqual([400]);
+    } finally {
+      clearAllMangaProviderCachesForTest();
+    }
+  });
+
+  /**
+   * `NEED_CAPTCHA` is what a geo/bot-gated region actually gets back from the
+   * episode-sources query while the episode *catalog* still resolves — the exact
+   * "valid catalog, zero streams" shape. It used to fall through the retry loop
+   * and return an empty list, so the user saw "No streams extracted" with no way
+   * to know the request was gated rather than the episode empty.
+   */
+  test("surfaces NEED_CAPTCHA as a distinct, actionable failure", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"NEED_CAPTCHA"}],"data":{"episode":null}}'],
+    });
+
+    let thrown: unknown;
+    try {
+      await resolveWithSiteSources();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AllMangaCaptchaError);
+    expect((thrown as Error).message).toContain("captcha");
+    // A captcha is not a crypto problem: it must not trigger re-bootstrapping,
+    // and it must not burn the retry budget on identical requests.
+    expect(site.apiCallCount).toBe(1);
+    expect(site.bootstrapFetchCount).toBe(1);
+  });
+
+  test("does not mistake NEED_CAPTCHA for a stale key or a rate limit", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"NEED_CAPTCHA"}]}', PLAIN_SOURCE_JSON],
+    });
+    const sleeps: number[] = [];
+    setAllMangaRetrySleepForTest((ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    });
+
+    try {
+      await expect(resolveWithSiteSources()).rejects.toBeInstanceOf(AllMangaCaptchaError);
+      expect(sleeps).toEqual([]);
+      expect(site.apiCallCount).toBe(1);
     } finally {
       clearAllMangaProviderCachesForTest();
     }

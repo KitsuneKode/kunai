@@ -39,6 +39,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode, subtitleLanguageDisplayName } from "../shared/subtitle-helpers";
 import {
   type StreamLink,
+  AllMangaCaptchaError,
   loadAvailableEpisodesDetail,
   resolveAnimeEpisodeString,
   resolveEpisodeSources,
@@ -707,11 +708,15 @@ export const allmangaProviderModule: CoreProviderModule = {
         });
       }
 
+      // A captcha gate is not a network fault and retrying cannot clear it —
+      // reporting it as retryable network noise is what made this look like an
+      // empty episode rather than a blocked request.
+      const captchaBlocked = error instanceof AllMangaCaptchaError;
       const failure: ProviderFailure = {
         providerId: ALLANIME_PROVIDER_ID,
-        code: "network-error",
+        code: captchaBlocked ? "blocked" : "network-error",
         message: error instanceof Error ? error.message : "AllManga API failed",
-        retryable: true,
+        retryable: !captchaBlocked,
         at: context.now(),
       };
       failures.push(failure);

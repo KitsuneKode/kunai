@@ -639,6 +639,35 @@ export async function gqlRaw(
   }
 }
 
+/**
+ * The AllAnime/mkissa API answers the episode-sources query with `NEED_CAPTCHA`
+ * when the caller's network is bot- or geo-gated. The episode *catalog* query is
+ * not gated, so the symptom is a full episode list next to zero streams.
+ *
+ * This is not a crypto fault: build id, bootstrap material, `aaReq`, and the
+ * persisted query hash are all accepted when it happens. Re-bootstrapping or
+ * retrying the identical request cannot clear it, so it must fail loudly and
+ * point at the one thing that does help — a user-owned relay in an ungated
+ * region (`providerRelay.baseUrl`, see `.docs/providers.md`).
+ */
+export class AllMangaCaptchaError extends Error {
+  readonly code = "allmanga-captcha-required" as const;
+
+  constructor() {
+    super(
+      "AllAnime requires a captcha for stream sources from this network. " +
+        "The episode catalog still loads, which is why the episode list looks healthy. " +
+        "Configure a user-owned provider relay (providerRelay.baseUrl) in an ungated region.",
+    );
+    this.name = "AllMangaCaptchaError";
+  }
+}
+
+/** Distinguishes the captcha gate from crypto staleness and rate limiting. */
+export function isAllMangaCaptchaResponse(rawText: string): boolean {
+  return rawText.includes("NEED_CAPTCHA");
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -696,6 +725,12 @@ export async function resolveEpisodeSources(opts: {
 
     if (!rawText) return [];
     if (rawText.includes('"tobeparsed"')) break;
+
+    // Check before the crypto/rate-limit branches: a captcha gate is neither,
+    // and retrying or re-bootstrapping against it only wastes the budget.
+    if (isAllMangaCaptchaResponse(rawText)) {
+      throw new AllMangaCaptchaError();
+    }
 
     if (rawText.includes("Too many requests")) {
       rateLimitRetries += 1;

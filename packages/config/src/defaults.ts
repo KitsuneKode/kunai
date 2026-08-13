@@ -8,12 +8,18 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultMode: "series",
   // Series automatic lane (2026-07-16): Videasy first (fast seed+neon path), then Rivestream, VidLink.
   provider: "videasy",
-  // AniDB is ani-cli v5's primary source; AllManga stays as fallback while mkissa CF churn settles.
+  // AniDB is ani-cli v5's primary source, and the only anime provider in the
+  // automatic lane. AllAnime and Miruro stay registered and manually selectable.
   animeProvider: "anidb",
   youtubeProvider: "youtube",
   providerPriority: ["rivestream", "vidlink"],
-  // Miruro remains manually selectable until its pipe mirrors pass the live release gate.
-  animeProviderPriority: ["anidb", "allanime"],
+  // AllAnime is demoted out of the automatic fallback (2026-08-13): its stream
+  // sources endpoint answers NEED_CAPTCHA on bot/geo-gated networks while its
+  // episode catalog still loads, so automatic fallback can only spend resolve
+  // budget and then fail. It stays registered and manually selectable, and works
+  // where the gate does not apply or behind a user-owned relay in an ungated
+  // region. Miruro is demoted for the same class of reason (Cloudflare WAF).
+  animeProviderPriority: ["anidb"],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: {},
