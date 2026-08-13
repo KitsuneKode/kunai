@@ -21,6 +21,7 @@ export type LateSubtitleLookupDecision = {
   attempt: boolean;
   reason:
     | "disabled"
+    | "offline"
     | "tmdb-id-missing"
     | "attached"
     | "inventory-satisfied"
@@ -33,14 +34,19 @@ export function shouldAttemptLateSubtitleLookup({
   stream,
   requestedSubLang,
   hasTmdbId,
+  networkAvailable = true,
 }: {
   stream: StreamInfo;
   requestedSubLang: string;
   hasTmdbId: boolean;
+  networkAvailable?: boolean;
 }): LateSubtitleLookupDecision {
   const availableTracks = stream.subtitleList?.length ?? 0;
   if (isSubtitlePreferenceDisabled(requestedSubLang)) {
     return { attempt: false, reason: "disabled", availableTracks };
+  }
+  if (!networkAvailable) {
+    return { attempt: false, reason: "offline", availableTracks };
   }
   if (!hasTmdbId) {
     return { attempt: false, reason: "tmdb-id-missing", availableTracks };

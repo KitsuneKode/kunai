@@ -1,5 +1,5 @@
 import type { SubtitleTrack } from "@/domain/types";
-import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
@@ -53,13 +53,16 @@ export class PersistentSubtitleManager {
     primarySubtitle: string | null,
     subtitleTracks?: readonly SubtitleTrack[],
     onAttached?: (trackCount: number) => void,
+    primarySubtitleKind: MpvUrlKind = "remote",
   ): Promise<void> {
     if (!ipcSession) return;
 
     await this.removeExternalSubtitles(ipcSession);
 
     const safePrimary =
-      primarySubtitle && isAllowedMpvUrl(primarySubtitle, "remote") ? primarySubtitle : null;
+      primarySubtitle && isAllowedMpvUrl(primarySubtitle, primarySubtitleKind)
+        ? primarySubtitle
+        : null;
     if (safePrimary) {
       const primary = describeSubtitleTrackForMpv(safePrimary, subtitleTracks);
       const result = await ipcSession.send(

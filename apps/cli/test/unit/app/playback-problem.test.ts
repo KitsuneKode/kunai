@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildLocalPlaybackFailureProblem,
   buildMpvMissingProblem,
   buildOfflineFileUnavailableProblem,
   buildPlayerFailureProblem,
@@ -9,6 +10,23 @@ import {
 } from "@/domain/playback/playback-problem";
 
 describe("playback problem model", () => {
+  test("reports a local player launch failure without suggesting provider recovery", () => {
+    const problem = buildLocalPlaybackFailureProblem();
+
+    expect(problem).toMatchObject({
+      stage: "mpv",
+      severity: "blocking",
+      cause: "local-playback-failed",
+      recommendedAction: "diagnostics",
+      secondaryActions: ["relaunch"],
+    });
+    expect(problem.userMessage).toContain("downloaded file");
+    expect(toErrorScenario(problem, { title: "Obsession" })).toEqual({
+      kind: "title-unavailable",
+      title: "Obsession",
+    });
+  });
+
   test("maps an unplayable downloaded file to a blocking problem that names the remedy", () => {
     const problem = buildOfflineFileUnavailableProblem();
 

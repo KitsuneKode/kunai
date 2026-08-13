@@ -1,12 +1,29 @@
 import { expect, test } from "bun:test";
 
-import { EpisodePrefetchHandle, type EpisodePrefetchBundle } from "@/app/playback/episode-prefetch";
+import {
+  EpisodePrefetchHandle,
+  isEpisodePrefetchEligible,
+  type EpisodePrefetchBundle,
+} from "@/app/playback/episode-prefetch";
 
 const target = {
   titleId: "tmdb:1",
   episode: { season: 1, episode: 2 },
   providerId: "videasy",
 };
+
+test("offline playback is never eligible for provider prefetch", () => {
+  expect(
+    isEpisodePrefetchEligible({
+      titleType: "series",
+      hasNextEpisode: true,
+      stopAfterCurrent: false,
+      sessionMode: "autoplay-chain",
+      autoplayPaused: false,
+      networkAllowed: false,
+    }),
+  ).toBe(false);
+});
 
 test("suspend keeps in-flight resolve and ready bundle", async () => {
   const handle = new EpisodePrefetchHandle();

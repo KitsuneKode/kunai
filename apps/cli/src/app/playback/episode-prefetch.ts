@@ -99,7 +99,9 @@ export function isEpisodePrefetchEligible(input: {
   readonly stopAfterCurrent: boolean;
   readonly sessionMode: "manual" | "autoplay-chain";
   readonly autoplayPaused: boolean;
+  readonly networkAllowed?: boolean;
 }): boolean {
+  if (input.networkAllowed === false) return false;
   if (input.titleType !== "series" || !input.hasNextEpisode) return false;
   if (input.stopAfterCurrent) return false;
   if (input.sessionMode === "autoplay-chain" && input.autoplayPaused) return false;

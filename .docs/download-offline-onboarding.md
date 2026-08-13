@@ -124,6 +124,12 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 
 - No aggressive startup network probe.
 - Offline prompt appears only after a real network failure.
+- Runtime network status is **offline** (connect/DNS/unreachable — including Bun's
+  "Unable to connect" fetch string) or **limited** (timeouts). Confirmed offline is
+  sticky until a later success: a TMDB/proxy fallback that only times out must not
+  reclassify the session as flaky. Limited still counts as online for retries.
+  Search while actually offline opens browse with the existing header alert and
+  does not remount the phase in a silent loop.
 - `--offline` and `/library` list completed `download_jobs` and validate artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
 - Offline episode rows may show resume percentage or watched state from local history. This is derived from local
@@ -151,6 +157,13 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
 - An offline-library launch keeps its explicit local-only origin through episode selection and
   playback. The validated local source is handed to the local mpv path, including local subtitle
   sidecars, rather than being represented as a remote stream URL.
+- The full player-options path preserves that verified origin by exact media/sidecar path match, so
+  resume, autoplay, timing, track preferences, and cancellation remain available without weakening
+  mpv URL safety. A local launch failure is a local player problem: it never invalidates provider
+  caches or enters source/provider failover.
+- Offline playback does not start remote subtitle or timing-metadata lookup, provider prefetch, or
+  recommendation warming. Local next-episode readiness, cached timing, and local subtitle sidecars
+  remain available.
 - Offline asset lookup uses the same canonical title identity as download enqueue. This covers
   provider-native anime ids, canonical AniList/TMDB ids, and YouTube ids across download, library,
   and normal playback surfaces.

@@ -38,6 +38,23 @@ function createFakeIpc(failCommand?: string): {
 }
 
 describe("PersistentSubtitleManager", () => {
+  test("accepts a verified local primary subtitle during persistent replacement", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    await (
+      manager.replaceSubtitleInventory as unknown as (
+        ipc: MpvIpcSession,
+        primarySubtitle: string,
+        subtitleTracks: undefined,
+        onAttached: undefined,
+        primarySubtitleKind: "local",
+      ) => Promise<void>
+    )(ipc, "/media/episode-2.en.srt", undefined, undefined, "local");
+
+    expect(commands).toEqual([["sub-add", "/media/episode-2.en.srt", "select", "", ""]]);
+  });
+
   test("skips local subtitle targets on remote persistent playback", async () => {
     const { ipc, commands } = createFakeIpc();
     const manager = new PersistentSubtitleManager();

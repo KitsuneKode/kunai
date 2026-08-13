@@ -4,11 +4,18 @@ import {
   listOrderedPlaybackSourceIds,
   pickNextCatalogSourceId,
   planStartupFailover,
+  shouldUseProviderPlaybackRecovery,
   STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
 import type { ProviderResolveResult } from "@kunai/types";
 
 describe("playback-source-failover", () => {
+  test("verified local playback never enters provider stream recovery", () => {
+    expect(shouldUseProviderPlaybackRecovery("local")).toBe(false);
+    expect(shouldUseProviderPlaybackRecovery("fresh")).toBe(true);
+    expect(shouldUseProviderPlaybackRecovery("cache")).toBe(true);
+  });
+
   test("STARTUP_STALL_TIMEOUT_MS leaves headroom past 20s for slow CDNs", () => {
     expect(STARTUP_STALL_TIMEOUT_MS).toBeGreaterThanOrEqual(45_000);
   });

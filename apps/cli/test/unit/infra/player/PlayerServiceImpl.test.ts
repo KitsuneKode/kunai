@@ -69,7 +69,10 @@ function createService(
   events: DiagnosticEventInput[],
   overrides: {
     presentation?: { isInteractiveShellMounted: () => boolean };
-    playerControl?: { setActive: (control: unknown) => void };
+    playerControl?: {
+      setActive: (control: ActivePlayerControl | null) => void;
+      getActive?: () => ActivePlayerControl | null;
+    };
     launchMpv?: typeof launchMpv;
   } = {},
 ) {
@@ -104,6 +107,41 @@ function createService(
 }
 
 describe("PlayerServiceImpl diagnostics", () => {
+  test("full play marks a verified local file and sidecar as trusted local targets", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const localSource = {
+      ...LOCAL_SOURCE,
+      subtitlePath: "/media/episode-2.en.srt",
+    };
+    const { service } = createService(events, {
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(
+      createStream({
+        url: localSource.filePath,
+        headers: {},
+        subtitle: localSource.subtitlePath,
+      }),
+      {
+        url: localSource.filePath,
+        displayTitle: "Offline episode",
+        localPlaybackSource: localSource,
+      } as PlayerOptions,
+    );
+
+    expect(launchedWith).toMatchObject({
+      url: localSource.filePath,
+      urlKind: "local",
+      subtitle: localSource.subtitlePath,
+      subtitleUrlKind: "local",
+    });
+  });
+
   test("rejects a terminal HLS response before spawning MPV", async () => {
     const events: DiagnosticEventInput[] = [];
     let launches = 0;
@@ -512,6 +550,48 @@ describe("PlayerServiceImpl playback generations", () => {
 });
 
 describe("PlayerServiceImpl shutdown", () => {
+  test("aborting an active one-shot play stops its mpv control", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let activeControl: ActivePlayerControl | null = null;
+    let stopReason: string | undefined;
+    let finishPlayback!: (result: PlaybackResult) => void;
+    const playbackResult = new Promise<PlaybackResult>((resolve) => {
+      finishPlayback = resolve;
+    });
+    const { service } = createService(events, {
+      playerControl: {
+        setActive: (control) => {
+          activeControl = control;
+        },
+        getActive: () => activeControl,
+      },
+      launchMpv: (async (options) => {
+        options.onControlReady?.({
+          id: "one-shot",
+          stop: async (reason) => {
+            stopReason = reason;
+          },
+        });
+        return await playbackResult;
+      }) as typeof launchMpv,
+    });
+    const abortController = new AbortController();
+
+    const playing = service.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      abortSignal: abortController.signal,
+    });
+    await Bun.sleep(0);
+    abortController.abort("session-shutdown");
+    await Bun.sleep(0);
+    const observedStopReason = stopReason;
+    finishPlayback(createPlaybackResult());
+    await playing;
+
+    expect(observedStopReason).toBe("playback-aborted");
+  });
+
   test("local playback retires a persistent player and owns the active controls", async () => {
     const events: DiagnosticEventInput[] = [];
     const lifecycle: string[] = [];

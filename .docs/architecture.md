@@ -161,6 +161,8 @@ Production resolution is browserless by default:
 `apps/cli/src/mpv.ts`:
 
 - launches `mpv` detached
+- binds the active one-shot control to the playback abort signal, so shutdown
+  stops the current player instead of waiting for the process-exit backstop
 - writes playback position through a Lua helper
 - polls the position file after exit
 - has a deadline to avoid hanging forever if `mpv` dies badly

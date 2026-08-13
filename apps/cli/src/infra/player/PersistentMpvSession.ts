@@ -973,12 +973,14 @@ export class PersistentMpvSession {
     primarySubtitle: string | null,
     subtitleTracks?: readonly SubtitleTrack[],
     onAttached?: (trackCount: number) => void,
+    primarySubtitleUrlKind?: MpvUrlKind,
   ): Promise<void> {
     await this.subtitleManager.replaceSubtitleInventory(
       this.ipcSession,
       primarySubtitle,
       subtitleTracks,
       onAttached,
+      primarySubtitleUrlKind,
     );
   }
 
@@ -1510,6 +1512,7 @@ export class PersistentMpvSession {
 
     const now = Date.now();
     if (now < this.reconnectBackoffUntilMs) return false;
+    const reconnectGeneration = this.cycleGeneration;
 
     const nextAttempt = this.reconnectTryCount + 1;
     const backoffBefore =
@@ -1518,6 +1521,7 @@ export class PersistentMpvSession {
         : 0;
     if (backoffBefore > 0) {
       await Bun.sleep(backoffBefore);
+      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
     }
 
     this.reconnectInFlight = true;
@@ -1545,7 +1549,6 @@ export class PersistentMpvSession {
       active.telemetry.lastReliableProgressSeconds = savedLastReliable;
       // Reconnect reloads the same cycle: keep its generation, but retire the
       // previous pending owner so two load owners never coexist.
-      const reconnectGeneration = this.cycleGeneration;
       this.pendingInProcessReconnect = {
         seekSeconds,
         shouldSeek,
@@ -1603,7 +1606,10 @@ export class PersistentMpvSession {
     seekSeconds: number;
     shouldSeek: boolean;
     trigger: InProcessReconnectTrigger;
+    generation: PlaybackGeneration;
   }): Promise<void> {
+    const isCurrent = () => this.isGenerationCurrent(spec.generation);
+    if (!isCurrent()) return;
     const opts = this.currentCycleOptions();
     try {
       if (spec.shouldSeek && this.ipcSession) {
@@ -1611,11 +1617,13 @@ export class PersistentMpvSession {
           ["seek", spec.seekSeconds, "absolute"],
           3_000,
         );
+        if (!isCurrent()) return;
         if (seekResult.ok) {
           this.currentPositionSeconds = spec.seekSeconds;
         }
       }
       await this.ipcSession?.send(["set_property", "pause", false], 500);
+      if (!isCurrent()) return;
 
       await this.replaceSubtitleInventory(
         opts.primarySubtitle,
@@ -1624,7 +1632,9 @@ export class PersistentMpvSession {
           opts.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
           opts.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
         },
+        opts.subtitleUrlKind,
       );
+      if (!isCurrent()) return;
 
       opts.onPlaybackEvent?.({
         type: "mpv-in-process-reconnect",
@@ -1633,6 +1643,7 @@ export class PersistentMpvSession {
         detail: spec.trigger,
       });
     } catch (error) {
+      if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
       opts.onPlaybackEvent?.({
         type: "mpv-in-process-reconnect",
@@ -1641,9 +1652,11 @@ export class PersistentMpvSession {
         detail: `${spec.trigger}: ${message}`,
       });
     } finally {
-      this.reconnectInFlight = false;
-      this.nearEofFired = false;
-      await this.handleSegmentSkipProgress(opts);
+      if (isCurrent()) {
+        this.reconnectInFlight = false;
+        this.nearEofFired = false;
+        await this.handleSegmentSkipProgress(opts);
+      }
     }
   }
 }

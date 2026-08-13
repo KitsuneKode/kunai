@@ -194,6 +194,7 @@ export async function runMpvPlaybackSession(
       startAt: input.startAt,
       timing: input.timing,
       correlation: input.correlation,
+      localPlaybackSource: input.localPlaybackSource,
       shareLinkContext: {
         ...input.shareLinkContext,
         onCopied: hooks.onShareCopied,
