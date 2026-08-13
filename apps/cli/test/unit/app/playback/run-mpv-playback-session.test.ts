@@ -359,16 +359,16 @@ describe("runMpvPlaybackSession completion", () => {
     expect(harness.store.snapshot.status).toBe("error");
   });
 
-/** Every hook is a no-op; this test only asserts which player method ran. */
-function noopSessionHooks() {
-  return new Proxy(
-    {},
-    {
-      get: (_target, property) =>
-        property === "applyPlaybackStatusSignal" ? () => ({ accepted: true }) : () => undefined,
-    },
-  ) as Parameters<typeof runMpvPlaybackSession>[0]["hooks"];
-}
+  /** Every hook is a no-op; this test only asserts which player method ran. */
+  function noopSessionHooks() {
+    return new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          property === "applyPlaybackStatusSignal" ? () => ({ accepted: true }) : () => undefined,
+      },
+    ) as Parameters<typeof runMpvPlaybackSession>[0]["hooks"];
+  }
 
   test("plays a local file through play(), not the playLocal shortcut", async () => {
     // playLocal() takes a narrow option bag, so routing local files through it
