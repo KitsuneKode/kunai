@@ -415,7 +415,6 @@ describe("AniListAdapter membership lookups", () => {
   };
 
   const target = { tracker: "anilist", anilistId: 7, mediaKind: "anime" } as const;
-  const signal = () => ({ signal: new AbortController().signal });
 
   test("does not report a removal as done when the lookup was rejected", async () => {
     const { adapter, calls } = await adapterReturning({
