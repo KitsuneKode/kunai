@@ -2,9 +2,41 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
+import type { TrackerOperation } from "./operations";
+import {
+  outcomeForAbortedRequest,
+  startRequestDeadline,
+  type RequestDeadline,
+} from "./request-deadline";
 import { resolveAniListIdentity, resolveAniListProgressEpisode } from "./sync-identity";
 import type { SyncAdapter, SyncResult } from "./SyncAdapter";
-import type { SyncCapabilities } from "./types";
+import {
+  syncFailed,
+  syncNeedsReauth,
+  syncOk,
+  type SyncCapabilities,
+  type SyncMutationOptions,
+  type SyncOutcome,
+} from "./types";
+
+/**
+ * AniList reports application-level problems as a 200 with an `errors` array,
+ * so a bare `res.ok` check treats a rejected write as a success. An expired or
+ * revoked token surfaces here too and must become a reauth demand rather than a
+ * retry, or the queue spins against a credential the server has already refused.
+ */
+function outcomeForGraphQlErrors(errors?: { message: string }[]): SyncOutcome | null {
+  const first = errors?.[0]?.message;
+  if (!first) return null;
+  if (/invalid token|unauthorized|not authenticated/i.test(first)) {
+    return syncNeedsReauth("token-rejected");
+  }
+  return syncFailed("remote-error", "remote", first.slice(0, 256));
+}
+
+function errorCode(error: unknown): string {
+  return error instanceof Error ? error.name : "unknown";
+}
 
 /**
  * Progress, planning and favourites are the three writes this adapter
@@ -31,6 +63,26 @@ interface ViewerResponse {
 
 interface MediaListEntryResponse {
   data: { SaveMediaListEntry: { id: number } | null };
+  errors?: { message: string }[];
+}
+
+interface FavouriteLookupResponse {
+  data?: { Media?: { id: number; isFavourite?: boolean } | null };
+  errors?: { message: string }[];
+}
+
+interface MediaEntryLookupResponse {
+  data?: { Media?: { id: number; mediaListEntry?: { id: number } | null } | null };
+  errors?: { message: string }[];
+}
+
+interface ToggleFavouriteResponse {
+  data?: unknown;
+  errors?: { message: string }[];
+}
+
+interface DeleteEntryResponse {
+  data?: { DeleteMediaListEntry?: { deleted: boolean } | null };
   errors?: { message: string }[];
 }
 
@@ -181,7 +233,129 @@ export class AniListAdapter implements SyncAdapter {
     }
   }
 
-  private async gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  /**
+   * Apply one desired-state operation.
+   *
+   * Every branch converges on the requested state rather than moving relative
+   * to the current one, because the outbox may redeliver a row whose response
+   * was lost after AniList already applied it.
+   */
+  async apply(operation: TrackerOperation, options: SyncMutationOptions): Promise<SyncOutcome> {
+    if (operation.target.tracker !== this.id) {
+      return syncFailed("tracker-target-mismatch", "mapping");
+    }
+    if (!this.accessToken) return syncNeedsReauth("not-connected");
+
+    const deadline = startRequestDeadline(options.signal);
+    try {
+      switch (operation.kind) {
+        case "progress:set":
+          return await this.setProgress(operation, deadline);
+        case "list-membership:set":
+          return await this.setWatchlistMembership(operation, deadline);
+        case "favorite-membership:set":
+          return await this.setFavoriteMembership(operation, deadline);
+      }
+    } catch (error) {
+      return (
+        outcomeForAbortedRequest(options.signal, deadline) ??
+        syncFailed("request-failed", "network", errorCode(error))
+      );
+    } finally {
+      deadline.release();
+    }
+  }
+
+  private async setProgress(
+    operation: Extract<TrackerOperation, { kind: "progress:set" }>,
+    deadline: RequestDeadline,
+  ): Promise<SyncOutcome> {
+    const res = await this.gql<MediaListEntryResponse>(
+      `mutation SaveProgress($mediaId: Int, $status: MediaListStatus, $progress: Int) {
+        SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id }
+      }`,
+      {
+        mediaId: operation.target.anilistId,
+        status: operation.status === "completed" ? "COMPLETED" : "CURRENT",
+        progress: operation.progress,
+      },
+      deadline,
+    );
+    return outcomeForGraphQlErrors(res.errors) ?? syncOk();
+  }
+
+  /**
+   * Kunai's watchlist maps onto AniList's PLANNING status. Removal deletes the
+   * list entry, and an already-absent entry is success, not an error — the
+   * desired state is what the user asked for and it already holds.
+   */
+  private async setWatchlistMembership(
+    operation: Extract<TrackerOperation, { kind: "list-membership:set" }>,
+    deadline: RequestDeadline,
+  ): Promise<SyncOutcome> {
+    const mediaId = operation.target.tracker === "anilist" ? operation.target.anilistId : 0;
+    if (operation.present) {
+      const res = await this.gql<MediaListEntryResponse>(
+        `mutation SavePlanning($mediaId: Int, $status: MediaListStatus) {
+          SaveMediaListEntry(mediaId: $mediaId, status: $status) { id }
+        }`,
+        { mediaId, status: "PLANNING" },
+        deadline,
+      );
+      return outcomeForGraphQlErrors(res.errors) ?? syncOk();
+    }
+
+    const current = await this.gql<MediaEntryLookupResponse>(
+      `query EntryFor($mediaId: Int) { Media(id: $mediaId) { id mediaListEntry { id } } }`,
+      { mediaId },
+      deadline,
+    );
+    const entryId = current.data?.Media?.mediaListEntry?.id;
+    if (entryId === undefined) return syncOk("already-absent");
+
+    const res = await this.gql<DeleteEntryResponse>(
+      `mutation RemoveEntry($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }`,
+      { id: entryId },
+      deadline,
+    );
+    return outcomeForGraphQlErrors(res.errors) ?? syncOk();
+  }
+
+  /**
+   * AniList exposes only `ToggleFavourite`, which is a relative operation — so
+   * membership is read first and the toggle is sent only when the remote
+   * actually differs from the desired state. Toggling blind would undo the
+   * user's intent whenever a response was lost in flight.
+   */
+  private async setFavoriteMembership(
+    operation: Extract<TrackerOperation, { kind: "favorite-membership:set" }>,
+    deadline: RequestDeadline,
+  ): Promise<SyncOutcome> {
+    const mediaId = operation.target.tracker === "anilist" ? operation.target.anilistId : 0;
+    const current = await this.gql<FavouriteLookupResponse>(
+      `query FavouriteFor($mediaId: Int) { Media(id: $mediaId) { id isFavourite } }`,
+      { mediaId },
+      deadline,
+    );
+    if (current.data?.Media?.isFavourite === operation.present) {
+      return syncOk("already-current");
+    }
+
+    const res = await this.gql<ToggleFavouriteResponse>(
+      `mutation ToggleFavourite($animeId: Int) {
+        ToggleFavourite(animeId: $animeId) { anime { nodes { id } } }
+      }`,
+      { animeId: mediaId },
+      deadline,
+    );
+    return outcomeForGraphQlErrors(res.errors) ?? syncOk();
+  }
+
+  private async gql<T>(
+    query: string,
+    variables?: Record<string, unknown>,
+    deadline?: RequestDeadline,
+  ): Promise<T> {
     const res = await this.fetchImpl(ANILIST_GRAPHQL, {
       method: "POST",
       headers: {
@@ -190,6 +364,7 @@ export class AniListAdapter implements SyncAdapter {
         ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
       },
       body: JSON.stringify({ query, variables }),
+      ...(deadline ? { signal: deadline.signal } : {}),
     });
     if (!res.ok) throw new Error(`AniList API error: ${res.status}`);
     return res.json() as Promise<T>;

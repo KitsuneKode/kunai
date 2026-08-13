@@ -2,8 +2,19 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
+import type { TrackerOperation } from "./operations";
+import { outcomeForAbortedRequest, startRequestDeadline } from "./request-deadline";
 import type { SyncAdapter, SyncResult } from "./SyncAdapter";
-import type { SyncCapabilities } from "./types";
+import {
+  syncFailed,
+  syncNeedsReauth,
+  syncOk,
+  type SyncCapabilities,
+  type SyncMutationOptions,
+  type SyncOutcome,
+} from "./types";
+
+type TmdbFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 /**
  * TMDB v3 exposes account watchlist and favourite membership, and nothing that
@@ -34,7 +45,64 @@ export class TmdbAdapter implements SyncAdapter {
   constructor(
     private readonly tokenStore: SyncTokenStore,
     private readonly apiKey: string,
+    private readonly fetchImpl: TmdbFetch = (input, init) => fetch(input, init),
   ) {}
+
+  /**
+   * Apply one desired-state operation.
+   *
+   * Both supported writes carry the requested boolean directly, so a redelivery
+   * after a lost response converges rather than inverting — which is why the
+   * operation records the state and not a toggle.
+   */
+  async apply(operation: TrackerOperation, options: SyncMutationOptions): Promise<SyncOutcome> {
+    if (operation.kind === "progress:set") {
+      // Declared as episodeProgress: false. Reaching here means the payload was
+      // misrouted, and no retry can make TMDB accept it.
+      return syncFailed("capability-unsupported", "invalid");
+    }
+    if (operation.target.tracker !== this.id) {
+      return syncFailed("tracker-target-mismatch", "mapping");
+    }
+    if (!this.sessionId || !this.accountId) return syncNeedsReauth("not-connected");
+
+    const { mediaKind, tmdbId } = operation.target;
+    const [path, field] =
+      operation.kind === "list-membership:set"
+        ? (["watchlist", "watchlist"] as const)
+        : (["favorite", "favorite"] as const);
+
+    const deadline = startRequestDeadline(options.signal);
+    try {
+      const res = await this.fetchImpl(`${TMDB_API_BASE}/account/${this.accountId}/${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          // Credentials travel in headers and body rather than the query
+          // string, which is what ends up in proxy and crash logs.
+          Authorization: `Bearer ${this.apiKey}`,
+          "X-Session-Id": this.sessionId,
+        },
+        body: JSON.stringify({
+          media_type: mediaKind === "movie" ? "movie" : "tv",
+          media_id: tmdbId,
+          [field]: operation.present,
+        }),
+        signal: deadline.signal,
+      });
+
+      if (res.status === 401 || res.status === 403) return syncNeedsReauth("session-rejected");
+      if (!res.ok) return syncFailed(`remote-${res.status}`, "remote");
+      return syncOk();
+    } catch (error) {
+      return (
+        outcomeForAbortedRequest(options.signal, deadline) ??
+        syncFailed("request-failed", "network", error instanceof Error ? error.name : "unknown")
+      );
+    } finally {
+      deadline.release();
+    }
+  }
 
   async init(): Promise<void> {
     const tokens = await this.tokenStore.load();

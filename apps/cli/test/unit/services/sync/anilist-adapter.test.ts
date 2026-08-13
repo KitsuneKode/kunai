@@ -2,6 +2,237 @@ import { describe, expect, test } from "bun:test";
 
 import type { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
 import { AniListAdapter } from "@/services/sync/AniListAdapter";
+import type { TrackerOperation } from "@/services/sync/operations";
+
+const connectedTokenStore = {
+  load: async () => ({ anilist: { accessToken: "token", userId: 42 } }),
+} as unknown as SyncTokenStore;
+
+const anilistTarget = { tracker: "anilist", anilistId: 438631, mediaKind: "anime" } as const;
+
+/**
+ * A fake AniList that holds real state, so idempotence can be asserted against
+ * what the remote ends up believing rather than against call arguments.
+ */
+function fakeAniList(options: { favourite?: boolean; failNextResponse?: boolean } = {}) {
+  const state = {
+    favourite: options.favourite ?? false,
+    toggleCalls: 0,
+    saveCalls: 0,
+    deleteCalls: 0,
+    lastSave: undefined as Record<string, unknown> | undefined,
+    failNextResponse: options.failNextResponse ?? false,
+  };
+
+  const fetchImpl = async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      query: string;
+      variables?: Record<string, unknown>;
+    };
+    const json = (data: unknown) =>
+      new Response(JSON.stringify({ data }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    if (body.query.includes("ToggleFavourite")) {
+      state.toggleCalls += 1;
+      state.favourite = !state.favourite;
+      // The mutation lands, then the response is lost on the way back — the
+      // exact shape that makes a blind retry flip the value back.
+      if (state.failNextResponse) {
+        state.failNextResponse = false;
+        throw new TypeError("network error");
+      }
+      return json({ ToggleFavourite: { anime: { nodes: [{ id: 438631 }] } } });
+    }
+    if (body.query.includes("isFavourite")) {
+      return json({ Media: { id: 438631, isFavourite: state.favourite } });
+    }
+    if (body.query.includes("DeleteMediaListEntry")) {
+      state.deleteCalls += 1;
+      return json({ DeleteMediaListEntry: { deleted: true } });
+    }
+    if (body.query.includes("mediaListEntry")) {
+      return json({ Media: { id: 438631, mediaListEntry: { id: 7 } } });
+    }
+    state.saveCalls += 1;
+    state.lastSave = body.variables;
+    return json({ SaveMediaListEntry: { id: 1 } });
+  };
+
+  return { state, fetchImpl };
+}
+
+async function connectedAdapter(fetchImpl: ConstructorParameters<typeof AniListAdapter>[1]) {
+  const adapter = new AniListAdapter(connectedTokenStore, fetchImpl);
+  await adapter.init();
+  return adapter;
+}
+
+const signal = () => ({ signal: new AbortController().signal });
+
+describe("AniListAdapter.apply", () => {
+  test("sends the cour-relative progress and desired status", async () => {
+    const { state, fetchImpl } = fakeAniList();
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(
+      {
+        version: 1,
+        kind: "progress:set",
+        target: anilistTarget,
+        progress: 3,
+        status: "completed",
+      },
+      signal(),
+    );
+
+    expect(outcome.status).toBe("ok");
+    expect(state.lastSave).toMatchObject({ mediaId: 438631, progress: 3, status: "COMPLETED" });
+  });
+
+  /**
+   * A foreign target is a payload that can never succeed against this adapter,
+   * so it must be classified before any request rather than failing remotely
+   * and being retried forever.
+   */
+  test("rejects a foreign target before making a request", async () => {
+    let calls = 0;
+    const adapter = await connectedAdapter(async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    });
+
+    const outcome = await adapter.apply(
+      {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "tmdb", tmdbId: 550, mediaKind: "movie" },
+        present: true,
+      },
+      signal(),
+    );
+
+    expect(outcome).toMatchObject({
+      status: "failed",
+      code: "tracker-target-mismatch",
+      kind: "mapping",
+      retryable: false,
+    });
+    expect(calls).toBe(0);
+  });
+
+  /**
+   * The reason favourites are modelled as desired state rather than
+   * `ToggleFavourite`: the outbox may redeliver a row whose response was lost
+   * after the remote already applied it. A blind toggle would undo the user's
+   * intent on the retry, and nothing would report an error.
+   */
+  test("a lost favourite response leaves the desired state after retry", async () => {
+    const { state, fetchImpl } = fakeAniList({ favourite: false, failNextResponse: true });
+    const adapter = await connectedAdapter(fetchImpl);
+    const operation: TrackerOperation = {
+      version: 1,
+      kind: "favorite-membership:set",
+      target: anilistTarget,
+      present: true,
+    };
+
+    const first = await adapter.apply(operation, signal());
+    expect(first.status).toBe("failed");
+    expect(state.favourite).toBe(true);
+
+    const retry = await adapter.apply(operation, signal());
+
+    expect(retry.status).toBe("ok");
+    expect(state.toggleCalls).toBe(1);
+    expect(state.favourite).toBe(true);
+  });
+
+  test("does not toggle when the favourite is already in the desired state", async () => {
+    const { state, fetchImpl } = fakeAniList({ favourite: true });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target: anilistTarget, present: true },
+      signal(),
+    );
+
+    expect(outcome.status).toBe("ok");
+    expect(state.toggleCalls).toBe(0);
+  });
+
+  test("toggles once to remove a favourite that is present", async () => {
+    const { state, fetchImpl } = fakeAniList({ favourite: true });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target: anilistTarget, present: false },
+      signal(),
+    );
+
+    expect(state.toggleCalls).toBe(1);
+    expect(state.favourite).toBe(false);
+  });
+
+  test("adds to planning and deletes the entry to remove it", async () => {
+    const { state, fetchImpl } = fakeAniList();
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.apply(
+      {
+        version: 1,
+        kind: "list-membership:set",
+        target: anilistTarget,
+        list: "watchlist",
+        present: true,
+      },
+      signal(),
+    );
+    expect(state.lastSave).toMatchObject({ mediaId: 438631, status: "PLANNING" });
+
+    await adapter.apply(
+      {
+        version: 1,
+        kind: "list-membership:set",
+        target: anilistTarget,
+        list: "watchlist",
+        present: false,
+      },
+      signal(),
+    );
+    expect(state.deleteCalls).toBe(1);
+  });
+
+  /** Cancellation releases the claim untouched; it is not a delivery failure. */
+  test("reports caller cancellation rather than a retryable failure", async () => {
+    const controller = new AbortController();
+    const adapter = await connectedAdapter(async () => {
+      controller.abort();
+      throw new DOMException("aborted", "AbortError");
+    });
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target: anilistTarget, present: true },
+      { signal: controller.signal },
+    );
+
+    expect(outcome).toEqual({ status: "cancelled", reason: "caller-aborted" });
+  });
+
+  test("reports an unauthenticated adapter as needing reauth", async () => {
+    const adapter = new AniListAdapter({ load: async () => ({}) } as unknown as SyncTokenStore);
+    await adapter.init();
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target: anilistTarget, present: true },
+      signal(),
+    );
+
+    expect(outcome.status).toBe("needs-reauth");
+  });
+});
 
 /**
  * Capabilities are read, not restated. Settings decides what to offer and the
