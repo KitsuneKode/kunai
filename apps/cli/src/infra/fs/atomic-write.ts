@@ -1,4 +1,4 @@
-import { chmod, mkdir, rename, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 function tempPath(targetPath: string): string {
@@ -7,21 +7,98 @@ function tempPath(targetPath: string): string {
   return join(dir, `.${base}.${process.pid}-${Math.random().toString(36).slice(2, 10)}.tmp`);
 }
 
-async function atomicMove(tmp: string, targetPath: string): Promise<void> {
+function backupPath(targetPath: string): string {
+  const dir = dirname(targetPath);
+  const base = basename(targetPath);
+  return join(dir, `.${base}.${process.pid}-${Math.random().toString(36).slice(2, 10)}.bak`);
+}
+
+interface AtomicFileOps {
+  lstat(path: string): Promise<{ isDirectory(): boolean }>;
+  rename(from: string, to: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+}
+
+interface AtomicMoveOptions {
+  backupPath?: string;
+  fs?: AtomicFileOps;
+  platform?: NodeJS.Platform;
+}
+
+const nodeAtomicFileOps: AtomicFileOps = { lstat, rename, unlink };
+
+function isWindowsReplaceConflict(error: unknown, platform: NodeJS.Platform): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return platform === "win32" && (code === "EPERM" || code === "EEXIST" || code === "ENOTEMPTY");
+}
+
+async function removeIfPresent(path: string, fs: AtomicFileOps): Promise<void> {
+  await fs.unlink(path).catch(() => {});
+}
+
+async function atomicMove(
+  tmp: string,
+  targetPath: string,
+  options: AtomicMoveOptions = {},
+): Promise<void> {
+  const fs = options.fs ?? nodeAtomicFileOps;
+  const platform = options.platform ?? process.platform;
+
   try {
-    await rename(tmp, targetPath);
+    await fs.rename(tmp, targetPath);
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (
-      process.platform === "win32" &&
-      (code === "EPERM" || code === "EEXIST" || code === "ENOTEMPTY")
-    ) {
-      await unlink(targetPath).catch(() => {});
-      await rename(tmp, targetPath);
-    } else {
-      await unlink(tmp).catch(() => {});
+    if (!isWindowsReplaceConflict(err, platform)) {
+      await removeIfPresent(tmp, fs);
       throw err;
     }
+
+    const targetStats = await fs.lstat(targetPath).catch(async (statError) => {
+      await removeIfPresent(tmp, fs);
+      const failure = new AggregateError(
+        [err, statError],
+        "Atomic replacement failed while inspecting the previous target",
+        { cause: statError },
+      );
+      throw failure;
+    });
+    if (targetStats.isDirectory()) {
+      await removeIfPresent(tmp, fs);
+      throw err;
+    }
+
+    const backup = options.backupPath ?? backupPath(targetPath);
+    try {
+      await fs.rename(targetPath, backup);
+    } catch (backupError) {
+      await removeIfPresent(tmp, fs);
+      const failure = new AggregateError(
+        [err, backupError],
+        "Atomic replacement failed before the previous target could be preserved",
+        { cause: backupError },
+      );
+      throw failure;
+    }
+
+    try {
+      await fs.rename(tmp, targetPath);
+    } catch (installError) {
+      try {
+        await fs.rename(backup, targetPath);
+      } catch (restoreError) {
+        await removeIfPresent(tmp, fs);
+        const failure = new AggregateError(
+          [installError, restoreError],
+          `Atomic replacement and restoration failed; previous target retained at ${backup}`,
+          { cause: restoreError },
+        );
+        throw failure;
+      }
+
+      await removeIfPresent(tmp, fs);
+      throw installError;
+    }
+
+    await fs.unlink(backup);
   }
 }
 
@@ -85,3 +162,5 @@ export async function writeAtomicSecretText(targetPath: string, contents: string
 export async function writeAtomicSecretJson(targetPath: string, value: unknown): Promise<void> {
   await writeAtomicSecretText(targetPath, JSON.stringify(value, null, 2));
 }
+
+export const __testing = { atomicMove };
