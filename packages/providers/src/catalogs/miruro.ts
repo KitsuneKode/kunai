@@ -1,5 +1,5 @@
 import type { MiruroAudioCategory } from "../miruro/direct";
-import { MIRURO_PROVIDER_ID } from "../miruro/manifest";
+import { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "../miruro/manifest";
 import {
   formatAnimeSourceArchetype,
   formatAnimeSourceDetail,
@@ -30,21 +30,6 @@ export const MIRURO_THEME_DETAIL: Record<string, { readonly sub: string; readonl
   animez: { sub: "Kamui", dub: "Kamui" },
   dune: { sub: "Katsura", dub: "Katsura" },
 };
-
-/** Servers shown as known-catalog placeholders (merge with live discovery). */
-export const MIRURO_DEFAULT_SERVERS = [
-  "kiwi",
-  "bee",
-  "hop",
-  "ally",
-  "pewe",
-  "moo",
-  "bonk",
-  "dune",
-  "ANIMEKAI",
-  "ANIMEZ",
-  "ZORO",
-] as const;
 
 /** Short technical token for diagnostics / favorites (`Kiwi`, not `kiwi`). */
 export function miruroTechnicalServerLabel(serverId: string): string {
@@ -100,7 +85,7 @@ export function getMiruroKnownCatalog(
   const allCategories: readonly MiruroAudioCategory[] = ["sub", "dub"];
   const categories = allCategories.filter((category) => enabled.has(category));
   const entries: KnownCatalogEntry[] = [];
-  for (const serverId of MIRURO_DEFAULT_SERVERS) {
+  for (const serverId of MIRURO_SERVER_TRY_ORDER) {
     const technicalLabel = miruroTechnicalServerLabel(serverId);
     for (const audioCategory of categories) {
       const character = miruroCharacterLabel(serverId, audioCategory);

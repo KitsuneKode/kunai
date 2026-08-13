@@ -9,7 +9,6 @@ import {
 import type {
   CachePolicy,
   ProviderCycleCandidate,
-  ProviderEpisodeListInput,
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
@@ -17,9 +16,11 @@ import type {
   ProviderRuntimeContext,
   ProviderSourceCandidate,
   ProviderTraceEvent,
+  ResolveErrorCode,
   ProviderVariantCandidate,
   StreamCandidate,
   SubtitleCandidate,
+  TitleIdentity,
 } from "@kunai/types";
 
 import {
@@ -51,10 +52,14 @@ import {
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
-import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
+import {
+  isStreamReachabilityVerified,
+  type StreamReachabilityProbeResult,
+} from "../shared/stream-reachability";
+import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 
-export { MIRURO_PROVIDER_ID };
+export { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER };
 /** Canonical site origin (browser uses www; bare host redirects). */
 export const MIRURO_REFERER = "https://www.miruro.bz/";
 /**
@@ -129,7 +134,7 @@ function isNumericQualityLabel(value: string): boolean {
   return true;
 }
 
-type MiruroSourcesResponse = {
+export type MiruroSourcesResponse = {
   readonly streams?: readonly MiruroPipeStream[];
   readonly subtitles?: readonly MiruroPipeSubtitle[];
   readonly thumbnails?: readonly MiruroPipeThumbnail[];
@@ -172,6 +177,13 @@ export type MiruroResolvePayloadOptions = {
   readonly startedAt?: string;
   readonly events?: ProviderTraceEvent[];
   readonly failures?: readonly ProviderFailure[];
+  /**
+   * Bounded probe evidence for the stream this payload selects. Reachability is
+   * attested only when a probe actually reported `reachable`; absent, timed-out,
+   * and unreachable probes all leave reachability unknown so the CLI's own
+   * stream-health gate keeps probing instead of trusting an unproven claim.
+   */
+  readonly streamReachabilityProbe?: StreamReachabilityProbeResult;
 };
 
 type MiruroEpisodeEntry = {
@@ -194,7 +206,7 @@ type MiruroProviderEntry = {
   readonly episodes?: MiruroProviderEpisodes;
 };
 
-type MiruroEpisodesResponse = {
+export type MiruroEpisodesResponse = {
   readonly mappings?: Record<string, unknown>;
   readonly providers?: Record<string, MiruroProviderEntry | undefined>;
 };
@@ -232,6 +244,7 @@ export async function createMiruroResultFromPayload({
   startedAt,
   events = [],
   failures = [],
+  streamReachabilityProbe,
 }: MiruroResolvePayloadOptions): Promise<ProviderResolveResult | null> {
   const policy =
     cachePolicy ??
@@ -418,7 +431,10 @@ export async function createMiruroResultFromPayload({
     providerId: MIRURO_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
     selectionDecision: selection.decision,
-    streamReachabilityVerified: true,
+    streamReachabilityVerified:
+      streamReachabilityProbe && isStreamReachabilityVerified(streamReachabilityProbe)
+        ? true
+        : undefined,
     sources: [
       {
         id: sourceId,
@@ -492,7 +508,7 @@ function createMiruroSubtitles(
         url,
         language: normalizeIsoLanguageCode(rawLanguage),
         label: subtitle.label ?? rawLanguage,
-        format: url.endsWith(".vtt") ? ("vtt" as const) : ("srt" as const),
+        format: inferSubtitleFormat(url),
         source: "provider" as const,
         confidence: 0.9,
         cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" as const },
@@ -528,26 +544,6 @@ function normalizeMiruroTimingSegment(
   return { start: segment.start, end: segment.end };
 }
 
-/**
- * Server try order. `kiwi` streams come from uwucdn.top/owocdn.top CDN with
- * kwik.cx referral — these serve real video. `bonk` CDN (ibyteimg.com) is an
- * image-only CDN that returns PNG placeholders for segments, so it goes last.
- * Everything else follows the API's own discovery order.
- */
-const MIRURO_SERVER_TRY_ORDER = [
-  "kiwi",
-  "pewe",
-  "bee",
-  "hop",
-  "moo",
-  "dune",
-  "ANIMEKAI",
-  "ANIMEZ",
-  "ZORO",
-  "ally",
-  "bonk",
-] as const;
-
 function sortMiruroProviderEntries(
   entries: readonly (readonly [string, MiruroProviderEntry | undefined])[],
 ): readonly (readonly [string, MiruroProviderEntry | undefined])[] {
@@ -579,22 +575,9 @@ export function buildMiruroCycleCandidates({
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
   let priority = 0;
-  const defaultServers = [
-    "kiwi",
-    "bee",
-    "hop",
-    "ally",
-    "pewe",
-    "moo",
-    "bonk",
-    "dune",
-    "ANIMEKAI",
-    "ANIMEZ",
-    "ZORO",
-  ] as const;
   const providerEntries = providers
     ? sortMiruroProviderEntries(Object.entries(providers))
-    : defaultServers.map((server) => [server, { episodes }] as const);
+    : MIRURO_SERVER_TRY_ORDER.map((server) => [server, { episodes }] as const);
 
   for (const audioCategory of audioOrder) {
     for (const [providerKey, providerEntry] of providerEntries) {
@@ -1044,10 +1027,7 @@ function qualityRankFromMiruroStream(stream: MiruroPipeStream): number {
   return animeQualityFields(stream.quality, stream.resolution?.height).qualityRank;
 }
 
-function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
-  const parts = keyHex.match(/.{2}/g) ?? [];
-  if (parts.length === 0) throw new Error("Invalid Miruro pipe key");
-  const key = new Uint8Array(parts.map((b) => parseInt(b, 16)));
+function xorDecrypt(encrypted: Uint8Array, key: Uint8Array): Uint8Array {
   const result = new Uint8Array(encrypted.length);
   for (let i = 0; i < encrypted.length; i++) {
     result[i] = (encrypted[i] ?? 0) ^ (key[i % key.length] ?? 0);
@@ -1055,10 +1035,159 @@ function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
   return result;
 }
 
-function resolveMiruroAnilistId(title: ProviderEpisodeListInput["title"]): string | null {
-  const anilistId = title.anilistId ?? title.id.replace("anilist:", "");
-  if (!anilistId || Number.isNaN(Number(anilistId))) return null;
-  return anilistId;
+/** Which endpoint contract a pipe body is expected to satisfy. */
+export type MiruroPipeExpectedKind = "episodes" | "sources";
+
+/**
+ * One code per decode stage. A rotated key, a bumped obfuscation version, and a
+ * reshaped endpoint payload all look like "provider returned nothing" without
+ * these, which is exactly the silent exhaustion this provider used to produce.
+ */
+export type MiruroPipeDecodeFailureCode =
+  | "pipe-key-missing"
+  | "pipe-version-mismatch"
+  | "pipe-base64-invalid"
+  | "pipe-xor-gunzip-failed"
+  | "pipe-json-syntax-invalid"
+  | "pipe-json-shape-invalid";
+
+/**
+ * The message is the stage code and nothing else. Key hex, the encrypted body,
+ * decrypted plaintext, and native parser messages (which quote body bytes) must
+ * never reach a log line or a provider failure.
+ */
+export class MiruroPipeDecodeError extends Error {
+  readonly code: MiruroPipeDecodeFailureCode;
+
+  constructor(code: MiruroPipeDecodeFailureCode) {
+    super(code);
+    this.name = "MiruroPipeDecodeError";
+    this.code = code;
+  }
+}
+
+/** The only obfuscation version this decoder understands. */
+const MIRURO_PIPE_OBFUSCATION_VERSION = "2";
+
+/**
+ * `base64url(xor(gzipHeader, PIPE_KEY))` — present only on gzipped bodies, which
+ * is why the `x-obfuscated` header is still required for plain ones.
+ */
+const MIRURO_PIPE_GZIP_BODY_PREFIX = "bh4YNPj7";
+
+function parsePipeKey(keyHex: string | undefined): Uint8Array | null {
+  if (!keyHex || !/^(?:[0-9a-fA-F]{2})+$/.test(keyHex)) return null;
+  return new Uint8Array((keyHex.match(/.{2}/g) ?? []).map((byte) => parseInt(byte, 16)));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const MIRURO_EPISODES_KEYS = ["providers", "mappings"] as const;
+const MIRURO_SOURCES_KEYS = [
+  "streams",
+  "subtitles",
+  "thumbnails",
+  "intro",
+  "outro",
+  "download",
+] as const;
+
+function isMiruroEpisodesResponse(value: unknown): value is MiruroEpisodesResponse {
+  if (!isRecord(value)) return false;
+  if (MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
+  if (!MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
+  if ("providers" in value && !isRecord(value.providers)) return false;
+  if ("mappings" in value && !isRecord(value.mappings)) return false;
+  return true;
+}
+
+function isMiruroSourcesResponse(value: unknown): value is MiruroSourcesResponse {
+  if (!isRecord(value)) return false;
+  if (MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
+  if (!MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
+  if ("streams" in value && !Array.isArray(value.streams)) return false;
+  if ("subtitles" in value && !Array.isArray(value.subtitles)) return false;
+  return true;
+}
+
+/**
+ * Decode one obfuscated pipe body. Every stage that can fail — key, version,
+ * base64, XOR/gunzip, JSON syntax, endpoint schema — raises its own code, so a
+ * key rotation is never mistaken for a Cloudflare block or an empty catalog.
+ */
+export function decodeMiruroPipePayload(input: {
+  readonly body: string;
+  readonly obfuscationVersion: string | null;
+  readonly expectedKind: MiruroPipeExpectedKind;
+  readonly keyHex?: string;
+}): MiruroEpisodesResponse | MiruroSourcesResponse {
+  const key = parsePipeKey(input.keyHex);
+  if (!key) throw new MiruroPipeDecodeError("pipe-key-missing");
+
+  const versionMatches =
+    input.obfuscationVersion === MIRURO_PIPE_OBFUSCATION_VERSION ||
+    (input.obfuscationVersion === null && input.body.startsWith(MIRURO_PIPE_GZIP_BODY_PREFIX));
+  if (!versionMatches) throw new MiruroPipeDecodeError("pipe-version-mismatch");
+
+  let encrypted: Uint8Array;
+  try {
+    encrypted = base64urlToBytes(input.body);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-base64-invalid");
+  }
+
+  let json: string;
+  try {
+    const decrypted = xorDecrypt(encrypted, key);
+    json =
+      decrypted[0] === 31 && decrypted[1] === 139
+        ? new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer))
+        : new TextDecoder().decode(decrypted);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-xor-gunzip-failed");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-json-syntax-invalid");
+  }
+
+  if (input.expectedKind === "episodes") {
+    if (!isMiruroEpisodesResponse(parsed)) {
+      throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
+    }
+    return parsed;
+  }
+
+  if (!isMiruroSourcesResponse(parsed)) {
+    throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
+  }
+  return parsed;
+}
+
+const MIRURO_ANILIST_ID_PREFIX = "anilist:";
+
+/** Complete positive decimal only — no trimming, no partial parse, no zero. */
+function parsePositiveDecimalId(value: string | undefined): string | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  return value;
+}
+
+/**
+ * The single AniList identity reader for both `listEpisodes()` and `resolve()`.
+ * Every Miruro pipe query is keyed on a real AniList id, so a bare, padded, or
+ * foreign-catalog id must fail closed here rather than reach the API and come
+ * back as an unexplained empty catalog.
+ */
+export function resolveMiruroAnilistId(title: TitleIdentity): string | null {
+  const explicit = parsePositiveDecimalId(title.anilistId);
+  if (explicit) return explicit;
+  if (!title.id.startsWith(MIRURO_ANILIST_ID_PREFIX)) return null;
+  return parsePositiveDecimalId(title.id.slice(MIRURO_ANILIST_ID_PREFIX.length));
 }
 
 /** Shared episode list fetch for listEpisodes + resolve (30m TTL). */
@@ -1071,13 +1200,8 @@ export async function getMiruroEpisodesResponse(
   const cached = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
   if (cached) return cached;
 
-  const epData = (await pipeCall(
-    context,
-    "episodes",
-    { anilistId: Number(anilistId) },
-    signal,
-  )) as MiruroEpisodesResponse | null;
-  if (epData) episodeCache.set(cacheKey, epData);
+  const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
+  episodeCache.set(cacheKey, epData);
   return epData;
 }
 
@@ -1192,6 +1316,48 @@ function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<strin
   };
 }
 
+const MIRURO_CURL_STATUS_MARKER = "\n__KUNAI_CURL_STATUS__:";
+const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}";
+/** Abort only when throughput collapses below this for `STALL_SECONDS`. */
+const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
+const MIRURO_CURL_STALL_SECONDS = 5;
+/** Backstop only; the engine's attempt timeout is the real bound. */
+const MIRURO_CURL_MAX_SECONDS = 25;
+
+/**
+ * Read one curl invocation's outcome.
+ *
+ * curl writes its `-w` status line even when the transfer aborts part-way, so
+ * the presence of the marker is **not** proof of a complete body. Trusting it
+ * let a truncated multi-megabyte episode catalog through as a healthy HTTP 200,
+ * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
+ * A non-zero exit means the body is partial — refuse it.
+ */
+export function interpretMiruroCurlResult(input: {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}): { readonly status: number; readonly text: string } {
+  if (input.exitCode !== 0) {
+    throw new Error(input.stderr.trim() || `curl exit ${input.exitCode}`);
+  }
+
+  const index = input.stdout.lastIndexOf(MIRURO_CURL_STATUS_MARKER);
+  if (index < 0) {
+    throw new Error(input.stderr.trim() || "curl returned without an HTTP response");
+  }
+
+  const status = Number.parseInt(
+    input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim(),
+    10,
+  );
+  if (!Number.isFinite(status) || status <= 0) {
+    throw new Error(input.stderr.trim() || "curl returned without an HTTP status");
+  }
+
+  return { status, text: input.stdout.slice(0, index) };
+}
+
 /**
  * Bun/Node fetch often gets CF 403 HTML on /api/secure/pipe while the same URL works
  * with curl --http2 (browser network capture on www.miruro.bz). Prefer native fetch,
@@ -1271,9 +1437,6 @@ async function fetchMiruroPipeBody(
     };
   }
 
-  // Curl exists to clear Cloudflare challenges; for plain HTTP errors it rarely
-  // changes the answer, so keep every curl attempt inside the candidate budget.
-  const curlMaxTime = "8";
   const hasCurlHttp2 = detectCurlHttp2Support();
   const args = [
     curlPath,
@@ -1299,9 +1462,17 @@ async function fetchMiruroPipeBody(
     "-H",
     "sec-fetch-site: same-origin",
     "-w",
-    "\n__KUNAI_CURL_STATUS__:%{http_code}",
+    MIRURO_CURL_STATUS_WRITE_OUT,
+    // A long-running series' episode catalog is multiple megabytes, so a flat
+    // wall-clock cap truncates a perfectly healthy transfer. Bound the stall
+    // instead: abort only when throughput collapses. The engine's own attempt
+    // timeout still caps total time, and the ceiling is a backstop.
+    "--speed-limit",
+    String(MIRURO_CURL_MIN_BYTES_PER_SECOND),
+    "--speed-time",
+    String(MIRURO_CURL_STALL_SECONDS),
     "--max-time",
-    curlMaxTime,
+    String(MIRURO_CURL_MAX_SECONDS),
     url,
   ];
 
@@ -1326,16 +1497,11 @@ async function fetchMiruroPipeBody(
     if (aborted || signal?.aborted) {
       throw new Error("aborted");
     }
-    if (exit !== 0 && !raw.includes("__KUNAI_CURL_STATUS__:")) {
-      throw new Error(stderr.trim() || `curl exit ${exit}`);
-    }
-    const marker = "\n__KUNAI_CURL_STATUS__:";
-    const idx = raw.lastIndexOf(marker);
-    const text = idx >= 0 ? raw.slice(0, idx) : raw;
-    const status = idx >= 0 ? Number.parseInt(raw.slice(idx + marker.length).trim(), 10) : 0;
-    if (!Number.isFinite(status) || status <= 0) {
-      throw new Error(stderr.trim() || `curl exit ${exit || "without an HTTP response"}`);
-    }
+    const { status, text } = interpretMiruroCurlResult({
+      exitCode: exit,
+      stdout: raw,
+      stderr,
+    });
     return {
       status,
       text,
@@ -1349,10 +1515,22 @@ async function fetchMiruroPipeBody(
 
 async function pipeCall(
   context: ProviderRuntimeContext,
-  path: string,
+  path: "episodes",
   query: Record<string, string | number>,
   signal?: AbortSignal,
-): Promise<unknown | null> {
+): Promise<MiruroEpisodesResponse>;
+async function pipeCall(
+  context: ProviderRuntimeContext,
+  path: "sources",
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<MiruroSourcesResponse>;
+async function pipeCall(
+  context: ProviderRuntimeContext,
+  path: MiruroPipeExpectedKind,
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<MiruroEpisodesResponse | MiruroSourcesResponse> {
   const q: Record<string, string> = {};
   for (const [k, v] of Object.entries(query)) q[k] = String(v);
 
@@ -1384,15 +1562,15 @@ async function pipeCall(
         candidate.status < 300 &&
         isMiruroObfuscatedPipeBody(candidate.text, candidate.xObfuscated)
       ) {
-        const raw = base64urlToBytes(candidate.text);
-        const decrypted = xorDecrypt(raw, PIPE_KEY);
-        let json: string;
-        if (decrypted[0] === 31 && decrypted[1] === 139) {
-          json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
-        } else {
-          json = new TextDecoder().decode(decrypted);
-        }
-        return JSON.parse(json);
+        // Decode failures are a key/version/schema problem, not a mirror problem —
+        // every remaining mirror would fail identically, so surface it immediately
+        // instead of burning the budget and reporting it as a network error.
+        return decodeMiruroPipePayload({
+          body: candidate.text,
+          obfuscationVersion: candidate.xObfuscated,
+          expectedKind: path,
+          keyHex: PIPE_KEY,
+        });
       }
       if (
         candidate.cloudflareHtml ||
@@ -1401,10 +1579,7 @@ async function pipeCall(
         wafHits += 1;
         lastError = new Error("HTTP 403 (cloudflare html)");
         if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
-          throw new Error(
-            "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)",
-            { cause: lastError },
-          );
+          throw new Error(MIRURO_WAF_BLOCK_MESSAGE, { cause: lastError });
         }
         continue;
       }
@@ -1413,8 +1588,9 @@ async function pipeCall(
       );
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
+      if (error instanceof MiruroPipeDecodeError) throw error;
       lastError = error;
-      if (error instanceof Error && error.message.includes("Cloudflare WAF on multiple mirrors")) {
+      if (error instanceof Error && isMiruroWafBlockError(error)) {
         throw error;
       }
     }
@@ -1422,6 +1598,43 @@ async function pipeCall(
 
   const message = lastError instanceof Error ? lastError.message : "request failed";
   throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
+}
+
+/**
+ * One owner for the WAF-block signal. `runProviderCycle` stops the whole cycle on
+ * it, so the message shape and this predicate must not drift apart.
+ */
+const MIRURO_WAF_BLOCK_MESSAGE =
+  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)";
+
+function isMiruroWafBlockError(error: Error): boolean {
+  return error.message.includes("Cloudflare WAF on multiple mirrors");
+}
+
+/**
+ * Map a pipe exception onto a distinct resolve failure. Decode drift is not a
+ * network fault and is not retryable; a WAF block is neither of those.
+ */
+function classifyMiruroPipeError(error: unknown): {
+  readonly code: ResolveErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
+} {
+  if (error instanceof MiruroPipeDecodeError) {
+    return {
+      code: "parse-failed",
+      message: `Miruro pipe payload could not be decoded (${error.code})`,
+      retryable: false,
+    };
+  }
+  if (error instanceof Error && isMiruroWafBlockError(error)) {
+    return { code: "blocked", message: error.message, retryable: true };
+  }
+  return {
+    code: "network-error",
+    message: error instanceof Error ? error.message : "Miruro pipe API failed",
+    retryable: true,
+  };
 }
 
 export const miruroProviderModule: CoreProviderModule = {
@@ -1449,8 +1662,8 @@ export const miruroProviderModule: CoreProviderModule = {
       });
     }
 
-    const anilistId = input.title.anilistId ?? input.title.id.replace("anilist:", "");
-    if (!anilistId || Number.isNaN(Number(anilistId))) {
+    const anilistId = resolveMiruroAnilistId(input.title);
+    if (!anilistId) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Miruro pipe resolver requires a numeric AniList ID",
@@ -1542,7 +1755,7 @@ export const miruroProviderModule: CoreProviderModule = {
           const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
-            srcData = (await pipeCall(
+            srcData = await pipeCall(
               context,
               "sources",
               {
@@ -1552,8 +1765,8 @@ export const miruroProviderModule: CoreProviderModule = {
                 category: metadata.audioCategory,
               },
               cycleContext.signal,
-            )) as MiruroSourcesResponse | null;
-            if (srcData) sourceCache.set(srcCacheKey, srcData);
+            );
+            sourceCache.set(srcCacheKey, srcData);
           }
 
           const rawStreams =
@@ -1673,19 +1886,14 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
+      const classified = classifyMiruroPipeError(error);
       failures.push({
         providerId: MIRURO_PROVIDER_ID,
-        code: "network-error",
-        message: error instanceof Error ? error.message : "Miruro pipe API failed",
-        retryable: true,
+        ...classified,
         at: context.now(),
       });
 
-      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
-        code: "network-error",
-        message: error instanceof Error ? error.message : "Miruro pipe API failed",
-        retryable: true,
-      });
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, classified);
     }
   },
 };

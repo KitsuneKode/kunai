@@ -256,3 +256,45 @@ function stripLocaleSuffix(value: string): string {
   const match = value.match(/^([a-z]{2,3})-[a-z]{2,4}$/);
   return match?.[1] ?? value;
 }
+
+/**
+ * Subtitle container formats a provider may declare. Mirrors
+ * `SubtitleCandidate["format"]` without importing the whole types surface.
+ */
+export type SubtitleFormat = "srt" | "vtt" | "ass" | "unknown";
+
+const SUBTITLE_EXTENSION_FORMATS: Readonly<Record<string, SubtitleFormat>> = {
+  vtt: "vtt",
+  srt: "srt",
+  ass: "ass",
+  ssa: "ass",
+};
+
+const SUBTITLE_CONTENT_TYPE_FORMATS: Readonly<Record<string, SubtitleFormat>> = {
+  "text/vtt": "vtt",
+  "text/webvtt": "vtt",
+  "application/x-subrip": "srt",
+  "application/x-srt": "srt",
+  "text/srt": "srt",
+  "text/x-ssa": "ass",
+  "text/x-ass": "ass",
+  "application/x-ass": "ass",
+  "application/x-ssa": "ass",
+};
+
+/**
+ * Decide a subtitle's format from what the response actually shows: the path
+ * extension (query and fragment stripped, so `?token=….srt` cannot masquerade as
+ * evidence) or a known content type. Anything else is `unknown` — guessing SRT
+ * for every non-VTT track hands mpv a parser that will not open the file.
+ */
+export function inferSubtitleFormat(url: string, contentType?: string): SubtitleFormat {
+  const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+  const byContentType = mediaType ? SUBTITLE_CONTENT_TYPE_FORMATS[mediaType] : undefined;
+  if (byContentType) return byContentType;
+
+  const path = url.split(/[?#]/)[0]?.toLowerCase() ?? "";
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return "unknown";
+  return SUBTITLE_EXTENSION_FORMATS[path.slice(dot + 1)] ?? "unknown";
+}
