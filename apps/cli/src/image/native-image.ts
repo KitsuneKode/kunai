@@ -28,7 +28,7 @@
 // =============================================================================
 
 import { debugImage } from "./debug";
-import { decodeImageBytes, type DecodedImage } from "./decode";
+import { decodeImageBytes, decodePng, type DecodedImage } from "./decode";
 
 /**
  * Largest encoded poster we will even hand to the decoder.
@@ -173,6 +173,36 @@ export async function decodeToRgba(
   return decodeImageBytes(bytes);
 }
 
+function reportPrepareFailure(category: PosterPrepareFailure): null {
+  debugImage(`poster preparation failed: ${category}`);
+  return null;
+}
+
+function isValidBounds(bounds: PosterPixelBounds): boolean {
+  return (
+    Number.isInteger(bounds.maxWidthPx) &&
+    Number.isInteger(bounds.maxHeightPx) &&
+    bounds.maxWidthPx > 0 &&
+    bounds.maxHeightPx > 0
+  );
+}
+
+/**
+ * Map a native throw onto a stable category.
+ *
+ * Bun.Image reports both "unrecognised format" and the maxPixels breach as
+ * plain errors, and those two mean different things to a caller: one is a bad
+ * source, the other is a source too large to trust.
+ */
+function classifyNativeFailure(error: unknown): PosterPrepareFailure {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("maxPixels")) return "pixel-limit";
+  if (message.includes("unrecognised") || message.includes("unsupported")) {
+    return "unsupported-format";
+  }
+  return "invalid-image";
+}
+
 /**
  * Prepare one poster for every renderer: bounded, oriented, fitted, decoded.
  *
@@ -190,8 +220,40 @@ export async function preparePoster(
   bounds: PosterPixelBounds,
   signal?: AbortSignal,
 ): Promise<PreparedPoster | null> {
-  void bytes;
-  void bounds;
-  void signal;
-  return null;
+  if (bytes.byteLength > MAX_POSTER_SOURCE_BYTES) return reportPrepareFailure("input-too-large");
+  if (!isValidBounds(bounds)) return reportPrepareFailure("invalid-bounds");
+  if (bytes.byteLength === 0) return reportPrepareFailure("invalid-image");
+  if (signal?.aborted) return null;
+
+  const Ctor = nativeImageCtor();
+  if (!Ctor) return reportPrepareFailure("native-failure");
+
+  let png: Uint8Array;
+  try {
+    const image = new Ctor(bytes, NATIVE_OPTIONS);
+    if (signal?.aborted) return null;
+
+    const resized = image.resize(bounds.maxWidthPx, bounds.maxHeightPx, RESIZE_OPTIONS);
+    if (signal?.aborted) return null;
+
+    const encoded = resized.png();
+    if (signal?.aborted) return null;
+
+    png = new Uint8Array(await encoded.bytes());
+    if (signal?.aborted) return null;
+  } catch (error) {
+    // The native message can carry a path or the source URL, so it is
+    // classified and dropped rather than logged.
+    return reportPrepareFailure(classifyNativeFailure(error));
+  }
+
+  if (png.byteLength === 0) return reportPrepareFailure("png-bridge-failed");
+
+  try {
+    const image = decodePng(png);
+    if (signal?.aborted) return null;
+    return { png, image };
+  } catch {
+    return reportPrepareFailure("png-bridge-failed");
+  }
 }
