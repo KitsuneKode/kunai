@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { createMiruroResultFromPayload, type MiruroServerProfile } from "../src/miruro/direct";
+import {
+  createMiruroResultFromPayload,
+  resolveMiruroAnilistId,
+  type MiruroServerProfile,
+} from "../src/miruro/direct";
 
 const TEST_CONTEXT: ProviderRuntimeContext = {
   providerId: "miruro",
@@ -83,5 +87,55 @@ describe("createMiruroResultFromPayload reachability attestation", () => {
     const result = await buildResult({ status: "reachable" });
 
     expect(result?.streamReachabilityVerified).toBe(true);
+  });
+});
+
+describe("resolveMiruroAnilistId", () => {
+  const anime = (id: string, anilistId?: string) => ({
+    id,
+    kind: "anime" as const,
+    title: "One Piece",
+    ...(anilistId === undefined ? {} : { anilistId }),
+  });
+
+  test("accepts an explicit positive decimal anilistId", () => {
+    expect(resolveMiruroAnilistId(anime("tmdb:37854", "438631"))).toBe("438631");
+  });
+
+  test("accepts an exact anilist: prefixed title id", () => {
+    expect(resolveMiruroAnilistId(anime("anilist:438631"))).toBe("438631");
+  });
+
+  test("rejects a bare numeric title id with no anilist evidence", () => {
+    expect(resolveMiruroAnilistId(anime("438631"))).toBeNull();
+  });
+
+  test("rejects zero, negative, signed and decimal ids", () => {
+    expect(resolveMiruroAnilistId(anime("anilist:0"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("anilist:-5"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("anilist:+5"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("anilist:4.5"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", "0"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", "-5"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", "4.5"))).toBeNull();
+  });
+
+  test("rejects padded and partially numeric ids without trimming them into shape", () => {
+    expect(resolveMiruroAnilistId(anime("anilist: 438631"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", " 438631 "))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("anilist:438631abc"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", "438631abc"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("anilist:"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("x", ""))).toBeNull();
+  });
+
+  test("rejects other catalogs' ids", () => {
+    expect(resolveMiruroAnilistId(anime("tmdb:438631"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("mal:21"))).toBeNull();
+    expect(resolveMiruroAnilistId(anime("bxCKTopaque"))).toBeNull();
+  });
+
+  test("prefers the explicit anilistId over the title id", () => {
+    expect(resolveMiruroAnilistId(anime("anilist:21", "438631"))).toBe("438631");
   });
 });

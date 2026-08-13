@@ -9,7 +9,6 @@ import {
 import type {
   CachePolicy,
   ProviderCycleCandidate,
-  ProviderEpisodeListInput,
   ProviderEpisodeOption,
   ProviderFailure,
   ProviderResolveInput,
@@ -20,6 +19,7 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
   SubtitleCandidate,
+  TitleIdentity,
 } from "@kunai/types";
 
 import {
@@ -1070,10 +1070,25 @@ function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
   return result;
 }
 
-function resolveMiruroAnilistId(title: ProviderEpisodeListInput["title"]): string | null {
-  const anilistId = title.anilistId ?? title.id.replace("anilist:", "");
-  if (!anilistId || Number.isNaN(Number(anilistId))) return null;
-  return anilistId;
+const MIRURO_ANILIST_ID_PREFIX = "anilist:";
+
+/** Complete positive decimal only — no trimming, no partial parse, no zero. */
+function parsePositiveDecimalId(value: string | undefined): string | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) return null;
+  return value;
+}
+
+/**
+ * The single AniList identity reader for both `listEpisodes()` and `resolve()`.
+ * Every Miruro pipe query is keyed on a real AniList id, so a bare, padded, or
+ * foreign-catalog id must fail closed here rather than reach the API and come
+ * back as an unexplained empty catalog.
+ */
+export function resolveMiruroAnilistId(title: TitleIdentity): string | null {
+  const explicit = parsePositiveDecimalId(title.anilistId);
+  if (explicit) return explicit;
+  if (!title.id.startsWith(MIRURO_ANILIST_ID_PREFIX)) return null;
+  return parsePositiveDecimalId(title.id.slice(MIRURO_ANILIST_ID_PREFIX.length));
 }
 
 /** Shared episode list fetch for listEpisodes + resolve (30m TTL). */
@@ -1464,8 +1479,8 @@ export const miruroProviderModule: CoreProviderModule = {
       });
     }
 
-    const anilistId = input.title.anilistId ?? input.title.id.replace("anilist:", "");
-    if (!anilistId || Number.isNaN(Number(anilistId))) {
+    const anilistId = resolveMiruroAnilistId(input.title);
+    if (!anilistId) {
       return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
         code: "unsupported-title",
         message: "Miruro pipe resolver requires a numeric AniList ID",
