@@ -27,6 +27,7 @@ import type {
   TitleIdentity,
 } from "@kunai/types";
 
+import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { HealthTracker } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
@@ -302,7 +303,7 @@ export async function resolveVideasyDirect(
     });
   }
 
-  const tmdbId = resolveTmdbId(input.title);
+  const tmdbId = resolveTmdbCatalogId(input.title);
   if (!tmdbId) {
     return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, {
       code: "unsupported-title",
@@ -1781,7 +1782,7 @@ export function resolveVideasyClientProfile(
     };
   }
 
-  const tmdbId = resolveTmdbId(input.title);
+  const tmdbId = resolveTmdbCatalogId(input.title);
   const referer =
     customReferer ??
     (tmdbId && input.mediaKind === "series" && input.episode?.season && input.episode?.episode
@@ -2382,12 +2383,6 @@ function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFa
   if (!failure.retryable) return false;
   const retryableCodes = context.retryPolicy?.retryableCodes;
   return !retryableCodes || retryableCodes.includes(failure.code);
-}
-
-function resolveTmdbId(title: TitleIdentity): number | null {
-  const raw = title.tmdbId ?? title.id;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeVidkingAudioLanguage(
