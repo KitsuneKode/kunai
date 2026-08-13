@@ -9,9 +9,17 @@ import {
   setKittyPlacementEvictFn,
   type KittyPlacementSlot,
 } from "./kitty-placement-registry";
-import { deleteAllTerminalImages, deleteKittyImage, renderPoster } from "./poster-renderer";
+import {
+  commitKittyPlacementCandidate,
+  deleteAllTerminalImages,
+  deleteKittyImage,
+  deleteUncommittedKittyCandidate,
+  renderPreparedPoster,
+  resolvePosterRenderPlan,
+} from "./poster-renderer";
 import { clearPosterSourceCache, fetchPosterSource, resolvePosterUrl } from "./poster-source-cache";
 import type { PosterResult } from "./poster-types";
+import { clearPreparedPosterCache, getPreparedPoster } from "./prepared-poster-cache";
 
 // LRU-style cache keyed by "url:WxH"
 const posterCache = new Map<string, PosterResult>();
@@ -46,6 +54,7 @@ function dropAllKittyCacheEntries(): void {
 export function deleteAllKittyImages(): void {
   clearRenderedPosterImages();
   clearPosterSourceCache();
+  clearPreparedPosterCache();
 }
 
 /** Global wipe — surface exit / resize only. Prefer releasePosterPlacement for slots. */
@@ -259,19 +268,40 @@ export async function fetchPoster(
     let result: PosterResult;
     try {
       if (signal?.aborted) return { kind: "none" };
+      // Plan before fetching: the plan carries the pixel bounds preparation
+      // needs, and a null plan means nothing can draw, so the bytes would be
+      // wasted.
+      const renderOptions = {
+        rows,
+        cols,
+        allowKitty,
+        allowSixel,
+        inkEmbedded,
+        placementSlot,
+        signal,
+      };
+      const plan = resolvePosterRenderPlan(renderOptions);
+      if (!plan) return { kind: "none" };
+
       const source = await fetchPosterSource(resolved, { cols, variant, signal });
-      if (signal?.aborted) return { kind: "none" };
-      result = source
-        ? await renderPoster(source.bytes, {
-            rows,
-            cols,
-            allowKitty,
-            allowSixel,
-            inkEmbedded,
-            placementSlot,
-            signal,
-          })
-        : { kind: "none" };
+      if (!source || signal?.aborted) return { kind: "none" };
+
+      const prepared = await getPreparedPoster(source, plan.bounds, signal);
+      if (!prepared || signal?.aborted) return { kind: "none" };
+
+      const candidate = await renderPreparedPoster(prepared, plan, renderOptions);
+      if (signal?.aborted) {
+        // Superseded after upload: drop the orphan rather than letting it
+        // replace a placement that is still correct.
+        if (candidate.kind === "kitty-upload") deleteUncommittedKittyCandidate(candidate);
+        return { kind: "none" };
+      }
+      // Commit is synchronous and adjacent to the abort check above, so no newer
+      // request can interleave between confirming currentness and claiming the slot.
+      result =
+        candidate.kind === "kitty-upload"
+          ? commitKittyPlacementCandidate(candidate, placementSlot)
+          : candidate;
     } catch {
       result = { kind: "none" };
     }

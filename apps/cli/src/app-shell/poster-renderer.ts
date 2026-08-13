@@ -7,11 +7,16 @@ import {
   uploadKittyPayload,
   type KittyPayload,
 } from "@/image/kitty-transport";
-import { decodeToRgba, encodeNativePng } from "@/image/native-image";
+import {
+  decodeToRgba,
+  encodeNativePng,
+  type PosterPixelBounds,
+  type PreparedPoster,
+} from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
 import { pixelBudgetForCells } from "@/image/renderers/sixel";
-import { renderSixelFromBytes } from "@/image/sixel";
+import { renderSixelFromBytes, renderSixelFromImage } from "@/image/sixel";
 
 import {
   clearKittyPlacementRegistry,
@@ -432,6 +437,203 @@ export async function renderPoster(
     debugImage(`poster render failed: ${error instanceof Error ? error.message : String(error)}`);
     return { kind: "none" };
   }
+}
+
+// ── Prepared-poster pipeline ────────────────────────────────────────────────
+//
+// One plan decides renderer *and* target pixel bounds before any source is
+// fetched, so preparation is done once at the geometry that will actually be
+// drawn. The renderers then consume the prepared poster: Kitty takes the PNG,
+// Sixel and half-block take the decoded RGBA. Nothing here re-decodes.
+
+export type PosterRenderer = "kitty-native" | "sixel" | "half-block";
+
+export type PosterRenderPlan = {
+  readonly renderer: PosterRenderer;
+  readonly bounds: PosterPixelBounds;
+};
+
+/**
+ * A Kitty image that has been uploaded but has not claimed its slot yet.
+ *
+ * Upload and placement are deliberately separate: by the time an upload
+ * finishes, the caller may have been superseded, and registering the slot inside
+ * rendering would let a stale poster replace a live one. The caller commits only
+ * after it has confirmed it is still current.
+ */
+export type UncommittedKittyPoster = {
+  readonly kind: "kitty-upload";
+  readonly placeholder: string;
+  readonly rows: number;
+  readonly cols: number;
+  readonly imageId: number;
+};
+
+export type RenderedPosterCandidate =
+  | UncommittedKittyPoster
+  | Exclude<PosterResult, { readonly kind: "kitty" }>;
+
+export type PreparedRenderOptions = {
+  readonly rows: number;
+  readonly cols: number;
+  readonly allowKitty?: boolean;
+  readonly allowSixel?: boolean;
+  readonly inkEmbedded?: boolean;
+  readonly placementSlot?: KittyPlacementSlot;
+  readonly signal?: AbortSignal;
+};
+
+/**
+ * Which renderer will draw, and the pixel box to prepare for it.
+ *
+ * Returns null when nothing can render, so callers skip source acquisition
+ * entirely rather than fetching bytes they cannot use.
+ */
+export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterRenderPlan | null {
+  const { rows, cols, allowKitty = true, allowSixel = true, inkEmbedded = false } = options;
+  if (rows <= 0 || cols <= 0) return null;
+
+  // Inside Ink, a placement would fight the layout, so text is the only option.
+  if (inkEmbedded) return { renderer: "half-block", bounds: halfBlockBounds(rows, cols) };
+  if (!allowKitty) return null;
+
+  const capability = runtime.detectImageCapability();
+  if (!capability.available || capability.renderer === "none") return null;
+
+  if (capability.renderer === "kitty-native" && supportsKittyPlaceholders(capability.terminal)) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "kitty-native",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
+  if (capability.renderer === "sixel" && allowSixel) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "sixel",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
+  // Everything else — half-block, chafa-symbols, a Kitty build without Unicode
+  // placeholders, Sixel with the overlay suppressed — lands on the universal
+  // text floor.
+  return { renderer: "half-block", bounds: halfBlockBounds(rows, cols) };
+}
+
+/** Half-block encodes two pixels per cell row, so height doubles. */
+function halfBlockBounds(rows: number, cols: number): PosterPixelBounds {
+  return { maxWidthPx: cols, maxHeightPx: rows * 2 };
+}
+
+/**
+ * Draw a prepared poster. Kitty returns an uncommitted upload; everything else
+ * returns a finished result, having no terminal resource to release.
+ */
+export async function renderPreparedPoster(
+  poster: PreparedPoster,
+  plan: PosterRenderPlan,
+  options: PreparedRenderOptions,
+): Promise<RenderedPosterCandidate> {
+  const { rows, cols, placementSlot, signal } = options;
+  try {
+    if (signal?.aborted) return { kind: "none" };
+    if (plan.renderer === "kitty-native") {
+      return await uploadPreparedKitty(poster, rows, cols, signal);
+    }
+    if (plan.renderer === "sixel") {
+      const sixel = renderSixelFromImage(poster.image, {
+        ...pixelBudgetForCells(cols, rows),
+        maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+      });
+      if (!sixel) return { kind: "none" };
+      return {
+        kind: "sixel",
+        sixel,
+        rows,
+        cols,
+        overlayId: placementSlot ?? `sixel-${allocId()}`,
+      };
+    }
+    return renderPreparedHalfBlock(poster, rows, cols);
+  } catch (error) {
+    debugImage(`poster render failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { kind: "none" };
+  }
+}
+
+function renderPreparedHalfBlock(
+  poster: PreparedPoster,
+  rows: number,
+  cols: number,
+): RenderedPosterCandidate {
+  const text = buildHalfBlockOutput(poster.image, {
+    size: `${cols}x${rows}`,
+    maxRows: rows,
+    debug: false,
+  }).trimEnd();
+  if (!text) return { kind: "none" };
+  return { kind: "text", placeholder: text, rows, cols };
+}
+
+async function uploadPreparedKitty(
+  poster: PreparedPoster,
+  rows: number,
+  cols: number,
+  signal?: AbortSignal,
+): Promise<RenderedPosterCandidate> {
+  if (poster.png.byteLength === 0) return { kind: "none" };
+  const imageId = allocId();
+  // The prepared PNG *is* the payload: no deflate, no RGBA transport, no
+  // external conversion.
+  await uploadKittyPayload(
+    { kind: "png", data: poster.png },
+    {
+      imageId,
+      rows,
+      cols,
+      unicodePlaceholder: true,
+      preferFileTransmission: true,
+    },
+  );
+  if (signal?.aborted) {
+    // Upload finished after cancel — delete the orphan so it cannot clobber a
+    // winner. Direct deletion, not a registry release: it owns no slot yet.
+    deleteKittyImage(imageId);
+    return { kind: "none" };
+  }
+  return {
+    kind: "kitty-upload",
+    placeholder: buildPlaceholder(imageId, rows, cols),
+    rows,
+    cols,
+    imageId,
+  };
+}
+
+/** Claim the slot for a confirmed-current upload, replacing any prior image. */
+export function commitKittyPlacementCandidate(
+  candidate: UncommittedKittyPoster,
+  placementSlot?: KittyPlacementSlot,
+): PosterResult {
+  if (placementSlot) registerKittyPlacement(placementSlot, candidate.imageId);
+  return {
+    kind: "kitty",
+    placeholder: candidate.placeholder,
+    rows: candidate.rows,
+    cols: candidate.cols,
+    imageId: candidate.imageId,
+  };
+}
+
+/**
+ * Drop a stale or aborted upload.
+ *
+ * Direct deletion is load-bearing: an uncommitted id has no registry ownership,
+ * so releasing it through the registry would disturb bookkeeping for whichever
+ * image legitimately holds the slot.
+ */
+export function deleteUncommittedKittyCandidate(candidate: UncommittedKittyPoster): void {
+  deleteKittyImage(candidate.imageId);
 }
 
 export type { KittyPlacementSlot };

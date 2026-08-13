@@ -30,6 +30,22 @@ function setFetchMock(
   }) as typeof fetch;
 }
 
+/**
+ * A real, decodable PNG.
+ *
+ * These fixtures used to be a bare 9-byte PNG signature, which worked only
+ * because the old Kitty path forwarded PNG-signed bytes to the terminal without
+ * decoding them. Preparation decodes every source to bound and fit it, so a
+ * fixture now has to be a real image.
+ */
+function realPng(): Uint8Array {
+  return makeRgbPng(
+    4,
+    4,
+    Array.from({ length: 4 * 4 * 3 }, (_, index) => (index * 17) % 256),
+  );
+}
+
 function cap(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "kitty-native") {
     return {
@@ -84,7 +100,7 @@ afterEach(() => {
 describe("app-shell image pane cache", () => {
   test("undisplaying Kitty posters drops cache so the next visit re-uploads", async () => {
     setFetchMock(async () => {
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
     process.stdout.write = (() => true) as typeof process.stdout.write;
@@ -115,7 +131,7 @@ describe("app-shell image pane cache", () => {
     let fetchCalls = 0;
     setFetchMock(async () => {
       fetchCalls += 1;
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
     paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
@@ -134,7 +150,7 @@ describe("app-shell image pane cache", () => {
 
   test("cache key is segregated by renderer capability", async () => {
     setFetchMock(async () => {
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
 
