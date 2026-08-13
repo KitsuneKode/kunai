@@ -18,6 +18,8 @@ import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-eve
 /** Reaches the generation seams the service owns privately. */
 type GenerationInternals = {
   readonly currentGeneration: PlaybackGeneration;
+  activateGeneration(persistent: boolean): PlaybackGeneration;
+  setActiveControlFor(generation: PlaybackGeneration, control: ActivePlayerControl | null): void;
   wrapPlaybackEventHandler(
     generation: PlaybackGeneration,
     handler: ((input: PlayerPlaybackEventEnvelope) => void) | undefined,
@@ -350,6 +352,50 @@ describe("PlayerServiceImpl diagnostics", () => {
 });
 
 describe("PlayerServiceImpl playback generations", () => {
+  test("a retired generation clears only the control it owns", () => {
+    const events: DiagnosticEventInput[] = [];
+    const active: Array<string | null> = [];
+    const { service } = createService(events, {
+      playerControl: {
+        setActive: (control) => active.push(control?.id ?? null),
+      },
+    });
+    const generationOne = internals(service).activateGeneration(false);
+    internals(service).setActiveControlFor(generationOne, {
+      id: "generation-one",
+      stop: async () => {},
+    });
+    internals(service).activateGeneration(false);
+
+    internals(service).setActiveControlFor(generationOne, null);
+
+    expect(active).toEqual(["generation-one", null]);
+  });
+
+  test("a retired generation cannot clear a replacement control", () => {
+    const events: DiagnosticEventInput[] = [];
+    const active: Array<string | null> = [];
+    const { service } = createService(events, {
+      playerControl: {
+        setActive: (control) => active.push(control?.id ?? null),
+      },
+    });
+    const generationOne = internals(service).activateGeneration(false);
+    internals(service).setActiveControlFor(generationOne, {
+      id: "generation-one",
+      stop: async () => {},
+    });
+    const generationTwo = internals(service).activateGeneration(false);
+    internals(service).setActiveControlFor(generationTwo, {
+      id: "generation-two",
+      stop: async () => {},
+    });
+
+    internals(service).setActiveControlFor(generationOne, null);
+
+    expect(active).toEqual(["generation-one", "generation-two"]);
+  });
+
   test("play activates a generation synchronously, before the first await", async () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events, {

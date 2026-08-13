@@ -1,5 +1,16 @@
 # Plan 047: Make playback, queue interruption, and one-shot ownership truthful
 
+Status: **COMPLETE** on 2026-08-14.
+
+Completion evidence:
+
+- confirmed-start phase and queue acknowledgement share one callback boundary;
+- catalog and playlist planning consume the same exact queue head;
+- one-shot IPC bootstrap failure waits for owned-child termination and uses
+  generation-safe control cleanup;
+- focused playback, queue lifecycle, process registry, and generation tests
+  cover the regressions.
+
 > **For executors:** use test-driven development and verification before
 > completion. Work against current `PlaybackPhase.ts`; do not import unrelated
 > local playback/prefetch edits from another worktree.
@@ -79,5 +90,3 @@ plan because process and IPC behavior differs by platform.
   connection rather than confirmed progress.
 - Cleanup cannot prove which generation owns the child.
 - The queue fix would require reviving deprecated `QueueService.advance()`.
-
-Status: TODO

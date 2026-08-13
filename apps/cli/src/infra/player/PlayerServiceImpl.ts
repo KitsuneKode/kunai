@@ -476,9 +476,16 @@ export class PlayerServiceImpl implements PlayerService {
     generation: PlaybackGeneration,
     control: Parameters<PlayerControlService["setActive"]>[0],
   ): void {
+    if (!control) {
+      // Completion can arrive after stop/cancellation retired the generation.
+      // Clear the control only when that retired generation still owns it;
+      // never let a late null erase a replacement player's controls.
+      this.clearActiveControlFor(generation);
+      return;
+    }
     if (!this.isCurrentGeneration(generation)) return;
-    this.activeControlGeneration = control ? generation : null;
-    this.deps.playerControl.setActive(control ? this.guardControlGenerations(control) : null);
+    this.activeControlGeneration = generation;
+    this.deps.playerControl.setActive(this.guardControlGenerations(control));
   }
 
   /**

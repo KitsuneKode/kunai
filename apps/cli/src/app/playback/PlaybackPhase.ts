@@ -14,6 +14,7 @@ import {
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
+import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
 import {
   adoptEpisodePrefetchBundle,
@@ -2331,18 +2332,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
 
-          run.playbackSession = this.transitionPlaybackSession(
-            context,
-            run.playbackSession,
-            "playback-started",
-            {
-              titleId: title.id,
-              season: currentEpisode.season,
-              episode: currentEpisode.episode,
-              provider: resolvedProviderId,
-            },
-          );
-
           if (context.signal.aborted) {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
             this.releasePlaybackLedgerWithoutPersist();
@@ -2369,7 +2358,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               providerHandoff.successfulProviderId,
               playbackIterationAbort.signal,
               () => {
-                queueAttempt?.acknowledgeStarted();
+                run.playbackSession = confirmPlaybackStart({
+                  session: run.playbackSession,
+                  transition: (session, event) =>
+                    this.transitionPlaybackSession(context, session, event, {
+                      titleId: title.id,
+                      season: currentEpisode.season,
+                      episode: currentEpisode.episode,
+                      provider: resolvedProviderId,
+                    }),
+                  acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
+                });
               },
               run.localPlaybackSource ?? undefined,
             );
@@ -3157,10 +3156,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             signalAborted: context.signal.aborted,
           });
+          // One decision owns one exact queue head. Re-reading after the
+          // catalog path would let a reordered row bypass or replace the
+          // interrupting play-next intent that prevented episode countdown.
+          const autoAdvanceQueueHead = container.queueService.peekNext();
           const { nextEpisode, catalogAutoNext, catalogAutoplayEndBanner, blockedBy } =
             await planCatalogAutoAdvance({
               autoplayAdvanceArgs,
               guards: readAutoAdvanceGuards(),
+              queueHead: autoAdvanceQueueHead,
               seriesDone: !episodeAvailability.nextEpisode,
               autoplayRecommendations: container.config.autoplayRecommendations,
               isAnime: stateManager.getState().mode === "anime",
@@ -3297,7 +3301,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             autoplayPaused: run.playbackSession.autoplayPaused,
             autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
             aborted: context.signal.aborted,
-            hasQueuedNext: Boolean(container.queueService.peekNext()),
+            hasQueuedNext: Boolean(autoAdvanceQueueHead),
             autoplayRecommendationsEnabled: container.config.autoplayRecommendations,
           });
           const recommendationRailItems = await recommendationRail.resolveRailItems({
@@ -3318,7 +3322,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const playlistAutoNext = planPlaylistAutoAdvance({
             catalogNextEpisode: nextEpisode,
             guards: readAutoAdvanceGuards(),
-            queueHead: container.queueService.peekNext(),
+            queueHead: autoAdvanceQueueHead,
             seriesHasNextEpisode: Boolean(episodeAvailability.nextEpisode),
             autoplayRecommendations: container.config.autoplayRecommendations,
             topRecommendation,

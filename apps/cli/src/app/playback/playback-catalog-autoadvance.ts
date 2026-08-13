@@ -10,6 +10,7 @@ import { formatCaughtUpReleaseBanner } from "@/app/post-play/caught-up-banner";
 import type { NextUp } from "@/domain/playback/resolve-next-up";
 import type { EpisodeInfo } from "@/domain/types";
 import type { CatalogScheduleService } from "@/services/catalog/CatalogScheduleService";
+import type { QueueEntry } from "@kunai/storage";
 
 export type CatalogAutoAdvancePlan = {
   readonly nextEpisode: EpisodeInfo | null;
@@ -25,6 +26,7 @@ export type CatalogAutoAdvancePlan = {
 export async function planCatalogAutoAdvance(input: {
   readonly autoplayAdvanceArgs: AutoAdvanceArgs;
   readonly guards: AutoAdvanceGuards;
+  readonly queueHead: QueueEntry | undefined;
   readonly seriesDone: boolean;
   readonly autoplayRecommendations: boolean;
   readonly isAnime: boolean;
@@ -36,7 +38,7 @@ export async function planCatalogAutoAdvance(input: {
   const catalogAutoNext = evaluateAutoAdvanceNextUp({
     guards: input.guards,
     nextEpisode,
-    queueHead: undefined,
+    queueHead: input.queueHead,
     topRecommendation: null,
     seriesDone: input.seriesDone,
     autoplayRecommendations: input.autoplayRecommendations,
