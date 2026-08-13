@@ -254,7 +254,14 @@ jobs:
       - name: Test Windows storage lifecycle
         # SQLite handles and temp-directory teardown have Windows-specific
         # locking semantics that the Linux package leg cannot exercise.
-        timeout-minutes: 2
+        #
+        # This is the slowest leg in the matrix for the reason described above,
+        # and it owns its per-test budget in packages/storage's own test script
+        # rather than through KUNAI_TEST_TIMEOUT_MS, which only reaches the
+        # apps/cli runner. Observed wall time is 73-99s, so the previous
+        # 2-minute bound left almost no headroom and would have started failing
+        # as the suite grew.
+        timeout-minutes: 6
         run: bun run --cwd packages/storage test
 
       # The Linux legs build and smoke a binary; Windows did not, and that gap
