@@ -40,7 +40,10 @@ import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
-import { shouldRunBootstrapSearch } from "@/app/search/search-failure-policy";
+import {
+  buildSearchFailureNote,
+  shouldRunBootstrapSearch,
+} from "@/app/search/search-failure-policy";
 import { buildSearchFilterChipOptions } from "@/app/search/search-filter-chips";
 import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
 import {
@@ -190,6 +193,34 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
     const { container } = context;
     const { searchRegistry, providerRegistry, stateManager, logger, diagnosticsService } =
       container;
+    const containSearchFailure = (error: unknown, operation: string) => {
+      const failure = kitsuneErrorFromUnknown(error, {
+        code: "NETWORK_ERROR",
+        message: "Search failed",
+        service: searchRegistry.getDefault()?.metadata.id,
+        retryable: true,
+      });
+      const snapshot = container.connectivity.getSnapshot();
+      stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "error" });
+      logger.error("Search phase error", { error: String(error), operation });
+      diagnosticsService.record(
+        buildSearchDiagnosticEvent({
+          operation,
+          status: "failed",
+          severity: "recoverable",
+          failureClass:
+            snapshot.status === "offline"
+              ? "offline"
+              : snapshot.status === "limited"
+                ? "timeout"
+                : "unknown",
+          recommendedAction: "retry",
+          message: "Search phase error",
+          context: { error: String(error) },
+        }),
+      );
+      return { failure, note: buildSearchFailureNote(failure, snapshot) };
+    };
 
     try {
       const preserveExistingSearch =
@@ -252,6 +283,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // go through the same honest local-filter pipeline as interactive Enter.
       let pendingSearchEvidence: SearchFilterEvidence | undefined;
       let pendingSearchWarnings: readonly string[] = [];
+      let initialSearchError: string | undefined;
 
       while (true) {
         const currentState = stateManager.getState();
@@ -305,18 +337,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           const searchIntent = createSearchIntentEngine().fromText(currentState.searchQuery, {
             currentMode: currentState.mode,
           });
-          const search = await observeOnline(container, "search-error", () =>
-            searchTitles(searchIntent.intent, {
-              mode: stateManager.getState().mode,
-              providerId: currentState.provider,
-              animeLanguageProfile: container.config.animeLanguageProfile,
-              youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-              signal: context.signal,
-              searchRegistry,
-              providerRegistry,
-              enrichAnimeMetadata: true,
-            }),
-          );
+          let search: Awaited<ReturnType<typeof searchTitles>>;
+          try {
+            search = await observeOnline(container, "search-error", () =>
+              searchTitles(searchIntent.intent, {
+                mode: stateManager.getState().mode,
+                providerId: currentState.provider,
+                animeLanguageProfile: container.config.animeLanguageProfile,
+                youtubeLanguageProfile: container.config.youtubeLanguageProfile,
+                signal: context.signal,
+                searchRegistry,
+                providerRegistry,
+                enrichAnimeMetadata: true,
+              }),
+            );
+          } catch (error) {
+            if (context.signal.aborted) throw error;
+            initialSearchError = containSearchFailure(error, "search.bootstrap.failed").note;
+            continue;
+          }
+          initialSearchError = undefined;
           const results = search.results;
           pendingSearchEvidence = search.evidence;
           pendingSearchWarnings = searchIntent.warnings;
@@ -473,6 +513,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           settings: container.config.getRaw(),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
+          initialErrorMessage: initialSearchError,
           onLoadCalendar: async (signal) => {
             const bundle = await loadCalendarResults(container, signal);
             signal.throwIfAborted();
@@ -626,18 +667,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
-            const search = await observeOnline(container, "search-error", () =>
-              searchTitles(searchIntent.intent, {
-                mode: stateManager.getState().mode,
-                providerId: stateManager.getState().provider,
-                animeLanguageProfile: container.config.animeLanguageProfile,
-                youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-                signal: context.signal,
-                searchRegistry,
-                providerRegistry,
-                enrichAnimeMetadata: true,
-              }),
-            );
+            let search: Awaited<ReturnType<typeof searchTitles>>;
+            try {
+              search = await observeOnline(container, "search-error", () =>
+                searchTitles(searchIntent.intent, {
+                  mode: stateManager.getState().mode,
+                  providerId: stateManager.getState().provider,
+                  animeLanguageProfile: container.config.animeLanguageProfile,
+                  youtubeLanguageProfile: container.config.youtubeLanguageProfile,
+                  signal: context.signal,
+                  searchRegistry,
+                  providerRegistry,
+                  enrichAnimeMetadata: true,
+                }),
+              );
+            } catch (error) {
+              if (context.signal.aborted) throw error;
+              const failure = containSearchFailure(error, "search.query.failed");
+              throw new Error(failure.note, { cause: error });
+            }
+            initialSearchError = undefined;
             const results = search.results;
 
             logger.info("Search complete", {
@@ -667,6 +716,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             );
 
             stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
 
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
@@ -1065,26 +1115,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       if (context.signal.aborted) {
         return { status: "cancelled" };
       }
-      stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "error" });
-      logger.error("Search phase error", { error: String(e) });
-      diagnosticsService.record(
-        buildSearchDiagnosticEvent({
-          operation: "search.phase.failed",
-          status: "failed",
-          severity: "recoverable",
-          failureClass: "unknown",
-          message: "Search phase error",
-          context: { error: String(e) },
-        }),
-      );
+      const failure = containSearchFailure(e, "search.phase.failed");
       return {
         status: "error",
-        error: kitsuneErrorFromUnknown(e, {
-          code: "NETWORK_ERROR",
-          message: "Search failed",
-          service: searchRegistry.getDefault()?.metadata.id,
-          retryable: true,
-        }),
+        error: failure.failure,
       };
     }
   }

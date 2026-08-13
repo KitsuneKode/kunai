@@ -6,7 +6,6 @@
 // =============================================================================
 
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
-import { presentSearchFailure } from "@/app/search/search-failure-policy";
 import type { SearchPhaseInput } from "@/app/search/SearchPhase";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { abortOrphanDownloadResolve, type Container } from "@/container";
@@ -132,7 +131,6 @@ export class SessionController {
             if (searchResult.status === "cancelled") continue;
             if (searchResult.status === "error") {
               logger.error("Search phase failed", { error: searchResult.error });
-              presentSearchFailure(this.container, searchResult.error);
               continue;
             }
 

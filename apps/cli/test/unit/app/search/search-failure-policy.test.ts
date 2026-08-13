@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildSearchFailureNote,
-  presentSearchFailure,
   shouldRunBootstrapSearch,
 } from "@/app/search/search-failure-policy";
 
@@ -65,35 +64,5 @@ describe("search failure policy", () => {
     );
 
     expect(note).toBe("Search failed: Search service timed out · retry");
-  });
-
-  test("presenting a failure dispatches the actionable note to the shell", () => {
-    const actions: unknown[] = [];
-    presentSearchFailure(
-      {
-        connectivity: {
-          getSnapshot: () => ({
-            status: "offline",
-            checkedAt: 1,
-            evidence: "search-error",
-          }),
-        },
-        stateManager: {
-          dispatch: (action) => actions.push(action),
-        },
-      },
-      {
-        code: "NETWORK_ERROR",
-        message: "Search service unreachable",
-        retryable: true,
-      },
-    );
-
-    expect(actions).toEqual([
-      {
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: "Search failed: Search service unreachable · retry or open /offline",
-      },
-    ]);
   });
 });

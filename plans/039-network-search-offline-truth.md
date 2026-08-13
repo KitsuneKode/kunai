@@ -46,10 +46,12 @@ home.
 - [ ] Add `search-failure-policy.test.ts` first. Prove `searchState: "error"`
       suppresses bootstrap replay, idle/loading queries behave intentionally, and an
       offline note contains both `retry` and `/offline`.
-- [ ] Use the policy in `SearchPhase.ts`; dispatch `SET_SEARCH_STATE: "error"` in
-      the outer failure path.
-- [ ] In `SessionController.ts`, dispatch the policy note when SearchPhase returns an
-      error before continuing to the next interactive search mount.
+- [ ] Contain bootstrap failure inside `SearchPhase.ts`, keep the query/state in that
+      phase, and pass the failure into BrowseShell's initial error surface.
+- [ ] Add a render regression that shows the retained query, retry copy, and
+      `/offline`, then retries the same query on Enter.
+- [ ] Convert interactive search rejections into the same actionable BrowseShell
+      error while retaining the original failure in structured diagnostics.
 - [ ] Keep the existing structured `search.phase.failed` event and raw logged error.
 
 ## Verification

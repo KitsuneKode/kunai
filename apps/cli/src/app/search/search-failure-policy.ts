@@ -1,5 +1,5 @@
 import type { KitsuneError } from "@/domain/errors";
-import type { SearchStatus, StateTransition } from "@/domain/session/SessionState";
+import type { SearchStatus } from "@/domain/session/SessionState";
 import type { NetworkSnapshot } from "@/services/network/NetworkStatus";
 
 export type BootstrapSearchState = {
@@ -25,20 +25,4 @@ export function buildSearchFailureNote(error: KitsuneError, snapshot: NetworkSna
     return `Search failed: ${error.message} · retry`;
   }
   return `Search failed: ${error.message} · open /diagnostics`;
-}
-
-type SearchFailurePresenter = {
-  readonly connectivity: { getSnapshot(): NetworkSnapshot };
-  readonly stateManager: {
-    dispatch(
-      transition: Extract<StateTransition, { readonly type: "SET_PLAYBACK_FEEDBACK" }>,
-    ): void;
-  };
-};
-
-export function presentSearchFailure(target: SearchFailurePresenter, error: KitsuneError): void {
-  target.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: buildSearchFailureNote(error, target.connectivity.getSnapshot()),
-  });
 }

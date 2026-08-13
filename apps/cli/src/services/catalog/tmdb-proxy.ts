@@ -1,5 +1,6 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
+import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { VIDEASY_DB_BASE } from "@kunai/providers";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
@@ -101,14 +102,8 @@ export function isTmdbNetworkError(error: unknown): boolean {
   return (
     name.includes("failedtoopensocket") ||
     name.includes("aborterror") ||
-    message.includes("failedtoopensocket") ||
-    message.includes("unable to connect") ||
-    message.includes("econnrefused") ||
     message.includes("network") ||
-    message.includes("unreachable") ||
-    message.includes("timed out") ||
-    message.includes("timeout") ||
-    message.includes("was there a typo in the url or port")
+    classifyNetworkFailure(message) !== "unknown"
   );
 }
 
