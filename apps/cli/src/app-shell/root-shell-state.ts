@@ -1,4 +1,5 @@
 import type { OverlayState, SessionState, StateTransition } from "@/domain/session/SessionState";
+import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 
 import type { KeyScope } from "./keybindings";
 import type { RootContentKind } from "./root-content-state";
@@ -79,14 +80,7 @@ export function resolveRootShellSurface(
     return "error";
   }
   const rootOverlay = getRootOwnedOverlay(state);
-  if (
-    state.playbackStatus === "loading" ||
-    state.playbackStatus === "ready" ||
-    state.playbackStatus === "buffering" ||
-    state.playbackStatus === "seeking" ||
-    state.playbackStatus === "stalled" ||
-    state.playbackStatus === "playing"
-  ) {
+  if (isPlaybackSessionActive(state.playbackStatus)) {
     if (rootOverlay) {
       return "root-overlay";
     }

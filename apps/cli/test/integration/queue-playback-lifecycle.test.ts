@@ -19,6 +19,11 @@ import {
   playlistAdvanceFromQueueIntent,
   resolvePlaylistAutoNextCountdown,
 } from "@/app/playback/playback-outcome";
+import {
+  transitionPlaybackStatus,
+  type PlaybackStatusSignal,
+  type PlaybackStatusSnapshot,
+} from "@/app/playback/playback-status-policy";
 import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import { QueueService } from "@/domain/queue/QueueService";
@@ -99,11 +104,14 @@ function enqueueAnime(
   });
 }
 
+const FAKE_GENERATION = { process: 1, cycle: 1 } as const;
+
 function fakePlayer(events: readonly PlayerPlaybackEvent[]): PlayerService {
   return {
     play: async (_stream, playOptions: PlayerOptions) => {
+      playOptions.onGenerationActivated?.(FAKE_GENERATION);
       for (const event of events) {
-        playOptions.onPlaybackEvent?.(event);
+        playOptions.onPlaybackEvent?.({ generation: FAKE_GENERATION, event });
       }
       return FINISHED;
     },
@@ -116,6 +124,10 @@ function fakePlayer(events: readonly PlayerPlaybackEvent[]): PlayerService {
 }
 
 function noopHooks(overrides: { onConfirmedPlaybackStart?: () => void } = {}) {
+  let statusSnapshot: PlaybackStatusSnapshot = {
+    status: "loading",
+    generation: { process: 0, cycle: 0 },
+  };
   return {
     onFeedback: () => undefined,
     onPresenceLaunch: () => undefined,
@@ -124,8 +136,11 @@ function noopHooks(overrides: { onConfirmedPlaybackStart?: () => void } = {}) {
     onPresenceSubtitles: () => undefined,
     onPresencePaused: () => undefined,
     onPresenceResumed: () => undefined,
-    setPlaybackStatus: () => undefined,
-    getPlaybackStatus: () => "idle",
+    applyPlaybackStatusSignal: (signal: PlaybackStatusSignal) => {
+      const decision = transitionPlaybackStatus(statusSnapshot, signal);
+      if (decision.accepted && decision.statusChanged) statusSnapshot = decision.snapshot;
+      return decision;
+    },
     onTrackChanged: () => undefined,
     onShareCopied: () => undefined,
     onPlayerReady: () => undefined,

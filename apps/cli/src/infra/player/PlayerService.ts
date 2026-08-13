@@ -4,6 +4,7 @@
 // MPV abstraction for media playback.
 // =============================================================================
 
+import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, ShellMode, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { SubtitleTrack } from "@/domain/types";
@@ -70,6 +71,16 @@ export type PlayerPlaybackEvent =
       detail?: string;
     };
 
+/**
+ * The public shape of a player event. `PlayerServiceImpl` is the only place raw
+ * `PlayerPlaybackEvent` callbacks are turned into envelopes, so every consumer
+ * above it can tell which mpv process/cycle produced the event.
+ */
+export type PlayerPlaybackEventEnvelope = {
+  readonly generation: PlaybackGeneration;
+  readonly event: PlayerPlaybackEvent;
+};
+
 export interface PlayerOptions {
   url: string;
   headers?: Record<string, string>;
@@ -102,7 +113,9 @@ export interface PlayerOptions {
   skipCredits?: boolean;
   onProgress?: (seconds: number) => void;
   onPlayerReady?: () => void;
-  onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  /** Fired synchronously, before the first await, with the generation this play owns. */
+  onGenerationActivated?: (generation: PlaybackGeneration) => void;
+  onPlaybackEvent?: (input: PlayerPlaybackEventEnvelope) => void;
   /** Called once when playback enters the last ~30 s (autoplay-chain mode only). */
   onNearEof?: () => void;
   /** When aborted, `play()` rejects before spawning mpv. */
@@ -130,7 +143,8 @@ export interface PlayerService {
     startAt?: number;
     policy?: LocalPlaybackPolicyInput;
     onPlayerReady?: () => void;
-    onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+    onGenerationActivated?: (generation: PlaybackGeneration) => void;
+    onPlaybackEvent?: (input: PlayerPlaybackEventEnvelope) => void;
   }): Promise<PlaybackResult>;
 }
 

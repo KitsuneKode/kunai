@@ -31,6 +31,7 @@ import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngin
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
+import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import {
   encodePlaybackTargetRef,
   parsePlaybackTargetRef,
@@ -789,16 +790,13 @@ type ActionHandler = (container: Container) => Promise<ShellWorkflowResult>;
 
 async function handleTitleControlMenu(container: Container): Promise<"handled"> {
   const state = container.stateManager.getState();
-  const surface =
-    state.playbackStatus === "playing"
-      ? "playing"
-      : state.playbackStatus === "loading" ||
-          state.playbackStatus === "ready" ||
-          state.playbackStatus === "buffering"
-        ? "loading"
-        : state.activeModals.some((overlay) => overlay.type === "library")
-          ? "library"
-          : "browse";
+  // An active session — including paused — keeps the title-control playback
+  // route. Only a session that does not exist falls through to library/browse.
+  const surface = isPlaybackSessionActive(state.playbackStatus)
+    ? "playing"
+    : state.activeModals.some((overlay) => overlay.type === "library")
+      ? "library"
+      : "browse";
   const { openTitleControlMenu } =
     await import("@/app-shell/title-control/open-title-control-menu");
   await openTitleControlMenu(container, surface);

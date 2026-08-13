@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 
+import {
+  isSamePlaybackGeneration,
+  type PlaybackGeneration,
+} from "@/domain/playback/playback-generation";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
@@ -154,6 +158,13 @@ export class PersistentMpvSession {
   private mpvUnregister: (() => void) | null = null;
   private ipcSession: MpvIpcSession | null = null;
   private activeCycle: PlayerCycleState | null = null;
+  /**
+   * Set synchronously by close()/termination, before any await. Bootstrap work
+   * that was already in flight for the outgoing process checks this after each
+   * await, so a late endpoint wait or IPC open cannot install a resource,
+   * publish an event, or activate player control on a retired session.
+   */
+  private retired = false;
   private readonly subtitleManager = new PersistentSubtitleManager();
   private readonly propertyRouter = new PersistentMpvPropertyRouter({
     getActiveCycle: () => this.activeCycle,
@@ -190,7 +201,26 @@ export class PersistentMpvSession {
   private skippedSegments = new Set<string>();
   private currentOptions: PlayerCycleOptions;
   private watchdog: PlaybackWatchdog | null = null;
-  private pendingReadyWork: PlayerCycleOptions | null = null;
+  /**
+   * One playback cycle inside this process. Every deferred continuation captures
+   * it and rechecks before mutating, so a replacement cycle cannot be driven by
+   * the previous cycle's file load, ready work, or reconnect.
+   */
+  private cycleGeneration: PlaybackGeneration = { process: 1, cycle: 0 };
+  /**
+   * The single outstanding `loadfile`. mpv's `file-loaded` carries no identity,
+   * so at most one owner may exist: a replacement retires the previous owner
+   * before issuing its own load, and an unowned `file-loaded` is ignored.
+   */
+  private pendingFileLoad: { readonly id: number; readonly generation: PlaybackGeneration } | null =
+    null;
+  private nextFileLoadId = 1;
+  /** The generation whose file is actually loaded; property/end-file routing uses this. */
+  private loadedFileGeneration: PlaybackGeneration | null = null;
+  private pendingReadyWork: {
+    readonly options: PlayerCycleOptions;
+    readonly generation: PlaybackGeneration;
+  } | null = null;
   private readyWorkFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private terminationPromise: Promise<void> | null = null;
   private terminated = false;
@@ -233,6 +263,7 @@ export class PersistentMpvSession {
     seekSeconds: number;
     shouldSeek: boolean;
     trigger: InProcessReconnectTrigger;
+    generation: PlaybackGeneration;
   } | null = null;
 
   private constructor(
@@ -372,6 +403,10 @@ export class PersistentMpvSession {
       return await cycle.promise;
     }
 
+    // Replacement admission: retire the previous owner, then install exactly one.
+    const generation = this.advanceCycleGeneration();
+    const fileLoadId = this.installPendingFileLoad(generation);
+
     await this.subtitleManager.removeExternalSubtitles(this.ipcSession);
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
@@ -401,6 +436,7 @@ export class PersistentMpvSession {
         command: "loadfile",
         error: `stream unreachable: ${preflight.reason}`,
       });
+      this.clearPendingFileLoadIf(fileLoadId, generation);
       cycle.telemetry.endReason = "error";
       this.activeCycle = null;
       cycle.resolve({
@@ -421,6 +457,8 @@ export class PersistentMpvSession {
     }
 
     if (!loadResult?.ok) {
+      // Compare id and generation so an older rejection cannot erase a newer owner.
+      this.clearPendingFileLoadIf(fileLoadId, generation);
       void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
       options.onPlaybackEvent?.({
         type: "ipc-command-failed",
@@ -469,6 +507,9 @@ export class PersistentMpvSession {
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
     this.alive = false;
+    this.retired = true;
+    this.retirePendingFileLoad();
+    this.loadedFileGeneration = null;
 
     const target = this.mpv;
 
@@ -583,6 +624,10 @@ export class PersistentMpvSession {
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);
     this.alive = true;
+    // The first file is loaded from argv and never passes through IPC loadfile,
+    // so it needs its owner seeded here or its file-loaded would be unowned.
+    this.cycleGeneration = { process: this.cycleGeneration.process, cycle: 1 };
+    this.installPendingFileLoad(this.cycleGeneration);
     this.initialOptions.onPlaybackEvent?.({ type: "mpv-process-started" });
     this.hasLoadedFile = true;
     this.resetCycleState();
@@ -599,6 +644,9 @@ export class PersistentMpvSession {
     {
       const ipcBootstrapStarted = Date.now();
       const ready = await this.runtime.waitForIpcEndpoint(this.ipcEndpoint, 5_000);
+      // The session was closed while this wait was outstanding; opening IPC now
+      // would resurrect a process that is already being torn down.
+      if (this.retired) return;
       const waitedMs = Date.now() - ipcBootstrapStarted;
       if (!ready) {
         this.currentCycleOptions().onPlaybackEvent?.({
@@ -610,8 +658,9 @@ export class PersistentMpvSession {
         return;
       }
 
+      let openedIpcSession: MpvIpcSession;
       try {
-        this.ipcSession = await this.runtime.openIpcSession({
+        openedIpcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
@@ -620,10 +669,19 @@ export class PersistentMpvSession {
             void this.handlePlaybackEnded(reason, observedAt, fileError);
           },
           onFileLoaded: () => {
+            const pending = this.pendingFileLoad;
+            // mpv's file-loaded carries no identity. Without a pending owner it
+            // belongs to a load nobody is waiting for, so it must do nothing.
+            if (!pending) return;
+            this.pendingFileLoad = null;
+            if (!this.isGenerationCurrent(pending.generation)) return;
+            this.loadedFileGeneration = pending.generation;
+
             void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
             const reconnect = this.pendingInProcessReconnect;
             if (reconnect) {
               this.pendingInProcessReconnect = null;
+              if (!this.isGenerationCurrent(reconnect.generation)) return;
               void this.finishInProcessReconnectAfterLoad(reconnect);
               return;
             }
@@ -657,6 +715,13 @@ export class PersistentMpvSession {
         await this.terminateAfterIpcBootstrapFailure(proc);
         return;
       }
+
+      if (this.retired) {
+        // Close the handle we just created exactly once and install nothing.
+        await openedIpcSession.close().catch(() => {});
+        return;
+      }
+      this.ipcSession = openedIpcSession;
 
       dbg("mpv-ipc", "ipc-bootstrap-complete", {
         ipcTransport: mpvIpcTransportTag(this.ipcEndpoint),
@@ -778,13 +843,51 @@ export class PersistentMpvSession {
     }
   }
 
+  isGenerationCurrent(generation: PlaybackGeneration): boolean {
+    return isSamePlaybackGeneration(generation, this.cycleGeneration);
+  }
+
+  /** Starts a new cycle generation and retires anything the previous one owned. */
+  private advanceCycleGeneration(): PlaybackGeneration {
+    this.cycleGeneration = {
+      process: this.cycleGeneration.process,
+      cycle: this.cycleGeneration.cycle + 1,
+    };
+    this.retirePendingFileLoad();
+    this.loadedFileGeneration = null;
+    this.pendingInProcessReconnect = null;
+    return this.cycleGeneration;
+  }
+
+  /** Installs the one pending load owner, retiring any previous owner first. */
+  private installPendingFileLoad(generation: PlaybackGeneration): number {
+    this.retirePendingFileLoad();
+    const id = this.nextFileLoadId++;
+    this.pendingFileLoad = { id, generation };
+    return id;
+  }
+
+  private retirePendingFileLoad(): void {
+    this.pendingFileLoad = null;
+  }
+
+  /** Clears the pending owner only when it is exactly the one that failed. */
+  private clearPendingFileLoadIf(id: number, generation: PlaybackGeneration): void {
+    const pending = this.pendingFileLoad;
+    if (!pending) return;
+    if (pending.id !== id) return;
+    if (!isSamePlaybackGeneration(pending.generation, generation)) return;
+    this.pendingFileLoad = null;
+  }
+
   private queueReadyWork(options: PlayerCycleOptions, opts: { armFallback?: boolean } = {}): void {
-    this.pendingReadyWork = options;
+    const generation = this.cycleGeneration;
+    this.pendingReadyWork = { options, generation };
     this.clearReadyWorkFallback();
     if (!this.ipcSession) {
       this.pendingReadyWork = null;
       this.acceptPlaybackPropertiesForActiveCycle();
-      void this.runReadyWork(options);
+      void this.runReadyWork(options, generation);
       return;
     }
     if (opts.armFallback !== false) {
@@ -807,11 +910,15 @@ export class PersistentMpvSession {
   private drainPendingReadyWork(expected?: PlayerCycleOptions): void {
     const pending = this.pendingReadyWork;
     if (!pending) return;
-    if (expected && pending !== expected) return;
+    if (expected && pending.options !== expected) return;
+    if (!this.isGenerationCurrent(pending.generation)) {
+      this.pendingReadyWork = null;
+      return;
+    }
     this.pendingReadyWork = null;
     this.clearReadyWorkFallback();
     this.acceptPlaybackPropertiesForActiveCycle();
-    void this.runReadyWork(pending);
+    void this.runReadyWork(pending.options, pending.generation);
   }
 
   private acceptPlaybackPropertiesForActiveCycle(): void {
@@ -820,7 +927,10 @@ export class PersistentMpvSession {
     }
   }
 
-  private async runReadyWork(options: PlayerCycleOptions): Promise<void> {
+  private async runReadyWork(
+    options: PlayerCycleOptions,
+    generation: PlaybackGeneration,
+  ): Promise<void> {
     const executor = new PersistentReadyWorkExecutor({
       getIpcSession: () => this.ipcSession,
       getInitialOptions: () => this.initialOptions,
@@ -847,9 +957,10 @@ export class PersistentMpvSession {
         dbg("mpv-ipc", `${command}-failed`, { error });
       },
       subtitleManager: this.subtitleManager,
+      isGenerationCurrent: (candidate) => this.isGenerationCurrent(candidate),
     });
 
-    await executor.execute(options, this.activeCycle);
+    await executor.execute(options, this.activeCycle, generation);
   }
 
   private clearReadyWorkFallback(): void {
@@ -1231,6 +1342,9 @@ export class PersistentMpvSession {
 
     this.terminationPromise = (async () => {
       this.alive = false;
+      this.retired = true;
+      this.retirePendingFileLoad();
+      this.loadedFileGeneration = null;
       this.clearReadyWorkFallback();
       this.pendingReadyWork = null;
       this.watchdog?.stop();
@@ -1305,6 +1419,10 @@ export class PersistentMpvSession {
     this.abortResumeChoiceWaitForCycleEnd();
     this.clearReadyWorkFallback();
     this.pendingReadyWork = null;
+    // end-file before file-loaded: that load will never arrive, so retire its
+    // owner. A later unowned file-loaded is then correctly ignored.
+    this.retirePendingFileLoad();
+    this.loadedFileGeneration = null;
     if (!this.nearEofFired) {
       this.nearEofFired = true;
       this.currentCycleOptions().onNearEof?.();
@@ -1425,7 +1543,16 @@ export class PersistentMpvSession {
       active.telemetry.endReason = savedEndReason;
       active.telemetry.maxTrustedProgressSeconds = savedMaxTrusted;
       active.telemetry.lastReliableProgressSeconds = savedLastReliable;
-      this.pendingInProcessReconnect = { seekSeconds, shouldSeek, trigger };
+      // Reconnect reloads the same cycle: keep its generation, but retire the
+      // previous pending owner so two load owners never coexist.
+      const reconnectGeneration = this.cycleGeneration;
+      this.pendingInProcessReconnect = {
+        seekSeconds,
+        shouldSeek,
+        trigger,
+        generation: reconnectGeneration,
+      };
+      const reconnectLoadId = this.installPendingFileLoad(reconnectGeneration);
       this.clearReadyWorkFallback();
       this.pendingReadyWork = null;
 
@@ -1444,8 +1571,10 @@ export class PersistentMpvSession {
         12_000,
       );
       if (!loadResult.ok) {
+        this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
         throw new Error(loadResult.error ?? "loadfile failed");
       }
+      if (!this.isGenerationCurrent(reconnectGeneration)) return false;
 
       this.reconnectBackoffUntilMs = 0;
       void this.ipcSession.send(["set_property", "user-data/kunai-loading", ""], 500);

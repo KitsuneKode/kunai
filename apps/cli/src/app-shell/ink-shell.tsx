@@ -110,7 +110,14 @@ import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-p
 
 export { openPlaybackShell } from "./playback-mount-shell";
 
-const ACTIVE_PLAYBACK_STATUSES = ["ready", "buffering", "seeking", "stalled", "playing"] as const;
+const ACTIVE_PLAYBACK_STATUSES = [
+  "ready",
+  "buffering",
+  "seeking",
+  "stalled",
+  "playing",
+  "paused",
+] as const;
 // Statuses where mpv owns the session and `q` means stop, not cancel. `ready`
 // is deliberately absent: bootstrap can sit in `ready` before first frame, and
 // cancel must stay available there (it always has been).

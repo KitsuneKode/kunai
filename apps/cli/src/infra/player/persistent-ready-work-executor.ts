@@ -1,3 +1,4 @@
+import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
 import { collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
 
@@ -47,16 +48,26 @@ export type PersistentReadyWorkExecutorDeps = {
   handleSegmentSkipProgress(options: PersistentReadyWorkOptions): Promise<void>;
   onIpcCommandFailure?(command: string, error: string): void;
   subtitleManager: PersistentSubtitleManager;
+  /** False once a replacement cycle has taken over the generation this work belongs to. */
+  isGenerationCurrent(generation: PlaybackGeneration): boolean;
 };
 
 export class PersistentReadyWorkExecutor {
   constructor(private readonly deps: PersistentReadyWorkExecutorDeps) {}
 
+  /**
+   * Ready work is a chain of awaited IPC commands. A replacement can land at any
+   * boundary, so the generation is passed in explicitly — never read from
+   * mutable current state — and rechecked before every mutation and command.
+   */
   async execute(
     options: PersistentReadyWorkOptions,
     cycle: PersistentReadyWorkCycle | null,
+    generation: PlaybackGeneration,
   ): Promise<void> {
     if (!cycle) return;
+    const isCurrent = () => this.deps.isGenerationCurrent(generation);
+    if (!isCurrent()) return;
 
     if (!cycle.playerReadyNotified) {
       cycle.playerReadyNotified = true;
@@ -72,6 +83,7 @@ export class PersistentReadyWorkExecutor {
     );
     try {
       const unpauseResult = await ipcSession.send(["set_property", "pause", false], 500);
+      if (!isCurrent()) return;
       if (!unpauseResult.ok) {
         this.deps.onIpcCommandFailure?.("unpause", unpauseResult.error);
       }
@@ -85,6 +97,7 @@ export class PersistentReadyWorkExecutor {
           ["set_property", "force-media-title", options.displayTitle],
           1_000,
         );
+        if (!isCurrent()) return;
         if (!titleResult.ok) {
           this.deps.onIpcCommandFailure?.("set-title", titleResult.error);
         }
@@ -99,6 +112,7 @@ export class PersistentReadyWorkExecutor {
           options.displayTitle,
           options.resumeChoiceTimeLabel,
         );
+        if (!isCurrent()) return;
       }
 
       const seekTarget = resolvePersistentStartSeekTarget(options, choice);
@@ -110,6 +124,7 @@ export class PersistentReadyWorkExecutor {
           noteTrustedSeek(cycle.telemetry, target);
         } else {
           const seekResult = await ipcSession.send(["seek", target, "absolute"], 2_000);
+          if (!isCurrent()) return;
           if (seekResult.ok) {
             this.deps.setCurrentPositionSeconds(target);
             noteTrustedSeek(cycle.telemetry, target);
@@ -117,9 +132,10 @@ export class PersistentReadyWorkExecutor {
         }
       }
     } finally {
-      this.deps.setResumeSeekPending(false);
+      if (isCurrent()) this.deps.setResumeSeekPending(false);
     }
 
+    if (!isCurrent()) return;
     const initialOptions = this.deps.getInitialOptions();
     if (
       this.deps.getSubtitlesAttachedAtSpawn() &&
@@ -140,6 +156,7 @@ export class PersistentReadyWorkExecutor {
         },
       );
     }
+    if (!isCurrent()) return;
     this.deps.setSubtitlesAttachedAtSpawn(false);
     await this.deps.handleSegmentSkipProgress(options);
   }

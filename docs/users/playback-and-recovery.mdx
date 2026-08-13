@@ -113,6 +113,19 @@ Kunai monitors mpv through IPC and the Kunai bridge Lua script:
 - In-process stream reconnect after network-read-dead stalls (configurable)
 - Auto-skip overlay when timing metadata and autoskip are enabled
 
+When playback recovers on its own — buffering clears, a stall resolves, or a
+seek completes — the shell returns to playing as soon as fresh progress arrives,
+so a transient hiccup no longer leaves the header stuck on "buffering" for the
+rest of the episode. Recovery never overrides a deliberate state: pausing,
+stopping, or finishing stays exactly as you left it, and only resuming restarts
+playback. Diagnostics keep the record of the stall or the source switch even
+after playback looks healthy again, so `/diagnostics` can still explain what
+happened mid-episode.
+
+Starting a new episode or stopping playback retires the old mpv session
+immediately. Late events from that retired session are discarded rather than
+applied, so a replaced episode cannot be revived by the previous one's activity.
+
 Debug mpv for one run:
 
 ```sh

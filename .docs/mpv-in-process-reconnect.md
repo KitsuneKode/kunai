@@ -31,10 +31,10 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 
 ## Configuration (`~/.config/kunai/config.json`)
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `mpvInProcessStreamReconnect` | `true` | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work). |
-| `mpvInProcessStreamReconnectMaxAttempts` | `3` | Max reload attempts **per episode play**. Set `0` to disable (same as turning off retries). |
+| Field                                    | Default | Meaning                                                                                                    |
+| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work). |
+| `mpvInProcessStreamReconnectMaxAttempts` | `3`     | Max reload attempts **per episode play**. Set `0` to disable (same as turning off retries).                |
 
 ## Relationship to other recovery
 
@@ -42,7 +42,43 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 - **Libavformat reconnect** flags (`--demuxer-lavf-o=…`) are complementary; they only help when the backend supports them.
 - **`keep-open=always`** is **not** used: it can suppress `end-file` and break autoplay/session hand-off. Reconnect is explicit IPC instead.
 
+## Generations and stale work
+
+Every mpv process and playback cycle carries a monotonic generation
+(`{ process, cycle }`, `apps/cli/src/domain/playback/playback-generation.ts`).
+Endpoint waits, IPC opens, property callbacks, `file-loaded`, end-file,
+reconnect completions, and recovery work all capture the generation that created
+them and compare it against the active one before mutating session state.
+
+Stale work closes any handle it just created and returns without touching
+status, presence, diagnostics, or the shell. Replacing or stopping a session
+increments the generation **before** cleanup, so a late IPC event from the
+previous cycle cannot revive a session the user already replaced or stopped.
+Reconnect budgets and backoff above are unchanged by this.
+
+## Status recovery contract
+
+One authoritative transition policy owns current playback status
+(`apps/cli/src/app/playback/playback-status-policy.ts`):
+
+- Fresh `playback-progress` is recovery evidence **only** from `buffering`,
+  `stalled`, or `seeking`, and returns that session to `playing`.
+- It never overrides `paused`, `stopped`, `finished`, a replaced session, or a
+  terminal fallback/failure state that has not accepted a new stream.
+  `playback-resumed` is the only paused-to-playing transition; stop stays
+  authoritative.
+- Genuine stall and provider-fallback evidence stays in the diagnostics record
+  after status recovers, so the UI can still explain what happened.
+
+Header, loading shell, diagnostics, and presence consume that one status. They
+format it differently but never infer a second state machine. Note the two
+distinct predicates in `SessionState.ts`: `isPlaybackSessionActive()` means "a
+session exists" and includes the bootstrap states `loading`/`ready`, while
+`isPlaybackTransportStarted()` means "bootstrap is over" and does not. Surfaces
+deciding whether to keep a loading presentation need the latter.
+
 ## Telemetry and UI
 
 - Diagnostics / shell may show **`mpv-in-process-reconnect`** events (`started` | `complete` | `failed`) with attempt number and a short `detail` (trigger + error when failed).
 - Seek policy lives in `apps/cli/src/infra/player/mpv-in-process-reconnect.ts` (`computeInProcessReconnectSeek`).
+- Presence updates from a superseded generation are dropped rather than sent.

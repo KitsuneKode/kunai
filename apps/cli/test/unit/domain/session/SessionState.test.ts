@@ -5,6 +5,7 @@ import { parseCommand, resolveCommands } from "@/domain/session/command-registry
 import {
   createInitialState,
   isPlaybackSessionActive,
+  isPlaybackTransportStarted,
   reduceState,
 } from "@/domain/session/SessionState";
 
@@ -15,6 +16,24 @@ describe("SessionState playback activity", () => {
     expect(isPlaybackSessionActive("idle")).toBeFalse();
     expect(isPlaybackSessionActive("finished")).toBeFalse();
     expect(isPlaybackSessionActive("error")).toBeFalse();
+  });
+
+  test("transport-started excludes the bootstrap states a session-active check includes", () => {
+    // The distinction that matters: both are true for a live session, but only
+    // isPlaybackSessionActive() counts loading/ready. Collapsing the two makes
+    // the loading shell announce itself as playing mid-bootstrap.
+    for (const bootstrapping of ["loading", "ready"] as const) {
+      expect(isPlaybackSessionActive(bootstrapping)).toBeTrue();
+      expect(isPlaybackTransportStarted(bootstrapping)).toBeFalse();
+    }
+
+    for (const started of ["buffering", "seeking", "stalled", "playing", "paused"] as const) {
+      expect(isPlaybackTransportStarted(started)).toBeTrue();
+    }
+
+    for (const inactive of ["idle", "finished", "error"] as const) {
+      expect(isPlaybackTransportStarted(inactive)).toBeFalse();
+    }
   });
 });
 

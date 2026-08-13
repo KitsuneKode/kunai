@@ -157,6 +157,10 @@ untouched.
 - prefer deterministic tests over integration theater
 - isolate volatile network and provider drift behind fixtures and contracts
 - keep slow or brittle end-to-end behavior out of the critical path unless it validates something no lower layer can
+- test staleness by driving generations, not by racing timers: playback work is
+  stamped with `{ process, cycle }`, so a "late event from a replaced session"
+  test sets an older generation and asserts the state did not move. Deferred
+  promises resolved in a controlled order beat `setTimeout` for the same reason.
 
 ## Testing Pyramid For This Repo
 

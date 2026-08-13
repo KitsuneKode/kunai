@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { createPlayerTelemetryState } from "@/infra/player/mpv-telemetry";
 import { PersistentReadyWorkExecutor } from "@/infra/player/persistent-ready-work-executor";
@@ -34,6 +35,8 @@ function createCycle(events: unknown[]) {
   };
 }
 
+const GENERATION: PlaybackGeneration = { process: 3, cycle: 8 };
+
 describe("PersistentReadyWorkExecutor", () => {
   test("skips redundant resume seek when loadfile already started at the same timestamp", async () => {
     const { ipc, commands } = createFakeIpc();
@@ -56,6 +59,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "start",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isGenerationCurrent: () => true,
     });
 
     await executor.execute(
@@ -66,6 +70,7 @@ describe("PersistentReadyWorkExecutor", () => {
         onPlaybackEvent: (event) => events.push(event),
       },
       createCycle(events),
+      GENERATION,
     );
 
     expect(commands.some((command) => command[0] === "seek")).toBe(false);
@@ -93,6 +98,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "resume",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isGenerationCurrent: () => true,
     });
 
     await executor.execute(
@@ -104,6 +110,7 @@ describe("PersistentReadyWorkExecutor", () => {
         offerResumeStartChoice: true,
       },
       createCycle([]),
+      GENERATION,
     );
 
     expect(commands).toContainEqual(["seek", 90, "absolute"]);
@@ -133,6 +140,7 @@ describe("PersistentReadyWorkExecutor", () => {
       waitResumeOrStartOverChoice: async () => "start",
       handleSegmentSkipProgress: async () => {},
       subtitleManager: new PersistentSubtitleManager(),
+      isGenerationCurrent: () => true,
     });
 
     await executor.execute(
@@ -142,6 +150,7 @@ describe("PersistentReadyWorkExecutor", () => {
         onPlaybackEvent: (event) => events.push(event),
       },
       createCycle(events),
+      GENERATION,
     );
 
     expect(commands.some((command) => command[0] === "sub-remove")).toBe(false);
@@ -149,5 +158,135 @@ describe("PersistentReadyWorkExecutor", () => {
     expect(events).toContainEqual({ type: "subtitle-inventory-ready", trackCount: 1 });
     expect(events).toContainEqual({ type: "subtitle-attached", trackCount: 1 });
     expect(subtitlesAttachedAtSpawn).toBe(false);
+  });
+});
+
+describe("PersistentReadyWorkExecutor stale-generation continuations", () => {
+  /**
+   * Holds one await boundary open, retires the generation while it is pending,
+   * then resolves it. Nothing after that boundary may run.
+   */
+  async function runWithRetirementAt(boundary: {
+    readonly gate: "unpause" | "title" | "resume-choice" | "seek" | "subtitles";
+  }): Promise<{ commands: readonly unknown[][]; events: unknown[]; skipRuns: number }> {
+    const commands: unknown[][] = [];
+    const events: unknown[] = [];
+    let current = true;
+    let skipRuns = 0;
+    let released = false;
+
+    const gateOn = (name: typeof boundary.gate) => async () => {
+      if (released || name !== boundary.gate) return;
+      released = true;
+      // The replacement takes over while this boundary is still pending.
+      current = false;
+    };
+
+    const ipc: MpvIpcSession = {
+      async send(command) {
+        commands.push([...command]);
+        const key = String(command[0]);
+        if (key === "set_property" && command[1] === "pause") await gateOn("unpause")();
+        if (key === "set_property" && command[1] === "force-media-title") await gateOn("title")();
+        if (key === "seek") await gateOn("seek")();
+        return {
+          ok: true,
+          command,
+          requestId: commands.length,
+          response: {},
+        } satisfies MpvIpcCommandResult;
+      },
+      sendUnchecked(command) {
+        commands.push([...command]);
+      },
+      async close() {},
+    };
+
+    const executor = new PersistentReadyWorkExecutor({
+      getIpcSession: () => ipc,
+      getInitialOptions: () => ({ displayTitle: "Other", primarySubtitle: null }),
+      getLoadStartAt: () => null,
+      getTitleAppliedViaArgs: () => false,
+      setTitleAppliedViaArgs: () => {},
+      getSubtitlesAttachedAtSpawn: () => false,
+      setSubtitlesAttachedAtSpawn: () => {},
+      setCurrentPositionSeconds: () => {},
+      setResumeSeekPending: () => {},
+      waitResumeOrStartOverChoice: async () => {
+        await gateOn("resume-choice")();
+        return "resume";
+      },
+      handleSegmentSkipProgress: async () => {
+        skipRuns += 1;
+      },
+      subtitleManager: new PersistentSubtitleManager(),
+      isGenerationCurrent: () => current,
+    });
+
+    await executor.execute(
+      {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        resumePromptAt: 90,
+        offerResumeStartChoice: true,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      createCycle(events),
+      GENERATION,
+    );
+
+    return { commands, events, skipRuns };
+  }
+
+  test("a retirement during the unpause command stops every later command", async () => {
+    const { commands, skipRuns } = await runWithRetirementAt({ gate: "unpause" });
+    expect(commands.map((command) => command[0])).toEqual(["set_property"]);
+    expect(skipRuns).toBe(0);
+  });
+
+  test("a retirement during the title update stops the resume prompt and seek", async () => {
+    const { commands, skipRuns } = await runWithRetirementAt({ gate: "title" });
+    expect(commands.some((command) => command[0] === "seek")).toBe(false);
+    expect(skipRuns).toBe(0);
+  });
+
+  test("a retirement during the resume-choice wait stops the seek", async () => {
+    const { commands, skipRuns } = await runWithRetirementAt({ gate: "resume-choice" });
+    expect(commands.some((command) => command[0] === "seek")).toBe(false);
+    expect(skipRuns).toBe(0);
+  });
+
+  test("a retirement during the seek stops subtitle replacement and segment-skip setup", async () => {
+    const { skipRuns } = await runWithRetirementAt({ gate: "seek" });
+    expect(skipRuns).toBe(0);
+  });
+
+  test("a stale execute does nothing at all, not even the ready notification", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const events: unknown[] = [];
+    const executor = new PersistentReadyWorkExecutor({
+      getIpcSession: () => ipc,
+      getInitialOptions: () => ({ displayTitle: "Episode 1", primarySubtitle: null }),
+      getLoadStartAt: () => null,
+      getTitleAppliedViaArgs: () => true,
+      setTitleAppliedViaArgs: () => {},
+      getSubtitlesAttachedAtSpawn: () => false,
+      setSubtitlesAttachedAtSpawn: () => {},
+      setCurrentPositionSeconds: () => {},
+      setResumeSeekPending: () => {},
+      waitResumeOrStartOverChoice: async () => "start",
+      handleSegmentSkipProgress: async () => {},
+      subtitleManager: new PersistentSubtitleManager(),
+      isGenerationCurrent: () => false,
+    });
+
+    await executor.execute(
+      { displayTitle: "Episode 1", primarySubtitle: null, onPlaybackEvent: (e) => events.push(e) },
+      createCycle(events),
+      GENERATION,
+    );
+
+    expect(commands).toEqual([]);
+    expect(events).toEqual([]);
   });
 });

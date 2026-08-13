@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import { SessionController } from "@/app/session/SessionController";
 
+import { readRepoFile } from "../../support/repo-scan";
+
 describe("SessionController shutdown", () => {
   test("releases persistent player session even when presence shutdown fails", async () => {
     const calls: string[] = [];
@@ -99,5 +101,39 @@ describe("SessionController shutdown", () => {
     expect(calls).toContain("player:release");
     expect(calls).toContain("presence");
     expect(calls).toContain("diagnostic:Session shutdown cleanup failed");
+  });
+
+  test("player cleanup is delegated to releasePersistentSession, never to another method", async () => {
+    const calls: string[] = [];
+    const controller = new SessionController({
+      workControl: { cancelActive() {} },
+      presence: { async shutdown() {} },
+      player: {
+        beginShutdown() {
+          calls.push("beginShutdown");
+        },
+        async releasePersistentSession() {
+          calls.push("releasePersistentSession");
+        },
+        killActiveMpvProcessesSync() {
+          calls.push("killActiveMpvProcessesSync");
+        },
+      },
+      diagnosticsService: { record() {} },
+    } as never);
+
+    await controller.releaseExternalResources();
+
+    // releasePersistentSession is the single release/disposal invalidation
+    // authority: nothing else may reorder mpv teardown around it.
+    expect(calls).toEqual(["releasePersistentSession"]);
+  });
+
+  test("disposeContainer stays database/background disposal and never acquires mpv ownership", () => {
+    const source = readRepoFile("apps/cli/src/container/dispose-container.ts");
+
+    expect(source).not.toContain("player");
+    expect(source).not.toContain("mpv");
+    expect(source).toContain("backgroundWorkScheduler");
   });
 });
