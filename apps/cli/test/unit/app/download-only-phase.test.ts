@@ -1,9 +1,7 @@
 import { expect, test } from "bun:test";
 
-import {
-  DownloadOnlyPhase,
-  updateDownloadConfirmationProfile,
-} from "@/app/playback/DownloadOnlyPhase";
+import { updateDownloadConfirmationProfile } from "@/app-shell/download-confirmation-profile";
+import { DownloadOnlyPhase } from "@/app/playback/DownloadOnlyPhase";
 import type { PhaseContext } from "@/app/session/Phase";
 
 test("DownloadOnlyPhase does not discover provider episodes when downloads are disabled", async () => {
