@@ -67,8 +67,8 @@ function forceDirectTransport(): void {
   process.env.KUNAI_IMAGE_TRANSPORT = "direct";
 }
 
-function pngBytes(): ArrayBuffer {
-  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]).buffer;
+function pngBytes(): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 }
 
 function captureStdout(): { writes: string[] } {
@@ -127,7 +127,7 @@ describe("app-shell poster renderer", () => {
       4,
       Array.from({ length: 8 * 4 * 3 }, (_, i) => i % 256),
     );
-    const result = await renderPoster(jpeg.buffer as ArrayBuffer, {
+    const result = await renderPoster(jpeg, {
       rows: 2,
       cols: 4,
       allowKitty: true,
@@ -162,7 +162,7 @@ describe("app-shell poster renderer", () => {
 
     // 2x2 red over blue pixels — real bytes, decoded in-process.
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png.buffer as ArrayBuffer, {
+    const result = await renderPoster(png, {
       rows: 2,
       cols: 2,
       allowKitty: true,
@@ -179,7 +179,7 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.which = () => null;
 
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png.buffer as ArrayBuffer, {
+    const result = await renderPoster(png, {
       rows: 2,
       cols: 2,
       allowKitty: true,
@@ -194,7 +194,7 @@ describe("app-shell poster renderer", () => {
     rendererTesting.runtime.which = () => null;
 
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png.buffer as ArrayBuffer, {
+    const result = await renderPoster(png, {
       rows: 2,
       cols: 2,
       inkEmbedded: true,
@@ -218,7 +218,7 @@ describe("app-shell poster renderer", () => {
     const { writes } = captureStdout();
 
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-    const result = await renderPoster(png.buffer as ArrayBuffer, {
+    const result = await renderPoster(png, {
       rows: 2,
       cols: 2,
       allowKitty: true,
@@ -259,7 +259,7 @@ describe("app-shell poster renderer", () => {
     test("encodes a sixel overlay instead of placing escape bytes in Ink text", async () => {
       rendererTesting.runtime.detectImageCapability = () => sixelCapability;
       const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-      const result = await renderPoster(png.buffer as ArrayBuffer, {
+      const result = await renderPoster(png, {
         rows: 4,
         cols: 8,
         allowKitty: true,
@@ -278,7 +278,7 @@ describe("app-shell poster renderer", () => {
       rendererTesting.runtime.detectImageCapability = () => sixelCapability;
       rendererTesting.runtime.which = () => null;
       const png = makeRgbPng(2, 2, [255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255]);
-      const result = await renderPoster(png.buffer as ArrayBuffer, {
+      const result = await renderPoster(png, {
         rows: 4,
         cols: 8,
         allowKitty: true,
@@ -297,7 +297,7 @@ describe("app-shell poster renderer", () => {
         pixels.push(index * 3, (index * 7) % 256, (index * 11) % 256);
       }
       const png = makeRgbPng(80, 1, pixels);
-      const result = await renderPoster(png.buffer as ArrayBuffer, {
+      const result = await renderPoster(png, {
         rows: 4,
         cols: 8,
         placementSlot: "browse-preview",
@@ -329,7 +329,7 @@ describe("app-shell poster renderer", () => {
     // Truncated JPEG SOI: undecodable in-process, and unconvertible because the
     // file-wide stub pins ImageMagick as absent. Both halves matter — while the
     // host's real `magick` was still reachable here, this spawned it.
-    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]).buffer;
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
     const result = await renderPoster(jpeg, {
       rows: 3,
       cols: 6,
@@ -387,7 +387,7 @@ describe("chafa encoder stdin", () => {
       rendererTesting.runtime.spawn = () => fake.proc;
 
       const jpeg = makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
-      const result = await renderPoster(jpeg.buffer as ArrayBuffer, { rows: 4, cols: 8 });
+      const result = await renderPoster(jpeg, { rows: 4, cols: 8 });
 
       expect(result).toMatchObject({ kind: "text", placeholder: "SYMBOLS" });
       // An encoder that is sent nothing, or never sees EOF, hangs forever.
@@ -413,7 +413,7 @@ describe("chafa encoder stdin", () => {
       }) as unknown as Bun.Subprocess;
 
     const result = await renderPoster(
-      makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]).buffer as ArrayBuffer,
+      makeRgbJpeg(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]),
       { rows: 4, cols: 8 },
     );
 

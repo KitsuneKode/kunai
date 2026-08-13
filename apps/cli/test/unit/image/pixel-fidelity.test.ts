@@ -54,7 +54,7 @@ async function renderHalfBlock(png: Uint8Array, cols: number, rows: number): Pro
   // No chafa on PATH: force the in-process renderer rather than a subprocess.
   rendererTesting.runtime.which = () => null;
   try {
-    const result = await renderPoster(png.buffer as ArrayBuffer, { rows, cols, allowKitty: true });
+    const result = await renderPoster(png, { rows, cols, allowKitty: true });
     expect(result.kind).toBe("text");
     return result.kind === "text" ? result.placeholder : "";
   } finally {
@@ -110,7 +110,7 @@ describe("half-block pixel fidelity", () => {
     rendererTesting.runtime.which = () => null;
     try {
       const junk = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-      const result = await renderPoster(junk.buffer as ArrayBuffer, {
+      const result = await renderPoster(junk, {
         rows: 2,
         cols: 2,
         allowKitty: true,

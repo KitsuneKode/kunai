@@ -262,7 +262,7 @@ export async function fetchPoster(
       const source = await fetchPosterSource(resolved, { cols, variant, signal });
       if (signal?.aborted) return { kind: "none" };
       result = source
-        ? await renderPoster(source.data, {
+        ? await renderPoster(source.bytes, {
             rows,
             cols,
             allowKitty,

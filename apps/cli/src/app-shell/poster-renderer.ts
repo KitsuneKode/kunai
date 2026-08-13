@@ -139,7 +139,7 @@ function supportsKittyPlaceholders(terminal: TerminalId): boolean {
  * on Windows Terminal, iTerm2, and any chafa-less machine.
  */
 async function renderHalfBlockText(
-  data: ArrayBuffer,
+  data: Uint8Array,
   rows: number,
   cols: number,
 ): Promise<PosterResult> {
@@ -147,7 +147,7 @@ async function renderHalfBlockText(
   // cell row is what the half-block trick encodes. Bun.Image does the resize
   // natively and off-thread, so the full-size bitmap never enters JS and the
   // event loop keeps ticking; without it this falls back to a blocking decode.
-  const image = await decodeToRgba(new Uint8Array(data), { width: cols, height: rows * 2 });
+  const image = await decodeToRgba(data, { width: cols, height: rows * 2 });
   if (!image) return { kind: "none" };
   const text = buildHalfBlockOutput(image, {
     size: `${cols}x${rows}`,
@@ -167,12 +167,12 @@ async function renderHalfBlockText(
  * frame itself would be measured as text and corrupt the layout.
  */
 function renderSixelOverlay(
-  data: ArrayBuffer,
+  data: Uint8Array,
   rows: number,
   cols: number,
   placementSlot?: KittyPlacementSlot,
 ): PosterResult {
-  const sixel = renderSixelFromBytes(new Uint8Array(data), {
+  const sixel = renderSixelFromBytes(data, {
     ...pixelBudgetForCells(cols, rows),
     maxColors: APP_SHELL_SIXEL_MAX_COLORS,
   });
@@ -187,7 +187,7 @@ function renderSixelOverlay(
 }
 
 async function renderKitty(
-  data: ArrayBuffer,
+  data: Uint8Array,
   rows: number,
   cols: number,
   placementSlot?: KittyPlacementSlot,
@@ -195,17 +195,16 @@ async function renderKitty(
 ): Promise<PosterResult> {
   if (data.byteLength === 0) return { kind: "none" };
   if (signal?.aborted) return { kind: "none" };
-  const bytes = new Uint8Array(data);
   // Native PNG first: Bun.Image encodes off-thread, and an f=100 PNG is both
   // smaller on the wire than deflated RGBA and skips the synchronous
   // decode-then-deflate pair entirely. In-process decode is the fallback, and
   // ImageMagick stays the last resort for formats neither can read (WebP, …).
-  const nativePng = await encodeNativePng(bytes);
+  const nativePng = await encodeNativePng(data);
   let payload: KittyPayload | null = nativePng
     ? { kind: "png", data: nativePng }
-    : prepareKittyPayload(bytes);
+    : prepareKittyPayload(data);
   if (!payload) {
-    const png = await ensurePngBytes(bytes);
+    const png = await ensurePngBytes(data);
     if (png) payload = { kind: "png", data: png };
   }
   if (signal?.aborted) return { kind: "none" };
@@ -270,13 +269,12 @@ function isFileSink(value: unknown): value is ChildStdinSink {
  *
  * Closing is the part that must not be skipped, so it happens in `finally`.
  */
-async function writeImageToEncoder(stdin: unknown, data: ArrayBuffer): Promise<boolean> {
-  const bytes = new Uint8Array(data);
+async function writeImageToEncoder(stdin: unknown, data: Uint8Array): Promise<boolean> {
   try {
     if (isWritableStream(stdin)) {
       const writer = stdin.getWriter();
       try {
-        await writer.write(bytes);
+        await writer.write(data);
       } finally {
         await writer.close().catch(() => {});
       }
@@ -284,7 +282,7 @@ async function writeImageToEncoder(stdin: unknown, data: ArrayBuffer): Promise<b
     }
     if (isFileSink(stdin)) {
       try {
-        stdin.write(bytes);
+        stdin.write(data);
       } finally {
         stdin.end();
       }
@@ -305,7 +303,7 @@ async function writeImageToEncoder(stdin: unknown, data: ArrayBuffer): Promise<b
 const CHAFA_RENDER_TIMEOUT_MS = 3_000;
 
 async function renderChafaSymbols(
-  data: ArrayBuffer,
+  data: Uint8Array,
   rows: number,
   cols: number,
 ): Promise<PosterResult> {
@@ -369,7 +367,7 @@ async function renderChafaSymbols(
  * renderer. Never spawns a process on the half-block path.
  */
 async function renderTextPoster(
-  data: ArrayBuffer,
+  data: Uint8Array,
   rows: number,
   cols: number,
 ): Promise<PosterResult> {
@@ -379,7 +377,7 @@ async function renderTextPoster(
 }
 
 export async function renderPoster(
-  data: ArrayBuffer,
+  data: Uint8Array,
   {
     rows,
     cols,
