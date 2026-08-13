@@ -13,6 +13,14 @@ describe("NetworkStatus", () => {
     expect(classifyNetworkFailure("Network is unreachable")).toBe("offline");
   });
 
+  test("classifies Bun unable-to-connect failures as offline", () => {
+    expect(
+      classifyNetworkFailure("Unable to connect. Is the computer able to access the url?"),
+    ).toBe("offline");
+    expect(classifyNetworkFailure("FailedToOpenSocket")).toBe("offline");
+    expect(classifyNetworkFailure("Was there a typo in the url or port?")).toBe("offline");
+  });
+
   test("classifies single timeouts as limited instead of offline", () => {
     expect(classifyNetworkFailure("provider timed out")).toBe("limited");
   });

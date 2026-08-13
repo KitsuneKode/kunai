@@ -130,7 +130,6 @@ export class SessionController {
             if (searchResult.status === "quit") break;
             if (searchResult.status === "cancelled") continue;
             if (searchResult.status === "error") {
-              // Log error and continue to next iteration
               logger.error("Search phase failed", { error: searchResult.error });
               continue;
             }

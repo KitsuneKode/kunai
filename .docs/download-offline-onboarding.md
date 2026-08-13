@@ -128,8 +128,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   "Unable to connect" fetch string) or **limited** (timeouts). Confirmed offline is
   sticky until a later success: a TMDB/proxy fallback that only times out must not
   reclassify the session as flaky. Limited still counts as online for retries.
-  Search while actually offline opens browse with the existing header alert and
-  does not remount the phase in a silent loop.
+  A failed search keeps its query editable, marks search state as failed, and
+  returns to browse with visible retry and `/offline` guidance instead of
+  remounting into a silent automatic-retry loop.
 - `--offline` and `/library` list completed `download_jobs` and validate artifact readability.
 - Local files should validate before playback; corrupt or missing files should offer re-download, not crash.
 - Offline episode rows may show resume percentage or watched state from local history. This is derived from local

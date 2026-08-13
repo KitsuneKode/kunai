@@ -53,9 +53,10 @@ export class Connectivity {
 
   recordFailure(message: string, evidence: NetworkEvidence): void {
     if (this.getOfflineMode()) return;
-    const status = classifyNetworkFailure(message);
+    const classified = classifyNetworkFailure(message);
+    const observedStatus = classified === "unknown" ? "limited" : classified;
     this.snapshot = {
-      status: status === "unknown" ? "limited" : status,
+      status: this.snapshot.status === "offline" ? "offline" : observedStatus,
       checkedAt: Date.now(),
       evidence,
       message,

@@ -111,8 +111,8 @@ Execute 031 and 032 before calling the release stable. Plans 033 and 034 are the
 highest-value interaction work. The remaining provider plans are independent,
 except that 035 should land before expanding the AniDB release fixture beyond S1.
 
-| Plan | Title                                                   | Priority | Effort | Depends on | Status |
-| ---- | ------------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| Plan | Title                                                    | Priority | Effort | Depends on | Status |
+| ---- | -------------------------------------------------------- | -------- | ------ | ---------- | ------ |
 | 031  | Make the default AniDB route searchable and signoff-real | P0       | M      | —          | TODO   |
 | 032  | Make sync identity-safe and describe real capabilities   | P0       | M      | —          | TODO   |
 | 033  | Restore truthful playback state after buffering/stalls   | P1       | S      | —          | TODO   |
@@ -146,6 +146,20 @@ Already landed from this audit (no plan needed):
   fail when a declaration has no reader. This is the ratchet the whole wave hangs off:
   each plan below deletes its baseline entries as it lands. Verified by mutation.
 - **History YouTube facet** — YouTube rows were filed under Movies.
+
+### Wave 9 — Audit remediation: truth, containment, durability
+
+| Plan | Title                                             | Priority | Effort | Depends on | Status |
+| ---- | ------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| 039  | Preserve network truth and surface search failure | P0       | S      | —          | DONE   |
+| 040  | Make support-bundle sections exhaustive           | P0       | S      | 039        | TODO   |
+| 041  | Jail installer staging cleanup                    | P0       | S      | —          | TODO   |
+| 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | TODO   |
+| 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO   |
+
+Plans 039 and 040 are sequenced because the first fixes the user-visible search
+failure and the second guarantees its search/session diagnostics survive export.
+Plans 041–043 are independent and should remain separate implementation PRs.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 

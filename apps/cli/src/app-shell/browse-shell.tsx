@@ -191,6 +191,7 @@ export function BrowseShell<T>({
   queryDraft,
   initialResults,
   initialResultSubtitle,
+  initialErrorMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -220,6 +221,7 @@ export function BrowseShell<T>({
   queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
+  initialErrorMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -293,14 +295,14 @@ export function BrowseShell<T>({
   const [selectedIndex, setSelectedIndex] = useState(initialSelectedIndex ?? 0);
   const [resultSubtitle, setResultSubtitle] = useState(initialResultSubtitle ?? "");
   const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "error">(
-    initialResults && initialResults.length > 0 ? "ready" : "idle",
+    initialErrorMessage ? "error" : initialResults && initialResults.length > 0 ? "ready" : "idle",
   );
   const [lastSearchedQuery, setLastSearchedQuery] = useState(
     initialResults && initialResults.length > 0 ? (initialQuery ?? "") : "",
   );
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [draftQuery, setDraftQuery] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorMessage ?? null);
   const [emptyMessage, setEmptyMessage] = useState(() => browseIdleHint(mode));
   const [activeIdleContext, setActiveIdleContext] = useState(idleContext);
   const [idleContextStatus, setIdleContextStatus] = useState<"loading" | "ready" | "error">(
@@ -2234,6 +2236,7 @@ export function openBrowseShell<T>({
   queryDraft: sharedQueryDraft,
   initialResults,
   initialResultSubtitle,
+  initialErrorMessage,
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
@@ -2260,6 +2263,7 @@ export function openBrowseShell<T>({
   queryDraft?: BrowseQueryDraft;
   initialResults?: readonly BrowseShellOption<T>[];
   initialResultSubtitle?: string;
+  initialErrorMessage?: string;
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
@@ -2298,6 +2302,7 @@ export function openBrowseShell<T>({
         queryDraft={queryDraft}
         initialResults={initialResults}
         initialResultSubtitle={initialResultSubtitle}
+        initialErrorMessage={initialErrorMessage}
         initialWarnings={initialWarnings}
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}
