@@ -23,7 +23,22 @@ import {
   type TrackerIdSource,
 } from "./types";
 
-export type SyncHealth = "ok" | "warn" | "error" | "disconnected";
+export type SyncHealth = "ok" | "warn" | "error" | "disconnected" | "paused";
+
+/**
+ * Everything a surface needs to say what sync is doing, in one read.
+ *
+ * `getHealth()` alone was computed from "did the last push fail", so it could
+ * not distinguish a paused queue, a backlog waiting to go out, or a credential
+ * the tracker has refused — three states that need three different sentences.
+ */
+export type SyncStatus = {
+  readonly connected: number;
+  readonly pending: number;
+  readonly needsReauth: number;
+  readonly deadLettered: number;
+  readonly health: SyncHealth;
+};
 
 export interface SyncConfigGate {
   readonly enabled: boolean;
@@ -137,9 +152,27 @@ export class SyncService {
     return this.adapters.filter((adapter) => adapter.isConnected());
   }
 
-  getHealth(): SyncHealth {
+  /**
+   * Pause is passed in rather than read here: the caller already holds config,
+   * and an async status read would make every surface that renders a one-word
+   * badge wait on the filesystem.
+   */
+  getHealth(pausedUntil?: string | null): SyncHealth {
+    if (resolvePauseState(pausedUntil).paused) return "paused";
     if (this.getConnectedAdapters().length === 0) return "disconnected";
+    if (this.outbox.counts().needsReauth > 0) return "error";
     return this.lastPushFailed ? "warn" : "ok";
+  }
+
+  getStatus(pausedUntil?: string | null): SyncStatus {
+    const counts = this.outbox.counts();
+    return {
+      connected: this.getConnectedAdapters().length,
+      pending: counts.pending,
+      needsReauth: counts.needsReauth,
+      deadLettered: counts.deadLetter,
+      health: this.getHealth(pausedUntil),
+    };
   }
 
   /**

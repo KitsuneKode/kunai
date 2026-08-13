@@ -1,6 +1,9 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
+import type { SyncAuthAvailability } from "@/services/sync/auth-contract";
+import type { SyncAdapter } from "@/services/sync/SyncAdapter";
+import type { SyncStatus } from "@/services/sync/SyncService";
 
 import type { ShellPickerOption } from "../types";
 import type { SectionLayout } from "./layouts";
@@ -17,6 +20,16 @@ export type SettingsRegistryContext = {
   readonly seriesProviderOptions: readonly ShellPickerOption<string>[];
   readonly animeProviderOptions: readonly ShellPickerOption<string>[];
   readonly youtubeProviderOptions: readonly ShellPickerOption<string>[];
+  /**
+   * A typed projection, not a door into the service. Settings decides what to
+   * offer from declared capabilities and resolved auth availability only — never
+   * from `process.env`, a credential literal, or adapter internals.
+   */
+  readonly sync: {
+    readonly adapters: readonly SyncAdapter[];
+    readonly authAvailability: SyncAuthAvailability;
+    readonly status: SyncStatus;
+  };
   readonly container: Container;
 };
 

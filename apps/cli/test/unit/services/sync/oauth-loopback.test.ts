@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createOAuthState, startLoopbackServer } from "@/services/sync/oauth-loopback";
+import { startLoopbackServer } from "@/services/sync/oauth-loopback";
 
 const PORT = 43871;
 const redirectUri = `http://127.0.0.1:${PORT}/callback`;
@@ -17,21 +17,13 @@ function server(overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = 
 }
 
 /**
- * State ties the callback to the request that started it. Without it — as the
- * shipped flow did — any page that can reach the loopback port can hand Kunai
- * an authorization code of its choosing.
+ * The listener binds the exact registered address and settles once. The shipped
+ * flow bound an OS-assigned port, which cannot match a registration, so it was
+ * structurally incapable of succeeding.
+ *
+ * The token arrives on the collect path, handed over by the bridge — the
+ * callback itself only ever receives a fragment the browser will not transmit.
  */
-describe("createOAuthState", () => {
-  test("is long, URL-safe, and distinct per call", () => {
-    const first = createOAuthState();
-    const second = createOAuthState();
-
-    expect(first).not.toBe(second);
-    expect(first.length).toBeGreaterThanOrEqual(43);
-    expect(first).toMatch(/^[A-Za-z0-9_-]+$/);
-  });
-});
-
 describe("startLoopbackServer", () => {
   /** The whole point: the bound port is the registered one, not an OS pick. */
   test("binds the exact port from the configured redirect URI", async () => {
@@ -46,33 +38,33 @@ describe("startLoopbackServer", () => {
   test("accepts a callback whose state matches", async () => {
     const loopback = server();
     try {
-      const response = await fetch(`${redirectUri}?code=auth-code&state=expected-state`);
+      const response = await fetch(
+        `${redirectUri}/collect?access_token=tok-abc&state=expected-state`,
+      );
       expect(response.status).toBe(200);
 
       const result = await loopback.result;
       expect(result).toEqual({ ok: true, params: expect.anything() });
-      expect(result.ok && result.params.get("code")).toBe("auth-code");
+      expect(result.ok && result.params.get("access_token")).toBe("tok-abc");
     } finally {
       loopback.close();
     }
   });
 
-  test("rejects a missing or mismatched state", async () => {
-    for (const query of ["?code=auth-code", "?code=auth-code&state=wrong"]) {
-      const loopback = server();
-      try {
-        await fetch(`${redirectUri}${query}`);
-        expect(await loopback.result, query).toEqual({ ok: false, reason: "state-mismatch" });
-      } finally {
-        loopback.close();
-      }
+  test("rejects a mismatched state", async () => {
+    const loopback = server();
+    try {
+      await fetch(`${redirectUri}/collect?access_token=tok-abc&state=wrong`);
+      expect(await loopback.result).toEqual({ ok: false, reason: "state-mismatch" });
+    } finally {
+      loopback.close();
     }
   });
 
   test("reports an explicit denial", async () => {
     const loopback = server();
     try {
-      await fetch(`${redirectUri}?error=access_denied&state=expected-state`);
+      await fetch(`${redirectUri}/collect?error=access_denied&state=expected-state`);
       expect(await loopback.result).toEqual({ ok: false, reason: "denied" });
     } finally {
       loopback.close();
@@ -136,7 +128,7 @@ describe("startLoopbackServer", () => {
  * send to a server — so the callback serves a page that reads the fragment and
  * returns it over same-origin loopback.
  */
-describe("startLoopbackServer fragment mode", () => {
+describe("startLoopbackServer bridge", () => {
   const fragmentServer = (overrides: Record<string, unknown> = {}) =>
     startLoopbackServer({
       redirectUri,
@@ -144,7 +136,6 @@ describe("startLoopbackServer fragment mode", () => {
       signal: new AbortController().signal,
       timeoutMs: 5_000,
       serviceName: "AniList",
-      mode: "fragment",
       ...overrides,
     });
 
@@ -158,19 +149,6 @@ describe("startLoopbackServer fragment mode", () => {
       expect(html).toContain("location.hash");
       // The callback itself carries no answer, so it must not decide anything.
       expect(await loopback.result).toEqual({ ok: false, reason: "timeout" });
-    } finally {
-      loopback.close();
-    }
-  });
-
-  test("accepts the token the bridge hands back", async () => {
-    const loopback = fragmentServer();
-    try {
-      await fetch(`${redirectUri}/collect?access_token=tok-123&state=expected-state`);
-      const result = await loopback.result;
-
-      expect(result.ok).toBe(true);
-      expect(result.ok && result.params.get("access_token")).toBe("tok-123");
     } finally {
       loopback.close();
     }

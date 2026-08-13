@@ -295,7 +295,6 @@ export class AniListAdapter implements SyncAdapter {
         signal,
         timeoutMs: OAUTH_TIMEOUT_MS,
         serviceName: "AniList",
-        mode: "fragment",
       });
     } catch {
       // The port is registered on the AniList application, so another one

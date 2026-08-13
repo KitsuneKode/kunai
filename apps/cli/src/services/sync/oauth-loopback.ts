@@ -1,23 +1,9 @@
-import { randomBytes } from "node:crypto";
-
 export interface LoopbackOptions {
   readonly redirectUri: string;
   readonly expectedState: string;
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
   readonly serviceName: string;
-  /**
-   * Where the provider puts its answer.
-   *
-   * `query` is the authorization-code grant: the parameters arrive as a query
-   * string the server can read directly.
-   *
-   * `fragment` is the implicit grant, which returns the access token after `#`.
-   * Fragments are never sent to the server — that is the point of them — so the
-   * callback serves a page that reads `location.hash` in the browser and hands
-   * it back over same-origin loopback.
-   */
-  readonly mode?: "query" | "fragment";
 }
 
 export type LoopbackResult =
@@ -34,17 +20,6 @@ export interface LoopbackServer {
 }
 
 /**
- * A single-use nonce binding the callback to the request that opened it.
- *
- * 32 bytes of CSPRNG output, base64url so it survives a query string unescaped.
- * Without this the loopback listener accepts an authorization code from anything
- * that can reach the port, which on a shared machine is every local process.
- */
-export function createOAuthState(): string {
-  return randomBytes(32).toString("base64url");
-}
-
-/**
  * Listen for one OAuth callback on the exact registered loopback address.
  *
  * The host and port come from the configured redirect URI and are bound as-is.
@@ -56,7 +31,6 @@ export function createOAuthState(): string {
 export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   const url = new URL(options.redirectUri);
   const callbackPath = url.pathname;
-  const mode = options.mode ?? "query";
   const collectPath = `${callbackPath}/collect`;
 
   let settled = false;
@@ -99,50 +73,38 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
     fetch: (request) => {
       const requestUrl = new URL(request.url);
 
-      // Fragment mode lands here first with nothing readable: the token is
-      // after `#`, which the browser never transmits. Serve the bridge and wait
-      // for it to call back.
-      if (mode === "fragment" && requestUrl.pathname === callbackPath) {
+      // The callback lands here first with nothing readable: the token is after
+      // `#`, which the browser never transmits. Serve the bridge and wait for it
+      // to call back.
+      if (requestUrl.pathname === callbackPath) {
         return bridgePage(collectPath, options.serviceName);
       }
-
-      const isResult =
-        mode === "fragment"
-          ? requestUrl.pathname === collectPath
-          : requestUrl.pathname === callbackPath;
-      if (!isResult) return new Response("Not found", { status: 404 });
+      if (requestUrl.pathname !== collectPath) return new Response("Not found", { status: 404 });
 
       const params = requestUrl.searchParams;
       if (params.get("error")) {
         settle({ ok: false, reason: "denied" });
-        return finalResponse(mode, `${options.serviceName} authorization was declined.`);
+        return bridgeAck();
       }
 
       /**
-       * State is compared before the token or code is read at all.
+       * State is compared before the token is read at all.
        *
-       * A provider that returns no state is accepted only in fragment mode.
-       * AniList's implicit grant rejects the request outright when `state` is
-       * sent — it answers `unsupported_grant_type` — so there is no nonce to
-       * echo and requiring one would make the only working flow unusable. The
-       * bridge is same-origin on a listener bound for one attempt and torn down
-       * immediately after, so there is no third party in position to forge one.
+       * An absent one is accepted: AniList's implicit grant rejects the request
+       * outright when `state` is sent — it answers `unsupported_grant_type` —
+       * so there is no nonce to echo, and requiring one would make the only
+       * working flow unusable. The bridge is same-origin on a listener bound
+       * for a single attempt and torn down immediately after, so there is no
+       * third party in position to forge one. A *wrong* state is still refused.
        */
       const returnedState = params.get("state");
-      const stateAcceptable =
-        returnedState === options.expectedState || (mode === "fragment" && returnedState === null);
-      if (!stateAcceptable) {
+      if (returnedState !== null && returnedState !== options.expectedState) {
         settle({ ok: false, reason: "state-mismatch" });
-        return finalResponse(mode, `${options.serviceName} authorization could not be verified.`);
+        return bridgeAck();
       }
 
       settle({ ok: true, params });
-      // Shown in the user's browser, where it can be screenshotted, shared, or
-      // restored from history — so it echoes nothing back.
-      return finalResponse(
-        mode,
-        `${options.serviceName} authorization complete. You can close this tab.`,
-      );
+      return bridgeAck();
     },
   });
 
@@ -156,21 +118,13 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   };
 }
 
-function page(message: string): Response {
-  return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Kunai</title><p>${message}</p>`,
-    {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    },
-  );
-}
-
 /**
- * The bridge's reply goes to a `fetch`, not to a person, so it is plain text —
- * while the callback's reply is the page the user actually looks at.
+ * The bridge's reply goes to a `fetch`, not to a person — the browser is
+ * already showing the page that made the call, so there is nothing to render
+ * and nothing to echo back.
  */
-function finalResponse(mode: "query" | "fragment", message: string): Response {
-  return mode === "fragment" ? new Response("ok") : page(message);
+function bridgeAck(): Response {
+  return new Response("ok");
 }
 
 /**

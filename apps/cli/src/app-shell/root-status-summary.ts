@@ -28,7 +28,7 @@ export type RootStatusSummary = {
   alert: RootStatusAlert | null;
 };
 
-export type SyncHealth = "ok" | "warn" | "error" | "disconnected";
+export type SyncHealth = "ok" | "warn" | "error" | "disconnected" | "paused";
 
 function humanReadableRootStatus(raw: string): string {
   switch (raw) {
@@ -163,8 +163,12 @@ export function buildRootStatusSummary({
     if (streak !== undefined && streak >= 2) {
       crumbParts.push(`🔥 ${streak}d`);
     }
+    // Only states the user can act on earn a crumb: "disconnected" is the
+    // default for most people and would be permanent noise.
     if (syncHealth === "ok") {
       crumbParts.push("sync✓");
+    } else if (syncHealth === "paused") {
+      crumbParts.push("sync⏸");
     } else if (syncHealth === "warn") {
       crumbParts.push("sync⚠");
     } else if (syncHealth === "error") {

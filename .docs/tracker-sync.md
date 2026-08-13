@@ -148,3 +148,51 @@ credentials but does not revoke anything remotely.
 
 Pull/import of remote lists, pagination, and ratings. No adapter reader or
 writer exists for any of them on this branch, and no capability declares them.
+
+## Settings and pause
+
+Settings reads one typed projection — `ctx.sync` — carrying the adapters, the
+resolved `SyncAuthAvailability`, and a `SyncStatus` snapshot. It never reads
+`process.env`, never imports a credential literal, and never inspects adapter
+internals; a unit test pins that. Controls are gated on declared capabilities,
+so "Send episode progress" is absent for TMDB rather than present and inert.
+
+**Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
+Enabled off means never; paused means not right now. Work keeps queueing while
+paused and goes out on resume, so pausing never costs an episode. The drain
+checks the pause before claiming, so a paused queue holds no leases. An
+unparseable timestamp fails open rather than stopping sync with nothing able to
+explain why.
+
+The root status crumb shows `sync✓`, `sync⏸`, `sync⚠`, or `sync✗`. Disconnected
+earns no crumb — it is the default for most users and would be permanent noise.
+
+## Rate limiting
+
+AniList publishes `X-RateLimit-Limit` / `X-RateLimit-Remaining` on every
+response and answers `429` with `Retry-After` and `X-RateLimit-Reset`;
+`TrackerRateLimiter` reads all of it. Below ten remaining it spreads what is
+left across the rest of the window; at zero it blocks until reset.
+
+Short waits are absorbed in-flight. Anything longer is handed back to the outbox
+via `defer()`, which writes the server's own instant to `next_attempt_at` and
+**rolls back the attempt this claim started** — a row must not inherit a longer
+backoff for a queue-wide condition it did not cause. Within one drain, the first
+`rate-limited` outcome defers every remaining row for that tracker without
+asking again: the limit belongs to the connection, not to any one payload.
+
+## GraphQL error fates
+
+AniList reports application-level problems inside the envelope, often with a 200. They are classified by what can be done about them:
+
+| Signal                                    | Fate                                                                         |
+| ----------------------------------------- | ---------------------------------------------------------------------------- |
+| `validation` map, or status 400/404       | dead-letter — a redelivery cannot change the answer                          |
+| status 401/403, or an auth-shaped message | needs-reauth                                                                 |
+| status 429                                | rate-limited, using AniList's wait                                           |
+| anything else                             | retry — a wrong retry costs one request, a wrong dead-letter loses the write |
+
+Both membership writes read before they write, and the read is classified too.
+An unreadable lookup refuses rather than guessing: removing from a watchlist
+used to report _success_ when the lookup was rejected, and `ToggleFavourite` is
+a flip rather than a set, so firing it blind turns a redelivery into a flip-flop.
