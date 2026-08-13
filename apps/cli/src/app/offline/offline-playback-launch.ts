@@ -13,6 +13,11 @@ export type OfflinePlaybackRequestResult =
   | { readonly status: "browse-handoff"; readonly launch: OfflinePlaybackLaunch }
   | { readonly status: "direct"; readonly launch: OfflinePlaybackLaunch };
 
+export type OfflinePlaybackRequestOptions = {
+  /** Called synchronously before overlay close when no retained browse session owns the launch. */
+  readonly onDirectLaunch?: (launch: OfflinePlaybackLaunch) => void;
+};
+
 export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
   return {
     id: job.titleId,
@@ -92,16 +97,21 @@ export async function prepareOfflinePlaybackLaunch(
 export async function requestUnifiedOfflinePlayback(
   container: Container,
   jobId: string,
+  options: OfflinePlaybackRequestOptions = {},
 ): Promise<OfflinePlaybackRequestResult | null> {
   const launch = await prepareOfflinePlaybackLaunch(container, jobId);
   if (!launch) return null;
-
-  container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 
   const closedBrowse = forceCloseRootContent<BrowseShellResult<SearchResult>>({
     type: "launch-playback",
     launch,
   });
+
+  if (!closedBrowse) {
+    options.onDirectLaunch?.(launch);
+  }
+
+  container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
 
   if (closedBrowse) {
     return { status: "browse-handoff", launch };
