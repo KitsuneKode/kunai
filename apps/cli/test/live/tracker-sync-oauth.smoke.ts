@@ -1,0 +1,203 @@
+/**
+ * Live tracker-sync smoke. Opt-in, never run in CI, and destructive to whatever
+ * account it authorizes — so it refuses to start unless every safety flag is
+ * set explicitly.
+ *
+ * Connect is not reachable from the shell, deliberately, until this has passed
+ * against a disposable account. This script is the only way to exercise the
+ * real OAuth contract, and it uses the production auth readers and adapters so
+ * a pass here means the shipped path works, not that a test double does.
+ *
+ * Required:
+ *   KUNAI_LIVE_SYNC=1                     acknowledge this mutates a real account
+ *   KUNAI_ANILIST_CLIENT_ID=…             from anilist.co/settings/developer
+ *   KUNAI_ANILIST_REDIRECT_URI=…          registered on that application, exactly
+ *   KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID=…    a disposable title to mutate
+ * Optional:
+ *   KUNAI_LIVE_SYNC_TMDB=1                also exercise TMDB
+ *   KUNAI_LIVE_SYNC_TMDB_MOVIE_ID=550
+ *
+ * Run:
+ *   bun run test:live:tracker-sync
+ */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { SyncTokenStore } from "@/services/persistence/SyncTokenStore";
+import { AniListAdapter } from "@/services/sync/AniListAdapter";
+import { resolveAniListAuth, resolveTmdbAuth } from "@/services/sync/auth-contract";
+import type { TrackerOperation } from "@/services/sync/operations";
+import { TmdbAdapter } from "@/services/sync/TmdbAdapter";
+import type { SyncOutcome } from "@/services/sync/types";
+
+type Step = { readonly name: string; readonly ok: boolean; readonly detail?: string };
+
+const steps: Step[] = [];
+function record(name: string, outcome: SyncOutcome | boolean, detail?: string): boolean {
+  const ok = typeof outcome === "boolean" ? outcome : outcome.status === "ok";
+  const note = detail ?? (typeof outcome === "boolean" ? undefined : describeOutcome(outcome));
+  steps.push({ name, ok, ...(note ? { detail: note } : {}) });
+  process.stdout.write(`${ok ? "ok  " : "FAIL"}  ${name}${note ? ` — ${note}` : ""}\n`);
+  return ok;
+}
+
+/** Never prints a token, code, or state — only the typed decision. */
+function describeOutcome(outcome: SyncOutcome): string {
+  switch (outcome.status) {
+    case "ok":
+      return outcome.detail ?? "ok";
+    case "skipped":
+      return `skipped: ${outcome.reason}`;
+    case "cancelled":
+      return `cancelled: ${outcome.reason}`;
+    case "needs-reauth":
+      return `needs-reauth: ${outcome.code}`;
+    case "failed":
+      return `failed: ${outcome.code} (${outcome.kind})`;
+  }
+}
+
+function required(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+async function main(): Promise<void> {
+  if (process.env.KUNAI_LIVE_SYNC !== "1") {
+    process.stdout.write(
+      "Refusing to run: set KUNAI_LIVE_SYNC=1 to confirm this mutates a real tracker account.\n",
+    );
+    process.exit(2);
+  }
+
+  const anilistMediaId = Number(required("KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID"));
+  if (!Number.isSafeInteger(anilistMediaId) || anilistMediaId < 1) {
+    process.stdout.write(
+      "Set KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID to a disposable AniList media id.\n",
+    );
+    process.exit(2);
+  }
+
+  // Isolated profile: the live run must never touch the developer's real
+  // config, history, or cached credentials.
+  const profile = mkdtempSync(join(tmpdir(), "kunai-live-sync-"));
+  process.env.KUNAI_CONFIG_DIR = profile;
+  process.stdout.write(`isolated profile: ${profile}\n\n`);
+
+  const controller = new AbortController();
+  const options = { signal: controller.signal };
+  let anilistConnected = false;
+  const tokenStore = new SyncTokenStore({ configDir: profile } as never);
+
+  try {
+    // --- AniList -------------------------------------------------------------
+    const auth = resolveAniListAuth();
+    if (!record("anilist auth contract resolves", auth.availability.available)) {
+      process.stdout.write(
+        "\nSet KUNAI_ANILIST_CLIENT_ID and KUNAI_ANILIST_REDIRECT_URI. The redirect URI must be\n" +
+          "registered on your AniList application exactly, e.g. http://127.0.0.1:43863/callback\n",
+      );
+      process.exit(1);
+    }
+
+    const anilist = new AniListAdapter(tokenStore, undefined, auth);
+    await anilist.init();
+
+    process.stdout.write("\nA browser window will open for AniList authorization.\n");
+    const connected = await anilist.connect(controller.signal);
+    if (!record("anilist connect", connected.ok, connected.ok ? undefined : connected.error)) {
+      process.exit(1);
+    }
+    anilistConnected = true;
+    record(
+      "anilist identity",
+      Boolean(anilist.getConnectedUsername()),
+      anilist.getConnectedUsername(),
+    );
+
+    const target = { tracker: "anilist", anilistId: anilistMediaId, mediaKind: "anime" } as const;
+    const progress: TrackerOperation = {
+      version: 1,
+      kind: "progress:set",
+      target,
+      progress: 2,
+      status: "watching",
+    };
+    record("anilist progress:set 2", await anilist.apply(progress, options));
+
+    const favouriteOn: TrackerOperation = {
+      version: 1,
+      kind: "favorite-membership:set",
+      target,
+      present: true,
+    };
+    record("anilist favourite add", await anilist.apply(favouriteOn, options));
+    // The property that motivated desired state: a redelivery must converge,
+    // not toggle back off.
+    record("anilist favourite add again is idempotent", await anilist.apply(favouriteOn, options));
+
+    record(
+      "anilist favourite remove (cleanup)",
+      await anilist.apply({ ...favouriteOn, present: false }, options),
+    );
+    record(
+      "anilist watchlist remove (cleanup)",
+      await anilist.apply(
+        { version: 1, kind: "list-membership:set", target, list: "watchlist", present: false },
+        options,
+      ),
+    );
+
+    // --- TMDB ----------------------------------------------------------------
+    if (process.env.KUNAI_LIVE_SYNC_TMDB === "1") {
+      const tmdbAuth = resolveTmdbAuth();
+      record("tmdb auth contract resolves", tmdbAuth.availability.available);
+      if (tmdbAuth.apiKey) {
+        const tmdb = new TmdbAdapter(tokenStore, tmdbAuth.apiKey);
+        await tmdb.init();
+        const tmdbConnected = await tmdb.connect(controller.signal);
+        if (
+          record(
+            "tmdb connect",
+            tmdbConnected.ok,
+            tmdbConnected.ok ? undefined : tmdbConnected.error,
+          )
+        ) {
+          const movieId = Number(process.env.KUNAI_LIVE_SYNC_TMDB_MOVIE_ID ?? 550);
+          const tmdbTarget = { tracker: "tmdb", tmdbId: movieId, mediaKind: "movie" } as const;
+          const watchlistOn: TrackerOperation = {
+            version: 1,
+            kind: "list-membership:set",
+            target: tmdbTarget,
+            list: "watchlist",
+            present: true,
+          };
+          record("tmdb watchlist add", await tmdb.apply(watchlistOn, options));
+          record("tmdb watchlist add again is idempotent", await tmdb.apply(watchlistOn, options));
+          record(
+            "tmdb watchlist remove (cleanup)",
+            await tmdb.apply({ ...watchlistOn, present: false }, options),
+          );
+          await tmdb.disconnect();
+          record("tmdb session deleted", true);
+        }
+      }
+    }
+  } finally {
+    if (anilistConnected) {
+      process.stdout.write(
+        "\nLocal AniList token cleared. Revoke the application at\n" +
+          "https://anilist.co/settings/apps to remove access remotely.\n",
+      );
+    }
+    rmSync(profile, { recursive: true, force: true });
+    process.stdout.write(`removed isolated profile: ${profile}\n`);
+  }
+
+  const failed = steps.filter((step) => !step.ok);
+  process.stdout.write(`\n${steps.length - failed.length}/${steps.length} steps passed\n`);
+  process.exit(failed.length === 0 ? 0 : 1);
+}
+
+await main();
