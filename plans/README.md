@@ -157,7 +157,7 @@ Already landed from this audit (no plan needed):
 | 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | DONE   |
 | 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO   |
 | 044  | Preserve the working Windows launcher             | P0       | S      | —          | DONE   |
-| 045  | Make download commit and recovery state-safe      | P0       | M      | —          | TODO   |
+| 045  | Make download commit and recovery state-safe      | P0       | M      | —          | DONE   |
 
 Plans 039 and 040 are sequenced because the first fixes the user-visible search
 failure and the second guarantees its search/session diagnostics survive export.

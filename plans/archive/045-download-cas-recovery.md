@@ -17,7 +17,8 @@ recovers a crash-after-rename without redownloading or orphaning a valid artifac
 - Claiming is a SQLite compare-and-set from `queued` to `running`; an in-memory set
   is only a same-process optimization.
 - A downloaded temp artifact validates before it becomes the public output.
-- Startup reconciliation leaves no interrupted job in `running`.
+- Reconciliation leaves no expired interrupted job in `running` and never takes a
+  freshly heartbeating lease from another Kunai process.
 - A valid output paired with an interrupted `running` job is adopted and completed;
   it is never downloaded again.
 - An invalid interrupted output is removed before the job is retried or failed.
@@ -26,20 +27,22 @@ recovers a crash-after-rename without redownloading or orphaning a valid artifac
 
 ## Tasks
 
-- [ ] Make `DownloadJobsRepository.markRunning` update only a `queued` row and
+- [x] Make `DownloadJobsRepository.markRunning` update only a `queued` row and
       report whether the claim succeeded.
-- [ ] Add repository tests proving a second process cannot claim a running or
+- [x] Add repository tests proving a second process cannot claim a running or
       completed job.
-- [ ] Have workers stop before network/process work when the durable claim loses.
-- [ ] Validate the temp artifact before rename and reuse that validation after
+- [x] Have workers stop before network/process work when the durable claim loses.
+- [x] Validate the temp artifact before rename and reuse that validation after
       publication.
-- [ ] Make startup interrupted-job reconciliation asynchronous and distinguish
+- [x] Make interrupted-job reconciliation asynchronous, lease-aware, and distinguish
       valid output, invalid output, and missing output.
-- [ ] Add a crash-after-rename fixture proving valid output is adopted as completed
+- [x] Add a crash-after-rename fixture proving valid output is adopted as completed
       without starting `yt-dlp`.
-- [ ] Add an invalid-output fixture proving the artifact is removed and the job is
+- [x] Add an invalid-output fixture proving the artifact is removed and the job is
       scheduled according to its retry budget.
-- [ ] Preserve shutdown pause, sidecar repair, progress, and ordinary completion
+- [x] Add a fresh-lease fixture proving recovery does not interfere with another
+      process's active artifact or temp file.
+- [x] Preserve shutdown pause, sidecar repair, progress, and ordinary completion
       behavior.
 
 ## Verification

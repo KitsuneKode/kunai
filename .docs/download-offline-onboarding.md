@@ -49,7 +49,13 @@ Layering rule: UI asks services for capability/state; services do not render UI.
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
 - HLS size is reported honestly as unknown when content length cannot be known.
-- Temporary files use a `.tmp.*` suffix and are renamed only after a clean exit.
+- Temporary files use a `.tmp.*` suffix, validate after a clean exit, and are renamed only
+  after that validation. An invalid candidate never replaces an existing playable output.
+- Queue ownership is a SQLite compare-and-set from `queued` to `running`. Heartbeats form a
+  bounded lease across Kunai processes; recovery never touches a freshly heartbeating owner.
+- Once an interrupted lease expires, recovery validates any already-published output. A valid
+  artifact is adopted without another network request; an invalid regular file is removed before
+  bounded retry. This closes the unavoidable filesystem-rename/SQLite-commit crash window.
 - Abort terminates active download processes (`yt-dlp`), deletes temporary files, and persists an aborted job state.
 - App shutdown pauses active downloads, cleans temporary workers, and leaves jobs retryable.
 - Failed jobs retry with bounded backoff and then surface as failed when retry limits are exhausted.
