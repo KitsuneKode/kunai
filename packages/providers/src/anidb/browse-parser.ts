@@ -150,10 +150,7 @@ function parseAnidbShowIdFromHref(href: string | undefined): string | null {
 function extractAnidbTitle(attrs: string, body: string): string {
   const anchorTitle = extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label");
   const imageAlt = IMAGE_ALT_PATTERN.exec(body)?.[1];
-  // `</script\s*>`, not `</script>`: HTML permits whitespace before the closing
-  // angle bracket, and a `</script >` that this filter misses would leak script
-  // source into a title.
-  const nestedText = body.replace(/<script\b[\s\S]*?<\/script\s*>/gi, " ").replace(/<[^>]+>/g, " ");
+  const nestedText = body.replace(SCRIPT_BLOCK_PATTERN, " ").replace(/<[^>]+>/g, " ");
   return decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText)
     .replace(/\s+/g, " ")
     .trim();
@@ -172,6 +169,15 @@ const ATTRIBUTE_PATTERNS = {
 } as const;
 
 const IMAGE_ALT_PATTERN = /<img\b[^>]*\salt\s*=\s*["']([^"']*)["']/i;
+
+/**
+ * An HTML end tag's name ends at whitespace, `/`, or `>`, and anything up to the
+ * `>` is then ignored — so `</script>`, `</script >`, `</script\t\n bar>` and
+ * `</script/>` all close a script, while `</scriptfoo>` does not. Matching only
+ * `</script>` (or only `</script\s*>`) leaves script source in the anchor body,
+ * where it becomes the title.
+ */
+const SCRIPT_BLOCK_PATTERN = /<script\b[\s\S]*?<\/script(?:[\s/][^>]*)?>/gi;
 
 function extractAttribute(
   attrs: string,

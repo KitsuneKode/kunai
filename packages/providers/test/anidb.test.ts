@@ -138,12 +138,18 @@ describe("anidb browse parsing", () => {
     expect(results[0]?.id).toBe("onigiri-3942");
   });
 
-  test("strips script content behind a whitespace-padded closing tag", () => {
-    // `</script >` is legal HTML. A filter matching only `</script>` leaves the
-    // script source in the anchor body, which then becomes the title.
-    const html =
-      '<a href="/anime/scripted-77"><script>var leaked = 1;</script ><span>Real Title</span></a>';
-    // Filtering only `</script>` leaves "var leaked = 1; Real Title" as the title.
+  test("strips script blocks behind every legal end-tag form", () => {
+    // An end tag's name ends at whitespace, `/`, or `>`; the rest is ignored.
+    // Missing any of these leaves "var leaked = 1; Real Title" as the title.
+    for (const endTag of ["</script>", "</script >", "</script\t\n bar>", "</script/>"]) {
+      const html = `<a href="/anime/scripted-77"><script>var leaked = 1;${endTag}<span>Real Title</span></a>`;
+      expect(parseAnidbBrowseHtml(html).map((result) => result.title)).toEqual(["Real Title"]);
+    }
+  });
+
+  test("does not treat a longer tag name as a script end tag", () => {
+    // `</scriptfoo>` closes nothing; over-broad stripping would swallow the title.
+    const html = '<a href="/anime/notscript-78"><span>Real Title</span><scriptfoo></scriptfoo></a>';
     expect(parseAnidbBrowseHtml(html).map((result) => result.title)).toEqual(["Real Title"]);
   });
 
