@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { initLogger } from "@/logger";
-import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -84,6 +83,11 @@ import { TitlePlaybackSourceService } from "../services/playback/TitlePlaybackSo
 import { TitleProviderHealthService } from "../services/playback/TitleProviderHealthService";
 import { VideasyLazySourceProbeService } from "../services/playback/VideasyLazySourceProbeService";
 import { AniListAdapter } from "../services/sync/AniListAdapter";
+import {
+  resolveAniListAuth,
+  resolveTmdbAuth,
+  type SyncAuthAvailability,
+} from "../services/sync/auth-contract";
 import { SyncService } from "../services/sync/SyncService";
 import { TmdbAdapter } from "../services/sync/TmdbAdapter";
 import type { ContainerOptions } from "./types";
@@ -140,6 +144,7 @@ export type PersistenceBootstrap = {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly syncAuthAvailability: SyncAuthAvailability;
   readonly debugTracePath?: string;
   readonly debugSessionInstructions?: readonly string[];
 };
@@ -327,12 +332,19 @@ export async function bootstrapPersistence(
   // Sync is constructed after config loads: the drain reads live gates through
   // `SyncConfigPort` on every mutation, so it must close over the real config
   // service rather than a snapshot taken before it existed.
+  // Auth is resolved once, here, and injected. Adapters and settings then read
+  // the same decision instead of each interpreting the environment, which is
+  // how a Connect button comes to be offered for a flow that cannot start.
+  const anilistAuth = resolveAniListAuth();
+  const tmdbAuth = resolveTmdbAuth();
+  const syncAuthAvailability: SyncAuthAvailability = {
+    anilist: anilistAuth.availability,
+    tmdb: tmdbAuth.availability,
+  };
+
   const syncTokenStore = new SyncTokenStore(paths);
-  const anilistAdapter = new AniListAdapter(syncTokenStore);
-  const tmdbAdapter = new TmdbAdapter(
-    syncTokenStore,
-    process.env.KUNAI_TMDB_API_KEY ?? TMDB_API_KEY,
-  );
+  const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
+  const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
   await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
   const syncService = new SyncService({
     adapters: [anilistAdapter, tmdbAdapter],
@@ -387,6 +399,7 @@ export async function bootstrapPersistence(
     statsFormatter,
     syncTokenStore,
     syncService,
+    syncAuthAvailability,
     debugTracePath,
     debugSessionInstructions,
   };

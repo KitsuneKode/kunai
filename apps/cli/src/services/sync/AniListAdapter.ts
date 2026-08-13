@@ -2,6 +2,8 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 import type { HistoryProgress } from "@kunai/storage";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
+import { resolveAniListAuth, type AniListAuthResolution } from "./auth-contract";
+import { createOAuthState, startLoopbackServer, type LoopbackResult } from "./oauth-loopback";
 import type { TrackerOperation } from "./operations";
 import {
   outcomeForAbortedRequest,
@@ -36,6 +38,43 @@ function outcomeForGraphQlErrors(errors?: { message: string }[]): SyncOutcome | 
 
 function errorCode(error: unknown): string {
   return error instanceof Error ? error.name : "unknown";
+}
+
+/**
+ * Say what the user must configure, without echoing any value they set. Each
+ * reason names one concrete missing or malformed input, because "authorization
+ * failed" sends people looking at their AniList account rather than their env.
+ */
+function aniListAuthMessage(
+  reason: Extract<AniListAuthResolution["availability"], { available: false }>["reason"],
+): string {
+  switch (reason) {
+    case "client-id-missing":
+      return "Set KUNAI_ANILIST_CLIENT_ID to your AniList application client ID.";
+    case "client-id-invalid":
+      return "KUNAI_ANILIST_CLIENT_ID is empty or a placeholder.";
+    case "callback-missing":
+      return "Set KUNAI_ANILIST_REDIRECT_URI to the redirect URI registered on your AniList application.";
+    case "callback-not-loopback":
+      return "KUNAI_ANILIST_REDIRECT_URI must be a loopback address (127.0.0.1 or localhost).";
+    case "callback-invalid":
+      return "KUNAI_ANILIST_REDIRECT_URI must look like http://127.0.0.1:43863/callback — http, an explicit port, and the /callback path.";
+  }
+}
+
+function aniListCallbackMessage(reason: Extract<LoopbackResult, { ok: false }>["reason"]): string {
+  switch (reason) {
+    case "timeout":
+      return "Authorization timed out.";
+    case "aborted":
+      return "Authorization was cancelled.";
+    case "denied":
+      return "Authorization was declined in the browser.";
+    case "state-mismatch":
+      // Refused rather than reported as a transient error: a callback whose
+      // state does not match did not come from the request we started.
+      return "Authorization could not be verified and was refused.";
+  }
 }
 
 /**
@@ -98,6 +137,11 @@ export class AniListAdapter implements SyncAdapter {
   constructor(
     private readonly tokenStore: SyncTokenStore,
     private readonly fetchImpl: AniListFetch = (input, init) => fetch(input, init),
+    /**
+     * Injected by the container so the adapter never reads `process.env`
+     * itself — settings needs the same decision, and two readers drift.
+     */
+    private readonly auth?: AniListAuthResolution,
   ) {}
 
   async init(): Promise<void> {
@@ -132,48 +176,73 @@ export class AniListAdapter implements SyncAdapter {
     return this.username;
   }
 
+  /**
+   * Run the authorization-code flow against the *registered* callback.
+   *
+   * The redirect URI is configuration, not something Kunai can invent: AniList
+   * matches it against the client registration exactly. Both it and the client
+   * id must be present and valid before anything is opened or bound, so a
+   * misconfiguration is reported here rather than as an opaque token-exchange
+   * failure after the user has already approved in a browser.
+   */
   async connect(signal: AbortSignal): Promise<SyncResult> {
-    const clientId = process.env.KUNAI_ANILIST_CLIENT_ID;
-    if (!clientId) {
-      return {
-        ok: false,
-        error:
-          "KUNAI_ANILIST_CLIENT_ID env var is not set. Set it to your AniList application client ID.",
-      };
+    const resolution = this.auth ?? resolveAniListAuth();
+    const { availability, clientId } = resolution;
+    if (!availability.available) {
+      return { ok: false, error: aniListAuthMessage(availability.reason) };
+    }
+    // The resolution type pairs an available result with a non-null client id,
+    // but that correlation does not survive destructuring — so this stays as a
+    // total guard rather than a non-null assertion.
+    if (clientId === null) {
+      return { ok: false, error: aniListAuthMessage("client-id-invalid") };
     }
 
-    // Bind the loopback callback server first so the OS assigns a free port
-    // (no TOCTOU gap between picking a port and binding it). The redirect URI is
-    // then derived from the bound port.
-    const callback = this.startCallbackServer(signal);
-    const callbackUrl = `http://localhost:${callback.port}/callback`;
-    const authorizeUrl = `${OAUTH_BASE}/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(callbackUrl)}&response_type=code`;
-
-    console.log(`\nAniList authorization URL:\n${authorizeUrl}\n`);
-    console.log("Opening in browser… (60s timeout)");
-    void openExternalUrl(authorizeUrl);
-
-    const code = await callback.code;
-    if (!code) {
-      return { ok: false, error: "Authorization timed out or was cancelled." };
-    }
-
-    const tokenRes = await fetch(`${OAUTH_BASE}/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        client_id: clientId,
-        redirect_uri: callbackUrl,
-        code,
-      }),
+    const state = createOAuthState();
+    const callback = startLoopbackServer({
+      redirectUri: availability.redirectUri,
+      expectedState: state,
       signal,
+      timeoutMs: OAUTH_TIMEOUT_MS,
+      serviceName: "AniList",
     });
 
-    if (!tokenRes.ok) {
-      return { ok: false, error: `Token exchange failed: ${tokenRes.status}` };
-    }
+    try {
+      const authorizeUrl =
+        `${OAUTH_BASE}/authorize?client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(availability.redirectUri)}` +
+        `&response_type=code&state=${encodeURIComponent(state)}`;
+      void openExternalUrl(authorizeUrl);
 
+      const result = await callback.result;
+      if (!result.ok) return { ok: false, error: aniListCallbackMessage(result.reason) };
+
+      const code = result.params.get("code");
+      if (!code) return { ok: false, error: "AniList returned no authorization code." };
+
+      const tokenRes = await fetch(`${OAUTH_BASE}/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          client_id: clientId,
+          redirect_uri: availability.redirectUri,
+          code,
+        }),
+        signal,
+      });
+
+      if (!tokenRes.ok) {
+        return { ok: false, error: `Token exchange failed: ${tokenRes.status}` };
+      }
+      return await this.persistToken(tokenRes);
+    } finally {
+      // Frees the registered port on every path, so a retry can bind it.
+      callback.close();
+    }
+  }
+
+  private async persistToken(tokenRes: Response): Promise<SyncResult> {
     const tokenData = (await tokenRes.json()) as { access_token: string; expires_in?: number };
     this.accessToken = tokenData.access_token;
     await this.refreshUsername();
@@ -368,58 +437,5 @@ export class AniListAdapter implements SyncAdapter {
     });
     if (!res.ok) throw new Error(`AniList API error: ${res.status}`);
     return res.json() as Promise<T>;
-  }
-
-  /**
-   * Start the OAuth loopback server on an OS-assigned free port (`Bun.serve`
-   * with `port: 0`) and return that port plus a promise that resolves with the
-   * authorization code (or null on timeout/abort). Replaces the previous
-   * `require("node:net")` free-port probe + separate server, removing both the
-   * dynamic ESM require and the find-then-rebind race.
-   */
-  private startCallbackServer(signal: AbortSignal): {
-    port: number;
-    code: Promise<string | null>;
-  } {
-    let settled = false;
-    let resolveCode!: (value: string | null) => void;
-    const code = new Promise<string | null>((resolve) => {
-      resolveCode = resolve;
-    });
-
-    const settle = (value: string | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      server.stop(true);
-      resolveCode(value);
-    };
-
-    const timeout = setTimeout(() => settle(null), OAUTH_TIMEOUT_MS);
-    signal.addEventListener("abort", () => settle(null));
-
-    const server = Bun.serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch(req) {
-        const url = new URL(req.url);
-        const oauthCode = url.searchParams.get("code");
-        if (url.pathname === "/callback" && oauthCode) {
-          settle(oauthCode);
-          return new Response(
-            "<html><body><h2>Authorization complete. You can close this tab.</h2></body></html>",
-            { headers: { "Content-Type": "text/html" } },
-          );
-        }
-        return new Response("Waiting for authorization…");
-      },
-    });
-
-    const port = server.port;
-    if (port === undefined) {
-      server.stop(true);
-      throw new Error("OAuth callback server failed to bind a port");
-    }
-    return { port, code };
   }
 }
