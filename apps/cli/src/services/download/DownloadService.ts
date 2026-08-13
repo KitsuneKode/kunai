@@ -236,6 +236,44 @@ export class DownloadService {
     );
   }
 
+  /**
+   * Re-derives duration and size for artifacts that are present but incomplete
+   * in the database, returning how many were repaired.
+   *
+   * A download interrupted and resumed lands its file correctly but can miss
+   * the post-completion probe, leaving `duration_ms` null. That is not
+   * cosmetic: duration drives the resume position and the progress bar.
+   * Re-queueing the download to recover a number `ffprobe` reads from the
+   * finished file in milliseconds would mean fetching gigabytes again, so
+   * repair it in place instead.
+   */
+  async repairArtifactMetadata(jobIds: readonly string[]): Promise<number> {
+    let repaired = 0;
+    for (const jobId of jobIds) {
+      const job = this.deps.repo.get(jobId);
+      if (!job?.outputPath) continue;
+      try {
+        const validation = await this.validateCompletedArtifact(job.outputPath);
+        const updatedAt = new Date().toISOString();
+        if (job.fileSize !== validation.fileSize) {
+          this.deps.repo.updateFileSize(jobId, validation.fileSize, updatedAt);
+        }
+        if (validation.durationMs !== undefined && job.durationMs !== validation.durationMs) {
+          this.deps.repo.updateOfflineMetadata(
+            jobId,
+            { durationMs: validation.durationMs },
+            updatedAt,
+          );
+          repaired += 1;
+        }
+      } catch {
+        // A file that cannot be probed is a broken artifact, not a metadata
+        // gap; the artifact-status sweep owns that case and re-downloads it.
+      }
+    }
+    return repaired;
+  }
+
   getEnqueueEligibility(): DownloadEnqueueEligibility {
     const feature = resolveDownloadFeatureState({
       config: this.deps.config,

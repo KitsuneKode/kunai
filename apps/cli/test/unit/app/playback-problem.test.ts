@@ -24,6 +24,16 @@ describe("playback problem model", () => {
     expect(problem.userMessage).toContain("integrity check");
   });
 
+  test("renders an unplayable download through the error surface, not a raw slug", () => {
+    // Without a case in `toErrorScenario` this fell through to undefined, and
+    // the shell showed the bare cause slug "offline-file-unavailable" instead of
+    // the error screen every other blocking failure gets.
+    expect(toErrorScenario(buildOfflineFileUnavailableProblem(), { title: "Obsession" })).toEqual({
+      kind: "title-unavailable",
+      title: "Obsession",
+    });
+  });
+
   test("maps missing mpv to a blocking playback dependency problem", () => {
     const problem = buildMpvMissingProblem({
       remediationSummary: "Install mpv to enable playback.",
