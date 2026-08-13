@@ -81,6 +81,7 @@ export function bootstrapServices(input: {
     config,
     diagnosticsService,
     historyRepository,
+    historyTitleAliases,
     playbackEventRepository,
     downloadJobs,
     offlineAssets,
@@ -169,6 +170,7 @@ export function bootstrapServices(input: {
 
   const downloadService = new DownloadService({
     repo: downloadJobs,
+    titleAliases: historyTitleAliases,
     config,
     logger,
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
