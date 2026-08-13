@@ -221,6 +221,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // after each open so a plain /calendar afterwards is not stuck on a filter.
       let pendingCalendarType: CalendarTypeTab | undefined;
 
+      // The subtitle for the most recently loaded route (calendar/trending/surprise/
+      // discover). Without this, an empty-query results view always showed the generic
+      // "N recommendation picks · loaded" even on the calendar. Cleared on manual search.
+      let routeSubtitle: string | undefined;
+
       // The calendar route is MOUNTED, not awaited: the shell opens immediately
       // with this request and loads the schedule underneath its own loader. The
       // accepted key is the ONLY evidence that a routed calendar really loaded —
@@ -240,11 +245,6 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         routeSubtitle = undefined;
         syncBrowseQueryDraft();
       };
-
-      // The subtitle for the most recently loaded route (calendar/trending/surprise/
-      // discover). Without this, an empty-query results view always showed the generic
-      // "N recommendation picks · loaded" even on the calendar. Cleared on manual search.
-      let routeSubtitle: string | undefined;
 
       // Filter evidence + parser warnings from the most recent bootstrap/`-S`
       // search, consumed once when the browse shell mounts so bootstrap results
