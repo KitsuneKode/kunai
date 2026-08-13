@@ -1,9 +1,9 @@
 {
-  "syncedAt": "2026-08-13T11:52:12.378Z",
+  "syncedAt": "2026-08-13T22:27:15.116Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "6359ece8",
-  "cliSourceFingerprint": "787c49c9107036b9a9db043a1e17d5edd3b6e529a00e27029dd578c7cd9f970e",
+  "cliSourceRevision": "b68662bf",
+  "cliSourceFingerprint": "791212685deacad7c3ea972294d8a8e5d63c0e9b84ebe700e10544686a4e6734",
   "docsContentFingerprint": "fef27a454ddd909b2dce89052178e6702695c995c239fb28468037331e70d26d",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
@@ -111,7 +111,8 @@
         "Primary hosts: www.miruro.bz",
         "www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
         "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-        "Still not the default anime auto-fallback (AllAnime remains primary); Miruro is available for manual pick when curl/http2 path works.",
+        "Still not the default anime auto-fallback (AniDB is the default",
+        "AllAnime the fallback); Miruro is available for manual pick when curl/http2 path works.",
         "May hit Cloudflare rate limits if called too frequently."
       ]
     },
