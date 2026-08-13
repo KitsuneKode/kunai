@@ -16,10 +16,11 @@ export type OfflinePlaybackRequestResult =
 export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
   return {
     id: job.titleId,
-    type: job.mediaKind === "movie" ? "movie" : "series",
+    type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
     name: job.titleName,
     posterUrl: job.posterUrl,
     isAnime: job.mediaKind === "anime" || job.mode === "anime",
+    launchSource: "offline-library",
   };
 }
 
@@ -33,20 +34,18 @@ export function episodeInfoFromDownloadJob(job: DownloadJobRecord): EpisodeInfo 
 }
 
 function applyDownloadJobSessionRouting(container: Container, job: DownloadJobRecord): void {
-  if (job.mode === "anime" || job.mediaKind === "anime") {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode: "anime",
-      provider: job.providerId ?? container.stateManager.getState().provider,
-    });
-    return;
-  }
-  if (job.providerId) {
-    container.stateManager.dispatch({
-      type: "SET_PROVIDER",
-      provider: job.providerId,
-    });
-  }
+  const mode =
+    job.mode === "youtube" || job.mediaKind === "video"
+      ? "youtube"
+      : job.mode === "anime" || job.mediaKind === "anime"
+        ? "anime"
+        : "series";
+  const state = container.stateManager.getState();
+  container.stateManager.dispatch({
+    type: "SET_MODE",
+    mode,
+    provider: job.providerId ?? state.defaultProviders?.[mode] ?? state.provider,
+  });
 }
 
 export function buildOfflinePlaybackLaunch(job: DownloadJobRecord): OfflinePlaybackLaunch {

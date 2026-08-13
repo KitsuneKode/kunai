@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildOfflinePlaybackLaunch,
   requestUnifiedOfflinePlayback,
+  titleInfoFromDownloadJob,
 } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import type { DownloadJobRecord } from "@kunai/storage";
@@ -48,5 +49,16 @@ describe("requestUnifiedOfflinePlayback", () => {
     });
     expect(dispatches).toContain("SELECT_TITLE");
     expect(dispatches).toContain("CLOSE_TOP_OVERLAY");
+  });
+
+  test("preserves video mode and marks library launches as local-only", () => {
+    const title = titleInfoFromDownloadJob(
+      readyJob({ mediaKind: "video", mode: "youtube", season: undefined, episode: undefined }),
+    );
+
+    expect(title).toMatchObject({
+      type: "movie",
+      launchSource: "offline-library",
+    });
   });
 });

@@ -30,4 +30,13 @@ describe("resolveSessionConfigOverrides", () => {
   test("returns nothing for a default launch", () => {
     expect(resolveSessionConfigOverrides({ zen: false, minimal: false }, off)).toEqual({});
   });
+
+  test("--offline flips offlineMode so startup and connectivity enforce local-only work", () => {
+    expect(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, offline: true },
+        { ...off, offlineMode: false },
+      ),
+    ).toEqual({ offlineMode: true });
+  });
 });

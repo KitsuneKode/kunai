@@ -67,6 +67,9 @@ export class OfflineLibraryService {
 
     const entries: OfflineLibraryEntry[] = [];
     for (const job of completed) {
+      // Re-adopt on every library read so jobs created before offline_assets (or
+      // after an interrupted completion callback) remain locally discoverable.
+      this.deps.offlineAssetService?.adoptCompletedJob(job);
       if (isArtifactCacheFresh(job) && isOfflineArtifactStatus(job.artifactStatus)) {
         entries.push({
           job,
@@ -76,6 +79,7 @@ export class OfflineLibraryService {
       }
       const status = await resolveOfflineArtifactStatus(job);
       this.deps.downloadService.markArtifactValidated(job.id, status);
+      this.deps.offlineAssetService?.adoptCompletedJob({ ...job, artifactStatus: status });
       entries.push({ job, status });
     }
     return entries;
@@ -94,7 +98,11 @@ export class OfflineLibraryService {
   > {
     const job = this.deps.downloadService.getJob(jobId);
     if (!job) return { status: "not-found" };
-    if (job.status !== "completed" && job.status !== "completed-with-notes") {
+    if (
+      job.status !== "completed" &&
+      job.status !== "completed-with-notes" &&
+      job.status !== "repairable"
+    ) {
       return { status: "not-completed", job };
     }
 
@@ -112,7 +120,8 @@ export class OfflineLibraryService {
     const timing = source.timing ?? null;
     if (!shouldPersistHistory(result, timing)) return false;
 
-    const mediaKind = source.mediaKind === "movie" ? "movie" : "series";
+    const mediaKind =
+      source.mediaKind === "movie" ? "movie" : source.mediaKind === "video" ? "video" : "series";
     const historyAnchor = this.deps.historyRepository.getLatestForTitleIdentity({
       id: source.titleId,
       kind: mediaKind,

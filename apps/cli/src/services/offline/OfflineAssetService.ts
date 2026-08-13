@@ -36,8 +36,18 @@ export class OfflineAssetService {
     this.assets.markValidation(id, state, validatedAt);
   }
 
+  removeForJob(jobId: string): void {
+    this.assets.deleteByOriginJobId(jobId);
+  }
+
   adoptCompletedJob(job: DownloadJobRecord): OfflineAssetRecord | null {
-    if (job.status !== "completed" && job.status !== "completed-with-notes") return null;
+    if (
+      job.status !== "completed" &&
+      job.status !== "completed-with-notes" &&
+      job.status !== "repairable"
+    ) {
+      return null;
+    }
     const state = recordedAssetState(job);
     return this.assets.upsertPlayable({
       titleId: job.titleId,
@@ -69,7 +79,6 @@ function recordedAssetState(job: DownloadJobRecord): OfflineAssetState {
   if (job.artifactStatus === "missing" || job.artifactStatus === "invalid-file") {
     return job.artifactStatus;
   }
-  if (job.status === "completed-with-notes" || job.status === "repairable") return "repairable";
   return "ready";
 }
 

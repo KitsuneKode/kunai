@@ -234,6 +234,20 @@ export class OfflineAssetsRepository {
       .run(state, validatedAt, validatedAt, id);
   }
 
+  deleteByOriginJobId(jobId: string): void {
+    this.db
+      .query(
+        "DELETE FROM offline_asset_tracks WHERE asset_id IN (SELECT id FROM offline_assets WHERE origin_job_id = ?)",
+      )
+      .run(jobId);
+    this.db
+      .query(
+        "DELETE FROM offline_asset_artwork WHERE asset_id IN (SELECT id FROM offline_assets WHERE origin_job_id = ?)",
+      )
+      .run(jobId);
+    this.db.query("DELETE FROM offline_assets WHERE origin_job_id = ?").run(jobId);
+  }
+
   setProtected(id: string, protectedValue: boolean, updatedAt: string): void {
     this.db
       .query("UPDATE offline_assets SET protected = ?, updated_at = ? WHERE id = ?")

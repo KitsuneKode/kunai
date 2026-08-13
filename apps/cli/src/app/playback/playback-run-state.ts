@@ -17,6 +17,7 @@ import type { PlaybackSessionState } from "@/app/playback/playback-session-contr
 import type { PlaybackStartIntent } from "@/app/playback/playback-start-intent";
 import type { SourceRefreshAction } from "@/app/playback/source-refresh-policy";
 import type { PlaybackTimingMetadata } from "@/domain/types";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 export interface PlaybackRunState {
   /** Current session snapshot; reassigned as the session transitions phases. */
@@ -43,6 +44,8 @@ export interface PlaybackRunState {
   localEpisodeTiming: PlaybackTimingMetadata | null;
   /** Download job id backing the current local playback, when applicable. */
   localPlaybackJobId: string | null;
+  /** Validated local source carried to the player seam for the current iteration. */
+  localPlaybackSource: LocalPlaybackSource | null;
 }
 
 /**
@@ -67,5 +70,6 @@ export function createPlaybackRunState(init: {
     episodePlaybackSourceOverride: null,
     localEpisodeTiming: null,
     localPlaybackJobId: null,
+    localPlaybackSource: null,
   };
 }

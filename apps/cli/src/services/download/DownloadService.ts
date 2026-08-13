@@ -724,8 +724,13 @@ export class DownloadService {
         await rm(posterPath, { force: true }).catch(() => {});
       }
     }
-    this.deps.repo.delete(jobId);
+    // Emit before deleting the row, not after. `offline_assets.origin_job_id` is
+    // `ON DELETE SET NULL` with foreign keys enabled, so once the job row is
+    // gone the listener's `deleteByOriginJobId(jobId)` matches nothing and the
+    // asset is orphaned: still `state='ready'`, still advertised as downloaded,
+    // but unplayable because its originJobId is now null.
     this.emit({ type: "deleted", jobId });
+    this.deps.repo.delete(jobId);
   }
 
   private async executeYtDlpDownload(job: DownloadJobRecord): Promise<DownloadJobRecord> {
@@ -945,6 +950,7 @@ export class DownloadService {
         id: job.titleId,
         type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
         name: job.titleName,
+        externalIds: externalIdsFromDownloadJob(job),
       },
       episode:
         job.season !== undefined && job.episode !== undefined
@@ -1483,6 +1489,22 @@ function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
   if (input.title.type === "movie") return "movie";
   if (input.mode === "anime") return "anime";
   return "series";
+function externalIdsFromDownloadJob(
+  job: Pick<DownloadJobRecord, "titleId" | "mediaKind" | "mode">,
+): TitleInfo["externalIds"] {
+  const titleId = job.titleId.trim();
+  if (!titleId) return undefined;
+  if (job.mode === "anime" || job.mediaKind === "anime") {
+    const anilistId = titleId.replace(/^anilist:/, "");
+    return /^\d+$/.test(anilistId) ? { anilistId } : undefined;
+  }
+  if (job.mode === "youtube" || job.mediaKind === "video") {
+    return { youtubeId: titleId.replace(/^youtube:/, "") };
+  }
+  if (titleId.startsWith("tmdb:")) {
+    return { tmdbId: titleId.slice("tmdb:".length) };
+  }
+  return undefined;
 }
 
 function normalizeYear(value: string | undefined): string | null {

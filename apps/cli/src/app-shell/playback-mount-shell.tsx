@@ -12,6 +12,7 @@ import type { PostPlaybackRecommendationRail } from "@/app/post-play/post-playba
 import { postPlaybackRecommendationItemsToRailItems } from "@/app/post-play/post-playback-recommendations";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
+import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import {
   mediaLanguageProfileFor,
   resolveContentKind,
@@ -195,7 +196,7 @@ export function buildPlaybackRootLoadingShellState(
       if (
         isEpisodeDownloaded(
           container.offlineAssetService,
-          title.id,
+          resolveTitleHistoryLookupId(title, state.mode),
           episode.season,
           episode.episode,
         )

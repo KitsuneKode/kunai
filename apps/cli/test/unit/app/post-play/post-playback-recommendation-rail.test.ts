@@ -7,11 +7,12 @@ import {
 import type { SearchResult, TitleInfo } from "@/domain/types";
 
 const TITLE = { id: "tt1", name: "My Show", type: "series" } as TitleInfo;
+const OFFLINE_TITLE = { ...TITLE, launchSource: "offline-library" as const };
 
-function makeContainer(railEnabled = true) {
+function makeContainer(railEnabled = true, offlineMode = false) {
   const records: Array<{ operation?: string }> = [];
   const container = {
-    config: { recommendationRailEnabled: railEnabled },
+    config: { recommendationRailEnabled: railEnabled, offlineMode },
     diagnosticsService: {
       record: (entry: { operation?: string }) => {
         records.push(entry);
@@ -48,6 +49,30 @@ describe("PostPlaybackRecommendationRail", () => {
       autoContinueIntoRecommendationPossible: false,
     });
     expect(items.map((i) => i.id)).toEqual(["a", "b"]);
+    expect(loadCalls).toBe(0);
+    expect(rail.attempted).toBe(false);
+  });
+
+  it("does not load recommendations for an offline-library launch", async () => {
+    const { container } = makeContainer();
+    let loadCalls = 0;
+    const rail = new PostPlaybackRecommendationRail({
+      container,
+      title: OFFLINE_TITLE,
+      budgetMs: 250,
+      load: async () => {
+        loadCalls += 1;
+        return [item("online")];
+      },
+    });
+
+    const items = await rail.resolveRailItems({
+      mode: "series",
+      prefetchedItems: null,
+      autoContinueIntoRecommendationPossible: true,
+    });
+
+    expect(items).toEqual([]);
     expect(loadCalls).toBe(0);
     expect(rail.attempted).toBe(false);
   });

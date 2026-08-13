@@ -556,7 +556,7 @@ export class DownloadJobsRepository {
   listCompleted(limit = 100): readonly DownloadJobRecord[] {
     return this.db
       .query<DownloadJobRow, [number]>(
-        "SELECT * FROM download_jobs WHERE status IN ('completed', 'completed-with-notes') ORDER BY completed_at DESC LIMIT ?",
+        "SELECT * FROM download_jobs WHERE status IN ('completed', 'completed-with-notes', 'repairable') ORDER BY completed_at DESC LIMIT ?",
       )
       .all(limit)
       .map(mapRow);
@@ -566,8 +566,12 @@ export class DownloadJobsRepository {
     return this.db
       .query<DownloadJobRow, [number]>(
         `
+          -- 'repairable' belongs to listCompleted only. Listing it here too put
+          -- one job in both result sets, so the download manager rendered it as
+          -- two rows sharing an id, and index-based selection/delete then acted
+          -- on a phantom.
           SELECT * FROM download_jobs
-          WHERE status IN ('failed', 'aborted', 'repairable')
+          WHERE status IN ('failed', 'aborted')
           ORDER BY updated_at DESC
           LIMIT ?
         `,

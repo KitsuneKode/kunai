@@ -198,7 +198,11 @@ export function LibraryTitleDetail({
         try {
           if (selectedRow.kind === "episode") {
             const job = selectedRow.entry.job;
-            if (job.status !== "completed" && job.status !== "completed-with-notes") {
+            if (
+              job.status !== "completed" &&
+              job.status !== "completed-with-notes" &&
+              job.status !== "repairable"
+            ) {
               return;
             }
             const playable = await container.offlineLibraryService.getPlayableSource(job.id);

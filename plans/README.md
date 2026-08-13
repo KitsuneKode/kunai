@@ -103,6 +103,25 @@ the behavior that actually landed.
 | 029  | Require release evidence and native platform smokes          | P1       | L      | 026, 027, 028      | TODO        |
 | 030  | Reconcile distribution documentation with shipped routes     | P1       | M      | 026, 027, 028, 029 | TODO        |
 
+### Wave 7 — 2026-08-11 release truth, providers, sync, playback, and posters
+
+These plans were audited against live code at commit `36da54c4`, the live AniDB
+browse page, focused provider smokes, and Bun 1.3.14's documented image surface.
+Execute 031 and 032 before calling the release stable. Plans 033 and 034 are the
+highest-value interaction work. The remaining provider plans are independent,
+except that 035 should land before expanding the AniDB release fixture beyond S1.
+
+| Plan | Title                                                   | Priority | Effort | Depends on | Status |
+| ---- | ------------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| 031  | Make the default AniDB route searchable and signoff-real | P0       | M      | —          | TODO   |
+| 032  | Make sync identity-safe and describe real capabilities   | P0       | M      | —          | TODO   |
+| 033  | Restore truthful playback state after buffering/stalls   | P1       | S      | —          | TODO   |
+| 034  | Finish the zero-install native poster pipeline           | P1       | M      | —          | TODO   |
+| 035  | Route AniDB seasons explicitly                           | P1       | M      | 031 (soft) | TODO   |
+| 036  | Reconcile AllManga source parity                         | P2       | S      | —          | TODO   |
+| 037  | Make Miruro resolution evidence truthful and resilient   | P1       | M      | —          | TODO   |
+| 038  | Bound Videasy caches before retiring deprecated routes   | P2       | M      | —          | TODO   |
+
 **PARTIAL detail.** `021`: stage 3 is complete (episode catalogs are
 language-aware and cache-keyed by audio); stages 1, 2, 4, 5, 6, 7 are untouched.
 `022`: 022.1 (help scope) is done and the overlay-routing rework that 022 called

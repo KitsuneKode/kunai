@@ -1,14 +1,17 @@
 import type { Container } from "@/container";
+import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import type { PlaybackSourcePreference } from "@/domain/playback-source/SourceSelectionEngine";
 import type { EpisodeInfo, PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { findReadyJobIdForEpisode } from "@/services/offline/offline-episode-index";
 import { parseIntroSkipTiming } from "@/services/offline/offline-library";
 
 export type LocalEpisodePlaybackResolution = {
   readonly stream: StreamInfo;
   readonly jobId: string;
+  readonly source: LocalPlaybackSource;
   readonly timing: PlaybackTimingMetadata | null;
 };
 
@@ -25,18 +28,22 @@ export async function resolveLocalEpisodePlayback(
   title: TitleInfo,
   episode: EpisodeInfo,
   options: {
-    readonly entrypoint?: "online-search" | "continue";
+    readonly entrypoint?: "online-search" | "continue" | "offline-library";
     readonly forceOnline?: boolean;
     readonly forceLocal?: boolean;
   } = {},
 ): Promise<LocalEpisodePlaybackResolution | null> {
   if (options.forceOnline) return null;
 
+  const mode = container.stateManager.getState().mode;
+  const lookupTitleId = resolveTitleHistoryLookupId(title, mode);
+  const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const jobId = findReadyJobIdForEpisode(
     container.offlineAssetService,
-    title.id,
+    lookupTitleId,
     episode.season,
     episode.episode,
+    { mediaKind },
   );
   if (!jobId) return null;
 
@@ -75,6 +82,7 @@ function buildLocalEpisodeResolution(
   const displayTitle = formatOfflinePlaybackTitle(playable.source);
   return {
     jobId: playable.job.id,
+    source: playable.source,
     timing: playable.source.timing ?? parseIntroSkipTiming(playable.job.introSkipJson),
     stream: {
       url: playable.source.filePath,

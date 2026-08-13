@@ -217,6 +217,7 @@ import {
   type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -598,6 +599,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       playbackSession: createPlaybackSessionState({ autoNextEnabled: config.autoNext }),
       pendingStart: startFromBeginning(),
     });
+    const isOfflineLaunch = title.launchSource === "offline-library";
     const selectionCoordinator = new PlaybackSelectionCoordinator({
       titleId: title.id,
       episodePlaybackSelection: container.episodePlaybackSelection,
@@ -712,17 +714,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return result.startIntent;
       };
       const provider = providerRegistry.get(stateManager.getState().provider);
-      const initialAnimeEpisodes = await this.getAnimeEpisodeOptions({
-        title,
-        mode: stateManager.getState().mode,
-        provider,
-        cache: animeEpisodeCatalogByProvider,
-        languages: playbackEpisodeCatalogLanguages({
-          mode: stateManager.getState().mode,
-          title,
-          config,
-        }),
-      });
+      const initialAnimeEpisodes = isOfflineLaunch
+        ? undefined
+        : await this.getAnimeEpisodeOptions({
+            title,
+            mode: stateManager.getState().mode,
+            provider,
+            cache: animeEpisodeCatalogByProvider,
+            languages: playbackEpisodeCatalogLanguages({
+              mode: stateManager.getState().mode,
+              title,
+              config,
+            }),
+          });
       logger.info("Episode selection metadata", {
         titleId: title.id,
         mode: stateManager.getState().mode,
@@ -789,9 +793,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         const providerHealth = container.providerHealth.get(stateManager.getState().provider);
         const failedProvider =
           providerHealth?.status === "degraded" || providerHealth?.status === "down";
-        const seasonCount = usesNativeEpisodes
-          ? (title.episodeCount ?? initialAnimeEpisodes?.length)
-          : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
+        const seasonCount = isOfflineLaunch
+          ? undefined
+          : usesNativeEpisodes
+            ? (title.episodeCount ?? initialAnimeEpisodes?.length)
+            : ((await fetchSeasons(title.id).catch(() => null))?.length ?? undefined);
         const episodeEntry = resolvePlaybackEpisodeEntry({
           titleId: title.id,
           titleType: title.type,
@@ -958,6 +964,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         previousIterationAbort?.abort();
         const playbackIterationAbort = new AbortController();
         previousIterationAbort = playbackIterationAbort;
+        run.localEpisodeTiming = null;
+        run.localPlaybackJobId = null;
+        run.localPlaybackSource = null;
         const currentEpisode = stateManager.getState().currentEpisode;
         if (!currentEpisode) break;
         const episodeScopeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
@@ -1203,20 +1212,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // can read it. On resolve we dispatch SET_TITLE_DETAIL so the UI reacts
           // (the rail reads SessionState.titleDetail). Errors are swallowed; the
           // panels fall back to honest placeholders if it never resolves.
-          void fetchTitleDetail(title.id, title.type, undefined, {
-            externalIds: title.externalIds,
-            isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
-          })
-            .then((detail) => {
-              stateManager.dispatch({
-                type: "SET_TITLE_DETAIL",
-                titleId: title.id,
-                titleType: title.type,
-                detail,
-              });
-              return undefined;
+          if (!isOfflineLaunch) {
+            void fetchTitleDetail(title.id, title.type, undefined, {
+              externalIds: title.externalIds,
+              isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
             })
-            .catch(() => undefined);
+              .then((detail) => {
+                stateManager.dispatch({
+                  type: "SET_TITLE_DETAIL",
+                  titleId: title.id,
+                  titleType: title.type,
+                  detail,
+                });
+                return undefined;
+              })
+              .catch(() => undefined);
+          }
 
           // Kick off timing fetch in parallel with everything else — IntroDB is a
           // lightweight API call and should resolve well before stream resolution.
@@ -1224,15 +1235,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // on the successful provider when they differ.
           recordStartupMark("timing-fetch-started");
           const configuredTimingProviderId = currentProvider?.metadata.id;
-          const timingFetch = this.getPlaybackTimingMetadata(
-            title,
-            currentEpisode,
-            playbackTimingByEpisode,
-            resolveController.signal,
-            stateManager.getState().mode === "anime",
-            configuredTimingProviderId,
-            container.diagnosticsService,
-          );
+          const timingFetch = isOfflineLaunch
+            ? Promise.resolve(null)
+            : this.getPlaybackTimingMetadata(
+                title,
+                currentEpisode,
+                playbackTimingByEpisode,
+                resolveController.signal,
+                stateManager.getState().mode === "anime",
+                configuredTimingProviderId,
+                container.diagnosticsService,
+              );
 
           const watchedEntries = historyRepository.listByTitleIdentity(historyTitleLookup);
           const playbackMode = stateManager.getState().mode;
@@ -1260,17 +1273,19 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             note: "Warming episode names, navigation, and artwork",
           });
 
-          const currentAnimeEpisodesPromise = this.getAnimeEpisodeOptions({
-            title,
-            mode: playbackMode,
-            provider: currentProvider,
-            cache: animeEpisodeCatalogByProvider,
-            languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
-            signal: resolveController.signal,
-          });
+          const currentAnimeEpisodesPromise = isOfflineLaunch
+            ? Promise.resolve(undefined)
+            : this.getAnimeEpisodeOptions({
+                title,
+                mode: playbackMode,
+                provider: currentProvider,
+                cache: animeEpisodeCatalogByProvider,
+                languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
+                signal: resolveController.signal,
+              });
           const downloadedEpisodes = new Set(
             container.offlineAssetService
-              .listTitleAssets(title.id)
+              .listTitleAssets(resolveTitleHistoryLookupId(title, playbackMode))
               .filter((asset) => asset.state === "ready")
               .map((asset) => `${asset.season ?? 1}:${asset.episode ?? 1}`),
           );
@@ -1292,20 +1307,28 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 loadEpisodes: loadEpisodesOnce,
               }),
           );
-          const episodeAvailabilityPromise = currentAnimeEpisodesPromise.then(
-            (currentAnimeEpisodes) =>
-              resolveEpisodeAvailability({
-                title,
-                currentEpisode,
-                isAnime: isAnimePlayback,
-                animeEpisodeCount: knownEpisodeCount,
-                animeEpisodes: currentAnimeEpisodes,
-                loaders: {
-                  loadSeasons: fetchSeasons,
-                  loadEpisodes: loadEpisodesOnce,
-                },
-              }),
-          );
+          const episodeAvailabilityPromise = isOfflineLaunch
+            ? Promise.resolve({
+                previousEpisode: null,
+                nextEpisode: null,
+                nextSeasonEpisode: null,
+                upcomingNext: null,
+                animeNextReleaseUnknown: false,
+                tmdbUnavailable: false,
+              })
+            : currentAnimeEpisodesPromise.then((currentAnimeEpisodes) =>
+                resolveEpisodeAvailability({
+                  title,
+                  currentEpisode,
+                  isAnime: isAnimePlayback,
+                  animeEpisodeCount: knownEpisodeCount,
+                  animeEpisodes: currentAnimeEpisodes,
+                  loaders: {
+                    loadSeasons: fetchSeasons,
+                    loadEpisodes: loadEpisodesOnce,
+                  },
+                }),
+              );
           const [currentAnimeEpisodes, shellEpisodePicker, episodeAvailability] = await Promise.all(
             [currentAnimeEpisodesPromise, shellEpisodePickerPromise, episodeAvailabilityPromise],
           );
@@ -1524,9 +1547,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               title,
               currentEpisode,
               {
-                entrypoint: "online-search",
+                entrypoint: isOfflineLaunch
+                  ? "offline-library"
+                  : title.launchSource === "continue"
+                    ? "continue"
+                    : "online-search",
                 forceOnline: run.episodePlaybackSourceOverride === "online",
-                forceLocal: run.episodePlaybackSourceOverride === "local",
+                forceLocal: isOfflineLaunch || run.episodePlaybackSourceOverride === "local",
               },
             );
             run.episodePlaybackSourceOverride = null;
@@ -1535,6 +1562,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               streamProvenance = "local";
               run.localEpisodeTiming = localResolution.timing;
               run.localPlaybackJobId = localResolution.jobId;
+              run.localPlaybackSource = localResolution.source;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "playback",
@@ -1547,6 +1575,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               });
               recordStartupMark("resolve-complete", stream);
             }
+          }
+
+          if (!stream && isOfflineLaunch) {
+            workControl.setActive(null);
+            stateManager.dispatch({ type: "SET_STREAM", stream: null });
+            this.updatePlaybackFeedback(context, {
+              detail: "Downloaded file unavailable",
+              note: "Return to the offline library and run integrity check or re-download it.",
+            });
+            return { status: "success", value: "back_to_results" };
           }
 
           if (!stream) {
@@ -2261,6 +2299,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               () => {
                 queueAttempt?.acknowledgeStarted();
               },
+              run.localPlaybackSource ?? undefined,
             );
           } catch (error) {
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
@@ -3652,6 +3691,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     successfulProviderId?: string,
     playbackIterationSignal?: AbortSignal,
     onConfirmedPlaybackStart?: () => void,
+    localPlaybackSource?: LocalPlaybackSource,
   ): Promise<PlaybackResult> {
     const {
       player,
@@ -3733,6 +3773,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       iterationAborted: playbackIterationSignal?.aborted ?? false,
       correlation,
       timing,
+      localPlaybackSource,
       shareLinkContext: {
         mode: stateManager.getState().mode,
         title,

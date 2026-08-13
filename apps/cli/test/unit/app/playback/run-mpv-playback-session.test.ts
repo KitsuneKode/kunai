@@ -14,6 +14,7 @@ import type {
   PlayerPlaybackEvent,
   PlayerService,
 } from "@/infra/player/PlayerService";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 const TITLE: TitleInfo = { id: "1396", name: "Test", type: "series" };
 const EPISODE: EpisodeInfo = { season: 1, episode: 1 };
@@ -21,6 +22,18 @@ const STREAM: StreamInfo = {
   url: "https://example.test/stream.m3u8",
   headers: {},
   timestamp: Date.now(),
+};
+const LOCAL_SOURCE: LocalPlaybackSource = {
+  kind: "local",
+  jobId: "job-1",
+  titleId: "1396",
+  titleName: "Test",
+  mediaKind: "series",
+  providerId: "vidking",
+  season: 1,
+  episode: 1,
+  filePath: "/tmp/test.mkv",
+  subtitlePath: "/tmp/test.vtt",
 };
 
 const FINISHED: PlaybackResult = {
@@ -344,5 +357,47 @@ describe("runMpvPlaybackSession completion", () => {
       result: { ...FINISHED, endReason: "error" },
     });
     expect(harness.store.snapshot.status).toBe("error");
+  });
+
+  test("routes an offline source through local playback", async () => {
+    const calls: string[] = [];
+    const player: PlayerService = {
+      play: async () => {
+        calls.push("remote");
+        return FINISHED;
+      },
+      releasePersistentSession: async () => undefined,
+      killActiveMpvProcessesSync: () => undefined,
+      beginShutdown: () => undefined,
+      isAvailable: async () => true,
+      playLocal: async () => {
+        calls.push("local");
+        return FINISHED;
+      },
+    };
+
+    const input = {
+      stream: { ...STREAM, url: LOCAL_SOURCE.filePath },
+      title: TITLE,
+      episode: EPISODE,
+      player,
+      playOptions: {},
+      subtitleStatus: "local",
+      startAt: 0,
+      sessionAborted: false,
+      iterationAborted: false,
+      shareLinkContext: {
+        mode: "series" as const,
+        title: TITLE,
+        episode: { season: 1, episode: 1 },
+      },
+      timing: null,
+      localPlaybackSource: LOCAL_SOURCE,
+      hooks: noopHooks(),
+    } as Parameters<typeof runMpvPlaybackSession>[0];
+
+    await runMpvPlaybackSession(input);
+
+    expect(calls).toEqual(["local"]);
   });
 });

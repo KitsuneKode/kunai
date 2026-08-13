@@ -68,3 +68,25 @@ test("OfflineAssetService ignores unfinished download attempts", () => {
 
   expect(service.adoptCompletedJob(completedJob({ status: "running" }))).toBeNull();
 });
+
+test("OfflineAssetService keeps a repairable sidecar job locally playable", () => {
+  let stored: OfflineAssetRecord | undefined;
+  const service = new OfflineAssetService({
+    upsertPlayable(input: OfflineAssetInput) {
+      stored = {
+        ...input,
+        id: "asset-1",
+        identityKey: "repairable-asset",
+        protected: false,
+        createdAt: input.updatedAt,
+      };
+      return stored;
+    },
+  } as never);
+
+  const adopted = service.adoptCompletedJob(
+    completedJob({ status: "repairable", artifactStatus: "expected-missing" }),
+  );
+
+  expect(adopted?.state).toBe("ready");
+});

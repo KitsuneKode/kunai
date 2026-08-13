@@ -62,7 +62,15 @@ export function createSourceSelectionEngine(): SourceSelectionEngine {
           : blockedOfflineDecision(localStatus);
       }
 
-      if (input.entrypoint === "continue" && localStatus === "ready") {
+      // `prefer-online` is an explicit user setting, so Continue must honour it
+      // even when a download exists. Without this check, enabling the offline
+      // "continue" entrypoint silently overrode continueSourcePreference for
+      // every resume — an online-path regression.
+      if (
+        input.entrypoint === "continue" &&
+        localStatus === "ready" &&
+        preference !== "prefer-online"
+      ) {
         return localDecision("local-continuation", localStatus, input.networkAvailable);
       }
 

@@ -410,6 +410,7 @@ describe("DownloadService", () => {
 
   test("stores durable intent and resolves a fresh stream before processing", async () => {
     const resolvedUrls: string[] = [];
+    let resolvedTitleExternalIds: unknown;
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -417,6 +418,7 @@ describe("DownloadService", () => {
       downloadPath: tempDir,
       resolveDownloadStream: async (intent) => {
         resolvedUrls.push(`${intent.providerId}:${intent.title.id}:${intent.episode?.episode}`);
+        resolvedTitleExternalIds = intent.title.externalIds;
         return {
           stream: {
             url: "https://fresh.example/master.m3u8",
@@ -452,6 +454,7 @@ describe("DownloadService", () => {
 
     const completed = repo.get(job.id);
     expect(resolvedUrls).toEqual(["vidking:tmdb:1:3"]);
+    expect(resolvedTitleExternalIds).toEqual({ tmdbId: "1" });
     expect(completed?.status).toBe("completed");
     expect(completed?.streamUrl).toBe("https://fresh.example/master.m3u8");
     expect(completed?.mode).toBe("series");

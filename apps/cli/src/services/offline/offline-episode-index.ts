@@ -46,10 +46,17 @@ export function findReadyJobIdForEpisode(
   titleId: string,
   season: number,
   episode: number,
+  options: {
+    readonly mediaKind?: "movie" | "series" | "anime" | "video";
+  } = {},
 ): string | undefined {
   return offlineAssetService
     .listTitleAssets(titleId)
     .find(
-      (asset) => asset.state === "ready" && asset.season === season && asset.episode === episode,
+      (asset) =>
+        asset.state === "ready" &&
+        (options.mediaKind === "movie" || options.mediaKind === "video"
+          ? asset.mediaKind === options.mediaKind
+          : asset.season === season && asset.episode === episode),
     )?.originJobId;
 }

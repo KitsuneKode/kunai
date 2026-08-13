@@ -176,6 +176,10 @@ export class PostPlaybackRecommendationRail {
       },
     });
 
+    if (container.config.offlineMode || title.launchSource === "offline-library") {
+      return railItems;
+    }
+
     const loadMode = resolvePostPlaybackRecommendationLoadMode({
       seedCount: railItems.length,
       railEnabled: container.config.recommendationRailEnabled,

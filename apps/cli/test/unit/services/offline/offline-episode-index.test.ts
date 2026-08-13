@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   downloadedCountForTitle,
+  findReadyJobIdForEpisode,
   isEpisodeDownloaded,
 } from "@/services/offline/offline-episode-index";
 import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
@@ -49,5 +50,21 @@ describe("offline-episode-index", () => {
     expect(isEpisodeDownloaded(service, "t1", 1, 1)).toBe(true);
     expect(isEpisodeDownloaded(service, "t1", 1, 2)).toBe(false);
     expect(downloadedCountForTitle(service, "t1")).toBe(2);
+  });
+
+  test("finds downloaded movies without inventing an episode axis", () => {
+    const repo = {
+      get: () => undefined,
+      listTitleAssets: () => [asset({ titleId: "movie-1", mediaKind: "movie" })],
+      listByTitleIds: () => [],
+      listNextReadyByTitleCursors: () => [],
+      markValidation: () => {},
+      upsertPlayable: () => asset({ titleId: "movie-1", mediaKind: "movie" }),
+    } as unknown as OfflineAssetsRepository;
+    const service = new OfflineAssetService(repo);
+
+    expect(findReadyJobIdForEpisode(service, "movie-1", 1, 1, { mediaKind: "movie" })).toBe(
+      "job-1",
+    );
   });
 });

@@ -335,7 +335,12 @@ export function DownloadManagerContent({
         const job = allJobs[selectedIndex];
         if (!job) return;
 
-        if (key.return && (job.status === "completed" || job.status === "completed-with-notes")) {
+        if (
+          key.return &&
+          (job.status === "completed" ||
+            job.status === "completed-with-notes" ||
+            job.status === "repairable")
+        ) {
           void import("@/app/offline/offline-playback-launch").then(
             ({ requestUnifiedOfflinePlayback }) => requestUnifiedOfflinePlayback(container, job.id),
           );

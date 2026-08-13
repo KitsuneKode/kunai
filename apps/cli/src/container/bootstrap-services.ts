@@ -251,6 +251,9 @@ export function bootstrapServices(input: {
     historyRepository,
     offlineAssetService,
   });
+  downloadService.onEvent((event) => {
+    if (event.type === "deleted") offlineAssetService.removeForJob(event.jobId);
+  });
   const offlineMaintenanceService = new OfflineMaintenanceService({
     jobs: offlineMaintenanceJobs,
     assets: offlineAssetService,
