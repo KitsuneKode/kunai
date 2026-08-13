@@ -20,6 +20,23 @@ describe("Connectivity", () => {
     expect(connectivity.isOnline()).toBe(true);
   });
 
+  test("offline evidence stays sticky until an online operation succeeds", () => {
+    const connectivity = new Connectivity(() => false);
+
+    connectivity.recordFailure("ENETUNREACH", "search-error");
+    connectivity.recordFailure("request timed out", "provider-error");
+
+    expect(connectivity.getSnapshot()).toMatchObject({
+      status: "offline",
+      evidence: "provider-error",
+      message: "request timed out",
+    });
+    expect(connectivity.isOnline()).toBe(false);
+
+    connectivity.recordSuccess("search-error");
+    expect(connectivity.getSnapshot().status).toBe("online");
+  });
+
   test("subscribe fires when network reality changes", () => {
     const connectivity = new Connectivity(() => false);
     let calls = 0;

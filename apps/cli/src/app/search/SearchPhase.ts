@@ -40,6 +40,7 @@ import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { shouldRunBootstrapSearch } from "@/app/search/search-failure-policy";
 import { buildSearchFilterChipOptions } from "@/app/search/search-filter-chips";
 import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
 import {
@@ -296,7 +297,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           continue;
         }
 
-        if (currentState.searchQuery.trim().length > 0 && currentState.searchResults.length === 0) {
+        if (shouldRunBootstrapSearch(currentState)) {
           // A real text search supersedes any route subtitle (calendar/trending/etc).
           routeSubtitle = undefined;
           stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
@@ -1064,6 +1065,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       if (context.signal.aborted) {
         return { status: "cancelled" };
       }
+      stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "error" });
       logger.error("Search phase error", { error: String(e) });
       diagnosticsService.record(
         buildSearchDiagnosticEvent({

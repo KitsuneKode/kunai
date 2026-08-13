@@ -102,6 +102,7 @@ export function isTmdbNetworkError(error: unknown): boolean {
     name.includes("failedtoopensocket") ||
     name.includes("aborterror") ||
     message.includes("failedtoopensocket") ||
+    message.includes("unable to connect") ||
     message.includes("econnrefused") ||
     message.includes("network") ||
     message.includes("unreachable") ||

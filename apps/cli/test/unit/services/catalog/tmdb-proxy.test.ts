@@ -15,6 +15,12 @@ describe("tmdb proxy search errors", () => {
     expect(formatTmdbSearchError(error).message).toBe("Search service unreachable");
   });
 
+  test("maps Bun unable-to-connect failures to a friendly search message", () => {
+    const error = new Error("Unable to connect. Is the computer able to access the url?");
+    expect(isTmdbNetworkError(error)).toBe(true);
+    expect(formatTmdbSearchError(error).message).toBe("Search service unreachable");
+  });
+
   test("preserves non-network errors", () => {
     const error = new Error("Search failed: 500");
     expect(formatTmdbSearchError(error).message).toBe("Search failed: 500");

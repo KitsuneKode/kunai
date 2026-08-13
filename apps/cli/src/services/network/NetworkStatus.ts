@@ -30,6 +30,9 @@ const NETWORK_ERROR_PATTERNS = [
   "network is unreachable",
   "err_internet_disconnected",
   "err_name_not_resolved",
+  "unable to connect",
+  "failedtoopensocket",
+  "was there a typo in the url or port",
   "dns",
 ];
 
