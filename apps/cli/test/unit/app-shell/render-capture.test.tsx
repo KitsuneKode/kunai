@@ -240,9 +240,10 @@ describe("captureFramesSettled", () => {
         const [ready, setReady] = useState(false);
         useEffect(() => {
           let live = true;
-          void gate.promise.then(() => {
+          void (async () => {
+            await gate.promise;
             if (live) setReady(true);
-          });
+          })();
           return () => {
             live = false;
             unmounts += 1;
