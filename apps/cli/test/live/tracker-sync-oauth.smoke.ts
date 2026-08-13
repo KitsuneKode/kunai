@@ -82,10 +82,19 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  // Isolated profile: the live run must never touch the developer's real
-  // config, history, or cached credentials.
+  /**
+   * Isolated profile: the live run must never touch the developer's real
+   * config, history, or cached credentials.
+   *
+   * `SyncTokenStore` is handed `configDir` directly below, which is what
+   * actually decides where the token file lands. The XDG overrides are belt and
+   * braces for anything else this process might resolve a path through —
+   * `getKunaiPaths()` reads them, and there is no `KUNAI_CONFIG_DIR`.
+   */
   const profile = mkdtempSync(join(tmpdir(), "kunai-live-sync-"));
-  process.env.KUNAI_CONFIG_DIR = profile;
+  process.env.XDG_CONFIG_HOME = join(profile, "config");
+  process.env.XDG_DATA_HOME = join(profile, "data");
+  process.env.XDG_CACHE_HOME = join(profile, "cache");
   process.stdout.write(`isolated profile: ${profile}\n\n`);
 
   const controller = new AbortController();
