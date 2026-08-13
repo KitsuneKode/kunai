@@ -150,7 +150,7 @@ function parseAnidbShowIdFromHref(href: string | undefined): string | null {
 function extractAnidbTitle(attrs: string, body: string): string {
   const anchorTitle = extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label");
   const imageAlt = IMAGE_ALT_PATTERN.exec(body)?.[1];
-  const nestedText = stripScriptBlocks(body).replace(/<[^>]+>/g, " ");
+  const nestedText = stripTags(stripScriptBlocks(body));
   const decoded = decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText);
   // A raw ESC/BEL byte in the response body is the other half of the entity
   // vector closed in decodeCodePoint(); `\s` matches neither, so without this
@@ -218,6 +218,34 @@ function stripScriptBlocks(body: string): string {
     if (closeEnd === -1) return `${out + body.slice(cursor, open)} `;
     out += `${body.slice(cursor, open)} `;
     cursor = closeEnd + 1;
+  }
+}
+
+/**
+ * Replaces `/<[^>]+>/g` for the same reason as stripScriptBlocks: on a body of
+ * many `<` with no `>`, every `<` restarts a scan to end of input. Here the
+ * failing `indexOf(">")` can happen at most once, because it returns
+ * immediately, so the walk stays linear.
+ *
+ * Faithful to the regex it replaces: a tag needs at least one character between
+ * the brackets, so a literal `<>` is text, and an unclosed `<` keeps the rest of
+ * the string as text rather than discarding it.
+ */
+function stripTags(value: string): string {
+  let out = "";
+  let cursor = 0;
+  for (;;) {
+    const open = value.indexOf("<", cursor);
+    if (open === -1) return out + value.slice(cursor);
+    const close = value.indexOf(">", open + 1);
+    if (close === -1) return out + value.slice(cursor);
+    if (close === open + 1) {
+      out += value.slice(cursor, close + 1);
+      cursor = close + 1;
+      continue;
+    }
+    out += `${value.slice(cursor, open)} `;
+    cursor = close + 1;
   }
 }
 

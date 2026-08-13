@@ -173,6 +173,14 @@ describe("anidb browse parsing", () => {
     expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
+  test("strips tags in linear time on unclosed angle brackets", () => {
+    // `/<[^>]+>/g` restarted a scan to end of input at every `<`.
+    const hostile = `<a href="/anime/tagredos-14" title="T">${"<".repeat(200_000)}</a>`;
+    const startedAt = performance.now();
+    expect(parseAnidbBrowseHtml(hostile).map((result) => result.title)).toEqual(["T"]);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   test("never emits terminal control characters, raw or entity-encoded", () => {
     const ESC = String.fromCharCode(27);
     const BEL = String.fromCharCode(7);
