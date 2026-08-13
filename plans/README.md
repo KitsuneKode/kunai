@@ -156,10 +156,11 @@ Already landed from this audit (no plan needed):
 | 041  | Jail installer staging cleanup                    | P0       | S      | —          | DONE   |
 | 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | DONE   |
 | 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO   |
+| 044  | Preserve the working Windows launcher             | P0       | S      | —          | DONE   |
 
 Plans 039 and 040 are sequenced because the first fixes the user-visible search
 failure and the second guarantees its search/session diagnostics survive export.
-Plans 041–043 are independent and should remain separate implementation PRs.
+Plans 041–044 are independent and should remain separate implementation PRs.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (one-line reason) | REJECTED (one-line rationale)
 
