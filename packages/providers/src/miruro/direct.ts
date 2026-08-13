@@ -1316,6 +1316,48 @@ function buildMiruroPipeHeaders(baseUrl: string, referer?: string): Record<strin
   };
 }
 
+const MIRURO_CURL_STATUS_MARKER = "\n__KUNAI_CURL_STATUS__:";
+const MIRURO_CURL_STATUS_WRITE_OUT = "\n__KUNAI_CURL_STATUS__:%{http_code}";
+/** Abort only when throughput collapses below this for `STALL_SECONDS`. */
+const MIRURO_CURL_MIN_BYTES_PER_SECOND = 1024;
+const MIRURO_CURL_STALL_SECONDS = 5;
+/** Backstop only; the engine's attempt timeout is the real bound. */
+const MIRURO_CURL_MAX_SECONDS = 25;
+
+/**
+ * Read one curl invocation's outcome.
+ *
+ * curl writes its `-w` status line even when the transfer aborts part-way, so
+ * the presence of the marker is **not** proof of a complete body. Trusting it
+ * let a truncated multi-megabyte episode catalog through as a healthy HTTP 200,
+ * and the decoder then reported that transport failure as `pipe-xor-gunzip-failed`.
+ * A non-zero exit means the body is partial — refuse it.
+ */
+export function interpretMiruroCurlResult(input: {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}): { readonly status: number; readonly text: string } {
+  if (input.exitCode !== 0) {
+    throw new Error(input.stderr.trim() || `curl exit ${input.exitCode}`);
+  }
+
+  const index = input.stdout.lastIndexOf(MIRURO_CURL_STATUS_MARKER);
+  if (index < 0) {
+    throw new Error(input.stderr.trim() || "curl returned without an HTTP response");
+  }
+
+  const status = Number.parseInt(
+    input.stdout.slice(index + MIRURO_CURL_STATUS_MARKER.length).trim(),
+    10,
+  );
+  if (!Number.isFinite(status) || status <= 0) {
+    throw new Error(input.stderr.trim() || "curl returned without an HTTP status");
+  }
+
+  return { status, text: input.stdout.slice(0, index) };
+}
+
 /**
  * Bun/Node fetch often gets CF 403 HTML on /api/secure/pipe while the same URL works
  * with curl --http2 (browser network capture on www.miruro.bz). Prefer native fetch,
@@ -1395,9 +1437,6 @@ async function fetchMiruroPipeBody(
     };
   }
 
-  // Curl exists to clear Cloudflare challenges; for plain HTTP errors it rarely
-  // changes the answer, so keep every curl attempt inside the candidate budget.
-  const curlMaxTime = "8";
   const hasCurlHttp2 = detectCurlHttp2Support();
   const args = [
     curlPath,
@@ -1423,9 +1462,17 @@ async function fetchMiruroPipeBody(
     "-H",
     "sec-fetch-site: same-origin",
     "-w",
-    "\n__KUNAI_CURL_STATUS__:%{http_code}",
+    MIRURO_CURL_STATUS_WRITE_OUT,
+    // A long-running series' episode catalog is multiple megabytes, so a flat
+    // wall-clock cap truncates a perfectly healthy transfer. Bound the stall
+    // instead: abort only when throughput collapses. The engine's own attempt
+    // timeout still caps total time, and the ceiling is a backstop.
+    "--speed-limit",
+    String(MIRURO_CURL_MIN_BYTES_PER_SECOND),
+    "--speed-time",
+    String(MIRURO_CURL_STALL_SECONDS),
     "--max-time",
-    curlMaxTime,
+    String(MIRURO_CURL_MAX_SECONDS),
     url,
   ];
 
@@ -1450,16 +1497,11 @@ async function fetchMiruroPipeBody(
     if (aborted || signal?.aborted) {
       throw new Error("aborted");
     }
-    if (exit !== 0 && !raw.includes("__KUNAI_CURL_STATUS__:")) {
-      throw new Error(stderr.trim() || `curl exit ${exit}`);
-    }
-    const marker = "\n__KUNAI_CURL_STATUS__:";
-    const idx = raw.lastIndexOf(marker);
-    const text = idx >= 0 ? raw.slice(0, idx) : raw;
-    const status = idx >= 0 ? Number.parseInt(raw.slice(idx + marker.length).trim(), 10) : 0;
-    if (!Number.isFinite(status) || status <= 0) {
-      throw new Error(stderr.trim() || `curl exit ${exit || "without an HTTP response"}`);
-    }
+    const { status, text } = interpretMiruroCurlResult({
+      exitCode: exit,
+      stdout: raw,
+      stderr,
+    });
     return {
       status,
       text,

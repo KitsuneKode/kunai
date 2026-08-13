@@ -7,6 +7,7 @@ import {
   buildMiruroCycleCandidates,
   createMiruroResultFromPayload,
   decodeMiruroPipePayload,
+  interpretMiruroCurlResult,
   MiruroPipeDecodeError,
   type MiruroPipeDecodeFailureCode,
   MIRURO_SERVER_TRY_ORDER,
@@ -393,5 +394,47 @@ describe("subtitle format comes from evidence", () => {
     });
 
     expect(result?.subtitles.map((subtitle) => subtitle.format)).toEqual(["vtt", "srt", "unknown"]);
+  });
+});
+
+describe("interpretMiruroCurlResult", () => {
+  const marker = "\n__KUNAI_CURL_STATUS__:";
+
+  test("accepts a complete transfer and strips the status marker", () => {
+    const result = interpretMiruroCurlResult({
+      exitCode: 0,
+      stdout: `bh4YNPj7payload${marker}200`,
+      stderr: "",
+    });
+
+    expect(result).toEqual({ status: 200, text: "bh4YNPj7payload" });
+  });
+
+  /**
+   * curl writes its `-w` status line even when `--max-time` aborts mid-body, so
+   * the marker alone is not proof of a complete transfer. Accepting it fed a
+   * truncated payload to the decoder, which then reported a transport failure as
+   * `pipe-xor-gunzip-failed` — a real Miruro live failure.
+   */
+  test("rejects a truncated transfer even though curl still reported HTTP 200", () => {
+    expect(() =>
+      interpretMiruroCurlResult({
+        exitCode: 28,
+        stdout: `bh4YNPj7partial${marker}200`,
+        stderr: "curl: (28) Operation timed out after 8001 milliseconds with 1024 bytes received",
+      }),
+    ).toThrow("Operation timed out");
+  });
+
+  test("rejects a transfer that produced no HTTP status at all", () => {
+    expect(() =>
+      interpretMiruroCurlResult({ exitCode: 0, stdout: "no marker here", stderr: "" }),
+    ).toThrow();
+    expect(() =>
+      interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}not-a-number`, stderr: "" }),
+    ).toThrow();
+    expect(() =>
+      interpretMiruroCurlResult({ exitCode: 0, stdout: `body${marker}0`, stderr: "" }),
+    ).toThrow();
   });
 });
