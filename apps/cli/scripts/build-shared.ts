@@ -225,8 +225,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * cancellation/reconnect generation guards. `main` had only 388 bytes of
  * headroom before those changes. The added provider code is diagnostics and
  * bounded-cache machinery: endpoint-aware pipe decoding, a curl truncation
- * guard, strict catalog-id parsing, and TTL cache size bounds. The step restores
- * real headroom rather than clearing one change.
+ * guard, strict catalog-id parsing, captcha classification that replaces a
+ * silent empty result, and TTL cache size bounds. The step restores real
+ * headroom rather than clearing one change.
  */
 export const NPM_BUNDLE_BUDGET_KB = 2_880;
 
