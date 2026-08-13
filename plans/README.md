@@ -152,7 +152,7 @@ Already landed from this audit (no plan needed):
 | Plan | Title                                             | Priority | Effort | Depends on | Status |
 | ---- | ------------------------------------------------- | -------- | ------ | ---------- | ------ |
 | 039  | Preserve network truth and surface search failure | P0       | S      | —          | DONE   |
-| 040  | Make support-bundle sections exhaustive           | P0       | S      | 039        | TODO   |
+| 040  | Make support-bundle sections exhaustive           | P0       | S      | 039        | DONE   |
 | 041  | Jail installer staging cleanup                    | P0       | S      | —          | DONE   |
 | 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | DONE   |
 | 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO   |

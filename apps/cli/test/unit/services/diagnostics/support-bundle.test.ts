@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { DIAGNOSTIC_CATEGORIES } from "@/services/diagnostics/diagnostic-event";
 import { resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import {
   applySupportBundleSizeBudget,
@@ -11,6 +12,23 @@ import {
 const TEST_HOME = resolveRedactionHomeDir() ?? "/home/kunai-test";
 
 describe("DiagnosticsSupportBundle", () => {
+  test("exports a section for every diagnostic category in taxonomy order", () => {
+    const bundle = buildDiagnosticsSupportBundle({
+      appVersion: "0.1.0",
+      debug: false,
+      events: DIAGNOSTIC_CATEGORIES.map((category, index) => ({
+        timestamp: index + 1,
+        category,
+        level: "info" as const,
+        operation: `${category}.test`,
+        message: `${category} diagnostic`,
+      })),
+    });
+
+    expect(Object.keys(bundle.sections)).toEqual([...DIAGNOSTIC_CATEGORIES]);
+    expect(bundle.summary.sections).toEqual([...DIAGNOSTIC_CATEGORIES]);
+  });
+
   test("builds layered summary and section metadata", () => {
     const bundle = buildDiagnosticsSupportBundle({
       appVersion: "0.1.0",
@@ -36,7 +54,7 @@ describe("DiagnosticsSupportBundle", () => {
 
     expect(bundle.summary.headline).toBe("Network unavailable");
     expect(bundle.triage.likelyCause).toBe("Network unavailable");
-    expect(bundle.summary.sections).toEqual(["network", "provider"]);
+    expect(bundle.summary.sections).toEqual(["provider", "network"]);
     expect(bundle.sections.network).toMatchObject({ tone: "warning", eventCount: 1 });
     expect(bundle.sections.provider).toMatchObject({ tone: "neutral", eventCount: 1 });
     expect(bundle.privacy).toEqual({

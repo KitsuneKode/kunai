@@ -19,13 +19,13 @@ hardcodes nine and silently drops `session`, `search`, `ui`, and `update`.
 
 ## Tasks
 
-- [ ] Export one readonly `DIAGNOSTIC_CATEGORIES` tuple from `diagnostic-event.ts`
+- [x] Export one readonly `DIAGNOSTIC_CATEGORIES` tuple from `diagnostic-event.ts`
       and derive `DiagnosticCategory` from `(typeof DIAGNOSTIC_CATEGORIES)[number]`.
-- [ ] Add a failing table-driven `support-bundle.test.ts` case with one event per
+- [x] Add a failing table-driven `support-bundle.test.ts` case with one event per
       category; expect all thirteen section keys in tuple order.
-- [ ] Make `buildBundleSections` iterate the shared tuple. Keep omitting categories
+- [x] Make `buildBundleSections` iterate the shared tuple. Keep omitting categories
       with zero events and retain current privacy and size budgets.
-- [ ] Do not add empty per-category configuration or a second allowlist.
+- [x] Do not add empty per-category configuration or a second allowlist.
 
 ## Verification
 
