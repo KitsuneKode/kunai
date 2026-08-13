@@ -6,6 +6,7 @@ import {
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
+import type { RecordedOfflineStatus } from "@/services/offline/OfflineAssetService";
 import type { HistoryProgress } from "@kunai/storage";
 
 function result(patch: Partial<SearchResult> = {}): SearchResult {
@@ -316,8 +317,8 @@ describe("ResultEnrichmentService", () => {
 
 describe("ResultEnrichmentService cancellation", () => {
   function deferredOffline() {
-    let resolve!: (value: ReadonlyArray<{ titleId: string; status: string }>) => void;
-    const promise = new Promise<ReadonlyArray<{ titleId: string; status: string }>>((res) => {
+    let resolve!: (value: readonly RecordedOfflineStatus[]) => void;
+    const promise = new Promise<readonly RecordedOfflineStatus[]>((res) => {
       resolve = res;
     });
     return { promise, resolve };
