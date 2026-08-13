@@ -108,7 +108,6 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
     anilist: { enabled: false, trackWatched: false, syncList: false },
     tmdb: { enabled: false, trackWatched: false, syncList: false },
   },
-  syncNudgeDismissedAt: undefined,
   lastWeeklyDigestShownAt: null,
   tuningOverrides: {},
   titleProviderPreferences: {},

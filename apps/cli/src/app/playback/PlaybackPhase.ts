@@ -2543,17 +2543,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
-          // One-time sync nudge: show on first episode completion if no sync is connected.
-          if (
-            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode) &&
-            !config.syncNudgeDismissedAt &&
-            container.syncService.getConnectedAdapters().length === 0
-          ) {
-            this.updatePlaybackFeedback(context, {
-              note: "Connect AniList or TMDB to sync progress. /sync to set up  ·  [d] dismiss",
-            });
-          }
-
           const providerRecoveryAllowed = shouldUseProviderPlaybackRecovery(streamProvenance);
           const shouldInvalidateStreamCache =
             providerRecoveryAllowed &&

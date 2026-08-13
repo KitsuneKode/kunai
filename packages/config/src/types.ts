@@ -150,7 +150,6 @@ export interface KitsuneConfig {
     anilist: { enabled: boolean; trackWatched: boolean; syncList: boolean };
     tmdb: { enabled: boolean; trackWatched: boolean; syncList: boolean };
   };
-  syncNudgeDismissedAt?: string;
   lastWeeklyDigestShownAt?: string | null;
   lastStreakMilestoneDays?: number;
   tuningOverrides?: ConfigTuningOverrides;
