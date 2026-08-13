@@ -113,6 +113,18 @@ export type SyncOutcome =
       readonly status: "needs-reauth";
       readonly code: string;
       readonly detail?: string;
+    }
+  /**
+   * The tracker asked us to come back later, and said when.
+   *
+   * Deliberately not a `failed` variant: nothing is wrong with the row, so it
+   * must not accrue attempts or drift toward a longer backoff for a queue-wide
+   * condition it did not cause. The wait is the server's number, not ours.
+   */
+  | {
+      readonly status: "rate-limited";
+      readonly retryAfterMs: number;
+      readonly detail?: string;
     };
 
 export const syncOk = (detail?: string): SyncOutcome => ({
@@ -143,6 +155,15 @@ export function syncFailed(
   return { status: "failed", code, kind, retryable: false, ...(detail ? { detail } : {}) };
 }
 
+export const syncRateLimited = (
+  retryAfterMs: number,
+  detail?: string,
+): Extract<SyncOutcome, { status: "rate-limited" }> => ({
+  status: "rate-limited",
+  retryAfterMs,
+  ...(detail ? { detail } : {}),
+});
+
 export const syncNeedsReauth = (
   code: string,
   detail?: string,
@@ -155,13 +176,4 @@ export const syncNeedsReauth = (
 /** Every adapter mutation is cancellable; there is no uninterruptible path. */
 export type SyncMutationOptions = {
   readonly signal: AbortSignal;
-};
-
-/**
- * Connect additionally needs to say things to the user. It reports through
- * `onPrompt` so the Ink shell owns rendering — an adapter writing to stdout
- * corrupts the frame.
- */
-export type SyncConnectOptions = SyncMutationOptions & {
-  readonly onPrompt: (message: string) => void;
 };

@@ -266,6 +266,43 @@ export class SyncOutboxRepository {
     return apply();
   }
 
+  /**
+   * The tracker asked us to come back at a specific time.
+   *
+   * Not a retry: the attempt this claim started is rolled back, because the row
+   * did nothing wrong and must not inherit a longer backoff — or a place closer
+   * to dead-letter — for a queue-wide condition. `next_attempt_at` is the
+   * server's own number, so the wait is durable and survives a restart rather
+   * than being re-learned by hitting the limit again.
+   */
+  defer(input: {
+    readonly item: SyncOutboxClaimRef;
+    readonly notBefore: Date;
+    readonly errorCode: string;
+    readonly now?: Date;
+  }): SyncOutboxMutationResult {
+    const now = input.now ?? new Date();
+    const apply = this.db.transaction(
+      (): SyncOutboxMutationResult =>
+        this.transition(
+          input.item,
+          `state = 'pending',
+         claim_token = NULL,
+         claimed_at = NULL,
+         attempts = MAX(attempts - 1, 0),
+         next_attempt_at = ?,
+         last_error_code = ?,
+         updated_at = ?`,
+          [
+            input.notBefore.toISOString(),
+            clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
+            now.toISOString(),
+          ],
+        ),
+    );
+    return apply();
+  }
+
   /** Hand the row back untouched — shutdown, not failure. */
   release(item: SyncOutboxClaimRef, now = new Date()): SyncOutboxMutationResult {
     return this.transition(

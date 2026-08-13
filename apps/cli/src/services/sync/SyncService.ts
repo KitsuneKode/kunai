@@ -12,6 +12,7 @@ import {
   resolveAniListProgressEpisode,
   resolveTmdbIdentity,
 } from "./sync-identity";
+import { resolvePauseState } from "./sync-pause";
 import type { SyncAdapter } from "./SyncAdapter";
 import {
   syncCancelled,
@@ -36,7 +37,11 @@ export interface SyncConfigGate {
  * queued work outlives the moment it was queued.
  */
 export interface SyncConfigPort {
-  read(): Promise<{ readonly sync: Readonly<Record<TrackerId, SyncConfigGate>> }>;
+  read(): Promise<{
+    readonly sync: Readonly<Record<TrackerId, SyncConfigGate>> & {
+      readonly pausedUntil?: string | null;
+    };
+  }>;
 }
 
 export type SyncPushSummary = {
@@ -50,6 +55,8 @@ export type SyncPushSummary = {
   readonly deadLettered: number;
   readonly released: number;
   readonly superseded: number;
+  /** Held back because the tracker asked us to wait — not a failure. */
+  readonly deferred: number;
   readonly pending: number;
   readonly failures: readonly string[];
 };
@@ -76,6 +83,7 @@ const emptySummary = (pending: number): SyncPushSummary => ({
   deadLettered: 0,
   released: 0,
   superseded: 0,
+  deferred: 0,
   pending,
   failures: [],
 });
@@ -237,6 +245,11 @@ export class SyncService {
   }
 
   private async drainOnce(limit: number, options?: SyncMutationOptions): Promise<SyncPushSummary> {
+    // Checked before claiming, not per row: a paused queue should not churn
+    // leases it has no intention of using.
+    const pause = resolvePauseState((await this.config.read()).sync.pausedUntil);
+    if (pause.paused) return emptySummary(this.outbox.counts().pending);
+
     const claims = this.outbox.claimDue(limit);
     if (claims.length === 0) return emptySummary(this.outbox.counts().pending);
 
@@ -248,14 +261,35 @@ export class SyncService {
       deadLettered: 0,
       released: 0,
       superseded: 0,
+      deferred: 0,
     };
     const failures: string[] = [];
 
+    /**
+     * Once a tracker says "come back later", every remaining row for that
+     * tracker in this batch is deferred without asking again.
+     *
+     * Deciding this per row is what turned one drain of 25 rows into 25
+     * requests the server had already refused — the limit is a property of the
+     * connection, not of any single payload.
+     */
+    const backOffUntil = new Map<TrackerId, Date>();
+
     for (const claim of claims) {
+      const blocked = backOffUntil.get(claim.trackerId);
+      if (blocked) {
+        this.outbox.defer({ item: claim, notBefore: blocked, errorCode: "rate-limited" });
+        tally.deferred += 1;
+        continue;
+      }
+
       const result = await this.deliver(claim, options);
       if (result.transition === "superseded") tally.superseded += 1;
       else tally[result.bucket] += 1;
       if (result.failure) failures.push(result.failure);
+      if (result.retryAfterMs !== undefined) {
+        backOffUntil.set(claim.trackerId, new Date(Date.now() + result.retryAfterMs));
+      }
     }
 
     const failed = tally.retrying + tally.needsReauth + tally.deadLettered;
@@ -276,8 +310,16 @@ export class SyncService {
     options?: SyncMutationOptions,
   ): Promise<{
     transition: string;
-    bucket: "succeeded" | "skipped" | "retrying" | "needsReauth" | "deadLettered" | "released";
+    bucket:
+      | "succeeded"
+      | "skipped"
+      | "retrying"
+      | "needsReauth"
+      | "deadLettered"
+      | "released"
+      | "deferred";
     failure?: string;
+    retryAfterMs?: number;
   }> {
     const parsed = parseTrackerOperation(claim.payload);
     if (!parsed.ok) {
@@ -346,8 +388,17 @@ export class SyncService {
     outcome: SyncOutcome,
   ): {
     transition: string;
-    bucket: "succeeded" | "skipped" | "retrying" | "needsReauth" | "deadLettered" | "released";
+    bucket:
+      | "succeeded"
+      | "skipped"
+      | "retrying"
+      | "needsReauth"
+      | "deadLettered"
+      | "released"
+      | "deferred";
     failure?: string;
+    /** Set only when the tracker named a wait, so the drain can stop asking. */
+    retryAfterMs?: number;
   } {
     const label = (code: string) => `${adapter.displayName}: ${code}`;
     switch (outcome.status) {
@@ -359,6 +410,16 @@ export class SyncService {
         // Cancellation is not failure: the claim goes back untouched so an
         // orderly shutdown cannot walk a row toward dead-letter.
         return { transition: this.outbox.release(claim), bucket: "released" };
+      case "rate-limited":
+        return {
+          transition: this.outbox.defer({
+            item: claim,
+            notBefore: new Date(Date.now() + outcome.retryAfterMs),
+            errorCode: "rate-limited",
+          }),
+          bucket: "deferred",
+          retryAfterMs: outcome.retryAfterMs,
+        };
       case "needs-reauth":
         return {
           transition: this.outbox.requireReauth({

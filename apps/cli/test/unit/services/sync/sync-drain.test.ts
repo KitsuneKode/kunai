@@ -6,7 +6,13 @@ import { join } from "node:path";
 import type { TrackerOperation } from "@/services/sync/operations";
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import { SyncService, type SyncConfigPort } from "@/services/sync/SyncService";
-import { syncFailed, syncNeedsReauth, syncOk, type SyncOutcome } from "@/services/sync/types";
+import {
+  syncFailed,
+  syncNeedsReauth,
+  syncOk,
+  syncRateLimited,
+  type SyncOutcome,
+} from "@/services/sync/types";
 import { openKunaiDatabase, runMigrations, SyncOutboxRepository } from "@kunai/storage";
 
 const dirs: string[] = [];
@@ -303,5 +309,141 @@ describe("SyncService drain", () => {
 
     expect(tmdb.calls).toHaveLength(0);
     expect(summary.deadLettered).toBe(1);
+  });
+});
+
+/**
+ * A rate limit is a property of the connection, not of any one payload. The
+ * drain used to decide per row, so a limited tracker was asked once per claimed
+ * row — the exact hammering the limit exists to prevent.
+ */
+describe("SyncService rate limiting", () => {
+  test("stops asking a rate-limited tracker for the rest of the drain", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist", () => syncRateLimited(30_000));
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    for (let episode = 1; episode <= 5; episode += 1) {
+      service.enqueueOperation({
+        version: 1,
+        kind: "progress:set",
+        target: { tracker: "anilist", anilistId: 100 + episode, mediaKind: "anime" },
+        progress: episode,
+        status: "watching",
+      });
+    }
+
+    const summary = await service.drain();
+
+    // One ask, four deferred without asking.
+    expect(anilist.calls.length).toBe(1);
+    expect(summary.deferred).toBe(5);
+    // Deferral is not failure: nothing is retrying, dead-lettered, or reported.
+    expect(summary.failed).toBe(0);
+    expect(summary.failures).toEqual([]);
+    // Everything is still queued, none of it lost.
+    expect(summary.pending).toBe(5);
+  });
+
+  /** A deferred row must not inherit a longer backoff it did not earn. */
+  test("does not spend an attempt on a deferral", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist", () => syncRateLimited(30_000));
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+
+    const [row] = repo.claimDue(10, new Date(Date.now() + 60_000));
+    expect(row?.attempts).toBe(1);
+  });
+
+  /** The server's own number decides when, not our exponential backoff. */
+  test("honours the tracker's wait rather than the local backoff schedule", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist", () => syncRateLimited(10 * 60_000));
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+
+    // Well past the 30s first-retry backoff, still parked.
+    expect(repo.claimDue(10, new Date(Date.now() + 60_000)).length).toBe(0);
+    expect(repo.claimDue(10, new Date(Date.now() + 11 * 60_000)).length).toBe(1);
+  });
+});
+
+/**
+ * Pausing is "not right now", not "never". The distinction only earns its keep
+ * if pausing never loses work — so enqueue keeps accepting while the drain
+ * holds, and resuming delivers everything that piled up.
+ */
+describe("SyncService pause", () => {
+  const pausedConfig = (pausedUntil: string | null) => ({
+    read: async () => ({
+      sync: { pausedUntil, anilist: enabled, tmdb: enabled },
+    }),
+  });
+
+  test("delivers nothing while paused, and loses nothing either", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: pausedConfig(new Date(Date.now() + 60 * 60 * 1000).toISOString()),
+    });
+
+    expect(service.enqueueOperation(anilistFavourite)).toBe(1);
+    const summary = await service.drain();
+
+    expect(anilist.calls.length).toBe(0);
+    expect(summary.pending).toBe(1);
+    expect(summary.claimed).toBe(0);
+    // No claim was taken, so nothing was left leased behind a pause.
+    expect(repo.claimDue(10).length).toBe(1);
+  });
+
+  test("delivers normally once the pause has elapsed", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: pausedConfig(new Date(Date.now() - 1_000).toISOString()),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+
+    expect(anilist.calls.length).toBe(1);
+  });
+
+  /** A corrupt timestamp must not stop sync forever with nothing to show why. */
+  test("treats an unparseable pause as not paused", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: pausedConfig("whenever"),
+    });
+
+    service.enqueueOperation(anilistFavourite);
+    await service.drain();
+
+    expect(anilist.calls.length).toBe(1);
   });
 });

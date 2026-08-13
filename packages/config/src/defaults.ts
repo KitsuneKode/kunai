@@ -105,6 +105,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   lastUpdateCheckFailedAt: 0,
   lastKnownLatestVersion: "",
   sync: {
+    pausedUntil: null,
     anilist: { enabled: false, trackWatched: false, syncList: false },
     tmdb: { enabled: false, trackWatched: false, syncList: false },
   },

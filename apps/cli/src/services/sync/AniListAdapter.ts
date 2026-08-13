@@ -4,6 +4,7 @@ import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import { resolveAniListAuth, type AniListAuthResolution } from "./auth-contract";
 import { createOAuthState, startLoopbackServer, type LoopbackResult } from "./oauth-loopback";
 import type { TrackerOperation } from "./operations";
+import { TrackerRateLimiter } from "./rate-limit";
 import {
   outcomeForAbortedRequest,
   startRequestDeadline,
@@ -17,6 +18,7 @@ import {
   syncFailed,
   syncNeedsReauth,
   syncOk,
+  syncRateLimited,
   type ConnectionState,
   type SyncCapabilities,
   type SyncMutationOptions,
@@ -29,9 +31,14 @@ import {
  * revoked token surfaces here too and must become a reauth demand rather than a
  * retry, or the queue spins against a credential the server has already refused.
  */
-function outcomeForGraphQlErrors(errors?: { message: string }[]): SyncOutcome | null {
+function outcomeForGraphQlErrors(
+  errors?: { message: string; status?: number }[],
+): SyncOutcome | null {
   const first = errors?.[0]?.message;
   if (!first) return null;
+  // AniList also reports the limit inside the GraphQL envelope. Without this it
+  // reads as a generic remote error and retries on our schedule, not theirs.
+  if (errors?.[0]?.status === 429) return syncRateLimited(DEFAULT_GRAPHQL_RETRY_AFTER_MS, first);
   if (/invalid token|unauthorized|not authenticated/i.test(first)) {
     return syncNeedsReauth("token-rejected");
   }
@@ -43,6 +50,14 @@ class AniListHttpError extends Error {
   constructor(readonly status: number) {
     super(`AniList API error: ${status}`);
     this.name = "AniListHttpError";
+  }
+}
+
+/** A 429 is not a failure, so it travels as its own type with the wait. */
+class AniListRateLimitError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super("AniList rate limit reached");
+    this.name = "AniListRateLimitError";
   }
 }
 
@@ -106,6 +121,8 @@ const ANILIST_CAPABILITIES: SyncCapabilities = {
 };
 
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
+/** AniList's documented default wait when it does not send one itself. */
+const DEFAULT_GRAPHQL_RETRY_AFTER_MS = 60_000;
 const OAUTH_BASE = "https://anilist.co/api/v2/oauth";
 const OAUTH_TIMEOUT_MS = 90_000;
 type AniListFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -149,6 +166,7 @@ export class AniListAdapter implements SyncAdapter {
   private userId: number | undefined;
   private accessToken: string | undefined;
   private expiresAt: string | undefined;
+  private readonly limiter = new TrackerRateLimiter();
   /** Set only when AniList has actually refused the token, never on a timeout. */
   private reauthReason: string | undefined;
 
@@ -404,6 +422,7 @@ export class AniListAdapter implements SyncAdapter {
           return await this.setFavoriteMembership(operation, deadline);
       }
     } catch (error) {
+      if (error instanceof AniListRateLimitError) return syncRateLimited(error.retryAfterMs);
       return (
         outcomeForAbortedRequest(options.signal, deadline) ??
         syncFailed("request-failed", "network", errorCode(error))
@@ -411,6 +430,11 @@ export class AniListAdapter implements SyncAdapter {
     } finally {
       deadline.release();
     }
+  }
+
+  /** What the last response said about the budget, for status and diagnostics. */
+  getRateLimit() {
+    return this.limiter.getSnapshot();
   }
 
   private async setProgress(
@@ -503,6 +527,9 @@ export class AniListAdapter implements SyncAdapter {
     variables?: Record<string, unknown>,
     deadline?: RequestDeadline,
   ): Promise<T> {
+    // Ease off before asking, not after being refused.
+    if (deadline) await this.limiter.waitInline(deadline.signal);
+
     const res = await this.fetchImpl(ANILIST_GRAPHQL, {
       method: "POST",
       headers: {
@@ -513,6 +540,10 @@ export class AniListAdapter implements SyncAdapter {
       body: JSON.stringify({ query, variables }),
       ...(deadline ? { signal: deadline.signal } : {}),
     });
+    const budget = this.limiter.observe(res);
+    if (res.status === 429) {
+      throw new AniListRateLimitError(budget.retryAfterMs ?? DEFAULT_GRAPHQL_RETRY_AFTER_MS);
+    }
     if (!res.ok) throw new AniListHttpError(res.status);
     return res.json() as Promise<T>;
   }

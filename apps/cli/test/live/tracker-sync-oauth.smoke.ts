@@ -56,6 +56,8 @@ function describeOutcome(outcome: SyncOutcome): string {
       return `needs-reauth: ${outcome.code}`;
     case "failed":
       return `failed: ${outcome.code} (${outcome.kind})`;
+    case "rate-limited":
+      return `rate-limited: retry in ${Math.round(outcome.retryAfterMs / 1000)}s`;
   }
 }
 

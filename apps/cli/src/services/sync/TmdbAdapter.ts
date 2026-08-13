@@ -2,6 +2,7 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import type { TrackerOperation } from "./operations";
+import { TrackerRateLimiter } from "./rate-limit";
 import { outcomeForAbortedRequest, startRequestDeadline } from "./request-deadline";
 import type { SyncAdapter, SyncConnectOptions, SyncResult } from "./SyncAdapter";
 import {
@@ -10,6 +11,7 @@ import {
   syncFailed,
   syncNeedsReauth,
   syncOk,
+  syncRateLimited,
   type ConnectionState,
   type SyncCapabilities,
   type SyncMutationOptions,
@@ -43,6 +45,7 @@ export class TmdbAdapter implements SyncAdapter {
 
   private sessionId: string | undefined;
   private accountId: string | undefined;
+  private readonly limiter = new TrackerRateLimiter();
 
   constructor(
     private readonly tokenStore: SyncTokenStore,
@@ -76,6 +79,7 @@ export class TmdbAdapter implements SyncAdapter {
 
     const deadline = startRequestDeadline(options.signal);
     try {
+      await this.limiter.waitInline(deadline.signal);
       const res = await this.fetchImpl(`${TMDB_API_BASE}/account/${this.accountId}/${path}`, {
         method: "POST",
         headers: {
@@ -93,6 +97,8 @@ export class TmdbAdapter implements SyncAdapter {
         signal: deadline.signal,
       });
 
+      const budget = this.limiter.observe(res);
+      if (res.status === 429) return syncRateLimited(budget.retryAfterMs ?? 60_000);
       if (res.status === 401 || res.status === 403) return syncNeedsReauth("session-rejected");
       if (!res.ok) return syncFailed(`remote-${res.status}`, "remote");
       return syncOk();
@@ -130,6 +136,11 @@ export class TmdbAdapter implements SyncAdapter {
    * than a request that would only ever confirm what is already known.
    */
   async refreshIdentity(): Promise<void> {}
+
+  /** What the last response said about the budget, for status and diagnostics. */
+  getRateLimit() {
+    return this.limiter.getSnapshot();
+  }
 
   async connect({ signal, onPrompt }: SyncConnectOptions): Promise<SyncResult> {
     try {
