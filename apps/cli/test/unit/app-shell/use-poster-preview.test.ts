@@ -175,3 +175,65 @@ describe("spinner state", () => {
     expect(posterPreviewReducer(resolved, { type: "loading" }).spinner).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stale-completion gate
+//
+// Calendar navigation issues one poster request per row. When row A's fetch is
+// slower than row B's, A can resolve LAST — after the user already settled on
+// B. Effect cleanup normally cancels A, but the reducer is the last line of
+// defence: a completion that does not belong to the pending request must never
+// replace the poster that is already on screen.
+// ---------------------------------------------------------------------------
+
+describe("usePosterPreview stale-completion gate", () => {
+  const rowA = "calendar-row-a";
+  const rowB = "calendar-row-b";
+  const textPoster = (placeholder: string) =>
+    ({ kind: "text", placeholder, rows: 4, cols: 8 }) as const;
+
+  test("a completion for a superseded row cannot paint over the settled row", () => {
+    // Navigate A → B, settle B, then let A land last.
+    let state = posterPreviewReducer(initialPosterPreviewState, {
+      type: "loading",
+      sourceKey: rowA,
+    });
+    state = posterPreviewReducer(state, { type: "loading", sourceKey: rowB });
+    const settled = posterPreviewReducer(state, {
+      type: "resolved",
+      result: textPoster("B"),
+      sourceKey: rowB,
+    });
+    expect(settled.poster).toMatchObject({ placeholder: "B" });
+
+    const late = posterPreviewReducer(settled, {
+      type: "resolved",
+      result: textPoster("A"),
+      sourceKey: rowA,
+    });
+    // Identity, not just equality: the stale completion must not even re-render.
+    expect(late).toBe(settled);
+  });
+
+  test("the pending row's own completion still paints", () => {
+    const loading = posterPreviewReducer(initialPosterPreviewState, {
+      type: "loading",
+      sourceKey: rowB,
+    });
+    const resolved = posterPreviewReducer(loading, {
+      type: "resolved",
+      result: textPoster("B"),
+      sourceKey: rowB,
+    });
+    expect(resolved.posterState).toBe("ready");
+    expect(resolved.poster).toMatchObject({ placeholder: "B" });
+  });
+
+  test("re-requesting the same row keeps the same state reference during a burst", () => {
+    const first = posterPreviewReducer(initialPosterPreviewState, {
+      type: "loading",
+      sourceKey: rowA,
+    });
+    expect(posterPreviewReducer(first, { type: "loading", sourceKey: rowA })).toBe(first);
+  });
+});
