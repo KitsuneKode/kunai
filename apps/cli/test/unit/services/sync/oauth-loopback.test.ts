@@ -130,3 +130,82 @@ describe("startLoopbackServer", () => {
     }
   });
 });
+
+/**
+ * Implicit-grant mode. The access token arrives after `#`, which browsers never
+ * send to a server — so the callback serves a page that reads the fragment and
+ * returns it over same-origin loopback.
+ */
+describe("startLoopbackServer fragment mode", () => {
+  const fragmentServer = (overrides: Record<string, unknown> = {}) =>
+    startLoopbackServer({
+      redirectUri,
+      expectedState: "expected-state",
+      signal: new AbortController().signal,
+      timeoutMs: 5_000,
+      serviceName: "AniList",
+      mode: "fragment",
+      ...overrides,
+    });
+
+  test("serves a bridge on the callback without settling", async () => {
+    const loopback = fragmentServer({ timeoutMs: 150 });
+    try {
+      const response = await fetch(redirectUri);
+      const html = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(html).toContain("location.hash");
+      // The callback itself carries no answer, so it must not decide anything.
+      expect(await loopback.result).toEqual({ ok: false, reason: "timeout" });
+    } finally {
+      loopback.close();
+    }
+  });
+
+  test("accepts the token the bridge hands back", async () => {
+    const loopback = fragmentServer();
+    try {
+      await fetch(`${redirectUri}/collect?access_token=tok-123&state=expected-state`);
+      const result = await loopback.result;
+
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.params.get("access_token")).toBe("tok-123");
+    } finally {
+      loopback.close();
+    }
+  });
+
+  /**
+   * AniList's implicit grant rejects the request outright when `state` is sent,
+   * so there is no nonce to echo back. Requiring one would make the only
+   * working flow unusable; a *wrong* one is still refused.
+   */
+  test("accepts a missing state but still rejects a wrong one", async () => {
+    const without = fragmentServer();
+    try {
+      await fetch(`${redirectUri}/collect?access_token=tok-123`);
+      expect((await without.result).ok).toBe(true);
+    } finally {
+      without.close();
+    }
+
+    const wrong = fragmentServer();
+    try {
+      await fetch(`${redirectUri}/collect?access_token=tok-123&state=forged`);
+      expect(await wrong.result).toEqual({ ok: false, reason: "state-mismatch" });
+    } finally {
+      wrong.close();
+    }
+  });
+
+  test("never writes the token into the bridge document", async () => {
+    const loopback = fragmentServer({ timeoutMs: 150 });
+    try {
+      const html = await (await fetch(redirectUri)).text();
+      expect(html).not.toContain("access_token=");
+    } finally {
+      loopback.close();
+    }
+  });
+});

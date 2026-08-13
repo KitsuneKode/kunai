@@ -2,7 +2,7 @@ import { openExternalUrl } from "@/infra/shell/open-external-url";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import { resolveAniListAuth, type AniListAuthResolution } from "./auth-contract";
-import { createOAuthState, startLoopbackServer, type LoopbackResult } from "./oauth-loopback";
+import { startLoopbackServer, type LoopbackResult, type LoopbackServer } from "./oauth-loopback";
 import type { TrackerOperation } from "./operations";
 import { TrackerRateLimiter } from "./rate-limit";
 import {
@@ -26,23 +26,50 @@ import {
 } from "./types";
 
 /**
- * AniList reports application-level problems as a 200 with an `errors` array,
- * so a bare `res.ok` check treats a rejected write as a success. An expired or
- * revoked token surfaces here too and must become a reauth demand rather than a
- * retry, or the queue spins against a credential the server has already refused.
+ * AniList's GraphQL envelope, classified by what can be done about it.
+ *
+ * Every application-level problem arrives as an `errors` array — often with a
+ * 200 — so a bare `res.ok` check reads a rejected write as a success. The
+ * status inside each error is what separates the three fates:
+ *
+ *  - 400/404 are the request's own fault. Validation failures carry a
+ *    `validation` map naming the offending fields. Retrying cannot change the
+ *    answer, so these dead-letter instead of cycling until the backoff caps.
+ *  - 401/403 mean the credential is dead and must become a reauth demand, or
+ *    the queue spins against a token the server has already refused.
+ *  - 429 is the rate limit reported inside the envelope rather than as an HTTP
+ *    status; without this branch it retries on our schedule, not AniList's.
+ *
+ * Anything else is treated as transient, which is the safe default: a wrongly
+ * retried row costs one request, a wrongly dead-lettered one loses the write.
  */
-function outcomeForGraphQlErrors(
-  errors?: { message: string; status?: number }[],
-): SyncOutcome | null {
-  const first = errors?.[0]?.message;
-  if (!first) return null;
-  // AniList also reports the limit inside the GraphQL envelope. Without this it
-  // reads as a generic remote error and retries on our schedule, not theirs.
-  if (errors?.[0]?.status === 429) return syncRateLimited(DEFAULT_GRAPHQL_RETRY_AFTER_MS, first);
-  if (/invalid token|unauthorized|not authenticated/i.test(first)) {
+interface AniListGraphQlError {
+  readonly message: string;
+  readonly status?: number;
+  readonly validation?: Record<string, readonly string[]>;
+}
+
+function outcomeForGraphQlErrors(errors?: readonly AniListGraphQlError[]): SyncOutcome | null {
+  const first = errors?.[0];
+  if (!first?.message) return null;
+
+  if (first.status === 429) return syncRateLimited(DEFAULT_GRAPHQL_RETRY_AFTER_MS, first.message);
+
+  if (first.status === 401 || first.status === 403) return syncNeedsReauth("token-rejected");
+  if (/invalid token|unauthorized|not authenticated/i.test(first.message)) {
     return syncNeedsReauth("token-rejected");
   }
-  return syncFailed("remote-error", "remote", first.slice(0, 256));
+
+  if (first.validation) {
+    // Name the field, not the value: the message is stored and displayed.
+    const field = Object.keys(first.validation)[0] ?? "unknown";
+    return syncFailed("validation-rejected", "invalid", `field: ${field}`);
+  }
+  if (first.status === 400 || first.status === 404) {
+    return syncFailed(`remote-${first.status}`, "invalid", first.message.slice(0, 256));
+  }
+
+  return syncFailed("remote-error", "remote", first.message.slice(0, 256));
 }
 
 /** Carries the status so callers can tell "refused" from "could not ask". */
@@ -74,16 +101,10 @@ function aniListAuthMessage(
   reason: Extract<AniListAuthResolution["availability"], { available: false }>["reason"],
 ): string {
   switch (reason) {
-    case "client-id-missing":
-      return "Set KUNAI_ANILIST_CLIENT_ID to your AniList application client ID.";
     case "client-id-invalid":
-      return "KUNAI_ANILIST_CLIENT_ID is empty or a placeholder.";
-    case "client-secret-missing":
-      return "Set KUNAI_ANILIST_CLIENT_SECRET to your AniList application client secret.";
-    case "client-secret-invalid":
-      return "KUNAI_ANILIST_CLIENT_SECRET is empty or a placeholder.";
+      return "KUNAI_ANILIST_CLIENT_ID is empty or a placeholder. Unset it to use the built-in application.";
     case "callback-missing":
-      return "Set KUNAI_ANILIST_REDIRECT_URI to the redirect URI registered on your AniList application.";
+      return "KUNAI_ANILIST_CLIENT_ID is set, so KUNAI_ANILIST_REDIRECT_URI must be the redirect URI registered on that application.";
     case "callback-not-loopback":
       return "KUNAI_ANILIST_REDIRECT_URI must be a loopback address (127.0.0.1 or localhost).";
     case "callback-invalid":
@@ -129,32 +150,32 @@ type AniListFetch = (input: string | URL | Request, init?: RequestInit) => Promi
 
 interface ViewerResponse {
   data: { Viewer: { id: number; name: string } };
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 interface MediaListEntryResponse {
   data: { SaveMediaListEntry: { id: number } | null };
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 interface FavouriteLookupResponse {
   data?: { Media?: { id: number; isFavourite?: boolean } | null };
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 interface MediaEntryLookupResponse {
   data?: { Media?: { id: number; mediaListEntry?: { id: number } | null } | null };
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 interface ToggleFavouriteResponse {
   data?: unknown;
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 interface DeleteEntryResponse {
   data?: { DeleteMediaListEntry?: { deleted: boolean } | null };
-  errors?: { message: string }[];
+  errors?: readonly AniListGraphQlError[];
 }
 
 export class AniListAdapter implements SyncAdapter {
@@ -239,129 +260,70 @@ export class AniListAdapter implements SyncAdapter {
   }
 
   /**
-   * Run the authorization-code grant against the *registered* callback.
+   * Run the implicit grant against the registered callback.
    *
-   * AniList's token endpoint requires a client secret, so Kunai asks for the
-   * user's own — from the application they registered themselves. Kunai ships
-   * no credentials and keeps the secret nowhere: it is read from the
-   * environment at connect time and never written to the token file.
+   * The authorization URL carries `client_id` and `response_type` and nothing
+   * else, because that is empirically the only shape AniList accepts: adding
+   * `redirect_uri` or `state` makes it answer `unsupported_grant_type`. It uses
+   * the callback registered on the application, which is why that URI is fixed
+   * configuration rather than something Kunai can choose at runtime.
    *
-   * AniList also documents an implicit grant, which would need no secret, and
-   * long-registered clients do use it. This application is answered with
-   * `unsupported_grant_type` for `response_type=token`, so that path is not
-   * available to a newly registered client and is not implemented.
-   *
-   * The redirect URI is configuration, not something Kunai can invent: AniList
-   * matches it against the client registration exactly. Id, secret and callback
-   * must all be valid before anything is opened or bound, so a misconfiguration
-   * is reported here rather than after the user has approved in a browser.
+   * No client secret is involved. The token comes back in the redirect
+   * fragment, so there is no token endpoint to authenticate against and Kunai
+   * ships no credential that could leak.
    */
-  async connect({ signal }: SyncConnectOptions): Promise<SyncResult> {
+  async connect({ signal, onPrompt }: SyncConnectOptions): Promise<SyncResult> {
     const resolution = this.auth ?? resolveAniListAuth();
-    const { availability, clientId, clientSecret } = resolution;
+    const { availability, clientId } = resolution;
     if (!availability.available) {
       return { ok: false, error: aniListAuthMessage(availability.reason) };
     }
-    // The resolution type pairs an available result with non-null credentials,
-    // but that correlation does not survive destructuring — so these stay as
-    // total guards rather than non-null assertions.
+    // The resolution type pairs an available result with a non-null client id,
+    // but that correlation does not survive destructuring — so this stays as a
+    // total guard rather than a non-null assertion.
     if (clientId === null) {
       return { ok: false, error: aniListAuthMessage("client-id-invalid") };
     }
-    if (clientSecret === null) {
-      return { ok: false, error: aniListAuthMessage("client-secret-invalid") };
-    }
 
-    const state = createOAuthState();
-    const callback = startLoopbackServer({
-      redirectUri: availability.redirectUri,
-      expectedState: state,
-      signal,
-      timeoutMs: OAUTH_TIMEOUT_MS,
-      serviceName: "AniList",
-    });
+    let callback: LoopbackServer;
+    try {
+      callback = startLoopbackServer({
+        redirectUri: availability.redirectUri,
+        // AniList echoes no nonce back on this grant, so there is none to
+        // compare. The listener is single-use and torn down either way.
+        expectedState: "",
+        signal,
+        timeoutMs: OAUTH_TIMEOUT_MS,
+        serviceName: "AniList",
+        mode: "fragment",
+      });
+    } catch {
+      // The port is registered on the AniList application, so another one
+      // cannot be substituted — a busy port is a real dead end and says so.
+      return {
+        ok: false,
+        error: `Could not listen on ${availability.redirectUri}. Another program is using that port; free it and try again.`,
+      };
+    }
 
     try {
       const authorizeUrl =
         `${OAUTH_BASE}/authorize?client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${encodeURIComponent(availability.redirectUri)}` +
-        `&response_type=code&state=${encodeURIComponent(state)}`;
+        `&response_type=token`;
+      onPrompt?.("Approve Kunai in your browser to finish connecting AniList.");
       void openExternalUrl(authorizeUrl);
 
       const result = await callback.result;
       if (!result.ok) return { ok: false, error: aniListCallbackMessage(result.reason) };
 
-      const code = result.params.get("code");
-      if (!code) return { ok: false, error: "AniList returned no authorization code." };
+      const accessToken = result.params.get("access_token");
+      if (!accessToken) return { ok: false, error: "AniList returned no access token." };
 
-      return await this.exchangeCode({
-        code,
-        clientId,
-        clientSecret,
-        redirectUri: availability.redirectUri,
-        signal,
-      });
+      return await this.persistToken(accessToken, result.params.get("expires_in"));
     } finally {
       // Frees the registered port on every path, so a retry can bind it.
       callback.close();
     }
-  }
-
-  /**
-   * Trade the one-time code for a token.
-   *
-   * The failure branch reports the HTTP status and nothing else. AniList echoes
-   * the request back in its error bodies, so forwarding one would put the
-   * client secret into whatever surface shows the message.
-   */
-  private async exchangeCode(input: {
-    readonly code: string;
-    readonly clientId: string;
-    readonly clientSecret: string;
-    readonly redirectUri: string;
-    readonly signal: AbortSignal;
-  }): Promise<SyncResult> {
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${OAUTH_BASE}/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          grant_type: "authorization_code",
-          client_id: input.clientId,
-          client_secret: input.clientSecret,
-          redirect_uri: input.redirectUri,
-          code: input.code,
-        }),
-        signal: input.signal,
-      });
-    } catch {
-      return { ok: false, error: "Could not reach AniList to exchange the authorization code." };
-    }
-
-    if (!response.ok) {
-      const hint =
-        response.status === 400 || response.status === 401
-          ? " Check KUNAI_ANILIST_CLIENT_SECRET and that the redirect URI matches the one registered on your AniList application exactly."
-          : "";
-      return {
-        ok: false,
-        error: `AniList rejected the token exchange (${response.status}).${hint}`,
-      };
-    }
-
-    // The response also carries a refresh token. It is deliberately dropped:
-    // nothing on this branch refreshes, AniList access tokens last a year, and
-    // a stored credential no code path reads is a liability, not a feature.
-    const payload = (await response.json().catch(() => null)) as {
-      access_token?: unknown;
-      expires_in?: unknown;
-    } | null;
-    const accessToken = typeof payload?.access_token === "string" ? payload.access_token : null;
-    if (!accessToken) return { ok: false, error: "AniList returned no access token." };
-
-    const expiresIn = typeof payload?.expires_in === "number" ? String(payload.expires_in) : null;
-    return await this.persistToken(accessToken, expiresIn);
   }
 
   private async persistToken(accessToken: string, expiresIn: string | null): Promise<SyncResult> {
@@ -481,7 +443,23 @@ export class AniListAdapter implements SyncAdapter {
       { mediaId },
       deadline,
     );
-    const entryId = current.data?.Media?.mediaListEntry?.id;
+    /**
+     * A failed lookup is not an absent entry.
+     *
+     * Without this, a rejected read left `entryId` undefined and the removal
+     * reported success — so the row was completed, the title stayed on the
+     * user's list, and nothing anywhere said so. "I could not check" has to
+     * stay distinct from "there is nothing to remove".
+     */
+    const lookupFailure = outcomeForGraphQlErrors(current.errors);
+    if (lookupFailure) return lookupFailure;
+
+    const media = current.data?.Media;
+    if (!media) {
+      return syncFailed("entry-state-unknown", "remote", "lookup returned no media");
+    }
+
+    const entryId = media.mediaListEntry?.id;
     if (entryId === undefined) return syncOk("already-absent");
 
     const res = await this.gql<DeleteEntryResponse>(
@@ -508,9 +486,23 @@ export class AniListAdapter implements SyncAdapter {
       { mediaId },
       deadline,
     );
-    if (current.data?.Media?.isFavourite === operation.present) {
-      return syncOk("already-current");
+    /**
+     * The read decides whether to toggle, so its failure has to stop the write.
+     *
+     * `ToggleFavourite` is a flip, not a set — the one relative operation in
+     * this adapter. Reaching it without a definite current value turns a
+     * redelivery into an unbounded flip-flop, which is precisely what desired
+     * state exists to prevent. So an unclassified or empty read refuses rather
+     * than guessing.
+     */
+    const lookupFailure = outcomeForGraphQlErrors(current.errors);
+    if (lookupFailure) return lookupFailure;
+
+    const isFavourite = current.data?.Media?.isFavourite;
+    if (isFavourite === undefined) {
+      return syncFailed("favourite-state-unknown", "remote", "lookup returned no membership");
     }
+    if (isFavourite === operation.present) return syncOk("already-current");
 
     const res = await this.gql<ToggleFavouriteResponse>(
       `mutation ToggleFavourite($animeId: Int) {

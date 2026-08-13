@@ -10,10 +10,10 @@
  *
  * Required:
  *   KUNAI_LIVE_SYNC=1                     acknowledge this mutates a real account
- *   KUNAI_ANILIST_CLIENT_ID=…             from anilist.co/settings/developer
- *   KUNAI_ANILIST_CLIENT_SECRET=…         from the same page; never committed
- *   KUNAI_ANILIST_REDIRECT_URI=…          registered on that application, exactly
  *   KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID=…    a disposable title to mutate
+ * Optional (only to test your own AniList application instead of the shipped one):
+ *   KUNAI_ANILIST_CLIENT_ID=…             from anilist.co/settings/developer
+ *   KUNAI_ANILIST_REDIRECT_URI=…          registered on that application, exactly
  * Optional:
  *   KUNAI_LIVE_SYNC_TMDB=1                also exercise TMDB
  *   KUNAI_LIVE_SYNC_TMDB_MOVIE_ID=550
@@ -99,9 +99,9 @@ async function main(): Promise<void> {
     if (!record("anilist auth contract resolves", auth.availability.available)) {
       process.stdout.write(
         `\nreason: ${auth.availability.available ? "" : auth.availability.reason}\n` +
-          "Set KUNAI_ANILIST_CLIENT_ID, KUNAI_ANILIST_CLIENT_SECRET and KUNAI_ANILIST_REDIRECT_URI.\n" +
-          "The redirect URI must be\n" +
-          "registered on your AniList application exactly, e.g. http://127.0.0.1:43863/callback\n",
+          "The shipped application needs no configuration. If you overrode\n" +
+          "KUNAI_ANILIST_CLIENT_ID, KUNAI_ANILIST_REDIRECT_URI must be the URI registered\n" +
+          "on that application exactly, e.g. http://127.0.0.1:43863/callback\n",
       );
       process.exit(1);
     }

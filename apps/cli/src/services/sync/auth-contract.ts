@@ -10,15 +10,12 @@ export type AniListAuthAvailability =
   | {
       readonly available: true;
       readonly redirectUri: string;
-      readonly clientIdSource: "environment";
+      readonly clientIdSource: "environment" | "shipped-default";
     }
   | {
       readonly available: false;
       readonly reason:
-        | "client-id-missing"
         | "client-id-invalid"
-        | "client-secret-missing"
-        | "client-secret-invalid"
         | "callback-missing"
         | "callback-invalid"
         | "callback-not-loopback";
@@ -43,13 +40,26 @@ export type AniListAuthResolution =
   | {
       readonly availability: Extract<AniListAuthAvailability, { available: true }>;
       readonly clientId: string;
-      readonly clientSecret: string;
     }
   | {
       readonly availability: Extract<AniListAuthAvailability, { available: false }>;
       readonly clientId: null;
-      readonly clientSecret: null;
     };
+
+/**
+ * Kunai's own AniList application.
+ *
+ * A client id is not a secret — it is an application identifier, published in
+ * every authorization URL the user's browser visits. AniList's implicit grant
+ * needs nothing else, so Kunai ships no credential at all and there is nothing
+ * here that could leak.
+ *
+ * The redirect URI is fixed because AniList registers exactly one per
+ * application and the implicit grant ignores any `redirect_uri` sent with the
+ * request. A different port cannot be substituted at runtime.
+ */
+export const SHIPPED_ANILIST_CLIENT_ID = "48500";
+export const SHIPPED_ANILIST_REDIRECT_URI = "http://127.0.0.1:43863/callback";
 
 export type TmdbAuthResolution =
   | {
@@ -127,16 +137,16 @@ type AniListCallbackReason = Extract<AniListAuthAvailability, { available: false
 /**
  * Decide whether AniList Connect may be offered at all.
  *
- * A client *secret* is required because AniList supports only the
- * authorization-code grant in practice: its authorize endpoint answers
- * `unsupported_grant_type` to `response_type=token`, so the documented implicit
- * grant — the one flow that needs no secret — is not actually enabled. The
- * secret is the user's own, from their own registered application; Kunai ships
- * none and stores it nowhere.
+ * Usually it can: Kunai ships an application id and the loopback callback
+ * registered against it, so connecting takes one approval in a browser and no
+ * setup. No client secret is involved — AniList's implicit grant returns the
+ * token in the redirect fragment, so there is no token endpoint to authenticate
+ * against and no credential for Kunai to hold.
  *
- * The exact registered callback is required for the same reason as the id and
- * secret: Kunai cannot register one on the user's behalf, so guessing only
- * moves the failure somewhere less legible.
+ * Overriding the client id means pointing at a *different* application, whose
+ * registered callback Kunai cannot know. So an override must bring its own
+ * redirect URI rather than inheriting the shipped one, which would be rejected
+ * remotely with nothing useful to say about why.
  */
 export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniListAuthResolution {
   const unavailable = (
@@ -144,24 +154,22 @@ export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniLis
   ): AniListAuthResolution => ({
     availability: { available: false, reason },
     clientId: null,
-    clientSecret: null,
   });
 
-  const clientId = meaningful(env.KUNAI_ANILIST_CLIENT_ID);
-  if (!clientId) {
-    return unavailable(
-      env.KUNAI_ANILIST_CLIENT_ID === undefined ? "client-id-missing" : "client-id-invalid",
-    );
+  const override = env.KUNAI_ANILIST_CLIENT_ID;
+  if (override === undefined) {
+    return {
+      availability: {
+        available: true,
+        redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+        clientIdSource: "shipped-default",
+      },
+      clientId: SHIPPED_ANILIST_CLIENT_ID,
+    };
   }
 
-  const clientSecret = meaningful(env.KUNAI_ANILIST_CLIENT_SECRET);
-  if (!clientSecret) {
-    return unavailable(
-      env.KUNAI_ANILIST_CLIENT_SECRET === undefined
-        ? "client-secret-missing"
-        : "client-secret-invalid",
-    );
-  }
+  const clientId = meaningful(override);
+  if (!clientId) return unavailable("client-id-invalid");
 
   const callback = validateCallback(env.KUNAI_ANILIST_REDIRECT_URI);
   if (!callback.ok) return unavailable(callback.reason);
@@ -173,7 +181,6 @@ export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniLis
       clientIdSource: "environment",
     },
     clientId,
-    clientSecret,
   };
 }
 

@@ -78,27 +78,39 @@ Both trackers fail closed. Availability is resolved once in the container and
 injected, so adapters and settings read one decision rather than each
 interpreting the environment.
 
-**AniList** requires `KUNAI_ANILIST_CLIENT_ID`, `KUNAI_ANILIST_CLIENT_SECRET` and
-`KUNAI_ANILIST_REDIRECT_URI`. There is no default for any of them, and Kunai
-ships no credentials: you register your own application at
-[anilist.co/settings/developer](https://anilist.co/settings/developer) and supply
-its id and secret.
+**AniList** needs no configuration. Kunai ships an application id and the
+loopback callback registered against it, so connecting is one approval in a
+browser.
 
-The flow is the authorization-code grant, which is why a secret is needed at all.
-AniList also documents an implicit grant — `response_type=token`, no secret — and
-long-registered clients such as MALSync's do use it, but a newly registered
-application is answered with `unsupported_grant_type`, so that path is not
-implemented. The refresh token AniList returns is deliberately discarded:
-access tokens last a year, nothing here refreshes, and a stored credential with
-no reader is a liability.
+The flow is the **implicit grant**: `authorize?client_id=…&response_type=token`
+and nothing else. That exact shape matters — adding `redirect_uri` or `state`
+makes AniList answer `unsupported_grant_type`. The token comes back in the
+redirect fragment, so there is no token endpoint to authenticate against and
+Kunai ships no client secret. A client id is not a secret; it travels in every
+authorization URL the user's browser visits.
 
-The redirect URI must be `http`, a loopback host,
-an explicit port, and exactly `/callback` — for example
-`http://127.0.0.1:43863/callback` — and must match what is registered on your
-AniList application character for character. The loopback listener binds that
-exact address; a taken port is an error rather than a reason to pick another,
-since another port cannot match the registration. A 32-byte CSPRNG `state` is
-generated per attempt and compared before the authorization code is read.
+Because the fragment is never sent to a server, the callback serves a bridge
+page that reads `location.hash` and hands it back over same-origin loopback,
+then rewrites the address bar so the token never enters browser history.
+
+Two consequences of AniList registering exactly one redirect URL per
+application, and the implicit grant ignoring any `redirect_uri` sent with the
+request:
+
+- The loopback port is fixed. A busy port is a dead end, reported as one —
+  another port cannot match the registration.
+- There is no `state` nonce to compare, since sending one breaks the request.
+  The listener is single-use, bound for one attempt, and torn down immediately;
+  a _wrong_ state is still refused, an absent one is expected.
+
+The refresh token AniList would return on the code grant does not exist here.
+Access tokens last a year.
+
+`KUNAI_ANILIST_CLIENT_ID` overrides the shipped application. Doing so means a
+different registration, so `KUNAI_ANILIST_REDIRECT_URI` becomes required rather
+than inheriting the shipped one — which the other application would reject with
+nothing useful to say about why. The redirect URI must be `http`, a loopback
+host, an explicit port, and exactly `/callback`.
 
 **TMDB** uses a public application key shipped with Kunai, owned by
 `services/catalog/tmdb-proxy.ts`. `KUNAI_TMDB_API_KEY` overrides it; an

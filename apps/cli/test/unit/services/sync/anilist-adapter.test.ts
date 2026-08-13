@@ -313,3 +313,148 @@ describe("AniListAdapter startup", () => {
     expect(refused.getConnection()).toEqual({ state: "needs-reauth", reason: "token-rejected" });
   });
 });
+
+/**
+ * AniList answers most application-level problems with a 200 and an `errors`
+ * array. What separates them is the status inside, and getting that wrong is
+ * expensive in both directions: a retried permanent failure cycles until the
+ * backoff caps, a dead-lettered transient one loses the write.
+ */
+describe("AniListAdapter GraphQL error classification", () => {
+  const applyWith = async (error: Record<string, unknown>) => {
+    const tokenStore = {
+      load: async () => ({ anilist: { accessToken: "tok", userId: 1 } }),
+      patchAniList: async () => {},
+    } as unknown as SyncTokenStore;
+    // A fresh Response per call: a body can only be consumed once.
+    const adapter = new AniListAdapter(
+      tokenStore,
+      async () =>
+        new Response(JSON.stringify({ data: null, errors: [error] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await adapter.init();
+    return adapter.apply(
+      {
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+        present: true,
+      },
+      { signal: new AbortController().signal },
+    );
+  };
+
+  /** A validation failure can never succeed on redelivery. */
+  test("dead-letters a validation rejection instead of retrying it", async () => {
+    const outcome = await applyWith({
+      message: "validation",
+      status: 400,
+      validation: { score: ["The score may not be greater than 100."] },
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.status === "failed" && outcome.retryable).toBe(false);
+    expect(outcome.status === "failed" && outcome.code).toBe("validation-rejected");
+    // The field is named; the offending value never is.
+    expect(JSON.stringify(outcome)).toContain("score");
+    expect(JSON.stringify(outcome)).not.toContain("may not be greater");
+  });
+
+  test("dead-letters 400 and 404 without a validation map", async () => {
+    for (const status of [400, 404]) {
+      const outcome = await applyWith({ message: "Not Found.", status });
+      expect(outcome.status === "failed" && outcome.retryable, String(status)).toBe(false);
+    }
+  });
+
+  test("treats an in-envelope 429 as a rate limit, not a failure", async () => {
+    const outcome = await applyWith({ message: "Too Many Requests.", status: 429 });
+
+    expect(outcome.status).toBe("rate-limited");
+  });
+
+  test("demands reauth on 401 and 403", async () => {
+    for (const status of [401, 403]) {
+      const outcome = await applyWith({ message: "Unauthorized.", status });
+      expect(outcome.status, String(status)).toBe("needs-reauth");
+    }
+  });
+
+  /** Unknown means transient: a wrong retry costs one request, a wrong drop loses data. */
+  test("retries an unclassified server error", async () => {
+    const outcome = await applyWith({ message: "Internal Error.", status: 500 });
+
+    expect(outcome.status === "failed" && outcome.retryable).toBe(true);
+  });
+});
+
+/**
+ * Both membership writes read before they write. A read that failed is not an
+ * answer, and treating it as one is silent: the row completes, the remote never
+ * changed, and nothing reports a problem.
+ */
+describe("AniListAdapter membership lookups", () => {
+  const adapterReturning = async (body: unknown, status = 200) => {
+    const tokenStore = {
+      load: async () => ({ anilist: { accessToken: "tok", userId: 1 } }),
+      patchAniList: async () => {},
+    } as unknown as SyncTokenStore;
+    const calls: string[] = [];
+    const adapter = new AniListAdapter(tokenStore, async (_input, init) => {
+      calls.push(String((init?.body as string) ?? ""));
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    await adapter.init();
+    return { adapter, calls };
+  };
+
+  const target = { tracker: "anilist", anilistId: 7, mediaKind: "anime" } as const;
+  const signal = () => ({ signal: new AbortController().signal });
+
+  test("does not report a removal as done when the lookup was rejected", async () => {
+    const { adapter, calls } = await adapterReturning({
+      data: null,
+      errors: [{ message: "Invalid token", status: 401 }],
+    });
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "list-membership:set", target, list: "watchlist", present: false },
+      signal(),
+    );
+
+    expect(outcome.status).toBe("needs-reauth");
+    // The delete mutation must never have been attempted.
+    expect(calls.some((body) => body.includes("DeleteMediaListEntry"))).toBe(false);
+  });
+
+  test("reports an unreadable membership rather than guessing absent", async () => {
+    const { adapter } = await adapterReturning({ data: {} });
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "list-membership:set", target, list: "watchlist", present: false },
+      signal(),
+    );
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.status === "failed" && outcome.code).toBe("entry-state-unknown");
+  });
+
+  /** ToggleFavourite is a flip: firing it blind turns redelivery into flip-flop. */
+  test("never toggles a favourite it could not read", async () => {
+    const { adapter, calls } = await adapterReturning({ data: { Media: { id: 7 } } });
+
+    const outcome = await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target, present: true },
+      signal(),
+    );
+
+    expect(outcome.status === "failed" && outcome.code).toBe("favourite-state-unknown");
+    expect(calls.some((body) => body.includes("ToggleFavourite"))).toBe(false);
+  });
+});

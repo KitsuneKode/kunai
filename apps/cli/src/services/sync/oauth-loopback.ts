@@ -6,6 +6,18 @@ export interface LoopbackOptions {
   readonly signal: AbortSignal;
   readonly timeoutMs: number;
   readonly serviceName: string;
+  /**
+   * Where the provider puts its answer.
+   *
+   * `query` is the authorization-code grant: the parameters arrive as a query
+   * string the server can read directly.
+   *
+   * `fragment` is the implicit grant, which returns the access token after `#`.
+   * Fragments are never sent to the server — that is the point of them — so the
+   * callback serves a page that reads `location.hash` in the browser and hands
+   * it back over same-origin loopback.
+   */
+  readonly mode?: "query" | "fragment";
 }
 
 export type LoopbackResult =
@@ -44,6 +56,8 @@ export function createOAuthState(): string {
 export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   const url = new URL(options.redirectUri);
   const callbackPath = url.pathname;
+  const mode = options.mode ?? "query";
+  const collectPath = `${callbackPath}/collect`;
 
   let settled = false;
   let resolveResult!: (value: LoopbackResult) => void;
@@ -84,27 +98,51 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
     hostname: url.hostname,
     fetch: (request) => {
       const requestUrl = new URL(request.url);
-      if (requestUrl.pathname !== callbackPath) return new Response("Not found", { status: 404 });
+
+      // Fragment mode lands here first with nothing readable: the token is
+      // after `#`, which the browser never transmits. Serve the bridge and wait
+      // for it to call back.
+      if (mode === "fragment" && requestUrl.pathname === callbackPath) {
+        return bridgePage(collectPath, options.serviceName);
+      }
+
+      const isResult =
+        mode === "fragment"
+          ? requestUrl.pathname === collectPath
+          : requestUrl.pathname === callbackPath;
+      if (!isResult) return new Response("Not found", { status: 404 });
 
       const params = requestUrl.searchParams;
       if (params.get("error")) {
         settle({ ok: false, reason: "denied" });
-        return page(`${options.serviceName} authorization was declined.`);
+        return finalResponse(mode, `${options.serviceName} authorization was declined.`);
       }
 
-      // State is compared before the code is read at all. A callback whose
-      // state does not match did not come from the request we started, and an
-      // absent one is treated the same way: the provider echoes it back, so
-      // missing means this is not our redirect.
-      if (params.get("state") !== options.expectedState) {
+      /**
+       * State is compared before the token or code is read at all.
+       *
+       * A provider that returns no state is accepted only in fragment mode.
+       * AniList's implicit grant rejects the request outright when `state` is
+       * sent — it answers `unsupported_grant_type` — so there is no nonce to
+       * echo and requiring one would make the only working flow unusable. The
+       * bridge is same-origin on a listener bound for one attempt and torn down
+       * immediately after, so there is no third party in position to forge one.
+       */
+      const returnedState = params.get("state");
+      const stateAcceptable =
+        returnedState === options.expectedState || (mode === "fragment" && returnedState === null);
+      if (!stateAcceptable) {
         settle({ ok: false, reason: "state-mismatch" });
-        return page(`${options.serviceName} authorization could not be verified.`);
+        return finalResponse(mode, `${options.serviceName} authorization could not be verified.`);
       }
 
       settle({ ok: true, params });
       // Shown in the user's browser, where it can be screenshotted, shared, or
       // restored from history — so it echoes nothing back.
-      return page(`${options.serviceName} authorization complete. You can close this tab.`);
+      return finalResponse(
+        mode,
+        `${options.serviceName} authorization complete. You can close this tab.`,
+      );
     },
   });
 
@@ -125,4 +163,40 @@ function page(message: string): Response {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     },
   );
+}
+
+/**
+ * The bridge's reply goes to a `fetch`, not to a person, so it is plain text —
+ * while the callback's reply is the page the user actually looks at.
+ */
+function finalResponse(mode: "query" | "fragment", message: string): Response {
+  return mode === "fragment" ? new Response("ok") : page(message);
+}
+
+/**
+ * Moves the fragment from the browser to the listener.
+ *
+ * The token is handed over via same-origin `fetch` rather than a redirect or a
+ * form, so it never becomes a navigation the browser records. The address bar
+ * is then rewritten to drop the fragment, keeping the token out of history, and
+ * nothing is ever written into the visible document.
+ */
+function bridgePage(collectPath: string, serviceName: string): Response {
+  const html = `<!doctype html><meta charset="utf-8"><title>Kunai</title>
+<p id="m">Completing ${serviceName} authorization…</p>
+<script>
+(async () => {
+  const hash = location.hash.slice(1);
+  try {
+    await fetch(${JSON.stringify(collectPath)} + "?" + hash, { credentials: "omit" });
+    history.replaceState(null, "", location.pathname);
+    document.getElementById("m").textContent =
+      ${JSON.stringify(serviceName)} + " authorization complete. You can close this tab.";
+  } catch {
+    document.getElementById("m").textContent =
+      "Could not reach Kunai. Return to the terminal and try again.";
+  }
+})();
+</script>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
