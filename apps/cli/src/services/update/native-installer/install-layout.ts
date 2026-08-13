@@ -1,6 +1,6 @@
 import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 
 import { getKunaiPaths, joinerForNodePlatform, type StoragePlatform } from "@kunai/storage";
 
@@ -142,20 +142,25 @@ export async function removeStagingAndPruneParents(
   stagingPath: string,
   stagingRoot: string,
 ): Promise<void> {
+  if (!isInsideStagingRoot(stagingPath, stagingRoot)) {
+    throw new Error("Refusing to remove path outside the staging root");
+  }
   await rm(stagingPath, { recursive: true, force: true }).catch(() => {});
   await pruneEmptyStagingParents(stagingPath, stagingRoot);
 }
 
-/** Normalized for prefix comparison: forward slashes, no trailing separator. */
-function normalizeDirPath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/\/+$/, "");
-}
-
-/** True when `path` sits inside `root` (and is not `root` itself). */
-export function isInsideStagingRoot(path: string, root: string): boolean {
-  const normalizedRoot = normalizeDirPath(root);
-  const normalizedPath = normalizeDirPath(path);
-  return normalizedPath.startsWith(`${normalizedRoot}/`);
+/** True when `candidate` resolves inside `root` (and is not `root` itself). */
+export function isInsideStagingRoot(candidate: string, root: string): boolean {
+  const pathApi = /^[A-Za-z]:[\\/]/.test(root) || root.startsWith("\\\\") ? win32 : posix;
+  const resolvedRoot = pathApi.resolve(root);
+  const resolvedCandidate = pathApi.resolve(candidate);
+  const relative = pathApi.relative(resolvedRoot, resolvedCandidate);
+  return (
+    relative.length > 0 &&
+    relative !== ".." &&
+    !relative.startsWith(`..${pathApi.sep}`) &&
+    !pathApi.isAbsolute(relative)
+  );
 }
 
 /**
