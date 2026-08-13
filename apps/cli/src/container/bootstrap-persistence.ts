@@ -4,6 +4,7 @@ import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-br
 import { initLogger } from "@/logger";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
+import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
 import {
   CalendarArchiveRepository,
   DiagnosticEventsRepository,
@@ -228,6 +229,18 @@ export async function bootstrapPersistence(
   const diagnosticEvents = new DiagnosticEventsRepository(cacheDb);
   const downloadJobs = new DownloadJobsRepository(dataDb);
   const offlineAssets = new OfflineAssetsRepository(dataDb);
+  // Every bootstrap, not once behind a marker: an asset filed under a raw id
+  // only becomes relocatable when history or another download teaches the alias
+  // index the title's catalog ids, and that learning has no deadline.
+  const offlineIdentityBackfill = runOfflineAssetIdentityBackfill(
+    offlineAssets,
+    historyTitleAliases,
+  );
+  if (debug && offlineIdentityBackfill.assetsRelocated > 0) {
+    logger.info(
+      `Offline identity backfill moved ${offlineIdentityBackfill.assetsRelocated} asset(s) across ${offlineIdentityBackfill.titlesRelocated} title(s)`,
+    );
+  }
   const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
   const offlineMaintenanceJobs = new OfflineMaintenanceJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
