@@ -1,4 +1,5 @@
 import type { TitleInfo } from "@/domain/types";
+import { isStreamReachableForResolve, probeStreamReachability } from "@kunai/providers";
 
 import {
   buildProviderSmokePayload,
@@ -43,6 +44,12 @@ let resolveError: unknown = null;
 let failureCodes: readonly string[] = [];
 let failureMessages: readonly string[] = [];
 let streamCandidates = 0;
+/**
+ * The resolver no longer claims reachability it did not measure, so the smoke
+ * owns the probe. `resolverAttestedReachable` is reported separately and is
+ * never what this smoke passes on — actual reachability is.
+ */
+let resolverAttestedReachable: boolean | undefined;
 const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
   container,
   providerId: "miruro",
@@ -58,12 +65,22 @@ const { stream, resolveDurationMs } = await resolveProviderSmokeStream({
     failureCodes = resolved.result.failures.map((failure) => failure.code);
     failureMessages = resolved.result.failures.map((failure) => failure.message);
     streamCandidates = resolved.result.streams.length;
+    resolverAttestedReachable = resolved.result.streamReachabilityVerified;
     return resolved;
   })
   .catch((error) => {
     resolveError = error;
     return { stream: null, resolveDurationMs: null };
   });
+
+const streamProbe = stream?.url
+  ? await probeStreamReachability({
+      url: stream.url,
+      headers: stream.headers,
+      timeoutMs: 5_000,
+    })
+  : null;
+const streamReachable = streamProbe ? isStreamReachableForResolve(streamProbe) : false;
 
 const payload = {
   ...buildProviderSmokePayload({
@@ -78,6 +95,9 @@ const payload = {
   failureCodes,
   failureMessages,
   streamCandidates,
+  streamProbe,
+  streamReachable,
+  resolverAttestedReachable,
   ...providerSmokeProfilePayload(profile),
   animeLang: container.config.animeLang,
   cacheCleared: clearCache,
@@ -85,7 +105,9 @@ const payload = {
 
 console.log(JSON.stringify(payload, null, 2));
 
-if (!stream?.url) {
+// Pass on measured reachability, not on resolver attestation — a resolver that
+// correctly declines to attest an unprobed stream must still be able to pass.
+if (!stream?.url || !streamReachable) {
   // Let stdout flush so the matrix parent can retain structured failure evidence.
   process.exitCode = 1;
 }

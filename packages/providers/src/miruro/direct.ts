@@ -51,6 +51,10 @@ import {
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import {
+  isStreamReachabilityVerified,
+  type StreamReachabilityProbeResult,
+} from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
 
@@ -172,6 +176,13 @@ export type MiruroResolvePayloadOptions = {
   readonly startedAt?: string;
   readonly events?: ProviderTraceEvent[];
   readonly failures?: readonly ProviderFailure[];
+  /**
+   * Bounded probe evidence for the stream this payload selects. Reachability is
+   * attested only when a probe actually reported `reachable`; absent, timed-out,
+   * and unreachable probes all leave reachability unknown so the CLI's own
+   * stream-health gate keeps probing instead of trusting an unproven claim.
+   */
+  readonly streamReachabilityProbe?: StreamReachabilityProbeResult;
 };
 
 type MiruroEpisodeEntry = {
@@ -232,6 +243,7 @@ export async function createMiruroResultFromPayload({
   startedAt,
   events = [],
   failures = [],
+  streamReachabilityProbe,
 }: MiruroResolvePayloadOptions): Promise<ProviderResolveResult | null> {
   const policy =
     cachePolicy ??
@@ -418,7 +430,10 @@ export async function createMiruroResultFromPayload({
     providerId: MIRURO_PROVIDER_ID,
     selectedStreamId: selectedStream.id,
     selectionDecision: selection.decision,
-    streamReachabilityVerified: true,
+    streamReachabilityVerified:
+      streamReachabilityProbe && isStreamReachabilityVerified(streamReachabilityProbe)
+        ? true
+        : undefined,
     sources: [
       {
         id: sourceId,
