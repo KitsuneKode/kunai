@@ -43,6 +43,22 @@ function record(name: string, outcome: SyncOutcome | boolean, detail?: string): 
   return ok;
 }
 
+/**
+ * Assert the outcome *detail*, not just its status.
+ *
+ * `syncOk()` and `syncOk("already-current")` are both `status: "ok"`, so a
+ * status-only check cannot tell "converged" from "toggled again". That is
+ * exactly how a flip-flopping favourite passed an idempotency step.
+ */
+function recordDetail(name: string, outcome: SyncOutcome, expected: string | null): boolean {
+  const actual = outcome.status === "ok" ? (outcome.detail ?? "toggled") : describeOutcome(outcome);
+  const ok = outcome.status === "ok" && actual === (expected ?? "toggled");
+  const note = expected === null ? actual : `${actual} (expected ${expected})`;
+  steps.push({ name, ok, detail: note });
+  process.stdout.write(`${ok ? "ok  " : "FAIL"}  ${name} — ${note}\n`);
+  return ok;
+}
+
 /** Never prints a token, code, or state — only the typed decision. */
 function describeOutcome(outcome: SyncOutcome): string {
   switch (outcome.status) {
@@ -150,14 +166,37 @@ async function main(): Promise<void> {
       target,
       present: true,
     };
-    record("anilist favourite add", await anilist.apply(favouriteOn, options));
-    // The property that motivated desired state: a redelivery must converge,
-    // not toggle back off.
-    record("anilist favourite add again is idempotent", await anilist.apply(favouriteOn, options));
+    recordDetail("anilist favourite add", await anilist.apply(favouriteOn, options), null);
 
-    record(
+    /**
+     * The property that motivated desired state: a redelivery must converge,
+     * not toggle back off. `already-current` is the only passing answer —
+     * `toggled` means the membership read did not see our own write, and the
+     * favourite has just been switched back off.
+     */
+    recordDetail(
+      "anilist favourite add again is idempotent",
+      await anilist.apply(favouriteOn, options),
+      "already-current",
+    );
+
+    // Optional, slow, and decisive: if an immediate re-read is stale but a
+    // delayed one is not, the cause is AniList caching the Media query rather
+    // than anything about how the mutation was sent.
+    if (process.env.KUNAI_LIVE_SYNC_SLOW_RECHECK === "1") {
+      process.stdout.write("\nwaiting 65s to re-read membership past any short-lived cache…\n");
+      await Bun.sleep(65_000);
+      recordDetail(
+        "anilist favourite still present after 65s",
+        await anilist.apply(favouriteOn, options),
+        "already-current",
+      );
+    }
+
+    recordDetail(
       "anilist favourite remove (cleanup)",
       await anilist.apply({ ...favouriteOn, present: false }, options),
+      null,
     );
     record(
       "anilist watchlist remove (cleanup)",
