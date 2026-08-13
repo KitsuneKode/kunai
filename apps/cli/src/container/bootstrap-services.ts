@@ -33,6 +33,7 @@ import {
   OsNotificationSink,
 } from "../services/notifications/notification-sinks";
 import { NotificationService } from "../services/notifications/NotificationService";
+import { OfflineTitleIdentityService } from "../services/offline/offline-title-identity";
 import { OfflineAssetService } from "../services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "../services/offline/OfflineLibraryService";
 import { OfflineMaintenanceService } from "../services/offline/OfflineMaintenanceService";
@@ -139,7 +140,8 @@ export function bootstrapServices(input: {
   });
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
-  const offlineAssetService = new OfflineAssetService(offlineAssets);
+  const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases);
+  const offlineAssetService = new OfflineAssetService(offlineAssets, offlineTitleIdentity);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(
@@ -462,6 +464,7 @@ export function bootstrapServices(input: {
     titleProviderHealth,
     downloadService,
     offlineAssetService,
+    offlineTitleIdentity,
     offlineTitlePolicies,
     offlineMaintenanceJobs,
     offlineLibraryService,

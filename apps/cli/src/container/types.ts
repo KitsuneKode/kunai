@@ -45,6 +45,7 @@ import type { DownloadService } from "../services/download/DownloadService";
 import type { HistoryMetadataHealer } from "../services/history-metadata/HistoryMetadataHealer";
 import type { Connectivity } from "../services/network/Connectivity";
 import type { NotificationService } from "../services/notifications/NotificationService";
+import type { OfflineTitleIdentity } from "../services/offline/offline-title-identity";
 import type { OfflineAssetService } from "../services/offline/OfflineAssetService";
 import type { OfflineLibraryService } from "../services/offline/OfflineLibraryService";
 import type { OfflineMaintenanceService } from "../services/offline/OfflineMaintenanceService";
@@ -124,6 +125,8 @@ export interface Container {
   readonly titleProviderHealth: TitleProviderHealthService;
   readonly downloadService: DownloadService;
   readonly offlineAssetService: OfflineAssetService;
+  /** The one id an offline asset for a given title is filed under — writes and reads both use it. */
+  readonly offlineTitleIdentity: OfflineTitleIdentity;
   readonly offlineTitlePolicies: OfflineTitlePoliciesRepository;
   readonly offlineMaintenanceJobs: OfflineMaintenanceJobsRepository;
   readonly offlineLibraryService: OfflineLibraryService;

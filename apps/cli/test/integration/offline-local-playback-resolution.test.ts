@@ -7,10 +7,12 @@ import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-sou
 import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
+import { OfflineTitleIdentityService } from "@/services/offline/offline-title-identity";
 import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
 import { OfflineLibraryService } from "@/services/offline/OfflineLibraryService";
 import {
   DownloadJobsRepository,
+  HistoryTitleAliasRepository,
   OfflineAssetsRepository,
   openKunaiDatabase,
   runMigrations,
@@ -33,6 +35,7 @@ type Harness = {
   readonly dir: string;
   readonly jobs: DownloadJobsRepository;
   readonly assets: OfflineAssetService;
+  readonly aliases: HistoryTitleAliasRepository;
   readonly library: OfflineLibraryService;
   readonly filePath: string;
 };
@@ -85,7 +88,13 @@ function createHarness(input: {
   jobs.complete(jobId, now);
   jobs.markArtifactValidated(jobId, "ready", now);
 
-  const assets = new OfflineAssetService(new OfflineAssetsRepository(db));
+  // The real resolver, not a stub: identity is precisely what this suite is
+  // here to pin down, and a passthrough would make every case pass trivially.
+  const aliases = new HistoryTitleAliasRepository(db);
+  const assets = new OfflineAssetService(
+    new OfflineAssetsRepository(db),
+    new OfflineTitleIdentityService(aliases),
+  );
   const completed = jobs.get(jobId);
   if (!completed) throw new Error("download job missing after complete()");
   assets.adoptCompletedJob(completed);
@@ -99,7 +108,7 @@ function createHarness(input: {
     offlineAssetService: assets,
   });
 
-  return { db, dir, jobs, assets, library, filePath };
+  return { db, dir, jobs, assets, aliases, library, filePath };
 }
 
 function containerFor(
@@ -113,6 +122,7 @@ function containerFor(
   return {
     stateManager: { getState: () => ({ mode: options.mode ?? "series" }) },
     offlineAssetService: harness.assets,
+    offlineTitleIdentity: new OfflineTitleIdentityService(harness.aliases),
     offlineLibraryService: harness.library,
     connectivity: { isOnline: () => options.online ?? false },
     config: { continueSourcePreference: options.continueSourcePreference ?? "auto" },

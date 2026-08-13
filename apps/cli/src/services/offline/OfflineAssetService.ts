@@ -6,13 +6,18 @@ import type {
   OfflineNextReadyCursor,
 } from "@kunai/storage";
 
+import type { OfflineTitleIdentity } from "./offline-title-identity";
+
 export type RecordedOfflineStatus = {
   readonly titleId: string;
   readonly status: OfflineAssetState;
 };
 
 export class OfflineAssetService {
-  constructor(private readonly assets: OfflineAssetsRepository) {}
+  constructor(
+    private readonly assets: OfflineAssetsRepository,
+    private readonly titleIdentity: OfflineTitleIdentity,
+  ) {}
 
   getAsset(id: string): OfflineAssetRecord | undefined {
     return this.assets.get(id);
@@ -64,7 +69,9 @@ export class OfflineAssetService {
     }
     const state = recordedAssetState(job);
     return this.assets.upsertPlayable({
-      titleId: job.titleId,
+      // Resolved, not verbatim: every read resolves the same way, so an asset
+      // can only be filed under an id a read will actually ask for.
+      titleId: this.titleIdentity.resolveForJob(job),
       titleName: job.titleName,
       mediaKind: job.mediaKind,
       season: job.season,
