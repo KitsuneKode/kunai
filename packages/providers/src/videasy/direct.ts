@@ -889,9 +889,35 @@ function parseVidkingCycleCandidateMetadata(
   };
 }
 
+/**
+ * The one builder for a Videasy stream-cache policy.
+ *
+ * A route may only be named here **after** a request to it actually succeeded —
+ * `apiRoute` is evidence of a selected route, not a guess. Keeping construction
+ * in one place is what stops the result, the source rows, and the stream rows
+ * from drifting onto three near-identical keys.
+ */
+export function createVideasyRouteCachePolicy(input: {
+  readonly resolveInput: ProviderResolveInput;
+  readonly appId?: string;
+  readonly apiRoute: string;
+}): CachePolicy {
+  return createProviderCachePolicy({
+    providerId: VIDEOSY_PROVIDER_ID,
+    title: input.resolveInput.title,
+    episode: input.resolveInput.episode,
+    subtitleLanguage: input.resolveInput.preferredSubtitleLanguage,
+    qualityPreference: input.resolveInput.qualityPreference,
+    startupPriority: input.resolveInput.startupPriority,
+    videasyAppId: input.appId,
+    apiRoute: input.apiRoute,
+  });
+}
+
 export function createVidkingResultFromPayload({
   input,
-  cachePolicy: _cachePolicy,
+  cachePolicy,
+  apiRoute,
   payload,
   sourceId,
   server,
@@ -908,7 +934,10 @@ export function createVidkingResultFromPayload({
   streamReachabilityVerified,
 }: {
   readonly input: ProviderResolveInput;
-  readonly cachePolicy?: CachePolicy;
+  /** Built by `createVideasyRouteCachePolicy()` and used verbatim — never rebuilt here. */
+  readonly cachePolicy: CachePolicy;
+  /** The route that actually answered. Recorded on the selected source. */
+  readonly apiRoute: string;
   readonly payload: VidkingPayload;
   readonly sourceId?: string;
   readonly server?: string;
@@ -925,17 +954,7 @@ export function createVidkingResultFromPayload({
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
   const resolvedServer = (server as VidkingServer | undefined) ?? "wings-cdn";
-  const videasyAppId = context ? resolveVideasyAppId(engineOptions ?? {}, context) : undefined;
-  const policy = createProviderCachePolicy({
-    providerId: VIDEOSY_PROVIDER_ID,
-    title: input.title,
-    episode: input.episode,
-    subtitleLanguage: input.preferredSubtitleLanguage,
-    qualityPreference: input.qualityPreference,
-    startupPriority: input.startupPriority,
-    videasyAppId,
-    apiRoute: resolvedServer,
-  });
+  const policy = cachePolicy;
   const presentation = resolveVidkingPresentation(
     resolvedServer,
     engineOptions ?? {
@@ -1074,6 +1093,10 @@ export function createVidkingResultFromPayload({
         cachePolicy: policy,
         sourceEvidence,
         metadata: {
+          // Explicit route provenance. Anything that later wants to know which
+          // route produced this result reads it here rather than positionally
+          // parsing `cachePolicy.keyParts`.
+          apiRoute,
           server: resolvedServer,
           flavorId: presentation.flavorId,
           flavorArchetype: themedSubtitle,
@@ -1663,9 +1686,16 @@ async function tryVidkingServer(opts: {
             break;
           }
 
+          // The route is only known now that this request succeeded, so this is
+          // the first point at which a route-specific policy is honest.
           const result = createVidkingResultFromPayload({
             input,
-            cachePolicy,
+            cachePolicy: createVideasyRouteCachePolicy({
+              resolveInput: input,
+              appId: resolveVideasyAppId(engineOptions, context),
+              apiRoute: server,
+            }),
+            apiRoute: server,
             payload: decoded,
             sourceId,
             server,

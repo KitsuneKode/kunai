@@ -17,6 +17,7 @@ import {
   getMiruroEpisodesResponse,
   miruroProviderModule,
   createVidkingResultFromPayload,
+  createVideasyRouteCachePolicy,
   extractQualitiesFromMaster,
   listVidkingFlavors,
   normalizeIsoLanguageCode,
@@ -37,6 +38,18 @@ import {
   getProviderResearchProfile,
   providerResearchProfiles,
 } from "../src/research";
+
+/** Route policies are built by the provider's one owner, never hand-rolled here. */
+const TEST_ROUTE_POLICY = (apiRoute: string) =>
+  createVideasyRouteCachePolicy({
+    resolveInput: {
+      title: { id: "438631", kind: "movie", title: "Dune", tmdbId: "438631" },
+      mediaKind: "movie",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    apiRoute,
+  });
 
 const FIXTURE_BASE = new URL("./fixtures/", import.meta.url);
 
@@ -135,6 +148,8 @@ test("provider research profiles separate direct providers from legacy fallbacks
 
 test("vidking direct payload creates selected stream, variants, and subtitle inventory", () => {
   const result = createVidkingResultFromPayload({
+    apiRoute: "mb-flix",
+    cachePolicy: TEST_ROUTE_POLICY("mb-flix"),
     input: {
       title: {
         id: "1668",
@@ -720,6 +735,8 @@ test("vidking refresh intent cycles the wider flavor source set", async () => {
 
 test("vidking payload filtering keeps localized flavored sources explicit", () => {
   const result = createVidkingResultFromPayload({
+    apiRoute: "hdmovie",
+    cachePolicy: TEST_ROUTE_POLICY("hdmovie"),
     input: {
       title: {
         id: "438631",
@@ -762,6 +779,8 @@ test("vidking evidence fixture preserves native server labels beside ISO audio l
     readonly quality: string;
   }>("videasy/expected-normalized.json");
   const result = createVidkingResultFromPayload({
+    apiRoute: "wings-cdn",
+    cachePolicy: TEST_ROUTE_POLICY("wings-cdn"),
     input: {
       title: {
         id: "438631",
@@ -815,6 +834,8 @@ test("vidking fixture fast startup keeps the first ready stream", async () => {
     Parameters<typeof createVidkingResultFromPayload>[0]["payload"]
   >("videasy/source-payload.json");
   const result = createVidkingResultFromPayload({
+    apiRoute: "Kiwi",
+    cachePolicy: TEST_ROUTE_POLICY("Kiwi"),
     input: {
       title: {
         id: "438631",
