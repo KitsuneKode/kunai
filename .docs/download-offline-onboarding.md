@@ -97,6 +97,29 @@ confirmation, and filesystem naming all consume it instead of re-deriving "is th
   audio, subtitle, quality, artwork, destination, runway, or cleanup never re-requests artwork or
   replaces the placement.
 
+## Offline Title Identity
+
+One title reaches the offline layer under several id forms — a provider-native handle, a raw
+catalog id, or a canonical `tmdb:`/AniList id — depending on how enriched the title was at the
+moment. Writes and reads used to canonicalise independently, so an asset stored under `1339713`
+was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file unavailable".
+
+- **`OfflineTitleIdentityService` is the only answer** to which id an asset is filed under.
+  `resolveForJob` decides where a completed download is stored; `resolveForTitle` decides what
+  every read asks for. Neither side canonicalises on its own, and no read may ask under two ids.
+- **`download_jobs.external_ids_json` is the download's own record** of the ids the title arrived
+  with. Nothing may re-derive external ids from a title id — the derivation that did turned a
+  MAL-only anime into `{ anilistId: <malId> }`.
+- **Aliases are registered at enqueue** (`downloadTitleAliases`) as well as on every history
+  upsert, so a title that was only ever downloaded still participates in
+  `history_title_aliases`.
+- **Stale filing is repaired, not tolerated.** When resolution moves a title off the id it
+  arrived with, assets still filed under the old id are relocated (once per id per session).
+  `runOfflineAssetIdentityBackfill` covers the other trigger — rows whose canonical id the alias
+  index already knows but which nothing has browsed — and runs on **every** bootstrap, because an
+  asset only becomes relocatable once something teaches the index the title's ids, and that
+  learning has no deadline.
+
 ## Desired Offline Behavior
 
 - No aggressive startup network probe.

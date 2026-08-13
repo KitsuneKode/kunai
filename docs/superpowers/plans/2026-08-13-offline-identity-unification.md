@@ -34,22 +34,22 @@
 
 **Modified**
 
-| File                                                       | Change                                                        |
-| ---------------------------------------------------------- | ------------------------------------------------------------- |
-| `packages/storage/src/migrations.ts`                       | Migration `027_data_download_job_external_ids`                |
-| `packages/storage/src/repositories/download-jobs.ts`       | `externalIds` on the record, the row, the insert and `mapRow` |
-| `packages/storage/src/repositories/offline-assets.ts`      | `listDistinctTitleIds()` and `relocateTitleId()`              |
-| `packages/storage/src/index.ts`                            | Re-export what the CLI needs                                  |
-| `apps/cli/src/services/download/DownloadService.ts`        | Persist real external ids, register aliases, stop fabricating |
-| `apps/cli/src/services/offline/OfflineAssetService.ts`     | File assets under the resolved canonical id                   |
-| `apps/cli/src/services/offline/offline-episode-index.ts`   | Back to a single title id; candidate list deleted             |
-| `apps/cli/src/container/bootstrap-persistence.ts`          | Run the backfill                                              |
-| `apps/cli/src/container/bootstrap-services.ts`             | Construct and wire `OfflineTitleIdentityService`              |
-| `apps/cli/src/container/Container.ts` (or its type module) | Expose `offlineTitleIdentity`                                 |
-| `apps/cli/src/app/playback/episode-playback-source.ts`     | Resolve once, pass one id                                     |
-| `apps/cli/src/app/playback/PlaybackPhase.ts`               | Both offline read sites resolve through the service           |
-| `apps/cli/src/app-shell/playback-mount-shell.tsx`          | Resolve once, pass one id                                     |
-| `.docs/download-offline-onboarding.md`                     | Document the identity rule                                    |
+| File                                                     | Change                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/storage/src/migrations.ts`                     | Migration `027_data_download_job_external_ids`                |
+| `packages/storage/src/repositories/download-jobs.ts`     | `externalIds` on the record, the row, the insert and `mapRow` |
+| `packages/storage/src/repositories/offline-assets.ts`    | `listDistinctTitleIds()` and `relocateTitleId()`              |
+| `packages/storage/src/index.ts`                          | Re-export what the CLI needs                                  |
+| `apps/cli/src/services/download/DownloadService.ts`      | Persist real external ids, register aliases, stop fabricating |
+| `apps/cli/src/services/offline/OfflineAssetService.ts`   | File assets under the resolved canonical id                   |
+| `apps/cli/src/services/offline/offline-episode-index.ts` | Back to a single title id; candidate list deleted             |
+| `apps/cli/src/container/bootstrap-persistence.ts`        | Run the backfill                                              |
+| `apps/cli/src/container/bootstrap-services.ts`           | Construct and wire `OfflineTitleIdentityService`              |
+| `apps/cli/src/container/types.ts`                        | Expose `offlineTitleIdentity`                                 |
+| `apps/cli/src/app/playback/episode-playback-source.ts`   | Resolve once, pass one id                                     |
+| `apps/cli/src/app/playback/PlaybackPhase.ts`             | Both offline read sites resolve through the service           |
+| `apps/cli/src/app-shell/playback-mount-shell.tsx`        | Resolve once, pass one id                                     |
+| `.docs/download-offline-onboarding.md`                   | Document the identity rule                                    |
 
 ---
 
@@ -1560,3 +1560,35 @@ bun run dev -- --debug
 - Open the offline library, press enter on a downloaded title, and confirm it plays rather than reporting "Downloaded file unavailable".
 - Open a downloaded series' episode picker and confirm the downloaded episodes are marked as downloaded.
 - Play a downloaded episode to its end and confirm the next downloaded episode autoplays.
+
+---
+
+## What execution changed about this plan
+
+Recorded because the handoff and the first draft of this plan were wrong on
+three points, and the reasons matter more than the corrections.
+
+1. **The handoff named `reassignTitleId` for the backfill.** That method belongs
+   to `HistoryTitleAliasRepository` and moves _alias_ rows; it cannot move an
+   asset. Moving an asset also has to rewrite `identity_key`, which embeds the
+   title id and is the UNIQUE key `upsertPlayable` conflicts on — so the work
+   became a new `OfflineAssetsRepository.relocateTitleId` (Task 6).
+
+2. **The bootstrap backfill is not one-shot.** A one-shot marker would strand
+   every asset written under a raw id before anything knew the title's catalog
+   ids. The scan is one `SELECT DISTINCT` plus an indexed lookup per title, so
+   it runs every bootstrap instead.
+
+3. **The backfill alone does not fix the reported title.** Verified against a
+   shadow copy of the real database: the single `offline_assets` row is filed
+   under `1339713`, and `history_title_aliases` holds no alias for that id — so
+   the backfill would relocate nothing. The information only exists on the
+   _title_ at read time. `OfflineTitleIdentityService.resolveForTitle` therefore
+   relocates rows still filed under the id a title arrived with, once per id per
+   session, and the same shadow copy then resolves `1339713` → `tmdb:1339713`
+   and returns the real job id.
+
+   Task 8's integration case for the tmdb form went red when the candidate list
+   was deleted, which is how this was caught. Two triggers of one operation
+   (`relocateTitleId`) is not the same thing as two lookup strategies — the
+   candidate list is gone.
