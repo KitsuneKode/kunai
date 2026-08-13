@@ -6,12 +6,53 @@
 - **Production module:** `packages/providers/src/miruro/*`.
 - **Current status (2026-07-11):** **demote from default.** Live `container.engine.resolve(..., "miruro")` (One Piece AniList `21` / matrix E1159 fixture) fails before stream candidates. Anime default path remains AllAnime.
 
+## Production status (2026-08-13) — truth and resilience pass
+
+Plan 037 landed. What is now true of `packages/providers/src/miruro/direct.ts`:
+
+- **Reachability attestation.** `createMiruroResultFromPayload()` no longer returns
+  `streamReachabilityVerified: true` unconditionally. It takes an optional
+  `StreamReachabilityProbeResult` and attests only on `status: "reachable"`. The
+  production path runs no probe, so it emits no attestation; the CLI stream-health
+  gate probes as normal, and `bun run test:live:miruro` probes the selected stream
+  itself and reports `streamReachable` separately from `resolverAttestedReachable`.
+- **One server order.** `MIRURO_SERVER_TRY_ORDER` moved to
+  `packages/providers/src/miruro/manifest.ts` and is now the only list. The old
+  resolver-local `defaultServers` and catalog-local `MIRURO_DEFAULT_SERVERS` were
+  removed. Note the user-visible consequence: the picker's placeholder rows now put
+  `bonk` last, where the catalog list previously surfaced it seventh — ahead of
+  servers that actually serve video.
+- **Strict AniList identity.** `resolveMiruroAnilistId()` is exported and used by both
+  `listEpisodes()` and `resolve()`; the duplicated inline extraction in `resolve()` is
+  gone. Only a complete positive decimal from an explicit `anilistId` or an exact
+  `anilist:` prefix is accepted.
+- **Typed, redacted decode failures.** `decodeMiruroPipePayload()` is the seam, with
+  six stage codes on `MiruroPipeDecodeError` and endpoint-aware shape guards. Decode
+  failures now classify as `parse-failed` (not retryable) and Cloudflare blocks as
+  `blocked`; both used to be reported as `network-error`.
+- **Subtitle format from evidence.** The old `endsWith(".vtt") ? vtt : srt` rule is
+  gone; the shared `inferSubtitleFormat()` returns `unknown` when nothing proves a
+  format.
+- **Key derivation: still not attempted.** No first-party or reproducible source has
+  been demonstrated. `PIPE_KEY` stays a documented static constant and Kunai does not
+  scrape or guess one at runtime.
+- **WAF threshold: unchanged at 2, deliberately.** It matches the real mirror count.
+  It was not reclassified as a defect because no reproducible failure sequence shows
+  it dropping a mirror that would have answered.
+
+Deliberate deferral: `rivestream/direct.ts` still assumes every non-VTT track is SRT,
+and `videasy` / `allmanga` / `direct-stream-source` each keep a near-duplicate format
+helper. Consolidating those onto the shared `inferSubtitleFormat()` was left out of
+this change to keep the release-hardening branches independently mergeable.
+
 ## Production status (2026-07-18)
 
 - **Labels:** Hybrid — primary Tracks label is Gintama character (`Gintoki`, `Kagura`, …); detail is `Sub · hard sub` / `Dub · …` via `metadata.sourceDetail`. Emits `inventory:audio-modes` when the episode payload exposes sub and/or dub.
 - **HLS quality:** Lone Pipe `master.m3u8` rows expand through shared `expandHlsMasterPlaylist` ([`packages/providers/src/shared/hls-ladder.ts`](../../packages/providers/src/shared/hls-ladder.ts)) into multiple quality candidates for `/quality`.
 - **Live pipe (this environment):** `/api/secure/pipe` on `miruro.bz` / `miruro.ru` may return **HTTP 403 Cloudflare HTML**; fail-fast after 2 consecutive CF HTML mirrors.
-- **Recommended disposition:** keep **demoted from default** (`animeProviderPriority` default remains `["allanime"]`). Re-promote after opt-in live matrix passes.
+- **Recommended disposition:** keep **demoted from default**. (The default is now
+  `animeProvider: "anidb"` with `animeProviderPriority: ["anidb", "allanime"]`; this
+  line previously claimed `["allanime"]`.) Re-promote after opt-in live matrix passes.
 
 ## Production status (2026-07-11)
 

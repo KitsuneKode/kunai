@@ -79,7 +79,7 @@ export const miruroManifest = defineProviderManifest({
     "Bun fetch often gets CF 403 HTML on pipe; production path falls back to curl --http2 with browser headers (dossier-proven on this machine).",
     "Primary hosts: www.miruro.bz, www.miruro.ru. Bare miruro.bz/.ru are 301 redirects to www. and still CF-block at the pipe path; miruro.com serves a different app shell with no /api/secure/pipe; miruro.tv/.to are TLS-dead — all stay off the resolve list.",
     "Uses Miruro pipe API with XOR/gzip decryption key 71951034f8fbcf53d89db52ceb3dc22c.",
-    "Still not the default anime auto-fallback (AllAnime remains primary); Miruro is available for manual pick when curl/http2 path works.",
+    "Still not the default anime auto-fallback (AniDB is the default, AllAnime the fallback); Miruro is available for manual pick when curl/http2 path works.",
     "May hit Cloudflare rate limits if called too frequently.",
   ],
 });
