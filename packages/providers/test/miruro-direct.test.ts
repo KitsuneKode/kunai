@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
+import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import {
+  buildMiruroCycleCandidates,
   createMiruroResultFromPayload,
+  MIRURO_SERVER_TRY_ORDER,
   resolveMiruroAnilistId,
   type MiruroServerProfile,
 } from "../src/miruro/direct";
@@ -137,5 +140,88 @@ describe("resolveMiruroAnilistId", () => {
 
   test("prefers the explicit anilistId over the title id", () => {
     expect(resolveMiruroAnilistId(anime("anilist:21", "438631"))).toBe("438631");
+  });
+});
+
+describe("Miruro server order has one authority", () => {
+  const EXPECTED_ORDER: readonly string[] = [
+    "kiwi",
+    "pewe",
+    "bee",
+    "hop",
+    "moo",
+    "dune",
+    "ANIMEKAI",
+    "ANIMEZ",
+    "ZORO",
+    "ally",
+    "bonk",
+  ];
+
+  const episodes = { sub: [{ id: "ep-1", number: 1 }] };
+
+  test("exports the canonical try order with bonk last", () => {
+    expect(MIRURO_SERVER_TRY_ORDER.map(String)).toEqual([...EXPECTED_ORDER]);
+  });
+
+  test("the known catalog is built from the same order", () => {
+    const catalogServers = getMiruroKnownCatalog(["sub"]).map((entry) =>
+      entry.sourceId.replace(/^source:miruro:pipe:/, "").replace(/:sub$/, ""),
+    );
+
+    expect(catalogServers).toEqual([...EXPECTED_ORDER]);
+  });
+
+  test("fallback construction with no discovered providers follows the canonical order", () => {
+    const candidates = buildMiruroCycleCandidates({
+      episodes,
+      episodeNum: 1,
+      targetAudio: "sub",
+      fallbackAudio: "sub",
+    });
+
+    expect(candidates.map((candidate) => candidate.serverId)).toEqual([...EXPECTED_ORDER]);
+  });
+
+  test("discovered providers are ranked by the canonical order", () => {
+    const candidates = buildMiruroCycleCandidates({
+      providers: {
+        bonk: { episodes },
+        ZORO: { episodes },
+        kiwi: { episodes },
+        bee: { episodes },
+      },
+      episodeNum: 1,
+      targetAudio: "sub",
+      fallbackAudio: "sub",
+    });
+
+    expect(candidates.map((candidate) => candidate.serverId)).toEqual([
+      "kiwi",
+      "bee",
+      "ZORO",
+      "bonk",
+    ]);
+  });
+
+  test("unknown providers keep source order behind every known server", () => {
+    const candidates = buildMiruroCycleCandidates({
+      providers: {
+        zzz: { episodes },
+        bonk: { episodes },
+        aaa: { episodes },
+        kiwi: { episodes },
+      },
+      episodeNum: 1,
+      targetAudio: "sub",
+      fallbackAudio: "sub",
+    });
+
+    expect(candidates.map((candidate) => candidate.serverId)).toEqual([
+      "kiwi",
+      "bonk",
+      "zzz",
+      "aaa",
+    ]);
   });
 });

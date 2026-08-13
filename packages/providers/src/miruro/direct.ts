@@ -56,9 +56,9 @@ import {
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
-import { miruroManifest, MIRURO_PROVIDER_ID } from "./manifest";
+import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 
-export { MIRURO_PROVIDER_ID };
+export { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER };
 /** Canonical site origin (browser uses www; bare host redirects). */
 export const MIRURO_REFERER = "https://www.miruro.bz/";
 /**
@@ -543,26 +543,6 @@ function normalizeMiruroTimingSegment(
   return { start: segment.start, end: segment.end };
 }
 
-/**
- * Server try order. `kiwi` streams come from uwucdn.top/owocdn.top CDN with
- * kwik.cx referral — these serve real video. `bonk` CDN (ibyteimg.com) is an
- * image-only CDN that returns PNG placeholders for segments, so it goes last.
- * Everything else follows the API's own discovery order.
- */
-const MIRURO_SERVER_TRY_ORDER = [
-  "kiwi",
-  "pewe",
-  "bee",
-  "hop",
-  "moo",
-  "dune",
-  "ANIMEKAI",
-  "ANIMEZ",
-  "ZORO",
-  "ally",
-  "bonk",
-] as const;
-
 function sortMiruroProviderEntries(
   entries: readonly (readonly [string, MiruroProviderEntry | undefined])[],
 ): readonly (readonly [string, MiruroProviderEntry | undefined])[] {
@@ -594,22 +574,9 @@ export function buildMiruroCycleCandidates({
   const audioOrder: readonly MiruroAudioCategory[] =
     targetAudio === fallbackAudio ? [targetAudio] : [targetAudio, fallbackAudio];
   let priority = 0;
-  const defaultServers = [
-    "kiwi",
-    "bee",
-    "hop",
-    "ally",
-    "pewe",
-    "moo",
-    "bonk",
-    "dune",
-    "ANIMEKAI",
-    "ANIMEZ",
-    "ZORO",
-  ] as const;
   const providerEntries = providers
     ? sortMiruroProviderEntries(Object.entries(providers))
-    : defaultServers.map((server) => [server, { episodes }] as const);
+    : MIRURO_SERVER_TRY_ORDER.map((server) => [server, { episodes }] as const);
 
   for (const audioCategory of audioOrder) {
     for (const [providerKey, providerEntry] of providerEntries) {

@@ -2,6 +2,31 @@ import { defineProviderManifest } from "@kunai/core";
 
 export const MIRURO_PROVIDER_ID = "miruro" as const;
 
+/**
+ * The one Miruro server order. Discovery ranking, fallback construction when the
+ * pipe returns no provider map, and the known-catalog placeholder rows all read
+ * this list — three lists that disagreed was how a known-bad server ended up
+ * ahead of a good one in the picker.
+ *
+ * `kiwi` streams come from the uwucdn.top/owocdn.top CDN with a kwik.cx referral
+ * and serve real video, so it leads. `bonk`'s CDN (ibyteimg.com) is image-only
+ * and returns PNG placeholders for segments, so it goes last. Everything between
+ * follows the API's own discovery order.
+ */
+export const MIRURO_SERVER_TRY_ORDER = [
+  "kiwi",
+  "pewe",
+  "bee",
+  "hop",
+  "moo",
+  "dune",
+  "ANIMEKAI",
+  "ANIMEZ",
+  "ZORO",
+  "ally",
+  "bonk",
+] as const;
+
 export const miruroManifest = defineProviderManifest({
   id: MIRURO_PROVIDER_ID,
   displayName: "Miruro",

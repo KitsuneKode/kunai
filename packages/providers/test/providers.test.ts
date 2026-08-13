@@ -16,6 +16,7 @@ import {
   decodeVideasyGuardedPayload,
   getMiruroEpisodesResponse,
   miruroProviderModule,
+  MIRURO_SERVER_TRY_ORDER,
   createVidkingResultFromPayload,
   createVideasyRouteCachePolicy,
   extractQualitiesFromMaster,
@@ -1282,53 +1283,26 @@ test("miruro source cycling orders preferred subtitle delivery before fallback a
     fallbackAudio: "sub",
   });
 
-  expect(candidates.map((candidate) => candidate.label)).toEqual([
-    "Kagura",
-    "Okita",
-    "Hijikata",
-    "Katsura",
-    "Soyo",
-    "Kyubei",
-    "Sacchan",
-    "Katsura",
-    "Takasugi",
-    "Kamui",
-    "Mutsu",
-    "Gintoki",
-    "Shinpachi",
-    "Hijikata",
-    "Elizabeth",
-    "Soyo",
-    "Kyubei",
-    "Sacchan",
-    "Katsura",
-    "Takasugi",
-    "Kamui",
-    "Mutsu",
-  ]);
+  const dub = candidates.filter((candidate) => candidate.presentation === "dub");
+  const sub = candidates.filter((candidate) => candidate.presentation === "sub");
+
+  // Every preferred-audio candidate comes before any fallback-audio candidate.
+  expect(candidates.slice(0, dub.length)).toEqual(dub);
+  expect(candidates.slice(dub.length)).toEqual(sub);
   expect(candidates.map((candidate) => candidate.normalizedAudioLanguage)).toEqual([
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "en",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
-    "ja",
+    ...dub.map(() => "en"),
+    ...sub.map(() => "ja"),
+  ]);
+
+  // Within each audio lane the servers follow the one canonical try order.
+  const canonical = [...MIRURO_SERVER_TRY_ORDER];
+  expect(dub.map((candidate) => candidate.serverId)).toEqual(canonical);
+  expect(sub.map((candidate) => candidate.serverId)).toEqual(canonical);
+  expect(dub.map((candidate) => candidate.label).slice(0, 3)).toEqual(["Kagura", "Soyo", "Okita"]);
+  expect(sub.map((candidate) => candidate.label).slice(0, 3)).toEqual([
+    "Gintoki",
+    "Soyo",
+    "Shinpachi",
   ]);
 });
 
