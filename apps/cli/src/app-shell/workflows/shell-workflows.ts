@@ -17,6 +17,11 @@ import {
   noteForExternalOpenFailure,
 } from "@/app-shell/external-open-fallback";
 import { openSessionProviderPicker } from "@/app-shell/provider-picker-overlay";
+import {
+  cancelRootLibraryPlaybackLaunch,
+  resolveRootLibraryPlaybackLaunch,
+  waitForRootLibraryPlaybackLaunch,
+} from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { buildShareRefFromTitleContext } from "@/app/bootstrap/share-ref-from-context";
@@ -527,7 +532,9 @@ export async function openOfflineLibraryGroupPicker(
         );
         continue;
       }
-      await requestUnifiedOfflinePlayback(container, job.id);
+      await requestUnifiedOfflinePlayback(container, job.id, {
+        onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+      });
       return;
     }
     if (action === "reveal") {
@@ -926,11 +933,19 @@ async function handleContinue(container: Container): Promise<"handled"> {
 async function handleLibraryOverlay(
   container: Container,
   view: "library" | "queue",
-): Promise<"handled"> {
+): Promise<ShellWorkflowResult> {
   const { stateManager } = container;
+  const playbackLaunch = waitForRootLibraryPlaybackLaunch();
   stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "library", view } });
   await waitForOverlayClose(stateManager, "library");
-  return "handled";
+  cancelRootLibraryPlaybackLaunch();
+  const launch = await playbackLaunch;
+  if (!launch) return "handled";
+  return {
+    type: "history-entry",
+    title: launch.title,
+    ...(launch.episode ? { episode: launch.episode } : {}),
+  };
 }
 
 async function handleStaticOverlay(

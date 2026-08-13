@@ -12,6 +12,7 @@ import {
   type PreviewRailModel,
 } from "@/app-shell/primitives/PreviewRail.model";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
+import { resolveRootLibraryPlaybackLaunch } from "@/app-shell/root-library-playback-bridge";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
@@ -213,7 +214,9 @@ export function LibraryTitleDetail({
               });
               return;
             }
-            await requestUnifiedOfflinePlayback(container, job.id);
+            await requestUnifiedOfflinePlayback(container, job.id, {
+              onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+            });
             return;
           }
 

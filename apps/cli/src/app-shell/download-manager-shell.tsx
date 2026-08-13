@@ -15,6 +15,7 @@ import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import { resolveRootLibraryPlaybackLaunch } from "@/app-shell/root-library-playback-bridge";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
 import { getWindowStart } from "@/app-shell/shell-text";
@@ -342,7 +343,10 @@ export function DownloadManagerContent({
             job.status === "repairable")
         ) {
           void import("@/app/offline/offline-playback-launch").then(
-            ({ requestUnifiedOfflinePlayback }) => requestUnifiedOfflinePlayback(container, job.id),
+            ({ requestUnifiedOfflinePlayback }) =>
+              requestUnifiedOfflinePlayback(container, job.id, {
+                onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+              }),
           );
           return;
         }
