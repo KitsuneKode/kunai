@@ -32,10 +32,14 @@ recovers a crash-after-rename without redownloading or orphaning a valid artifac
 - [x] Add repository tests proving a second process cannot claim a running or
       completed job.
 - [x] Have workers stop before network/process work when the durable claim loses.
+- [x] Start the heartbeat immediately after the durable claim so stream resolution
+      time is covered by the lease, not only the child-process phase.
 - [x] Validate the temp artifact before rename and reuse that validation after
       publication.
 - [x] Make interrupted-job reconciliation asynchronous, lease-aware, and distinguish
       valid output, invalid output, and missing output.
+- [x] Compare-and-set the observed stale heartbeat before recovery so only one
+      process owns reconciliation of an expired job.
 - [x] Add a crash-after-rename fixture proving valid output is adopted as completed
       without starting `yt-dlp`.
 - [x] Add an invalid-output fixture proving the artifact is removed and the job is
