@@ -19,7 +19,12 @@ import type { BrowseShellOption, BrowseShellSearchResponse } from "@/app-shell/t
 import type { SearchResult } from "@/domain/types";
 import React, { act } from "react";
 
-import { render } from "../harness/render-capture";
+import { render, stripAnsi, type RenderHandle } from "../harness/render-capture";
+
+/** The Sakura glimmer label interleaves colour codes between characters. */
+function frame(handle: RenderHandle): string {
+  return stripAnsi(handle.lastFrame());
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -34,6 +39,14 @@ function deferred<T>() {
 
 async function flush(): Promise<void> {
   for (let i = 0; i < 6; i++) await Promise.resolve();
+}
+
+/** Ink defers a lone ESC briefly to disambiguate it from an escape sequence. */
+async function pressEscape(handle: RenderHandle): Promise<void> {
+  await act(async () => {
+    handle.stdin.enqueue("\u001b");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
 }
 
 function calendarOption(label: string, dayKey: string): BrowseShellOption<SearchResult> {
@@ -114,7 +127,7 @@ test("the calendar surface mounts and paints before its schedule request or idle
   );
 
   try {
-    const firstFrame = handle.lastFrame();
+    const firstFrame = frame(handle);
     events.unshift("browse-mounted:calendar-loading");
     // The very first committed frame is already the calendar loading surface.
     expect(firstFrame).toContain("Loading release schedule");
@@ -140,7 +153,7 @@ test("the calendar surface mounts and paints before its schedule request or idle
       "calendar-load-completed",
       "browse-rendered:calendar-success",
     ]);
-    expect(handle.lastFrame()).toContain("Frieren");
+    expect(frame(handle)).toContain("Frieren");
   } finally {
     idle.resolve(undefined);
     handle.unmount();
@@ -167,10 +180,10 @@ test("a zero-row schedule keeps calendar identity instead of falling back to bro
       });
       await flush();
     });
-    const frame = handle.lastFrame();
-    expect(frame).toContain("Nothing on the schedule");
+    const emptyFrame = frame(handle);
+    expect(emptyFrame).toContain("Nothing on the schedule");
     // Browse's generic idle/empty copy must not take the surface back.
-    expect(frame).not.toContain("try /trending to see what's popular");
+    expect(emptyFrame).not.toContain("try /trending to see what's popular");
   } finally {
     handle.unmount();
   }
@@ -196,8 +209,8 @@ test("a failed schedule stays on calendar chrome and offers an r retry that relo
       attempts[0]?.reject(new Error("every schedule source failed"));
       await flush();
     });
-    expect(handle.lastFrame()).toContain("Schedule unavailable");
-    expect(handle.lastFrame()).toContain("Refresh schedule");
+    expect(frame(handle)).toContain("Schedule unavailable");
+    expect(frame(handle)).toContain("Refresh schedule");
 
     handle.stdin.enqueue("r");
     await act(async () => {
@@ -209,7 +222,7 @@ test("a failed schedule stays on calendar chrome and offers an r retry that relo
       attempts[1]?.resolve(calendarResponse(["Frieren"]));
       await flush();
     });
-    expect(handle.lastFrame()).toContain("Frieren");
+    expect(frame(handle)).toContain("Frieren");
   } finally {
     handle.unmount();
   }
@@ -233,11 +246,8 @@ test("Esc during loading aborts the schedule request and no late frame can paint
   );
 
   try {
-    expect(handle.lastFrame()).toContain("Loading release schedule");
-    handle.stdin.enqueue("\u001b");
-    await act(async () => {
-      await flush();
-    });
+    expect(frame(handle)).toContain("Loading release schedule");
+    await pressEscape(handle);
     expect(signals[0]?.aborted).toBe(true);
 
     await act(async () => {
@@ -246,7 +256,45 @@ test("Esc during loading aborts the schedule request and no late frame can paint
       await flush();
     });
     expect(accepted).toEqual([]);
-    expect(handle.lastFrame()).not.toContain("Frieren");
+    expect(frame(handle)).not.toContain("Frieren");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("loading trending after the schedule settles hands the surface back to ordinary results", async () => {
+  const schedule = deferred<BrowseShellSearchResponse<SearchResult>>();
+  const handle = render(
+    <BrowseShell<SearchResult>
+      {...BASE_PROPS}
+      initialCalendarRoute={{ kind: "calendar", requestKey: 1 }}
+      onLoadCalendar={() => schedule.promise}
+      onLoadDiscovery={async () => ({
+        options: [{ label: "Dune", value: { id: "dune", title: "Dune" } as SearchResult }],
+        subtitle: "1 trending pick",
+        emptyMessage: "",
+      })}
+    />,
+    { columns: 100, rows: 30 },
+  );
+
+  try {
+    await act(async () => {
+      schedule.resolve(calendarResponse(["Frieren"]));
+      await flush();
+    });
+    expect(frame(handle)).toContain("Frieren");
+
+    // Ctrl+T loads trending. A settled calendar route must not keep rendering
+    // ordinary results through calendar chrome.
+    handle.stdin.enqueue("\u0014");
+    await act(async () => {
+      await flush();
+    });
+    const trending = frame(handle);
+    expect(trending).toContain("Dune");
+    expect(trending).not.toContain("Frieren");
+    expect(trending).not.toContain("day");
   } finally {
     handle.unmount();
   }

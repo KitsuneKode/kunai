@@ -1,3 +1,4 @@
+import { mapPosterPreviewState } from "@/app-shell/browse-preview-rail";
 import {
   buildDownloadManagerLayout,
   buildDownloadManagerRailModel,
@@ -12,7 +13,6 @@ import {
 import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
-import { mapPosterPreviewState } from "@/app-shell/browse-preview-rail";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
@@ -24,7 +24,7 @@ import type { Container } from "@/container";
 import { presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 
@@ -208,7 +208,13 @@ export function DownloadManagerContent({
     return unsub;
   }, [container, refresh]);
 
-  const allJobs = [...activeJobs, ...queuedJobs, ...completedJobs, ...failedJobs];
+  // Memoized: the selection-relocation effect below depends on this list, and a
+  // fresh array every render would re-run it (and its setSelectedIndex) on every
+  // commit. The four sources are state, so identity only changes on a refresh.
+  const allJobs = useMemo(
+    () => [...activeJobs, ...queuedJobs, ...completedJobs, ...failedJobs],
+    [activeJobs, queuedJobs, completedJobs, failedJobs],
+  );
   // Actions target the immediate cursor; only expensive artwork waits for the
   // selection to settle, so holding an arrow key never spawns a poster render
   // per row.
@@ -390,10 +396,7 @@ export function DownloadManagerContent({
       season: job.season,
       episode: job.episode,
     });
-    const titleLine = truncateLine(
-      `${job.titleName} · ${positionLabel ?? kindLabel}`,
-      titleCol,
-    );
+    const titleLine = truncateLine(`${job.titleName} · ${positionLabel ?? kindLabel}`, titleCol);
 
     return (
       <Box

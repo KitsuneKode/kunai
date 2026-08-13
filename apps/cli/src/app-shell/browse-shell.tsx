@@ -96,6 +96,7 @@ import {
   type DetailsPanelData,
 } from "./details-panel";
 import { buildDetailsSheet } from "./details-sheet.model";
+import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { deleteAllKittyImages } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
@@ -193,9 +194,12 @@ export function BrowseShell<T>({
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
+  initialCalendarRoute,
   placeholder,
   commands,
   onSearch,
+  onLoadCalendar,
+  onCalendarAccepted,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -219,9 +223,19 @@ export function BrowseShell<T>({
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
+  /**
+   * Present when this open IS the calendar route. Route identity comes from
+   * here, never from whether the loaded options happen to contain calendar rows.
+   */
+  initialCalendarRoute?: CalendarRouteRequest;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
+  onLoadCalendar?: (signal: AbortSignal) => Promise<BrowseShellSearchResponse<T>>;
+  onCalendarAccepted?: (
+    request: CalendarRouteRequest,
+    response: BrowseShellSearchResponse<T>,
+  ) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -305,6 +319,7 @@ export function BrowseShell<T>({
     // nothing visible. Boot straight into `list` so the schedule owns the keyboard
     // immediately. Mirrored by the focus effect below for route-loaded calendars.
     const bootsIntoCalendar =
+      initialCalendarRoute !== undefined ||
       (initialResults ?? []).some(
         (opt) => opt.calendar !== undefined || opt.previewGroup !== undefined,
       ) ||
@@ -341,6 +356,37 @@ export function BrowseShell<T>({
       mountedRef.current = false;
     };
   }, []);
+
+  // The calendar route is MOUNTED work: the surface exists first and the hook
+  // owns loading / retrying / success / empty / error underneath it. Esc clears
+  // the request, which aborts whatever is in flight.
+  const [calendarRoute, setCalendarRoute] = useState<CalendarRouteRequest | undefined>(
+    onLoadCalendar ? initialCalendarRoute : undefined,
+  );
+  const handleCalendarAccepted = useCallback(
+    (request: CalendarRouteRequest, accepted: BrowseShellSearchResponse<T>) => {
+      setOptions(accepted.options);
+      setSelectedIndex(0);
+      setResultSubtitle(accepted.subtitle);
+      if (accepted.emptyMessage) setEmptyMessage(accepted.emptyMessage);
+      setSearchState("ready");
+      setErrorMessage(null);
+      setLastSearchedQuery("");
+      onCalendarAccepted?.(request, accepted);
+    },
+    [onCalendarAccepted],
+  );
+  const noCalendarLoader = useCallback(
+    () => Promise.resolve<BrowseShellSearchResponse<T>>({ options: [], subtitle: "" }),
+    [],
+  );
+  const calendarRouteState = useCalendarRoute<T>({
+    request: calendarRoute,
+    load: onLoadCalendar ?? noCalendarLoader,
+    onAccepted: handleCalendarAccepted,
+  });
+  const calendarRouteKind = calendarRouteState.state.kind;
+  const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
 
   useEffect(() => {
     if (!loadIdleContext) return;
@@ -395,9 +441,11 @@ export function BrowseShell<T>({
   );
 
   // Calendar view detection and day-strip derived state.
-  // A structured `calendar` item is only attached by the calendar surface, so it is
-  // the authoritative signal. previewGroup/subtitle remain as legacy fallbacks.
+  // Route identity is authoritative; a structured `calendar` item is only
+  // attached by the calendar surface, so it remains the fallback signal for
+  // opens that were not routed (previewGroup/subtitle are legacy fallbacks).
   const isCalendarView =
+    calendarRouteKind !== "inactive" ||
     options.some((opt) => opt.calendar !== undefined || opt.previewGroup !== undefined) ||
     resultSubtitle.includes("schedule") ||
     resultSubtitle.includes("airing today");
@@ -421,6 +469,17 @@ export function BrowseShell<T>({
     cycleType: cycleCalendarType,
     setDayFilter: setCalendarDayFilter,
   } = calendar;
+
+  /**
+   * Leaving the schedule for other content (search, trending, recommendations,
+   * Esc). Releases BOTH the calendar UI state and the route request, so an
+   * in-flight schedule fetch is aborted and a settled route can no longer claim
+   * the surface for rows that are not calendar rows.
+   */
+  const leaveCalendarSurface = useCallback(() => {
+    setCalendarRoute(undefined);
+    resetCalendar();
+  }, [resetCalendar]);
 
   const narrowedOptions = useMemo(
     () => filterBrowseOptionsByResultFilter(options, resultFilter),
@@ -457,8 +516,8 @@ export function BrowseShell<T>({
     setResultFilter("");
     setFilterModeOpen(false);
     setFocusZone("query");
-    resetCalendar();
-  }, [resetCalendar]);
+    leaveCalendarSurface();
+  }, [leaveCalendarSurface]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -495,7 +554,7 @@ export function BrowseShell<T>({
       setOptions([]);
       setSelectedIndex(0);
       setResultSubtitle("");
-      resetCalendar();
+      leaveCalendarSurface();
 
       try {
         const response = await onSearch(rawQuery);
@@ -535,7 +594,7 @@ export function BrowseShell<T>({
         setEmptyMessage("Search failed.");
       }
     },
-    [query, onSearch, resetCalendar],
+    [query, onSearch, leaveCalendarSurface],
   );
 
   const clearStructuredFilterChip = useCallback(
@@ -570,7 +629,7 @@ export function BrowseShell<T>({
     setActiveFilterBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
-    resetCalendar();
+    leaveCalendarSurface();
 
     try {
       const response = await onLoadDiscovery();
@@ -609,7 +668,7 @@ export function BrowseShell<T>({
     setActiveFilterBadges([]);
     setSearchWarnings([]);
     setFocusZone("query");
-    resetCalendar();
+    leaveCalendarSurface();
 
     try {
       const response = await onLoadRecommendations();
@@ -1079,6 +1138,7 @@ export function BrowseShell<T>({
     isCalendarView ||
     resultSubtitle.toLowerCase().includes("schedule") ||
     emptyMessage.toLowerCase().includes("schedule");
+  const calendarRouteLoadingModel = buildCalendarLoadingState(calendarRouteKind === "retrying");
   const calendarEmptyModeLabel =
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
   const browseChromeRows = getBrowseChromeRows({
@@ -1276,6 +1336,13 @@ export function BrowseShell<T>({
       setCommandMode(true);
       setCommandInput("");
       setHighlightedCommandIndex(0);
+      return;
+    }
+
+    // The calendar error state advertises `r`; it must work while the surface
+    // has no rows, which is exactly when the list hotkeys below do nothing.
+    if (calendarRouteKind === "error" && input.toLowerCase() === "r") {
+      calendarRouteState.retry();
       return;
     }
 
@@ -1797,6 +1864,19 @@ export function BrowseShell<T>({
           />
         ) : activeOverlay ? (
           <OverlayPanel overlay={activeOverlay} width={innerWidth} />
+        ) : calendarRoutePending ? (
+          <Box marginTop={2} flexGrow={1} flexDirection="column">
+            <SakuraLoader
+              label={calendarRouteLoadingModel.title}
+              sublabel={calendarRouteLoadingModel.detail}
+              active={!rootContentSuspended}
+            />
+          </Box>
+        ) : calendarRouteState.state.kind === "error" ? (
+          <CalendarScheduleStatus
+            model={buildCalendarErrorState(calendarRouteState.state.message)}
+            width={Math.min(innerWidth, 72)}
+          />
         ) : searchState === "loading" && !isCalendarView ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">
             <SakuraLoader
@@ -2157,9 +2237,12 @@ export function openBrowseShell<T>({
   initialWarnings,
   initialSelectedIndex,
   initialCalendarTypeTab,
+  initialCalendarRoute,
   placeholder,
   commands,
   onSearch,
+  onLoadCalendar,
+  onCalendarAccepted,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -2180,9 +2263,15 @@ export function openBrowseShell<T>({
   initialWarnings?: readonly string[];
   initialSelectedIndex?: number;
   initialCalendarTypeTab?: CalendarTypeTab;
+  initialCalendarRoute?: CalendarRouteRequest;
   placeholder: string;
   commands: readonly ResolvedAppCommand[];
   onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
+  onLoadCalendar?: (signal: AbortSignal) => Promise<BrowseShellSearchResponse<T>>;
+  onCalendarAccepted?: (
+    request: CalendarRouteRequest,
+    response: BrowseShellSearchResponse<T>,
+  ) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -2212,9 +2301,12 @@ export function openBrowseShell<T>({
         initialWarnings={initialWarnings}
         initialSelectedIndex={initialSelectedIndex}
         initialCalendarTypeTab={initialCalendarTypeTab}
+        initialCalendarRoute={initialCalendarRoute}
         placeholder={placeholder}
         commands={commands}
         onSearch={onSearch}
+        onLoadCalendar={onLoadCalendar}
+        onCalendarAccepted={onCalendarAccepted}
         onLoadDiscovery={onLoadDiscovery}
         onLoadRecommendations={onLoadRecommendations}
         settings={settings}

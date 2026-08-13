@@ -93,6 +93,9 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/browse-idle-context",
       "@/app-shell/calendar-ui.model",
       "@/app-shell/command-router",
+      // The mounted calendar route's request type. SearchPhase owns the request
+      // identity and the acceptance commit; the shell owns its state machine.
+      "@/app-shell/hooks/use-calendar-route",
       "@/app-shell/commands",
       // DEBT (2026-07-21): both are shell-owned helpers that app/ reaches up for.
       // `external-open-fallback` is presentation copy; `root-queue-bridge` is the
