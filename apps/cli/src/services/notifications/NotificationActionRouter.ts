@@ -1,5 +1,6 @@
 import type { MediaActionId } from "@/domain/media/media-action-policy";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
+import { normalizeMediaKind } from "@/domain/media/media-presentation";
 import type {
   MediaActionRunResult,
   RunMediaActionInput,
@@ -205,7 +206,7 @@ function parseMediaItem(notification: NotificationRecord): MediaItemIdentity | n
   }
 
   return {
-    mediaKind: parsed.mediaKind,
+    mediaKind: normalizeMediaKind(parsed.mediaKind),
     sourceId: typeof parsed.sourceId === "string" ? parsed.sourceId : undefined,
     titleId: parsed.titleId,
     title: parsed.title,

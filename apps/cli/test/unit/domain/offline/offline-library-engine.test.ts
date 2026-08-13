@@ -68,13 +68,66 @@ describe("OfflineLibraryEngine", () => {
       "artwork ready · subtitles missing · timing missing",
     );
     expect(shelf.groups[0]?.previewImageUrl).toBe("/downloads/solo-s01e01.thumbnail.jpg");
-    expect(shelf.groups[0]?.entries.map((entry) => entry.episodeLabel)).toEqual([
+    expect(shelf.groups[0]?.entries.map((entry) => entry.presentation.positionLabel)).toEqual([
       "S01E01",
       "S01E02",
     ]);
+    expect(shelf.groups[0]?.entries[0]?.presentation).toMatchObject({
+      title: "Solo Leveling",
+      kindLabel: "Series",
+      position: { kind: "episode", season: 1, episode: 1, seasonIsMeaningful: true },
+      itemNoun: "episode",
+    });
     expect(shelf.groups[0]?.entries[0]?.previewImageUrl).toBe(
       "/downloads/solo-s01e01.thumbnail.jpg",
     );
+  });
+
+  test("carries canonical presentation for a legacy synthetic movie row", () => {
+    const shelf = createOfflineLibraryEngine().buildShelf([
+      {
+        job: job({
+          id: "m",
+          titleId: "dune",
+          titleName: "Dune: Part Two",
+          mediaKind: "movie",
+          season: 1,
+          episode: 1,
+        }),
+        status: "ready",
+      },
+    ]);
+
+    const group = shelf.groups[0];
+    expect(group?.entries[0]?.presentation).toMatchObject({
+      kindLabel: "Movie",
+      position: { kind: "title" },
+      positionLabel: null,
+      itemNoun: "movie",
+    });
+    expect(group?.nextPlayableEpisodeLabel).toBe("Movie");
+    expect(group?.actionSummary).toBe("Play Movie · inspect 1 movie");
+    expect(JSON.stringify(shelf)).not.toContain("S01E01");
+  });
+
+  test("anime shelf entries are episode-only by default", () => {
+    const shelf = createOfflineLibraryEngine().buildShelf([
+      {
+        job: job({
+          id: "a",
+          titleId: "frieren",
+          titleName: "Frieren",
+          mediaKind: "anime",
+          season: 1,
+          episode: 3,
+        }),
+        status: "ready",
+      },
+    ]);
+
+    expect(shelf.groups[0]?.entries[0]?.presentation.positionLabel).toBe("E03");
+    expect(shelf.groups[0]?.nextPlayableEpisodeLabel).toBe("E03");
+    expect(shelf.groups[0]?.actionSummary).toBe("Play E03 · inspect 1 episode");
   });
 
   test("keeps empty shelf actionable without network work", () => {

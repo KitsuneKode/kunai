@@ -1,4 +1,5 @@
 import { getEpisodeIdentityKey } from "@/domain/media/media-item-identity";
+import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import { parseNotificationMediaItem } from "@/services/notifications/NotificationActionRouter";
 import type { NotificationRecord } from "@/services/storage/storage-read-models";
 
@@ -258,16 +259,15 @@ function toRow(
 function mediaFacts(record: NotificationRecord): readonly PreviewFact[] {
   const media = parseNotificationMediaItem(record);
   if (!media) return [];
+  const { positionLabel, kindLabel } = presentMedia({
+    title: media.title,
+    mediaKind: normalizeMediaKind(media.mediaKind),
+    season: media.season,
+    episode: media.episode ?? media.absoluteEpisode,
+  });
+  // Series/anime notices with no episode at all have nothing worth stating.
   const episode =
-    media.episode !== undefined
-      ? media.season !== undefined
-        ? `S${String(media.season).padStart(2, "0")}E${String(media.episode).padStart(2, "0")}`
-        : `E${String(media.episode).padStart(2, "0")}`
-      : media.absoluteEpisode !== undefined
-        ? `E${String(media.absoluteEpisode).padStart(2, "0")}`
-        : media.mediaKind === "movie"
-          ? "Movie"
-          : undefined;
+    positionLabel ?? (kindLabel === "Series" || kindLabel === "Anime" ? undefined : kindLabel);
   const provider = media.providerHints?.[0]?.providerId;
   return [
     ...(episode ? [{ label: "Episode", value: episode }] : []),

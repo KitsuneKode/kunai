@@ -102,4 +102,50 @@ describe("formatPlaybackDownloadStripe", () => {
     );
     expect(line).toBe("S02E03  ·  downloading 44%");
   });
+
+  test("presents a legacy synthetic movie row as Movie, never S01E01", () => {
+    const line = formatPlaybackDownloadStripe(
+      job({
+        id: "1",
+        titleId: "dune",
+        mediaKind: "movie",
+        season: 1,
+        episode: 1,
+        status: "running",
+        progressPercent: 44,
+      }),
+    );
+    expect(line).toBe("Movie  ·  downloading 44%");
+    expect(line).not.toContain("S01E01");
+  });
+
+  test("presents anime episode-only by default", () => {
+    expect(
+      formatPlaybackDownloadStripe(
+        job({
+          id: "1",
+          titleId: "frieren",
+          mediaKind: "anime",
+          season: 1,
+          episode: 3,
+          status: "queued",
+        }),
+      ),
+    ).toBe("E03  ·  queued");
+  });
+
+  test("presents a video job as Video rather than an episode code", () => {
+    const line = formatPlaybackDownloadStripe(
+      job({
+        id: "1",
+        titleId: "trailer",
+        mediaKind: "video",
+        season: 1,
+        episode: 1,
+        status: "queued",
+      }),
+    );
+    expect(line).toBe("Video  ·  queued");
+    expect(line).not.toMatch(/E\d/);
+  });
 });

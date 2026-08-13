@@ -373,17 +373,42 @@ async function loadUnifiedCalendarWindow(
   signal?: AbortSignal,
 ): Promise<readonly CatalogScheduleItem[]> {
   // Content-kind aware: load anime + series + movie windows concurrently and merge.
-  // allSettled keeps the calendar rendering even if one source fails.
+  // allSettled keeps the calendar rendering even if ONE source fails — but it
+  // must not turn "every source failed" or "the user cancelled" into a cheerful
+  // empty week, which is what an unconditional flatMap of fulfilled values did.
+  //
+  // Only real source operations become tasks. A container without
+  // `loadMovieReleaseWindow` contributes neither a success nor a failure, so a
+  // placeholder `Promise.resolve([])` would have masked a total anime+series
+  // outage as one fulfilled (empty) source.
   const tasks: Promise<readonly CatalogScheduleItem[]>[] = [
     loadWindowForMode(timelineService, "anime", days, signal),
     loadWindowForMode(timelineService, "series", days, signal),
+  ];
+  if (
     "loadMovieReleaseWindow" in timelineService &&
     typeof timelineService.loadMovieReleaseWindow === "function"
-      ? timelineService.loadMovieReleaseWindow(days, signal)
-      : Promise.resolve<readonly CatalogScheduleItem[]>([]),
-  ];
+  ) {
+    tasks.push(timelineService.loadMovieReleaseWindow(days, signal));
+  }
+
   const settled = await Promise.allSettled(tasks);
-  return settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
+  // Cancellation outranks every source outcome: allSettled completes normally
+  // even when each source rejected because the caller aborted them.
+  signal?.throwIfAborted();
+
+  const fulfilled = settled.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (fulfilled.length === 0) {
+    throw new AggregateError(
+      settled.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
+      "Calendar sources unavailable",
+    );
+  }
+  // A fulfilled empty array IS a real successful source response — an honestly
+  // quiet week stays success.
+  return fulfilled.flat();
 }
 
 async function loadWindowForMode(

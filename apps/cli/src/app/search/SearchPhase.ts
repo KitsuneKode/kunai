@@ -13,6 +13,7 @@ import type { CalendarTypeTab } from "@/app-shell/calendar-ui.model";
 import { routeSearchShellAction } from "@/app-shell/command-router";
 import { resolveCommands } from "@/app-shell/commands";
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
+import type { CalendarRouteRequest } from "@/app-shell/hooks/use-calendar-route";
 import { openBrowseShell } from "@/app-shell/ink-shell";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
@@ -225,6 +226,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // "N recommendation picks · loaded" even on the calendar. Cleared on manual search.
       let routeSubtitle: string | undefined;
 
+      // The calendar route is MOUNTED, not awaited: the shell opens immediately
+      // with this request and loads the schedule underneath its own loader. The
+      // accepted key is the ONLY evidence that a routed calendar really loaded —
+      // close-time visit bookkeeping must never infer it from leftover rows.
+      let calendarRequestKey = 0;
+      let pendingCalendarRoute: CalendarRouteRequest | undefined;
+      let acceptedCalendarRequestKey: number | undefined;
+      const beginCalendarRoute = (typeTab?: CalendarTypeTab) => {
+        calendarRequestKey += 1;
+        pendingCalendarRoute = { kind: "calendar", requestKey: calendarRequestKey };
+        if (typeTab) pendingCalendarType = typeTab;
+        // Clear the ordinary query/results state for the route so the shell opens
+        // on calendar chrome instead of a stale result list.
+        stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
+        stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results: [] });
+        stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
+        routeSubtitle = undefined;
+        syncBrowseQueryDraft();
+      };
+
       // Filter evidence + parser warnings from the most recent bootstrap/`-S`
       // search, consumed once when the browse shell mounts so bootstrap results
       // go through the same honest local-filter pipeline as interactive Enter.
@@ -262,6 +283,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               }
               return { status: "success", value: routedAction.title };
             }
+            continue;
+          }
+          if (pendingInitialRoute === "calendar") {
+            beginCalendarRoute();
+            pendingInitialRoute = undefined;
             continue;
           }
           routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
@@ -375,6 +401,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           query: currentState.searchQuery,
           resultCount: currentState.searchResults.length,
           initialRoute: pendingInitialRoute,
+          hasPendingCalendarRoute: pendingCalendarRoute !== undefined,
         });
         const allHistory = deferIdleContext ? {} : this.readLocalBrowseHistory(context);
         const browseContext =
@@ -418,6 +445,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
         const initialCalendarTypeTab = pendingCalendarType;
         pendingCalendarType = undefined;
+        const openedCalendarRoute = pendingCalendarRoute;
+        pendingCalendarRoute = undefined;
         const browseState = currentState;
         ensureSessionProviderMatchesLane(stateManager, providerRegistry);
         const syncedState = stateManager.getState();
@@ -442,6 +471,57 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           provider: syncedState.provider,
           settings: container.config.getRaw(),
           initialCalendarTypeTab,
+          initialCalendarRoute: openedCalendarRoute,
+          onLoadCalendar: async (signal) => {
+            const bundle = await loadCalendarResults(container, signal);
+            signal.throwIfAborted();
+            const results = [...bundle.results];
+            const display = await loadBrowseDisplayContext(container, results, { signal });
+            signal.throwIfAborted();
+            return {
+              options: results.map((result) => mapBrowseResultOption(container, display, result)),
+              subtitle: bundle.subtitle,
+              emptyMessage: bundle.emptyMessage,
+            };
+          },
+          // The single acceptance commit point: the hook calls this only after
+          // mounted / current / not-aborted checks, so no superseded or cancelled
+          // schedule response can write global state, diagnostics, or the subtitle.
+          onCalendarAccepted: (request, response) => {
+            const results = response.options.map((option) => option.value);
+            stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
+            if (results.length > 0) {
+              stateManager.dispatch({ type: "SELECT_RESULT", index: 0 });
+            }
+            routeSubtitle = response.subtitle;
+            acceptedCalendarRequestKey = request.requestKey;
+            logger.info("Search route loaded", {
+              route: "calendar",
+              mode: stateManager.getState().mode,
+              count: results.length,
+            });
+            diagnosticsService.record(
+              buildSearchDiagnosticEvent({
+                operation: "search.route.loaded",
+                status: "succeeded",
+                severity: "healthy",
+                recommendedAction: "none",
+                message: "Search route loaded",
+                context: {
+                  route: "calendar",
+                  mode: stateManager.getState().mode,
+                  count: results.length,
+                },
+              }),
+            );
+            enqueueReleaseReconciliation(
+              container,
+              collectReleaseReconciliationRows(container),
+              "calendar",
+              context.signal,
+            );
+          },
           initialQuery: browseState.searchQuery,
           queryDraft: browseQueryDraft,
           initialResults: initialBrowse.options,
@@ -687,8 +767,16 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event
         // (not a render effect) so the just-shown rows still used the prior value.
+        // Stamp the visit only when this open really showed a calendar: either the
+        // routed request was accepted, or a non-routed remount re-showed rows that
+        // an earlier accepted route already committed. Leftover rows behind a
+        // failed/aborted route are NOT evidence of a visit.
         const firstShownResult = currentState.searchResults[0];
-        if (firstShownResult && isCalendarSearchResult(firstShownResult)) {
+        const calendarWasShown =
+          openedCalendarRoute !== undefined
+            ? acceptedCalendarRequestKey === openedCalendarRoute.requestKey
+            : Boolean(firstShownResult && isCalendarSearchResult(firstShownResult));
+        if (calendarWasShown) {
           try {
             await container.config.update({ lastCalendarVisitAt: Date.now() });
             await container.config.save();
@@ -881,9 +969,13 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             continue;
           }
 
+          if (outcome.action === "calendar") {
+            beginCalendarRoute();
+            continue;
+          }
+
           if (
             outcome.action === "trending" ||
-            outcome.action === "calendar" ||
             outcome.action === "random" ||
             outcome.action === "surprise"
           ) {
@@ -897,9 +989,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // the entry point promised.
           const seededCalendarTab = SEEDED_CALENDAR_TYPE_TABS[outcome.action];
           if (seededCalendarTab) {
-            pendingCalendarType = seededCalendarTab;
-            routeSubtitle = await loadSearchRoute("calendar", context);
-            syncBrowseQueryDraft();
+            beginCalendarRoute(seededCalendarTab);
             continue;
           }
 
@@ -1020,7 +1110,9 @@ function syncSelectedResultIndex(
 }
 
 async function loadSearchRoute(
-  route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history">,
+  // The calendar deliberately does NOT route through here: it mounts first and
+  // loads under its own surface (see `beginCalendarRoute`).
+  route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history" | "calendar">,
   context: PhaseContext,
 ): Promise<string | undefined> {
   const { container } = context;
@@ -1040,22 +1132,11 @@ async function loadSearchRoute(
                 ? "YouTube trending"
                 : "TMDB trending",
         }
-      : route === "calendar"
-        ? await loadCalendarResults(container, context.signal)
-        : route === "surprise"
-          ? await loadSurpriseResults(container, { signal: context.signal })
-          : route === "random"
-            ? await loadRandomResults(container, { signal: context.signal })
-            : await loadDiscoverResults(container);
-
-  if (route === "calendar") {
-    enqueueReleaseReconciliation(
-      container,
-      collectReleaseReconciliationRows(container),
-      "calendar",
-      context.signal,
-    );
-  }
+      : route === "surprise"
+        ? await loadSurpriseResults(container, { signal: context.signal })
+        : route === "random"
+          ? await loadRandomResults(container, { signal: context.signal })
+          : await loadDiscoverResults(container);
 
   const results = [...bundle.results];
   stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
@@ -1128,7 +1209,10 @@ type BrowseDisplayContext = {
 async function loadBrowseDisplayContext(
   container: PhaseContext["container"],
   results: readonly SearchResult[],
-  options?: { readonly preloadedHistory?: Record<string, HistoryProgress> },
+  options?: {
+    readonly preloadedHistory?: Record<string, HistoryProgress>;
+    readonly signal?: AbortSignal;
+  },
 ): Promise<BrowseDisplayContext> {
   const historyMap =
     options?.preloadedHistory ??
@@ -1140,8 +1224,13 @@ async function loadBrowseDisplayContext(
       }
     })();
   const enrichments = await container.resultEnrichmentService
-    .enrichResults(results, { preloadedHistory: historyMap })
-    .catch(() => new Map<string, ResultEnrichment>());
+    .enrichResults(results, { preloadedHistory: historyMap, signal: options?.signal })
+    .catch((error: unknown) => {
+      // A cancelled route must stay cancelled; only real enrichment failures
+      // degrade to "no badges".
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      return new Map<string, ResultEnrichment>();
+    });
   const queueTitleIds = new Set(
     container.queueService
       .getAll()

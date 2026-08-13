@@ -64,8 +64,15 @@ export class ResultEnrichmentService {
     options?: {
       /** Skip a redundant repository history read when the caller already loaded history. */
       readonly preloadedHistory?: Record<string, HistoryProgress>;
+      /**
+       * Cancels the enrichment. Browse abandons routes (Esc, a newer calendar
+       * request) mid-flight; an abandoned attempt must never seed the service
+       * cache, or the next real request silently serves cancelled work.
+       */
+      readonly signal?: AbortSignal;
     },
   ): Promise<ReadonlyMap<string, ResultEnrichment>> {
+    options?.signal?.throwIfAborted();
     const output = new Map<string, ResultEnrichment>();
     const missing = results.filter((result) => {
       const key = resultEnrichmentKey(result);
@@ -88,6 +95,7 @@ export class ResultEnrichmentService {
         300,
       ),
     ]);
+    options?.signal?.throwIfAborted();
     const history = historyResult.status === "fulfilled" ? historyResult.value : {};
     const offlineEntries = offlineResult.status === "fulfilled" ? offlineResult.value : [];
     const offlineByTitleId = groupOfflineStatusesByTitleId(offlineEntries);
@@ -119,6 +127,9 @@ export class ResultEnrichmentService {
             offlineStatuses,
           });
       const key = resultEnrichmentKey(result);
+      // Checked immediately before every mutation, not once per batch: a long
+      // `missing` list must stop writing the moment the caller walks away.
+      options?.signal?.throwIfAborted();
       this.cache.set(key, { expiresAt: this.now() + this.ttlMs, value: enrichment });
       output.set(key, enrichment);
     }

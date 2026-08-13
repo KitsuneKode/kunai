@@ -10,6 +10,7 @@ import { render, stripAnsi } from "../../harness/render-capture";
 type FixtureOptions = {
   readonly updates?: unknown[];
   readonly initialView?: "library" | "queue";
+  readonly entries?: readonly OfflineLibraryEntry[];
 };
 
 function offlineEntry(overrides: Partial<OfflineLibraryEntry["job"]> = {}): OfflineLibraryEntry {
@@ -70,7 +71,7 @@ function fixture(options: FixtureOptions = {}): Container {
       }),
     },
     offlineLibraryService: {
-      listCompletedEntries: async () => [offlineEntry()],
+      listCompletedEntries: async () => options.entries ?? [offlineEntry()],
     },
     historyRepository: {
       listLatestByTitle: () => [],
@@ -199,6 +200,67 @@ describe("library input ownership", () => {
       await waitForFrame(handle, "Dune");
       await pressEscape(handle);
       expect(closeCount).toBe(1);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  /**
+   * The library shelf used to read season identity back out of a formatted
+   * label with a regex, so a movie stored with a synthetic season 1/episode 1
+   * rendered as a season the user does not have.
+   */
+  test("a legacy synthetic movie title never renders S01E01 or a season code", async () => {
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          entries: [
+            offlineEntry({
+              titleId: "dune",
+              titleName: "Dune: Part Two",
+              mediaKind: "movie",
+              season: 1,
+              episode: 1,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Dune: Part Two");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).not.toContain("S01E01");
+      expect(frame).not.toContain("S01");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("ready-item counts use the canonical item noun rather than fixed ep copy", async () => {
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          entries: [
+            offlineEntry({
+              titleId: "dune",
+              titleName: "Dune: Part Two",
+              mediaKind: "movie",
+              season: 1,
+              episode: 1,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Dune: Part Two");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).toContain("1 movie");
+      expect(frame).not.toContain("1 ep");
     } finally {
       handle.unmount();
     }

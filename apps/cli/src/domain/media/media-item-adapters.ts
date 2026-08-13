@@ -29,10 +29,16 @@ export function mediaItemFromSearchResult(result: SearchResult): MediaItemIdenti
   };
 }
 
+/**
+ * `TitleInfo.type` is a two-way provider/playback shape, not the content-kind
+ * authority. Title-level kinds (movie, video) map to `"movie"`; episodic kinds
+ * (series, anime) map to `"series"`. Callers that need the real kind pass
+ * `item.mediaKind` alongside.
+ */
 export function titleInfoFromMediaItemIdentity(item: MediaItemIdentity): TitleInfo {
   return {
     id: item.titleId,
-    type: item.mediaKind === "movie" ? "movie" : "series",
+    type: item.mediaKind === "movie" || item.mediaKind === "video" ? "movie" : "series",
     name: item.title,
   };
 }

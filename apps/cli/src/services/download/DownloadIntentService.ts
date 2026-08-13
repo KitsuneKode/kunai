@@ -1,7 +1,9 @@
 import type { Container } from "@/container";
 import { mediaLanguageProfileFor } from "@/domain/media/content-kind";
+import { formatMediaItemCount } from "@/domain/media/media-presentation";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
+import type { MediaKind } from "@kunai/types";
 
 import { DownloadEnqueueRejectedError } from "./DownloadService";
 
@@ -20,9 +22,20 @@ export type DownloadConfirmationProfile = {
   readonly cleanupPolicy: OfflineCleanupPolicy;
 };
 
+/**
+ * One thing to download. A movie or a video is the title itself; a series or
+ * anime download names an episode. Modelling this as a union is what stops a
+ * movie from carrying a synthetic season 1 / episode 1 into storage.
+ */
+export type DownloadIntentItem =
+  | { readonly kind: "title" }
+  | { readonly kind: "episode"; readonly episode: EpisodeInfo };
+
 export type DownloadIntentCommitInput = {
   readonly title: TitleInfo;
-  readonly episodes: readonly EpisodeInfo[];
+  /** Authoritative content kind. Never re-derived from `title.type`. */
+  readonly mediaKind: MediaKind;
+  readonly items: readonly DownloadIntentItem[];
   readonly profile: DownloadConfirmationProfile;
 };
 
@@ -62,20 +75,31 @@ export function buildDefaultDownloadProfile(
 }
 
 /**
- * Resolve the episodes to queue for a non-interactive download intent. Movies are
- * a single slot; series fall back to the carried season/episode when present
- * (e.g. a new-episode notification), otherwise the first episode.
+ * Resolve what to queue for a non-interactive download intent.
+ *
+ * Movies and videos are title-level. Series and anime use the carried
+ * season/episode when present (e.g. a new-episode notification), and only they
+ * fall back to the first episode. Episodic identity comes from `mediaKind`,
+ * never from `title.type` — that field cannot tell a video from a series.
  */
-export function resolveDownloadIntentEpisodes(input: {
+export function resolveDownloadIntentItems(input: {
   readonly title: TitleInfo;
+  readonly mediaKind: MediaKind;
   readonly season?: number;
   readonly episode?: number;
-}): readonly EpisodeInfo[] {
-  if (input.title.type === "movie") return [{ season: 1, episode: 1 }];
+}): readonly DownloadIntentItem[] {
+  if (input.mediaKind === "movie" || input.mediaKind === "video") return [{ kind: "title" }];
   if (typeof input.season === "number" && typeof input.episode === "number") {
-    return [{ season: input.season, episode: input.episode }];
+    return [{ kind: "episode", episode: { season: input.season, episode: input.episode } }];
   }
-  return [{ season: 1, episode: 1 }];
+  return [{ kind: "episode", episode: { season: 1, episode: 1 } }];
+}
+
+/** The enqueue playback mode implied by an authoritative content kind. */
+function enqueueModeForMediaKind(mediaKind: MediaKind): "youtube" | "anime" | "series" {
+  if (mediaKind === "video") return "youtube";
+  if (mediaKind === "anime") return "anime";
+  return "series";
 }
 
 /**
@@ -107,20 +131,21 @@ export async function commitDownloadIntent(
     return { status: "blocked", queuedCount: 0 };
   }
 
-  const { title, episodes, profile } = input;
-  if (episodes.length === 0) return { status: "none", queuedCount: 0 };
+  const { title, mediaKind, items, profile } = input;
+  if (items.length === 0) return { status: "none", queuedCount: 0 };
+  const mode = enqueueModeForMediaKind(mediaKind);
+  const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
 
   const state = container.stateManager.getState();
-  const existingPolicy =
-    title.type !== "movie" ? container.offlineTitlePolicies.get(title.id) : undefined;
+  const existingPolicy = isTitleLevel ? undefined : container.offlineTitlePolicies.get(title.id);
 
   const persistSeriesPolicy = () => {
-    if (title.type === "movie") return;
+    if (isTitleLevel) return;
     const enrolled = profile.enrollKeepWatchingOffline || existingPolicy?.enrolled === true;
     container.offlineTitlePolicies.upsert({
       titleId: title.id,
       titleName: title.name,
-      mediaKind: state.mode === "anime" ? "anime" : "series",
+      mediaKind: mediaKind === "anime" ? "anime" : "series",
       enrolled,
       runwayTarget: profile.enrollKeepWatchingOffline
         ? (profile.runwayTarget ?? container.config.offlineDefaultRunwayTarget)
@@ -145,12 +170,12 @@ export async function commitDownloadIntent(
   let queuedCount = 0;
   let lastJobId: string | undefined;
   try {
-    for (const episode of episodes) {
+    for (const item of items) {
       const job = await container.downloadService.enqueue({
         title,
-        episode,
+        episode: item.kind === "episode" ? item.episode : undefined,
         providerId: state.provider,
-        mode: state.mode,
+        mode,
         audioPreference: profile.audioPreference,
         subtitlePreference: profile.subtitlePreference,
         qualityPreference: profile.qualityPreference,
@@ -216,7 +241,7 @@ export async function commitDownloadIntent(
     note:
       queuedCount === 1
         ? `Download queued: ${title.name}`
-        : `Downloads queued: ${queuedCount} episodes · ${title.name}`,
+        : `Downloads queued: ${formatMediaItemCount({ mediaKind, count: queuedCount })} · ${title.name}`,
   });
   void container.downloadService.processQueue();
   return { status: "queued", queuedCount };

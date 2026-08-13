@@ -8,6 +8,7 @@
 // they need to be verified, because almost nobody developing this runs Windows.
 // =============================================================================
 
+import type { CanonicalMediaPosition } from "@/domain/media/media-presentation";
 import { joinerForNodePlatform } from "@kunai/storage";
 
 /**
@@ -123,15 +124,22 @@ export type DownloadPathInput = {
   readonly titleName: string;
   readonly year?: string | null;
   readonly extension: string;
-  /** Omit for a movie; supply both for an episode. */
-  readonly season?: number;
-  readonly episode?: number;
+  /**
+   * Canonical position from `presentMedia()`. Naming encodes it for the
+   * filesystem; it never reinterprets what content kind the item is. That
+   * decision belongs to the media-presentation seam alone, so a movie stored
+   * with a legacy synthetic season 1/episode 1 cannot reach a filename as
+   * `S01E01`.
+   */
+  readonly position: CanonicalMediaPosition;
   readonly platform?: NodeJS.Platform;
 };
 
 /**
  * Where a download lands: `<base>/<Title (Year)>/Season NN/<Title - SxxEyy.ext>`
- * for episodes, `<base>/<Title (Year)>/<Title (Year).ext>` for movies.
+ * for an episode whose season is meaningful, `<base>/<Title (Year)>/<Title -
+ * Exx.ext>` for an episode-only position, and
+ * `<base>/<Title (Year)>/<Title (Year).ext>` for a title-level item.
  *
  * The platform is a parameter rather than read from `process.platform` so the
  * Windows rules are testable from Linux — `node:path` always follows the host,
@@ -145,16 +153,22 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
   const year = input.year ? sanitizePathPart(input.year) : "";
   const titleWithYear = year ? `${title} (${year})` : title;
 
-  const isEpisode = input.season !== undefined && input.episode !== undefined;
   const components: string[] = [titleWithYear];
   let fileStem = titleWithYear;
 
-  if (isEpisode) {
-    const season = Math.max(1, Math.trunc(input.season as number));
-    const episode = Math.max(1, Math.trunc(input.episode as number));
-    const seasonLabel = String(season).padStart(2, "0");
-    components.push(`Season ${seasonLabel}`);
-    fileStem = `${title} - S${seasonLabel}E${String(episode).padStart(2, "0")}`;
+  if (input.position.kind === "episode") {
+    // Clamp defensively. The seam already rejects non-positive values, but a
+    // filename is the one artefact a user cannot repair by re-rendering.
+    const episode = Math.max(1, Math.trunc(input.position.episode));
+    const episodeLabel = String(episode).padStart(2, "0");
+
+    if (input.position.seasonIsMeaningful && input.position.season !== undefined) {
+      const seasonLabel = String(Math.max(1, Math.trunc(input.position.season))).padStart(2, "0");
+      components.push(`Season ${seasonLabel}`);
+      fileStem = `${title} - S${seasonLabel}E${episodeLabel}`;
+    } else {
+      fileStem = `${title} - E${episodeLabel}`;
+    }
   }
 
   const budget = componentBudget({

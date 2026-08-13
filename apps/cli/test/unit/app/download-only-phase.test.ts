@@ -1,9 +1,7 @@
 import { expect, test } from "bun:test";
 
-import {
-  DownloadOnlyPhase,
-  updateDownloadConfirmationProfile,
-} from "@/app/playback/DownloadOnlyPhase";
+import { updateDownloadConfirmationProfile } from "@/app-shell/download-confirmation-profile";
+import { DownloadOnlyPhase } from "@/app/playback/DownloadOnlyPhase";
 import type { PhaseContext } from "@/app/session/Phase";
 
 test("DownloadOnlyPhase does not discover provider episodes when downloads are disabled", async () => {
@@ -412,4 +410,128 @@ test("DownloadOnlyPhase persists profile intent after a partially queued series 
 
   expect(result).toEqual({ status: "success", value: "queued" });
   expect(persisted).toBe(1);
+});
+
+/**
+ * A movie or a YouTube video has nothing to pick. Routing them through the
+ * episode checklist produced a synthetic season 1 / episode 1 that was then
+ * persisted as the job's identity.
+ */
+function titleLevelContext(mode: string, enqueued: Record<string, unknown>[]) {
+  return {
+    signal: new AbortController().signal,
+    container: {
+      config: {
+        offlineArtworkCacheEnabled: false,
+        downloadPath: "",
+        offlineDefaultRunwayTarget: 2,
+        youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+      },
+      stateManager: {
+        getState: () => ({
+          provider: "vidking",
+          mode,
+          animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+          seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+          movieLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
+        }),
+        dispatch: () => {},
+      },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: true }),
+        enqueue: async (input: Record<string, unknown>) => {
+          enqueued.push(input);
+          return { id: `job-${enqueued.length}` };
+        },
+        processQueue: () => {},
+      },
+      offlineTitlePolicies: { get: () => undefined, upsert: () => {} },
+      offlineRunwayService: { enqueueEvaluation: () => {} },
+      diagnosticsService: { record: () => {} },
+    },
+  } as unknown as PhaseContext;
+}
+
+test("DownloadOnlyPhase confirms a movie as one title item and never picks episodes", async () => {
+  const enqueued: Record<string, unknown>[] = [];
+  let confirmedKind: string | undefined;
+  let confirmedItems: unknown;
+  let pickCalls = 0;
+
+  const phase = new DownloadOnlyPhase({
+    pickEpisodes: async () => {
+      pickCalls += 1;
+      return [{ season: 1, episode: 1 }];
+    },
+    confirmProfile: async ({ mediaKind, items, profile }) => {
+      confirmedKind = mediaKind;
+      confirmedItems = items;
+      return profile;
+    },
+  });
+
+  const result = await phase.execute(
+    { title: { id: "tmdb:693134", type: "movie", name: "Dune: Part Two" } },
+    titleLevelContext("series", enqueued),
+  );
+
+  expect(result).toEqual({ status: "success", value: "queued" });
+  expect(pickCalls).toBe(0);
+  expect(confirmedKind).toBe("movie");
+  expect(confirmedItems).toEqual([{ kind: "title" }]);
+  expect(enqueued[0]).toMatchObject({ episode: undefined });
+});
+
+test("DownloadOnlyPhase treats youtube playback as a title-level video", async () => {
+  const enqueued: Record<string, unknown>[] = [];
+  let confirmedKind: string | undefined;
+  let confirmedItems: unknown;
+  let pickCalls = 0;
+
+  const phase = new DownloadOnlyPhase({
+    pickEpisodes: async () => {
+      pickCalls += 1;
+      return [{ season: 1, episode: 1 }];
+    },
+    confirmProfile: async ({ mediaKind, items, profile }) => {
+      confirmedKind = mediaKind;
+      confirmedItems = items;
+      return profile;
+    },
+  });
+
+  const result = await phase.execute(
+    { title: { id: "yt:1", type: "series", name: "Kunai Release Trailer" } },
+    titleLevelContext("youtube", enqueued),
+  );
+
+  expect(result).toEqual({ status: "success", value: "queued" });
+  expect(pickCalls).toBe(0);
+  expect(confirmedKind).toBe("video");
+  expect(confirmedItems).toEqual([{ kind: "title" }]);
+  expect(enqueued[0]).toMatchObject({ episode: undefined, mode: "youtube" });
+});
+
+test("DownloadOnlyPhase maps an anime selection to an episode item", async () => {
+  const enqueued: Record<string, unknown>[] = [];
+  let confirmedKind: string | undefined;
+  let confirmedItems: unknown;
+
+  const phase = new DownloadOnlyPhase({
+    pickEpisodes: async () => [{ season: 1, episode: 3 }],
+    confirmProfile: async ({ mediaKind, items, profile }) => {
+      confirmedKind = mediaKind;
+      confirmedItems = items;
+      return profile;
+    },
+  });
+
+  await phase.execute(
+    { title: { id: "anilist:1", type: "series", name: "Frieren" } },
+    titleLevelContext("anime", enqueued),
+  );
+
+  expect(confirmedKind).toBe("anime");
+  expect(confirmedItems).toEqual([{ kind: "episode", episode: { season: 1, episode: 3 } }]);
+  expect(enqueued[0]).toMatchObject({ episode: { season: 1, episode: 3 }, mode: "anime" });
 });

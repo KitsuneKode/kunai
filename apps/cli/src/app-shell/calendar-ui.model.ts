@@ -511,10 +511,10 @@ export function buildCalendarPreviewRailModel(
   };
 }
 
-export function buildCalendarLoadingState(): StateBlockModel {
+export function buildCalendarLoadingState(retrying = false): StateBlockModel {
   return {
     kind: "loading",
-    title: "Loading release schedule",
+    title: retrying ? "Retrying release schedule" : "Loading release schedule",
     detail:
       "Fetching this week's airing window from catalog metadata. Provider checks happen only when you open a release.",
   };

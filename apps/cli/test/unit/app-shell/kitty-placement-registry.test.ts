@@ -58,6 +58,30 @@ describe("kitty placement registry", () => {
     expect(getKittyPlacement("browse-preview")).toBe(2);
   });
 
+  /**
+   * The download manager rail is a sibling of the browse preview, not a
+   * replacement for it. Replacing or releasing one slot must never evict the
+   * other, or navigating between surfaces orphans a live on-screen image.
+   */
+  test("the download-manager rail owns a slot independent of browse-preview", () => {
+    const deleted: number[] = [];
+    setKittyPlacementDeleteFn((id) => {
+      deleted.push(id);
+    });
+
+    registerKittyPlacement("browse-preview", 11);
+    registerKittyPlacement("download-manager-preview", 12);
+    expect(deleted).toEqual([]);
+
+    registerKittyPlacement("download-manager-preview", 13);
+    expect(deleted).toEqual([12]);
+    expect(getKittyPlacement("browse-preview")).toBe(11);
+
+    releaseKittyImageId(13);
+    expect(getKittyPlacement("download-manager-preview")).toBeUndefined();
+    expect(getKittyPlacement("browse-preview")).toBe(11);
+  });
+
   test("releaseKittyImageId clears the owning slot", () => {
     const deleted: number[] = [];
     setKittyPlacementDeleteFn((id) => {

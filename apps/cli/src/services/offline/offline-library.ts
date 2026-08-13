@@ -1,6 +1,7 @@
 import { access, constants, stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
+import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import type { DownloadJobRecord } from "@kunai/storage";
 
@@ -99,10 +100,10 @@ export function groupOfflineLibraryEntries(
 }
 
 export function formatOfflineLibraryGroupLabel(group: OfflineLibraryGroup): string {
-  const itemLabel =
-    group.mediaKind === "movie"
-      ? `${group.entries.length} ${group.entries.length === 1 ? "movie" : "movies"}`
-      : `${group.entries.length} ${group.entries.length === 1 ? "episode" : "episodes"}`;
+  const itemLabel = formatMediaItemCount({
+    mediaKind: group.mediaKind,
+    count: group.entries.length,
+  });
   return `${group.titleName}  ·  ${itemLabel}`;
 }
 
@@ -120,11 +121,13 @@ export function formatOfflineLibraryGroupDetail(group: OfflineLibraryGroup): str
 
 /** Short label for pickers; matches `/downloads` completed row style. */
 export function formatOfflineJobListingTitle(job: DownloadJobRecord): string {
-  const episodeLabel =
-    job.season !== undefined && job.episode !== undefined
-      ? `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`
-      : "movie";
-  return `${job.titleName}  ·  ${episodeLabel}`;
+  const { positionLabel, kindLabel } = presentMedia({
+    title: job.titleName,
+    mediaKind: job.mediaKind,
+    season: job.season,
+    episode: job.episode,
+  });
+  return `${job.titleName}  ·  ${positionLabel ?? kindLabel}`;
 }
 
 export function formatOfflineSecondaryLine(
@@ -248,10 +251,13 @@ function offlineStatusLabel(status: OfflineArtifactStatus): string {
 }
 
 function formatOfflineEpisodeLabel(job: DownloadJobRecord): string {
-  if (job.season !== undefined && job.episode !== undefined) {
-    return `S${String(job.season).padStart(2, "0")}E${String(job.episode).padStart(2, "0")}`;
-  }
-  return job.mediaKind === "movie" ? "movie" : "episode";
+  const { positionLabel, kindLabel } = presentMedia({
+    title: job.titleName,
+    mediaKind: job.mediaKind,
+    season: job.season,
+    episode: job.episode,
+  });
+  return positionLabel ?? kindLabel;
 }
 
 function compareOfflineEntries(left: OfflineLibraryEntry, right: OfflineLibraryEntry): number {
@@ -262,25 +268,36 @@ function compareOfflineEntries(left: OfflineLibraryEntry, right: OfflineLibraryE
   return left.job.titleName.localeCompare(right.job.titleName);
 }
 
+/**
+ * "S01E01-E12" for a run of episodes in one season, "E01-E12" when the season
+ * is not meaningful, and nothing at all for title-level items — a movie has no
+ * range, and synthesizing one from a legacy season 1 slot invented a span the
+ * user never downloaded.
+ */
 function formatOfflineRange(entries: readonly OfflineLibraryEntry[]): string | null {
-  const numbered = entries
-    .map((entry) => entry.job)
-    .filter(
-      (job): job is DownloadJobRecord & { season: number; episode: number } =>
-        typeof job.season === "number" && typeof job.episode === "number",
-    );
-  if (numbered.length === 0) return null;
-  const first = numbered[0];
-  const last = numbered[numbered.length - 1];
+  const positioned = entries.flatMap((entry) => {
+    const presentation = presentMedia({
+      title: entry.job.titleName,
+      mediaKind: entry.job.mediaKind,
+      season: entry.job.season,
+      episode: entry.job.episode,
+    });
+    return presentation.position.kind === "episode"
+      ? [{ position: presentation.position, label: presentation.positionLabel ?? "" }]
+      : [];
+  });
+
+  const first = positioned[0];
+  const last = positioned[positioned.length - 1];
   if (!first || !last) return null;
-  if (numbered.length === 1) return formatOfflineEpisodeLabel(first);
-  const sameSeason = first.season === last.season;
+  if (positioned.length === 1) return first.label;
+
+  const sameSeason =
+    first.position.seasonIsMeaningful === last.position.seasonIsMeaningful &&
+    first.position.season === last.position.season;
   return sameSeason
-    ? `S${String(first.season).padStart(2, "0")}E${String(first.episode).padStart(
-        2,
-        "0",
-      )}-E${String(last.episode).padStart(2, "0")}`
-    : `${formatOfflineEpisodeLabel(first)}-${formatOfflineEpisodeLabel(last)}`;
+    ? `${first.label}-E${String(last.position.episode).padStart(2, "0")}`
+    : `${first.label}-${last.label}`;
 }
 
 export function parseIntroSkipTiming(introSkipJson?: string): PlaybackTimingMetadata | null {

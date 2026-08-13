@@ -33,6 +33,7 @@ import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
+import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import {
@@ -581,17 +582,30 @@ function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boo
   return `${group.titleName}${downloaded}${shield}`;
 }
 
+/**
+ * The compact position column for a shelf row.
+ *
+ * Season facts come from the canonical position each entry already carries.
+ * They used to be recovered by running a regex over the entry's display label,
+ * which quietly reported a season for any movie stored with a legacy synthetic
+ * season 1 slot.
+ */
 function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
   const seasons = new Set(
-    group.entries
-      .map((entry) => entry.episodeLabel.match(/^S(\d+)/)?.[1])
-      .filter((value): value is string => Boolean(value)),
+    group.entries.flatMap((entry) =>
+      entry.presentation.position.kind === "episode" &&
+      entry.presentation.position.seasonIsMeaningful &&
+      entry.presentation.position.season !== undefined
+        ? [entry.presentation.position.season]
+        : [],
+    ),
   );
   if (seasons.size === 1) {
     const season = [...seasons][0];
-    return season ? `S${season}` : "—";
+    return season === undefined ? "—" : `S${String(season).padStart(2, "0")}`;
   }
-  if (group.entries.length === 1) return group.entries[0]?.episodeLabel ?? "—";
+  const only = group.entries.length === 1 ? group.entries[0]?.presentation : undefined;
+  if (only) return only.positionLabel ?? only.kindLabel;
   return "—";
 }
 
@@ -609,7 +623,10 @@ function formatLibraryStatus(
   }
   if (group.readyCount > 0) {
     return {
-      label: `↓ ${group.readyCount} ${group.readyCount === 1 ? "ep" : "ep"}`,
+      label: `↓ ${formatMediaItemCount({
+        mediaKind: group.mediaKind,
+        count: group.readyCount,
+      })}`,
       color: palette.ok,
       dim: false,
     };
@@ -641,7 +658,10 @@ function buildLibraryPreviewRailModel(
   const facts: PreviewFact[] = [
     {
       label: "offline",
-      value: `${group.readyCount} of ${group.entries.length} episodes`,
+      value: `${group.readyCount} of ${formatMediaItemCount({
+        mediaKind: group.mediaKind,
+        count: group.entries.length,
+      })}`,
       tone: group.readyCount > 0 ? "success" : "warning",
     },
     {
@@ -653,10 +673,13 @@ function buildLibraryPreviewRailModel(
 
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
     const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
-    const ep =
-      historyContentType(hist) === "series"
-        ? `E${String(hist.episode ?? hist.absoluteEpisode ?? 1).padStart(2, "0")}`
-        : "movie";
+    const histPresentation = presentMedia({
+      title: group.titleName,
+      mediaKind: historyContentType(hist),
+      season: hist.season,
+      episode: hist.episode ?? hist.absoluteEpisode,
+    });
+    const ep = histPresentation.positionLabel ?? histPresentation.kindLabel;
     facts.push({
       label: "progress",
       value: `${ep} · ${pct}%`.trim(),

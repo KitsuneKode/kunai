@@ -233,6 +233,7 @@ import {
 } from "@/subtitle";
 import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
+import type { MediaKind } from "@kunai/types";
 import type { ProviderFailure } from "@kunai/types";
 
 // Re-exported for tests that import it from this module's public surface.
@@ -3151,7 +3152,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const topRec = recommendationRailItems[0];
           const topRecommendation = topRec
             ? {
-                mediaKind: topRec.type === "movie" ? "movie" : "series",
+                mediaKind: (topRec.type === "movie" ? "movie" : "series") as MediaKind,
                 titleId: topRec.id,
                 title: topRec.title,
                 sourceId: topRec.sourceId,

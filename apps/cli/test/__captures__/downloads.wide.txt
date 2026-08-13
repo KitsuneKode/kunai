@@ -1,0 +1,15 @@
+# downloads · wide (140×45)
+1 downloading  2 queued  1 failed                                                                           ╭────────────────────────────╮
+                                                                                                            │                            │
+▌ Severance · S02E04                              ↓ downloading   ██████████████┈┈┈┈┈┈┈┈           63%      │             SE             │
+  Frieren: Beyond Journey's End · E29             ○ queued                                    — waiti…      │                            │
+  Dune: Part Two · Movie                          ○ queued                                    — waiti…      │                            │
+  Arcane · S01E09                                 ◇ repairable                                 sidecar      ╰────────────────────────────╯
+
+x to abort  ·  a to repair all                                                                              Severance
+                                                                                                            S02E04
+
+                                                                                                            Status downloading 63%
+                                                                                                            Progress 63%
+                                                                                                            Provider videasy
+                                                                                                            Kind 1 episode

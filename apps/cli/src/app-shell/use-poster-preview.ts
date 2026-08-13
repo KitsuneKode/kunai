@@ -22,6 +22,12 @@ type PosterPreviewState = {
   /** Input identity that produced `poster`; used to hide stale sixel overlays. */
   readonly sourceKey: string | null;
   /**
+   * Input identity of the request the surface is currently waiting on. A
+   * completion that does not match it belongs to a row the user already left,
+   * so it must not paint over the settled one.
+   */
+  readonly pendingKey: string | null;
+  /**
    * True only when this fetch missed the cache AND has been pending past
    * POSTER_SPINNER_DELAY_MS. Surfaces show a spinner on this, never on
    * `posterState === "loading"`, which is also true for cache hits.
@@ -31,7 +37,7 @@ type PosterPreviewState = {
 
 type PosterPreviewAction =
   | { type: "reset"; posterState: PosterState }
-  | { type: "loading" }
+  | { type: "loading"; sourceKey?: string }
   | { type: "spinner" }
   | { type: "resolved"; result: PosterResult; sourceKey?: string };
 
@@ -39,6 +45,7 @@ const initialPosterPreviewState: PosterPreviewState = {
   poster: { kind: "none" },
   posterState: "idle",
   sourceKey: null,
+  pendingKey: null,
   spinner: false,
 };
 
@@ -52,32 +59,44 @@ function posterPreviewReducer(
         poster: { kind: "none" },
         posterState: action.posterState,
         sourceKey: null,
+        pendingKey: null,
         spinner: false,
       };
-    case "loading":
-      // Already loading: return the SAME reference so React bails out of the
-      // re-render. Without this, holding ↑/↓ dispatches "loading" on every
-      // keystroke and each new object forces an extra render during navigation.
-      if (state.posterState === "loading") return state;
+    case "loading": {
+      const pendingKey = action.sourceKey ?? null;
+      // Already loading the SAME request: return the same reference so React
+      // bails out of the re-render. Without this, holding ↑/↓ dispatches
+      // "loading" on every keystroke and each new object forces an extra
+      // render during navigation.
+      if (state.posterState === "loading" && state.pendingKey === pendingKey) return state;
       // Preserve previous poster while loading to avoid flash when switching episodes
       return {
         poster: state.poster,
         posterState: "loading",
         sourceKey: state.sourceKey,
+        pendingKey,
         spinner: false,
       };
+    }
     case "spinner":
       // Only a still-pending fetch may raise the spinner: the arming timer can
       // outlive the resolve it was armed for.
       if (state.spinner || state.posterState !== "loading") return state;
       return { ...state, spinner: true };
-    case "resolved":
+    case "resolved": {
+      const resolvedKey = action.sourceKey ?? null;
+      // Last line of defence against a stale completion. Effect cleanup already
+      // cancels the losing fetch, but a burst can settle row B and then let
+      // row A's slower fetch land; that result must not paint.
+      if (state.pendingKey !== null && resolvedKey !== state.pendingKey) return state;
       return {
         poster: action.result,
         posterState: action.result.kind === "none" ? "unavailable" : "ready",
-        sourceKey: action.sourceKey ?? null,
+        sourceKey: resolvedKey,
+        pendingKey: state.pendingKey,
         spinner: false,
       };
+    }
     default:
       return state;
   }
@@ -120,6 +139,7 @@ function visiblePosterPreviewState(
     poster: { kind: "none" },
     posterState: currentSourceKey === null ? "idle" : "loading",
     sourceKey: state.sourceKey,
+    pendingKey: state.pendingKey,
     spinner: false,
   };
 }
@@ -235,7 +255,7 @@ export function usePosterPreview(
       if (cancelled) return;
       // Do NOT global-wipe before fetch. Slot registration replaces the previous
       // imageId for this slot; siblings keep their placements.
-      dispatch({ type: "loading" });
+      dispatch({ type: "loading", sourceKey: requestKey ?? undefined });
       const fetchOptions = {
         rows,
         cols,

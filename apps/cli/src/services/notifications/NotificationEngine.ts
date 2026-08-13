@@ -1,5 +1,6 @@
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sanitizeProviderHints } from "@/domain/media/media-item-identity";
+import { normalizeMediaKind } from "@/domain/media/media-presentation";
 
 export type NotificationSignal =
   | {
@@ -109,7 +110,7 @@ export function deriveNotifications(
         title: `${signal.title} ${episodePart}`,
         body,
         item: {
-          mediaKind: signal.mediaKind,
+          mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,
@@ -138,7 +139,7 @@ export function deriveNotifications(
         title: `Downloaded · ${signal.title} ${episodePart}`,
         body: "Available offline",
         item: {
-          mediaKind: signal.mediaKind,
+          mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,
@@ -167,7 +168,7 @@ export function deriveNotifications(
         title: `Download failed · ${signal.title} ${episodePart}`,
         body: signal.error,
         item: {
-          mediaKind: signal.mediaKind,
+          mediaKind: normalizeMediaKind(signal.mediaKind),
           titleId: signal.titleId,
           title: signal.title,
           season: signal.season,

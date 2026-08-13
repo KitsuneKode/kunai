@@ -500,3 +500,136 @@ test("loadCalendarResults merges anime, series, and movie sources into one windo
     "movie-release",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Abort-safe source aggregation
+//
+// The calendar merges anime / series / movie windows with `allSettled` so one
+// dead source cannot blank the schedule. That tolerance must not also swallow
+// "every source failed" or "the user cancelled" into a cheerful empty week.
+// ---------------------------------------------------------------------------
+
+function calendarDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  promise.catch(() => {});
+  return { promise, resolve, reject };
+}
+
+test("keeps partial rows when one supported source fails and another succeeds", async () => {
+  const anime = calendarDeferred<unknown[]>();
+  const series = calendarDeferred<unknown[]>();
+  const pending = loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleaseWindow: async (mode: string) =>
+          mode === "anime" ? anime.promise : series.promise,
+        loadMovieReleaseWindow: async () => [],
+      },
+    }) as never,
+  );
+  series.reject(new Error("tmdb unavailable"));
+  anime.resolve([
+    {
+      source: "anilist",
+      titleId: "21",
+      titleName: "Frieren",
+      type: "anime",
+      episode: 29,
+      releaseAt: new Date(Date.now() + 60_000).toISOString(),
+      releasePrecision: "timestamp",
+      status: "upcoming",
+    },
+  ]);
+
+  const bundle = await pending;
+  expect(bundle.results.map((r) => r.title)).toEqual(["Frieren"]);
+});
+
+test("rejects with a bounded aggregate when every real source fails and no movie loader exists", async () => {
+  const settledModes: string[] = [];
+  await expect(
+    loadCalendarResults(
+      withCalendarServices({
+        stateManager: { getState: () => ({ mode: "anime" }) },
+        timelineService: {
+          loadReleaseWindow: async (mode: string) => {
+            settledModes.push(mode);
+            throw new Error(`${mode} source down`);
+          },
+        },
+      }) as never,
+    ),
+  ).rejects.toBeInstanceOf(AggregateError);
+  // A missing optional movie loader contributes neither a success nor a failure;
+  // only the two real source tasks may be settled.
+  expect(settledModes).toEqual(["anime", "series"]);
+});
+
+test("rejects with the same aggregate classification when all three sources fail", async () => {
+  let error: unknown;
+  try {
+    await loadCalendarResults(
+      withCalendarServices({
+        stateManager: { getState: () => ({ mode: "anime" }) },
+        timelineService: {
+          loadReleaseWindow: async (mode: string) => {
+            throw new Error(`${mode} source down`);
+          },
+          loadMovieReleaseWindow: async () => {
+            throw new Error("movie source down");
+          },
+        },
+      }) as never,
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  expect(error).toBeInstanceOf(AggregateError);
+  expect((error as AggregateError).errors.length).toBe(3);
+});
+
+test("propagates an abort rather than reporting an empty week", async () => {
+  const controller = new AbortController();
+  const anime = calendarDeferred<unknown[]>();
+  const pending = loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleaseWindow: async () => anime.promise,
+        loadMovieReleaseWindow: async () => [],
+      },
+    }) as never,
+    controller.signal,
+  );
+  controller.abort();
+  // Sources observe the abort and reject; allSettled still completes normally.
+  anime.reject(new Error("aborted by caller"));
+
+  let error: unknown;
+  try {
+    await pending;
+  } catch (caught) {
+    error = caught;
+  }
+  expect((error as { name?: string } | undefined)?.name).toBe("AbortError");
+});
+
+test("treats three fulfilled empty source responses as a real empty week", async () => {
+  const bundle = await loadCalendarResults(
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "anime" }) },
+      timelineService: {
+        loadReleaseWindow: async () => [],
+        loadMovieReleaseWindow: async () => [],
+      },
+    }) as never,
+  );
+  expect(bundle.results).toEqual([]);
+  expect(bundle.subtitle).toBe("No releases found for the next week");
+});

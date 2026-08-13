@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import {
+  createContainerMediaActionRouter,
+  queueDownloadFromMediaItem,
+} from "@/services/media-actions/create-container-media-action-router";
 
 describe("createContainerMediaActionRouter", () => {
   test("routes watchlist, follow, unfollow, and queue actions through container services", async () => {
@@ -141,5 +144,91 @@ describe("createContainerMediaActionRouter", () => {
     });
 
     expect(calls).toEqual(["custom-download:tmdb:2"]);
+  });
+});
+
+/**
+ * The router is the non-interactive download path. It carries the item's own
+ * content kind through to the intent service instead of letting the service
+ * re-derive one from `TitleInfo.type`, which cannot distinguish video from
+ * series or a movie from a one-episode show.
+ */
+describe("queueDownloadFromMediaItem authoritative kind", () => {
+  function harness() {
+    const enqueued: Record<string, unknown>[] = [];
+    const container = {
+      config: {
+        offlineDefaultRunwayTarget: 2,
+        downloadPath: "",
+        offlineArtworkCacheEnabled: false,
+      },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: true }),
+        enqueue: async (input: Record<string, unknown>) => {
+          enqueued.push(input);
+          return { id: `job-${enqueued.length}` };
+        },
+        processQueue: () => {},
+      },
+      offlineTitlePolicies: { get: () => undefined, upsert: () => {} },
+      offlineRunwayService: { enqueueEvaluation: () => {} },
+      diagnosticsService: { record: () => {} },
+      stateManager: {
+        getState: () => ({
+          provider: "vidking",
+          mode: "series",
+          seriesLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+          animeLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+          movieLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+        }),
+        dispatch: () => {},
+      },
+    } as never;
+    return { container, enqueued };
+  }
+
+  test("a movie item commits a title-level download with no episode", async () => {
+    const { container, enqueued } = harness();
+
+    await queueDownloadFromMediaItem(container, {
+      mediaKind: "movie",
+      titleId: "tmdb:693134",
+      title: "Dune: Part Two",
+      season: 1,
+      episode: 1,
+    });
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({ episode: undefined });
+    expect(enqueued[0]?.title).toMatchObject({ type: "movie", name: "Dune: Part Two" });
+  });
+
+  test("a video item commits title-level through youtube mode", async () => {
+    const { container, enqueued } = harness();
+
+    await queueDownloadFromMediaItem(container, {
+      mediaKind: "video",
+      titleId: "yt:1",
+      title: "Kunai Release Trailer",
+    });
+
+    expect(enqueued[0]).toMatchObject({ episode: undefined, mode: "youtube" });
+  });
+
+  test("an anime item keeps its episode and anime mode", async () => {
+    const { container, enqueued } = harness();
+
+    await queueDownloadFromMediaItem(container, {
+      mediaKind: "anime",
+      titleId: "anilist:1",
+      title: "Frieren",
+      season: 1,
+      episode: 3,
+    });
+
+    expect(enqueued[0]).toMatchObject({
+      mode: "anime",
+      episode: { season: 1, episode: 3 },
+    });
   });
 });

@@ -1,4 +1,4 @@
-export type MediaKind = "movie" | "series" | "anime";
+import type { MediaKind } from "@kunai/types";
 
 export interface MediaProviderHint {
   readonly providerId: string;
@@ -7,7 +7,7 @@ export interface MediaProviderHint {
 }
 
 export interface MediaItemIdentity {
-  readonly mediaKind: MediaKind | string;
+  readonly mediaKind: MediaKind;
   readonly sourceId?: string;
   readonly titleId: string;
   readonly title: string;
@@ -27,11 +27,17 @@ export function getMediaItemKey(item: MediaItemIdentity): string {
   ].join(":");
 }
 
-/** The fields shared by a media identity and a persisted queue entry. */
+/**
+ * The fields shared by a media identity and a persisted queue entry.
+ *
+ * `mediaKind` stays a bare string here: queue rows carry whatever the column
+ * holds, and both sides of a membership check must key on the same raw value
+ * for the comparison to mean anything.
+ */
 export type EpisodeIdentity = Pick<
   MediaItemIdentity,
-  "mediaKind" | "titleId" | "season" | "episode" | "absoluteEpisode"
->;
+  "titleId" | "season" | "episode" | "absoluteEpisode"
+> & { readonly mediaKind: string };
 
 /**
  * "Which episode is this", independent of where it would be played from.

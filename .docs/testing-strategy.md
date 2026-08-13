@@ -58,6 +58,33 @@ worth keeping. Do not add `ink-testing-library` as a dependency.
 | `countCommits(node, { durationMs })`    | Manual real-time flicker probe                             | Avoid in default unit tests; prefer `simulateTicks` unless you are deliberately probing real timer behavior.                |
 | `simulateTicks(node, { rounds, tick })` | Deterministic flicker probe                                | Replaces `setInterval` with a shim that fires once per `act()` round. No real timers; commit count is exactly `1 + rounds`. |
 | `render(node, { columns, rows })`       | Long-lived handle with `rerender` + `stdin`                | Use this to drive `useInput` from tests, change props, or read frame history.                                               |
+| `captureFramesSettled(createFixture)`   | Frames for a surface whose layout needs an async read      | Mounts a FRESH fixture per width, awaits its own gate inside async `act()`, unmounts before the next width.                 |
+| `captureSurfaceSettled(name, fixture)`  | Write `.txt` goldens for such a surface                    | Same as `captureSurface`, but settled. The `settle()` callback resolves a fixture-owned promise; it must not sleep.         |
+
+### Capture width discipline
+
+Capture harnesses mount the **real** component, never a parallel mock layout, and read the live
+terminal width so each named width renders its own layout. A harness that renders at a fixed width
+and files the frame under three names does not overflow — it wraps — so a per-line gate alone
+cannot catch it.
+
+`golden-captures.test.ts` therefore gates the capture families this program owns
+(`downloads`, `calendar-daystrip`, `calendar-rows`, `library-empty`, `library-populated`) on both:
+
+- every non-header line fits the width the capture's own header declares, measured with
+  `measureColumns` from `@/domain/text-display` (terminal columns, not JS string length); and
+- width-filling surfaces get strictly wider from narrow → medium → wide.
+
+Captures perform no network, subprocess, or timer work: poster rendering is disabled through the
+real capability gate (`KUNAI_POSTER=0`), and async surfaces settle a fixture-owned promise.
+
+Harnesses:
+
+```sh
+bun run apps/cli/test/harness/capture-downloads.tsx
+bun run apps/cli/test/harness/capture-calendar.tsx
+bun run apps/cli/test/harness/capture-library.tsx
+```
 
 ### Settings capture
 

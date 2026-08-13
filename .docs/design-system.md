@@ -104,6 +104,12 @@ Kunai feels like a calm, fast media command shell: content-first in normal use, 
 
 Loading · success · empty · error — see [.design/cli/02-state-ux.md](../.design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
 
+Width budget is owned by the container, not the terminal: inside a root overlay
+`OverlayLayoutProvider.contentColumns` is authoritative, because the frame consumes the
+difference. Narrow list surfaces stay full-width and actionable and drop their companion rail
+first; a wide surface adds one constrained rail driven by the settled selection, never by the raw
+cursor. Truncated cells always keep a one-column gutter before the next column.
+
 ### Failure motion
 
 The playback failure panel (`ErrorShell` in `apps/cli/src/app-shell/root-status-shells.tsx`) carries a one-shot sakura petal fall in the crimson `danger` family: petals drift down the panel for ~5.7s at one row per 380ms, then the sky empties and a single still `❀` rests in the gutter beside the recovery actions. Depths are `danger` near, `dangerDim` mid, `accentDim` far.

@@ -288,6 +288,71 @@ export async function captureSurface(
   return written;
 }
 
+// ---------------------------------------------------------------------------
+// Settled capture
+// ---------------------------------------------------------------------------
+
+/**
+ * One width's worth of capture input. `settle` resolves a fixture-owned gate
+ * (a deferred read-model promise, a queued event) and must NOT sleep or advance
+ * timers — a capture that waits on wall-clock time is a flaky capture.
+ */
+export type SettledCaptureFixture = {
+  readonly node: ReactElement;
+  readonly settle: () => Promise<void>;
+};
+
+export type SettledCaptureFactory = (input: {
+  readonly width: CaptureWidth;
+  readonly columns: number;
+  readonly rows: number;
+}) => SettledCaptureFixture;
+
+/**
+ * Mount a FRESH fixture per canonical width, settle it inside an async `act()`,
+ * read the settled frame, and unmount before moving on. Surfaces whose final
+ * layout depends on an async read (library shelves, offline lists) cannot be
+ * captured by {@link captureAllWidths}, which reads the mount frame.
+ */
+export async function captureFramesSettled(
+  createFixture: SettledCaptureFactory,
+  rows = DEFAULT_ROWS,
+): Promise<Record<CaptureWidth, string>> {
+  const frames = {} as Record<CaptureWidth, string>;
+  for (const width of Object.keys(CAPTURE_WIDTHS) as CaptureWidth[]) {
+    const columns = CAPTURE_WIDTHS[width];
+    const fixture = createFixture({ width, columns, rows });
+    const active = mount(fixture.node, { columns, rows });
+    try {
+      await act(async () => {
+        await fixture.settle();
+      });
+      frames[width] = stripAnsi(active.stdout.lastFrame()).replace(/\s+$/, "");
+    } finally {
+      active.unmount();
+    }
+  }
+  return frames;
+}
+
+/** {@link captureSurface} for surfaces that need an awaited settle per width. */
+export async function captureSurfaceSettled(
+  surface: string,
+  createFixture: SettledCaptureFactory,
+  rows = DEFAULT_ROWS,
+): Promise<string[]> {
+  await mkdir(CAPTURE_DIR, { recursive: true });
+  const frames = await captureFramesSettled(createFixture, rows);
+  const written: string[] = [];
+  for (const width of Object.keys(frames) as CaptureWidth[]) {
+    const file = path.join(CAPTURE_DIR, `${surface}.${width}.txt`);
+    const header = `# ${surface} · ${width} (${CAPTURE_WIDTHS[width]}×${rows})\n`;
+    await writeFile(file, `${header}${frames[width]}\n`, "utf8");
+    written.push(file);
+  }
+  return written;
+}
+
 export interface CommitReport {
   /** Total frames Ink committed during the window. */
   readonly commits: number;

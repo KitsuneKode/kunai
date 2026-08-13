@@ -89,8 +89,12 @@ describe("resolveDownloadOutputPath", () => {
         baseDir: "/home/u/Downloads",
         titleName: "Frieren",
         year: "2023",
-        season: 1,
-        episode: 4,
+        position: {
+          kind: "episode",
+          season: 1,
+          episode: 4,
+          seasonIsMeaningful: true,
+        },
         extension: ".mp4",
         platform: "linux",
       }),
@@ -103,6 +107,7 @@ describe("resolveDownloadOutputPath", () => {
         baseDir: "/home/u/Downloads",
         titleName: "Dune",
         year: "2021",
+        position: { kind: "title" },
         extension: ".mp4",
         platform: "linux",
       }),
@@ -114,8 +119,12 @@ describe("resolveDownloadOutputPath", () => {
       baseDir: "C:\\Users\\u\\Downloads",
       titleName: "Frieren",
       year: "2023",
-      season: 1,
-      episode: 4,
+      position: {
+        kind: "episode",
+        season: 1,
+        episode: 4,
+        seasonIsMeaningful: true,
+      },
       extension: ".mp4",
       platform: "win32",
     });
@@ -126,6 +135,7 @@ describe("resolveDownloadOutputPath", () => {
     const path = resolveDownloadOutputPath({
       baseDir: "/d",
       titleName: "   ",
+      position: { kind: "title" },
       extension: ".mp4",
       platform: "linux",
     });
@@ -139,8 +149,12 @@ describe("resolveDownloadOutputPath", () => {
       titleName:
         "Kono Subarashii Sekai ni Shukufuku wo Legend of Crimson Extremely Long Edition Director's Cut",
       year: "2024",
-      season: 2,
-      episode: 11,
+      position: {
+        kind: "episode",
+        season: 2,
+        episode: 11,
+        seasonIsMeaningful: true,
+      },
       extension: ".mp4",
       platform: "win32",
     });
@@ -156,8 +170,12 @@ describe("resolveDownloadOutputPath", () => {
       baseDir: "C:\\Users\\u\\Downloads",
       titleName: "Severance",
       year: "2022",
-      season: 1,
-      episode: 2,
+      position: {
+        kind: "episode",
+        season: 1,
+        episode: 2,
+        seasonIsMeaningful: true,
+      },
       extension: ".mp4",
       platform: "win32",
     });
@@ -170,18 +188,85 @@ describe("resolveDownloadOutputPath", () => {
     const path = resolveDownloadOutputPath({
       baseDir: "C:\\dl",
       titleName: "NUL",
+      position: { kind: "title" },
       extension: ".mp4",
       platform: "win32",
     });
     expect(path).toBe("C:\\dl\\NUL_\\NUL_.mp4");
   });
 
+  test("a title-level movie position produces the movie layout", () => {
+    expect(
+      resolveDownloadOutputPath({
+        baseDir: "/downloads",
+        titleName: "Dune: Part Two",
+        year: "2024",
+        extension: ".mkv",
+        position: { kind: "title" },
+        platform: "linux",
+      }),
+    ).toBe("/downloads/Dune Part Two (2024)/Dune Part Two (2024).mkv");
+  });
+
+  test("an episode position without a meaningful season omits the season folder and prefix", () => {
+    expect(
+      resolveDownloadOutputPath({
+        baseDir: "/downloads",
+        titleName: "Frieren",
+        extension: ".mkv",
+        position: {
+          kind: "episode",
+          episode: 4,
+          seasonIsMeaningful: false,
+        },
+        platform: "linux",
+      }),
+    ).toBe("/downloads/Frieren/Frieren - E04.mkv");
+  });
+
+  test("a season carried without the meaningful flag is not rendered", () => {
+    expect(
+      resolveDownloadOutputPath({
+        baseDir: "/downloads",
+        titleName: "Frieren",
+        extension: ".mkv",
+        position: {
+          kind: "episode",
+          season: 2,
+          episode: 4,
+          seasonIsMeaningful: false,
+        },
+        platform: "linux",
+      }),
+    ).toBe("/downloads/Frieren/Frieren - E04.mkv");
+  });
+
+  test("sanitization still runs after the canonical suffix is produced", () => {
+    expect(
+      resolveDownloadOutputPath({
+        baseDir: "/downloads",
+        titleName: "Face/Off: Redux",
+        extension: ".mkv",
+        position: {
+          kind: "episode",
+          episode: 4,
+          seasonIsMeaningful: false,
+        },
+        platform: "linux",
+      }),
+    ).toBe("/downloads/Face Off Redux/Face Off Redux - E04.mkv");
+  });
+
   test("pads season and episode numbers and guards against zero", () => {
     const path = resolveDownloadOutputPath({
       baseDir: "/d",
       titleName: "Show",
-      season: 0,
-      episode: 0,
+      position: {
+        kind: "episode",
+        season: 0,
+        episode: 0,
+        seasonIsMeaningful: true,
+      },
       extension: ".mp4",
       platform: "linux",
     });
@@ -222,8 +307,12 @@ describe("naming stability for existing libraries", () => {
           baseDir: base,
           titleName: raw,
           year: "2023",
-          season: 1,
-          episode: 4,
+          position: {
+            kind: "episode",
+            season: 1,
+            episode: 4,
+            seasonIsMeaningful: true,
+          },
           extension: ".mp4",
           platform: "linux",
         }),
@@ -264,8 +353,12 @@ describe("generated paths are creatable on this host", () => {
         baseDir: root,
         titleName: title,
         year: "2024",
-        season: 1,
-        episode: 2,
+        position: {
+          kind: "episode",
+          season: 1,
+          episode: 2,
+          seasonIsMeaningful: true,
+        },
         extension: ".mp4",
         platform: hostPlatform,
       });

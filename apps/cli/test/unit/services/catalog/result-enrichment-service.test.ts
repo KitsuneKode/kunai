@@ -6,6 +6,7 @@ import {
   buildResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
 import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
+import type { RecordedOfflineStatus } from "@/services/offline/OfflineAssetService";
 import type { HistoryProgress } from "@kunai/storage";
 
 function result(patch: Partial<SearchResult> = {}): SearchResult {
@@ -303,5 +304,87 @@ describe("ResultEnrichmentService", () => {
         offlineStatuses: ["ready"],
       }).badges,
     ).toContainEqual({ label: "downloaded", tone: "success" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cancellation
+//
+// Browse can abandon a route mid-enrichment (Esc, a newer calendar request).
+// An abandoned attempt must not seed the service cache, or the next real
+// request silently serves work the user cancelled.
+// ---------------------------------------------------------------------------
+
+describe("ResultEnrichmentService cancellation", () => {
+  function deferredOffline() {
+    let resolve!: (value: readonly RecordedOfflineStatus[]) => void;
+    const promise = new Promise<readonly RecordedOfflineStatus[]>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  test("rejects with AbortError and leaves the cache unpopulated", async () => {
+    const offline = deferredOffline();
+    let peekCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([history({ titleId: "title-1" })]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          peekCalls += 1;
+          if (peekCalls === 1) return offline.promise;
+          return [{ status: "ready", titleId: "title-1" }];
+        },
+      },
+      now: () => 1,
+      ttlMs: 10_000,
+    });
+
+    const controller = new AbortController();
+    const pending = service.enrichResults([result()], { signal: controller.signal });
+    controller.abort();
+    offline.resolve([{ status: "ready", titleId: "title-1" }]);
+
+    let error: unknown;
+    let accepted: unknown;
+    try {
+      accepted = await pending;
+    } catch (caught) {
+      error = caught;
+    }
+    expect((error as { name?: string } | undefined)?.name).toBe("AbortError");
+    expect(accepted).toBeUndefined();
+
+    // The cancelled attempt must not have seeded the cache: a fresh request has
+    // to do the offline read again.
+    const second = await service.enrichResults([result()]);
+    expect(peekCalls).toBe(2);
+    expect(second.size).toBe(1);
+  });
+
+  test("rejects before doing any repository or offline work when already aborted", async () => {
+    let peekCalls = 0;
+    const service = new ResultEnrichmentService({
+      historyRepository: historyRepository([history({ titleId: "title-1" })]),
+      offlineLibraryService: {
+        peekRecordedArtifactStatuses: async () => {
+          peekCalls += 1;
+          return [];
+        },
+      },
+      now: () => 1,
+      ttlMs: 10_000,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    let error: unknown;
+    try {
+      await service.enrichResults([result()], { signal: controller.signal });
+    } catch (caught) {
+      error = caught;
+    }
+    expect((error as { name?: string } | undefined)?.name).toBe("AbortError");
+    expect(peekCalls).toBe(0);
   });
 });

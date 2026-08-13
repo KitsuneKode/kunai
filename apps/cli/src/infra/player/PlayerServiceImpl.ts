@@ -6,6 +6,7 @@
 
 import { stat } from "node:fs/promises";
 
+import { presentMedia } from "@/domain/media/media-presentation";
 import {
   INITIAL_PLAYBACK_GENERATION,
   isSamePlaybackGeneration,
@@ -896,8 +897,13 @@ export class PlayerServiceImpl implements PlayerService {
 }
 
 function formatLocalPlaybackTitle(source: LocalPlaybackSource): string {
-  if (source.mediaKind === "movie") return `${source.titleName}  ·  local`;
-  return `${source.titleName}  ·  S${String(source.season ?? 1).padStart(2, "0")}E${String(source.episode ?? 1).padStart(2, "0")}  ·  local`;
+  const { positionLabel, kindLabel } = presentMedia({
+    title: source.titleName,
+    mediaKind: source.mediaKind,
+    season: source.season,
+    episode: source.episode,
+  });
+  return `${source.titleName}  ·  ${positionLabel ?? kindLabel}  ·  local`;
 }
 
 function safeUrlHost(url: string | null | undefined): string | null {

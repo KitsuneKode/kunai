@@ -18,6 +18,7 @@ import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
+import { presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
@@ -30,6 +31,7 @@ import {
   type OfflineLibraryEntry,
 } from "@/services/offline/offline-library";
 import { routeOfflineLibraryGroupAction } from "@/services/offline/offline-library-action-router";
+import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useMemo, useState } from "react";
 
@@ -272,10 +274,7 @@ export function LibraryTitleDetail({
               flexColumnIndex={rowLayout.flexColumnIndex}
               columns={buildMediaListRowColumns({
                 title: label,
-                episodeCode:
-                  entry.job.episode !== undefined
-                    ? `S${String(entry.job.season ?? 1).padStart(2, "0")}E${String(entry.job.episode).padStart(2, "0")}`
-                    : "—",
+                episodeCode: formatLibraryEntryPosition(entry.job),
                 statusLabel: detail,
                 statusColor: palette.muted,
                 statusDim: true,
@@ -337,4 +336,19 @@ export function LibraryTitleDetail({
       poster={railPoster}
     />
   );
+}
+
+/**
+ * The compact position column for one downloaded artifact row. A movie or a
+ * video has no episode code, so it shows its quiet content-kind label instead
+ * of a synthesized season the file does not have.
+ */
+function formatLibraryEntryPosition(job: DownloadJobRecord): string {
+  const { positionLabel, kindLabel } = presentMedia({
+    title: job.titleName,
+    mediaKind: job.mediaKind,
+    season: job.season,
+    episode: job.episode,
+  });
+  return positionLabel ?? kindLabel;
 }

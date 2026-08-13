@@ -8,6 +8,7 @@ import {
   CAPTURE_WIDTHS,
   captureAllWidths,
   captureFrame,
+  captureFramesSettled,
   captureResizeSequence,
   render,
   simulateTicks,
@@ -206,5 +207,66 @@ describe("simulateTicks (deterministic flicker probe)", () => {
     });
     // 1 initial mount frame + 5 distinct tick frames = 6 distinct.
     expect(report.distinctFrames).toBe(6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Settled capture
+//
+// Real surfaces (library shelves, download lists) reach their final layout only
+// after an async read resolves. Capturing them means mounting a FRESH fixture
+// per width, awaiting a fixture-owned gate inside `act`, reading the frame, and
+// unmounting before the next width — no sleeps, no timers.
+// ---------------------------------------------------------------------------
+
+function deferredGate() {
+  let open!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
+
+describe("captureFramesSettled", () => {
+  test("captures the settled frame independently at every canonical width", async () => {
+    const mounts: number[] = [];
+    let settles = 0;
+    let unmounts = 0;
+
+    const frames = await captureFramesSettled(({ columns }) => {
+      const gate = deferredGate();
+      mounts.push(columns);
+      function Settling() {
+        const [ready, setReady] = useState(false);
+        useEffect(() => {
+          let live = true;
+          void (async () => {
+            await gate.promise;
+            if (live) setReady(true);
+          })();
+          return () => {
+            live = false;
+            unmounts += 1;
+          };
+        }, []);
+        return <Text>{ready ? `settled at ${columns}` : "pending"}</Text>;
+      }
+      return {
+        node: <Settling />,
+        settle: async () => {
+          settles += 1;
+          gate.open();
+          await gate.promise;
+        },
+      };
+    });
+
+    expect(frames.narrow).toContain("settled at 72");
+    expect(frames.medium).toContain("settled at 100");
+    expect(frames.wide).toContain("settled at 140");
+    expect(mounts).toEqual([CAPTURE_WIDTHS.narrow, CAPTURE_WIDTHS.medium, CAPTURE_WIDTHS.wide]);
+    // One fixture, one settle, one unmount per width.
+    expect(settles).toBe(3);
+    expect(unmounts).toBe(3);
   });
 });

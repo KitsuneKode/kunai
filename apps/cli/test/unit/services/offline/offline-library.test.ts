@@ -57,6 +57,51 @@ describe("offline-library helpers", () => {
     ).toBe("Example  ·  S02E08");
   });
 
+  test("formatOfflineJobListingTitle presents a legacy synthetic movie row as Movie", () => {
+    const listing = formatOfflineJobListingTitle(
+      minimalJob({
+        id: "1",
+        titleName: "Dune: Part Two",
+        mediaKind: "movie",
+        season: 1,
+        episode: 1,
+        outputPath: "/o.mp4",
+      }),
+    );
+    expect(listing).toBe("Dune: Part Two  ·  Movie");
+    expect(listing).not.toContain("S01E01");
+  });
+
+  test("formatOfflineJobListingTitle uses episode-only labels for anime", () => {
+    expect(
+      formatOfflineJobListingTitle(
+        minimalJob({
+          id: "1",
+          titleName: "Frieren",
+          mediaKind: "anime",
+          season: 1,
+          episode: 3,
+          outputPath: "/o.mp4",
+        }),
+      ),
+    ).toBe("Frieren  ·  E03");
+  });
+
+  test("formatOfflineJobListingTitle keeps video title-level", () => {
+    expect(
+      formatOfflineJobListingTitle(
+        minimalJob({
+          id: "1",
+          titleName: "Kunai Release Trailer",
+          mediaKind: "video",
+          season: 1,
+          episode: 1,
+          outputPath: "/o.mp4",
+        }),
+      ),
+    ).toBe("Kunai Release Trailer  ·  Video");
+  });
+
   test("offlineStatusIcon matches artifact health", () => {
     expect(offlineStatusIcon("ready")).toBe("✓");
     expect(offlineStatusIcon("missing")).toBe("!");
