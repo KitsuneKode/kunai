@@ -3,14 +3,14 @@ title: Platforms
 description: Platform-specific install, playback, opening, protocol, and troubleshooting notes.
 ---
 
-Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews use Kitty graphics when available, otherwise a built-in half-block fallback — `chafa` is optional for richer output.
+Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews need nothing installed: Kitty graphics on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where the terminal reports it, and a built-in half-block fallback everywhere else.
 
 **Who this is for:** anyone choosing an install path or optional tools for their OS.
 
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.
 
 <Callout type="info" title="Optional tools stay optional">
-Missing `yt-dlp`, `ffprobe`, or `chafa` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths. Half-block posters work without `chafa`.
+Missing `yt-dlp` or `ffprobe` should degrade gracefully — setup and diagnostics explain the gap instead of breaking unrelated playback paths. Posters have no external dependency at all.
 </Callout>
 
 ## Support posture (0.3.0)
@@ -52,7 +52,6 @@ Recommended optional tools:
 - `mpv` — playback engine (required for watching; setup/browsing work without it)
 - `yt-dlp` — offline download jobs and YouTube playback
 - `ffprobe` — optional validation of completed artifacts
-- `chafa` — optional richer poster previews (half-block works without it)
 - `xdg-open` — `/docs`, `/report-issue`, folder reveal, and account auth handoffs
 
 </Tab>

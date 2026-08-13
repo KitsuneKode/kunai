@@ -18,7 +18,7 @@
 // kitty graphics protocol, so this is the only true-pixel path there.
 // =============================================================================
 
-import { decodeImageBytes, type DecodedImage } from "./decode";
+import type { DecodedImage } from "./decode";
 import { fitDimensions, resampleRgba } from "./renderers/half-block";
 
 /** Sixel introducer. `P2 = 1` makes zero bits transparent rather than background. */
@@ -337,20 +337,6 @@ export type SixelRenderOptions = {
   /** Palette size including the transparent register. Sixel allows at most 256. */
   readonly maxColors?: number;
 };
-
-/**
- * Decode, downscale, quantise, and encode — the whole path from poster bytes to
- * a sixel string. Returns null for bytes we cannot decode, so callers fall back
- * to a text renderer rather than emitting a broken escape sequence.
- */
-export function renderSixelFromBytes(
-  bytes: Uint8Array,
-  options: SixelRenderOptions,
-): string | null {
-  const decoded = decodeImageBytes(bytes);
-  if (!decoded) return null;
-  return renderSixelFromImage(decoded, options);
-}
 
 export function renderSixelFromImage(
   decoded: DecodedImage,

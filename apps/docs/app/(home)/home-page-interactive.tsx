@@ -15,9 +15,9 @@ export default function HomePageInteractive() {
 
   const prereqCommand =
     activeOs === "linux"
-      ? "sudo apt install mpv chafa"
+      ? "sudo apt install mpv yt-dlp curl"
       : activeOs === "macos"
-        ? "brew install mpv chafa"
+        ? "brew install mpv yt-dlp curl"
         : "winget install mpv";
 
   const installCommand = NATIVE_INSTALL_BY_OS[activeOs];

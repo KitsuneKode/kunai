@@ -3,23 +3,15 @@ import { getProbedGraphicsSupport } from "./probe";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
-const PROTOCOL_VALUES = new Set([
-  "auto",
-  "none",
-  "kitty",
-  "sixel",
-  "symbols",
-  "half-block",
-] as const);
+const PROTOCOL_VALUES = new Set(["auto", "none", "kitty", "iterm", "sixel", "half-block"] as const);
 
-type ProtocolOverride = "auto" | "none" | "kitty" | "sixel" | "symbols" | "half-block";
+type ProtocolOverride = "auto" | "none" | "kitty" | "iterm" | "sixel" | "half-block";
 
 type CapabilityInput = {
   readonly terminal: TerminalId;
   readonly protocol: ImageProtocol;
   readonly renderer: ImageRendererId;
   readonly available: boolean;
-  readonly dependency: "chafa" | "none";
   readonly reason: string;
 };
 
@@ -29,7 +21,6 @@ function buildCapability(input: CapabilityInput): ImageCapability {
     protocol: input.protocol,
     renderer: input.renderer,
     available: input.available,
-    dependency: input.dependency,
     reason: input.reason,
   };
 }
@@ -45,7 +36,6 @@ function halfBlockCapability(terminal: TerminalId, reason: string): ImageCapabil
     protocol: "half-block",
     renderer: "half-block",
     available: true,
-    dependency: "none",
     reason,
   });
 }
@@ -56,7 +46,6 @@ function noneCapability(terminal: TerminalId, reason: string): ImageCapability {
     protocol: "none",
     renderer: "none",
     available: false,
-    dependency: "none",
     reason,
   });
 }
@@ -65,6 +54,16 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalId
   if (env.KITTY_WINDOW_ID) return "kitty";
   if (env.TERM_PROGRAM?.toLowerCase() === "ghostty") return "ghostty";
   if (env.WT_SESSION) return "windows-terminal";
+  // iTerm2 forwards LC_TERMINAL through ssh, where TERM_PROGRAM is lost — and a
+  // remote session renders inline images just as well as a local one. Checked
+  // after the kitty-compatible names so an inherited LC_TERMINAL cannot outrank
+  // the terminal actually in front of the user.
+  if (
+    env.TERM_PROGRAM?.toLowerCase() === "iterm.app" ||
+    env.LC_TERMINAL?.toLowerCase() === "iterm2"
+  ) {
+    return "iterm2";
+  }
   if (env.TERM_PROGRAM?.toLowerCase() === "wezterm") return "wezterm";
   if (env.WEZTERM_EXECUTABLE) return "wezterm";
   // Konsole answers the kitty graphics probe but has no Unicode placeholder
@@ -92,6 +91,30 @@ export function isMultiplexed(env: NodeJS.ProcessEnv = process.env): boolean {
   return /^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "");
 }
 
+/** VSCode's integrated terminal learned the iTerm2 inline-image protocol in 1.80. */
+const VSCODE_INLINE_IMAGE_MINIMUM = { major: 1, minor: 80 } as const;
+
+/**
+ * Whether this terminal can be trusted with an iTerm2 inline image.
+ *
+ * iTerm2 owns the protocol, so it is unconditional there. VSCode is gated on a
+ * reported version: emitting the escape to a build that does not understand it
+ * dumps raw bytes across the UI, which is the same reason Windows Terminal sixel
+ * stays off without a probe answer. An unreported version is treated as too old.
+ */
+function supportsItermInlineImages(terminal: TerminalId, env: NodeJS.ProcessEnv): boolean {
+  if (terminal === "iterm2") return true;
+  if (terminal !== "vscode") return false;
+  const [major, minor] = (env.TERM_PROGRAM_VERSION ?? "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
+  if ((major as number) !== VSCODE_INLINE_IMAGE_MINIMUM.major) {
+    return (major as number) > VSCODE_INLINE_IMAGE_MINIMUM.major;
+  }
+  return (minor as number) >= VSCODE_INLINE_IMAGE_MINIMUM.minor;
+}
+
 function normalizeProtocol(value: string | undefined): ProtocolOverride | "invalid" {
   if (!value) return "auto";
   const normalized = value.trim().toLowerCase();
@@ -105,7 +128,6 @@ const runtime = {
   which: (command: string): string | null => Bun.which(command),
 };
 
-let chafaAvailableMemo: boolean | undefined;
 const capabilityMemo = new Map<string, ImageCapability>();
 
 function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
@@ -120,6 +142,10 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
     env.KUNAI_IMAGE_PROTOCOL ?? "",
     env.KITTY_WINDOW_ID ?? "",
     env.TERM_PROGRAM ?? "",
+    // Both feed inline-image routing: LC_TERMINAL identifies iTerm2 over ssh and
+    // the version gates VSCode, so a result cached without them would be wrong.
+    env.TERM_PROGRAM_VERSION ?? "",
+    env.LC_TERMINAL ?? "",
     env.WT_SESSION ?? "",
     env.WEZTERM_EXECUTABLE ?? "",
     env.KONSOLE_VERSION ?? "",
@@ -128,12 +154,6 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
     env.STY ?? "",
     env.TERM ?? "",
   ]);
-}
-
-/** True when `chafa` resolves on PATH. Uses the same injectable `runtime.which` as `detectImageCapability` (see `__testing`). */
-export function isChafaAvailable(): boolean {
-  chafaAvailableMemo ??= Boolean(runtime.which("chafa"));
-  return chafaAvailableMemo;
 }
 
 function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
@@ -146,7 +166,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   const terminal = detectTerminal(env);
-  const hasChafa = isChafaAvailable();
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
 
   if (override === "invalid") {
@@ -164,7 +183,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
         protocol: "kitty",
         renderer: "kitty-native",
         available: true,
-        dependency: "none",
         reason: "kitty-compatible terminal requested",
       });
     }
@@ -174,6 +192,16 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     );
   }
 
+  if (override === "iterm") {
+    return buildCapability({
+      terminal,
+      protocol: "iterm-inline",
+      renderer: "iterm-inline",
+      available: true,
+      reason: "forced iTerm2 inline images",
+    });
+  }
+
   if (override === "sixel") {
     // Sixel is encoded in process now, so this no longer needs chafa on PATH.
     return buildCapability({
@@ -181,22 +209,7 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "forced sixel output",
-    });
-  }
-
-  if (override === "symbols") {
-    if (!hasChafa) {
-      return noneCapability(terminal, "KUNAI_IMAGE_PROTOCOL=symbols requires chafa");
-    }
-    return buildCapability({
-      terminal,
-      protocol: "symbols",
-      renderer: "chafa-symbols",
-      available: true,
-      dependency: "chafa",
-      reason: "forced symbols output via chafa",
     });
   }
 
@@ -208,19 +221,10 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   // survive a multiplexer without passthrough wrapping. Explicit
   // KUNAI_IMAGE_PROTOCOL overrides are handled above and still win.
   if (isMultiplexed(env)) {
-    return isChafaAvailable()
-      ? buildCapability({
-          terminal,
-          protocol: "symbols",
-          renderer: "chafa-symbols",
-          available: true,
-          dependency: "chafa",
-          reason: "tmux/screen detected; graphics escapes need passthrough, using text output",
-        })
-      : halfBlockCapability(
-          terminal,
-          "tmux/screen detected; graphics escapes need passthrough, using half-block",
-        );
+    return halfBlockCapability(
+      terminal,
+      "tmux/screen detected; graphics escapes need passthrough, using half-block",
+    );
   }
 
   if (terminal === "kitty" || terminal === "ghostty") {
@@ -229,7 +233,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "kitty-compatible terminal detected",
     });
   }
@@ -245,17 +248,32 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "terminal answered the kitty graphics query",
     });
   }
+  // Inline images before sixel, deliberately. iTerm2 answers the sixel query
+  // too, but sixel is quantised to 256 colours while an inline image is the
+  // prepared PNG verbatim — so on a terminal that speaks both, sixel would be a
+  // needless downgrade.
+  if (supportsItermInlineImages(terminal, env)) {
+    return buildCapability({
+      terminal,
+      protocol: "iterm-inline",
+      renderer: "iterm-inline",
+      available: true,
+      reason:
+        terminal === "iterm2"
+          ? "iTerm2 inline images"
+          : `inline images supported since VSCode 1.80 (reported ${env.TERM_PROGRAM_VERSION ?? "none"})`,
+    });
+  }
+
   if (probe?.sixel) {
     return buildCapability({
       terminal,
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "terminal reported sixel support (DA1)",
     });
   }
@@ -279,7 +297,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "WezTerm detected",
     });
   }
@@ -298,7 +315,6 @@ export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): Ima
 }
 
 function resetMemo(): void {
-  chafaAvailableMemo = undefined;
   capabilityMemo.clear();
 }
 

@@ -68,9 +68,12 @@ export async function runSetupWizard({
     return "skipped";
   }
 
-  // Probe rather than hand-roll a snapshot: this literal used to duplicate
-  // probeCapabilities and drifted from it, and app-shell may not import the
-  // provider package, so it cannot ask AniDB which curl builds it can drive.
+  // Probe rather than hand-roll a snapshot. This literal duplicated
+  // probeCapabilities and drifted from it: it was still reporting `chafa` and
+  // `magick` after both were retired, and TypeScript missed it because the `??`
+  // widened the type instead of checking the literal. Probing is also the only
+  // option now — app-shell may not import the provider package, so it cannot ask
+  // AniDB which curl builds it can drive.
   const snapshot = container.capabilitySnapshot ?? (await probeCapabilities());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");

@@ -12,14 +12,11 @@ import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer"
 import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
-import { fakeChafaProcess } from "../../support/fake-chafa";
 import { makeRgbPng } from "../../support/image-fixtures";
 
 const originalFetch = globalThis.fetch;
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
 const originalRendererDetect = posterRendererTesting.runtime.detectImageCapability;
-const originalRendererWhich = posterRendererTesting.runtime.which;
-const originalRendererSpawn = posterRendererTesting.runtime.spawn;
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 
 function setFetchMock(
@@ -30,6 +27,22 @@ function setFetchMock(
   }) as typeof fetch;
 }
 
+/**
+ * A real, decodable PNG.
+ *
+ * These fixtures used to be a bare 9-byte PNG signature, which worked only
+ * because the old Kitty path forwarded PNG-signed bytes to the terminal without
+ * decoding them. Preparation decodes every source to bound and fit it, so a
+ * fixture now has to be a real image.
+ */
+function realPng(): Uint8Array {
+  return makeRgbPng(
+    4,
+    4,
+    Array.from({ length: 4 * 4 * 3 }, (_, index) => (index * 17) % 256),
+  );
+}
+
 function cap(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "kitty-native") {
     return {
@@ -37,18 +50,16 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "kitty",
       renderer: "kitty-native",
       available: true,
-      dependency: "none",
       reason: "test kitty",
     };
   }
-  if (renderer === "chafa-symbols") {
+  if (renderer === "half-block") {
     return {
       terminal: "unknown",
-      protocol: "symbols",
-      renderer: "chafa-symbols",
+      protocol: "half-block",
+      renderer: "half-block",
       available: true,
-      dependency: "chafa",
-      reason: "test symbols",
+      reason: "test half-block",
     };
   }
   if (renderer === "sixel") {
@@ -57,8 +68,16 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
       protocol: "sixel",
       renderer: "sixel",
       available: true,
-      dependency: "none",
       reason: "test sixel",
+    };
+  }
+  if (renderer === "iterm-inline") {
+    return {
+      terminal: "iterm2",
+      protocol: "iterm-inline",
+      renderer: "iterm-inline",
+      available: true,
+      reason: "test iterm inline",
     };
   }
   return {
@@ -66,7 +85,6 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
     protocol: "none",
     renderer: "none",
     available: false,
-    dependency: "none",
     reason: "test none",
   };
 }
@@ -75,8 +93,6 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   posterRendererTesting.runtime.detectImageCapability = originalRendererDetect;
-  posterRendererTesting.runtime.which = originalRendererWhich;
-  posterRendererTesting.runtime.spawn = originalRendererSpawn;
   process.stdout.write = originalStdoutWrite;
   clearRenderedPosterImages();
 });
@@ -84,7 +100,7 @@ afterEach(() => {
 describe("app-shell image pane cache", () => {
   test("undisplaying Kitty posters drops cache so the next visit re-uploads", async () => {
     setFetchMock(async () => {
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
     process.stdout.write = (() => true) as typeof process.stdout.write;
@@ -111,21 +127,19 @@ describe("app-shell image pane cache", () => {
     }
   });
 
-  test("chafa text cache survives undisplay for back navigation", async () => {
+  test("half-block text cache survives undisplay for back navigation", async () => {
     let fetchCalls = 0;
     setFetchMock(async () => {
       fetchCalls += 1;
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
-    paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
+    paneTesting.runtime.detectImageCapability = () => cap("half-block");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("half-block");
 
-    const first = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+    const first = await fetchPoster("/half-block.jpg", { rows: 4, cols: 8 });
     undisplayRenderedPosterImages();
-    const revisited = await fetchPoster("/chafa.jpg", { rows: 4, cols: 8 });
+    const revisited = await fetchPoster("/half-block.jpg", { rows: 4, cols: 8 });
 
     expect(first.kind).toBe("text");
     expect(revisited).toEqual(first);
@@ -134,7 +148,7 @@ describe("app-shell image pane cache", () => {
 
   test("cache key is segregated by renderer capability", async () => {
     setFetchMock(async () => {
-      const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+      const png = realPng();
       return new Response(png, { status: 200 });
     });
 
@@ -150,10 +164,8 @@ describe("app-shell image pane cache", () => {
       expect(kittySecond.imageId).toBe(kittyFirst.imageId);
     }
 
-    paneTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.detectImageCapability = () => cap("chafa-symbols");
-    posterRendererTesting.runtime.which = () => "/usr/bin/chafa";
-    posterRendererTesting.runtime.spawn = () => fakeChafaProcess("ASCII_PREVIEW\n").proc;
+    paneTesting.runtime.detectImageCapability = () => cap("half-block");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("half-block");
     const textResult = await fetchPoster("/abc.jpg", { rows: 4, cols: 8, allowKitty: true });
     expect(textResult.kind).toBe("text");
   });
@@ -284,5 +296,53 @@ describe("poster image helpers", () => {
 
   test("keeps image preview scoped to real terminal graphics protocols", () => {
     expect(isKittyCompatible({ TERM_PROGRAM: "xterm-256color" })).toBe(false);
+  });
+
+  test("an iTerm2 session renders a real inline image, not the text floor", async () => {
+    const png = makeRgbPng(
+      4,
+      4,
+      Array.from({ length: 48 }, (_, index) => (index * 11) % 256),
+    );
+    setFetchMock(async () => new Response(png, { status: 200 }));
+    paneTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+
+    const poster = await fetchPoster("/iterm.jpg", {
+      rows: 4,
+      cols: 8,
+      placementSlot: "browse-preview",
+    });
+
+    // Carried as an overlay result, but the payload has to be the iTerm2
+    // protocol rather than sixel bytes -- that is the quality difference.
+    expect(poster.kind).toBe("sixel");
+    if (poster.kind === "sixel") {
+      expect(poster.sixel).toContain("]1337;File=");
+      expect(poster.sixel).toContain("width=8");
+      expect(poster.sixel).toContain("height=4");
+    }
+  });
+
+  test("an iTerm2 poster is memoized like any other overlay", async () => {
+    let fetchCalls = 0;
+    const png = makeRgbPng(
+      4,
+      4,
+      Array.from({ length: 48 }, (_, index) => (index * 11) % 256),
+    );
+    setFetchMock(async () => {
+      fetchCalls += 1;
+      return new Response(png, { status: 200 });
+    });
+    paneTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+    posterRendererTesting.runtime.detectImageCapability = () => cap("iterm-inline");
+
+    const first = await fetchPoster("/iterm-cache.jpg", { rows: 4, cols: 8 });
+    const revisited = await fetchPoster("/iterm-cache.jpg", { rows: 4, cols: 8 });
+
+    expect(first.kind).toBe("sixel");
+    expect(revisited).toBe(first);
+    expect(fetchCalls).toBe(1);
   });
 });

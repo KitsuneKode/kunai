@@ -1,43 +1,28 @@
 import { detectImageCapability } from "@/image";
 import type { TerminalId } from "@/image";
-import { ensurePngBytes } from "@/image/convert";
 import { debugImage } from "@/image/debug";
-import {
-  prepareKittyPayload,
-  uploadKittyPayload,
-  type KittyPayload,
-} from "@/image/kitty-transport";
-import { decodeToRgba, encodeNativePng } from "@/image/native-image";
+import { uploadKittyPayload } from "@/image/kitty-transport";
+import { type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
+import { buildItermInlineImage } from "@/image/renderers/iterm-inline";
 import { pixelBudgetForCells } from "@/image/renderers/sixel";
-import { renderSixelFromBytes } from "@/image/sixel";
+import { renderSixelFromImage } from "@/image/sixel";
 
 import {
   clearKittyPlacementRegistry,
   registerKittyPlacement,
-  releaseKittySlot,
   setKittyPlacementDeleteFn,
   type KittyPlacementSlot,
 } from "./kitty-placement-registry";
 import type { PosterResult } from "./poster-types";
 
-type ChafaSpawnOptions = {
-  readonly stdin: "pipe";
-  readonly stdout: "pipe";
-  readonly stderr: "pipe";
-};
-
 type PosterRuntime = {
   detectImageCapability: typeof detectImageCapability;
-  which: (command: string) => string | null;
-  spawn: (command: string[], options: ChafaSpawnOptions) => Bun.Subprocess;
 };
 
 const runtime: PosterRuntime = {
   detectImageCapability: () => detectImageCapability(),
-  which: (command) => Bun.which(command),
-  spawn: (command, options) => Bun.spawn(command, options),
 };
 
 // Interactive overlays are encoded on the JS thread and replayed through the
@@ -133,23 +118,157 @@ function supportsKittyPlaceholders(terminal: TerminalId): boolean {
   return false;
 }
 
+// ── Prepared-poster pipeline ────────────────────────────────────────────────
+//
+// One plan decides renderer *and* target pixel bounds before any source is
+// fetched, so preparation is done once at the geometry that will actually be
+// drawn. The renderers then consume the prepared poster: Kitty takes the PNG,
+// Sixel and half-block take the decoded RGBA. Nothing here re-decodes.
+
+export type PosterRenderer = "kitty-native" | "iterm-inline" | "sixel" | "half-block";
+
+export type PosterRenderPlan = {
+  readonly renderer: PosterRenderer;
+  readonly bounds: PosterPixelBounds;
+};
+
 /**
- * Universal in-process text renderer: two pixels per cell via U+2580 with
- * truecolour SGR. Needs no external binary — this is what keeps posters alive
- * on Windows Terminal, iTerm2, and any chafa-less machine.
+ * A Kitty image that has been uploaded but has not claimed its slot yet.
+ *
+ * Upload and placement are deliberately separate: by the time an upload
+ * finishes, the caller may have been superseded, and registering the slot inside
+ * rendering would let a stale poster replace a live one. The caller commits only
+ * after it has confirmed it is still current.
  */
-async function renderHalfBlockText(
-  data: ArrayBuffer,
+export type UncommittedKittyPoster = {
+  readonly kind: "kitty-upload";
+  readonly placeholder: string;
+  readonly rows: number;
+  readonly cols: number;
+  readonly imageId: number;
+};
+
+export type RenderedPosterCandidate =
+  | UncommittedKittyPoster
+  | Exclude<PosterResult, { readonly kind: "kitty" }>;
+
+export type PreparedRenderOptions = {
+  readonly rows: number;
+  readonly cols: number;
+  readonly allowKitty?: boolean;
+  readonly allowSixel?: boolean;
+  readonly inkEmbedded?: boolean;
+  readonly placementSlot?: KittyPlacementSlot;
+  readonly signal?: AbortSignal;
+};
+
+/**
+ * Which renderer will draw, and the pixel box to prepare for it.
+ *
+ * Returns null when nothing can render, so callers skip source acquisition
+ * entirely rather than fetching bytes they cannot use.
+ */
+export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterRenderPlan | null {
+  const { rows, cols, allowKitty = true, allowSixel = true, inkEmbedded = false } = options;
+  if (rows <= 0 || cols <= 0) return null;
+
+  // Inside Ink, a placement would fight the layout, so text is the only option.
+  if (inkEmbedded) return { renderer: "half-block", bounds: halfBlockBounds(rows, cols) };
+  if (!allowKitty) return null;
+
+  const capability = runtime.detectImageCapability();
+  if (!capability.available || capability.renderer === "none") return null;
+
+  if (capability.renderer === "kitty-native" && supportsKittyPlaceholders(capability.terminal)) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "kitty-native",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
+  // Gated on allowSixel for the same reason sixel is: both are measured
+  // overlays written outside Ink's frame, so a surface that repaints constantly
+  // suppresses them together.
+  if (capability.renderer === "iterm-inline" && allowSixel) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "iterm-inline",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
+  if (capability.renderer === "sixel" && allowSixel) {
+    const budget = pixelBudgetForCells(cols, rows);
+    return {
+      renderer: "sixel",
+      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+    };
+  }
+  // Everything else — a Kitty build without Unicode placeholders, an inline-image
+  // or Sixel terminal with the overlay suppressed, or no image support at all —
+  // lands on the universal text floor.
+  return { renderer: "half-block", bounds: halfBlockBounds(rows, cols) };
+}
+
+/** Half-block encodes two pixels per cell row, so height doubles. */
+function halfBlockBounds(rows: number, cols: number): PosterPixelBounds {
+  return { maxWidthPx: cols, maxHeightPx: rows * 2 };
+}
+
+/**
+ * Draw a prepared poster. Kitty returns an uncommitted upload; everything else
+ * returns a finished result, having no terminal resource to release.
+ */
+export async function renderPreparedPoster(
+  poster: PreparedPoster,
+  plan: PosterRenderPlan,
+  options: PreparedRenderOptions,
+): Promise<RenderedPosterCandidate> {
+  const { rows, cols, placementSlot, signal } = options;
+  try {
+    if (signal?.aborted) return { kind: "none" };
+    if (plan.renderer === "kitty-native") {
+      return await uploadPreparedKitty(poster, rows, cols, signal);
+    }
+    if (plan.renderer === "iterm-inline") {
+      const escapes = buildItermInlineImage(poster.png, { rows, cols });
+      if (!escapes) return { kind: "none" };
+      // Carried as a sixel result because it is the same kind of thing: escape
+      // bytes the overlay manager writes at a measured rect, erased the same way.
+      return {
+        kind: "sixel",
+        sixel: escapes,
+        rows,
+        cols,
+        overlayId: placementSlot ?? `iterm-${allocId()}`,
+      };
+    }
+    if (plan.renderer === "sixel") {
+      const sixel = renderSixelFromImage(poster.image, {
+        ...pixelBudgetForCells(cols, rows),
+        maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+      });
+      if (!sixel) return { kind: "none" };
+      return {
+        kind: "sixel",
+        sixel,
+        rows,
+        cols,
+        overlayId: placementSlot ?? `sixel-${allocId()}`,
+      };
+    }
+    return renderPreparedHalfBlock(poster, rows, cols);
+  } catch (error) {
+    debugImage(`poster render failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { kind: "none" };
+  }
+}
+
+function renderPreparedHalfBlock(
+  poster: PreparedPoster,
   rows: number,
   cols: number,
-): Promise<PosterResult> {
-  // Decode straight to the cell geometry we are about to draw: two pixels per
-  // cell row is what the half-block trick encodes. Bun.Image does the resize
-  // natively and off-thread, so the full-size bitmap never enters JS and the
-  // event loop keeps ticking; without it this falls back to a blocking decode.
-  const image = await decodeToRgba(new Uint8Array(data), { width: cols, height: rows * 2 });
-  if (!image) return { kind: "none" };
-  const text = buildHalfBlockOutput(image, {
+): RenderedPosterCandidate {
+  const text = buildHalfBlockOutput(poster.image, {
     size: `${cols}x${rows}`,
     maxRows: rows,
     debug: false,
@@ -158,82 +277,34 @@ async function renderHalfBlockText(
   return { kind: "text", placeholder: text, rows, cols };
 }
 
-/**
- * Sixel is an overlay, not Ink text.
- *
- * This returns a `sixel` PosterResult rather than escape bytes: `SixelPosterPane`
- * reserves and measures an empty Ink rectangle, and the overlay manager writes
- * the pixels after Ink's frame has committed. Sixel bytes placed into the Ink
- * frame itself would be measured as text and corrupt the layout.
- */
-function renderSixelOverlay(
-  data: ArrayBuffer,
+async function uploadPreparedKitty(
+  poster: PreparedPoster,
   rows: number,
   cols: number,
-  placementSlot?: KittyPlacementSlot,
-): PosterResult {
-  const sixel = renderSixelFromBytes(new Uint8Array(data), {
-    ...pixelBudgetForCells(cols, rows),
-    maxColors: APP_SHELL_SIXEL_MAX_COLORS,
-  });
-  if (!sixel) return { kind: "none" };
-  return {
-    kind: "sixel",
-    sixel,
-    rows,
-    cols,
-    overlayId: placementSlot ?? `sixel-${allocId()}`,
-  };
-}
-
-async function renderKitty(
-  data: ArrayBuffer,
-  rows: number,
-  cols: number,
-  placementSlot?: KittyPlacementSlot,
   signal?: AbortSignal,
-): Promise<PosterResult> {
-  if (data.byteLength === 0) return { kind: "none" };
-  if (signal?.aborted) return { kind: "none" };
-  const bytes = new Uint8Array(data);
-  // Native PNG first: Bun.Image encodes off-thread, and an f=100 PNG is both
-  // smaller on the wire than deflated RGBA and skips the synchronous
-  // decode-then-deflate pair entirely. In-process decode is the fallback, and
-  // ImageMagick stays the last resort for formats neither can read (WebP, …).
-  const nativePng = await encodeNativePng(bytes);
-  let payload: KittyPayload | null = nativePng
-    ? { kind: "png", data: nativePng }
-    : prepareKittyPayload(bytes);
-  if (!payload) {
-    const png = await ensurePngBytes(bytes);
-    if (png) payload = { kind: "png", data: png };
-  }
-  if (signal?.aborted) return { kind: "none" };
-  if (!payload) {
-    // Undecodable even with ImageMagick: fall back to text renderers and
-    // release any prior Kitty for this slot so it does not ghost underneath.
-    debugImage("kitty payload preparation failed; falling back to text renderers");
-    if (placementSlot) releaseKittySlot(placementSlot);
-    return await renderTextPoster(data, rows, cols);
-  }
+): Promise<RenderedPosterCandidate> {
+  if (poster.png.byteLength === 0) return { kind: "none" };
   const imageId = allocId();
-  await uploadKittyPayload(payload, {
-    imageId,
-    rows,
-    cols,
-    unicodePlaceholder: true,
-    preferFileTransmission: true,
-  });
+  // The prepared PNG *is* the payload: no deflate, no RGBA transport, no
+  // external conversion.
+  await uploadKittyPayload(
+    { kind: "png", data: poster.png },
+    {
+      imageId,
+      rows,
+      cols,
+      unicodePlaceholder: true,
+      preferFileTransmission: true,
+    },
+  );
   if (signal?.aborted) {
-    // Upload finished after cancel — delete the orphan so it cannot clobber a winner.
+    // Upload finished after cancel — delete the orphan so it cannot clobber a
+    // winner. Direct deletion, not a registry release: it owns no slot yet.
     deleteKittyImage(imageId);
     return { kind: "none" };
   }
-  if (placementSlot) {
-    registerKittyPlacement(placementSlot, imageId);
-  }
   return {
-    kind: "kitty",
+    kind: "kitty-upload",
     placeholder: buildPlaceholder(imageId, rows, cols),
     rows,
     cols,
@@ -241,199 +312,30 @@ async function renderKitty(
   };
 }
 
-function isWritableStream(value: unknown): value is WritableStream<Uint8Array> {
-  return Boolean(value && typeof (value as WritableStream<Uint8Array>).getWriter === "function");
-}
-
-/** Bun's `FileSink`, which is what a spawned child's piped stdin actually is. */
-type ChildStdinSink = {
-  write: (chunk: Uint8Array) => unknown;
-  end: () => unknown;
-};
-
-function isFileSink(value: unknown): value is ChildStdinSink {
-  const sink = value as ChildStdinSink | null;
-  return Boolean(sink && typeof sink.write === "function" && typeof sink.end === "function");
+/** Claim the slot for a confirmed-current upload, replacing any prior image. */
+export function commitKittyPlacementCandidate(
+  candidate: UncommittedKittyPoster,
+  placementSlot?: KittyPlacementSlot,
+): PosterResult {
+  if (placementSlot) registerKittyPlacement(placementSlot, candidate.imageId);
+  return {
+    kind: "kitty",
+    placeholder: candidate.placeholder,
+    rows: candidate.rows,
+    cols: candidate.cols,
+    imageId: candidate.imageId,
+  };
 }
 
 /**
- * Send the encoder its image and close the pipe.
+ * Drop a stale or aborted upload.
  *
- * Bun hands a spawned child's piped stdin back as a `FileSink` (`write`/`end`),
- * not a `WritableStream` (`getWriter`). Testing only for `getWriter` meant this
- * silently wrote nothing and, worse, never closed the pipe -- chafa sat waiting
- * on stdin that would never end, `proc.exited` never settled, and the poster
- * stayed in its loading state forever. The spinner ran until the user quit, and
- * only on machines that *had* chafa: without it the code returns early and the
- * half-block fallback paints normally, so installing the better encoder was what
- * broke posters entirely.
- *
- * Closing is the part that must not be skipped, so it happens in `finally`.
+ * Direct deletion is load-bearing: an uncommitted id has no registry ownership,
+ * so releasing it through the registry would disturb bookkeeping for whichever
+ * image legitimately holds the slot.
  */
-async function writeImageToEncoder(stdin: unknown, data: ArrayBuffer): Promise<boolean> {
-  const bytes = new Uint8Array(data);
-  try {
-    if (isWritableStream(stdin)) {
-      const writer = stdin.getWriter();
-      try {
-        await writer.write(bytes);
-      } finally {
-        await writer.close().catch(() => {});
-      }
-      return true;
-    }
-    if (isFileSink(stdin)) {
-      try {
-        stdin.write(bytes);
-      } finally {
-        stdin.end();
-      }
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * How long the shell will wait on the external encoder before painting without
- * it. A poster is decoration; the UI must never be hostage to a child process
- * that does not exit. On timeout the caller falls through to the in-process
- * half-block renderer, which needs no subprocess at all.
- */
-const CHAFA_RENDER_TIMEOUT_MS = 3_000;
-
-async function renderChafaSymbols(
-  data: ArrayBuffer,
-  rows: number,
-  cols: number,
-): Promise<PosterResult> {
-  if (!runtime.which("chafa")) return { kind: "none" };
-  const proc = runtime.spawn(
-    [
-      "chafa",
-      "--format",
-      "symbols",
-      "--size",
-      `${cols}x${rows}`,
-      "--animate",
-      "off",
-      "--polite",
-      "on",
-      "--colors",
-      "full",
-    ],
-    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
-  );
-
-  if (!(await writeImageToEncoder(proc.stdin, data))) {
-    // Never leave a child blocked on a pipe we are not going to write.
-    proc.kill();
-    debugImage("chafa symbols: could not write image to encoder stdin");
-    return { kind: "none" };
-  }
-
-  const collected = await Promise.race([
-    Promise.all([
-      new Response(proc.stdout as ReadableStream | null).arrayBuffer(),
-      new Response(proc.stderr as ReadableStream | null).arrayBuffer(),
-      proc.exited,
-    ]),
-    Bun.sleep(CHAFA_RENDER_TIMEOUT_MS).then(() => null),
-  ]);
-
-  if (!collected) {
-    proc.kill();
-    debugImage(`chafa symbols timed out after ${CHAFA_RENDER_TIMEOUT_MS}ms; using half-block`);
-    return { kind: "none" };
-  }
-
-  const [stdoutBuf, stderrBuf, exitCode] = collected;
-
-  if (exitCode !== 0) {
-    const stderrText = stderrBuf.byteLength ? new TextDecoder().decode(stderrBuf).trim() : "";
-    debugImage(`chafa symbols failed (code ${exitCode})${stderrText ? `: ${stderrText}` : ""}`);
-    return { kind: "none" };
-  }
-
-  const text = stdoutBuf.byteLength ? new TextDecoder().decode(stdoutBuf).trimEnd() : "";
-  if (!text) return { kind: "none" };
-
-  return { kind: "text", placeholder: text, rows, cols };
-}
-
-/**
- * Text poster chain: chafa symbols when chafa resolves (higher fidelity:
- * symbol selection + dithering), otherwise the in-process half-block
- * renderer. Never spawns a process on the half-block path.
- */
-async function renderTextPoster(
-  data: ArrayBuffer,
-  rows: number,
-  cols: number,
-): Promise<PosterResult> {
-  const viaChafa = await renderChafaSymbols(data, rows, cols);
-  if (viaChafa.kind !== "none") return viaChafa;
-  return await renderHalfBlockText(data, rows, cols);
-}
-
-export async function renderPoster(
-  data: ArrayBuffer,
-  {
-    rows,
-    cols,
-    allowKitty = true,
-    allowSixel = true,
-    inkEmbedded = false,
-    placementSlot,
-    signal,
-  }: {
-    rows: number;
-    cols: number;
-    allowKitty?: boolean;
-    allowSixel?: boolean;
-    inkEmbedded?: boolean;
-    placementSlot?: KittyPlacementSlot;
-    signal?: AbortSignal;
-  },
-): Promise<PosterResult> {
-  try {
-    if (signal?.aborted) return { kind: "none" };
-    if (inkEmbedded) {
-      return await renderTextPoster(data, rows, cols);
-    }
-    if (!allowKitty) return { kind: "none" };
-    const capability = runtime.detectImageCapability();
-    if (!capability.available || capability.renderer === "none") return { kind: "none" };
-    if (capability.renderer === "kitty-native") {
-      if (supportsKittyPlaceholders(capability.terminal)) {
-        return await renderKitty(data, rows, cols, placementSlot, signal);
-      }
-      // The probe found kitty graphics but the terminal has no Unicode
-      // placeholders (WezTerm's opt-in kitty mode, Konsole). A real placement
-      // would fight Ink's layout, so stay on text renderers.
-      debugImage(
-        `kitty Unicode placeholders unsupported on terminal "${capability.terminal}"; using text renderers`,
-      );
-      return await renderTextPoster(data, rows, cols);
-    }
-    if (capability.renderer === "chafa-symbols") {
-      return await renderTextPoster(data, rows, cols);
-    }
-    if (capability.renderer === "sixel") {
-      if (!allowSixel) return await renderTextPoster(data, rows, cols);
-      return renderSixelOverlay(data, rows, cols, placementSlot);
-    }
-    // half-block: capability-faithful in-process rendering, no chafa spawn.
-    const viaHalfBlock = await renderHalfBlockText(data, rows, cols);
-    if (viaHalfBlock.kind !== "none") return viaHalfBlock;
-    // Undecodable in-process (e.g. WebP): chafa may still manage it.
-    return await renderChafaSymbols(data, rows, cols);
-  } catch (error) {
-    debugImage(`poster render failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { kind: "none" };
-  }
+export function deleteUncommittedKittyCandidate(candidate: UncommittedKittyPoster): void {
+  deleteKittyImage(candidate.imageId);
 }
 
 export type { KittyPlacementSlot };

@@ -169,7 +169,7 @@ confirm.
 # Required
 sudo pacman -S mpv
 # Optional: downloads, poster previews, integrity checks
-sudo pacman -S yt-dlp chafa imagemagick ffmpeg
+sudo pacman -S yt-dlp curl ffmpeg
 ```
 
 </details>
@@ -181,7 +181,7 @@ sudo pacman -S yt-dlp chafa imagemagick ffmpeg
 # Required
 sudo apt install mpv
 # Optional: downloads, poster previews, integrity checks
-sudo apt install yt-dlp chafa imagemagick ffmpeg
+sudo apt install yt-dlp curl ffmpeg
 ```
 
 </details>
@@ -193,7 +193,7 @@ sudo apt install yt-dlp chafa imagemagick ffmpeg
 # Required
 brew install mpv
 # Optional: downloads, poster previews, integrity checks
-brew install yt-dlp chafa imagemagick ffmpeg
+brew install yt-dlp curl ffmpeg
 ```
 
 </details>
@@ -262,8 +262,7 @@ Inside the shell, `/` opens the command palette from anywhere.
 | **mpv**         | Required             | Plays everything. `sudo pacman -S mpv` / `brew install mpv`                             |
 | **yt-dlp**      | Required for YouTube | YouTube playback and offline downloads. `sudo pacman -S yt-dlp` / `brew install yt-dlp` |
 | **ffprobe**     | Optional             | Post-download integrity checks (ships with FFmpeg)                                      |
-| **chafa**       | Optional             | Extra fidelity for text-mode posters. Sixel and half-block need nothing installed       |
-| **ImageMagick** | Optional             | Broader poster format support. `sudo pacman -S imagemagick`                             |
+| **curl**        | Anime mode           | AniDB, the default anime provider, is behind Cloudflare. `sudo pacman -S curl`          |
 | **Discord**     | Optional             | Rich Presence via local Unix-socket / Windows named-pipe IPC                            |
 
 ### Poster quality
@@ -271,15 +270,20 @@ Inside the shell, `/` opens the command palette from anywhere.
 Kunai picks the best renderer your terminal actually reports, asking it directly
 at startup rather than guessing from `TERM`:
 
-| Renderer       | Fidelity                     | Needs   | Terminals                                              |
-| -------------- | ---------------------------- | ------- | ------------------------------------------------------ |
-| Kitty graphics | true colour, full resolution | nothing | kitty, Ghostty                                         |
-| Sixel          | full resolution, 256 colours | nothing | Windows Terminal ≥1.22, WezTerm, foot, xterm -ti vt340 |
-| chafa symbols  | text approximation           | `chafa` | anything truecolour, and inside tmux/screen            |
-| Half-block     | text approximation           | nothing | everywhere — the universal fallback                    |
+| Renderer            | Fidelity                     | Needs   | Terminals                                              |
+| ------------------- | ---------------------------- | ------- | ------------------------------------------------------ |
+| Kitty graphics      | true colour, full resolution | nothing | kitty, Ghostty                                         |
+| iTerm2 inline image | true colour, full resolution | nothing | iTerm2, VS Code ≥1.80                                  |
+| Sixel               | full resolution, 64 colours  | nothing | Windows Terminal ≥1.22, WezTerm, foot, xterm -ti vt340 |
+| Half-block          | text approximation           | nothing | everywhere — the universal fallback                    |
 
-Sixel is encoded in-process, so it needs no external binary. Windows Terminal
-does not implement the Kitty protocol, so sixel is the sharp path there.
+**Nothing in that table needs installing.** Every renderer draws one image
+prepared natively by `Bun.Image`, so chafa and ImageMagick were retired rather
+than kept as optional upgrades.
+
+Inline images outrank sixel where both exist: they carry the prepared PNG
+verbatim, while sixel is quantised. Windows Terminal does not implement the Kitty
+protocol, so sixel is the sharp path there.
 
 Text renderers fit two pixels per character cell, which is roughly a hundredth
 of the pixels sixel gives you — that difference is what "blocky posters" is.
@@ -493,21 +497,20 @@ shows what you're watching:
 | ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | **yt-dlp**          | YouTube playback and download queue. Required for YouTube mode play/resolve and `/download`.   | YouTube search may work via Invidious/Piped, but playback and downloads need yt-dlp. |
 | **ffprobe**         | Post-download integrity check. Verifies the file is playable. (Ships with FFmpeg.)             | Downloads still work; integrity check is skipped.                                    |
-| **chafa**           | Optional richer text-mode poster previews in terminals without a usable graphics protocol.     | Built-in sixel or half-block rendering still works.                                  |
 | **ImageMagick**     | Broader Kitty poster format support (non-PNG).                                                 | Posters work but may fail on unusual formats.                                        |
 | **Discord desktop** | Rich Presence via local Unix-socket / named-pipe IPC — shows "Watching Kunai" on your profile. | No Discord integration.                                                              |
-| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                          | Half-block fallback (chafa optional for richer output).                              |
+| **Kitty / Ghostty** | Native poster protocol. Best-quality image rendering.                                          | iTerm2 inline images, sixel, or half-block — all built in.                           |
 
 ### Poster previews by terminal
 
-| Terminal               | Protocol             | How                                            |
-| ---------------------- | -------------------- | ---------------------------------------------- |
-| Kitty                  | Native               | Best quality, no extra tools                   |
-| Ghostty                | Kitty-compatible     | Same as Kitty                                  |
-| WezTerm                | Built-in Sixel       | No external renderer                           |
-| Windows Terminal 1.22+ | Built-in Sixel       | No external renderer                           |
-| Everything else        | Half-block (default) | Built-in; optional `chafa` for richer previews |
-| Non-TTY / unsupported  | None                 | No posters                                     |
+| Terminal               | Protocol             | How                          |
+| ---------------------- | -------------------- | ---------------------------- |
+| Kitty                  | Native               | Best quality, no extra tools |
+| Ghostty                | Kitty-compatible     | Same as Kitty                |
+| WezTerm                | Built-in Sixel       | No external renderer         |
+| Windows Terminal 1.22+ | Built-in Sixel       | No external renderer         |
+| Everything else        | Half-block (default) | Built in; nothing to install |
+| Non-TTY / unsupported  | None                 | No posters                   |
 
 Environment overrides:
 
@@ -527,7 +530,7 @@ KUNAI_IMAGE_DEBUG=1                     # Verbose poster logging
 Run `/setup` or `kunai --setup` for a guided walkthrough (six quick slides):
 
 1. Welcome
-2. System check — mpv, yt-dlp, ffprobe, chafa, and ImageMagick status
+2. System check — mpv, yt-dlp, ffprobe, curl, and poster renderer status
 3. Audio language preference
 4. Subtitle language preference
 5. Downloads — enable or disable the queue
@@ -599,9 +602,11 @@ Install **yt-dlp** and restart. Download features are hidden when yt-dlp is
 missing; everything else keeps working.
 
 **No poster previews.**
-Kitty and Ghostty render natively. Elsewhere Kunai uses a built-in **half-block**
-fallback; **chafa** is optional for richer text-mode output. Check `/diagnostics`
-for the detected renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging.
+Kitty and Ghostty render natively, iTerm2 and VS Code ≥1.80 use inline images,
+sixel terminals use sixel, and everything else falls back to built-in
+**half-block**. Nothing needs installing. Check `/diagnostics` for the detected
+renderer, or set `KUNAI_IMAGE_DEBUG=1` for verbose logging. Inside tmux or screen
+Kunai stays on half-block, because it emits no passthrough wrapper.
 
 **How do I update?**
 Keep it current with `kunai upgrade` (channel-aware). Kunai also notifies you

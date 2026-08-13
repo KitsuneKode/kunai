@@ -1,10 +1,11 @@
-export type ImageProtocol = "kitty" | "sixel" | "symbols" | "half-block" | "none";
+export type ImageProtocol = "kitty" | "iterm-inline" | "sixel" | "half-block" | "none";
 
-export type ImageRendererId = "kitty-native" | "sixel" | "chafa-symbols" | "half-block" | "none";
+export type ImageRendererId = "kitty-native" | "iterm-inline" | "sixel" | "half-block" | "none";
 
 export type TerminalId =
   | "kitty"
   | "ghostty"
+  | "iterm2"
   | "windows-terminal"
   | "wezterm"
   | "konsole"
@@ -16,7 +17,6 @@ export interface ImageCapability {
   readonly protocol: ImageProtocol;
   readonly renderer: ImageRendererId;
   readonly available: boolean;
-  readonly dependency: "chafa" | "none";
   readonly reason: string;
 }
 

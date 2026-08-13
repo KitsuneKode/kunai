@@ -12,12 +12,7 @@
 // What remains here is capability detection, which the shell and `ui.ts` do use.
 // =============================================================================
 
-export {
-  detectImageCapability,
-  detectTerminal,
-  isChafaAvailable,
-  isKittyCompatible,
-} from "./capability";
+export { detectImageCapability, detectTerminal, isKittyCompatible } from "./capability";
 export type {
   ImageCapability,
   ImageProtocol,

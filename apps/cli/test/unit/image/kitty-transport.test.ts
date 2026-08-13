@@ -4,12 +4,11 @@ import { inflateSync } from "node:zlib";
 import {
   __testing as transportTesting,
   canUseFileTransmission,
-  prepareKittyPayload,
   uploadKittyPayload,
   type KittyPayload,
 } from "@/image/kitty-transport";
 
-import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
+import { makeRgbPng } from "../../support/image-fixtures";
 
 const originalWriteFile = transportTesting.runtime.writeFile;
 const originalWrite = transportTesting.runtime.write;
@@ -32,29 +31,6 @@ afterEach(() => {
   transportTesting.runtime.writeFile = originalWriteFile;
   transportTesting.runtime.write = originalWrite;
   transportTesting.runtime.tmpdir = originalTmpdir;
-});
-
-describe("prepareKittyPayload", () => {
-  test("passes PNG bytes through without decoding", () => {
-    const png = makeRgbPng(2, 1, [255, 0, 0, 0, 255, 0]);
-    const payload = prepareKittyPayload(png);
-    expect(payload).toEqual({ kind: "png", data: png });
-  });
-
-  test("decodes JPEG in-process to raw RGBA", () => {
-    const jpeg = makeRgbJpeg(2, 1, [255, 0, 0, 0, 0, 255]);
-    const payload = prepareKittyPayload(jpeg);
-    expect(payload?.kind).toBe("rgba");
-    if (payload?.kind !== "rgba") return;
-    expect(payload.width).toBe(2);
-    expect(payload.height).toBe(1);
-    expect(payload.data.byteLength).toBe(2 * 1 * 4);
-  });
-
-  test("returns null for undecodable input", () => {
-    expect(prepareKittyPayload(new Uint8Array([1, 2, 3]))).toBeNull();
-    expect(prepareKittyPayload(new Uint8Array())).toBeNull();
-  });
 });
 
 describe("canUseFileTransmission", () => {

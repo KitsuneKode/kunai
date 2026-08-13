@@ -116,7 +116,7 @@ except that 035 should land before expanding the AniDB release fixture beyond S1
 | 031  | Make the default AniDB route searchable and signoff-real | P0       | M      | —          | TODO   |
 | 032  | Make sync identity-safe and describe real capabilities   | P0       | M      | —          | TODO   |
 | 033  | Restore truthful playback state after buffering/stalls   | P1       | S      | —          | TODO   |
-| 034  | Finish the zero-install native poster pipeline           | P1       | M      | —          | TODO   |
+| 034  | Finish the zero-install native poster pipeline           | P1       | M      | —          | DONE   |
 | 035  | Route AniDB seasons explicitly                           | P1       | M      | 031 (soft) | TODO   |
 | 036  | Reconcile AllManga source parity                         | P2       | S      | —          | TODO   |
 | 037  | Make Miruro resolution evidence truthful and resilient   | P1       | M      | —          | TODO   |

@@ -150,7 +150,7 @@ describe("0.3.0 public truth contract", () => {
     expect(joined).toMatch(/named pipe|named-pipe/i);
   });
 
-  test("poster fallback is half-block; chafa is optional", () => {
+  test("posters need no external binary; half-block is the floor", () => {
     const readme = readSurface("README.md");
     const support = readSurface("docs/users/supported-and-unsupported.mdx");
     const featureTour = readSurface("docs/users/feature-tour.mdx");
@@ -158,10 +158,12 @@ describe("0.3.0 public truth contract", () => {
     const joined = [readme, support, featureTour, platforms].join("\n");
 
     expect(joined).toMatch(/half-block/i);
-    expect(joined).toMatch(/chafa/i);
-    expect(joined).toMatch(/chafa[^\n.]{0,80}optional|optional[^\n.]{0,80}chafa/i);
 
-    // Must not imply posters require chafa with no half-block fallback.
+    // chafa and ImageMagick were retired. They may still be *named* as retired
+    // or unused, but nothing may present them as something to install.
+    expect(joined).not.toMatch(/install[^\n.]{0,40}chafa/i);
+    expect(joined).not.toMatch(/chafa[^\n.]{0,40}optional/i);
+    expect(joined).not.toMatch(/install[^\n.]{0,40}(?:imagemagick|magick)/i);
     expect(support).not.toMatch(
       /chafa \/ Kitty graphics \| No \| Poster previews degraded or hidden/,
     );

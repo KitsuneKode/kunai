@@ -624,7 +624,7 @@ function Write-KunaiPathDiagnostic {
 
 function Install-OptionalDeps {
   if ($SkipDeps) {
-    Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl, chafa).'
+    Write-Info 'Skipping optional dependencies (mpv, yt-dlp, curl).'
     return
   }
   $installMpv = $true
@@ -697,24 +697,8 @@ function Install-OptionalDeps {
     }
   }
 
-  # Sixel and half-block are encoded in-process. chafa is only an optional richer
-  # text-mode fallback for terminals that cannot use a graphics protocol.
-  if (Test-Cmd 'chafa') { return }
-  $installChafa = [bool]$Yes
-  if (-not $Yes -and -not $DryRun -and [Console]::IsInputRedirected -eq $false) {
-    $reply = Read-Host 'Install chafa (richer text-mode poster fallback)? [y/N]'
-    if ($reply -match '^[Yy]') { $installChafa = $true }
-  }
-  if (-not $installChafa) { return }
-  if (Test-Cmd 'winget') {
-    Invoke-OptionalStep 'winget install chafa' { winget install --id hpjansson.Chafa -e --accept-package-agreements --accept-source-agreements }
-    return
-  }
-  if (Test-Cmd 'scoop') {
-    Invoke-OptionalStep 'scoop install chafa' { scoop install chafa }
-    return
-  }
-  Write-Warn 'No winget/scoop found. Posters will use built-in sixel or half-block rendering.'
+  # No poster dependency to install: every renderer consumes one natively
+  # prepared image, and half-block is the universal in-process floor.
 }
 
 function Install-Binary {

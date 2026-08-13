@@ -173,7 +173,7 @@ Bun-first means using Bun primitives where they are the clearly better choice. I
 
 ### Already Bun-native (no Node APIs remain)
 
-- **Process spawning**: `Bun.spawn()` everywhere — mpv, yt-dlp, chafa, magick, ffprobe, xdg-open
+- **Process spawning**: `Bun.spawn()` everywhere — mpv, yt-dlp, half-block, magick, ffprobe, xdg-open
 - **IPC**: `Bun.connect()` for mpv JSON IPC (Unix sockets and Windows named pipes)
 - **Tool detection**: `Bun.which("mpv")`, `Bun.which("ffprobe")`, etc.
 - **Storage**: `bun:sqlite` for history, stream cache, source inventory, download jobs, provider health, resolve traces
@@ -193,7 +193,7 @@ These patterns use Node APIs because Bun either lacks an equivalent or the Node 
 | mtime comparison         | `kunai-mpv-bridge.ts`                              | `statSync` dynamic import for Lua bridge deployment                                               |
 | `/proc` filesystem       | `runtime-memory.ts`                                | `readdirSync`/`readFileSync` for Linux kernel API                                                 |
 | Sync mkdir before SQLite | `packages/storage/src/sqlite.ts`                   | Must happen before `new Database()`                                                               |
-| `chmod` in build         | `apps/cli/scripts/build.ts`                                 | Bun has no chmod; plus `copyFile`/`rm` for build reliability                                      |
+| `chmod` in build         | `apps/cli/scripts/build.ts`                        | Bun has no chmod; plus `copyFile`/`rm` for build reliability                                      |
 | Cancellable timeouts     | `mpv-ipc.ts`, `PersistentMpvSession.ts`, `main.ts` | `clearTimeout` required — `Bun.sleep` is not cancellable                                          |
 | Binary to base64         | `kitty.ts`, `poster-renderer.ts`                   | `Buffer.from()` handles arbitrary bytes safely; `btoa(String.fromCharCode)` fails on non-Latin1   |
 | Search history (read)    | `search-history.ts`                                | `readFileSync` kept for sync Ink render callers; write path already migrated to `writeAtomicJson` |

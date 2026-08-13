@@ -46,7 +46,7 @@ export function MiniPosterTile({
   readonly cols?: number;
   readonly debounceMs?: number;
   readonly placeholderColor?: string;
-  /** When true with placementSlot, use Kitty/Sixel instead of chafa. */
+  /** When true with placementSlot, use Kitty/Sixel instead of half-block text. */
   readonly allowKitty?: boolean;
   /** Permit measured Sixel overlays when the terminal is sixel-capable. */
   readonly allowSixel?: boolean;

@@ -21,8 +21,6 @@ import { deflateSync } from "node:zlib";
 
 import { detectTerminal } from "./capability";
 import { debugImage } from "./debug";
-import { decodeImageBytes } from "./decode";
-import { isPngBytes } from "./png";
 
 export type KittyPayload =
   | { readonly kind: "png"; readonly data: Uint8Array }
@@ -38,14 +36,6 @@ export type KittyPayload =
  * Returns null for formats we cannot decode (WebP, AVIF, corrupt bytes) —
  * callers may still try ImageMagick as a last resort.
  */
-export function prepareKittyPayload(bytes: Uint8Array): KittyPayload | null {
-  if (bytes.byteLength === 0) return null;
-  if (isPngBytes(bytes)) return { kind: "png", data: bytes };
-  const decoded = decodeImageBytes(bytes);
-  if (!decoded) return null;
-  return { kind: "rgba", data: decoded.rgba, width: decoded.width, height: decoded.height };
-}
-
 const CHUNK_SIZE = 4096;
 const TRANSPORT_VALUES = new Set(["auto", "file", "direct"]);
 

@@ -22,6 +22,8 @@ failure reasons, and cancellation checks. Renderers own only terminal protocol w
 - **Planned at:** `36da54c4`, 2026-08-11
 - **Runtime contract:** Bun `>=1.3.14`; JPEG/PNG/WebP portable, GIF/BMP first-frame
   decode, TIFF unsupported on Linux, HEIC/AVIF dependent on OS codecs.
+- **Completed by:** PR #35, 2026-08-14. Remaining real-terminal evidence moved to
+  [`.plans/poster-protocol-release-smokes.md`](../../.plans/poster-protocol-release-smokes.md).
 
 ## What is already done
 
@@ -71,52 +73,52 @@ budget. This avoids pretending one cell geometry is valid for every protocol.
 
 ### Task 1: Lock preparation behavior in tests
 
-- [ ] Add fixtures/tests for portrait and landscape aspect fit, no enlargement,
-  EXIF orientation, JPEG/PNG/WebP, GIF/BMP first frame, unsupported format, corrupt
-  data, byte limit, pixel limit, and abort-before/abort-after native work.
-- [ ] Assert a portrait source is not stretched to the requested box. The current
-  implementation must fail this test.
-- [ ] Set `Bun.Image.backend = "bun"` only inside golden tests and restore it after.
+- [x] Add fixtures/tests for portrait and landscape aspect fit, no enlargement,
+      EXIF orientation, JPEG/PNG/WebP, GIF/BMP first frame, unsupported format, corrupt
+      data, byte limit, pixel limit, and abort-before/abort-after native work.
+- [x] Assert a portrait source is not stretched to the requested box. The current
+      implementation must fail this test.
+- [x] Set `Bun.Image.backend = "bun"` only inside golden tests and restore it after.
 
 ### Task 2: Implement bounded preparation
 
-- [ ] Construct `Bun.Image` with `autoOrient:true` and `maxPixels:4096*4096`.
-- [ ] Resize with `fit:"inside"` and `withoutEnlargement:true`, encode PNG off-thread,
-  then decode only that small PNG to RGBA.
-- [ ] Check cancellation before construction and after each awaited native terminal.
-  Document that AbortSignal does not interrupt an in-flight native terminal; stale
-  results are discarded after completion.
-- [ ] Normalize stable Bun image error codes for debug logging without exposing URLs
-  or local paths.
+- [x] Construct `Bun.Image` with `autoOrient:true` and `maxPixels:4096*4096`.
+- [x] Resize with `fit:"inside"` and `withoutEnlargement:true`, encode PNG off-thread,
+      then decode only that small PNG to RGBA.
+- [x] Check cancellation before construction and after each awaited native terminal.
+      Document that AbortSignal does not interrupt an in-flight native terminal; stale
+      results are discarded after completion.
+- [x] Normalize stable Bun image error codes for debug logging without exposing URLs
+      or local paths.
 
 ### Task 3: Bound source acquisition and caches
 
-- [ ] Enforce a 16 MiB input ceiling before preparation. Reject remote
-  `Content-Length` above it; otherwise read the response stream and cancel once the
-  accumulated limit is exceeded.
-- [ ] Check `Bun.file(path).size` before reading local sidecars.
-- [ ] Add total-byte budgets to source/prepared caches, not only entry counts. Keep
-  rendered-result identity keyed by source, dimensions, renderer, and placement slot.
+- [x] Enforce a 16 MiB input ceiling before preparation. Reject remote
+      `Content-Length` above it; otherwise read the response stream and cancel once the
+      accumulated limit is exceeded.
+- [x] Check `Bun.file(path).size` before reading local sidecars.
+- [x] Add total-byte budgets to source/prepared caches, not only entry counts. Keep
+      rendered-result identity keyed by source, dimensions, renderer, and placement slot.
 
 ### Task 4: Move every renderer behind preparation
 
-- [ ] Kitty receives prepared PNG only; remove its independent decode/conversion
-  chain.
-- [ ] Sixel receives prepared RGBA and calls `renderSixelFromImage`; quantization may
-  remain synchronous because its input is now bounded to terminal pixels.
-- [ ] Half-block receives prepared RGBA; it must not invoke a decoder.
-- [ ] Preserve settled-selection debounce, in-flight ownership, resize cleanup, and
-  same-slot stale-paint protection.
+- [x] Kitty receives prepared PNG only; remove its independent decode/conversion
+      chain.
+- [x] Sixel receives prepared RGBA and calls `renderSixelFromImage`; quantization may
+      remain synchronous because its input is now bounded to terminal pixels.
+- [x] Half-block receives prepared RGBA; it must not invoke a decoder.
+- [x] Preserve settled-selection debounce, in-flight ownership, resize cleanup, and
+      same-slot stale-paint protection.
 
 ### Task 5: Retire optional subprocess paths only after parity
 
-- [ ] Profile arrow-key bursts and Sixel encode time after Task 4. Add a Worker only
-  if bounded quantization still causes a perceptible stall.
-- [ ] Once JPEG/PNG/WebP and fallback-format tests pass on Linux/macOS/Windows, remove
-  ImageMagick and Chafa runtime paths, flags, setup prompts, diagnostics fields, and
-  docs in one change.
-- [ ] Remove `jpeg-js` only after no interactive fallback decodes original JPEG bytes.
-  Keep the small PNG decoder needed for RGBA unless Bun adds raw output.
+- [x] Profile arrow-key bursts and Sixel encode time after Task 4. Add a Worker only
+      if bounded quantization still causes a perceptible stall.
+- [x] Once JPEG/PNG/WebP and fallback-format tests pass on Linux/macOS/Windows, remove
+      ImageMagick and Chafa runtime paths, flags, setup prompts, diagnostics fields, and
+      docs in one change.
+- [x] Remove `jpeg-js` only after no interactive fallback decodes original JPEG bytes.
+      Keep the small PNG decoder needed for RGBA unless Bun adds raw output.
 
 ## Verification
 

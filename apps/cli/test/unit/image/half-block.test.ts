@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { decodeImageBytes, decodePng } from "@/image/decode";
+import { decodePng } from "@/image/decode";
 import {
   buildHalfBlockOutput,
   fitDimensions,
@@ -35,15 +35,17 @@ describe("decodePng", () => {
   });
 });
 
-describe("decodeImageBytes", () => {
-  test("sniffs PNG by magic bytes, not file extension", () => {
-    const png = makeRgbPng(1, 1, [1, 2, 3]);
-    expect(decodeImageBytes(png)?.width).toBe(1);
+describe("decodePng rejects what it cannot read", () => {
+  test("decodes a minimal PNG", () => {
+    expect(decodePng(makeRgbPng(1, 1, [1, 2, 3])).width).toBe(1);
   });
 
-  test("returns null rather than throwing on undecodable input", () => {
-    expect(decodeImageBytes(new Uint8Array([1, 2, 3, 4]))).toBeNull();
-    expect(decodeImageBytes(new Uint8Array())).toBeNull();
+  test("throws on undecodable input rather than inventing pixels", () => {
+    // The generic content-sniffing decoder that returned null for anything
+    // unrecognised is gone; preparePoster owns that judgement now and turns a
+    // throw here into its `png-bridge-failed` category.
+    expect(() => decodePng(new Uint8Array([1, 2, 3, 4]))).toThrow();
+    expect(() => decodePng(new Uint8Array())).toThrow();
   });
 });
 

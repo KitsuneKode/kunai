@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { ImageCapability } from "@/image";
-import { detectImageCapability, isChafaAvailable } from "@/image";
+import { detectImageCapability } from "@/image";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -28,8 +28,6 @@ export interface CapabilitySnapshot {
    * Cloudflare, so this is a real dependency of the default route, not a nicety.
    */
   readonly curl: boolean;
-  readonly chafa: boolean;
-  readonly magick: boolean;
   readonly image: ImageCapability;
   readonly issues: readonly CapabilityIssue[];
 }
@@ -47,7 +45,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .map((issue) => `${issue.id}:${issue.severity}`)
     .sort()
     .join(",");
-  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${snapshot.curl ? "1" : "0"}|chafa:${snapshot.chafa ? "1" : "0"}|magick:${snapshot.magick ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${snapshot.curl ? "1" : "0"}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -90,8 +88,6 @@ export async function probeCapabilities(
   // curl-impersonate build over plain curl, so probing for the literal "curl"
   // would report missing on a host that is fully capable.
   const curl = resolveAnidbCurl(which) !== null;
-  const chafa = isChafaAvailable();
-  const magick = Boolean(which("magick"));
   const image = detectImageCapability();
 
   if (!mpv) {
@@ -147,18 +143,15 @@ export async function probeCapabilities(
     });
   }
 
-  // Posters no longer gate on chafa or ImageMagick: the in-process half-block
-  // renderer covers every truecolour terminal (including Windows Terminal
-  // without chafa), and the kitty path decodes JPEG/PNG itself. chafa/magick
-  // only raise fidelity on the paths that use them, so they are not issues.
+  // Posters need no external binary at all now: every renderer consumes one
+  // natively prepared image, and half-block is the universal floor. chafa and
+  // ImageMagick were retired rather than reported.
 
   return {
     mpv,
     ffprobe,
     ytDlp,
     curl,
-    chafa,
-    magick,
     image,
     issues,
   };

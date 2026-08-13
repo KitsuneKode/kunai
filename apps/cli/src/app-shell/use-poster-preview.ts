@@ -182,7 +182,7 @@ export function usePosterPreview(
     allowKitty?: boolean;
     allowSixel?: boolean;
     inkEmbedded?: boolean;
-    /** When true, never delete Kitty placements (chafa mini-tiles alongside a hero). */
+    /** When true, never delete Kitty placements (text mini-tiles alongside a hero). */
     preserveTerminalImages?: boolean;
     /** Named Kitty slot — per-fetch cleanup deletes only this slot. */
     placementSlot?: KittyPlacementSlot;

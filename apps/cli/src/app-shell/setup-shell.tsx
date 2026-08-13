@@ -251,16 +251,15 @@ function SystemSlide({
       install: "brew install curl  ·  pacman -S curl  ·  apt install curl",
     },
     {
-      name: snapshot.image.renderer !== "none" ? "posters" : "posters (chafa/kitty)",
-      status:
-        snapshot.image.renderer !== "none" ? "ok" : snapshot.chafa ? "ok" : "optional-missing",
+      name: "posters",
+      status: snapshot.image.renderer !== "none" ? "ok" : "optional-missing",
       detail:
         snapshot.image.renderer !== "none"
           ? `Active via ${snapshot.image.renderer} (${snapshot.image.terminal})`
-          : snapshot.chafa
-            ? "chafa available, terminal may not support graphics"
-            : "Optional — poster art in browse/picker",
-      install: "brew install chafa  ·  pacman -S chafa  ·  apt install chafa",
+          : "Optional — this terminal reports no image support",
+      // Nothing to install any more: every renderer consumes one natively
+      // prepared image and half-block is the universal floor.
+      install: "No install needed — posters render in process",
     },
   ];
 

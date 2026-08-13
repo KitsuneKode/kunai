@@ -26,7 +26,6 @@
       "dependencies": {
         "commander": "catalog:cli",
         "ink": "catalog:cli",
-        "jpeg-js": "^0.4.4",
         "react": "catalog:",
       },
       "devDependencies": {
@@ -39,6 +38,7 @@
         "@kunai/types": "workspace:*",
         "@types/bun": "catalog:",
         "@types/react": "catalog:",
+        "jpeg-js": "^0.4.4",
       },
       "optionalDependencies": {
         "@kitsunekode/kunai-darwin-arm64": "0.3.0",
