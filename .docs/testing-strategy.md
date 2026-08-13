@@ -121,6 +121,35 @@ Differences from `ink-testing-library`'s `Instance`:
 - `frames` is an accumulator across remounts (a remount produces exactly two
   commits: the previous tree's final frame, and the new tree's initial frame).
 
+### Per-test timeout budget
+
+Bun's default is 5000ms. That is ample on Linux and wrong on the Windows runner,
+where the SQLite-backed suites open a fresh database per test and the temp-store
+registry forces a synchronous full GC per teardown so Windows releases the file
+handles. Under full-suite load a test drifts past 5s and **which** test loses
+moves between runs — one storage test measured 6428ms on one run and 16549ms on
+the next.
+
+The budget lives on the suite scripts, because that is the one place every
+caller shares:
+
+| Script                        | Budget  |
+| ----------------------------- | ------- |
+| `apps/cli` `test:unit`        | 20000ms |
+| `apps/cli` `test:integration` | 20000ms |
+| `packages/storage` `test`     | 30000ms |
+
+`KUNAI_TEST_TIMEOUT_MS` still overrides the `apps/cli` pair, because
+`run-default-tests.ts` appends its `--timeout=` after the scripted one and Bun
+applies the last flag on the command line. It does not reach
+`packages/storage`, which is why that package carries its own value.
+
+Do not reach for the alternatives — both were tried and rejected:
+`bunfig.toml`'s `[test] timeout` is ignored outright by Bun 1.3.14, and a
+per-file `jest.setTimeout` covers only the file it sits in, which is useless
+when the failing test moves. `test-timeout-budget.test.ts` fails if a budget is
+dropped. Step-level `timeout-minutes` in CI stays the real hang detector.
+
 ### Determinism: prefer `simulateTicks` over `countCommits`
 
 `countCommits` uses real `setTimeout`, which is sensitive to CI load. The same
