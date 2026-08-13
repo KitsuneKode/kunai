@@ -396,7 +396,13 @@ export function DownloadManagerContent({
       season: job.season,
       episode: job.episode,
     });
-    const titleLine = truncateLine(`${job.titleName} · ${positionLabel ?? kindLabel}`, titleCol);
+    // titleCol - 1 leaves a guaranteed gutter: a title that exactly fills its
+    // column otherwise butts against the state chip ("…○ queued") and reads as
+    // one corrupted word at 72 columns.
+    const titleLine = truncateLine(
+      `${job.titleName} · ${positionLabel ?? kindLabel}`,
+      Math.max(1, titleCol - 1),
+    );
 
     return (
       <Box

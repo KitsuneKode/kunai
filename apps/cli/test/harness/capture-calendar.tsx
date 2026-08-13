@@ -1,5 +1,8 @@
+process.env.KUNAI_POSTER = "0";
+
 import { CalendarDayStrip, CalendarScheduleRow } from "@/app-shell/calendar-ui";
 import type { BrowseShellOption } from "@/app-shell/types";
+import { useShellDimensions } from "@/app-shell/use-viewport-policy";
 import { buildCalendarItem } from "@/domain/calendar/calendar-item";
 import { Box } from "ink";
 import React from "react";
@@ -78,7 +81,15 @@ const rows = [
   calOpt({ label: "One Piece", kind: "anime", releaseAt: "2026-05-29", status: "upcoming" }),
 ];
 
-function CalendarList({ width }: { width: number }) {
+/**
+ * Reads the ACTUAL terminal width for each capture. The previous fixed
+ * `width={96}` rendered the same 96-column layout into files named narrow (72)
+ * and medium (100), so the narrow capture could not fail on overflow and the
+ * wide one never showed the wide layout.
+ */
+function CalendarList() {
+  const { cols } = useShellDimensions();
+  const width = cols;
   return (
     <Box flexDirection="column" width={width}>
       {rows.map((o, i) => (
@@ -98,10 +109,12 @@ function CalendarList({ width }: { width: number }) {
   );
 }
 
-await captureSurface("calendar-rows", <CalendarList width={96} />);
-await captureSurface(
-  "calendar-daystrip",
-  <CalendarDayStrip days={dayStripDays} selectedDayKey="d6" />,
-);
+function CalendarStrip() {
+  const { cols } = useShellDimensions();
+  return <CalendarDayStrip days={dayStripDays} selectedDayKey="d6" maxWidth={cols} />;
+}
+
+await captureSurface("calendar-rows", <CalendarList />);
+await captureSurface("calendar-daystrip", <CalendarStrip />);
 console.log("captured calendar rows + day strip");
 process.exit(0);

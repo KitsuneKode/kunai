@@ -1,0 +1,28 @@
+# library-populated · wide (140×45)
+
+ Library   Downloads Tab switch
+
+downloads on · runway: title opt-in
+
+3 titles · 3 local items · local-only                                                                       ╭────────────────────────────╮
+                                                                                                            │                            │
+                                                                                                            │             DP             │
+DOWNLOADED ─────────────────────────────────────────────────────────────────────────────────────────────    │                            │
+▌ Dune: Part Two ↓ 1/1                                                   Movie                ↓ 1 movie     │                            │
+  Severance ↓ 1/1                                                        S02                ↓ 1 episode     ╰────────────────────────────╯
+  Frieren: Beyond Journey's End ↓ 1/1                                    E29                ↓ 1 episode
+                                                                                                            Dune: Part Two
+ ▸ Resume Movie offline                         ↵ enter                                                     artwork ready · subtitles mis…
+
+                                                                                                            1 ready · 700.0 MB local
+
+                                                                                                            offline 1 of 1 movie
+                                                                                                            size 700.0 MB
+                                                                                                            protected no
+
+
+Library
+
+[enter] open  [x] delete  [p] protect  [/] commands
+
+Missing or broken artifacts: press x to remove, then re-add via /download.

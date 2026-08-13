@@ -1,0 +1,23 @@
+# library-populated · narrow (72×45)
+
+ Library   Downloads Tab switch
+
+downloads on · runway: title opt-in
+
+3 titles · 3 local items · local-only
+
+
+DOWNLOADED ─────────────────────────────────────────────────────────────
+▌ Dune: Part Two ↓ 1/1                        Movie           ↓ 1 movie 
+  Severance ↓ 1/1                             S02           ↓ 1 episode
+  Frieren: Beyond Journey's End ↓ 1/1         E29           ↓ 1 episode
+
+ ▸ Resume Movie offline                         ↵ enter 
+
+
+Library
+
+[enter] open  [x] delete  [p] protect  [/] commands
+
+Missing or broken artifacts: press x to remove, then re-add via 
+/download.

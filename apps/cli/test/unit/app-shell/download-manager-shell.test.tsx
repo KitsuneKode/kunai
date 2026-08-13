@@ -232,3 +232,39 @@ test("burst navigation moves the selection immediately", async () => {
     handle.unmount();
   }
 });
+
+/**
+ * A title that exactly fills its column used to butt straight against the state
+ * chip ("…○ queued"), which reads as one corrupted word at 72 columns.
+ */
+test("a truncated title keeps a gutter before the state column", () => {
+  const fixture = createContainerFixture();
+  fixture.setActiveJobs([
+    queuedJob({
+      titleName: "Frieren: Beyond Journey's End and Then Some More Title Than Fits",
+      mediaKind: "anime",
+      season: undefined,
+      episode: 29,
+    }),
+  ]);
+
+  const handle = render(
+    <OverlayLayoutProvider
+      value={{ contentColumns: 72, contentRows: 24, chromeRows: 6, listMaxVisible: 12 }}
+    >
+      <DownloadManagerContent container={fixture.container} onClose={() => undefined} />
+    </OverlayLayoutProvider>,
+    { columns: 72, rows: 30 },
+  );
+
+  try {
+    fixture.emit({ type: "enqueued" });
+    const frame = stripAnsi(handle.lastFrame() ?? "");
+    const row = frame.split("\n").find((line) => line.includes("Frieren"));
+    expect(row).toBeDefined();
+    expect(row).toContain("…");
+    expect(row).not.toMatch(/…\S/);
+  } finally {
+    handle.unmount();
+  }
+});
