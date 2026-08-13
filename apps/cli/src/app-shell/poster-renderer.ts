@@ -203,9 +203,9 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
       bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
     };
   }
-  // Everything else — half-block, chafa-symbols, a Kitty build without Unicode
-  // placeholders, Sixel with the overlay suppressed — lands on the universal
-  // text floor.
+  // Everything else — a Kitty build without Unicode placeholders, an inline-image
+  // or Sixel terminal with the overlay suppressed, or no image support at all —
+  // lands on the universal text floor.
   return { renderer: "half-block", bounds: halfBlockBounds(rows, cols) };
 }
 
