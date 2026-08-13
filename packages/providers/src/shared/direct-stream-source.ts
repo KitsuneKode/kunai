@@ -10,9 +10,9 @@ import type {
   ProviderVariantCandidate,
   StreamCandidate,
   SubtitleCandidate,
-  TitleIdentity,
 } from "@kunai/types";
 
+import { resolveTmdbCatalogId } from "./catalog-id";
 import { createExhaustedResult, emitTraceEvent } from "./resolve-helpers";
 import {
   createStreamId,
@@ -96,7 +96,7 @@ export async function resolveDirectStreamSource(
     });
   }
 
-  const tmdbId = resolveTmdbId(input.title);
+  const tmdbId = resolveTmdbCatalogId(input.title);
   if (!tmdbId) {
     return createExhaustedResult(input, context, providerId, {
       code: "unsupported-title",
@@ -416,12 +416,6 @@ function isTimeoutError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.name === "TimeoutError" || error.name === "AbortError") return true;
   return /timed out|timeout/i.test(error.message);
-}
-
-function resolveTmdbId(title: TitleIdentity): number | null {
-  const raw = title.tmdbId ?? title.id;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function inferProtocol(url: string): StreamCandidate["protocol"] {

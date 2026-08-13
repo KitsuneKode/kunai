@@ -1,5 +1,44 @@
 # Provider: Videasy
 
+## Production status (2026-08-13) — cache and transport hardening
+
+Plan 038's active-path correctness work landed. What changed:
+
+- **Identity.** The provider-local `resolveTmdbId` (and its twin in
+  `shared/direct-stream-source.ts`) were replaced by one shared
+  `resolveTmdbCatalogId()`. Complete positive decimals only; a bare numeric
+  `title.id` is still accepted because that is what `-i <id>` and the live smokes
+  actually pass.
+- **Cache policy.** `createVidkingResultFromPayload()` no longer ignores the policy
+  it is handed. `createVideasyRouteCachePolicy()` is the one builder, called only
+  after a route answers, and the selected source now carries `metadata.apiRoute`.
+- **Wings transport.** Seed / preferred-host / failure state moved onto the shared
+  `TTLCache` with hard ceilings (16 / 256 / 32). The seed and preferred-host maps
+  were previously unbounded and only ever pruned an entry that was asked for again.
+- **Caller abort no longer poisons host health.** This was a real bug: cancelling a
+  playback rejected every in-flight seed attempt, and the catch could not tell that
+  apart from a genuine failure, so both Wings hosts entered a five-minute penalty
+  box. Pinned by `videasy-wings-seed-race.test.ts`, which fails without the guard.
+- **HTTP 500 remains transient**, documented once in `classifyVideasyHttpFailure()`
+  and pinned by tests. **`wings-tejo` remains deprecated and unimplemented.**
+
+Deliberately **not** done, and why:
+
+- **The logical-request → selected-route cache index was not built.** The design plan
+  called for route-specific CLI cache keys with a logical alias index. The CLI's
+  stream-cache key is currently route-agnostic and _consistent_ — read, write, and
+  invalidation all derive the same preimage from the manifest `keyParts` — so there
+  is no key-mismatch bug to fix, and fragmenting the key by route would add cache
+  misses for a benefit no test could demonstrate. Stale entries whose route later
+  dies are already handled by cache-revalidation stream-health probes.
+- **The `wings-transport.ts` extraction was not performed.** The two confirmed
+  defects (boundedness, abort classification) are fixed and tested in place. Lifting
+  the transport into its own module with an injected clock remains worthwhile
+  cleanup, not a release blocker.
+- **Deprecated route/WASM deletion was not attempted.** It is separate non-blocking
+  cleanup and is explicitly not a release blocker; the routes are proven inert by
+  contract tests instead.
+
 ## Production status (2026-07-16)
 
 - **Module:** `packages/providers/src/videasy/direct.ts` + `flavors.ts` + `crypto.ts`

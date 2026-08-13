@@ -27,7 +27,8 @@ import type {
   TitleIdentity,
 } from "@kunai/types";
 
-import { HealthTracker } from "../shared/provider-cache";
+import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { HealthTracker, TTLCache } from "../shared/provider-cache";
 import {
   appendCycleEventsToResult,
   findLastCycleFailure,
@@ -190,13 +191,12 @@ function createVideasyEndpointHealth(context: ProviderRuntimeContext) {
   };
 }
 
-function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
-  // Only permanent route removal is route-dead. Many speedracelight servers
-  // return HTTP 500 "No streams available" for a single title while staying
-  // healthy for others — do not quarantine the whole endpoint on 500.
-  if (statusCode === 404 || statusCode === 410) return "route-dead";
-  if (statusCode >= 500) return "transient";
-  return "transient";
+export function classifyVideasyHttpFailure(statusCode: number): EndpointFailureClass {
+  // Only permanent route removal is route-dead. Everything else — 500 included —
+  // is transient: many speedracelight servers return HTTP 500 "No streams
+  // available" for a single title while staying healthy for every other title,
+  // so quarantining the endpoint on a 500 would take a working route offline.
+  return statusCode === 404 || statusCode === 410 ? "route-dead" : "transient";
 }
 
 type VidkingServer = (typeof VIDKING_SERVERS)[number];
@@ -302,7 +302,7 @@ export async function resolveVideasyDirect(
     });
   }
 
-  const tmdbId = resolveTmdbId(input.title);
+  const tmdbId = resolveTmdbCatalogId(input.title);
   if (!tmdbId) {
     return createExhaustedResult(input, context, VIDEOSY_PROVIDER_ID, {
       code: "unsupported-title",
@@ -888,9 +888,35 @@ function parseVidkingCycleCandidateMetadata(
   };
 }
 
+/**
+ * The one builder for a Videasy stream-cache policy.
+ *
+ * A route may only be named here **after** a request to it actually succeeded —
+ * `apiRoute` is evidence of a selected route, not a guess. Keeping construction
+ * in one place is what stops the result, the source rows, and the stream rows
+ * from drifting onto three near-identical keys.
+ */
+export function createVideasyRouteCachePolicy(input: {
+  readonly resolveInput: ProviderResolveInput;
+  readonly appId?: string;
+  readonly apiRoute: string;
+}): CachePolicy {
+  return createProviderCachePolicy({
+    providerId: VIDEOSY_PROVIDER_ID,
+    title: input.resolveInput.title,
+    episode: input.resolveInput.episode,
+    subtitleLanguage: input.resolveInput.preferredSubtitleLanguage,
+    qualityPreference: input.resolveInput.qualityPreference,
+    startupPriority: input.resolveInput.startupPriority,
+    videasyAppId: input.appId,
+    apiRoute: input.apiRoute,
+  });
+}
+
 export function createVidkingResultFromPayload({
   input,
-  cachePolicy: _cachePolicy,
+  cachePolicy,
+  apiRoute,
   payload,
   sourceId,
   server,
@@ -907,7 +933,10 @@ export function createVidkingResultFromPayload({
   streamReachabilityVerified,
 }: {
   readonly input: ProviderResolveInput;
-  readonly cachePolicy?: CachePolicy;
+  /** Built by `createVideasyRouteCachePolicy()` and used verbatim — never rebuilt here. */
+  readonly cachePolicy: CachePolicy;
+  /** The route that actually answered. Recorded on the selected source. */
+  readonly apiRoute: string;
   readonly payload: VidkingPayload;
   readonly sourceId?: string;
   readonly server?: string;
@@ -924,17 +953,7 @@ export function createVidkingResultFromPayload({
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
   const resolvedServer = (server as VidkingServer | undefined) ?? "wings-cdn";
-  const videasyAppId = context ? resolveVideasyAppId(engineOptions ?? {}, context) : undefined;
-  const policy = createProviderCachePolicy({
-    providerId: VIDEOSY_PROVIDER_ID,
-    title: input.title,
-    episode: input.episode,
-    subtitleLanguage: input.preferredSubtitleLanguage,
-    qualityPreference: input.qualityPreference,
-    startupPriority: input.startupPriority,
-    videasyAppId,
-    apiRoute: resolvedServer,
-  });
+  const policy = cachePolicy;
   const presentation = resolveVidkingPresentation(
     resolvedServer,
     engineOptions ?? {
@@ -1073,6 +1092,10 @@ export function createVidkingResultFromPayload({
         cachePolicy: policy,
         sourceEvidence,
         metadata: {
+          // Explicit route provenance. Anything that later wants to know which
+          // route produced this result reads it here rather than positionally
+          // parsing `cachePolicy.keyParts`.
+          apiRoute,
           server: resolvedServer,
           flavorId: presentation.flavorId,
           flavorArchetype: themedSubtitle,
@@ -1343,11 +1366,59 @@ type WingsSeedTransport = {
   readonly seed: string;
 };
 
-const wingsSeedCache = new Map<string, { seed: string; expiresAt: number }>();
-const wingsPreferredHostCache = new Map<number, { apiBase: string; expiresAt: number }>();
+/**
+ * Hard ceilings. Seeds and preferred hosts are keyed per media id, so without a
+ * bound they grow for the lifetime of the process — expiry alone never frees an
+ * entry nobody asks for again. The failure map is host-keyed and naturally tiny;
+ * its bound is a backstop against a future host list, not a live pressure point.
+ */
+export const WINGS_TRANSPORT_LIMITS = {
+  seedEntries: 16,
+  preferredHostEntries: 256,
+  failureEntries: 32,
+} as const;
+
+/** A seed is only valid for the host that issued it, so the pair is the value. */
+const wingsSeedCache = new TTLCache<string, string>(30_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.seedEntries,
+});
+const wingsPreferredHostCache = new TTLCache<number, string>(30_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.preferredHostEntries,
+});
 /** Hosts that recently failed a seed request get skipped for a while (host-level). */
-const wingsHostFailureCache = new Map<string, number>();
+const wingsHostFailureCache = new TTLCache<string, true>(5 * 60_000, {
+  maxEntries: WINGS_TRANSPORT_LIMITS.failureEntries,
+});
 const WINGS_HOST_FAILURE_PENALTY_MS = 5 * 60_000;
+
+/** Test seam: the seed race is deterministic only with an injected requester. */
+export function fetchWingsdatabaseSeedForTest(
+  mediaId: number,
+  context: ProviderRuntimeContext,
+  signal?: AbortSignal,
+): Promise<WingsSeedTransport | undefined> {
+  return fetchWingsdatabaseSeed(mediaId, context, signal);
+}
+
+/**
+ * Test seam: which hosts currently carry a failure penalty.
+ *
+ * Request order alone cannot prove this — when every host is penalized the
+ * transport deliberately races them all rather than giving up, so "both hosts
+ * were contacted" is true both when nothing was blamed and when everything was.
+ */
+export function wingsPenalizedHostsForTest(): readonly string[] {
+  return [WINGS_API_BASE, WINGS_API_FALLBACK_BASE].filter((base) =>
+    Boolean(wingsHostFailureCache.get(base)),
+  );
+}
+
+/** Test seam: module-scoped transport state must not leak between test cases. */
+export function clearWingsTransportCachesForTest(): void {
+  wingsSeedCache.clear();
+  wingsPreferredHostCache.clear();
+  wingsHostFailureCache.clear();
+}
 
 function wingsSeedCacheKey(apiBase: string, mediaId: number): string {
   return `${apiBase}\u001f${mediaId}`;
@@ -1367,9 +1438,7 @@ async function fetchWingsdatabaseSeed(
     referer: "https://www.cineby.at/",
   } as const;
 
-  const now = Date.now();
-  const preferred = wingsPreferredHostCache.get(mediaId);
-  const preferredBase = preferred && now < preferred.expiresAt ? preferred.apiBase : undefined;
+  const preferredBase = wingsPreferredHostCache.get(mediaId);
   const bases = preferredBase
     ? [
         preferredBase,
@@ -1381,15 +1450,15 @@ async function fetchWingsdatabaseSeed(
   // fallback stays an indivisible host+seed pair.
   const uncached: string[] = [];
   for (const apiBase of bases) {
-    const cached = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));
-    if (cached && now < cached.expiresAt) {
-      return { apiBase, seed: cached.seed };
+    const cachedSeed = wingsSeedCache.get(wingsSeedCacheKey(apiBase, mediaId));
+    if (cachedSeed) {
+      return { apiBase, seed: cachedSeed };
     }
     uncached.push(apiBase);
   }
 
   // Skip recently-failed hosts unless every host is in the penalty box.
-  const healthy = uncached.filter((base) => (wingsHostFailureCache.get(base) ?? 0) <= now);
+  const healthy = uncached.filter((base) => !wingsHostFailureCache.get(base));
   const candidates = healthy.length > 0 ? healthy : uncached;
   if (candidates.length === 0) return undefined;
 
@@ -1416,19 +1485,22 @@ async function fetchWingsdatabaseSeed(
           if (!body.seed) throw new Error("seed payload missing seed");
           return { apiBase, seed: body.seed, ttlMs: body.ttlMs ?? 30_000 };
         } catch (error) {
-          if (!won) wingsHostFailureCache.set(apiBase, Date.now() + WINGS_HOST_FAILURE_PENALTY_MS);
+          // Three different causes reach this catch and only one is host
+          // evidence. A loser aborted because a peer already won says nothing
+          // about this host, and neither does the *caller* walking away — that
+          // used to poison both hosts for five minutes on every cancelled
+          // playback. A genuine pre-winner failure or timeout is real evidence.
+          if (!won && !effectiveSignal?.aborted) {
+            wingsHostFailureCache.set(apiBase, true, WINGS_HOST_FAILURE_PENALTY_MS);
+          }
           throw error;
         }
       }),
     ).catch(() => undefined);
     if (!winner) return undefined;
 
-    const expiresAt = Date.now() + winner.ttlMs;
-    wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), {
-      seed: winner.seed,
-      expiresAt,
-    });
-    wingsPreferredHostCache.set(mediaId, { apiBase: winner.apiBase, expiresAt });
+    wingsSeedCache.set(wingsSeedCacheKey(winner.apiBase, mediaId), winner.seed, winner.ttlMs);
+    wingsPreferredHostCache.set(mediaId, winner.apiBase, winner.ttlMs);
     wingsHostFailureCache.delete(winner.apiBase);
     return { apiBase: winner.apiBase, seed: winner.seed };
   } finally {
@@ -1662,9 +1734,16 @@ async function tryVidkingServer(opts: {
             break;
           }
 
+          // The route is only known now that this request succeeded, so this is
+          // the first point at which a route-specific policy is honest.
           const result = createVidkingResultFromPayload({
             input,
-            cachePolicy,
+            cachePolicy: createVideasyRouteCachePolicy({
+              resolveInput: input,
+              appId: resolveVideasyAppId(engineOptions, context),
+              apiRoute: server,
+            }),
+            apiRoute: server,
             payload: decoded,
             sourceId,
             server,
@@ -1781,7 +1860,7 @@ export function resolveVideasyClientProfile(
     };
   }
 
-  const tmdbId = resolveTmdbId(input.title);
+  const tmdbId = resolveTmdbCatalogId(input.title);
   const referer =
     customReferer ??
     (tmdbId && input.mediaKind === "series" && input.episode?.season && input.episode?.episode
@@ -2382,12 +2461,6 @@ function isRetryableFailure(context: ProviderRuntimeContext, failure: ProviderFa
   if (!failure.retryable) return false;
   const retryableCodes = context.retryPolicy?.retryableCodes;
   return !retryableCodes || retryableCodes.includes(failure.code);
-}
-
-function resolveTmdbId(title: TitleIdentity): number | null {
-  const raw = title.tmdbId ?? title.id;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeVidkingAudioLanguage(

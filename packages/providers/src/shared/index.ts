@@ -1,4 +1,5 @@
 export * from "./anime-audio-intent";
+export * from "./catalog-id";
 export * from "./anime-metadata";
 export * from "./anime-source-presentation";
 export * from "./known-catalog";
