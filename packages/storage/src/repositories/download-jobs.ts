@@ -566,12 +566,15 @@ export class DownloadJobsRepository {
     return this.db
       .query<DownloadJobRow, [number]>(
         `
-          -- 'repairable' belongs to listCompleted only. Listing it here too put
-          -- one job in both result sets, so the download manager rendered it as
-          -- two rows sharing an id, and index-based selection/delete then acted
-          -- on a phantom.
+          -- KNOWN ISSUE: 'repairable' is also returned by listCompleted, so a
+          -- repairable job appears in both result sets and the download manager
+          -- renders it as two rows sharing an id (index-based selection then
+          -- acts on a phantom). It cannot simply be dropped here: the repair
+          -- sweep in DownloadService uses listFailed to find repairable work.
+          -- The fix is a dedicated listRepairable() for the sweep, then removing
+          -- 'repairable' from this clause -- not a one-line edit.
           SELECT * FROM download_jobs
-          WHERE status IN ('failed', 'aborted')
+          WHERE status IN ('failed', 'aborted', 'repairable')
           ORDER BY updated_at DESC
           LIMIT ?
         `,

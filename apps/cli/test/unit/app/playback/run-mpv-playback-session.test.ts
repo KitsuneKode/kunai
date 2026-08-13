@@ -359,11 +359,28 @@ describe("runMpvPlaybackSession completion", () => {
     expect(harness.store.snapshot.status).toBe("error");
   });
 
-  test("routes an offline source through local playback", async () => {
+/** Every hook is a no-op; this test only asserts which player method ran. */
+function noopSessionHooks() {
+  return new Proxy(
+    {},
+    {
+      get: (_target, property) =>
+        property === "applyPlaybackStatusSignal" ? () => ({ accepted: true }) : () => undefined,
+    },
+  ) as Parameters<typeof runMpvPlaybackSession>[0]["hooks"];
+}
+
+  test("plays a local file through play(), not the playLocal shortcut", async () => {
+    // playLocal() takes a narrow option bag, so routing local files through it
+    // silently dropped resume prompting, autoplay-chain mode, near-EOF
+    // prefetch, the abort signal, merged timing, correlation and track
+    // preferences. Local playback keeps the full PlayerOptions contract.
     const calls: string[] = [];
+    const seenOptions: PlayerOptions[] = [];
     const player: PlayerService = {
-      play: async () => {
+      play: async (_stream, options) => {
         calls.push("remote");
+        seenOptions.push(options);
         return FINISHED;
       },
       releasePersistentSession: async () => undefined,
@@ -383,7 +400,7 @@ describe("runMpvPlaybackSession completion", () => {
       player,
       playOptions: {},
       subtitleStatus: "local",
-      startAt: 0,
+      startAt: 42,
       sessionAborted: false,
       iterationAborted: false,
       shareLinkContext: {
@@ -393,11 +410,13 @@ describe("runMpvPlaybackSession completion", () => {
       },
       timing: null,
       localPlaybackSource: LOCAL_SOURCE,
-      hooks: noopHooks(),
+      hooks: noopSessionHooks(),
     } as Parameters<typeof runMpvPlaybackSession>[0];
 
     await runMpvPlaybackSession(input);
 
-    expect(calls).toEqual(["local"]);
+    expect(calls).toEqual(["remote"]);
+    expect(seenOptions[0]?.startAt).toBe(42);
+    expect(seenOptions[0]?.shareLinkContext).toBeDefined();
   });
 });

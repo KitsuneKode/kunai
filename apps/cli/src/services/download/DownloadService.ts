@@ -1489,6 +1489,8 @@ function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
   if (input.title.type === "movie") return "movie";
   if (input.mode === "anime") return "anime";
   return "series";
+}
+
 function externalIdsFromDownloadJob(
   job: Pick<DownloadJobRecord, "titleId" | "mediaKind" | "mode">,
 ): TitleInfo["externalIds"] {
