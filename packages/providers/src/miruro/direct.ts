@@ -56,7 +56,7 @@ import {
   isStreamReachabilityVerified,
   type StreamReachabilityProbeResult,
 } from "../shared/stream-reachability";
-import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { miruroManifest, MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER } from "./manifest";
 
 export { MIRURO_PROVIDER_ID, MIRURO_SERVER_TRY_ORDER };
@@ -508,7 +508,7 @@ function createMiruroSubtitles(
         url,
         language: normalizeIsoLanguageCode(rawLanguage),
         label: subtitle.label ?? rawLanguage,
-        format: url.endsWith(".vtt") ? ("vtt" as const) : ("srt" as const),
+        format: inferSubtitleFormat(url),
         source: "provider" as const,
         confidence: 0.9,
         cachePolicy: { ...cachePolicy, ttlClass: "subtitle-list" as const },

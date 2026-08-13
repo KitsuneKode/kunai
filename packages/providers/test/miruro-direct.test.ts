@@ -13,6 +13,7 @@ import {
   resolveMiruroAnilistId,
   type MiruroServerProfile,
 } from "../src/miruro/direct";
+import { inferSubtitleFormat } from "../src/shared/subtitle-helpers";
 
 const TEST_CONTEXT: ProviderRuntimeContext = {
   providerId: "miruro",
@@ -351,5 +352,46 @@ describe("decodeMiruroPipePayload", () => {
       expect(rendered).not.toContain("Romance Dawn");
       expect((error as MiruroPipeDecodeError).message).toBe("pipe-json-syntax-invalid");
     }
+  });
+});
+
+describe("subtitle format comes from evidence", () => {
+  test("reads the extension, ignoring the query string", () => {
+    expect(inferSubtitleFormat("https://cdn.example/track.vtt")).toBe("vtt");
+    expect(inferSubtitleFormat("https://cdn.example/track.srt?token=redacted")).toBe("srt");
+    expect(inferSubtitleFormat("https://cdn.example/track.ass#cue")).toBe("ass");
+  });
+
+  test("falls back to a known content type when the URL carries no extension", () => {
+    expect(inferSubtitleFormat("https://cdn.example/track", "text/vtt")).toBe("vtt");
+    expect(inferSubtitleFormat("https://cdn.example/track", "application/x-subrip")).toBe("srt");
+    expect(inferSubtitleFormat("https://cdn.example/track", "text/x-ssa")).toBe("ass");
+  });
+
+  test("returns unknown rather than guessing SRT", () => {
+    expect(inferSubtitleFormat("https://cdn.example/track.bin")).toBe("unknown");
+    expect(inferSubtitleFormat("https://cdn.example/track")).toBe("unknown");
+    expect(inferSubtitleFormat("https://cdn.example/track", "application/octet-stream")).toBe(
+      "unknown",
+    );
+  });
+
+  test("a Miruro subtitle row with no format evidence is not labelled SRT", async () => {
+    const result = await createMiruroResultFromPayload({
+      input: TEST_INPUT,
+      sourceData: {
+        ...SOURCE_DATA,
+        subtitles: [
+          { url: "https://cdn.example/eng.vtt", lang: "English" },
+          { url: "https://cdn.example/eng.srt?token=redacted", lang: "English" },
+          { url: "https://cdn.example/opaque-track", lang: "English" },
+        ],
+      },
+      audioCategory: "sub",
+      serverProfile: KIWI_SUB,
+      context: TEST_CONTEXT,
+    });
+
+    expect(result?.subtitles.map((subtitle) => subtitle.format)).toEqual(["vtt", "srt", "unknown"]);
   });
 });
