@@ -166,6 +166,7 @@ import {
   toEpisodeNavigationState,
 } from "@/domain/playback/playback-policy";
 import {
+  buildOfflineFileUnavailableProblem,
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
   type PlaybackProblem,
@@ -218,6 +219,7 @@ import {
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -242,26 +244,6 @@ export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 export { playbackStartupStageForPlayerEvent };
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
-
-/**
- * The next downloaded episode after `current`, or null when nothing is ready.
- *
- * The offline launch path must answer episode availability from the library
- * rather than the catalog: returning null unconditionally reads as "series
- * finished" downstream, so a downloaded next episode would never autoplay.
- */
-function nextReadyOfflineEpisode(
-  container: PhaseContext["container"],
-  titleId: string,
-  current: EpisodeInfo,
-): EpisodeInfo | null {
-  if (!titleId) return null;
-  const [next] = container.offlineAssetService.listNextReadyByTitleCursors([
-    { titleId, season: current.season, episode: current.episode },
-  ]);
-  if (next?.season == null || next.episode == null) return null;
-  return { season: next.season, episode: next.episode };
-}
 
 function playbackTimingCacheKey(
   title: TitleInfo,
@@ -1335,8 +1317,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // of TMDB/anime-catalog calls while still answering truthfully.
               Promise.resolve({
                 previousEpisode: null,
-                nextEpisode: nextReadyOfflineEpisode(
-                  container,
+                nextEpisode: findNextReadyEpisode(
+                  container.offlineAssetService,
                   resolveTitleHistoryLookupId(title, playbackMode),
                   currentEpisode,
                 ),
@@ -1613,16 +1595,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             // and note, so the explanation was erased before it ever rendered
             // and the user just landed back on results with no reason given.
             // playbackProblem survives that teardown.
+            const offlineProblem = buildOfflineFileUnavailableProblem();
             stateManager.dispatch({
               type: "SET_PLAYBACK_PROBLEM",
-              problem: {
-                stage: "stream-open",
-                severity: "blocking",
-                cause: "offline-file-unavailable",
-                userMessage:
-                  "Downloaded file unavailable. Run an integrity check on it in the offline library, or download it again.",
-                recommendedAction: "diagnostics",
-                secondaryActions: ["refresh"],
+              problem: offlineProblem,
+            });
+            diagnosticsService.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation: "playback.source.local.unavailable",
+              message: offlineProblem.userMessage,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              context: {
+                stage: offlineProblem.stage,
+                severity: offlineProblem.severity,
+                cause: offlineProblem.cause,
+                recommendedAction: offlineProblem.recommendedAction,
               },
             });
             return { status: "success", value: "back_to_results" };

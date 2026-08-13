@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   downloadedCountForTitle,
+  findNextReadyEpisode,
   findReadyJobIdForEpisode,
   isEpisodeDownloaded,
 } from "@/services/offline/offline-episode-index";
@@ -66,5 +67,58 @@ describe("offline-episode-index", () => {
     expect(findReadyJobIdForEpisode(service, "movie-1", 1, 1, { mediaKind: "movie" })).toBe(
       "job-1",
     );
+  });
+});
+
+describe("findNextReadyEpisode", () => {
+  function serviceReturning(next: readonly OfflineAssetRecord[]) {
+    const cursorsSeen: unknown[] = [];
+    const repo = {
+      get: () => undefined,
+      listTitleAssets: () => [],
+      listByTitleIds: () => [],
+      listNextReadyByTitleCursors: (cursors: unknown) => {
+        cursorsSeen.push(cursors);
+        return next;
+      },
+      markValidation: () => {},
+      upsertPlayable: () => asset({ titleId: "t1" }),
+    } as unknown as OfflineAssetsRepository;
+    return { service: new OfflineAssetService(repo), cursorsSeen };
+  }
+
+  test("answers with the next downloaded episode after the current one", () => {
+    const { service, cursorsSeen } = serviceReturning([
+      asset({ titleId: "t1", season: 1, episode: 2 }),
+    ]);
+
+    expect(findNextReadyEpisode(service, "t1", { season: 1, episode: 1 })).toEqual({
+      season: 1,
+      episode: 2,
+    });
+    // The cursor is what scopes the query to "after this episode"; a wrong
+    // title id here silently answers null and reads as "series finished".
+    expect(cursorsSeen).toEqual([[{ titleId: "t1", season: 1, episode: 1 }]]);
+  });
+
+  test("answers null when nothing further is downloaded", () => {
+    const { service } = serviceReturning([]);
+
+    expect(findNextReadyEpisode(service, "t1", { season: 1, episode: 13 })).toBeNull();
+  });
+
+  test("answers null for an asset carrying no episode axis", () => {
+    const { service } = serviceReturning([asset({ titleId: "t1", mediaKind: "movie" })]);
+
+    expect(findNextReadyEpisode(service, "t1", { season: 1, episode: 1 })).toBeNull();
+  });
+
+  test("does not query at all without a title id", () => {
+    const { service, cursorsSeen } = serviceReturning([
+      asset({ titleId: "t1", season: 1, episode: 2 }),
+    ]);
+
+    expect(findNextReadyEpisode(service, "", { season: 1, episode: 1 })).toBeNull();
+    expect(cursorsSeen).toEqual([]);
   });
 });

@@ -41,6 +41,26 @@ export function downloadedCountForTitle(
   ).readyCountForTitle(titleId);
 }
 
+/**
+ * The next downloaded episode after `current`, or null when nothing is ready.
+ *
+ * The offline launch path must answer episode availability from the library
+ * rather than the catalog: returning null unconditionally reads as "series
+ * finished" downstream, so a downloaded next episode would never autoplay.
+ */
+export function findNextReadyEpisode(
+  offlineAssetService: OfflineAssetService,
+  titleId: string,
+  current: { readonly season: number; readonly episode: number },
+): { readonly season: number; readonly episode: number } | null {
+  if (!titleId) return null;
+  const [next] = offlineAssetService.listNextReadyByTitleCursors([
+    { titleId, season: current.season, episode: current.episode },
+  ]);
+  if (next?.season == null || next.episode == null) return null;
+  return { season: next.season, episode: next.episode };
+}
+
 export function findReadyJobIdForEpisode(
   offlineAssetService: OfflineAssetService,
   titleId: string,

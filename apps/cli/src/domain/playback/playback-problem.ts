@@ -51,6 +51,27 @@ export function buildMpvMissingProblem(input: {
   };
 }
 
+/**
+ * The library still advertises a title as downloaded, but nothing playable
+ * resolved for it — a deleted, moved, or truncated artifact.
+ *
+ * Dispatched as a problem rather than playback feedback: the offline bail-out
+ * runs inside a method whose `finally` clears detail and note, so a feedback
+ * note is erased before it renders and the user lands back on results with no
+ * reason given.
+ */
+export function buildOfflineFileUnavailableProblem(): PlaybackProblem {
+  return {
+    stage: "stream-open",
+    severity: "blocking",
+    cause: "offline-file-unavailable",
+    userMessage:
+      "Downloaded file unavailable. Run an integrity check on it in the offline library, or download it again.",
+    recommendedAction: "diagnostics",
+    secondaryActions: ["refresh"],
+  };
+}
+
 export function buildProviderResolveProblem({
   attempts,
 }: {
