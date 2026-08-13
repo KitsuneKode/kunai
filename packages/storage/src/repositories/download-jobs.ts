@@ -1,4 +1,4 @@
-import type { MediaKind, ProviderId } from "@kunai/types";
+import type { MediaKind, ProviderExternalIds, ProviderId } from "@kunai/types";
 
 import type { KunaiDatabase } from "../sqlite";
 
@@ -23,6 +23,14 @@ export type DownloadArtifactStatus =
 export interface DownloadJobRecord {
   readonly id: string;
   readonly titleId: string;
+  /**
+   * The external ids the title carried when the download was enqueued.
+   *
+   * Without them the service had to guess them back out of `titleId`, which
+   * turned a MAL-only anime into `{ anilistId: <malId> }` — a wrong id asserted
+   * confidently and re-consumed on every re-resolve.
+   */
+  readonly externalIds?: ProviderExternalIds;
   readonly titleName: string;
   readonly mediaKind: MediaKind;
   readonly season?: number;
@@ -68,6 +76,7 @@ export interface DownloadJobRecord {
 interface DownloadJobRow {
   readonly id: string;
   readonly title_id: string;
+  readonly external_ids_json: string | null;
   readonly title_name: string;
   readonly media_kind: MediaKind;
   readonly season: number | null;
@@ -140,19 +149,20 @@ export class DownloadJobsRepository {
       .query(
         `
           INSERT INTO download_jobs (
-            id, title_id, title_name, media_kind, season, episode, provider_id,
+            id, title_id, external_ids_json, title_name, media_kind, season, episode, provider_id,
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
             stream_url, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
             intro_skip_json, poster_url, thumbnail_path, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
             started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
             created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
       )
       .run(
         input.id,
         input.titleId,
+        input.externalIds ? JSON.stringify(input.externalIds) : null,
         input.titleName,
         input.mediaKind,
         input.season ?? null,
@@ -602,6 +612,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
   return {
     id: row.id,
     titleId: row.title_id,
+    externalIds: parseExternalIds(row.external_ids_json),
     titleName: row.title_name,
     mediaKind: row.media_kind,
     season: row.season ?? undefined,
@@ -643,6 +654,16 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     updatedAt: row.updated_at,
     completedAt: row.completed_at ?? undefined,
   };
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as ProviderExternalIds;
+    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function parseHeaders(value: string): Record<string, string> {

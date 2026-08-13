@@ -177,6 +177,46 @@ export class OfflineAssetsRepository {
       .map(mapAssetRow);
   }
 
+  listDistinctTitleIds(): readonly string[] {
+    return this.db
+      .query<{ title_id: string }, []>("SELECT DISTINCT title_id FROM offline_assets")
+      .all()
+      .map((row) => row.title_id);
+  }
+
+  /**
+   * Move every asset filed under `oldTitleId` onto `newTitleId`, returning how
+   * many moved.
+   *
+   * `identity_key` embeds the title id and is the UNIQUE key `upsertPlayable`
+   * conflicts on, so it has to move with it — otherwise the next adopt of the
+   * same file inserts a second row instead of updating the one that exists.
+   * `UPDATE OR REPLACE` covers the case where the destination already holds
+   * this episode under the same profile: the duplicate is dropped rather than
+   * the update failing.
+   */
+  relocateTitleId(oldTitleId: string, newTitleId: string, now = new Date().toISOString()): number {
+    if (!oldTitleId || !newTitleId || oldTitleId === newTitleId) return 0;
+    const rows = this.db
+      .query<OfflineAssetRow, [string]>("SELECT * FROM offline_assets WHERE title_id = ?")
+      .all(oldTitleId);
+    if (rows.length === 0) return 0;
+    const update = this.db.query(
+      "UPDATE OR REPLACE offline_assets SET title_id = ?, identity_key = ?, updated_at = ? WHERE id = ?",
+    );
+    for (const row of rows) {
+      const identityKey = createOfflineAssetIdentityKey({
+        titleId: newTitleId,
+        mediaKind: row.media_kind,
+        season: row.season ?? undefined,
+        episode: row.episode ?? undefined,
+        profileKey: row.profile_key,
+      });
+      update.run(newTitleId, identityKey, now, row.id);
+    }
+    return rows.length;
+  }
+
   listNextReadyByTitleCursors(
     cursors: readonly OfflineNextReadyCursor[],
   ): readonly OfflineAssetRecord[] {

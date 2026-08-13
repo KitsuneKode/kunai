@@ -4,6 +4,7 @@ import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-sou
 import type { Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
+import { OfflineTitleIdentityService } from "@/services/offline/offline-title-identity";
 
 const TITLE: TitleInfo = {
   id: "allanime-native-id",
@@ -28,10 +29,10 @@ const SOURCE: LocalPlaybackSource = {
 describe("resolveLocalEpisodePlayback", () => {
   test("matches downloaded assets by the canonical title id", async () => {
     // The asset is filed under the canonical id (the AniList id), not the
-    // opaque provider-native id the title carries, so the canonical form has to
-    // be among the ids asked for. The raw id rides along as a fallback because
-    // `offline_assets.title_id` is written verbatim from `job.titleId`, which
-    // is only canonical when the job happened to know the external ids.
+    // opaque provider-native id the title carries. The title proves that id for
+    // itself, so the resolver answers it without consulting the alias index and
+    // the canonical form is the *only* id asked for — writes resolve the same
+    // way, so there is no second id worth trying.
     const requestedTitleIds: string[] = [];
     const assetsById = (titleId: string) =>
       titleId === "151807"
@@ -41,14 +42,14 @@ describe("resolveLocalEpisodePlayback", () => {
       config: { continueSourcePreference: "stream" },
       connectivity: { isOnline: () => true },
       stateManager: { getState: () => ({ mode: "anime" }) },
+      offlineTitleIdentity: new OfflineTitleIdentityService(
+        { lookupTitleIdByAliasId: () => undefined },
+        { relocateTitleId: () => 0 },
+      ),
       offlineAssetService: {
         listTitleAssets: (titleId: string) => {
           requestedTitleIds.push(titleId);
           return assetsById(titleId);
-        },
-        listByTitleIds: (titleIds: readonly string[]) => {
-          requestedTitleIds.push(...titleIds);
-          return titleIds.flatMap(assetsById);
         },
       },
       offlineLibraryService: {
@@ -64,7 +65,7 @@ describe("resolveLocalEpisodePlayback", () => {
       forceLocal: true,
     });
 
-    expect(requestedTitleIds).toContain("151807");
+    expect(requestedTitleIds).toEqual(["151807"]);
     expect(result?.jobId).toBe("job-1");
   });
 });

@@ -21,6 +21,7 @@ import {
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
+import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -28,13 +29,17 @@ import {
   type YtDlpProcess,
 } from "@kunai/providers/youtube";
 import {
+  externalIdsToAliases,
   getKunaiPaths,
   type DownloadArtifactStatus,
   type DownloadJobRecord,
   type DownloadJobsRepository,
+  type HistoryTitleAliasInput,
+  type HistoryTitleAliasRepository,
 } from "@kunai/storage";
-import type { MediaKind } from "@kunai/types";
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
+import { downloadJobShellMode } from "./download-job-mode";
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
 import {
@@ -214,6 +219,7 @@ export class DownloadService {
   constructor(
     private readonly deps: {
       readonly repo: DownloadJobsRepository;
+      readonly titleAliases: Pick<HistoryTitleAliasRepository, "upsertAliases">;
       readonly config: ConfigService;
       readonly logger: Logger;
       readonly ytDlpAvailable: boolean;
@@ -338,6 +344,7 @@ export class DownloadService {
     this.deps.repo.enqueue({
       id,
       titleId: canonicalTitleId,
+      externalIds: input.title.externalIds,
       titleName: input.title.name,
       mediaKind,
       season: input.episode?.season,
@@ -358,6 +365,14 @@ export class DownloadService {
       updatedAt: now,
       completedAt: undefined,
     });
+
+    // Register the download's identity so a later playback read can find its
+    // assets under any id form. Without this a title that was only ever
+    // downloaded, never watched online, has no alias row at all.
+    this.deps.titleAliases.upsertAliases(
+      canonicalTitleId,
+      downloadTitleAliases(input.title, input.providerId),
+    );
 
     const subtitleLanguage = input.stream ? resolveSubtitleLanguage(input.stream) : null;
     if (input.stream?.subtitle || input.timing || subtitleLanguage) {
@@ -976,9 +991,7 @@ export class DownloadService {
       throw new Error("download stream resolver unavailable");
     }
 
-    const mode =
-      job.mode ??
-      (job.mediaKind === "anime" ? "anime" : job.mediaKind === "video" ? "youtube" : "series");
+    const mode = downloadJobShellMode(job);
     const subtitlePreference =
       mode === "youtube"
         ? (job.subLang ?? this.deps.config.youtubeLanguageProfile.subtitle ?? "eng")
@@ -988,7 +1001,7 @@ export class DownloadService {
         id: job.titleId,
         type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
         name: job.titleName,
-        externalIds: externalIdsFromDownloadJob(job),
+        externalIds: downloadJobExternalIds(job),
       },
       episode:
         job.season !== undefined && job.episode !== undefined
@@ -1529,21 +1542,45 @@ function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
   return "series";
 }
 
-function externalIdsFromDownloadJob(
-  job: Pick<DownloadJobRecord, "titleId" | "mediaKind" | "mode">,
-): TitleInfo["externalIds"] {
+/**
+ * The external ids for a job: the persisted bag, else only what a prefixed
+ * legacy title id genuinely encodes.
+ *
+ * The predecessor guessed. Any bare numeric id on an anime job became an
+ * AniList id, so a MAL-only title was re-resolved against the wrong catalog
+ * entirely. Rows written before `external_ids_json` existed still deserve the
+ * ids their prefix really carries — but nothing beyond that is knowable there,
+ * and inventing one is worse than answering undefined.
+ */
+/**
+ * The alias rows a download registers so its title stays findable under every
+ * id it arrived with.
+ *
+ * History has indexed its own titles this way since the catalog-identity-parity
+ * work. Downloads never participated, so a title that was only ever downloaded
+ * — never watched online — had no alias row at all, and its assets could be
+ * found only under the exact id they happened to be filed under.
+ */
+export function downloadTitleAliases(
+  title: Pick<TitleInfo, "id" | "externalIds">,
+  providerId: string,
+): readonly HistoryTitleAliasInput[] {
+  const aliases = [...externalIdsToAliases(title.externalIds)];
+  if (looksLikeOpaqueProviderNativeId(title.id, title.externalIds)) {
+    const nativeId = title.id.replace(/^allanime:/, "").trim();
+    if (nativeId) aliases.push({ ns: `provider:${providerId}`, id: nativeId });
+  }
+  return aliases;
+}
+
+export function downloadJobExternalIds(
+  job: Pick<DownloadJobRecord, "titleId" | "externalIds">,
+): ProviderExternalIds | undefined {
+  if (job.externalIds) return job.externalIds;
   const titleId = job.titleId.trim();
-  if (!titleId) return undefined;
-  if (job.mode === "anime" || job.mediaKind === "anime") {
-    const anilistId = titleId.replace(/^anilist:/, "");
-    return /^\d+$/.test(anilistId) ? { anilistId } : undefined;
-  }
-  if (job.mode === "youtube" || job.mediaKind === "video") {
-    return { youtubeId: titleId.replace(/^youtube:/, "") };
-  }
-  if (titleId.startsWith("tmdb:")) {
-    return { tmdbId: titleId.slice("tmdb:".length) };
-  }
+  if (titleId.startsWith("tmdb:")) return { tmdbId: titleId.slice("tmdb:".length) };
+  if (titleId.startsWith("anilist:")) return { anilistId: titleId.slice("anilist:".length) };
+  if (titleId.startsWith("youtube:")) return { youtubeId: titleId.slice("youtube:".length) };
   return undefined;
 }
 

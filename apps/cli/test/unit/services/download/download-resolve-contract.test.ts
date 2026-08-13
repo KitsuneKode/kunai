@@ -66,6 +66,7 @@ describe("download resolve preserves stored identity", () => {
   function buildService(seen: ResolveInput[]): DownloadService {
     return new DownloadService({
       repo,
+      titleAliases: { upsertAliases() {} },
       config: {
         downloadsEnabled: true,
         downloadPath: tempDir,

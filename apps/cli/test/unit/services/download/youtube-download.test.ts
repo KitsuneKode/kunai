@@ -227,6 +227,7 @@ function buildYoutubeService({
 
   return new DownloadService({
     repo,
+    titleAliases: { upsertAliases() {} },
     config,
     ytDlpAvailable: true,
     ffprobeAvailable: false,

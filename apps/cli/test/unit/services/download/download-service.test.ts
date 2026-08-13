@@ -104,6 +104,44 @@ describe("DownloadService", () => {
       expect(record?.episode).toBeUndefined();
     });
 
+    test("enqueue persists the title's external ids and registers them as aliases", async () => {
+      // Both halves of the identity contract. The row keeps the ids so nothing
+      // has to guess them back out of the title id later, and the alias index
+      // learns the title even though it was never watched online — which is
+      // what lets a playback read find these assets under any id form.
+      const registered: Array<{
+        titleId: string;
+        aliases: readonly { ns: string; id: string }[];
+      }> = [];
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+        titleAliases: {
+          upsertAliases(titleId, aliases) {
+            registered.push({ titleId, aliases });
+          },
+        },
+      });
+
+      const job = await service.enqueue({
+        title: {
+          id: "1339713",
+          type: "movie",
+          name: "Obsession",
+          externalIds: { tmdbId: "1339713" },
+        },
+        providerId: "videasy",
+        mode: "series",
+      });
+
+      expect(repo.get(job.id)?.externalIds).toEqual({ tmdbId: "1339713" });
+      expect(registered).toEqual([
+        { titleId: "tmdb:1339713", aliases: [{ ns: "tmdb", id: "1339713" }] },
+      ]);
+    });
+
     test("a new video job persists no season and no episode", async () => {
       const service = buildService({
         repo,
@@ -1212,6 +1250,7 @@ function buildService({
   ffprobeAvailable = false,
   diagnostics,
   configService,
+  titleAliases = { upsertAliases() {} },
 }: {
   repo: DownloadJobsRepository;
   downloadsEnabled: boolean;
@@ -1222,6 +1261,7 @@ function buildService({
   ffprobeAvailable?: boolean;
   diagnostics?: ConstructorParameters<typeof DownloadService>[0]["diagnostics"];
   configService?: ConfigService;
+  titleAliases?: ConstructorParameters<typeof DownloadService>[0]["titleAliases"];
 }): DownloadService {
   const defaultConfig = {
     downloadsEnabled,
@@ -1232,6 +1272,7 @@ function buildService({
   } as ConfigService;
   return new DownloadService({
     repo,
+    titleAliases,
     config: configService ?? defaultConfig,
     ytDlpAvailable,
     ffprobeAvailable,

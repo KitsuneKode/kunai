@@ -9,6 +9,12 @@ import {
 import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
 import type { OfflineAssetRecord, OfflineAssetsRepository } from "@kunai/storage";
 
+/** Identity is not what these tests exercise: keep whatever id the job carried. */
+const passthroughIdentity = {
+  resolveForTitle: (title: { id: string }) => title.id,
+  resolveForJob: (job: { titleId: string }) => job.titleId,
+};
+
 function asset(partial: Partial<OfflineAssetRecord> & Pick<OfflineAssetRecord, "titleId">) {
   return {
     id: partial.id ?? `asset-${partial.titleId}`,
@@ -46,7 +52,7 @@ describe("offline-episode-index", () => {
       markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "t1" }),
     } as unknown as OfflineAssetsRepository;
-    const service = new OfflineAssetService(repo);
+    const service = new OfflineAssetService(repo, passthroughIdentity);
 
     expect(isEpisodeDownloaded(service, "t1", 1, 1)).toBe(true);
     expect(isEpisodeDownloaded(service, "t1", 1, 2)).toBe(false);
@@ -62,7 +68,7 @@ describe("offline-episode-index", () => {
       markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "movie-1", mediaKind: "movie" }),
     } as unknown as OfflineAssetsRepository;
-    const service = new OfflineAssetService(repo);
+    const service = new OfflineAssetService(repo, passthroughIdentity);
 
     expect(findReadyJobIdForEpisode(service, "movie-1", 1, 1, { mediaKind: "movie" })).toBe(
       "job-1",
@@ -84,7 +90,7 @@ describe("findNextReadyEpisode", () => {
       markValidation: () => {},
       upsertPlayable: () => asset({ titleId: "t1" }),
     } as unknown as OfflineAssetsRepository;
-    return { service: new OfflineAssetService(repo), cursorsSeen };
+    return { service: new OfflineAssetService(repo, passthroughIdentity), cursorsSeen };
   }
 
   test("answers with the next downloaded episode after the current one", () => {
