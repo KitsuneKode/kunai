@@ -149,13 +149,13 @@ Already landed from this audit (no plan needed):
 
 ### Wave 9 — Audit remediation: truth, containment, durability
 
-| Plan | Title                                             | Priority | Effort | Depends on | Status      |
-| ---- | ------------------------------------------------- | -------- | ------ | ---------- | ----------- |
-| 039  | Preserve network truth and surface search failure | P0       | S      | —          | IN PROGRESS |
-| 040  | Make support-bundle sections exhaustive           | P0       | S      | 039        | TODO        |
-| 041  | Jail installer staging cleanup                    | P0       | S      | —          | TODO        |
-| 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | TODO        |
-| 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO        |
+| Plan | Title                                             | Priority | Effort | Depends on | Status |
+| ---- | ------------------------------------------------- | -------- | ------ | ---------- | ------ |
+| 039  | Preserve network truth and surface search failure | P0       | S      | —          | DONE   |
+| 040  | Make support-bundle sections exhaustive           | P0       | S      | 039        | TODO   |
+| 041  | Jail installer staging cleanup                    | P0       | S      | —          | TODO   |
+| 042  | Preserve the last-known-good atomic-write target  | P0       | M      | —          | TODO   |
+| 043  | Transact legacy history-key migration             | P1       | S      | —          | TODO   |
 
 Plans 039 and 040 are sequenced because the first fixes the user-visible search
 failure and the second guarantees its search/session diagnostics survive export.

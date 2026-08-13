@@ -13,6 +13,7 @@ home.
 - **Effort:** S
 - **Risk:** LOW
 - **Planned at:** `207ef937`, 2026-08-14
+- **Completed at:** `2472f2cf`, 2026-08-14
 - **Evidence:** GitHub issue #20 reports Bun's `Unable to connect. Is the computer able to access the url?` during search.
 
 ## Invariants
@@ -29,38 +30,44 @@ home.
 
 ### Task 1: Characterize Bun connection failures and sticky state
 
-- [ ] Add the exact issue #20 Bun message to `network-status.test.ts` and
+- [x] Add the exact issue #20 Bun message to `network-status.test.ts` and
       `tmdb-proxy.test.ts`; expect offline classification and `Search service unreachable`.
-- [ ] Add a `connectivity.test.ts` case proving `offline -> timeout` stays offline and
+- [x] Add a `connectivity.test.ts` case proving `offline -> timeout` stays offline and
       a confirmed search success restores online.
-- [ ] Run those assertions before implementation and confirm they fail for the
+- [x] Run those assertions before implementation and confirm they fail for the
       missing behavior.
-- [ ] Expand the shared classifiers in `NetworkStatus.ts` and `tmdb-proxy.ts`, then
+- [x] Expand the shared classifiers in `NetworkStatus.ts` and `tmdb-proxy.ts`, then
       make `Connectivity.recordFailure` preserve an existing offline status.
 
 ### Task 2: Stop automatic replay and produce actionable feedback
 
-- [ ] Add `apps/cli/src/app/search/search-failure-policy.ts` with pure functions that
+- [x] Add `apps/cli/src/app/search/search-failure-policy.ts` with pure functions that
       decide whether bootstrap search may run and format the failure note from a
       `KitsuneError` plus `NetworkSnapshot`.
-- [ ] Add `search-failure-policy.test.ts` first. Prove `searchState: "error"`
+- [x] Add `search-failure-policy.test.ts` first. Prove `searchState: "error"`
       suppresses bootstrap replay, idle/loading queries behave intentionally, and an
       offline note contains both `retry` and `/offline`.
-- [ ] Contain bootstrap failure inside `SearchPhase.ts`, keep the query/state in that
+- [x] Contain bootstrap failure inside `SearchPhase.ts`, keep the query/state in that
       phase, and pass the failure into BrowseShell's initial error surface.
-- [ ] Add a render regression that shows the retained query, retry copy, and
+- [x] Add a render regression that shows the retained query, retry copy, and
       `/offline`, then retries the same query on Enter.
-- [ ] Convert interactive search rejections into the same actionable BrowseShell
+- [x] Convert interactive search rejections into the same actionable BrowseShell
       error while retaining the original failure in structured diagnostics.
-- [ ] Keep the existing structured `search.phase.failed` event and raw logged error.
+- [x] Keep structured failure diagnostics and the raw logged error.
 
 ## Verification
 
 ```sh
-bun run --cwd apps/cli test -- test/unit/services/network/network-status.test.ts test/unit/services/network/connectivity.test.ts test/unit/services/catalog/tmdb-proxy.test.ts test/unit/app/search/search-failure-policy.test.ts
+bun run --cwd apps/cli test:file test/unit/services/network/network-status.test.ts
+bun run --cwd apps/cli test:file test/unit/services/network/connectivity.test.ts
+bun run --cwd apps/cli test:file test/unit/services/catalog/tmdb-proxy.test.ts
+bun run --cwd apps/cli test:file test/unit/app/search/search-failure-policy.test.ts
+bun run --cwd apps/cli test:file test/unit/app-shell/browse-search-failure.useinput.test.tsx
+bun run --cwd apps/cli test:file test/unit/app/search/search-phase-offline-bootstrap.test.ts
 bun run typecheck
 bun run lint
-bun run fmt
+bun run fmt:check
+bun run verify:doc-paths
 bun run test
 bun run build
 ```
