@@ -28,10 +28,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
-import {
-  isEpisodeDownloaded,
-  offlineAssetTitleIdCandidates,
-} from "@/services/offline/offline-episode-index";
+import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
 import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -199,7 +196,7 @@ export function buildPlaybackRootLoadingShellState(
       if (
         isEpisodeDownloaded(
           container.offlineAssetService,
-          offlineAssetTitleIdCandidates(title, state.mode),
+          container.offlineTitleIdentity.resolveForTitle(title, state.mode),
           episode.season,
           episode.episode,
         )

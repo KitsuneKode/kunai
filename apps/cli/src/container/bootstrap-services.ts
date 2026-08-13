@@ -140,7 +140,7 @@ export function bootstrapServices(input: {
   });
   const presence = new PresenceServiceImpl({ config, diagnostics: diagnosticsService });
 
-  const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases);
+  const offlineTitleIdentity = new OfflineTitleIdentityService(historyTitleAliases, offlineAssets);
   const offlineAssetService = new OfflineAssetService(offlineAssets, offlineTitleIdentity);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();

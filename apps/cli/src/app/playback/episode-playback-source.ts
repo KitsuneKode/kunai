@@ -4,10 +4,7 @@ import type { PlaybackSourcePreference } from "@/domain/playback-source/SourceSe
 import type { EpisodeInfo, PlaybackTimingMetadata, StreamInfo, TitleInfo } from "@/domain/types";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import {
-  findReadyJobIdForEpisode,
-  offlineAssetTitleIdCandidates,
-} from "@/services/offline/offline-episode-index";
+import { findReadyJobIdForEpisode } from "@/services/offline/offline-episode-index";
 import { parseIntroSkipTiming } from "@/services/offline/offline-library";
 
 export type LocalEpisodePlaybackResolution = {
@@ -41,7 +38,7 @@ export async function resolveLocalEpisodePlayback(
   const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
   const jobId = findReadyJobIdForEpisode(
     container.offlineAssetService,
-    offlineAssetTitleIdCandidates(title, mode),
+    container.offlineTitleIdentity.resolveForTitle(title, mode),
     episode.season,
     episode.episode,
     { mediaKind },

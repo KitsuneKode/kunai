@@ -219,10 +219,7 @@ import {
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import {
-  findNextReadyEpisode,
-  offlineAssetTitleIdCandidates,
-} from "@/services/offline/offline-episode-index";
+import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
 import {
   createPlaybackStartupTimeline,
   formatPlaybackStartupTimeline,
@@ -1288,9 +1285,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 languages: playbackEpisodeCatalogLanguages({ mode: playbackMode, title, config }),
                 signal: resolveController.signal,
               });
+          // The picker's downloaded marks and the autoplay cursor below must ask
+          // for the same id an asset is filed under; canonicalising here on its
+          // own left an enriched title looking up an id no asset row holds.
+          const offlineTitleId = container.offlineTitleIdentity.resolveForTitle(
+            title,
+            playbackMode,
+          );
           const downloadedEpisodes = new Set(
             container.offlineAssetService
-              .listTitleAssets(resolveTitleHistoryLookupId(title, playbackMode))
+              .listTitleAssets(offlineTitleId)
               .filter((asset) => asset.state === "ready")
               .map((asset) => `${asset.season ?? 1}:${asset.episode ?? 1}`),
           );
@@ -1322,7 +1326,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 previousEpisode: null,
                 nextEpisode: findNextReadyEpisode(
                   container.offlineAssetService,
-                  offlineAssetTitleIdCandidates(title, playbackMode),
+                  offlineTitleId,
                   currentEpisode,
                 ),
                 nextSeasonEpisode: null,

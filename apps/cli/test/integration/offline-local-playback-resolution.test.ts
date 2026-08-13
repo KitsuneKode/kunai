@@ -35,6 +35,7 @@ type Harness = {
   readonly dir: string;
   readonly jobs: DownloadJobsRepository;
   readonly assets: OfflineAssetService;
+  readonly offlineAssets: OfflineAssetsRepository;
   readonly aliases: HistoryTitleAliasRepository;
   readonly library: OfflineLibraryService;
   readonly filePath: string;
@@ -91,9 +92,10 @@ function createHarness(input: {
   // The real resolver, not a stub: identity is precisely what this suite is
   // here to pin down, and a passthrough would make every case pass trivially.
   const aliases = new HistoryTitleAliasRepository(db);
+  const offlineAssets = new OfflineAssetsRepository(db);
   const assets = new OfflineAssetService(
-    new OfflineAssetsRepository(db),
-    new OfflineTitleIdentityService(aliases),
+    offlineAssets,
+    new OfflineTitleIdentityService(aliases, offlineAssets),
   );
   const completed = jobs.get(jobId);
   if (!completed) throw new Error("download job missing after complete()");
@@ -108,7 +110,7 @@ function createHarness(input: {
     offlineAssetService: assets,
   });
 
-  return { db, dir, jobs, assets, aliases, library, filePath };
+  return { db, dir, jobs, assets, offlineAssets, aliases, library, filePath };
 }
 
 function containerFor(
@@ -122,7 +124,7 @@ function containerFor(
   return {
     stateManager: { getState: () => ({ mode: options.mode ?? "series" }) },
     offlineAssetService: harness.assets,
-    offlineTitleIdentity: new OfflineTitleIdentityService(harness.aliases),
+    offlineTitleIdentity: new OfflineTitleIdentityService(harness.aliases, harness.offlineAssets),
     offlineLibraryService: harness.library,
     connectivity: { isOnline: () => options.online ?? false },
     config: { continueSourcePreference: options.continueSourcePreference ?? "auto" },
@@ -238,6 +240,31 @@ describe("offline local playback resolution", () => {
     const resolution = await resolveLocalEpisodePlayback(
       containerFor(harness),
       { ...movieTitle, externalIds: { tmdbId: "1339713" } },
+      { season: 1, episode: 1 },
+      { entrypoint: "offline-library", forceLocal: true },
+    );
+
+    expect(resolution?.stream.url).toBe(harness.filePath);
+  });
+
+  test("a downloaded title resolves from an opaque provider id once an alias exists", async () => {
+    // The asset is filed under the canonical id "21". The user arrives from a
+    // provider search whose title id is the provider's own opaque handle and
+    // carries no external ids at all, so no amount of canonicalising the title
+    // reaches "21" — only the alias index does. A candidate list of
+    // [canonical, raw] cannot serve this case, because both entries are the
+    // opaque id.
+    const harness = createHarness({ titleId: "21", mediaKind: "series", season: 1, episode: 1 });
+    harness.aliases.upsertAliases("21", [{ ns: "provider:allmanga", id: "ReooPAxPMsHM4KPMY" }]);
+
+    const resolution = await resolveLocalEpisodePlayback(
+      containerFor(harness),
+      {
+        id: "ReooPAxPMsHM4KPMY",
+        type: "series",
+        name: "Demo",
+        launchSource: "offline-library",
+      },
       { season: 1, episode: 1 },
       { entrypoint: "offline-library", forceLocal: true },
     );

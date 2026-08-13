@@ -5,13 +5,22 @@ import type { DownloadJobRecord } from "@kunai/storage";
 
 function identity(aliases: Record<string, string> = {}) {
   const seen: string[] = [];
-  const service = new OfflineTitleIdentityService({
-    lookupTitleIdByAliasId: (id: string) => {
-      seen.push(id);
-      return aliases[id];
+  const relocations: Array<{ from: string; to: string }> = [];
+  const service = new OfflineTitleIdentityService(
+    {
+      lookupTitleIdByAliasId: (id: string) => {
+        seen.push(id);
+        return aliases[id];
+      },
     },
-  });
-  return { service, seen };
+    {
+      relocateTitleId: (from: string, to: string) => {
+        relocations.push({ from, to });
+        return 1;
+      },
+    },
+  );
+  return { service, seen, relocations };
 }
 
 function job(partial: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
@@ -63,9 +72,42 @@ describe("OfflineTitleIdentityService.resolveForTitle", () => {
   });
 
   test("keeps the raw id when nothing knows better", () => {
-    const { service } = identity();
+    const { service, relocations } = identity();
 
     expect(service.resolveForTitle({ id: "1339713", type: "movie" }, "series")).toBe("1339713");
+    expect(relocations).toEqual([]);
+  });
+
+  test("relocates assets still filed under the id the title arrived with", () => {
+    // The reported bug's residue: the download was filed under "1339713"
+    // because nothing knew the tmdb id yet. Answering "tmdb:1339713" alone
+    // would leave that row unreachable forever, so the row moves with the
+    // answer.
+    const { service, relocations } = identity();
+
+    service.resolveForTitle(
+      { id: "1339713", type: "movie", externalIds: { tmdbId: "1339713" } },
+      "series",
+    );
+
+    expect(relocations).toEqual([{ from: "1339713", to: "tmdb:1339713" }]);
+  });
+
+  test("reconciles a given id once, not on every resolve", () => {
+    // resolveForTitle runs on a render path; a repair per render would be a
+    // database write per frame.
+    const { service, relocations } = identity();
+    const title = {
+      id: "1339713",
+      type: "movie" as const,
+      externalIds: { tmdbId: "1339713" },
+    };
+
+    service.resolveForTitle(title, "series");
+    service.resolveForTitle(title, "series");
+    service.resolveForTitle(title, "series");
+
+    expect(relocations).toHaveLength(1);
   });
 
   test("resolves an opaque provider-native id through its provider alias", () => {
