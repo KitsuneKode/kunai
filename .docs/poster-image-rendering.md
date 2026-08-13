@@ -20,7 +20,7 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **TTY / disable**: non-TTY stdout or `KUNAI_POSTER=0|false` → no posters.
 - **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|iterm|sixel|symbols|half-block` (invalid values fall back to auto with optional debug log). Overrides are resolved before every heuristic below and always win.
 - **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
-- **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to `chafa` symbols (or half-block). `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
+- **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to half-block output. `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
 - **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; iTerm2 or VSCode ≥1.80 → `iterm-inline`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. The app shell renders both `iterm-inline` and sixel as measured post-frame overlays, never as Ink text.
 - **`iterm-inline` outranks sixel deliberately.** It transmits the prepared PNG verbatim, while this path quantises sixel to 64 colours (`APP_SHELL_SIXEL_MAX_COLORS`). iTerm2 answers the DA1 sixel query too, so taking sixel there would be a needless downgrade.
 - **iTerm2 detection accepts `LC_TERMINAL`,** which iTerm2 forwards through ssh where `TERM_PROGRAM` is lost. It is checked after the kitty-compatible names so an inherited value cannot outrank the terminal actually in front of the user.
@@ -34,15 +34,14 @@ Details live in `apps/cli/src/image/capability.ts`.
 
 ## Environment variables
 
-| Variable                        | Purpose                                                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `KUNAI_POSTER`                  | `0` / `false` disables poster flows                                                                     |
-| `KUNAI_IMAGE_PROTOCOL`          | Force or constrain renderer (see capability module)                                                     |
-| `KUNAI_IMAGE_SIZE`              | Legacy size hint; unused by the Ink poster path (kept for env compatibility)                            |
-| `KUNAI_IMAGE_DEBUG`             | `1` enables `[kunai:image]` debug lines                                                                 |
-| `KUNAI_IMAGE_PROBE`             | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                          |
-| `KUNAI_IMAGE_TRANSPORT`         | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                      |
-| `KUNAI_IMAGE_MAGICK_TIMEOUT_MS` | Per-conversion time budget for the `magick` subprocess (default **30000**, clamped **1000**–**120000**) |
+| Variable                | Purpose                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `KUNAI_POSTER`          | `0` / `false` disables poster flows                                                |
+| `KUNAI_IMAGE_PROTOCOL`  | Force or constrain renderer (see capability module)                                |
+| `KUNAI_IMAGE_SIZE`      | Legacy size hint; unused by the Ink poster path (kept for env compatibility)       |
+| `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                            |
+| `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)     |
+| `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below) |
 
 ### `KUNAI_IMAGE_TRANSPORT`
 
@@ -63,8 +62,9 @@ back to auto with a debug line.
 
 ## Tools
 
-- **No external poster binary.** Every renderer consumes one natively prepared image; half-block is the universal in-process floor. `chafa` and ImageMagick were retired, and `jpeg-js` is test-support only.
-- **`magick` (ImageMagick 7+)** _(optional, last resort)_: PNG passes through untouched and JPEG (all of TMDB) decodes in-process, so `magick` is no longer on the hot path. It is only reached for formats the in-process decoder cannot read (WebP, AVIF). The CLI invokes `magick` only (not other binary names).
+Posters need no external binary. Every renderer consumes one natively prepared
+image; half-block is the universal in-process floor. `chafa` and ImageMagick
+were retired, and `jpeg-js` is test-support only.
 
 ## App-shell `PosterResult` kinds
 
@@ -104,8 +104,8 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 - Each `usePosterPreview` / `fetchPoster` call that owns Kitty graphics should pass a `placementSlot`.
 - Slot cleanup deletes **only that image id** (`d=I`). Global wipe (`d=A`) is reserved for surface exit, terminal resize (unslotted), and capability loss.
-- Post-play wide budget: hero + rail primary + prev/next mini-cards as Kitty/Sixel, plus up to **3** discovery cards. Now Playing may also render the up-next mini-card as Kitty/Sixel (`playing-next`). Unslotted list tiles still use chafa.
-- JPEG/WebP without `magick`: Kitty path falls back to chafa symbols for that slot instead of silent `none`.
+- Post-play wide budget: hero + rail primary + prev/next mini-cards as Kitty/Sixel, plus up to **3** discovery cards. Now Playing may also render the up-next mini-card as Kitty/Sixel (`playing-next`). Unslotted list tiles use in-process half-block text.
+- Unsupported or invalid image bytes degrade to the visible text-only state instead of invoking a fallback process.
 
 ## Manual Ghostty / Kitty smoke (not CI)
 
@@ -115,7 +115,9 @@ Headless CI cannot assert framebuffer graphics. After image changes, smoke local
 2. Play any title with a poster, finish playback → post-play wide (≥120 cols).
 3. Expect: next-up hero art, rail primary, prev/next episode stills, **and** up to 3 discovery thumbs visible together (no blank slots racing).
 4. Change selection / leave post-play — no ghost images left on the browse screen.
-5. Optional: uninstall `magick` temporarily and confirm JPEG thumbs still show as chafa text rather than empty.
+5. Confirm the same flow on a machine without poster helper binaries; JPEG and
+   WebP preparation must remain in-process and invalid artwork must degrade to
+   the visible text-only state.
 
 ## Manual Windows Terminal Sixel smoke (not CI)
 
@@ -134,12 +136,14 @@ Use Windows Terminal 1.22+ and force the path with
 ## Debugging
 
 1. Set `KUNAI_IMAGE_DEBUG=1` and watch stderr for `[kunai:image]`.
-2. Use `/diagnostics` (or About) to see `chafa`, `magick`, and active image renderer / terminal in the capability line.
+2. Use `/diagnostics` (or About) to see the active image renderer, protocol,
+   terminal, and native preparation outcome.
 
 ## Tests
 
-- `apps/cli/test/unit/image.test.ts` — capability detection and ImageMagick resolution stubs.
-- `apps/cli/test/unit/app-shell/poster-renderer.test.ts` — renderer result kinds under mocked capability + JPEG fallback (host `magick` isolated).
+- `apps/cli/test/unit/image.test.ts` and `apps/cli/test/unit/image/capability-probe.test.ts` — capability detection and probe routing.
+- `apps/cli/test/unit/image/native-image.test.ts` — native JPEG/WebP/PNG preparation and failure bounds.
+- `apps/cli/test/unit/app-shell/poster-renderer.test.ts` — renderer result kinds under mocked capabilities.
 - `apps/cli/test/unit/app-shell/image-pane.test.ts` — cache key segregation by renderer + existing poster URL helpers.
 - `apps/cli/test/unit/app-shell/kitty-placement-registry.test.ts` — multi-slot delete isolation.
 - `apps/cli/test/unit/app-shell/use-poster-preview.resize.test.tsx` — unslotted geometry change still emits `d=A`.
@@ -147,8 +151,9 @@ Use Windows Terminal 1.22+ and force the path with
 Run:
 
 ```sh
-bun run --cwd apps/cli test:unit -- test/unit/image.test.ts
-bun test apps/cli/test/unit/app-shell/poster-renderer.test.ts
-bun test apps/cli/test/unit/app-shell/image-pane.test.ts
-bun test apps/cli/test/unit/app-shell/kitty-placement-registry.test.ts
+bun run --cwd apps/cli test:file test/unit/image.test.ts
+bun run --cwd apps/cli test:file test/unit/image/native-image.test.ts
+bun run --cwd apps/cli test:file test/unit/app-shell/poster-renderer.test.ts
+bun run --cwd apps/cli test:file test/unit/app-shell/image-pane.test.ts
+bun run --cwd apps/cli test:file test/unit/app-shell/kitty-placement-registry.test.ts
 ```

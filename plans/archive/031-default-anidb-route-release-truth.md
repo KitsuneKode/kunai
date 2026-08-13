@@ -42,41 +42,41 @@ default contract, not maintain a stale parallel default.
 ### Task 1: Characterize the live AniDB card shape
 
 - [ ] Save a minimal sanitized fixture under
-  `packages/providers/test/fixtures/anidb/browse-frieren.html` containing absolute
-  and relative links, `title` HTML entities, unrelated anchors, and duplicate ids.
+      `packages/providers/test/fixtures/anidb/browse-frieren.html` containing absolute
+      and relative links, `title` HTML entities, unrelated anchors, and duplicate ids.
 - [ ] Replace the inline obsolete fixture in `packages/providers/test/anidb.test.ts`.
 - [ ] Add assertions for exact id/title decoding and deduplication. The test must
-  fail before changing the parser.
+      fail before changing the parser.
 
 ### Task 2: Replace the brittle cross-tag regex
 
 - [ ] In `packages/providers/src/anidb/client.ts`, parse anime anchors independently
-  of attribute order. Accept absolute or relative `/anime/<slug-number>` URLs and
-  read the anchor's `title`; keep `alt` only as a compatibility fallback if it is
-  present on the same card.
+      of attribute order. Accept absolute or relative `/anime/<slug-number>` URLs and
+      read the anchor's `title`; keep `alt` only as a compatibility fallback if it is
+      present on the same card.
 - [ ] Keep `anidbNumericId()` as the final identity gate. Do not accept a bare
-  numeric or arbitrary provider id.
+      numeric or arbitrary provider id.
 - [ ] Return a deterministic empty result on valid pages with no cards; preserve
-  typed/network failures from `anidbFetchText`.
+      typed/network failures from `anidbFetchText`.
 
 ### Task 3: Route anime metadata search to AniList
 
 - [ ] Add `anidb` to the AniList definition in both
-  `definitions/index.ts` and `definitions/anilist.ts` (or extract one shared list so
-  the two declarations cannot drift).
+      `definitions/index.ts` and `definitions/anilist.ts` (or extract one shared list so
+      the two declarations cannot drift).
 - [ ] Add routing tests proving an advanced anime query on AniDB uses `anilist`,
-  while a simple query uses provider-native AniDB and a genuinely empty native
-  result falls back to AniList, never TMDB.
+      while a simple query uses provider-native AniDB and a genuinely empty native
+      result falls back to AniList, never TMDB.
 - [ ] Assert returned identities preserve `externalIds.anilistId`; do not label a
-  TMDB result as an anime-lane identity.
+      TMDB result as an anime-lane identity.
 
 ### Task 4: Make release signoff consume the default route
 
 - [ ] Replace the AllAnime anime fixture with a stable AniDB fixture carrying a
-  provider-native AniDB id.
+      provider-native AniDB id.
 - [ ] Add a contract test that the signoff provider for each lane equals the repo
-  default (or imports a shared fixture/default builder). A future default change must
-  fail one test instead of silently testing the old route.
+      default (or imports a shared fixture/default builder). A future default change must
+      fail one test instead of silently testing the old route.
 - [ ] Keep AllAnime as its focused provider smoke, not the default-lane signoff.
 - [ ] Require both resolve and stream reachability for AniDB, as movie/series do.
 

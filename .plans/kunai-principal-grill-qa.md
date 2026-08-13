@@ -11,7 +11,6 @@ This is the hard-question companion to:
 - [.plans/kunai-architecture-and-cache-hardening.md](./kunai-architecture-and-cache-hardening.md)
 - [.plans/kunai-experience-and-growth-moat.md](./kunai-experience-and-growth-moat.md)
 - [.plans/provider-hardening.md](./provider-hardening.md)
-- [.plans/cli-ux-overhaul.md](./cli-ux-overhaul.md)
 
 ## Premise
 

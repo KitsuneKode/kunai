@@ -23,8 +23,7 @@ Read these before implementation:
 - [.docs/engineering-guide.md](../.docs/engineering-guide.md)
 - [.plans/provider-result-contract.md](./provider-result-contract.md)
 - [.plans/search-service.md](./search-service.md)
-- [.plans/cli-ux-overhaul.md](./cli-ux-overhaul.md)
-- [.plans/series-catalog-end-state-and-upcoming-episode-ux.md](./series-catalog-end-state-and-upcoming-episode-ux.md)
+- [.plans/persistent-shell-implementation.md](./persistent-shell-implementation.md)
 
 Useful provider evidence:
 

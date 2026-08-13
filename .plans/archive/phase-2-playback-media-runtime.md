@@ -3,6 +3,7 @@
 Status: active implementation
 
 Verification reference:
+
 - [VERIFICATION.md](../VERIFICATION.md)
 
 This plan is the next runtime-quality checkpoint after the root shell and overlay migration.
@@ -116,9 +117,11 @@ The shell must never become the hidden source of truth for playback progression.
 ### Phase 2A — Playback Session Controller
 
 Goal:
+
 - create the controller that unifies shell intent and player events
 
 Deliverables:
+
 - `PlaybackSessionController` type and state machine
 - explicit intents:
   - `play`
@@ -143,10 +146,12 @@ Deliverables:
   - `resolveFailed`
 
 Acceptance:
+
 - shell and `mpv` no longer each infer autoplay state independently
 - `PlaybackPhase` becomes thinner and delegates state decisions to the controller
 
 Progress:
+
 - pure controller decisions are extracted into `playback-session-controller.ts`
 - playback session state now explicitly models manual vs autoplay-chain mode
 - stop-after-current and session-local autoplay pause now flow through that controller seam
@@ -154,9 +159,11 @@ Progress:
 ### Phase 2B — Persistent Autoplay Player Session
 
 Goal:
+
 - stop respawning `mpv` between autoplay episodes
 
 Deliverables:
+
 - keep spawn-per-play for manual single-item playback
 - persistent `MpvSession` for autoplay chains
 - use `loadfile <url> replace`
@@ -164,10 +171,12 @@ Deliverables:
 - update title / episode metadata after each replace
 
 Acceptance:
+
 - autoplay chains stay inside one player process for normal episode-to-episode advance
 - shell next/previous while playing reuse the same active player session
 
 Progress:
+
 - autoplay-chain playback now reuses a persistent mpv session
 - shell `next` / `previous` / `refresh` / `fallback` stop the current file when possible instead of always killing the process
 - post-playback and phase teardown now explicitly release the persistent session so idle mpv processes do not linger
@@ -175,15 +184,18 @@ Progress:
 ### Phase 2C — Quit Threshold and Manual Interruption Policy
 
 Goal:
+
 - remove the current ambiguity around `q`
 
 Defaults:
+
 - natural EOF + autoplay active => advance
 - natural EOF + manual playback => return to shell
 - manual quit mid-episode => save resume, pause autoplay for session
 - manual quit near end => treat as complete
 
 Settings to add:
+
 - `quitNearEndBehavior`
   - `continue`
   - `pause`
@@ -194,18 +206,22 @@ Settings to add:
   - `seconds-only`
 
 Acceptance:
+
 - quit behavior is explainable from config + progress state alone
 
 Progress:
+
 - credits timing now overrides the old blunt near-end threshold when IntroDB metadata exists
 - fallback completion logic now uses the final 5 seconds instead of the older hardcoded window
 
 ### Phase 2D — Interactive Playback Controls
 
 Goal:
+
 - make the playback shell active, not passive
 
 Required actions during playback:
+
 - `a` pause / resume autoplay
 - `n` next episode now
 - `p` previous episode now
@@ -217,21 +233,26 @@ Required actions during playback:
 - `f` fallback provider
 
 Recommended later action:
+
 - queue another title after current episode without full detach
 
 Acceptance:
+
 - active playback shell remains useful without forcing users to wait for playback to end
 
 Progress:
+
 - playback shell live controls for next/previous/autoplay pause/stop-after-current are already wired through the shared control service
 - playback shell now surfaces richer stage/status copy while the player launches and while skip events fire
 
 ### Phase 2E — Abortable Resolve and Scrape Work
 
 Goal:
+
 - make in-flight work cancellable
 
 Required:
+
 - `AbortController` support for:
   - search
   - stream resolve
@@ -241,9 +262,11 @@ Required:
 - shell cancel actions should actually stop background work, not just hide the state
 
 Acceptance:
+
 - users can back out of expensive resolve paths without leaving zombie jobs
 
 Progress:
+
 - phase-level abort signals now flow through session controller -> phase context -> search/provider/timing calls
 - provider search, registry search, provider resolve, IntroDB timing fetch, and anime episode catalogs now receive the shared signal
 - playback loading resolve can now be cancelled cleanly from the shell with `Esc`
@@ -252,31 +275,38 @@ Progress:
 ### Phase 2F — IntroDB Timing Metadata
 
 Goal:
+
 - add timing metadata plumbing without over-coupling it to current playback code
 
 Source:
+
 - `https://api.theintrodb.org/v2/media?...`
 
 Data model:
+
 - recap windows
 - intro windows
 - credits windows
 - preview windows
 
 Initial use:
+
 - auto-skip recap when enabled
 - auto-skip intro when enabled
 - use credits start as the preferred near-end threshold when available
 - expose shell-level status like `intro skipped` / `next episode soon`
 
 Out of scope here:
+
 - fancy on-player overlays
 - user-contributed timing editor
 
 Acceptance:
+
 - timing metadata can affect quit threshold and skip logic without hard-coding title-specific branches
 
 Progress:
+
 - IntroDB timing is already used for completion/near-end decisions
 - recap/intro/preview auto-skip is now wired into the player path
 - manual `i` segment skip is now available during playback
@@ -525,11 +555,13 @@ Use IntroDB metadata to make playback feel more premium without making the playe
 This phase should only lay the groundwork.
 
 Needed groundwork:
+
 - keep poster/media metadata services separable
 - avoid baking “poster only” assumptions into preview APIs
 - preserve a place to store trailer metadata from TMDB or provider sources
 
 Deferred:
+
 - actual trailer playback
 - inline video preview
 - trailer queues or autoplay

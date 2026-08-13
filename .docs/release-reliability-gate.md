@@ -46,12 +46,20 @@ that PR is merged.
 
 ## Provider Reality Gate
 
-Run one live smoke per active provider engine touched by the change.
+For a release candidate, run the route-derived signoff first. It derives cases
+from the production provider registry so a provider cannot silently disappear
+from a hand-written checklist:
+
+```sh
+KUNAI_LIVE_RELEASE_SIGNOFF=1 bun run test:live:release-signoff
+```
+
+Then run one focused live smoke per provider family touched by the change.
 
 Series/movie direct providers:
 
 ```sh
-bun run test:live:vidking
+bun run test:live:videasy
 bun run test:live:rivestream
 ```
 
@@ -83,6 +91,11 @@ Expected result for each provider:
 Do not run live provider smokes in default CI. They are opt-in checks for provider drift and release confidence.
 
 Provider smokes should be run once per touched provider family, not in a loop while developing. Repeated iteration belongs in fixture-backed provider tests and mocked fetch/runtime ports.
+
+Before changing the default resolve hedge delay, aggregate actual
+`provider.resolve.hedge-outcome` diagnostics by route and latency profile. The
+current delay values are reasoned defaults; a single local run is not evidence
+for global calibration.
 
 ## Discord Presence Gate
 

@@ -173,7 +173,7 @@ Bun-first means using Bun primitives where they are the clearly better choice. I
 
 ### Already Bun-native (no Node APIs remain)
 
-- **Process spawning**: `Bun.spawn()` everywhere — mpv, yt-dlp, half-block, magick, ffprobe, xdg-open
+- **Process spawning**: `Bun.spawn()` everywhere — mpv, yt-dlp, ffprobe, xdg-open
 - **IPC**: `Bun.connect()` for mpv JSON IPC (Unix sockets and Windows named pipes)
 - **Tool detection**: `Bun.which("mpv")`, `Bun.which("ffprobe")`, etc.
 - **Storage**: `bun:sqlite` for history, stream cache, source inventory, download jobs, provider health, resolve traces

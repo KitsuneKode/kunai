@@ -6,7 +6,6 @@ The product direction is already set by:
 
 - [.docs/design-system.md](./design-system.md)
 - [.docs/ux-architecture.md](./ux-architecture.md)
-- [.plans/cli-ux-overhaul.md](../.plans/cli-ux-overhaul.md)
 - [.plans/persistent-shell-implementation.md](../.plans/persistent-shell-implementation.md)
 
 This file turns those decisions into implementation guidance for real UI passes.

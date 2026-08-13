@@ -168,6 +168,5 @@ Discord Rich Presence here is local IPC, not OAuth:
 - Keep `presenceDiscordOpenUrl` opt-in until packaged installers can run protocol registration as
   part of installation.
 
-## Related Plan
-
-Implementation polish is tracked in [presence-integrations.md](../.plans/presence-integrations.md).
+The list above is the current presence residue. Do not reopen the archived
+implementation plan to infer current behavior.

@@ -10,9 +10,12 @@ unchecked `- [ ]` here means nothing. Status lived in the run, not the file.
 
 ## What stayed live
 
-Only the **resolve-loop wave** remains in `../plans/` and `../specs/`, indexed by
-[`../plans/2026-07-28-execution-board.md`](../plans/2026-07-28-execution-board.md).
-Start there, not at an individual plan.
+No SDD execution board remains live here. The resolve-loop implementation
+landed; its verified health-recovery, ordering, and hedge-calibration residue
+is tracked by
+[`../../../.plans/provider-resolve-hardening-handoff.md`](../../../.plans/provider-resolve-hardening-handoff.md).
+Current release checks live in
+[`../../../.docs/release-reliability-gate.md`](../../../.docs/release-reliability-gate.md).
 
 ## Reading these
 
@@ -30,7 +33,7 @@ Keep those paths working if you reorganize this folder again.
 A pair moves here when its wave closes. If you find work in an archived plan
 that looks unfinished, verify it against the code first, then put one line on
 [`../../../.plans/roadmap.md`](../../../.plans/roadmap.md) — do not revive the
-file.
+file or its execution board.
 
 Nothing under `docs/superpowers/` is published: the docs site only builds
 `index.mdx`, `users/**`, and `developer/**` (see `apps/docs/source.config.ts`).

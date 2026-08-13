@@ -13,8 +13,7 @@ the implementation plan can be archived without implying unsupported evidence.
 - [ ] VS Code terminal 1.80 or newer: automatic inline poster rendering and clean
       text fallback when the version is missing or older.
 - [ ] Windows Terminal 1.22 or newer: Sixel framebuffer placement, resize, rapid
-      navigation, and cleanup. This is also tracked by
-      [`sixel-in-ink.md`](./sixel-in-ink.md); record one shared result, not two runs.
+      navigation, and cleanup.
 - [ ] Kitty or Ghostty: native placement, stale-upload suppression, resize, and exit
       cleanup.
 - [ ] tmux, screen, SSH, redirected stdout, and unsupported terminals: no raw escape
