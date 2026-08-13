@@ -138,6 +138,24 @@ describe("anidb browse parsing", () => {
     expect(results[0]?.id).toBe("onigiri-3942");
   });
 
+  test("strips script content behind a whitespace-padded closing tag", () => {
+    // `</script >` is legal HTML. A filter matching only `</script>` leaves the
+    // script source in the anchor body, which then becomes the title.
+    const html =
+      '<a href="/anime/scripted-77"><script>var leaked = 1;</script ><span>Real Title</span></a>';
+    // Filtering only `</script>` leaves "var leaked = 1; Real Title" as the title.
+    expect(parseAnidbBrowseHtml(html).map((result) => result.title)).toEqual(["Real Title"]);
+  });
+
+  test("classifies card evidence in linear time on adversarial markup", () => {
+    // `<a` repeated with no closing `>` is the quadratic case for a
+    // `/<[a-z][^>]*>/` scan. Budget is generous; a regression blows past it.
+    const hostile = `<a href="/anime/hostile-9">${"<a".repeat(60_000)}</a>`;
+    const startedAt = performance.now();
+    expect(parseAnidbBrowseHtml(hostile)).toEqual([]);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   test("extracts deterministic season evidence", () => {
     expect(parseAnidbSeasonEvidence("Mob Psycho 100 3rd Season")).toEqual({
       seasonNumber: 3,

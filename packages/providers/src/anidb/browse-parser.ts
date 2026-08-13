@@ -116,7 +116,28 @@ export function chooseAnidbSearchMatch(
  */
 function hasResultCardEvidence(attrs: string, body: string): boolean {
   if (extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label")) return true;
-  return /<[a-z][^>]*>/i.test(body);
+  return hasNestedElement(body);
+}
+
+/**
+ * Scanned rather than matched with `/<[a-z][^>]*>/`. That pattern is quadratic on
+ * input like `<a<a<a…` with no `>` — every `<a` restarts a scan to end of input —
+ * and this runs on fetched provider markup we do not control. Walking `<` offsets
+ * against one precomputed last `>` is linear and answers the same question.
+ */
+function hasNestedElement(body: string): boolean {
+  const lastClose = body.lastIndexOf(">");
+  if (lastClose < 2) return false;
+  for (
+    let index = body.indexOf("<");
+    index !== -1 && index < lastClose;
+    index = body.indexOf("<", index + 1)
+  ) {
+    const code = body.charCodeAt(index + 1);
+    const startsTagName = (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    if (startsTagName) return true;
+  }
+  return false;
 }
 
 function parseAnidbShowIdFromHref(href: string | undefined): string | null {
@@ -129,7 +150,10 @@ function parseAnidbShowIdFromHref(href: string | undefined): string | null {
 function extractAnidbTitle(attrs: string, body: string): string {
   const anchorTitle = extractAttribute(attrs, "title") ?? extractAttribute(attrs, "aria-label");
   const imageAlt = IMAGE_ALT_PATTERN.exec(body)?.[1];
-  const nestedText = body.replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ");
+  // `</script\s*>`, not `</script>`: HTML permits whitespace before the closing
+  // angle bracket, and a `</script >` that this filter misses would leak script
+  // source into a title.
+  const nestedText = body.replace(/<script\b[\s\S]*?<\/script\s*>/gi, " ").replace(/<[^>]+>/g, " ");
   return decodeHtmlEntities(anchorTitle ?? imageAlt ?? nestedText)
     .replace(/\s+/g, " ")
     .trim();
