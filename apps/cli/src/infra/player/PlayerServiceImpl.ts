@@ -34,6 +34,7 @@ import {
   type HlsRelayStopReason,
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
+import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { PersistentMpvSession } from "./PersistentMpvSession";
@@ -298,13 +299,22 @@ export class PlayerServiceImpl implements PlayerService {
     );
 
     try {
-      const urlKind = materialized.kind === "none" ? "remote" : "local";
+      const verifiedLocalSource = options.localPlaybackSource;
+      const urlKind =
+        verifiedLocalSource?.filePath === playbackStream.url || materialized.kind !== "none"
+          ? "local"
+          : "remote";
+      const subtitleUrlKind =
+        playbackStream.subtitle && verifiedLocalSource?.subtitlePath === playbackStream.subtitle
+          ? "local"
+          : "remote";
       const result =
         options.playbackMode === "autoplay-chain"
           ? await this.playAutoplayChainStream(
               playbackStream,
               options,
               urlKind,
+              subtitleUrlKind,
               publish,
               retiredGeneration,
             )
@@ -312,6 +322,7 @@ export class PlayerServiceImpl implements PlayerService {
               playbackStream,
               options,
               urlKind,
+              subtitleUrlKind,
               publish,
               retiredGeneration,
             );
@@ -358,20 +369,19 @@ export class PlayerServiceImpl implements PlayerService {
 
       return result;
     } catch (e) {
+      if (e instanceof PlaybackAbortedError) throw e;
       const errorMessage = e instanceof Error ? e.message : String(e);
-      const actionableHint = errorMessage.toLowerCase().includes("mpv")
-        ? "mpv is required for playback. Install mpv and retry."
-        : "Run / export-diagnostics and / report-issue if this keeps failing.";
+      const launchFailure = classifyMpvLaunchError(e);
       this.deps.logger.error("MPV playback failed", { error: String(e) });
       this.deps.diagnostics.record(
         buildPlaybackDiagnosticEvent({
           operation: "mpv.playback.failed",
           status: "failed",
           severity: "blocked",
-          failureClass: "dependency",
+          failureClass: launchFailure.failureClass,
           message: "MPV playback failed",
           correlation: options.correlation,
-          context: { error: errorMessage, hint: actionableHint },
+          context: { error: errorMessage, hint: launchFailure.hint },
         }),
       );
       return {
@@ -646,46 +656,72 @@ export class PlayerServiceImpl implements PlayerService {
     stream: StreamInfo,
     options: PlayerOptions,
     urlKind: "remote" | "local",
+    subtitleUrlKind: "remote" | "local",
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
     const generation = this.currentGeneration;
-    await this.retirePersistentSession(retiredGeneration);
-    return await (this.deps.launchMpv ?? launchMpv)({
-      url: stream.url,
-      urlKind,
-      headers: stream.headers ?? {},
-      subtitle: stream.subtitle ?? null,
-      subtitleUrlKind: "remote",
-      audioPreference: options.audioPreference,
-      subtitlePreference: options.subtitlePreference,
-      subtitleTracks: stream.subtitleList,
-      displayTitle: options.displayTitle,
-      startAt: options.startAt,
-      requiresYtdl: stream.requiresYtdl,
-      ytdlFormat: stream.ytdlFormat,
-      ytdlRawOptions: stream.ytdlRawOptions,
-      attach: options.attach,
-      timing: options.timing,
-      autoSkipEnabled: options.autoSkipEnabled,
-      skipRecap: options.skipRecap,
-      skipIntro: options.skipIntro,
-      skipPreview: options.skipPreview,
-      skipCredits: options.skipCredits,
-      onControlReady: (control) => this.setActiveControlFor(generation, control),
-      onPlayerReady: options.onPlayerReady,
-      onPlaybackEvent: publish,
-      mpv: {
-        ...this.deps.mpv,
-        startupPriority: this.deps.config.startupPriority,
-      },
-    });
+    const stopOnAbort = () => {
+      const active = this.deps.playerControl.getActive?.();
+      if (!active) return;
+      void active.stop("playback-aborted").catch(() => {
+        // Session shutdown retains the process-registry SIGKILL backstop.
+      });
+    };
+    options.abortSignal?.addEventListener("abort", stopOnAbort, { once: true });
+    try {
+      await this.retirePersistentSession(retiredGeneration);
+      if (options.abortSignal?.aborted) {
+        throw new PlaybackAbortedError("playback aborted before mpv launch");
+      }
+      return await (this.deps.launchMpv ?? launchMpv)({
+        url: stream.url,
+        urlKind,
+        headers: stream.headers ?? {},
+        subtitle: stream.subtitle ?? null,
+        subtitleUrlKind,
+        audioPreference: options.audioPreference,
+        subtitlePreference: options.subtitlePreference,
+        subtitleTracks: stream.subtitleList,
+        displayTitle: options.displayTitle,
+        startAt: options.startAt,
+        requiresYtdl: stream.requiresYtdl,
+        ytdlFormat: stream.ytdlFormat,
+        ytdlRawOptions: stream.ytdlRawOptions,
+        attach: options.attach,
+        timing: options.timing,
+        autoSkipEnabled: options.autoSkipEnabled,
+        skipRecap: options.skipRecap,
+        skipIntro: options.skipIntro,
+        skipPreview: options.skipPreview,
+        skipCredits: options.skipCredits,
+        onControlReady: (control) => {
+          if (control && options.abortSignal?.aborted) {
+            if (this.isCurrentGeneration(generation)) this.invalidateProcessGeneration();
+            void control.stop("playback-aborted").catch(() => {
+              // Session shutdown retains the process-registry SIGKILL backstop.
+            });
+            return;
+          }
+          this.setActiveControlFor(generation, control);
+        },
+        onPlayerReady: options.onPlayerReady,
+        onPlaybackEvent: publish,
+        mpv: {
+          ...this.deps.mpv,
+          startupPriority: this.deps.config.startupPriority,
+        },
+      });
+    } finally {
+      options.abortSignal?.removeEventListener("abort", stopOnAbort);
+    }
   }
 
   private async playAutoplayChainStream(
     stream: StreamInfo,
     options: PlayerOptions,
     urlKind: "remote" | "local",
+    subtitleUrlKind: "remote" | "local",
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
@@ -701,7 +737,7 @@ export class PlayerServiceImpl implements PlayerService {
     const sharedOptions = {
       displayTitle: options.displayTitle,
       urlKind,
-      subtitleUrlKind: "remote" as const,
+      subtitleUrlKind,
       audioPreference: options.audioPreference,
       subtitlePreference: options.subtitlePreference,
       primarySubtitle: stream.subtitle ?? null,

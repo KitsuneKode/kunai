@@ -72,6 +72,19 @@ export function buildOfflineFileUnavailableProblem(): PlaybackProblem {
   };
 }
 
+/** A verified artifact reached mpv, but the local player handoff itself failed. */
+export function buildLocalPlaybackFailureProblem(): PlaybackProblem {
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "local-playback-failed",
+    userMessage:
+      "The downloaded file was found, but mpv could not open it. Open Diagnostics for the exact player error.",
+    recommendedAction: "diagnostics",
+    secondaryActions: ["relaunch"],
+  };
+}
+
 export function buildProviderResolveProblem({
   attempts,
 }: {
@@ -315,6 +328,7 @@ export function toErrorScenario(
     // shell rendered the bare `⚠ issue · offline-file-unavailable` slug instead
     // of the error surface every other blocking failure gets.
     case "offline-file-unavailable":
+    case "local-playback-failed":
       return {
         kind: "title-unavailable",
         title: context.title ?? extractUnavailableTitle(problem.userMessage),

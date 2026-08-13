@@ -143,6 +143,27 @@ describe("buildEpisodePickerOption", () => {
 });
 
 describe("buildPlaybackEpisodePickerOptions", () => {
+  test("offline picker derives series episodes only from the downloaded index", async () => {
+    let loadCalls = 0;
+    const result = await buildPlaybackEpisodePickerOptions({
+      title: seriesTitle,
+      currentEpisode: { season: 2, episode: 5 },
+      isAnime: false,
+      networkAllowed: false,
+      downloadedEpisodes: new Set(["1:9", "2:7", "2:5", "2:6"]),
+      watchedEntries: WATCHED_ENTRIES,
+      loadEpisodes: async () => {
+        loadCalls += 1;
+        return [];
+      },
+    });
+
+    expect(loadCalls).toBe(0);
+    expect(result.options.map((option) => option.value)).toEqual(["2:5", "2:6", "2:7"]);
+    expect(result.options[0]).toMatchObject({ badge: "✓", tone: "success" });
+    expect(result.initialIndex).toBe(0);
+  });
+
   test("anime path prefers animeEpisodes labels over numbered stubs", async () => {
     const options = await buildPlaybackEpisodePickerOptions({
       title: seriesTitle,

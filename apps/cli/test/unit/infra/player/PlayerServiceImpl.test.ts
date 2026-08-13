@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
+import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
@@ -69,7 +70,10 @@ function createService(
   events: DiagnosticEventInput[],
   overrides: {
     presentation?: { isInteractiveShellMounted: () => boolean };
-    playerControl?: { setActive: (control: unknown) => void };
+    playerControl?: {
+      setActive: (control: ActivePlayerControl | null) => void;
+      getActive?: () => ActivePlayerControl | null;
+    };
     launchMpv?: typeof launchMpv;
   } = {},
 ) {
@@ -104,6 +108,74 @@ function createService(
 }
 
 describe("PlayerServiceImpl diagnostics", () => {
+  test("classifies only typed missing-mpv failures as dependency problems", async () => {
+    const dependencyEvents: DiagnosticEventInput[] = [];
+    const genericEvents: DiagnosticEventInput[] = [];
+    const { service: dependencyService } = createService(dependencyEvents, {
+      launchMpv: (async () => {
+        throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
+      }) as typeof launchMpv,
+    });
+    const { service: genericService } = createService(genericEvents, {
+      launchMpv: (async () => {
+        throw new Error("mpv socket refused the launch");
+      }) as typeof launchMpv,
+    });
+
+    await dependencyService.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+    });
+    await genericService.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+    });
+
+    const dependencyFailure = dependencyEvents.find(
+      (event) => event.operation === "mpv.playback.failed",
+    );
+    const genericFailure = genericEvents.find((event) => event.operation === "mpv.playback.failed");
+    expect(dependencyFailure?.context?.failureClass).toBe("dependency");
+    expect(dependencyFailure?.context?.hint).toContain("Install mpv");
+    expect(genericFailure?.context?.failureClass).toBe("unknown");
+    expect(genericFailure?.context?.hint).not.toContain("Install mpv");
+  });
+
+  test("full play marks a verified local file and sidecar as trusted local targets", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const localSource = {
+      ...LOCAL_SOURCE,
+      subtitlePath: "/media/episode-2.en.srt",
+    };
+    const { service } = createService(events, {
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(
+      createStream({
+        url: localSource.filePath,
+        headers: {},
+        subtitle: localSource.subtitlePath,
+      }),
+      {
+        url: localSource.filePath,
+        displayTitle: "Offline episode",
+        localPlaybackSource: localSource,
+      } as PlayerOptions,
+    );
+
+    expect(launchedWith).toMatchObject({
+      url: localSource.filePath,
+      urlKind: "local",
+      subtitle: localSource.subtitlePath,
+      subtitleUrlKind: "local",
+    });
+  });
+
   test("rejects a terminal HLS response before spawning MPV", async () => {
     const events: DiagnosticEventInput[] = [];
     let launches = 0;
@@ -512,6 +584,135 @@ describe("PlayerServiceImpl playback generations", () => {
 });
 
 describe("PlayerServiceImpl shutdown", () => {
+  test("an abort during persistent retirement prevents the one-shot spawn", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let releaseClose!: () => void;
+    let closeStarted!: () => void;
+    let launchCalls = 0;
+    const closeReached = new Promise<void>((resolve) => {
+      closeStarted = resolve;
+    });
+    const closeGate = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const { service } = createService(events, {
+      launchMpv: (async () => {
+        launchCalls += 1;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+    (
+      service as unknown as { persistentSession: { isAlive(): boolean; close(): Promise<void> } }
+    ).persistentSession = {
+      isAlive: () => true,
+      async close() {
+        closeStarted();
+        await closeGate;
+      },
+    };
+    const abortController = new AbortController();
+
+    const playing = service.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      abortSignal: abortController.signal,
+    });
+    await closeReached;
+    abortController.abort("session-shutdown");
+    releaseClose();
+
+    await expect(playing).rejects.toBeInstanceOf(PlaybackAbortedError);
+    expect(launchCalls).toBe(0);
+  });
+
+  test("an abort before one-shot control publication stops the supplied control directly", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let publishControl!: () => void;
+    let stopReason: string | undefined;
+    let finishPlayback!: (result: PlaybackResult) => void;
+    const controlGate = new Promise<void>((resolve) => {
+      publishControl = resolve;
+    });
+    const playbackResult = new Promise<PlaybackResult>((resolve) => {
+      finishPlayback = resolve;
+    });
+    const { service } = createService(events, {
+      playerControl: {
+        setActive: () => {},
+        getActive: () => null,
+      },
+      launchMpv: (async (options) => {
+        await controlGate;
+        options.onControlReady?.({
+          id: "late-one-shot",
+          stop: async (reason) => {
+            stopReason = reason;
+          },
+        });
+        return await playbackResult;
+      }) as typeof launchMpv,
+    });
+    const abortController = new AbortController();
+
+    const playing = service.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      abortSignal: abortController.signal,
+    });
+    await Bun.sleep(0);
+    abortController.abort("session-shutdown");
+    service.beginShutdown();
+    publishControl();
+    await Bun.sleep(0);
+    const observedStopReason = stopReason;
+    finishPlayback(createPlaybackResult());
+    await playing;
+
+    expect(observedStopReason).toBe("playback-aborted");
+  });
+
+  test("aborting an active one-shot play stops its mpv control", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let activeControl: ActivePlayerControl | null = null;
+    let stopReason: string | undefined;
+    let finishPlayback!: (result: PlaybackResult) => void;
+    const playbackResult = new Promise<PlaybackResult>((resolve) => {
+      finishPlayback = resolve;
+    });
+    const { service } = createService(events, {
+      playerControl: {
+        setActive: (control) => {
+          activeControl = control;
+        },
+        getActive: () => activeControl,
+      },
+      launchMpv: (async (options) => {
+        options.onControlReady?.({
+          id: "one-shot",
+          stop: async (reason) => {
+            stopReason = reason;
+          },
+        });
+        return await playbackResult;
+      }) as typeof launchMpv,
+    });
+    const abortController = new AbortController();
+
+    const playing = service.play(createStream(), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 1",
+      abortSignal: abortController.signal,
+    });
+    await Bun.sleep(0);
+    abortController.abort("session-shutdown");
+    await Bun.sleep(0);
+    const observedStopReason = stopReason;
+    finishPlayback(createPlaybackResult());
+    await playing;
+
+    expect(observedStopReason).toBe("playback-aborted");
+  });
+
   test("local playback retires a persistent player and owns the active controls", async () => {
     const events: DiagnosticEventInput[] = [];
     const lifecycle: string[] = [];

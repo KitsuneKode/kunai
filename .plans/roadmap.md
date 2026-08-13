@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-07-29
+Last updated: 2026-08-13
 
 This is the **only index of active work**. Everything in `.plans/` is unfinished
 by construction; everything finished lives in [`archive/`](./archive/README.md).
@@ -71,6 +71,7 @@ lands; leftover polish becomes a row here, not a surviving plan file.
 | Release schedules               | TV weekly/season projection                               | [catalog-release-schedule-service.md](./catalog-release-schedule-service.md)                                 |
 | Upcoming-episode UX             | `upcomingNext` vs released `nextEpisode` mutual exclusion | [series-catalog-end-state-and-upcoming-episode-ux.md](./series-catalog-end-state-and-upcoming-episode-ux.md) |
 | Download / offline / onboarding | Download slices, offline library, setup wizard            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                           |
+| Provider-independent offline    | Keep downloads playable after provider retirement         | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)                       |
 | Offline artwork cache           | Library previews                                          | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)             |
 | Network status                  | Offline suggestion surface                                | [network-status-and-offline-suggestion.md](./network-status-and-offline-suggestion.md)                       |
 | Recovery policy engine          | Policy modes                                              | [recovery-policy-engine.md](./recovery-policy-engine.md)                                                     |

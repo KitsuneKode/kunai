@@ -204,6 +204,21 @@ describe("choosePlaybackSubtitle", () => {
 });
 
 describe("shouldAttemptLateSubtitleLookup", () => {
+  test("never starts a remote subtitle lookup while offline", () => {
+    const decision = shouldAttemptLateSubtitleLookup({
+      stream: {
+        ...BASE_STREAM,
+        subtitle: undefined,
+        subtitleList: undefined,
+      },
+      requestedSubLang: "en",
+      hasTmdbId: true,
+      networkAvailable: false,
+    });
+
+    expect(decision).toMatchObject({ attempt: false, reason: "offline" });
+  });
+
   test("tries Wyzie when provider inventory exists but has no matching configured subtitle", () => {
     expect(
       shouldAttemptLateSubtitleLookup({

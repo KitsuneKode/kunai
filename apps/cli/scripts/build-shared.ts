@@ -219,8 +219,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * ~9 KiB) and is ratcheted separately by NPM_PACK_PACKED_BUDGET_BYTES /
  * NPM_PACK_UNPACKED_BUDGET_BYTES, so moving this number cannot affect what a
  * user installs from npm.
+ *
+ * Raised from 2_800 on 2026-08-13 for the verified offline media/sidecar
+ * provenance handoff plus active cancellation and reconnect generation guards.
+ * The previous tree had 388 bytes of headroom; the completed bundle is 2_804 KiB.
  */
-export const NPM_BUNDLE_BUDGET_KB = 2_800;
+export const NPM_BUNDLE_BUDGET_KB = 2_816;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

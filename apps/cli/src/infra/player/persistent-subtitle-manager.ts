@@ -1,5 +1,5 @@
 import type { SubtitleTrack } from "@/domain/types";
-import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
+import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, describeSubtitleTrackForMpv } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
@@ -39,13 +39,19 @@ export class PersistentSubtitleManager {
     return [...this.externalSubtitleIds];
   }
 
-  async removeExternalSubtitles(ipcSession: MpvIpcSession | null): Promise<void> {
-    if (!ipcSession) return;
-    if (this.externalSubtitleIds.length === 0) return;
+  async removeExternalSubtitles(
+    ipcSession: MpvIpcSession | null,
+    isCurrent: () => boolean = () => true,
+  ): Promise<boolean> {
+    if (!ipcSession || !isCurrent()) return false;
+    if (this.externalSubtitleIds.length === 0) return true;
 
     for (const trackId of this.externalSubtitleIds) {
+      if (!isCurrent()) return false;
       await ipcSession.send(["sub-remove", trackId], 1_000);
+      if (!isCurrent()) return false;
     }
+    return true;
   }
 
   async replaceSubtitleInventory(
@@ -53,35 +59,40 @@ export class PersistentSubtitleManager {
     primarySubtitle: string | null,
     subtitleTracks?: readonly SubtitleTrack[],
     onAttached?: (trackCount: number) => void,
+    primarySubtitleKind: MpvUrlKind = "remote",
+    isCurrent: () => boolean = () => true,
   ): Promise<void> {
-    if (!ipcSession) return;
+    if (!ipcSession || !isCurrent()) return;
 
-    await this.removeExternalSubtitles(ipcSession);
+    if (!(await this.removeExternalSubtitles(ipcSession, isCurrent))) return;
 
     const safePrimary =
-      primarySubtitle && isAllowedMpvUrl(primarySubtitle, "remote") ? primarySubtitle : null;
+      primarySubtitle && isAllowedMpvUrl(primarySubtitle, primarySubtitleKind)
+        ? primarySubtitle
+        : null;
     if (safePrimary) {
       const primary = describeSubtitleTrackForMpv(safePrimary, subtitleTracks);
       const result = await ipcSession.send(
         ["sub-add", safePrimary, "select", primary.title, primary.language],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
-      if (!result.ok) return;
+      if (!result.ok || !isCurrent()) return;
     }
 
     const additionalTracks = collectAdditionalSubtitleTracks(safePrimary, subtitleTracks).filter(
       (track) => isAllowedMpvUrl(track.url, "remote"),
     );
     for (const track of additionalTracks) {
+      if (!isCurrent()) return;
       const result = await ipcSession.send(
         ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
-      if (!result.ok) return;
+      if (!result.ok || !isCurrent()) return;
     }
 
     const attachedCount = (safePrimary ? 1 : 0) + additionalTracks.length;
-    if (attachedCount > 0) {
+    if (attachedCount > 0 && isCurrent()) {
       onAttached?.(attachedCount);
     }
   }

@@ -36,6 +36,7 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -105,7 +106,7 @@ export async function launchMpv(opts: {
   };
 
   if (!Bun.which("mpv")) {
-    throw new Error("mpv is not installed or not found on PATH");
+    throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
   }
 
   const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
@@ -483,7 +484,10 @@ export function buildMpvArgs(
   },
 ): string[] {
   if (!isAllowedMpvUrl(opts.url, opts.urlKind ?? "remote")) {
-    throw new Error("Refusing to launch mpv with unsafe stream URL scheme");
+    throw new MpvLaunchError(
+      "unsafe-target",
+      "Refusing to launch mpv with unsafe stream URL scheme",
+    );
   }
 
   const args: string[] = [];

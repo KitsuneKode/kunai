@@ -118,8 +118,14 @@ export interface PlayerOptions {
   onPlaybackEvent?: (input: PlayerPlaybackEventEnvelope) => void;
   /** Called once when playback enters the last ~30 s (autoplay-chain mode only). */
   onNearEof?: () => void;
-  /** When aborted, `play()` rejects before spawning mpv. */
+  /** Rejects before spawn; while one-shot playback is active, stops its mpv control. */
   abortSignal?: AbortSignal;
+  /**
+   * Verified offline source that authorized local filesystem targets for this
+   * play. The player matches paths exactly before opting into local URL rules;
+   * provider-controlled streams remain remote-only.
+   */
+  localPlaybackSource?: LocalPlaybackSource;
   shareLinkContext?: {
     readonly mode: ShellMode;
     readonly title: Pick<TitleInfo, "id" | "type" | "name" | "externalIds" | "isAnime">;

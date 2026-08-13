@@ -1,5 +1,7 @@
 import type { ProviderResolveResult } from "@kunai/types";
 
+import type { RecentPlaybackStreamProvenance } from "./recent-playback-stream";
+
 /** ~3 catalog sources + 1 provider hop before surfacing post-play recovery. */
 export const MAX_STARTUP_FAILOVER_ATTEMPTS = 4;
 
@@ -10,6 +12,13 @@ export type StartupFailoverPlan =
   | { readonly kind: "advance-source"; readonly sourceId: string }
   | { readonly kind: "fallback-provider" }
   | { readonly kind: "give-up" };
+
+/** Local artifacts have no provider source to refresh, invalidate, or fail over from. */
+export function shouldUseProviderPlaybackRecovery(
+  provenance: RecentPlaybackStreamProvenance,
+): boolean {
+  return provenance !== "local";
+}
 
 /** Ordered source ids from a resolve result (catalog / inventory order). */
 export function listOrderedPlaybackSourceIds(

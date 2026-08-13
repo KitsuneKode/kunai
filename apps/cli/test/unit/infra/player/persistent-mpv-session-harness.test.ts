@@ -34,7 +34,11 @@ function createFakeProcess() {
   return { handle, endProcess: (code = 0) => resolveExit(code) };
 }
 
-function createHarness() {
+function createHarness(
+  harnessOptions: {
+    readonly beforeSend?: (command: readonly unknown[]) => Promise<void> | void;
+  } = {},
+) {
   let callbacks!: CapturedCallbacks;
   let resolveExit!: (code: number) => void;
   const commands: unknown[][] = [];
@@ -53,6 +57,7 @@ function createHarness() {
   const ipc: MpvIpcSession = {
     async send(command) {
       commands.push([...command]);
+      await harnessOptions.beforeSend?.(command);
       return {
         ok: true,
         command,
@@ -808,6 +813,186 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     const playbackResult = session.waitForCurrentPlayback();
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 18_200 });
     await playbackResult;
+  });
+
+  test("a replacement during reconnect seek blocks every stale completion command", async () => {
+    let releaseSeek!: () => void;
+    let seekStarted!: () => void;
+    const seekReached = new Promise<void>((resolve) => {
+      seekStarted = resolve;
+    });
+    const seekGate = new Promise<void>((resolve) => {
+      releaseSeek = resolve;
+    });
+    const harness = createHarness({
+      beforeSend: async (command) => {
+        if (command[0] !== "seek") return;
+        seekStarted();
+        await seekGate;
+      },
+    });
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/reconnect-race.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode-1.vtt",
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 4 });
+    harness.callbacks().onPropertyUpdate({
+      name: "demuxer-cache-state",
+      value: { "fw-bytes": 0 },
+      observedAt: 5,
+    });
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 6 });
+    await flushAsyncWork();
+    harness.callbacks().onFileLoaded?.({ observedAt: 7 });
+    await seekReached;
+
+    // A stop/replacement retires the reconnect's generation before its IPC
+    // command resolves. Drive that private seam directly so the test controls
+    // the exact await boundary instead of needing a second active cycle.
+    (session as unknown as { advanceCycleGeneration(): unknown }).advanceCycleGeneration();
+    const replacementCommandCount = harness.commands.length;
+    releaseSeek();
+    await flushAsyncWork();
+
+    expect(harness.commands.slice(replacementCommandCount)).toEqual([]);
+  });
+
+  test("a replacement during reconnect subtitle cleanup blocks stale subtitle attachment", async () => {
+    let releaseRemoval!: () => void;
+    let removalStarted!: () => void;
+    const removalReached = new Promise<void>((resolve) => {
+      removalStarted = resolve;
+    });
+    const removalGate = new Promise<void>((resolve) => {
+      releaseRemoval = resolve;
+    });
+    const events: unknown[] = [];
+    const harness = createHarness({
+      beforeSend: async (command) => {
+        if (command[0] !== "sub-remove") return;
+        removalStarted();
+        await removalGate;
+      },
+    });
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/reconnect-subtitle-race.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode-1.vtt",
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+    harness.callbacks().onPropertyUpdate({
+      name: "track-list",
+      value: [{ id: 9, type: "sub", external: true }],
+      observedAt: 2,
+    });
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 4 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 5 });
+    harness.callbacks().onPropertyUpdate({
+      name: "demuxer-cache-state",
+      value: { "fw-bytes": 0 },
+      observedAt: 6,
+    });
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 7 });
+    await flushAsyncWork();
+    harness.callbacks().onFileLoaded?.({ observedAt: 8 });
+    await removalReached;
+
+    (session as unknown as { advanceCycleGeneration(): unknown }).advanceCycleGeneration();
+    const commandCountAtReplacement = harness.commands.length;
+    releaseRemoval();
+    await flushAsyncWork();
+
+    expect(harness.commands.slice(commandCountAtReplacement)).toEqual([]);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "mpv-in-process-reconnect", phase: "complete" }),
+    );
+  });
+
+  test("a replacement during reconnect backoff prevents the stale reload", async () => {
+    const harness = createHarness();
+    const events: unknown[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/backoff-race.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 2,
+        mpvKunaiScriptOpts: "",
+        tuningOverrides: { mpvReconnectBaseBackoffMs: 100, mpvReconnectMaxBackoffMs: 100 },
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    const markNetworkable = (base: number) => {
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: base });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: base + 1 });
+      harness
+        .callbacks()
+        .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: base + 2 });
+      harness.callbacks().onPropertyUpdate({
+        name: "demuxer-cache-state",
+        value: { "fw-bytes": 0 },
+        observedAt: base + 3,
+      });
+    };
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    markNetworkable(2);
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 6 });
+    await flushAsyncWork();
+    markNetworkable(7);
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 12 });
+    await Bun.sleep(10);
+    (session as unknown as { advanceCycleGeneration(): unknown }).advanceCycleGeneration();
+    const commandCountAtReplacement = harness.commands.length;
+    await Bun.sleep(150);
+    await flushAsyncWork();
+
+    expect(
+      harness.commands
+        .slice(commandCountAtReplacement)
+        .some((command) => command[0] === "loadfile"),
+    ).toBe(false);
+    expect(
+      events.filter(
+        (event) =>
+          (event as { type?: string }).type === "mpv-in-process-reconnect" &&
+          (event as { phase?: string }).phase === "started",
+      ),
+    ).toHaveLength(1);
   });
 
   test("reconnect that dies before file-loaded does not block a retry within budget", async () => {

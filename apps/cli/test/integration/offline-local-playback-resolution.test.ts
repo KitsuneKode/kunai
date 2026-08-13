@@ -4,8 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
+import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
 import type { Container } from "@/container";
 import type { TitleInfo } from "@/domain/types";
+import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
+import type { launchMpv } from "@/mpv";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import { OfflineTitleIdentityService } from "@/services/offline/offline-title-identity";
 import { OfflineAssetService } from "@/services/offline/OfflineAssetService";
@@ -139,6 +142,85 @@ const movieTitle: TitleInfo = {
 };
 
 describe("offline local playback resolution", () => {
+  test("resolved local artifact crosses the full player handoff as a trusted file", async () => {
+    const harness = createHarness({
+      titleId: "1339713",
+      mediaKind: "movie",
+      season: 1,
+      episode: 1,
+    });
+    const resolution = await resolveLocalEpisodePlayback(
+      containerFor(harness),
+      movieTitle,
+      { season: 1, episode: 1 },
+      { entrypoint: "offline-library", forceLocal: true },
+    );
+    expect(resolution).not.toBeNull();
+    if (!resolution) throw new Error("expected local playback resolution");
+
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const player = new PlayerServiceImpl({
+      logger: {
+        child: () => {
+          throw new Error("not used");
+        },
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        fatal: () => {},
+      },
+      tracer: {
+        span: async <T>(_name: string, run: () => Promise<T>) => await run(),
+        getCurrentTrace: () => null,
+        getCurrentSpan: () => null,
+      },
+      diagnostics: { record: () => {} },
+      playerControl: { setActive: () => {} },
+      config: { getRaw: () => ({}) },
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return {
+          watchedSeconds: 1,
+          duration: 1,
+          endReason: "eof",
+          playerExitCode: 0,
+          playerExitSignal: null,
+          lastNonZeroPositionSeconds: 1,
+          lastNonZeroDurationSeconds: 1,
+        };
+      }) as typeof launchMpv,
+    } as never);
+    const hooks = new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          property === "applyPlaybackStatusSignal" ? () => ({ accepted: true }) : () => undefined,
+      },
+    ) as Parameters<typeof runMpvPlaybackSession>[0]["hooks"];
+
+    await runMpvPlaybackSession({
+      stream: resolution.stream,
+      title: movieTitle,
+      episode: { season: 1, episode: 1 },
+      player,
+      playOptions: {},
+      subtitleStatus: "local",
+      startAt: 0,
+      hooks,
+      sessionAborted: false,
+      iterationAborted: false,
+      shareLinkContext: { mode: "series", title: movieTitle },
+      timing: resolution.timing,
+      localPlaybackSource: resolution.source,
+    });
+
+    expect(launchedWith).toMatchObject({
+      url: harness.filePath,
+      urlKind: "local",
+    });
+  });
+
   test("a downloaded movie resolves to its local file", async () => {
     // The reported bug. `applyDownloadJobSessionRouting` routes a movie whose
     // job carries mode "series" into series mode, so the session mode and the

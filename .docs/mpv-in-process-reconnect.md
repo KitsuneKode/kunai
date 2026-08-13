@@ -56,6 +56,11 @@ increments the generation **before** cleanup, so a late IPC event from the
 previous cycle cannot revive a session the user already replaced or stopped.
 Reconnect budgets and backoff above are unchanged by this.
 
+Reconnect backoff and post-`file-loaded` completion carry the initiating
+generation explicitly. They re-check it after every awaited seek, unpause, and
+subtitle operation; a replacement during any one of those waits prevents every
+remaining command and state mutation from the retired cycle.
+
 ## Status recovery contract
 
 One authoritative transition policy owns current playback status

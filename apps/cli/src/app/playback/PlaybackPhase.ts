@@ -98,6 +98,7 @@ import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-
 import {
   listOrderedPlaybackSourceIds,
   planStartupFailover,
+  shouldUseProviderPlaybackRecovery,
   STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
 import {
@@ -112,6 +113,7 @@ import {
   type PlaybackStatusSignal,
   type PlaybackStatusSnapshot,
 } from "@/app/playback/playback-status-policy";
+import { shouldFetchPlaybackTiming } from "@/app/playback/playback-timing-fetch-policy";
 import {
   applyPlaybackControlTrackSelection,
   buildTrackOverrideDiagnosticContext,
@@ -129,6 +131,7 @@ import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attemp
 import {
   recentPlaybackStreamKey,
   recentPlaybackStreamMatchesProvider,
+  restoreRecentPlaybackStream,
   type RecentPlaybackStreamProvenance,
   type RecentPlaybackStreamRecord,
 } from "@/app/playback/recent-playback-stream";
@@ -166,6 +169,7 @@ import {
   toEpisodeNavigationState,
 } from "@/domain/playback/playback-policy";
 import {
+  buildLocalPlaybackFailureProblem,
   buildOfflineFileUnavailableProblem,
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
@@ -1209,6 +1213,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           };
           recordStartupMark("episode-bootstrap-started");
+          const playbackNetworkAllowed = !isOfflineLaunch && container.connectivity.isOnline();
 
           // Warm the catalog-detail cache early so the playback/post-play panels
           // can read it. On resolve we dispatch SET_TITLE_DETAIL so the UI reacts
@@ -1237,9 +1242,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // on the successful provider when they differ.
           recordStartupMark("timing-fetch-started");
           const configuredTimingProviderId = currentProvider?.metadata.id;
-          const timingFetch = isOfflineLaunch
-            ? Promise.resolve(null)
-            : this.getPlaybackTimingMetadata(
+          const timingFetch = shouldFetchPlaybackTiming({
+            networkAllowed: playbackNetworkAllowed,
+            hasTiming: false,
+          })
+            ? this.getPlaybackTimingMetadata(
                 title,
                 currentEpisode,
                 playbackTimingByEpisode,
@@ -1247,7 +1254,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.getState().mode === "anime",
                 configuredTimingProviderId,
                 container.diagnosticsService,
-              );
+              )
+            : Promise.resolve(null);
 
           const watchedEntries = historyRepository.listByTitleIdentity(historyTitleLookup);
           const playbackMode = stateManager.getState().mode;
@@ -1309,6 +1317,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 title,
                 currentEpisode,
                 isAnime: isAnimePlayback,
+                networkAllowed: playbackNetworkAllowed,
                 animeEpisodeCount: knownEpisodeCount,
                 animeEpisodes: currentAnimeEpisodes,
                 watchedEntries,
@@ -1537,9 +1546,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               recentPlaybackStreamMatchesProvider(recent, currentProvider.metadata.id) &&
               recentStreamMatchesPreferred(recent, currentProvider.metadata.id, currentEpisode)
             ) {
-              stream = recent.stream;
-              resolvedProviderId = recent.resolvedProviderId;
-              streamProvenance = recent.provenance;
+              const restored = restoreRecentPlaybackStream(recent);
+              stream = restored.stream;
+              resolvedProviderId = restored.resolvedProviderId;
+              streamProvenance = restored.provenance;
+              run.localPlaybackSource = restored.localPlaybackSource;
               diagnosticsService.record({
                 ...playbackCorrelation,
                 category: "cache",
@@ -2068,15 +2079,20 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             run.localEpisodeTiming ??
             (successfulTimingProviderId === configuredTimingProviderId
               ? await timingFetch
-              : await this.getPlaybackTimingMetadata(
-                  title,
-                  currentEpisode,
-                  playbackTimingByEpisode,
-                  resolveController.signal,
-                  stateManager.getState().mode === "anime",
-                  successfulTimingProviderId,
-                  container.diagnosticsService,
-                ));
+              : shouldFetchPlaybackTiming({
+                    networkAllowed: playbackNetworkAllowed,
+                    hasTiming: false,
+                  })
+                ? await this.getPlaybackTimingMetadata(
+                    title,
+                    currentEpisode,
+                    playbackTimingByEpisode,
+                    resolveController.signal,
+                    stateManager.getState().mode === "anime",
+                    successfulTimingProviderId,
+                    container.diagnosticsService,
+                  )
+                : null);
           run.localEpisodeTiming = null;
           recordStartupMark("timing-ready", stream);
           const playbackTiming = mergeTimingMetadata(
@@ -2095,7 +2111,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // if the background retry resolves while the episode is playing, so all
           // post-playback decisions (history, autoNext, result classification) use it.
           const effectiveTiming = { current: playbackTiming };
-          if (!playbackTiming) {
+          if (
+            shouldFetchPlaybackTiming({
+              networkAllowed: playbackNetworkAllowed,
+              hasTiming: playbackTiming !== null,
+            })
+          ) {
             runBackgroundTask({
               task: "playback.retryTiming",
               category: "playback",
@@ -2127,12 +2148,24 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
           const episodeKey = `${title.id}:${currentEpisode.season}:${currentEpisode.episode}`;
-          recentEpisodeStreams.set(episodeKey, {
-            stream: preparedStream,
-            selectedProviderId: currentProvider.metadata.id,
-            resolvedProviderId,
-            provenance: streamProvenance,
-          });
+          if (streamProvenance === "local") {
+            if (run.localPlaybackSource) {
+              recentEpisodeStreams.set(episodeKey, {
+                stream: preparedStream,
+                selectedProviderId: currentProvider.metadata.id,
+                resolvedProviderId,
+                provenance: "local",
+                localPlaybackSource: run.localPlaybackSource,
+              });
+            }
+          } else {
+            recentEpisodeStreams.set(episodeKey, {
+              stream: preparedStream,
+              selectedProviderId: currentProvider.metadata.id,
+              resolvedProviderId,
+              provenance: streamProvenance,
+            });
+          }
           if (recentEpisodeStreams.size > 5) {
             const first = recentEpisodeStreams.keys().next().value;
             if (first !== undefined) recentEpisodeStreams.delete(first);
@@ -2258,6 +2291,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stopAfterCurrent: run.playbackSession.stopAfterCurrent,
                 sessionMode: run.playbackSession.mode,
                 autoplayPaused: run.playbackSession.autoplayPaused,
+                networkAllowed: !isOfflineLaunch && container.connectivity.isOnline(),
               })
             ) {
               return;
@@ -2521,10 +2555,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             });
           }
 
+          const providerRecoveryAllowed = shouldUseProviderPlaybackRecovery(streamProvenance);
           const shouldInvalidateStreamCache =
-            result.endReason === "error" ||
-            result.suspectedDeadStream === true ||
-            didPlaybackFailToStart(result);
+            providerRecoveryAllowed &&
+            (result.endReason === "error" ||
+              result.suspectedDeadStream === true ||
+              didPlaybackFailToStart(result));
           if (shouldInvalidateStreamCache) {
             const invalidateProviderId = providerHandoff.successfulProviderId;
             const selectedResolveStream = preparedStream.providerResolveResult?.streams.find(
@@ -2612,8 +2648,51 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           // pushed into shell state: doing so rendered "autoplay paused" as if the
           // user's session preference had changed just because they closed mpv.
           // Only an explicit toggle changes the visible autoplay setting.
-          let shouldAutoFallbackProvider = playbackDecision.shouldFallbackProvider;
-          if (playbackDecision.shouldRefreshSource) {
+          let shouldAutoFallbackProvider =
+            playbackDecision.shouldFallbackProvider && !isOfflineLaunch;
+          if (!providerRecoveryAllowed && playbackDecision.shouldRefreshSource) {
+            const isExplicitLocalRelaunch =
+              playbackControlAction === "refresh" || playbackControlAction === "recover";
+            if (isExplicitLocalRelaunch) {
+              run.pendingStart = startAtResumePoint(
+                toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+                { suppressResumePrompt: true },
+              );
+              run.episodePlaybackSourceOverride = "local";
+              continue;
+            }
+
+            const localProblem = buildLocalPlaybackFailureProblem();
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_PROBLEM",
+              problem: localProblem,
+            });
+            diagnosticsService.record({
+              ...playbackCorrelation,
+              category: "playback",
+              operation: "playback.source.local.failed",
+              level: "error",
+              message: localProblem.userMessage,
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              context: {
+                cause: localProblem.cause,
+                endReason: result.endReason,
+                playerExitCode: result.playerExitCode,
+              },
+            });
+            await releasePersistentMpvForTerminalFailure({
+              player,
+              playerControl,
+              userMessage: localProblem.userMessage,
+              reason: `local-playback:${classifyPlaybackFailureFromResult(result)}`,
+              diagnostics: diagnosticsService,
+            });
+            return { status: "success", value: "back_to_results" };
+          }
+
+          if (providerRecoveryAllowed && playbackDecision.shouldRefreshSource) {
             const isExplicitSourceRefresh =
               playbackControlAction === "refresh" || playbackControlAction === "recover";
             const isAutoSourceRecover =
@@ -4010,10 +4089,13 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       stream,
       requestedSubLang,
       hasTmdbId: provenTmdbId !== null,
+      networkAvailable:
+        title.launchSource !== "offline-library" && context.container.connectivity.isOnline(),
     });
     if (!lookupDecision.attempt) {
       if (
         lookupDecision.reason !== "disabled" &&
+        lookupDecision.reason !== "offline" &&
         lookupDecision.reason !== "attached" &&
         lookupDecision.reason !== "hardsub-satisfied"
       ) {

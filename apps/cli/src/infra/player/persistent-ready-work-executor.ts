@@ -1,5 +1,6 @@
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackTimingMetadata, SubtitleTrack } from "@/domain/types";
+import type { MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { collectAdditionalSubtitleTracks, shouldApplyStartAtSeek } from "@/mpv";
 
 import type { MpvIpcSession } from "./mpv-ipc";
@@ -14,6 +15,7 @@ import type { PlayerPlaybackEvent } from "./PlayerService";
 export type PersistentReadyWorkOptions = {
   displayTitle: string;
   primarySubtitle: string | null;
+  subtitleUrlKind?: MpvUrlKind;
   subtitleTracks?: readonly SubtitleTrack[];
   startAt?: number;
   resumePromptAt?: number;
@@ -154,6 +156,8 @@ export class PersistentReadyWorkExecutor {
           options.onPlaybackEvent?.({ type: "subtitle-inventory-ready", trackCount });
           options.onPlaybackEvent?.({ type: "subtitle-attached", trackCount });
         },
+        options.subtitleUrlKind,
+        isCurrent,
       );
     }
     if (!isCurrent()) return;

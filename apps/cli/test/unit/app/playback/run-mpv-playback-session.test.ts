@@ -418,5 +418,9 @@ describe("runMpvPlaybackSession completion", () => {
     expect(calls).toEqual(["remote"]);
     expect(seenOptions[0]?.startAt).toBe(42);
     expect(seenOptions[0]?.shareLinkContext).toBeDefined();
+    expect(
+      (seenOptions[0] as PlayerOptions & { localPlaybackSource?: LocalPlaybackSource })
+        ?.localPlaybackSource,
+    ).toEqual(LOCAL_SOURCE);
   });
 });

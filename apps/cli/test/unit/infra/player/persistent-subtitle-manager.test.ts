@@ -38,6 +38,23 @@ function createFakeIpc(failCommand?: string): {
 }
 
 describe("PersistentSubtitleManager", () => {
+  test("accepts a verified local primary subtitle during persistent replacement", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    await (
+      manager.replaceSubtitleInventory as unknown as (
+        ipc: MpvIpcSession,
+        primarySubtitle: string,
+        subtitleTracks: undefined,
+        onAttached: undefined,
+        primarySubtitleKind: "local",
+      ) => Promise<void>
+    )(ipc, "/media/episode-2.en.srt", undefined, undefined, "local");
+
+    expect(commands).toEqual([["sub-add", "/media/episode-2.en.srt", "select", "", ""]]);
+  });
+
   test("skips local subtitle targets on remote persistent playback", async () => {
     const { ipc, commands } = createFakeIpc();
     const manager = new PersistentSubtitleManager();
@@ -106,6 +123,33 @@ describe("PersistentSubtitleManager", () => {
       ["sub-add", "https://subs.example/alt.vtt", "auto", "Spanish", "es"],
     ]);
     expect(attachedCounts).toEqual([2]);
+  });
+
+  test("stops replacement when its generation retires during subtitle removal", async () => {
+    let current = true;
+    const commands: unknown[][] = [];
+    const ipc: MpvIpcSession = {
+      async send(command) {
+        commands.push([...command]);
+        if (command[0] === "sub-remove") current = false;
+        return { ok: true, command, requestId: commands.length, response: {} };
+      },
+      sendUnchecked() {},
+      async close() {},
+    };
+    const manager = new PersistentSubtitleManager();
+    manager.updateTrackList([{ id: 7, type: "sub", external: true }]);
+
+    await manager.replaceSubtitleInventory(
+      ipc,
+      "https://subs.example/main.vtt",
+      [{ url: "https://subs.example/alt.vtt", language: "es" }],
+      undefined,
+      "remote",
+      () => current,
+    );
+
+    expect(commands).toEqual([["sub-remove", 7]]);
   });
 
   test("uses a longer mpv deadline for remote subtitle attachment", async () => {
