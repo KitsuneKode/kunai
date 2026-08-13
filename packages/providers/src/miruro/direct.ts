@@ -16,6 +16,7 @@ import type {
   ProviderRuntimeContext,
   ProviderSourceCandidate,
   ProviderTraceEvent,
+  ResolveErrorCode,
   ProviderVariantCandidate,
   StreamCandidate,
   SubtitleCandidate,
@@ -133,7 +134,7 @@ function isNumericQualityLabel(value: string): boolean {
   return true;
 }
 
-type MiruroSourcesResponse = {
+export type MiruroSourcesResponse = {
   readonly streams?: readonly MiruroPipeStream[];
   readonly subtitles?: readonly MiruroPipeSubtitle[];
   readonly thumbnails?: readonly MiruroPipeThumbnail[];
@@ -205,7 +206,7 @@ type MiruroProviderEntry = {
   readonly episodes?: MiruroProviderEpisodes;
 };
 
-type MiruroEpisodesResponse = {
+export type MiruroEpisodesResponse = {
   readonly mappings?: Record<string, unknown>;
   readonly providers?: Record<string, MiruroProviderEntry | undefined>;
 };
@@ -1026,15 +1027,146 @@ function qualityRankFromMiruroStream(stream: MiruroPipeStream): number {
   return animeQualityFields(stream.quality, stream.resolution?.height).qualityRank;
 }
 
-function xorDecrypt(encrypted: Uint8Array, keyHex: string): Uint8Array {
-  const parts = keyHex.match(/.{2}/g) ?? [];
-  if (parts.length === 0) throw new Error("Invalid Miruro pipe key");
-  const key = new Uint8Array(parts.map((b) => parseInt(b, 16)));
+function xorDecrypt(encrypted: Uint8Array, key: Uint8Array): Uint8Array {
   const result = new Uint8Array(encrypted.length);
   for (let i = 0; i < encrypted.length; i++) {
     result[i] = (encrypted[i] ?? 0) ^ (key[i % key.length] ?? 0);
   }
   return result;
+}
+
+/** Which endpoint contract a pipe body is expected to satisfy. */
+export type MiruroPipeExpectedKind = "episodes" | "sources";
+
+/**
+ * One code per decode stage. A rotated key, a bumped obfuscation version, and a
+ * reshaped endpoint payload all look like "provider returned nothing" without
+ * these, which is exactly the silent exhaustion this provider used to produce.
+ */
+export type MiruroPipeDecodeFailureCode =
+  | "pipe-key-missing"
+  | "pipe-version-mismatch"
+  | "pipe-base64-invalid"
+  | "pipe-xor-gunzip-failed"
+  | "pipe-json-syntax-invalid"
+  | "pipe-json-shape-invalid";
+
+/**
+ * The message is the stage code and nothing else. Key hex, the encrypted body,
+ * decrypted plaintext, and native parser messages (which quote body bytes) must
+ * never reach a log line or a provider failure.
+ */
+export class MiruroPipeDecodeError extends Error {
+  readonly code: MiruroPipeDecodeFailureCode;
+
+  constructor(code: MiruroPipeDecodeFailureCode) {
+    super(code);
+    this.name = "MiruroPipeDecodeError";
+    this.code = code;
+  }
+}
+
+/** The only obfuscation version this decoder understands. */
+const MIRURO_PIPE_OBFUSCATION_VERSION = "2";
+
+/**
+ * `base64url(xor(gzipHeader, PIPE_KEY))` — present only on gzipped bodies, which
+ * is why the `x-obfuscated` header is still required for plain ones.
+ */
+const MIRURO_PIPE_GZIP_BODY_PREFIX = "bh4YNPj7";
+
+function parsePipeKey(keyHex: string | undefined): Uint8Array | null {
+  if (!keyHex || !/^(?:[0-9a-fA-F]{2})+$/.test(keyHex)) return null;
+  return new Uint8Array((keyHex.match(/.{2}/g) ?? []).map((byte) => parseInt(byte, 16)));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const MIRURO_EPISODES_KEYS = ["providers", "mappings"] as const;
+const MIRURO_SOURCES_KEYS = [
+  "streams",
+  "subtitles",
+  "thumbnails",
+  "intro",
+  "outro",
+  "download",
+] as const;
+
+function isMiruroEpisodesResponse(value: unknown): value is MiruroEpisodesResponse {
+  if (!isRecord(value)) return false;
+  if (MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
+  if (!MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
+  if ("providers" in value && !isRecord(value.providers)) return false;
+  if ("mappings" in value && !isRecord(value.mappings)) return false;
+  return true;
+}
+
+function isMiruroSourcesResponse(value: unknown): value is MiruroSourcesResponse {
+  if (!isRecord(value)) return false;
+  if (MIRURO_EPISODES_KEYS.some((key) => key in value)) return false;
+  if (!MIRURO_SOURCES_KEYS.some((key) => key in value)) return false;
+  if ("streams" in value && !Array.isArray(value.streams)) return false;
+  if ("subtitles" in value && !Array.isArray(value.subtitles)) return false;
+  return true;
+}
+
+/**
+ * Decode one obfuscated pipe body. Every stage that can fail — key, version,
+ * base64, XOR/gunzip, JSON syntax, endpoint schema — raises its own code, so a
+ * key rotation is never mistaken for a Cloudflare block or an empty catalog.
+ */
+export function decodeMiruroPipePayload(input: {
+  readonly body: string;
+  readonly obfuscationVersion: string | null;
+  readonly expectedKind: MiruroPipeExpectedKind;
+  readonly keyHex?: string;
+}): MiruroEpisodesResponse | MiruroSourcesResponse {
+  const key = parsePipeKey(input.keyHex);
+  if (!key) throw new MiruroPipeDecodeError("pipe-key-missing");
+
+  const versionMatches =
+    input.obfuscationVersion === MIRURO_PIPE_OBFUSCATION_VERSION ||
+    (input.obfuscationVersion === null && input.body.startsWith(MIRURO_PIPE_GZIP_BODY_PREFIX));
+  if (!versionMatches) throw new MiruroPipeDecodeError("pipe-version-mismatch");
+
+  let encrypted: Uint8Array;
+  try {
+    encrypted = base64urlToBytes(input.body);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-base64-invalid");
+  }
+
+  let json: string;
+  try {
+    const decrypted = xorDecrypt(encrypted, key);
+    json =
+      decrypted[0] === 31 && decrypted[1] === 139
+        ? new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer))
+        : new TextDecoder().decode(decrypted);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-xor-gunzip-failed");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new MiruroPipeDecodeError("pipe-json-syntax-invalid");
+  }
+
+  if (input.expectedKind === "episodes") {
+    if (!isMiruroEpisodesResponse(parsed)) {
+      throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
+    }
+    return parsed;
+  }
+
+  if (!isMiruroSourcesResponse(parsed)) {
+    throw new MiruroPipeDecodeError("pipe-json-shape-invalid");
+  }
+  return parsed;
 }
 
 const MIRURO_ANILIST_ID_PREFIX = "anilist:";
@@ -1068,13 +1200,8 @@ export async function getMiruroEpisodesResponse(
   const cached = episodeCache.get(cacheKey) as MiruroEpisodesResponse | null;
   if (cached) return cached;
 
-  const epData = (await pipeCall(
-    context,
-    "episodes",
-    { anilistId: Number(anilistId) },
-    signal,
-  )) as MiruroEpisodesResponse | null;
-  if (epData) episodeCache.set(cacheKey, epData);
+  const epData = await pipeCall(context, "episodes", { anilistId: Number(anilistId) }, signal);
+  episodeCache.set(cacheKey, epData);
   return epData;
 }
 
@@ -1346,10 +1473,22 @@ async function fetchMiruroPipeBody(
 
 async function pipeCall(
   context: ProviderRuntimeContext,
-  path: string,
+  path: "episodes",
   query: Record<string, string | number>,
   signal?: AbortSignal,
-): Promise<unknown | null> {
+): Promise<MiruroEpisodesResponse>;
+async function pipeCall(
+  context: ProviderRuntimeContext,
+  path: "sources",
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<MiruroSourcesResponse>;
+async function pipeCall(
+  context: ProviderRuntimeContext,
+  path: MiruroPipeExpectedKind,
+  query: Record<string, string | number>,
+  signal?: AbortSignal,
+): Promise<MiruroEpisodesResponse | MiruroSourcesResponse> {
   const q: Record<string, string> = {};
   for (const [k, v] of Object.entries(query)) q[k] = String(v);
 
@@ -1381,15 +1520,15 @@ async function pipeCall(
         candidate.status < 300 &&
         isMiruroObfuscatedPipeBody(candidate.text, candidate.xObfuscated)
       ) {
-        const raw = base64urlToBytes(candidate.text);
-        const decrypted = xorDecrypt(raw, PIPE_KEY);
-        let json: string;
-        if (decrypted[0] === 31 && decrypted[1] === 139) {
-          json = new TextDecoder().decode(Bun.gunzipSync(decrypted.buffer as ArrayBuffer));
-        } else {
-          json = new TextDecoder().decode(decrypted);
-        }
-        return JSON.parse(json);
+        // Decode failures are a key/version/schema problem, not a mirror problem —
+        // every remaining mirror would fail identically, so surface it immediately
+        // instead of burning the budget and reporting it as a network error.
+        return decodeMiruroPipePayload({
+          body: candidate.text,
+          obfuscationVersion: candidate.xObfuscated,
+          expectedKind: path,
+          keyHex: PIPE_KEY,
+        });
       }
       if (
         candidate.cloudflareHtml ||
@@ -1398,10 +1537,7 @@ async function pipeCall(
         wafHits += 1;
         lastError = new Error("HTTP 403 (cloudflare html)");
         if (wafHits >= MIRURO_WAF_FAIL_FAST_THRESHOLD) {
-          throw new Error(
-            "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)",
-            { cause: lastError },
-          );
+          throw new Error(MIRURO_WAF_BLOCK_MESSAGE, { cause: lastError });
         }
         continue;
       }
@@ -1410,8 +1546,9 @@ async function pipeCall(
       );
       // Try next mirror; curl fallback already attempted inside fetchMiruroPipeBody.
     } catch (error) {
+      if (error instanceof MiruroPipeDecodeError) throw error;
       lastError = error;
-      if (error instanceof Error && error.message.includes("Cloudflare WAF on multiple mirrors")) {
+      if (error instanceof Error && isMiruroWafBlockError(error)) {
         throw error;
       }
     }
@@ -1419,6 +1556,43 @@ async function pipeCall(
 
   const message = lastError instanceof Error ? lastError.message : "request failed";
   throw new Error(`Miruro pipe network request failed: ${message}`, { cause: lastError });
+}
+
+/**
+ * One owner for the WAF-block signal. `runProviderCycle` stops the whole cycle on
+ * it, so the message shape and this predicate must not drift apart.
+ */
+const MIRURO_WAF_BLOCK_MESSAGE =
+  "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML)";
+
+function isMiruroWafBlockError(error: Error): boolean {
+  return error.message.includes("Cloudflare WAF on multiple mirrors");
+}
+
+/**
+ * Map a pipe exception onto a distinct resolve failure. Decode drift is not a
+ * network fault and is not retryable; a WAF block is neither of those.
+ */
+function classifyMiruroPipeError(error: unknown): {
+  readonly code: ResolveErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
+} {
+  if (error instanceof MiruroPipeDecodeError) {
+    return {
+      code: "parse-failed",
+      message: `Miruro pipe payload could not be decoded (${error.code})`,
+      retryable: false,
+    };
+  }
+  if (error instanceof Error && isMiruroWafBlockError(error)) {
+    return { code: "blocked", message: error.message, retryable: true };
+  }
+  return {
+    code: "network-error",
+    message: error instanceof Error ? error.message : "Miruro pipe API failed",
+    retryable: true,
+  };
 }
 
 export const miruroProviderModule: CoreProviderModule = {
@@ -1539,7 +1713,7 @@ export const miruroProviderModule: CoreProviderModule = {
           const srcCacheKey = `sources:${metadata.episodeId}:${metadata.audioCategory}:${metadata.serverId}`;
           let srcData = sourceCache.get(srcCacheKey) as MiruroSourcesResponse | null;
           if (!srcData) {
-            srcData = (await pipeCall(
+            srcData = await pipeCall(
               context,
               "sources",
               {
@@ -1549,8 +1723,8 @@ export const miruroProviderModule: CoreProviderModule = {
                 category: metadata.audioCategory,
               },
               cycleContext.signal,
-            )) as MiruroSourcesResponse | null;
-            if (srcData) sourceCache.set(srcCacheKey, srcData);
+            );
+            sourceCache.set(srcCacheKey, srcData);
           }
 
           const rawStreams =
@@ -1670,19 +1844,14 @@ export const miruroProviderModule: CoreProviderModule = {
         });
       }
 
+      const classified = classifyMiruroPipeError(error);
       failures.push({
         providerId: MIRURO_PROVIDER_ID,
-        code: "network-error",
-        message: error instanceof Error ? error.message : "Miruro pipe API failed",
-        retryable: true,
+        ...classified,
         at: context.now(),
       });
 
-      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, {
-        code: "network-error",
-        message: error instanceof Error ? error.message : "Miruro pipe API failed",
-        retryable: true,
-      });
+      return createExhaustedResult(input, context, MIRURO_PROVIDER_ID, classified);
     }
   },
 };

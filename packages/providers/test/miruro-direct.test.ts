@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
@@ -6,6 +6,9 @@ import { getMiruroKnownCatalog } from "../src/catalogs/miruro";
 import {
   buildMiruroCycleCandidates,
   createMiruroResultFromPayload,
+  decodeMiruroPipePayload,
+  MiruroPipeDecodeError,
+  type MiruroPipeDecodeFailureCode,
   MIRURO_SERVER_TRY_ORDER,
   resolveMiruroAnilistId,
   type MiruroServerProfile,
@@ -223,5 +226,130 @@ describe("Miruro server order has one authority", () => {
       "zzz",
       "aaa",
     ]);
+  });
+});
+
+describe("decodeMiruroPipePayload", () => {
+  const FIXTURES = new URL("./fixtures/miruro/", import.meta.url);
+  const read = (name: string) => Bun.file(new URL(name, FIXTURES)).text();
+  const PIPE_KEY = "71951034f8fbcf53d89db52ceb3dc22c";
+
+  const decode = (
+    body: string,
+    expectedKind: "episodes" | "sources",
+    overrides: { obfuscationVersion?: string | null; keyHex?: string } = {},
+  ) =>
+    decodeMiruroPipePayload({
+      body,
+      obfuscationVersion:
+        "obfuscationVersion" in overrides ? (overrides.obfuscationVersion ?? null) : "2",
+      expectedKind,
+      keyHex: "keyHex" in overrides ? overrides.keyHex : PIPE_KEY,
+    });
+
+  const expectCode = (run: () => unknown, code: MiruroPipeDecodeFailureCode) => {
+    try {
+      run();
+    } catch (error) {
+      expect(error).toBeInstanceOf(MiruroPipeDecodeError);
+      expect((error as MiruroPipeDecodeError).code).toBe(code);
+      return;
+    }
+    throw new Error(`expected ${code} but decode succeeded`);
+  };
+
+  let episodesUnderForeignKey = "";
+  let sourcesUnderForeignKey = "";
+
+  beforeAll(async () => {
+    episodesUnderForeignKey = await read("pipe-wrong-key-episodes-v2.txt");
+    sourcesUnderForeignKey = await read("pipe-wrong-key-sources-v2.txt");
+  });
+
+  test("decodes a plain version-2 episodes body", async () => {
+    const decoded = decode(await read("pipe-valid-episodes-v2.txt"), "episodes");
+
+    expect(decoded).toMatchObject({
+      mappings: { malId: 21 },
+      providers: { kiwi: { episodes: { sub: [{ id: "kiwi-ep-1", number: 1 }] } } },
+    });
+  });
+
+  test("decodes a gzipped version-2 sources body", async () => {
+    const decoded = decode(await read("pipe-valid-sources-v2.txt"), "sources");
+
+    expect(decoded).toMatchObject({
+      streams: [{ url: "https://uwucdn.top/stream/1080/index.m3u8", quality: "1080p" }],
+      intro: { start: 0, end: 90 },
+    });
+  });
+
+  test("reports a missing or unusable key distinctly", async () => {
+    const body = await read("pipe-valid-episodes-v2.txt");
+
+    expectCode(() => decode(body, "episodes", { keyHex: undefined }), "pipe-key-missing");
+    expectCode(() => decode(body, "episodes", { keyHex: "" }), "pipe-key-missing");
+    expectCode(() => decode(body, "episodes", { keyHex: "zz" }), "pipe-key-missing");
+  });
+
+  test("reports an unexpected obfuscation version distinctly", async () => {
+    const body = await read("pipe-valid-episodes-v2.txt");
+
+    expectCode(
+      () => decode(body, "episodes", { obfuscationVersion: "3" }),
+      "pipe-version-mismatch",
+    );
+    expectCode(
+      () => decode(body, "episodes", { obfuscationVersion: null }),
+      "pipe-version-mismatch",
+    );
+  });
+
+  test("reports a base64 failure distinctly", () => {
+    expectCode(() => decode("!!!not base64!!!", "episodes"), "pipe-base64-invalid");
+  });
+
+  test("reports an XOR/gunzip failure distinctly", async () => {
+    const body = await read("pipe-truncated-gzip-sources-v2.txt");
+
+    expectCode(() => decode(body, "sources"), "pipe-xor-gunzip-failed");
+  });
+
+  test("reports a JSON syntax failure distinctly", async () => {
+    const body = await read("pipe-wrong-key-episodes-v2.txt");
+
+    expectCode(() => decode(body, "episodes"), "pipe-json-syntax-invalid");
+  });
+
+  // A rotated key does not announce itself: XOR always "succeeds", so the failure
+  // surfaces at whichever later stage the garbage breaks. Both codes are still
+  // actionable and neither is silent, which is the point.
+  test("a rotated key surfaces at the stage its garbage actually breaks", async () => {
+    expectCode(() => decode(episodesUnderForeignKey, "episodes"), "pipe-json-syntax-invalid");
+    expectCode(() => decode(sourcesUnderForeignKey, "sources"), "pipe-json-syntax-invalid");
+  });
+
+  test("reports endpoint schema drift distinctly", async () => {
+    const episodesBody = await read("pipe-valid-episodes-v2.txt");
+    const sourcesBody = await read("pipe-valid-sources-v2.txt");
+
+    expectCode(() => decode(episodesBody, "sources"), "pipe-json-shape-invalid");
+    expectCode(() => decode(sourcesBody, "episodes"), "pipe-json-shape-invalid");
+  });
+
+  test("never leaks the key, the encrypted body, or plaintext in a public failure", async () => {
+    const body = await read("pipe-wrong-key-episodes-v2.txt");
+
+    try {
+      decode(body, "episodes");
+      throw new Error("expected decode to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(MiruroPipeDecodeError);
+      const rendered = `${(error as Error).name}: ${(error as Error).message}\n${(error as Error).stack ?? ""}`;
+      expect(rendered).not.toContain(PIPE_KEY);
+      expect(rendered).not.toContain(body.slice(0, 16));
+      expect(rendered).not.toContain("Romance Dawn");
+      expect((error as MiruroPipeDecodeError).message).toBe("pipe-json-syntax-invalid");
+    }
   });
 });
