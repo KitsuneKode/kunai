@@ -13,16 +13,91 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
+interface LauncherFileOps {
+  chmod(path: string, mode: number): Promise<void>;
+  copyFile(from: string, to: string): Promise<void>;
+  rename(from: string, to: string): Promise<void>;
+  rm(path: string, options: { force: true }): Promise<void>;
+}
+
+const nodeLauncherFileOps: LauncherFileOps = { chmod, copyFile, rename, rm };
+
 /** Retry rename to absorb transient AV/Defender locks (mainly Windows). */
-async function renameWithRetry(from: string, to: string, attempts = 5): Promise<void> {
+async function renameWithRetry(
+  from: string,
+  to: string,
+  options: {
+    readonly attempts?: number;
+    readonly fs?: LauncherFileOps;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const attempts = options.attempts ?? 5;
+  const fs = options.fs ?? nodeLauncherFileOps;
+  const sleep = options.sleep ?? Bun.sleep;
   for (let i = 0; i < attempts; i++) {
     try {
-      await rename(from, to);
+      await fs.rename(from, to);
       return;
     } catch (err) {
       if (i === attempts - 1) throw err;
-      await Bun.sleep(150 * (i + 1));
+      await sleep(150 * (i + 1));
     }
+  }
+}
+
+interface WindowsLauncherOptions {
+  readonly asidePath?: string;
+  readonly attempts?: number;
+  readonly candidatePath?: string;
+  readonly fs?: LauncherFileOps;
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+async function updateWindowsLauncher(
+  input: { readonly launcherPath: string; readonly versionPath: string },
+  options: WindowsLauncherOptions = {},
+): Promise<void> {
+  const fs = options.fs ?? nodeLauncherFileOps;
+  const suffix = `${process.pid}.${Date.now()}`;
+  const candidate = options.candidatePath ?? `${input.launcherPath}.new.${suffix}`;
+  const aside = options.asidePath ?? `${input.launcherPath}.old.${Date.now()}`;
+  const renameOptions = {
+    attempts: options.attempts,
+    fs,
+    sleep: options.sleep,
+  };
+
+  await fs.rm(candidate, { force: true }).catch(() => {});
+  try {
+    // Finish staging the replacement before moving the last-known-good launcher.
+    await fs.copyFile(input.versionPath, candidate);
+    await fs.chmod(candidate, 0o755).catch(() => {});
+
+    if (!existsSync(input.launcherPath)) {
+      await renameWithRetry(candidate, input.launcherPath, renameOptions);
+      return;
+    }
+
+    await fs.rm(aside, { force: true }).catch(() => {});
+    await renameWithRetry(input.launcherPath, aside, renameOptions);
+    try {
+      await renameWithRetry(candidate, input.launcherPath, renameOptions);
+    } catch (installError) {
+      try {
+        await renameWithRetry(aside, input.launcherPath, renameOptions);
+      } catch (restoreError) {
+        const failure = new AggregateError(
+          [installError, restoreError],
+          `Launcher activation and restoration failed; previous launcher retained at ${aside}`,
+          { cause: restoreError },
+        );
+        throw failure;
+      }
+      throw installError;
+    }
+  } finally {
+    await fs.rm(candidate, { force: true }).catch(() => {});
   }
 }
 
@@ -65,15 +140,7 @@ export async function updateLauncher(input: {
   await mkdir(dirname(input.launcherPath), { recursive: true });
 
   if (platform === "win32") {
-    if (existsSync(input.launcherPath)) {
-      const aside = `${input.launcherPath}.old.${Date.now()}`;
-      await rm(aside, { force: true }).catch(() => {});
-      await renameWithRetry(input.launcherPath, aside).catch(async () => {
-        await rm(input.launcherPath, { force: true });
-      });
-    }
-    await copyFile(input.versionPath, input.launcherPath);
-    await chmod(input.launcherPath, 0o755).catch(() => {});
+    await updateWindowsLauncher(input);
     return;
   }
 
@@ -171,3 +238,5 @@ export async function removeLauncherIfVersioned(input: {
   await rm(input.launcherPath, { force: true });
   return true;
 }
+
+export const __testing = { updateWindowsLauncher };
