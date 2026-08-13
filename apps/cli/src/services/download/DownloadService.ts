@@ -550,6 +550,7 @@ export class DownloadService {
       // this row ineligible, so continue with the next queued candidate.
       return this.processNextQueued();
     }
+    const stopHeartbeat = this.startHeartbeat(next.id);
 
     try {
       const downloaded = await this.executeYtDlpDownload(next);
@@ -607,6 +608,7 @@ export class DownloadService {
       this.deps.logger.warn("Download failed", { jobId: next.id, error: message });
       return this.deps.repo.get(next.id) ?? null;
     } finally {
+      stopHeartbeat();
       this.activeProcesses.delete(next.id);
       this.cancellationRequests.delete(next.id);
       this.claimedJobIds.delete(next.id);
@@ -931,36 +933,30 @@ export class DownloadService {
       cancelReason: cancellation?.reason,
     });
 
-    const stopHeartbeat = this.startHeartbeat(job.id);
+    const { exitCode, stderr } = await handle.completed;
 
-    try {
-      const { exitCode, stderr } = await handle.completed;
-
-      if (
-        exitCode !== 0 &&
-        !this.activeProcesses.get(job.id)?.cancelRequested &&
-        !this.cancellationRequests.has(job.id)
-      ) {
-        throw new Error(stderr.trim() || `yt-dlp exited with code ${exitCode}`);
-      }
-
-      if (
-        this.activeProcesses.get(job.id)?.cancelRequested ||
-        this.cancellationRequests.has(job.id)
-      ) {
-        throw new Error("download aborted");
-      }
-
-      // The temp file is the only artifact yt-dlp owns. Validate it before
-      // publication so an empty/invalid result can never replace a playable
-      // last-known-good output at the stable path.
-      const validation = await this.validateCompletedArtifact(job.tempPath);
-      await rename(job.tempPath, job.outputPath);
-      this.persistValidatedArtifactMetadata(job.id, validation);
-      return this.deps.repo.get(job.id) ?? job;
-    } finally {
-      stopHeartbeat();
+    if (
+      exitCode !== 0 &&
+      !this.activeProcesses.get(job.id)?.cancelRequested &&
+      !this.cancellationRequests.has(job.id)
+    ) {
+      throw new Error(stderr.trim() || `yt-dlp exited with code ${exitCode}`);
     }
+
+    if (
+      this.activeProcesses.get(job.id)?.cancelRequested ||
+      this.cancellationRequests.has(job.id)
+    ) {
+      throw new Error("download aborted");
+    }
+
+    // The temp file is the only artifact yt-dlp owns. Validate it before
+    // publication so an empty/invalid result can never replace a playable
+    // last-known-good output at the stable path.
+    const validation = await this.validateCompletedArtifact(job.tempPath);
+    await rename(job.tempPath, job.outputPath);
+    this.persistValidatedArtifactMetadata(job.id, validation);
+    return this.deps.repo.get(job.id) ?? job;
   }
 
   private async resolveStreamForJob(job: DownloadJobRecord): Promise<DownloadResolveResult> {
@@ -1381,6 +1377,9 @@ export class DownloadService {
       const heartbeatAt = runningJob.lastHeartbeatAt ?? runningJob.startedAt;
       const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : Number.NaN;
       if (Number.isFinite(heartbeatMs) && nowMs - heartbeatMs < STALLED_HEARTBEAT_MS) continue;
+      if (!this.deps.repo.claimRunningForRecovery(runningJob.id, runningJob.lastHeartbeatAt, now)) {
+        continue;
+      }
 
       // Clean up orphaned temp files from crashed processes
       if (runningJob.tempPath) {

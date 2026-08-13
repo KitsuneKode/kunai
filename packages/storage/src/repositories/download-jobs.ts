@@ -274,6 +274,26 @@ export class DownloadJobsRepository {
     return result.changes > 0;
   }
 
+  /** Acquire an expired running lease using the heartbeat observed by the reader. */
+  claimRunningForRecovery(
+    id: string,
+    observedHeartbeatAt: string | undefined,
+    updatedAt: string,
+  ): boolean {
+    const result = this.db
+      .query(
+        `
+          UPDATE download_jobs
+          SET last_heartbeat_at = ?, updated_at = ?
+          WHERE id = ?
+            AND status = 'running'
+            AND last_heartbeat_at IS ?
+        `,
+      )
+      .run(updatedAt, updatedAt, id, observedHeartbeatAt ?? null);
+    return result.changes > 0;
+  }
+
   markHeartbeat(id: string, updatedAt: string): void {
     this.db
       .query("UPDATE download_jobs SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?")

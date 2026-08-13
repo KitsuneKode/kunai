@@ -533,6 +533,22 @@ test("download jobs repository claims a queued job exactly once", () => {
   expect(repo.markRunning("job-claim", "2026-04-29T00:01:00.000Z")).toBe(true);
   expect(repo.markRunning("job-claim", "2026-04-29T00:01:01.000Z")).toBe(false);
   expect(repo.get("job-claim")?.attempt).toBe(1);
+  expect(
+    repo.claimRunningForRecovery(
+      "job-claim",
+      "2026-04-29T00:01:00.000Z",
+      "2026-04-29T00:03:00.000Z",
+    ),
+  ).toBe(true);
+  expect(
+    repo.claimRunningForRecovery(
+      "job-claim",
+      "2026-04-29T00:01:00.000Z",
+      "2026-04-29T00:03:01.000Z",
+    ),
+  ).toBe(false);
+  repo.complete("job-claim", "2026-04-29T00:04:00.000Z");
+  expect(repo.markRunning("job-claim", "2026-04-29T00:04:01.000Z")).toBe(false);
 });
 
 test("download jobs repository finds one blocking episode intent without scanning lists", () => {
