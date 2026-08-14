@@ -45,7 +45,7 @@ re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
 `bun run experiments:install` (standalone `apps/experiments/bun.lock`).
 
 Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
-`apps/telemetry-ingest`, `packages/*`.
+`apps/analytics-ingest`, `packages/*`.
 
 ## Local Hooks
 

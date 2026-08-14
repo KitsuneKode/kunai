@@ -46,10 +46,18 @@ judgment.
   `relayProfile.videoRelayHosts`. `packages/relay` is the single shared
   implementation; `apps/relay-server` stays a thin adapter.
 - **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
-  is empty by default and user-owned.
-- **Telemetry is opt-in and payload-bounded.** See
-  [.docs/telemetry-privacy-contract.md](.docs/telemetry-privacy-contract.md)
-  before touching `services/telemetry` or `apps/telemetry-ingest`.
+  is empty by default and user-owned. Analytics is the deliberate exception and
+  not a precedent: relay carries the user's own video traffic and must stay
+  user-owned, while analytics carries a bounded anonymous aggregate and ships a
+  maintainer-owned default endpoint.
+- **Analytics is on by default, opt-out, and disclosed before the first send.**
+  A fresh install is `unset` and sends nothing until the notice has been shown;
+  the run that shows it still sends nothing. No TTY stays `unset`. The payload
+  is bounded to five keys, and `installId` exists on disk iff analytics is
+  enabled. See
+  [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md)
+  before touching `services/analytics`, `domain/analytics`, or
+  `apps/analytics-ingest`.
 
 ## Commands
 
