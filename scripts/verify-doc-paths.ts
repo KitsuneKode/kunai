@@ -7,7 +7,7 @@
 // silent — nothing breaks until an agent reads the doc and looks in the wrong
 // place. This turns it into a build failure.
 //
-// Checks two things across AGENTS.md, .docs/**, and docs/agents/**:
+// Checks two things across AGENTS.md and .docs/** (which now contains agents/):
 //   1. Backtick-quoted repo paths (`apps/cli/src/...`) resolve on disk.
 //   2. Relative markdown links ([x](./y.md)) resolve on disk.
 //
@@ -25,7 +25,7 @@ const ROOT = resolve(import.meta.dir, "..");
  * stale. `provider-dossiers/` is field research citing live sites and captures,
  * not repo layout, so path checking there is noise.
  */
-const SCANNED_ROOTS = ["AGENTS.md", ".docs", "docs/agents"];
+const SCANNED_ROOTS = ["AGENTS.md", ".docs"];
 const EXCLUDED_DIRS = new Set(["archive", "node_modules", "provider-dossiers"]);
 
 /**

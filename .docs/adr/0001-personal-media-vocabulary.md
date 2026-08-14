@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # ADR 0001: Personal Media Vocabulary
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Status: accepted
 Date: 2026-06-25
@@ -64,6 +71,6 @@ Compatibility aliases are allowed:
 The 2026-06-25 implementation slice added `playlists`, `up-next`, and `unfollow` command ids; kept legacy aliases; split media actions into Watchlist, Playlist, and Up Next intents; promoted `/provider` in browse command surfaces; and regenerated docs metadata.
 
 The plan that drove it is archived at
-`docs/superpowers/archive/plans/2026-06-25-personal-media-vocabulary-and-keybindings.md`.
+`.archive/superpowers/archive/plans/2026-06-25-personal-media-vocabulary-and-keybindings.md`.
 It carries no authority — the decision above does. Any residual work belongs on
 [`../../.plans/roadmap.md`](../../.plans/roadmap.md), verified against the code first.

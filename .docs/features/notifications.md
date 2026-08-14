@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-17"
+---
+
 # Notifications
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Kunai notifications are local attention items for new episodes, recoverable queues, downloads, and app notices.
 

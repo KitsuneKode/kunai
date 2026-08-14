@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-19"
+---
+
 # Provider Contract Recommendations
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Based on the intelligence gathered across VidKing, Cineby, AllManga, Miruro, and Rivestream, this document defines how the research should become implementation fuel. The core objective is zero-regression, 0-RAM streaming with robust caching.
 

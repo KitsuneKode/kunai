@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Presence Integrations
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This is the canonical reference for local social presence integrations such as Discord Rich Presence.
 

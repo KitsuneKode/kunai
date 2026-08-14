@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Testing Strategy
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when adding tests, refactoring code to improve testability, or deciding what kind of test belongs to a change.
 
@@ -478,7 +485,7 @@ Opt-in release-candidate smoke, run only when provider traffic is acceptable:
 
 ## Manual Smoke Matrix
 
-See also [e2e-regression-matrix.md](./archive/e2e-regression-matrix.md) for the post-play convergence release gate scenarios.
+See also [e2e-regression-matrix.md](../.archive/docs/e2e-regression-matrix.md) for the post-play convergence release gate scenarios.
 
 Use these after meaningful shell or startup-route changes. They are not replacements for unit tests; they verify the real terminal experience.
 

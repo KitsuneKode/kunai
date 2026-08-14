@@ -274,7 +274,7 @@ Developer guardrails should include:
 
 Add architecture tests that fail on drift:
 
-- packages cannot import `apps/*`, `.plans/*`, `.docs/*`, `archive/*`, or `apps/experiments/*`
+- packages cannot import `apps/*`, `.plans/*`, `.docs/*`, `archive/*`, or `.reference/experiments/*`
 - `packages/types` has no workspace dependencies
 - `packages/schemas` may import only `@kunai/types`
 - `packages/core` may import only `@kunai/types`

@@ -4,7 +4,7 @@
 // Maps PostPlayShellProps (state + catalog facts) → a structured PostPlayView
 // that the component renders without any conditional derivation inline.
 //
-// Design authority: .design/cli/kunai-sakura-canonical.html §3 Post-play
+// Design authority: .reference/design/cli/kunai-sakura-canonical.html §3 Post-play
 // Rules:
 //   • plum (milestone) only on series-complete
 //   • caught-up stays mint (ok) + calendar framing — never confused with done

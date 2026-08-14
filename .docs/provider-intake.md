@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai — Provider Intake Playbook
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when researching a new provider, hardening an existing provider, or debugging provider drift after a site change.
 

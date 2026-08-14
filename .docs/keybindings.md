@@ -1,9 +1,13 @@
 ---
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
+status: current
+lastReviewed: "2026-07-21"
 ---
 
 # Kunai CLI Keybindings
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This page is the source map for shell shortcuts. It is intentionally screen-based:
 the same physical key can mean different things only when the active surface is

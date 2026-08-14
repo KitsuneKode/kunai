@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-23"
+---
+
 # Title provider health, cache layers, and reset
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Why a provider can feel “dead” even when another recovers, and what to reset / override.
 

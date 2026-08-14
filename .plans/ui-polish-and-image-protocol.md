@@ -4,7 +4,7 @@
 
 Last reconciled: 2026-05-16
 
-See also: [.docs/poster-image-rendering.md](../.docs/poster-image-rendering.md), [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md).
+See also: [.docs/poster-image-rendering.md](../.docs/poster-image-rendering.md), [archive/plan-implementation-truth.md](../.archive/plans/plan-implementation-truth.md).
 
 **Shipped:** `apps/cli/src/app-shell/image-pane.ts`, `poster-renderer.ts`, `use-poster-preview.ts`, Kitty/text placeholders in browse/playback companions, capability detection in `apps/cli/src/image/`.
 

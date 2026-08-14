@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-03"
+---
+
 # Provider: Rivestream
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Summary
 

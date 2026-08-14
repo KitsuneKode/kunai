@@ -10,7 +10,7 @@ Last updated: 2026-05-16
 
 **Not done:** slice 1–2 (single root-owned outer frame, remove nested full-width borders in child shells), browse 68/32 rebalance, root-owned footer, image-pane flicker ownership.
 
-Reconcile with [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md) before starting a slice.
+Reconcile with [archive/plan-implementation-truth.md](../.archive/plans/plan-implementation-truth.md) before starting a slice.
 
 This plan defines the target fullscreen TUI architecture for the new runtime. It is the implementation companion to:
 

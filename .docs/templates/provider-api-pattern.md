@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-23"
+---
+
 # Provider Pattern Template — API First With Embed Fallback
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this as a copyable reference when the provider resolves metadata or player bootstrap data over HTTP or GraphQL, but may still need browser help for the final stream.
 

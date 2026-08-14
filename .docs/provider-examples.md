@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai — Provider Examples And Demo Patterns
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when an agent needs a concrete starting point for a new provider or a hardening pass.
 
@@ -28,12 +35,12 @@ For non-trivial work:
 
 Use existing providers as anchors before inventing a new shape.
 
-| Pattern                                    | Reference file                                                                                          | When to copy the shape                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Playwright embed capture                   | [archive/legacy/apps/cli/src/providers/vidking.ts](../archive/legacy/apps/cli/src/providers/vidking.ts) | Site builds a stable page or embed URL and the real stream appears during runtime      |
-| Playwright with activation click           | [archive/legacy/apps/cli/src/providers/cineby.ts](../archive/legacy/apps/cli/src/providers/cineby.ts)   | The page must be activated before the stream request happens                           |
-| API-first with browser-assisted final step | [archive/legacy/apps/cli/src/providers/braflix.ts](../archive/legacy/apps/cli/src/providers/braflix.ts) | Search or metadata come from HTTP or GraphQL, but the final embed still needs scraping |
-| AllManga-compatible API parity client      | [packages/providers/src/allmanga/api-client.ts](../packages/providers/src/allmanga/api-client.ts)       | A concrete AllManga/ani-cli-style API client, not the base for anime providers         |
+| Pattern                                    | Reference file                                                                                            | When to copy the shape                                                                 |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Playwright embed capture                   | [.archive/legacy/apps/cli/src/providers/vidking.ts](../.archive/legacy/apps/cli/src/providers/vidking.ts) | Site builds a stable page or embed URL and the real stream appears during runtime      |
+| Playwright with activation click           | [.archive/legacy/apps/cli/src/providers/cineby.ts](../.archive/legacy/apps/cli/src/providers/cineby.ts)   | The page must be activated before the stream request happens                           |
+| API-first with browser-assisted final step | [.archive/legacy/apps/cli/src/providers/braflix.ts](../.archive/legacy/apps/cli/src/providers/braflix.ts) | Search or metadata come from HTTP or GraphQL, but the final embed still needs scraping |
+| AllManga-compatible API parity client      | [packages/providers/src/allmanga/api-client.ts](../packages/providers/src/allmanga/api-client.ts)         | A concrete AllManga/ani-cli-style API client, not the base for anime providers         |
 
 ## Pattern 1: Playwright Embed Provider
 

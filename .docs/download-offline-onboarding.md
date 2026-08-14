@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Download, Offline Library, And Onboarding
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This is the canonical design reference for future download/offline/onboarding work.
 

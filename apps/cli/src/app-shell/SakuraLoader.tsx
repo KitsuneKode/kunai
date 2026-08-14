@@ -1,7 +1,7 @@
 // =============================================================================
 // SakuraLoader.tsx — the signature ❀ bloom loader + label shimmer
 //
-// The brand motif (❀ in rose, per .design/cli/kunai-sakura.html .petal/.empty)
+// The brand motif (❀ in rose, per .reference/design/cli/kunai-sakura.html .petal/.empty)
 // animated once and reused: a centered bloom flanked by drifting side petals,
 // with a glimmer sweep across the active stage label. Color encodes state —
 // rose `accent` in-flight, amber `warn` when stalled — never identity.

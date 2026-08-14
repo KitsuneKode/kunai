@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai Release Reliability Gate
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this gate before release candidates and after changes to playback lifecycle, provider resolution, Discord presence, storage, or startup behavior.
 

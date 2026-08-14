@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-28"
+---
+
 # Headless Provider Reverse-Engineering Playbook
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This playbook documents the exact methodology used to crack the Vidking / HDToday protection and provides a universal blueprint for building 0-RAM, headless scrapers for other streaming aggregators (like `anikai.to`, `cineby.sc`, and `rivestream.app`).
 

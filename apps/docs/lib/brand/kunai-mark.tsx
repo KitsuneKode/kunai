@@ -7,7 +7,7 @@ type KunaiMarkProps = {
   readonly style?: CSSProperties;
 };
 
-/** Fox-blade mark from `.design/brand/kunai-mark.svg`, scaled for Satori OG renders. */
+/** Fox-blade mark from `.reference/design/brand/kunai-mark.svg`, scaled for Satori OG renders. */
 export function KunaiMark({ size, style }: KunaiMarkProps) {
   const scale = size / 64;
   return (

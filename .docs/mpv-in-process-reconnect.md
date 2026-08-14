@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # mpv in-process stream reconnect (persistent session)
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This applies only to the **persistent mpv** path (`PersistentMpvSession`, autoplay chain). One-shot `launchMpv` does not run this logic.
 

@@ -165,7 +165,7 @@ See [.docs/provider-intake.md](../.docs/provider-intake.md).
 - start storing provider dossiers for high-value or fragile providers
 - create a first pass for VidKing inventory research
 - define a dossier checklist for screenshots, network traces, and sample titles
-- use `apps/experiments/scratchpads/provider-*` and report files as source evidence, not production imports
+- use `.reference/experiments/scratchpads/provider-*` and report files as source evidence, not production imports
 
 ### Phase 2: Runtime Modeling
 

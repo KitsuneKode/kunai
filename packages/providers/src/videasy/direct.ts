@@ -50,7 +50,7 @@ import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "../shared/stream-h
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
-// `Bun.file()` reads both). See docs/superpowers/archive/plans/2026-06-13-*.
+// `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
 import videasyWasm from "./assets/module1_patched.wasm" with { type: "file" };
 import { decodeWingsdatabasePayload } from "./crypto";
 import {
@@ -1823,7 +1823,7 @@ async function tryVidkingServer(opts: {
  * bc-frontend Neon (Luffy/mb-flix): prefer the legacy mb-flix route — it returns the
  * quality ladder and subtitle tracks that match videasy.to/cineplay. The Cineplay bundle
  * also references e3b0c442, but that route often yields a stripped ORG-only payload
- * with no subtitles (see apps/experiments/scratchpads/provider-cineplay/CINEPLAY_RESEARCH_REPORT.md).
+ * with no subtitles (see .reference/experiments/scratchpads/provider-cineplay/CINEPLAY_RESEARCH_REPORT.md).
  */
 export function resolveVideasyRequestServers(
   server: VidkingServerEndpoint,

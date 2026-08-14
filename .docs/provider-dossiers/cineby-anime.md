@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-30"
+---
+
 # Cineby-Anime Provider Dossier
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 - **Status:** broken (superseded by HiAnime / Vidking)
 - **Provider ID:** cineby-anime
@@ -17,6 +24,7 @@
 - **Minimum tests/fixtures needed before Provider SDK promotion:** Move to 0-RAM.
 
 ## Subtitle Resolution
+
 - **Current production subtitle behavior:** Network sniffing.
 - **Experimental/research subtitle findings:** Same as Cineby.
 - **Exact endpoint or network pattern if known:** N/A.

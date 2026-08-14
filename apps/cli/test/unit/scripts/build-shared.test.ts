@@ -39,17 +39,17 @@ describe("release build shared guards", () => {
       "test/harness/render-capture.ts",
       "test/vhs/setup.tape",
       "test/live/provider.smoke.ts",
-      "apps/experiments/scratchpads/probe.ts",
-      "archive/legacy/apps/cli/src/providers/old.ts",
+      ".reference/experiments/scratchpads/probe.ts",
+      ".archive/legacy/apps/cli/src/providers/old.ts",
       ".plans/runtime-note.md",
       ".prototypes/harness/server.js",
     ]);
 
     expect(forbiddenReleaseInputs(graph)).toEqual([
+      ".archive/legacy/apps/cli/src/providers/old.ts",
       ".plans/runtime-note.md",
       ".prototypes/harness/server.js",
-      "apps/experiments/scratchpads/probe.ts",
-      "archive/legacy/apps/cli/src/providers/old.ts",
+      ".reference/experiments/scratchpads/probe.ts",
       "test/harness/render-capture.ts",
       "test/live/provider.smoke.ts",
       "test/unit/provider.test.ts",

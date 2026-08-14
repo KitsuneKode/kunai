@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-12"
+---
+
 # BitCine Provider Dossier
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 - **Status:** research wrapper over VidKing/Videasy 0-RAM, not a standalone production provider.
 - **Provider ID:** bitcine

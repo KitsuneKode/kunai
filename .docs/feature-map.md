@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Feature Map
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Routing table from a user-visible feature to the code that owns it. Use this to
 answer "where does X live" without grepping the whole tree.
@@ -69,7 +76,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Source inventory (source/quality/audio/subs) | `apps/cli/src/services/playback/*`, `packages/storage` `source-inventory`                                                                  | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md)                       |
 | Provider health + `/reset-provider-health`   | `packages/storage` `provider-health`, `title-provider-health`, `provider-endpoint-health`                                                  | [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)                 |
 | Geo relay (user-owned)                       | `packages/relay/*`, `apps/relay-server`                                                                                                    | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                          |
-| Provider research                            | `apps/experiments/*`, `.docs/provider-dossiers/*`                                                                                          | [provider-intake.md](./provider-intake.md)                                                             |
+| Provider research                            | `.reference/experiments/*`, `.docs/provider-dossiers/*`                                                                                    | [provider-intake.md](./provider-intake.md)                                                             |
 
 ## Playback
 
@@ -172,9 +179,9 @@ as capabilities.
 
 | Path                                                  | What it is                                                           |
 | ----------------------------------------------------- | -------------------------------------------------------------------- |
-| `archive/legacy/apps/cli/src/browser/*`               | Playwright interception reference; awaiting `@kunai/runtime-browser` |
-| `archive/legacy/apps/cli/src/providers/*`             | Pre-`packages/providers` provider reference                          |
-| `apps/experiments/*`                                  | Provider research lab and scratchpads                                |
+| `.archive/legacy/apps/cli/src/browser/*`              | Playwright interception reference; awaiting `@kunai/runtime-browser` |
+| `.archive/legacy/apps/cli/src/providers/*`            | Pre-`packages/providers` provider reference                          |
+| `.reference/experiments/*`                            | Provider research lab and scratchpads                                |
 | `packages/providers/src/cineby`, `rgshows`, `vidrock` | Modules that exist but are not in `loadProductionProviderModules()`  |
 | `apps/docs`                                           | The public docs site — content, not runtime                          |
 

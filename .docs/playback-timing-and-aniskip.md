@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Playback timing, IntroDB, and AniSkip
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when changing **auto-skip** (intro / recap / credits / preview), **near-end / auto-next** behavior that depends on timing, or **MAL / catalog identity** for anime skip metadata. It complements [.docs/providers.md](./providers.md) (streams) with the **timing** side of playback.
 

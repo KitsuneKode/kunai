@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-12"
+---
+
 # TMDB-Embed Aggregator Backends — Research Dossier
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 - **Status:** research (not implemented; multiple candidate providers identified)
 - **Date:** 2026-06-05
@@ -8,7 +15,7 @@
 - **Scope of this dossier:** the API surface of the backends, the consumer network
   that uses them, and the constraints we'd hit if we added a provider module on
   top of them.
-- **Research scripts:** `apps/experiments/scratchpads/vidapi-research/` (the
+- **Research scripts:** `.reference/experiments/scratchpads/vidapi-research/` (the
   probes that produced the data in this dossier).
 
 ## Validation Note — 2026-06-05

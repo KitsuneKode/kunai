@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai — Provider Agent Workflow
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this file as the repo-local instruction set for agent-driven provider work.
 

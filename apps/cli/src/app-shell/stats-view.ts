@@ -1,7 +1,7 @@
 // =============================================================================
 // stats-view.ts — pure view-model builder for Stats UI
 //
-// Design authority: .design/cli/kunai-sakura-canonical.html (Stats section)
+// Design authority: .reference/design/cli/kunai-sakura-canonical.html (Stats section)
 // =============================================================================
 
 import type { StatsFormatter } from "@/domain/lists/StatsFormatter";

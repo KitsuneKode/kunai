@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Poster and terminal image output
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when changing terminal poster previews, capability detection, the shared image subsystem, or Ink app-shell poster behavior.
 

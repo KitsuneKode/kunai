@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-17"
+---
+
 # New Episode Tracking
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 New episode tracking separates three facts:
 

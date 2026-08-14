@@ -9,11 +9,11 @@ This document captures **product name**, **beta acceptance themes**, and **engin
 
 ## Locked decisions
 
-| Decision | Choice |
-| -------- | ------ |
-| Product name | **Kunai** (docs and UI should converge on this name over time). |
-| Beta focus | CLI-first, releasable quality; moonshot / growth / relay docs do not block beta. |
-| Long horizon docs | May move under `.plans/archive/` (or similar) so day-to-day work tracks **beta-readiness** + this file. |
+| Decision          | Choice                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| Product name      | **Kunai** (docs and UI should converge on this name over time).                                         |
+| Beta focus        | CLI-first, releasable quality; moonshot / growth / relay docs do not block beta.                        |
+| Long horizon docs | May move under `.archive/plans/` (or similar) so day-to-day work tracks **beta-readiness** + this file. |
 
 ---
 
@@ -78,12 +78,12 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ## Cross-cutting architecture (what “good” looks like)
 
-| Piece | Single job | Stable interface | Providers touch it by |
-| ----- | ----------- | ---------------- | ---------------------- |
-| **Cache** | Persist / TTL stream-shaped blobs | `CacheStore` + **one** key builder module (to be consolidated from Playback + browser paths) | Returning `StreamInfo`; not importing SQLite |
-| **History** | Read/write watch state | `HistoryStore` | Never (history is post-play) |
-| **Subtitles** | Select + attach policy | `choosePlaybackSubtitle`, `selectSubtitle`, player attach API | Emitting tracks + evidence |
-| **Resolve** | Session + fallback + cancel | `PlaybackPhase` + `resolveWithFallback` | Implementing `Provider` only |
+| Piece         | Single job                        | Stable interface                                                                             | Providers touch it by                        |
+| ------------- | --------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Cache**     | Persist / TTL stream-shaped blobs | `CacheStore` + **one** key builder module (to be consolidated from Playback + browser paths) | Returning `StreamInfo`; not importing SQLite |
+| **History**   | Read/write watch state            | `HistoryStore`                                                                               | Never (history is post-play)                 |
+| **Subtitles** | Select + attach policy            | `choosePlaybackSubtitle`, `selectSubtitle`, player attach API                                | Emitting tracks + evidence                   |
+| **Resolve**   | Session + fallback + cancel       | `PlaybackPhase` + `resolveWithFallback`                                                      | Implementing `Provider` only                 |
 
 **Lazy work:** subtitle enrichers, poster fetch, Wyzie, optional HEAD-for-liveness run **only** when user prefs or cache policy require them—not on every keystroke.
 
@@ -93,28 +93,28 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ## Doc / plan hygiene (agreed process)
 
-1. Keep [beta-readiness.md](beta-readiness.md) as the **checklist**.  
-2. Keep [roadmap.md](roadmap.md) as the **index**; mark moonshot plans **Parked** with one line each.  
-3. Move superseded or principal-only plans to **`.plans/archive/`** (create folder when ready); leave a stub line in roadmap pointing to archive for archeology.  
-4. Runtime truth for agents: [architecture.md](../.docs/architecture.md); target shape: [architecture-v2.md](../.docs/architecture-v2.md).  
+1. Keep [beta-readiness.md](beta-readiness.md) as the **checklist**.
+2. Keep [roadmap.md](roadmap.md) as the **index**; mark moonshot plans **Parked** with one line each.
+3. Move superseded or principal-only plans to **`.archive/plans/`** (create folder when ready); leave a stub line in roadmap pointing to archive for archeology.
+4. Runtime truth for agents: [architecture.md](../.docs/architecture.md); target shape: [architecture-v2.md](../.docs/architecture-v2.md).
 5. Rename user-facing strings from legacy product names to **Kunai** in a dedicated pass (does not block playback work).
 
 ---
 
 ## Suggested implementation order (next rounds)
 
-1. **Truth:** Finish open items in [beta-readiness.md](beta-readiness.md) (autoplay live verify, Playwright guardrail, lint policy, shell transition polish).  
-2. **Contracts:** Introduce `StreamResolveCache` (or equivalent) module—single key API used by `PlaybackPhase` and `BrowserServiceImpl`.  
-3. **UX:** History right pane density; autonext loading state; fail-fast/retry copy.  
-4. **Prefs:** Quality selector + dub/sub preference surfaced in UI + threaded into resolve/cache keys.  
+1. **Truth:** Finish open items in [beta-readiness.md](beta-readiness.md) (autoplay live verify, Playwright guardrail, lint policy, shell transition polish).
+2. **Contracts:** Introduce `StreamResolveCache` (or equivalent) module—single key API used by `PlaybackPhase` and `BrowserServiceImpl`.
+3. **UX:** History right pane density; autonext loading state; fail-fast/retry copy.
+4. **Prefs:** Quality selector + dub/sub preference surfaced in UI + threaded into resolve/cache keys.
 5. **Telemetry:** Export-first; then opt-in Worker aggregates if you still want fleet view.
 
 ---
 
 ## Related
 
-- [kunai-execution-passes-and-cli-modes.md](kunai-execution-passes-and-cli-modes.md) — sequencing (perf vs reliability vs UX), CLI minimal/quick flags, autoskip notes  
-- [beta-readiness.md](beta-readiness.md) — operational checklist  
-- [roadmap.md](roadmap.md) — index and parked tracks  
-- [.docs/diagnostics-guide.md](../.docs/diagnostics-guide.md) — tracing for support  
+- [kunai-execution-passes-and-cli-modes.md](kunai-execution-passes-and-cli-modes.md) — sequencing (perf vs reliability vs UX), CLI minimal/quick flags, autoskip notes
+- [beta-readiness.md](beta-readiness.md) — operational checklist
+- [roadmap.md](roadmap.md) — index and parked tracks
+- [.docs/diagnostics-guide.md](../.docs/diagnostics-guide.md) — tracing for support
 - [.plans/kunai-architecture-and-cache-hardening.md](kunai-architecture-and-cache-hardening.md) — post-beta scale (do not conflate with v1 beta gate)

@@ -159,7 +159,7 @@ function collectImports(file: string): string[] {
 }
 
 function collectSourceFiles(root: string): string[] {
-  return collectRepoSourceFiles(root, { skipPrefixes: ["apps/experiments"] });
+  return collectRepoSourceFiles(root, { skipPrefixes: [".reference/experiments"] });
 }
 
 describe("runtime boundary imports", () => {

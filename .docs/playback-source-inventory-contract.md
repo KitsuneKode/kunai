@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-19"
+---
+
 # Playback Source Inventory Contract
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when changing provider retry behavior, source/quality/language switching, stream cache keys, provider fallback, or playback picker data.
 
@@ -7,7 +14,7 @@ This is a narrow contract doc. For broader context, read:
 - [.plans/provider-result-contract.md](../.plans/provider-result-contract.md) for provider ownership.
 - [.plans/search-service.md](../.plans/search-service.md) for catalog/search ownership.
 - [.docs/ux-architecture.md](./ux-architecture.md) for shell and overlay behavior.
-- [.docs/provider-dossiers/](./provider-dossiers/) and `apps/experiments/scratchpads/provider-*/*.md` for provider evidence.
+- [.docs/provider-dossiers/](./provider-dossiers/) and `.reference/experiments/scratchpads/provider-*/*.md` for provider evidence.
 
 ## Principle
 

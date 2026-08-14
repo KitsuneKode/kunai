@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-06"
+---
+
 # Braflix Provider Dossier
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 - **Status:** broken / deprecated (Service is down)
 - **Provider ID:** braflix
@@ -18,6 +25,7 @@
 - **Minimum tests/fixtures needed before Provider SDK promotion:** Regex stability tests for HTML parsing.
 
 ## Subtitle Resolution
+
 - **Current production subtitle behavior:** Network sniffing during Playwright session.
 - **Experimental/research subtitle findings:** None.
 - **Exact endpoint or network pattern if known:** N/A.

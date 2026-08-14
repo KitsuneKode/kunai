@@ -2,7 +2,7 @@
 
 Status: **In progress** (Tasks 1–7 largely complete; Tasks 8–10 open)
 
-Last reconciled: 2026-05-16 — see [archive/plan-implementation-truth.md](./archive/plan-implementation-truth.md).
+Last reconciled: 2026-05-16 — see [archive/plan-implementation-truth.md](../.archive/plans/plan-implementation-truth.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -27,10 +27,10 @@ Read these before implementation:
 
 Useful provider evidence:
 
-- `apps/experiments/README.md`
-- `apps/experiments/scratchpads/provider-vidking/VIDKING_NETWORK_ANALYSIS.md`
-- `apps/experiments/scratchpads/provider-miruro/MIRURO_BACKEND_REPORT.md`
-- `apps/experiments/scratchpads/provider-rivestream/RIVESTREAM_DECRYPT_REPORT.md`
+- `.reference/experiments/README.md`
+- `.reference/experiments/scratchpads/provider-vidking/VIDKING_NETWORK_ANALYSIS.md`
+- `.reference/experiments/scratchpads/provider-miruro/MIRURO_BACKEND_REPORT.md`
+- `.reference/experiments/scratchpads/provider-rivestream/RIVESTREAM_DECRYPT_REPORT.md`
 - `.docs/provider-dossiers/`
 
 ## Decisions Locked For This Plan

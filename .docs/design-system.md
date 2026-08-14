@@ -1,8 +1,15 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # Kunai — Terminal Design System (Sakura)
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when changing terminal styling, color, tokens, layout primitives, or interaction presentation. It is the design contract; source code is the implementation truth. Keep it lightweight — enough to preserve coherence, not so strict it blocks better UI.
 
-Visual reference prototypes live in [`.design/cli/kunai-sakura.html`](../.design/cli/kunai-sakura.html) (feel tour) and [`.design/cli/kunai-sakura-systems.html`](../.design/cli/kunai-sakura-systems.html) (onboarding, calendar, library, queue). The rollout is tracked in [`.plans/sakura-rollout.md`](../.plans/sakura-rollout.md).
+Visual reference prototypes live in [`.reference/design/cli/kunai-sakura.html`](../.reference/design/cli/kunai-sakura.html) (feel tour) and [`.reference/design/cli/kunai-sakura-systems.html`](../.reference/design/cli/kunai-sakura-systems.html) (onboarding, calendar, library, queue). The rollout is tracked in [`.plans/sakura-rollout.md`](../.plans/sakura-rollout.md).
 
 ## Source of Truth
 
@@ -82,8 +89,8 @@ Keep these composable; screen-specific policy lives in the caller.
 - **`ClaudeTabRow`** (`apps/cli/src/app-shell/primitives/ClaudeTabRow.tsx`) — tier-1 tabs with `accentFill` active pill; used on History, Calendar type filters, and Stats. Prefer over ad-hoc tab text.
 - **`MediaListShell`** — list + `PreviewRail` two-pane layout; collapses rail on narrow terminals. Browse, Calendar, History, Discover, and Library queue rows should compose through it.
 - **`ListRow` / `SectionGroup` / `ResumeCard`** — History makeover list rhythm (title · ep · status · recency) with resume card under selection.
-- **Calendar (locked)** — visual authority: [`.design/cli/kunai-sakura-calendar-locked.html`](../.design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`). Calendar is always scoped to one selected date (today or the first available date); it is not an all-days or week view.
-- **Discover** — hybrid list + preview rail per [`.design/cli/surfaces/recommendations-viewer.md`](../.design/cli/surfaces/recommendations-viewer.md); section header + **emphasized reason line** (`discover-reason.ts`) in the list, reason echoed in the rail note.
+- **Calendar (locked)** — visual authority: [`.reference/design/cli/kunai-sakura-calendar-locked.html`](../.reference/design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`). Calendar is always scoped to one selected date (today or the first available date); it is not an all-days or week view.
+- **Discover** — hybrid list + preview rail per [`.reference/design/cli/surfaces/recommendations-viewer.md`](../.reference/design/cli/surfaces/recommendations-viewer.md); section header + **emphasized reason line** (`discover-reason.ts`) in the list, reason echoed in the rail note.
 - **Return loop copy** — shared strings in `return-loop-copy.ts` for browse idle “Unwatched releases”, calendar empty tail, history new-episodes section “Ready for you now”, and post-play caught-up calendar action.
 
 F1 layout captures: `bun apps/cli/test/harness/capture-*.tsx` → `apps/cli/test/__captures__/*.txt` (see `render-capture.ts`).
@@ -102,7 +109,7 @@ Kunai feels like a calm, fast media command shell: content-first in normal use, 
 
 ## Surface Contracts (states every surface owns)
 
-Loading · success · empty · error — see [.design/cli/02-state-ux.md](../.design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
+Loading · success · empty · error — see [.reference/design/cli/02-state-ux.md](../.reference/design/cli/02-state-ux.md). Failure/recovery surfaces (`playback did not start`, `stream stalled`, `no source`, `provider degraded`, diagnostics) are first-class, not afterthoughts — they are where a scraper app earns trust.
 
 Width budget is owned by the container, not the terminal: inside a root overlay
 `OverlayLayoutProvider.contentColumns` is authoritative, because the frame consumes the
@@ -137,4 +144,4 @@ Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● 
 
 ## Migration Note
 
-If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.plans/archive/ink-migration.md).
+If future web/desktop surfaces consume this identity, keep the semantic layer intact: token naming, the one rule, spacing/box conventions, and fast-scan low-breakage behavior carry forward. See [.plans/sakura-rollout.md](../.plans/sakura-rollout.md) and [.plans/ink-migration.md](../.archive/plans/ink-migration.md).

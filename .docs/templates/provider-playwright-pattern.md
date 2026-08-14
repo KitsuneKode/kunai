@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-23"
+---
+
 # Provider Pattern Template — Playwright Embed Capture
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this as a copyable reference when the provider is mostly "build a URL, load a page, intercept the real stream."
 

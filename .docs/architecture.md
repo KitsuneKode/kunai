@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Runtime Architecture
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc first when changing flow control, playback lifecycle, provider orchestration, persistence, or any code that affects recovery behavior.
 
@@ -75,7 +82,7 @@ Active beta providers implement `CoreProviderModule` in `packages/providers/src/
 
 A module existing under `packages/providers/src/` does **not** make it a production provider; only membership in `loadProductionProviderModules()` does.
 
-Legacy Playwright provider shapes remain under `archive/legacy/apps/cli/src/providers/` for reference only. They are not part of the active beta runtime.
+Legacy Playwright provider shapes remain under `.archive/legacy/apps/cli/src/providers/` for reference only. They are not part of the active beta runtime.
 
 Use [.docs/providers.md](.docs/providers.md) for provider-specific details.
 
@@ -154,7 +161,7 @@ Production resolution is browserless by default:
 2. `apps/cli/src/services/playback/PlaybackResolveService.ts` coordinates cache, inventory, health, and fallback policy.
 3. `packages/core` runs the bounded provider engine.
 4. `packages/providers/src/*/direct.ts` returns stream, subtitle, source, and trace facts.
-5. Legacy Playwright interception remains quarantined under `archive/legacy/` and is not imported by the active runtime.
+5. Legacy Playwright interception remains quarantined under `.archive/legacy/` and is not imported by the active runtime.
 
 ### `mpv` flow
 
@@ -185,7 +192,7 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
-The SQLite storage model is described in [.plans/storage-hardening.md](../.plans/archive/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
+The SQLite storage model is described in [.plans/storage-hardening.md](../.archive/plans/storage-hardening.md), with durable history/progress in the OS app data directory and disposable cache in the OS cache directory.
 
 Automatic storage maintenance is conservative:
 

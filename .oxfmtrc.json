@@ -30,8 +30,8 @@
   },
 
   "ignorePatterns": [
-    "apps/experiments/**/*.ts",
-    "apps/experiments/**/node_modules/**",
+    ".reference/experiments/**/*.ts",
+    ".reference/experiments/**/node_modules/**",
     "apps/cli/dist/**",
     "dist/**",
     "node_modules/**",

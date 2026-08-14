@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai Runtime Boundary Map
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when deciding where new runtime, provider, playback, shell, cache,
 diagnostics, or legacy-removal work belongs. It is intentionally short and
@@ -29,28 +36,28 @@ file with dated `DEBT` entries; adding to a baseline needs a reason in the diff.
 | `apps/cli/src/services`  | `@/app`, `@/app-shell`                                                                                |
 | `apps/cli/src/app-shell` | providers (`@kunai/providers`, `@/services/providers`) and player runtime (`@/infra/player`, `@/mpv`) |
 | Any non-shell layer      | `ink` directly                                                                                        |
-| Any active runtime root  | `archive/legacy`, `apps/experiments`                                                                  |
+| Any active runtime root  | `.archive/legacy`, `.reference/experiments`                                                           |
 
 The same test also gates workspace dependencies per package, so a new
 `packages/*` dependency edge needs an allowlist entry.
 
 ## Ownership
 
-| Area                          | Owns                                                                                                              | Must not own                                |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `packages/types`              | Serializable contracts crossing package, storage, and provider boundaries                                         | UI state, app policy, provider quirks       |
-| `packages/schemas`            | Runtime validation for untrusted or persisted data                                                                | Business decisions                          |
-| `packages/core`               | Provider SDK contracts, resolver primitives, cache-key policy, fallback abstractions, trace models                | Ink UI, mpv IPC, history writes             |
-| `packages/providers`          | Provider-specific source extraction, mirror/source retry, decryption, language/source evidence                    | Global fallback UX, history, app settings   |
-| `packages/relay`              | Provider RPC relay validation, host allowlists, client fetch-port adapter, relay server shared handler            | Provider scraping logic, app settings UI    |
-| `packages/storage`            | SQLite paths, migrations, repositories, TTL helpers                                                               | UI behavior, provider scraping              |
-| `apps/cli/src/services`       | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration      | Ink rendering, raw mpv sockets              |
-| `apps/cli/src/app`            | Session phases, playback/search policy, user-intent semantics, history decisions, queue claim/ack/rollback policy | Provider internals, terminal drawing        |
-| `apps/cli/src/domain/queue`   | Queue playback intents, restore-with-resume, planner placement, `QueueService` adapters over storage              | Ink rendering, mpv launch, provider resolve |
-| `apps/cli/src/infra`          | mpv, IPC, process, filesystem, terminal/runtime mechanics; emits `playback-started` (ack boundary)                | User-facing playback policy                 |
-| `apps/cli/src/app-shell`      | Ink components, overlays, footer, command palette, picker rendering; exact-ID queue play bridge                   | Stream resolution, provider fallback policy |
-| `archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                           | Active beta runtime imports                 |
-| `apps/experiments`            | Provider research and scratchpads                                                                                 | Production runtime behavior                 |
+| Area                           | Owns                                                                                                              | Must not own                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `packages/types`               | Serializable contracts crossing package, storage, and provider boundaries                                         | UI state, app policy, provider quirks       |
+| `packages/schemas`             | Runtime validation for untrusted or persisted data                                                                | Business decisions                          |
+| `packages/core`                | Provider SDK contracts, resolver primitives, cache-key policy, fallback abstractions, trace models                | Ink UI, mpv IPC, history writes             |
+| `packages/providers`           | Provider-specific source extraction, mirror/source retry, decryption, language/source evidence                    | Global fallback UX, history, app settings   |
+| `packages/relay`               | Provider RPC relay validation, host allowlists, client fetch-port adapter, relay server shared handler            | Provider scraping logic, app settings UI    |
+| `packages/storage`             | SQLite paths, migrations, repositories, TTL helpers                                                               | UI behavior, provider scraping              |
+| `apps/cli/src/services`        | App services such as playback resolve, source inventory, diagnostics, presence, search/catalog orchestration      | Ink rendering, raw mpv sockets              |
+| `apps/cli/src/app`             | Session phases, playback/search policy, user-intent semantics, history decisions, queue claim/ack/rollback policy | Provider internals, terminal drawing        |
+| `apps/cli/src/domain/queue`    | Queue playback intents, restore-with-resume, planner placement, `QueueService` adapters over storage              | Ink rendering, mpv launch, provider resolve |
+| `apps/cli/src/infra`           | mpv, IPC, process, filesystem, terminal/runtime mechanics; emits `playback-started` (ack boundary)                | User-facing playback policy                 |
+| `apps/cli/src/app-shell`       | Ink components, overlays, footer, command palette, picker rendering; exact-ID queue play bridge                   | Stream resolution, provider fallback policy |
+| `.archive/legacy/apps/cli/src` | Quarantined old runtime/provider/browser reference code                                                           | Active beta runtime imports                 |
+| `.reference/experiments`       | Provider research and scratchpads                                                                                 | Production runtime behavior                 |
 
 ## Naming And Placement Rules
 
@@ -171,7 +178,7 @@ Do not add a generic `?url=` proxy or per-provider relay server routes.
 
 ## Legacy Quarantine
 
-Active runtime code must not import `archive/legacy`, `apps/experiments`, or other reference-only legacy paths.
+Active runtime code must not import `.archive/legacy`, `.reference/experiments`, or other reference-only legacy paths.
 The unit boundary test enforces this for active runtime roots.
 
 When removing legacy:

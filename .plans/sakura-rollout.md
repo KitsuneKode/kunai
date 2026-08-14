@@ -2,7 +2,7 @@
 
 Status: **in progress** — foundation landed (tokens + theme contract). Slices below are parallelizable across agents.
 
-Goal: ship the Sakura design system (dusk plum · rose · mint) as the next Kunai version, then keep it future-proof. Source code is truth; the design contract is [.docs/design-system.md](../.docs/design-system.md); visual reference is [`.design/cli/kunai-sakura*.html`](../.design/cli/).
+Goal: ship the Sakura design system (dusk plum · rose · mint) as the next Kunai version, then keep it future-proof. Source code is truth; the design contract is [.docs/design-system.md](../.docs/design-system.md); visual reference is [`.reference/design/cli/kunai-sakura*.html`](../.reference/design/cli/).
 
 Parallel handoff prompts: [.plans/sakura-parallel-agent-prompts.md](sakura-parallel-agent-prompts.md)
 
@@ -85,7 +85,7 @@ Not a screen — wire the habit loop the product depends on:
 ## Doc cleanup (fold in as slices land)
 
 - `.docs/design-system.md` previously listed `apps/cli/src/design.ts` (does not exist); already dropped in the rewrite.
-- Update [.plans/archive/plan-implementation-truth.md](archive/plan-implementation-truth.md) and [.plans/archive/kitsune-design-system-and-recommendations.md](archive/kitsune-design-system-and-recommendations.md) to point at this rollout and the Sakura contract.
+- Update [.archive/plans/plan-implementation-truth.md](../.archive/plans/plan-implementation-truth.md) and [.archive/plans/kitsune-design-system-and-recommendations.md](../.archive/plans/kitsune-design-system-and-recommendations.md) to point at this rollout and the Sakura contract.
 - When aliases are deleted (end of S1), remove the deprecation sections from `tokens.ts` and `shell-theme.ts`.
 
 ## Release gate (the next version)

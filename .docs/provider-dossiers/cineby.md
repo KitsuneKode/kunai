@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-12"
+---
+
 # Provider: Cineby
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Production status (2026-05-27)
 
@@ -78,5 +85,5 @@ sequenceDiagram
 - **Implemented:** Flavor → endpoint table in `packages/providers/src/videasy/flavors.ts` (`cinebyAlias` field for Neon / Yoru / …).
 - **Cache key dimensions:** Follow VidKing cache policy; wrapper remaps `providerId` to `cineby` on the resolve result.
 - **Diagnostics events:** WAF / timeout evidence same as VidKing.
-- **Tests:** Wrapper inherits VidKing unit/live tests; dedicated Cineby matrix remains in `apps/experiments/scratchpads/provider-cineby/` (local notes gitignored).
+- **Tests:** Wrapper inherits VidKing unit/live tests; dedicated Cineby matrix remains in `.reference/experiments/scratchpads/provider-cineby/` (local notes gitignored).
 - **Promotion:** Keep `status: research` in manifest until flavor matrix and WAF posture are validated outside lab network.
