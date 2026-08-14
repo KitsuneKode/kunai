@@ -28,7 +28,14 @@ export const ANALYTICS_RETRY_BACKOFF_MS = 15 * 60 * 1000;
  */
 export const UNSET_INSTALL_ID_PLACEHOLDER = "<generated when you enable>";
 
-/** Wire contract with users — exactly five keys. Never add one silently. */
+/**
+ * Wire contract with users — exactly these five keys, sorted. Never add one
+ * silently: `.docs/analytics-privacy-contract.md` and the user-facing MDX both
+ * document this list, and `analytics-payload-drift.test.ts` reads this
+ * constant so a sixth field cannot pass while the docs still say five.
+ */
+export const ANALYTICS_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
+
 export type AnalyticsPayload = {
   readonly installId: string;
   readonly version: string;
@@ -135,6 +142,12 @@ export class UsageAnalyticsService {
    * The first run never sends: disclosure is raised, the caller persists the
    * outcome, and the ping goes out on the next launch. Without that rule
    * "on by default, disclosed" would mean the data left before the notice.
+   *
+   * Awaits no network. The ping is fired in the background so the caller can
+   * `await` this before mounting the shell and get a deterministic
+   * `needs-disclosure` answer — the disclosure flag is read during render with
+   * no subscription, so it must be settled before the first paint rather than
+   * racing it.
    */
   async onSessionStart(options: { readonly isInteractive: boolean }): Promise<SessionStartOutcome> {
     const state = resolveConsentState({
@@ -155,7 +168,7 @@ export class UsageAnalyticsService {
     if (state.kind === "awaiting-disclosure") return { kind: "needs-disclosure" };
     if (!canSend(state)) return { kind: "quiet" };
 
-    await this.maybePing();
+    this.pingInBackground();
     return { kind: "pinged" };
   }
 

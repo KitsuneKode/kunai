@@ -872,18 +872,25 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         // checkForUpdate records its own failures; keep startup fire-and-forget.
       }
     })();
-  if (!config.offlineMode)
-    void (async () => {
-      try {
-        const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
-        const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
-        if (outcome.kind === "needs-disclosure") {
-          container.analyticsDisclosurePending = true;
-        }
-      } catch {
-        // Analytics must never affect startup.
+  if (!config.offlineMode) {
+    try {
+      // Awaited, not fire-and-forget: the shell reads
+      // `analyticsDisclosurePending` during render with no subscription, so the
+      // decision has to be settled before the first paint rather than racing
+      // it. `onSessionStart` awaits no network — the ping is backgrounded.
+      const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+      const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
+      // The setup wizard carries its own consent slide, so raising the banner
+      // here too would disclose twice — and worse, the banner persists consent
+      // on render, which would answer the slide's question while it is still
+      // being asked.
+      if (outcome.kind === "needs-disclosure" && !onboardingWillRun) {
+        container.analyticsDisclosurePending = true;
       }
-    })();
+    } catch {
+      // Analytics must never affect startup.
+    }
+  }
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",

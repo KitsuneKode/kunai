@@ -2,11 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  ANALYTICS_PAYLOAD_KEYS,
+  type AnalyticsPayload,
+} from "@/services/analytics/UsageAnalyticsService";
+
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
 const USER_DOC = join(ROOT, "docs/users/reliability-and-privacy.mdx");
 
-const PAYLOAD_KEYS = ["installId", "version", "os", "arch", "ts"] as const;
+/**
+ * Imported, never re-declared. A local copy would let a sixth wire field ship
+ * while this file stayed green and both documents still said five — which is
+ * the precise failure this gate exists to prevent.
+ */
+const PAYLOAD_KEYS = ANALYTICS_PAYLOAD_KEYS;
 
 /**
  * Prose in both documents is hard-wrapped, so a phrase can straddle a newline.
@@ -28,6 +38,21 @@ describe("analytics payload documentation drift", () => {
     ["contract", CONTRACT],
     ["user doc", USER_DOC],
   ] as const;
+
+  test("the wire key list matches the payload type exactly", () => {
+    // Binds the constant the docs are checked against to the type actually
+    // sent. Adding a field to AnalyticsPayload without adding it here is a
+    // compile error; adding it to both then fails the doc assertions below.
+    const sample: AnalyticsPayload = {
+      installId: "id",
+      version: "0.0.0",
+      os: "linux",
+      arch: "x64",
+      ts: 1,
+    };
+    expect(Object.keys(sample).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
+    expect(ANALYTICS_PAYLOAD_KEYS).toHaveLength(5);
+  });
 
   for (const [label, path] of docs) {
     test(`${label} names exactly the five wire keys`, () => {

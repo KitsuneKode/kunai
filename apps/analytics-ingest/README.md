@@ -1,94 +1,83 @@
-# Kunai telemetry ingest
+# @kunai/analytics-ingest
 
-Minimal **user-owned** Vercel function that accepts Kunai's opt-in anonymous
-usage ping and publishes a tiny public aggregate snapshot for the docs site.
+Minimal maintainer-owned Vercel function that receives Kunai's anonymous usage
+ping and publishes aggregate counts. Storage is **Neon Postgres**.
 
-## Privacy contract
+The binding rules live in
+[`.docs/analytics-privacy-contract.md`](../../.docs/analytics-privacy-contract.md).
+This README is the operator's guide; the contract wins on any disagreement.
 
-- **POST only** to `/api/ping` (no CORS)
-- Body must be exactly `{ installId, version, os, arch, ts }` (max 512 bytes)
-- Client `ts` must be within ±24h of server time
-- Rate-limits per **HMAC-hashed** IP key (ephemeral Redis TTL)
-- Counts at most **once per HMAC(installId) per UTC day**
-- Redis stores **hashed** install ids only (daily SET + lifetime HyperLogLog)
-- Response is **204** with empty body (no count leak)
-- Titles, queries, provider results, URLs, and file paths are rejected
+## What it does
 
-### Durable aggregates
+- Accepts `POST /api/ping` with exactly five keys:
+  `{ installId, version, os, arch, ts }`. A sixth key is rejected.
+- Validates every dimension: strict semver `version`, closed allowlists for
+  `os` and `arch`, so a hostile client cannot invent a bucket.
+- Stores an **HMAC-SHA256 hash** of the install id — never the raw UUID.
+- **Never reads a client IP.** There is no rate-limit key derived from one.
+  Abuse protection is the 512-byte body cap, Vercel's platform DDoS
+  mitigation, and the `(day, install_hash)` primary key, which caps a real
+  install at one row per day no matter how often it pings.
+- Publishes a daily aggregate JSON with dimension buckets under **5 installs**
+  folded into `other`.
 
-| Key purpose       | Redis shape                      | Notes                               |
-| ----------------- | -------------------------------- | ----------------------------------- |
-| Daily distinct    | `SET` of install hashes, 48h TTL | Exact for that day                  |
-| Lifetime estimate | HyperLogLog of install hashes    | Approximate (~±1%), non-enumerable  |
-| Day count cache   | integer string, 400d TTL         | For snapshots                       |
-| Public snapshot   | JSON string                      | Yesterday actives + lifetime approx |
+## Tables
 
-### Platform logs
+| Table              | Holds                                                       | Retention |
+| ------------------ | ----------------------------------------------------------- | --------- |
+| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days   |
+| `install_lifetime` | one hashed row per install + first-seen date                | permanent |
+| `daily_rollup`     | counts only, no identity                                    | permanent |
 
-Vercel access logs **can correlate client IP with the request body** unless you
-scrub or disable those logs. This app never writes IPs as durable identity, but
-operators who retain platform logs could reconstruct IP↔installId pairs for the
-log retention window.
+`install_lifetime` is a durable pseudonymous record — the cost of an exact
+lifetime count. The contract states this plainly; do not describe it as
+equivalent to a probabilistic sketch.
 
-### Abuse model
+## Endpoints
 
-A hostile client can mint many install ids and **inflate counters** (subject to
-rate limits). They cannot expose another user’s watch history. Cron-protected
-snapshot writes require `CRON_SECRET`.
+| Route                     | Auth                    | Purpose                                   |
+| ------------------------- | ----------------------- | ----------------------------------------- |
+| `POST /api/ping`          | none                    | Ingest. Returns `204` with no body.       |
+| `GET /metrics/daily.json` | none                    | Public aggregates, k-anonymised.          |
+| `GET /api/cron/snapshot`  | `CRON_SECRET`           | Rolls up yesterday, then prunes raw rows. |
+| `GET /api/metrics/admin`  | `ANALYTICS_ADMIN_TOKEN` | Last 30 days, **unsuppressed**.           |
 
-## Public metrics
+Cron runs at `5 0 * * *` (see `vercel.json`).
 
-- Cron (`0 5 * * *` UTC via Vercel): `GET|POST /api/cron/snapshot` with
-  `Authorization: Bearer $CRON_SECRET`
-- Public read: `GET /metrics/daily.json` → aggregates only
+## Setup
 
-Example:
+1. Create a Neon project and copy the **pooled** connection string.
+2. Set these environment variables in Vercel:
 
-```json
-{
-  "schemaVersion": 1,
-  "day": "2026-07-19",
-  "activeInstalls": 1284,
-  "lifetimeInstallsApprox": 15200,
-  "lifetimeMethod": "hyperloglog",
-  "updatedAt": "2026-07-20T00:05:00.000Z"
-}
-```
+   | Variable                | Purpose                                     |
+   | ----------------------- | ------------------------------------------- |
+   | `DATABASE_URL`          | Neon pooled connection string               |
+   | `ANALYTICS_HASH_SECRET` | Long random secret for the install-id HMAC  |
+   | `CRON_SECRET`           | Bearer token the cron job presents          |
+   | `ANALYTICS_ADMIN_TOKEN` | Bearer token for the admin metrics endpoint |
 
-## Deploy checklist
+3. Apply the schema (idempotent, safe to re-run):
 
-1. Create an Upstash Redis database (REST URL + token).
-2. Create a Vercel project from `apps/telemetry-ingest` (or link this folder).
-3. Set environment variables (Production + Preview as needed):
+   ```sh
+   DATABASE_URL="postgres://..." bun run --cwd apps/analytics-ingest migrate
+   ```
 
-   | Variable                   | Purpose                                                   |
-   | -------------------------- | --------------------------------------------------------- |
-   | `UPSTASH_REDIS_REST_URL`   | Upstash REST endpoint                                     |
-   | `UPSTASH_REDIS_REST_TOKEN` | Upstash REST token                                        |
-   | `TELEMETRY_HASH_SECRET`    | Long random secret for HMAC (install + IP keys)           |
-   | `CRON_SECRET`              | Bearer token for cron snapshot (Vercel Cron injects this) |
+4. Deploy. Point the CLI at it with `KUNAI_ANALYTICS_URL`, or ship the host as
+   `DEFAULT_ANALYTICS_ENDPOINT` in
+   `apps/cli/src/services/analytics/UsageAnalyticsService.ts`. The docs site
+   reads `KUNAI_ANALYTICS_METRICS_URL` / `DEFAULT_ANALYTICS_METRICS_URL`.
 
-4. Deploy: `cd apps/telemetry-ingest && vercel deploy --prod`
-5. Confirm:
-   - `POST /api/ping` without secrets → **503** `misconfigured` (before env set)
-   - After env: valid ping → **204**
-   - Cron without bearer → **401**
-   - Trigger cron once, then `GET /metrics/daily.json` returns schema v1 JSON
-6. Point the CLI default (already `https://kunai-telemetry.vercel.app/api/ping`)
-   or override with `KUNAI_TELEMETRY_URL`.
-7. Docs: set `KUNAI_TELEMETRY_METRICS_URL=https://<host>/metrics/daily.json`
-   (defaults to the same host’s `/metrics/daily.json`).
-8. Optional: disable request body logging in the Vercel project if available.
+**Fail closed:** `/api/ping` returns **503** when `DATABASE_URL` or
+`ANALYTICS_HASH_SECRET` is missing. It never falls back to storing raw ids or
+to an in-memory store — a missing hash secret must not silently degrade into
+recording install UUIDs.
 
-**Fail closed:** `/api/ping` returns **503** when Redis URL/token or
-`TELEMETRY_HASH_SECRET` is missing. It never falls back to silent in-memory
-counting in production.
-
-## Local test
+## Tests
 
 ```sh
-bun run --cwd apps/telemetry-ingest test
-bun run --cwd apps/telemetry-ingest typecheck
+bun run --cwd apps/analytics-ingest test
 ```
 
-Redis contract tests are opt-in (require live Upstash env); default CI stays offline.
+Runs offline against an in-memory store. `test/postgres-store.test.ts` is
+skipped unless `DATABASE_URL` is set; point it only at a scratch database,
+because it writes and prunes.

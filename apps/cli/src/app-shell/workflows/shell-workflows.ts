@@ -1410,7 +1410,10 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       });
       return "handled";
     }
-    container.usageAnalytics.pingInBackground();
+    // Deliberately no ping here. This menu is reachable during the very run
+    // that disclosed, so sending would break "the first run never sends" — and
+    // affirming a setting that is already on is not a reason to emit traffic.
+    // The next launch pings on the normal 24h cadence.
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Analytics on. Turn it off anytime with /analytics.",
