@@ -76,6 +76,12 @@ Postgres.
   `(day, install_hash)` as the primary key — that key **is** the
   once-per-install-per-day gate, atomic in one statement. Rows are deleted
   after **35 days**.
+  - The insert is `ON CONFLICT DO NOTHING`, so within a single UTC day the
+    **first** ping's dimensions win. The 24h client cadence means a second
+    same-day ping only happens on a retry after a failed send, where the
+    dimensions have not changed — but if that ever stops being true, a
+    version upgraded mid-day would be attributed to the old version until
+    the next day.
 - `install_lifetime` holds **one permanent row per install**: an HMAC hash and
   a first-seen date, retained for the life of the project. This is a durable
   pseudonymous record where the previous design kept only a HyperLogLog sketch.
