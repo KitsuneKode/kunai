@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun, TypeScript, Ink (terminal UI), Vercel functions, Neon Postgres (`@neondatabase/serverless`), Next.js (docs site), `bun:test`.
 
-**Spec:** [`docs/superpowers/specs/2026-08-14-usage-analytics-redesign-design.md`](../specs/2026-08-14-usage-analytics-redesign-design.md)
+**Spec:** [`.plans/usage-analytics-redesign-design.md`](./usage-analytics-redesign-design.md)
 
 ## Global Constraints
 
@@ -3232,7 +3232,7 @@ test so the contract and the user-facing page cannot diverge from code."
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-08-14-usage-analytics-redesign.md`. Two execution options:
+Plan complete and saved to `.plans/usage-analytics-redesign.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — a fresh subagent per task, review between tasks, fast iteration.
 

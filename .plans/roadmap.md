@@ -61,6 +61,12 @@ archive and put only the residue here.
 | Boundary + downloads         | Reviewed adaptive-download design, not started           | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)   |
 | Poster release smokes        | Real-terminal Kitty, iTerm2, Sixel, and multiplexer pass | [poster-protocol-release-smokes.md](./poster-protocol-release-smokes.md)                         |
 
+### Analytics
+
+| Track                    | Remaining                                                                                                           | Plan                                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Spec and plan written, not executed. Replaces the never-shipped opt-in ping with an opt-out subsystem over Postgres | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+
 ### Structure
 
 | Track                        | Remaining                                                                                                                                                                                                          | Plan                                                                         |
