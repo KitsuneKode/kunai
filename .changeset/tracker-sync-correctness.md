@@ -45,6 +45,16 @@ In the shell, the favourite mark moves to its own accent-tinted column on the
 right — prefixed into the title it took the title's colour and pushed every
 favourited row a glyph out of alignment — and a toggle now reports which way it
 went, and where it synced, instead of "Updated favourites" for both directions.
+Favourites reach the screens where you actually spend time: `l` toggles during
+loading and playback, and the playing rail and post-play panel both show the
+mark. The details panel gained a Favourite line beside Watchlist, which had
+been describing one half of a pair.
+
+Connecting TMDB no longer hangs when the API is unreachable. Artwork and
+metadata try a mirror before going direct, so they can work on a network where
+account linking cannot — linking must be direct, because a request token and
+session id are account credentials. That now fails in seconds with an
+explanation instead of stalling forever with no output.
 
 Sync gains a settings page — the first reachable Connect surface — with a status
 badge in the root crumb. It is marked experimental: the delivery path is covered
