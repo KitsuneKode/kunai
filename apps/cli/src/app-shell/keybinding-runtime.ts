@@ -95,6 +95,8 @@ export function resolvePlaybackBindingEffect(
       return input.canOpenSourcePicker && handlers.onPickSource ? { kind: "pick-source" } : null;
     case "player-episode":
       return handlers.onPickEpisode ? { kind: "pick-episode" } : null;
+    case "player-favorite":
+      return handlers.onToggleFavorite ? { kind: "toggle-favorite" } : null;
     case "player-skip":
       return handlers.onSkipSegment ? { kind: "skip-segment" } : null;
     case "player-quality":

@@ -41,6 +41,11 @@ import { useViewportPolicy } from "./use-viewport-policy";
 // ── Props ──────────────────────────────────────────────────────────────────────
 
 export type PostPlayShellProps = {
+  /**
+   * Whether the finished title is favourited. Read by the caller, not looked up
+   * here: this shell takes a view model and owns no services.
+   */
+  isFavorite?: boolean;
   title: string;
   episodeLabel: string;
   nextEpisodeLabel?: string;
@@ -415,6 +420,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   nextEpisodeThumbUrl,
   previousEpisodeThumbUrl,
   titleDetail,
+  isFavorite,
   autoplayPaused,
   autoskipPaused,
   stopAfterCurrent,
@@ -491,6 +497,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     previousEpisodeThumbUrl,
     queueNextLabel,
     autoplayPaused,
+    isFavorite,
     progress:
       totalEpisodes && totalEpisodes > 0
         ? { watched: watchedEpisodes ?? 0, total: totalEpisodes }

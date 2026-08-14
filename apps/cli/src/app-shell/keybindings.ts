@@ -380,6 +380,24 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     docs: { tier: "core", order: 60 },
   },
   {
+    // `l`, not browse's `f`. In the player `⇧F` is the provider fallback, and
+    // `keybindings.test.ts` deliberately locks out an unshifted `f` so a
+    // slipped shift cannot sit between "favourite this" and "switch provider
+    // mid-session" — two actions with very different costs. `l` is free across
+    // the loading and player scopes and is the common "like" key elsewhere, so
+    // the divergence from browse buys a real safety property rather than
+    // costing consistency for nothing.
+    id: "player-favorite",
+    chord: { input: "l" },
+    label: "Favourite or unfavourite the current title",
+    hintLabel: "favourite",
+    scope: "player",
+    group: "In the player",
+    commandId: "bookmark",
+    footerPriority: 55,
+    docs: { tier: "surface", order: 335 },
+  },
+  {
     id: "player-source",
     chord: { input: "o" },
     label: "Choose source",
