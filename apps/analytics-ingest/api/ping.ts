@@ -1,19 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { ingestTelemetryPing, MAX_BODY_BYTES } from "../src/ingest";
-import { loadTelemetryRuntimeConfig } from "../src/runtime-config";
-
-function clientIpKey(req: IncomingMessage): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  const raw =
-    typeof forwarded === "string"
-      ? forwarded.split(",")[0]?.trim()
-      : Array.isArray(forwarded)
-        ? forwarded[0]?.trim()
-        : "";
-  // Ephemeral rate-limit key only — hashed before Redis; never stored raw as identity.
-  return raw || req.socket.remoteAddress || "unknown";
-}
+import { ingestAnalyticsPing, MAX_BODY_BYTES } from "../src/ingest";
+import { loadAnalyticsRuntimeConfig } from "../src/runtime-config";
 
 async function readJsonBodyLimited(
   req: IncomingMessage,
@@ -42,7 +30,7 @@ function sendJson(
   status: number,
   payload: Record<string, unknown> | null,
 ): void {
-  // No CORS headers — CLI does not need them; blocks casual browser spam.
+  // No CORS headers — the CLI does not need them; blocks casual browser spam.
   res.setHeader("Cache-Control", "no-store");
   if (payload) {
     res.setHeader("Content-Type", "application/json");
@@ -54,8 +42,15 @@ function sendJson(
   res.end();
 }
 
+/**
+ * The client IP is never read. The previous revision hashed it for an
+ * in-memory rate limiter that reset on every cold start — so it bought
+ * almost nothing while making "we never touch your IP" untrue. Abuse
+ * protection is now the 512-byte body cap, Vercel's platform DDoS
+ * mitigation, and the (day, install_hash) primary key.
+ */
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const runtime = loadTelemetryRuntimeConfig();
+  const runtime = loadAnalyticsRuntimeConfig();
   if (!runtime) {
     sendJson(res, 503, { ok: false, error: "misconfigured" });
     return;
@@ -77,22 +72,18 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const result = await ingestTelemetryPing({
+    const result = await ingestAnalyticsPing({
       method,
       body: parsed.body,
-      ipKey: clientIpKey(req),
       hashSecret: runtime.hashSecret,
-      rateLimit: runtime.rateLimit,
-      installDayGate: runtime.installDayGate,
-      daily: runtime.daily,
-      lifetime: runtime.lifetime,
+      store: runtime.store,
     });
 
     if (!result.ok) {
       sendJson(res, result.status, { ok: false, error: result.error });
       return;
     }
-    // 204 empty — do not leak distinct counts to clients.
+    // 204 empty — do not leak counts to clients.
     sendJson(res, 204, null);
   } catch {
     sendJson(res, 503, { ok: false, error: "upstream_unavailable" });

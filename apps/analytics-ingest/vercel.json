@@ -16,6 +16,9 @@
     },
     "api/metrics/daily.ts": {
       "maxDuration": 5
+    },
+    "api/metrics/admin.ts": {
+      "maxDuration": 10
     }
   },
   "headers": [

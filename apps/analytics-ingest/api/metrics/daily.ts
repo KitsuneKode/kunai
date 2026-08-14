@@ -1,10 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { loadTelemetryRuntimeConfig } from "../../src/runtime-config";
-import { PUBLIC_METRICS_CACHE_CONTROL, readPublicMetricsFromRedis } from "../../src/snapshot";
+import {
+  buildPublicMetrics,
+  PUBLIC_METRICS_CACHE_CONTROL,
+  snapshotDayKey,
+} from "../../src/public-metrics";
+import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
 
 /**
- * Public read-only aggregates. No install hashes, IPs, or raw ids.
+ * Public read-only aggregates. No install hashes, IPs, or raw ids — and
+ * dimension buckets under the k-anonymity floor are folded into "other" by
+ * `buildPublicMetrics` before anything leaves here.
+ *
  * Served as /metrics/daily.json via vercel rewrite.
  */
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -15,7 +22,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  const runtime = loadTelemetryRuntimeConfig();
+  const runtime = loadAnalyticsRuntimeConfig();
   if (!runtime) {
     res.statusCode = 503;
     res.setHeader("Cache-Control", "no-store");
@@ -25,8 +32,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const metrics = await readPublicMetricsFromRedis(runtime.redis);
-    if (!metrics) {
+    const rollup = await runtime.store.readRollup(snapshotDayKey());
+    if (!rollup) {
       res.statusCode = 404;
       res.setHeader("Cache-Control", "public, s-maxage=60, max-age=60");
       res.setHeader("Content-Type", "application/json");
@@ -36,7 +43,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.statusCode = 200;
     res.setHeader("Cache-Control", PUBLIC_METRICS_CACHE_CONTROL);
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(metrics));
+    res.end(JSON.stringify(buildPublicMetrics(rollup, new Date().toISOString())));
   } catch {
     res.statusCode = 503;
     res.setHeader("Cache-Control", "no-store");

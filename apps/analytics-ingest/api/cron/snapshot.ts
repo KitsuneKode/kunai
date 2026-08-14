@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { loadTelemetryRuntimeConfig } from "../../src/runtime-config";
-import { collectPublicMetrics, writePublicMetricsToRedis } from "../../src/snapshot";
+import { RAW_RETENTION_DAYS } from "../../src/ingest";
+import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics";
+import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
 
 function unauthorized(res: ServerResponse): void {
   res.setHeader("Cache-Control", "no-store");
@@ -19,7 +20,7 @@ function authorize(req: IncomingMessage, cronSecret: string): boolean {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const runtime = loadTelemetryRuntimeConfig();
+  const runtime = loadAnalyticsRuntimeConfig();
   if (!runtime || !runtime.cronSecret) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
@@ -41,16 +42,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const metrics = await collectPublicMetrics({
-      daily: runtime.daily,
-      lifetime: runtime.lifetime,
-    });
-    await writePublicMetricsToRedis(runtime.redis, metrics);
+    const day = snapshotDayKey();
+    const rollup = await runtime.store.rollUpDay(day);
+    const metrics = buildPublicMetrics(rollup, new Date().toISOString());
+
+    // Raw dimension rows past retention go now; the rollup above already
+    // captured everything the public JSON and the admin view need.
+    const cutoff = new Date(Date.now() - RAW_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const pruned = await runtime.store.pruneRawBefore(cutoff);
+
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
     res.statusCode = 200;
     // Operators only — not public; cron secret required.
-    res.end(JSON.stringify({ ok: true, metrics }));
+    res.end(JSON.stringify({ ok: true, metrics, pruned }));
   } catch {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");

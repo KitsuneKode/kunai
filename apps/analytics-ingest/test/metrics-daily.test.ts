@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { PUBLIC_METRICS_CACHE_CONTROL } from "../src/snapshot";
+import { PUBLIC_METRICS_CACHE_CONTROL } from "../src/public-metrics";
 
 describe("public metrics cache policy", () => {
   test("serves stale content for a day while revalidating", () => {

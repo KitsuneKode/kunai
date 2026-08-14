@@ -1,14 +1,18 @@
 {
-  "name": "@kunai/telemetry-ingest",
+  "name": "@kunai/analytics-ingest",
   "private": true,
-  "description": "Minimal user-owned Vercel ingest for Kunai opt-in anonymous usage pings.",
+  "description": "Minimal maintainer-owned Vercel ingest for Kunai anonymous usage pings.",
   "type": "module",
   "scripts": {
     "typecheck": "bun tsc --noEmit",
     "lint": "oxlint .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "test": "bun test test"
+    "test": "bun test test",
+    "migrate": "bun run scripts/migrate.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
