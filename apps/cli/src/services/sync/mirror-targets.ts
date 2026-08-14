@@ -13,9 +13,17 @@ import type { SyncIdentity, TrackerIdSource } from "./types";
  */
 export type MirrorTargets = {
   readonly identities: readonly SyncIdentity[];
-  /** True when enrichment supplied an id the caller's item did not carry. */
-  readonly enriched: boolean;
 };
+
+/**
+ * How long a keypress may spend resolving identity before giving up.
+ *
+ * Only the enrichment fallback can be slow, and it reaches ARM over the
+ * network. Without a bound, an unreachable ARM would hang the `await` inside
+ * the favourite toggle, so the row would never flash a result — the local list
+ * change has already landed, and no remote lookup is worth freezing the UI over.
+ */
+const ENRICH_DEADLINE_MS = 4_000;
 
 export interface MirrorIdentityDeps {
   readonly catalogIdentityService: Pick<CatalogIdentityService, "enrich">;
@@ -65,31 +73,54 @@ export async function resolveMirrorTargets(
   };
 
   const direct = identitiesFor(source);
-  if (direct.length > 0) return { identities: direct, enriched: false };
+  if (direct.length > 0) return { identities: direct };
+
+  const deadline = AbortSignal.timeout(ENRICH_DEADLINE_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+
+  // Raced, not merely signalled. Passing an abort signal asks the callee to
+  // stop; it does not unblock this `await` if the callee declines to observe
+  // it. The race is what actually bounds the keypress, and the signal is still
+  // forwarded so a well-behaved lookup also stops doing work.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<null>((resolve) => {
+    if (signal.aborted) {
+      resolve(null);
+      return;
+    }
+    timer = setTimeout(() => resolve(null), ENRICH_DEADLINE_MS);
+    signal.addEventListener("abort", () => resolve(null), { once: true });
+  });
 
   let enrichedIds: TrackerIdSource["externalIds"];
   try {
-    const result = await deps.catalogIdentityService.enrich(
-      {
-        id: item.titleId,
-        kind: item.mediaKind,
-        title: item.title ?? "",
-        ...(item.externalIds ? { externalIds: item.externalIds } : {}),
-      },
-      options,
-    );
+    const result = await Promise.race([
+      deps.catalogIdentityService.enrich(
+        {
+          id: item.titleId,
+          kind: item.mediaKind,
+          title: item.title ?? "",
+          ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+        },
+        { signal },
+      ),
+      expiry,
+    ]);
+    if (!result) return { identities: [] };
     enrichedIds = result.externalIds;
   } catch {
     // Enrichment is an optimisation over "we could not address this title".
-    // Failing it must not fail the list change that already landed.
-    return { identities: [], enriched: false };
+    // Failing it — or timing out — must not fail the list change that already
+    // landed.
+    return { identities: [] };
+  } finally {
+    // The timer holds the event loop open for the whole deadline otherwise,
+    // which turns a fast keypress into a delayed exit.
+    if (timer) clearTimeout(timer);
   }
 
-  if (!enrichedIds) return { identities: [], enriched: false };
-  return {
-    identities: identitiesFor({ ...source, externalIds: enrichedIds }),
-    enriched: true,
-  };
+  if (!enrichedIds) return { identities: [] };
+  return { identities: identitiesFor({ ...source, externalIds: enrichedIds }) };
 }
 
 /** Tracker display order for user-facing copy, so messages read consistently. */

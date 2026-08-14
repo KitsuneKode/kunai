@@ -94,7 +94,6 @@ describe("resolveMirrorTargets", () => {
     });
 
     expect(d.enrichCalls).toBe(1);
-    expect(targets).toMatchObject({ enriched: true });
     expect(targets.identities).toEqual([{ tracker: "anilist", anilistId: 21, mediaKind: "anime" }]);
   });
 
@@ -132,5 +131,24 @@ describe("resolveMirrorTargets", () => {
     });
 
     expect(describeMirrorTargets(targets)).toBe("TMDB");
+  });
+});
+
+/**
+ * Identity resolution runs inside a keypress. Only the enrichment fallback can
+ * be slow — it reaches ARM over the network — so it carries its own deadline;
+ * an unreachable ARM must not freeze the toggle that already wrote the list.
+ */
+describe("resolveMirrorTargets deadline", () => {
+  test("gives up on an enrichment that never settles or observes the signal", async () => {
+    const targets = await resolveMirrorTargets(
+      // Deliberately ignores the signal entirely: forwarding one is a request,
+      // not a guarantee, so the bound cannot depend on the callee honouring it.
+      { catalogIdentityService: { enrich: () => new Promise(() => {}) } },
+      { titleId: "allanime:abc123", mediaKind: "anime" },
+      { signal: AbortSignal.abort() },
+    );
+
+    expect(targets.identities).toHaveLength(0);
   });
 });
