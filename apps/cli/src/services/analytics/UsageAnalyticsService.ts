@@ -4,9 +4,9 @@ import { isTelemetryEnvBlocked, type TelemetryEnvFlags } from "./consent";
 import { ensureInstallId } from "./install-id";
 
 /** Official opt-in ping endpoint. Override with `KUNAI_TELEMETRY_URL`. */
-export const DEFAULT_TELEMETRY_ENDPOINT = "https://kunai-telemetry.vercel.app/api/ping";
+export const DEFAULT_ANALYTICS_ENDPOINT = "https://kunai-telemetry.vercel.app/api/ping";
 
-export const TELEMETRY_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const ANALYTICS_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Delay before retrying a failed send. A failed ping must not consume the
@@ -14,10 +14,10 @@ export const TELEMETRY_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
  * Retries happen on the next CLI launch — never on an in-process timer, which
  * would be killed with the short-lived process.
  */
-export const TELEMETRY_RETRY_BACKOFF_MS = 15 * 60 * 1000;
+export const ANALYTICS_RETRY_BACKOFF_MS = 15 * 60 * 1000;
 
 /** Wire contract with users — never add fields without updating docs + snapshot tests. */
-export type TelemetryPayload = {
+export type AnalyticsPayload = {
   readonly installId: string;
   readonly version: string;
   readonly os: string;
@@ -25,7 +25,7 @@ export type TelemetryPayload = {
   readonly ts: number;
 };
 
-export type TelemetryStatus = KitsuneConfig["telemetry"];
+export type TelemetryStatus = KitsuneConfig["analytics"];
 
 type TelemetryConfig = Pick<
   {
@@ -41,7 +41,7 @@ export type TelemetryFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-export type TelemetryServiceDeps = {
+export type UsageAnalyticsServiceDeps = {
   readonly config: TelemetryConfig;
   readonly currentVersion: string;
   readonly endpoint: string;
@@ -53,14 +53,14 @@ export type TelemetryServiceDeps = {
   readonly env?: TelemetryEnvFlags;
 };
 
-export class TelemetryService {
+export class UsageAnalyticsService {
   private readonly fetchImpl: TelemetryFetch;
   private readonly now: () => number;
   private readonly platform: { readonly os: string; readonly arch: string };
   private readonly pingTimeoutMs: number;
   private readonly env: TelemetryEnvFlags;
 
-  constructor(private readonly deps: TelemetryServiceDeps) {
+  constructor(private readonly deps: UsageAnalyticsServiceDeps) {
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
     this.now = deps.now ?? (() => Date.now());
     this.platform = deps.platform ?? { os: process.platform, arch: process.arch };
@@ -72,7 +72,7 @@ export class TelemetryService {
   }
 
   getStatus(): TelemetryStatus {
-    return this.deps.config.getRaw().telemetry;
+    return this.deps.config.getRaw().analytics;
   }
 
   /**
@@ -84,7 +84,7 @@ export class TelemetryService {
   }> {
     const installId = ensureInstallId(this.deps.config.getRaw());
     const applied = status === "enabled" && isTelemetryEnvBlocked(this.env) ? "disabled" : status;
-    await this.deps.config.update({ telemetry: applied, installId });
+    await this.deps.config.update({ analytics: applied, installId });
     await this.deps.config.save();
     return { applied };
   }
@@ -93,7 +93,7 @@ export class TelemetryService {
    * Exact JSON that would be sent — never includes titles, queries, paths, or URLs.
    * Persists a fresh install id so repeated previews stay stable.
    */
-  async previewPayload(): Promise<TelemetryPayload> {
+  async previewPayload(): Promise<AnalyticsPayload> {
     const config = this.deps.config.getRaw();
     const installId = ensureInstallId(config);
     if (installId !== config.installId) {
@@ -112,13 +112,13 @@ export class TelemetryService {
   /** Fire-and-forget; never blocks startup/playback. Failures are silent. */
   pingInBackground(): void {
     void this.maybePing().catch(() => {
-      // Silent by design — telemetry must never surface as a user-facing failure.
+      // Silent by design — analytics must never surface as a user-facing failure.
     });
   }
 
   async maybePing(): Promise<void> {
     const config = this.deps.config.getRaw();
-    if (config.telemetry !== "enabled") {
+    if (config.analytics !== "enabled") {
       return;
     }
     // Hard gate: env flags win over a stale enabled config.
@@ -131,20 +131,20 @@ export class TelemetryService {
     }
     const now = this.now();
     if (
-      config.lastTelemetryPingAt > 0 &&
-      now - config.lastTelemetryPingAt < TELEMETRY_PING_INTERVAL_MS
+      config.lastAnalyticsPingAt > 0 &&
+      now - config.lastAnalyticsPingAt < ANALYTICS_PING_INTERVAL_MS
     ) {
       return;
     }
 
     // A pending retry from an earlier failed send is still cooling down.
-    if (config.telemetryRetryAfter > now) {
+    if (config.analyticsRetryAfter > now) {
       return;
     }
 
     const installId = ensureInstallId(config);
 
-    const payload: TelemetryPayload = {
+    const payload: AnalyticsPayload = {
       installId,
       version: this.deps.currentVersion,
       os: this.platform.os,
@@ -158,8 +158,8 @@ export class TelemetryService {
     // transient failure schedules a near-term retry.
     await this.deps.config.update(
       outcome === "retry"
-        ? { installId, telemetryRetryAfter: now + TELEMETRY_RETRY_BACKOFF_MS }
-        : { installId, lastTelemetryPingAt: now, telemetryRetryAfter: 0 },
+        ? { installId, analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
+        : { installId, lastAnalyticsPingAt: now, analyticsRetryAfter: 0 },
     );
     await this.deps.config.save();
   }
@@ -168,7 +168,7 @@ export class TelemetryService {
    * `permanent` covers success and 4xx: both mean "do not try this again today".
    * `retry` covers network errors, timeouts, and 5xx.
    */
-  private async send(endpoint: string, payload: TelemetryPayload): Promise<"permanent" | "retry"> {
+  private async send(endpoint: string, payload: AnalyticsPayload): Promise<"permanent" | "retry"> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.pingTimeoutMs);
     try {
@@ -188,7 +188,7 @@ export class TelemetryService {
   }
 }
 
-export function resolveTelemetryEndpoint(
+export function resolveAnalyticsEndpoint(
   env: NodeJS.ProcessEnv = process.env,
   configured = "",
 ): string {
@@ -196,5 +196,5 @@ export function resolveTelemetryEndpoint(
   if (fromEnv) return fromEnv;
   const fromConfig = configured.trim();
   if (fromConfig) return fromConfig;
-  return DEFAULT_TELEMETRY_ENDPOINT;
+  return DEFAULT_ANALYTICS_ENDPOINT;
 }

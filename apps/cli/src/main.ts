@@ -741,7 +741,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // column layout renders for this run without touching the user's config file.
   // They go through applySessionOverrides, NOT update() — update() writes into the
   // persisted object, and save() persists that whole object, so the unconditional
-  // background saves from UpdateService/TelemetryService below would otherwise
+  // background saves from UpdateService/UsageAnalyticsService below would otherwise
   // make a one-run flag permanent.
   // `--zen` implies minimal (cli-args sets args.minimal), so a zen launch collapses
   // the companion pane and dims chrome too — matching what each flag's name claims.
@@ -876,29 +876,29 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     void (async () => {
       try {
         const raw = container.config.getRaw();
-        if (raw.telemetry === "unset") {
-          const { resolveTelemetryConsent } = await import("./services/telemetry/consent");
+        if (raw.analytics === "unset") {
+          const { resolveTelemetryConsent } = await import("./services/analytics/consent");
           const decision = resolveTelemetryConsent({
             env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
             isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
             choice: "timeout",
           });
-          // Interactive `unset` stays unset (zero network) until setup or `/telemetry`.
+          // Interactive `unset` stays unset (zero network) until setup or `/analytics`.
           // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
           if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-            await container.telemetryService.setStatus("disabled");
+            await container.usageAnalytics.setStatus("disabled");
           } else if (decision === "disabled") {
             // DNT or CI with a TTY still auto-decline.
             const dntOrCi =
               Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
             if (dntOrCi) {
-              await container.telemetryService.setStatus("disabled");
+              await container.usageAnalytics.setStatus("disabled");
             }
           }
         }
-        container.telemetryService.pingInBackground();
+        container.usageAnalytics.pingInBackground();
       } catch {
-        // Telemetry must never affect startup.
+        // Analytics must never affect startup.
       }
     })();
   if (capabilitySnapshot.issues.length > 0) {

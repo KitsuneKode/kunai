@@ -18,8 +18,8 @@ export type AppCommandId =
   | "settings"
   | "providers"
   | "presence"
-  | "telemetry"
-  | "telemetry-show"
+  | "analytics"
+  | "analytics-show"
   | "notifications"
   | "toggle-mode"
   | "series-mode"
@@ -115,8 +115,8 @@ export const COMMAND_CONTEXTS = {
     "settings",
     "providers",
     "presence",
-    "telemetry",
-    "telemetry-show",
+    "analytics",
+    "analytics-show",
     "diagnostics",
     "export-diagnostics",
     "report-issue",
@@ -168,8 +168,8 @@ export const COMMAND_CONTEXTS = {
     "settings",
     "providers",
     "presence",
-    "telemetry",
-    "telemetry-show",
+    "analytics",
+    "analytics-show",
     "setup",
     "help",
     "menu",
@@ -234,8 +234,8 @@ export const COMMAND_CONTEXTS = {
     "settings",
     "providers",
     "presence",
-    "telemetry",
-    "telemetry-show",
+    "analytics",
+    "analytics-show",
     "setup",
     "help",
     "menu",
@@ -347,16 +347,16 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Open settings for Discord Rich Presence setup and status",
   },
   {
-    id: "telemetry",
-    label: "Telemetry",
-    aliases: ["telemetry"],
-    description: "Show or change the opt-in anonymous usage ping",
+    id: "analytics",
+    label: "Analytics",
+    aliases: ["analytics", "telemetry"],
+    description: "Anonymous usage ping — status, payload, and consent",
   },
   {
-    id: "telemetry-show",
-    label: "Telemetry payload",
-    aliases: ["telemetry show", "telemetry-show"],
-    description: "Print the exact JSON that would be sent if telemetry is enabled",
+    id: "analytics-show",
+    label: "Analytics payload",
+    aliases: ["analytics show", "analytics-show", "telemetry show", "telemetry-show"],
+    description: "Print the exact JSON that would be sent",
   },
   {
     id: "notifications",
@@ -763,7 +763,7 @@ export const HELP_PANEL_COMMAND_IDS = [
   "settings",
   "setup",
   "presence",
-  "telemetry",
+  "analytics",
   "follow",
   "unfollow",
   "mute",
@@ -1005,8 +1005,8 @@ function resolveCommandState(
     case "surprise":
     case "settings":
     case "presence":
-    case "telemetry":
-    case "telemetry-show":
+    case "analytics":
+    case "analytics-show":
     case "notifications":
     case "history":
     case "diagnostics":

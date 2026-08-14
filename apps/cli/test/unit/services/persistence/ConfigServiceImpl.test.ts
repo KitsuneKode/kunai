@@ -310,7 +310,7 @@ describe("session overrides", () => {
     expect(service.getRaw().zenMode).toBe(true);
 
     // ...but any save during the session must not bake it in. UpdateService and
-    // TelemetryService both call save() unconditionally on startup, so this is
+    // UsageAnalyticsService both call save() unconditionally on startup, so this is
     // the routine path, not an edge case.
     await service.save();
 

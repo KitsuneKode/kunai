@@ -4,9 +4,9 @@ import { chooseFromListShell } from "@/app-shell/pickers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
 import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
+import { resolveTelemetryConsent } from "@/services/analytics/consent";
+import { ensureInstallId } from "@/services/analytics/install-id";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
-import { resolveTelemetryConsent } from "@/services/telemetry/consent";
-import { ensureInstallId } from "@/services/telemetry/install-id";
 import { probeCapabilities } from "@/ui";
 
 import { runSetupFlow } from "../setup-shell";
@@ -79,14 +79,14 @@ export async function runSetupWizard({
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot);
   const { outcome, prefs } = await result;
-  const telemetry = resolveSetupTelemetry(prefs.telemetryChoice, outcome);
+  const analytics = resolveSetupTelemetry(prefs.telemetryChoice, outcome);
   const installId = ensureInstallId(current);
 
   if (outcome === "skipped") {
     await container.config.update({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
-      telemetry,
+      analytics,
       installId,
     });
     await container.config.save();
@@ -101,7 +101,7 @@ export async function runSetupWizard({
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
-      telemetry,
+      analytics,
       installId,
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
@@ -123,7 +123,7 @@ export async function runSetupWizard({
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force, telemetry },
+    context: { outcome, force, analytics },
   });
 
   return outcome === "completed" ? "completed" : "skipped";

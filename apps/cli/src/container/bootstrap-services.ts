@@ -9,6 +9,10 @@ import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceIm
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
 import { ShellServiceImpl } from "../infra/shell/ShellServiceImpl";
 import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
+import {
+  resolveAnalyticsEndpoint,
+  UsageAnalyticsService,
+} from "../services/analytics/UsageAnalyticsService";
 import { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import { createProviderAvailabilityRefresh } from "../services/attention/provider-availability-refresh";
 import { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
@@ -47,7 +51,6 @@ import { ReleaseReconciliationService } from "../services/release-reconciliation
 import { SEARCH_SERVICE_DEFINITIONS } from "../services/search/definitions";
 import { SearchRegistryImpl } from "../services/search/SearchRegistry";
 import { searchTitles } from "../services/search/SearchRoutingService";
-import { resolveTelemetryEndpoint, TelemetryService } from "../services/telemetry/TelemetryService";
 import { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import { readInstallManifest } from "../services/update/install-manifest";
 import { detectInstallMethod } from "../services/update/install-method";
@@ -430,10 +433,10 @@ export function bootstrapServices(input: {
     config,
     currentVersion: options?.appVersion ?? "0.0.0",
   });
-  const telemetryService = new TelemetryService({
+  const usageAnalytics = new UsageAnalyticsService({
     config,
     currentVersion: options?.appVersion ?? "0.0.0",
-    endpoint: resolveTelemetryEndpoint(process.env, config.getRaw().telemetryEndpoint),
+    endpoint: resolveAnalyticsEndpoint(process.env, config.getRaw().analyticsEndpoint),
   });
 
   return {
@@ -487,7 +490,7 @@ export function bootstrapServices(input: {
     historyCatalogEpisodeCounts,
     updateService,
     binaryAutoUpdater,
-    telemetryService,
+    usageAnalytics,
     listRepository,
     queueRepository,
     notificationRepository,

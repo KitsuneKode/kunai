@@ -11,7 +11,7 @@ export type PresenceProvider = "off" | "discord";
 export type PresencePrivacy = "full" | "private";
 
 /** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
-export type TelemetryPreference = "unset" | "enabled" | "disabled";
+export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
@@ -123,22 +123,23 @@ export interface KitsuneConfig {
    */
   playbackKeysSessionsSeen: number;
   /**
-   * Opt-in anonymous usage ping. Default `unset` → zero network calls.
+   * Anonymous usage ping. Default `unset` → zero network calls until the
+   * disclosure has been shown. See .docs/analytics-privacy-contract.md.
    * Payload is only `{ installId, version, os, arch, ts }`.
    */
-  telemetry: TelemetryPreference;
-  /** Random UUID install id for opt-in telemetry. Never hostname/MAC/username-derived. */
+  analytics: AnalyticsPreference;
+  /** Random UUID install id. Present if and only if `analytics === "enabled"`. */
   installId: string;
-  /** Last successful cadence mark for the daily telemetry ping (epoch ms). */
-  lastTelemetryPingAt: number;
+  /** Last successful cadence mark for the daily analytics ping (epoch ms). */
+  lastAnalyticsPingAt: number;
   /**
-   * Earliest epoch ms at which a failed telemetry send may be retried.
-   * `0` means no retry is pending. Set instead of `lastTelemetryPingAt` when a
+   * Earliest epoch ms at which a failed analytics send may be retried.
+   * `0` means no retry is pending. Set instead of `lastAnalyticsPingAt` when a
    * send fails, so the next CLI launch retries rather than losing the day.
    */
-  telemetryRetryAfter: number;
-  /** Optional override for the telemetry ingest URL (else env / built-in default). */
-  telemetryEndpoint: string;
+  analyticsRetryAfter: number;
+  /** Optional override for the analytics ingest URL (else env / built-in default). */
+  analyticsEndpoint: string;
   updateChecksEnabled: boolean;
   autoApplyBinaryUpdates: boolean;
   updateCheckIntervalDays: number;

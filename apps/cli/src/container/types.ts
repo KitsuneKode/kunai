@@ -30,6 +30,7 @@ import type { ShellService } from "../infra/shell/ShellService";
 import type { StorageService } from "../infra/storage/StorageService";
 import type { Tracer } from "../infra/tracer/Tracer";
 import type { WorkControlService } from "../infra/work/WorkControlService";
+import type { UsageAnalyticsService } from "../services/analytics/UsageAnalyticsService";
 import type { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import type { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
 import type { CatalogIdentityService } from "../services/catalog/CatalogIdentityService";
@@ -71,7 +72,6 @@ import type { ReleaseProgressWriter } from "../services/release-reconciliation/R
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
 import type { SyncService } from "../services/sync/SyncService";
-import type { TelemetryService } from "../services/telemetry/TelemetryService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import type { UpdateService } from "../services/update/UpdateService";
 import type { CapabilitySnapshot } from "../ui";
@@ -156,7 +156,7 @@ export interface Container {
   readonly historyCatalogEpisodeCounts: Map<string, number>;
   readonly updateService: UpdateService;
   readonly binaryAutoUpdater: BinaryAutoUpdater;
-  readonly telemetryService: TelemetryService;
+  readonly usageAnalytics: UsageAnalyticsService;
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;

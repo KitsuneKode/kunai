@@ -833,8 +833,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   providers: (c) => handleProvidersHub(c),
   provider: (c) => handleProvidersHub(c),
   presence: (c) => handleSettings(c),
-  telemetry: (c) => handleTelemetry(c),
-  "telemetry-show": (c) => handleTelemetryShow(c),
+  analytics: (c) => handleAnalytics(c),
+  "analytics-show": (c) => handleAnalyticsShow(c),
   setup: async (container) => {
     await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
     return "handled";
@@ -1345,8 +1345,8 @@ async function handleUpdate(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-async function handleTelemetryShow(container: Container): Promise<"handled"> {
-  const payload = await container.telemetryService.previewPayload();
+async function handleAnalyticsShow(container: Container): Promise<"handled"> {
+  const payload = await container.usageAnalytics.previewPayload();
   const json = JSON.stringify(payload, null, 2);
   await chooseFromListShell({
     title: "Telemetry payload",
@@ -1363,9 +1363,9 @@ async function handleTelemetryShow(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-async function handleTelemetry(container: Container): Promise<"handled"> {
-  const status = container.telemetryService.getStatus();
-  const payload = await container.telemetryService.previewPayload();
+async function handleAnalytics(container: Container): Promise<"handled"> {
+  const status = container.usageAnalytics.getStatus();
+  const payload = await container.usageAnalytics.previewPayload();
   const subtitle = [
     `Status: ${status}`,
     "Sends at most once per day when enabled.",
@@ -1397,10 +1397,10 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
   });
 
   if (choice === "show") {
-    return handleTelemetryShow(container);
+    return handleAnalyticsShow(container);
   }
   if (choice === "enable") {
-    const { applied } = await container.telemetryService.setStatus("enabled");
+    const { applied } = await container.usageAnalytics.setStatus("enabled");
     if (applied === "disabled") {
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
@@ -1408,7 +1408,7 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
       });
       return "handled";
     }
-    container.telemetryService.pingInBackground();
+    container.usageAnalytics.pingInBackground();
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Telemetry enabled. Change anytime with /telemetry.",
@@ -1416,7 +1416,7 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
     return "handled";
   }
   if (choice === "disable") {
-    await container.telemetryService.setStatus("disabled");
+    await container.usageAnalytics.setStatus("disabled");
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
       note: "Telemetry disabled.",

@@ -1,24 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { hostname, userInfo } from "node:os";
 
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
-import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import {
   resolveTelemetryConsent,
   type TelemetryConsentDecision,
-} from "@/services/telemetry/consent";
+} from "@/services/analytics/consent";
 import {
   ensureInstallId,
   isMacShaped,
   looksLikeHostnameOrUsername,
-} from "@/services/telemetry/install-id";
+} from "@/services/analytics/install-id";
 import {
-  DEFAULT_TELEMETRY_ENDPOINT,
-  TELEMETRY_RETRY_BACKOFF_MS,
-  TelemetryService,
+  DEFAULT_ANALYTICS_ENDPOINT,
+  ANALYTICS_RETRY_BACKOFF_MS,
+  UsageAnalyticsService,
   type TelemetryFetch,
-  type TelemetryPayload,
-} from "@/services/telemetry/TelemetryService";
+  type AnalyticsPayload,
+} from "@/services/analytics/UsageAnalyticsService";
+import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   let raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...overrides };
@@ -34,19 +34,19 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   };
 }
 
-describe("TelemetryService privacy gate", () => {
+describe("UsageAnalyticsService privacy gate", () => {
   test("telemetry unset performs zero network calls", async () => {
-    const config = makeConfig({ telemetry: "unset" });
+    const config = makeConfig({ analytics: "unset" });
     const fetchCalls: unknown[] = [];
     const fetchImpl: TelemetryFetch = async (...args) => {
       fetchCalls.push(args);
       throw new Error("fetch must not be called when telemetry is unset");
     };
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       now: () => Date.UTC(2026, 6, 20),
     });
@@ -62,20 +62,20 @@ describe("TelemetryService privacy gate", () => {
     const fetchImpl: TelemetryFetch = async () => {
       throw new Error("fetch must not be called when telemetry is disabled");
     };
-    const disabled = new TelemetryService({
+    const disabled = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "disabled",
+        analytics: "disabled",
         installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       }),
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
     });
     await disabled.maybePing();
 
-    const enabledButEmptyEndpoint = new TelemetryService({
+    const enabledButEmptyEndpoint = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "enabled",
+        analytics: "enabled",
         installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       }),
       currentVersion: "0.3.0",
@@ -91,14 +91,14 @@ describe("TelemetryService privacy gate", () => {
       fetchCalls.push(args);
       throw new Error("fetch must not be called when DO_NOT_TRACK is set");
     };
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "enabled",
+        analytics: "enabled",
         installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        lastTelemetryPingAt: 0,
+        lastAnalyticsPingAt: 0,
       }),
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       env: { DO_NOT_TRACK: "1" },
       now: () => Date.UTC(2026, 6, 20),
@@ -114,14 +114,14 @@ describe("TelemetryService privacy gate", () => {
       fetchCalls.push(args);
       throw new Error("fetch must not be called when CI is set");
     };
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "enabled",
+        analytics: "enabled",
         installId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        lastTelemetryPingAt: 0,
+        lastAnalyticsPingAt: 0,
       }),
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       env: { CI: "true" },
       now: () => Date.UTC(2026, 6, 20),
@@ -135,17 +135,17 @@ describe("TelemetryService privacy gate", () => {
     const fetchImpl: TelemetryFetch = async () => {
       throw new Error("fetch must not run after DNT-blocked enable");
     };
-    const config = makeConfig({ telemetry: "unset", installId: "" });
-    const service = new TelemetryService({
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       env: { DO_NOT_TRACK: "1" },
     });
     const result = await service.setStatus("enabled");
     expect(result.applied).toBe("disabled");
-    expect(config.rawRef.telemetry).toBe("disabled");
+    expect(config.rawRef.analytics).toBe("disabled");
     await service.maybePing();
   });
 });
@@ -169,18 +169,18 @@ describe("telemetry payload contract", () => {
   test("payload is exactly { installId, version, os, arch, ts }", async () => {
     const installId = "11111111-2222-4333-8444-555555555555";
     const now = Date.UTC(2026, 6, 20, 12, 0, 0);
-    let captured: TelemetryPayload | undefined;
+    let captured: AnalyticsPayload | undefined;
     const fetchImpl: TelemetryFetch = async (_input, init) => {
-      captured = JSON.parse(String(init?.body)) as TelemetryPayload;
+      captured = JSON.parse(String(init?.body)) as AnalyticsPayload;
       return new Response("{}", { status: 204 });
     };
 
     const config = makeConfig({
-      telemetry: "enabled",
+      analytics: "enabled",
       installId,
-      lastTelemetryPingAt: 0,
+      lastAnalyticsPingAt: 0,
     });
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -214,9 +214,9 @@ describe("telemetry payload contract", () => {
     const fetchImpl: TelemetryFetch = async () => {
       throw new Error("previewPayload must not fetch");
     };
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "enabled",
+        analytics: "enabled",
         installId: "11111111-2222-4333-8444-555555555555",
       }),
       currentVersion: "0.3.0",
@@ -236,8 +236,8 @@ describe("telemetry payload contract", () => {
   });
 
   test("previewPayload persists a fresh install id so previews stay stable", async () => {
-    const config = makeConfig({ telemetry: "unset", installId: "" });
-    const service = new TelemetryService({
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -258,19 +258,19 @@ describe("telemetry payload contract", () => {
 });
 
 describe("telemetry cadence", () => {
-  test("sends at most one ping per 24h and records lastTelemetryPingAt", async () => {
+  test("sends at most one ping per 24h and records lastAnalyticsPingAt", async () => {
     const calls: number[] = [];
     const fetchImpl: TelemetryFetch = async () => {
       calls.push(1);
       return new Response("{}", { status: 204 });
     };
     const config = makeConfig({
-      telemetry: "enabled",
+      analytics: "enabled",
       installId: "11111111-2222-4333-8444-555555555555",
-      lastTelemetryPingAt: 0,
+      lastAnalyticsPingAt: 0,
     });
     const t0 = Date.UTC(2026, 6, 20);
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -283,9 +283,9 @@ describe("telemetry cadence", () => {
     await service.maybePing();
     await service.maybePing();
     expect(calls).toHaveLength(1);
-    expect(config.rawRef.lastTelemetryPingAt).toBe(t0);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(t0);
 
-    const laterSameDay = new TelemetryService({
+    const laterSameDay = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -297,7 +297,7 @@ describe("telemetry cadence", () => {
     await laterSameDay.maybePing();
     expect(calls).toHaveLength(1);
 
-    const nextDay = new TelemetryService({
+    const nextDay = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -311,11 +311,11 @@ describe("telemetry cadence", () => {
   });
 
   test("failures are silent and do not throw", async () => {
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config: makeConfig({
-        telemetry: "enabled",
+        analytics: "enabled",
         installId: "11111111-2222-4333-8444-555555555555",
-        lastTelemetryPingAt: 0,
+        lastAnalyticsPingAt: 0,
       }),
       currentVersion: "0.3.0",
       endpoint: "https://example.test/api/ping",
@@ -367,23 +367,23 @@ describe("telemetry consent", () => {
   });
 });
 
-describe("telemetryRetryAfter config field", () => {
+describe("analyticsRetryAfter config field", () => {
   test("defaults to zero, meaning no pending retry", () => {
-    expect(DEFAULT_CONFIG.telemetryRetryAfter).toBe(0);
+    expect(DEFAULT_CONFIG.analyticsRetryAfter).toBe(0);
   });
 
   test("is a distinct field from the success cadence mark", () => {
     const config: KitsuneConfig = {
       ...DEFAULT_CONFIG,
-      lastTelemetryPingAt: 111,
-      telemetryRetryAfter: 222,
+      lastAnalyticsPingAt: 111,
+      analyticsRetryAfter: 222,
     };
-    expect(config.lastTelemetryPingAt).toBe(111);
-    expect(config.telemetryRetryAfter).toBe(222);
+    expect(config.lastAnalyticsPingAt).toBe(111);
+    expect(config.analyticsRetryAfter).toBe(222);
   });
 });
 
-describe("TelemetryService retry marker", () => {
+describe("UsageAnalyticsService retry marker", () => {
   const DAY = Date.UTC(2026, 6, 20, 12, 0, 0);
 
   function okFetch(calls: unknown[]): TelemetryFetch {
@@ -401,13 +401,13 @@ describe("TelemetryService retry marker", () => {
   }
 
   test("a failed send leaves the cadence mark untouched and sets a retry marker", async () => {
-    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const config = makeConfig({ analytics: "enabled", lastAnalyticsPingAt: 0 });
     const calls: unknown[] = [];
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl: failFetch(calls),
       now: () => DAY,
       env: {},
@@ -416,22 +416,22 @@ describe("TelemetryService retry marker", () => {
     await service.maybePing();
 
     expect(calls).toHaveLength(1);
-    expect(config.rawRef.lastTelemetryPingAt).toBe(0);
-    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+    expect(config.rawRef.analyticsRetryAfter).toBe(DAY + ANALYTICS_RETRY_BACKOFF_MS);
   });
 
   test("the retry marker suppresses re-sends until it expires", async () => {
     const config = makeConfig({
-      telemetry: "enabled",
-      lastTelemetryPingAt: 0,
-      telemetryRetryAfter: DAY + TELEMETRY_RETRY_BACKOFF_MS,
+      analytics: "enabled",
+      lastAnalyticsPingAt: 0,
+      analyticsRetryAfter: DAY + ANALYTICS_RETRY_BACKOFF_MS,
     });
     const calls: unknown[] = [];
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl: okFetch(calls),
       now: () => DAY + 60_000,
       env: {},
@@ -444,17 +444,17 @@ describe("TelemetryService retry marker", () => {
 
   test("a later launch retries once the marker has expired", async () => {
     const config = makeConfig({
-      telemetry: "enabled",
-      lastTelemetryPingAt: 0,
-      telemetryRetryAfter: DAY + TELEMETRY_RETRY_BACKOFF_MS,
+      analytics: "enabled",
+      lastAnalyticsPingAt: 0,
+      analyticsRetryAfter: DAY + ANALYTICS_RETRY_BACKOFF_MS,
     });
     const calls: unknown[] = [];
-    const later = DAY + TELEMETRY_RETRY_BACKOFF_MS + 1;
+    const later = DAY + ANALYTICS_RETRY_BACKOFF_MS + 1;
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl: okFetch(calls),
       now: () => later,
       env: {},
@@ -463,18 +463,18 @@ describe("TelemetryService retry marker", () => {
     await service.maybePing();
 
     expect(calls).toHaveLength(1);
-    expect(config.rawRef.lastTelemetryPingAt).toBe(later);
-    expect(config.rawRef.telemetryRetryAfter).toBe(0);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(later);
+    expect(config.rawRef.analyticsRetryAfter).toBe(0);
   });
 
   test("a 5xx response is treated as failure, not success", async () => {
-    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const config = makeConfig({ analytics: "enabled", lastAnalyticsPingAt: 0 });
     const fetchImpl: TelemetryFetch = async () => new Response("nope", { status: 503 });
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       now: () => DAY,
       env: {},
@@ -482,18 +482,18 @@ describe("TelemetryService retry marker", () => {
 
     await service.maybePing();
 
-    expect(config.rawRef.lastTelemetryPingAt).toBe(0);
-    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+    expect(config.rawRef.analyticsRetryAfter).toBe(DAY + ANALYTICS_RETRY_BACKOFF_MS);
   });
 
   test("a 4xx response is permanent — cadence advances so the client stops hammering", async () => {
-    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const config = makeConfig({ analytics: "enabled", lastAnalyticsPingAt: 0 });
     const fetchImpl: TelemetryFetch = async () => new Response("bad", { status: 400 });
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl,
       now: () => DAY,
       env: {},
@@ -501,17 +501,17 @@ describe("TelemetryService retry marker", () => {
 
     await service.maybePing();
 
-    expect(config.rawRef.lastTelemetryPingAt).toBe(DAY);
-    expect(config.rawRef.telemetryRetryAfter).toBe(0);
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(DAY);
+    expect(config.rawRef.analyticsRetryAfter).toBe(0);
   });
 
   test("a failure never throws out of pingInBackground", async () => {
-    const config = makeConfig({ telemetry: "enabled", lastTelemetryPingAt: 0 });
+    const config = makeConfig({ analytics: "enabled", lastAnalyticsPingAt: 0 });
 
-    const service = new TelemetryService({
+    const service = new UsageAnalyticsService({
       config,
       currentVersion: "0.3.0",
-      endpoint: DEFAULT_TELEMETRY_ENDPOINT,
+      endpoint: DEFAULT_ANALYTICS_ENDPOINT,
       fetchImpl: async () => {
         throw new Error("network down");
       },
@@ -521,6 +521,6 @@ describe("TelemetryService retry marker", () => {
 
     expect(() => service.pingInBackground()).not.toThrow();
     await Bun.sleep(10);
-    expect(config.rawRef.telemetryRetryAfter).toBe(DAY + TELEMETRY_RETRY_BACKOFF_MS);
+    expect(config.rawRef.analyticsRetryAfter).toBe(DAY + ANALYTICS_RETRY_BACKOFF_MS);
   });
 });
