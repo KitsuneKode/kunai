@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-08-14T09:10:16.593Z",
+  "syncedAt": "2026-08-14T00:25:35.864Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "6af2b56c",
-  "cliSourceFingerprint": "791212685deacad7c3ea972294d8a8e5d63c0e9b84ebe700e10544686a4e6734",
-  "docsContentFingerprint": "2eebb2d8881d5a4221a510ca573408b8afc9d98c9ed00580564738afae66a877",
+  "cliSourceRevision": "3ab31a25",
+  "cliSourceFingerprint": "f1de019893d296e009f4fc1cc7b42c954fc093829f3af0d0742f73257bd6637a",
+  "docsContentFingerprint": "3a1ab750886ee88dff7a8b27114be1e8a7b7b2b4c1883a1c2a6822ab217f5e3c",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -1036,6 +1036,15 @@
       "label": "Add the highlighted title to Watchlist",
       "tier": "surface",
       "order": 240
+    },
+    {
+      "id": "browse-favorite",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "f",
+      "label": "Favourite or unfavourite the highlighted title",
+      "tier": "surface",
+      "order": 245
     },
     {
       "id": "browse-follow",

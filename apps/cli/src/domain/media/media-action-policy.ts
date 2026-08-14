@@ -16,6 +16,7 @@ export type MediaActionId =
   | "queue-end"
   | "add-to-up-next"
   | "add-to-watchlist"
+  | "toggle-favorite"
   | "add-to-playlist"
   | "download"
   | "follow"

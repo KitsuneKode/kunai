@@ -206,6 +206,7 @@ export function BrowseShell<T>({
   settings,
   onQueueSelected,
   onWatchlistSelected,
+  onFavoriteSelected,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -243,6 +244,7 @@ export function BrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
+  onFavoriteSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -1375,6 +1377,7 @@ export function BrowseShell<T>({
         listEffect &&
         (listEffect.kind === "add-to-up-next" ||
           listEffect.kind === "add-to-watchlist" ||
+          listEffect.kind === "toggle-favorite" ||
           listEffect.kind === "follow") &&
         selectedOption &&
         displayOptions.length > 0 &&
@@ -1386,6 +1389,14 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Added ${selectedOption.label} to Up Next`,
             "Could not queue",
+          );
+          return;
+        }
+        if (listEffect.kind === "toggle-favorite" && onFavoriteSelected) {
+          runMutationWithFeedback(
+            () => onFavoriteSelected(selectedOption.value),
+            `Updated favourites for ${selectedOption.label}`,
+            "Could not update favourites",
           );
           return;
         }
@@ -2151,6 +2162,7 @@ export function BrowseShell<T>({
                 "browse-download",
                 ...(onQueueSelected ? ["browse-queue"] : []),
                 ...(onWatchlistSelected ? ["browse-watchlist"] : []),
+                ...(onFavoriteSelected ? ["browse-favorite"] : []),
                 ...(onFollowSelected ? ["browse-follow"] : []),
               ]
             : []),
@@ -2251,6 +2263,7 @@ export function openBrowseShell<T>({
   settings,
   onQueueSelected,
   onWatchlistSelected,
+  onFavoriteSelected,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -2281,6 +2294,7 @@ export function openBrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
+  onFavoriteSelected?: (value: T) => Promise<void> | void;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -2317,6 +2331,7 @@ export function openBrowseShell<T>({
         settings={settings}
         onQueueSelected={onQueueSelected}
         onWatchlistSelected={onWatchlistSelected}
+        onFavoriteSelected={onFavoriteSelected}
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}

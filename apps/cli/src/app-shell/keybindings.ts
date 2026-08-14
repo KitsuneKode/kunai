@@ -264,6 +264,16 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     docs: { tier: "surface", order: 240 },
   },
   {
+    id: "browse-favorite",
+    chord: { input: "f" },
+    label: "Favourite or unfavourite the highlighted title",
+    hintLabel: "favourite",
+    scope: "browse",
+    group: "While browsing",
+    commandId: "bookmark",
+    docs: { tier: "surface", order: 245 },
+  },
+  {
     id: "browse-follow",
     chord: { input: "W", shift: true },
     display: "⇧W",

@@ -130,16 +130,21 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
         sync: { ...config.sync, [tracker]: { ...config.sync[tracker], trackWatched: value } },
       }),
     },
-    /**
-     * No `syncList` row yet, deliberately.
-     *
-     * The adapters can write watchlist and favourite membership, and the drain
-     * honours the setting — but nothing in Kunai produces those operations:
-     * `enqueueListMembership` and `enqueueFavoriteMembership` have no callers,
-     * and `ListsRepository` is not wired into the app at all. A switch for
-     * something no code path generates is the silent no-op this repo gates
-     * against, so the row appears when a producer does.
-     */
+    {
+      kind: "boolean",
+      id: `sync:${tracker}:syncList`,
+      label: "Send watchlist and favourites",
+      detail: `Mirror w (watchlist) and f (favourite) to ${adapter.displayName}`,
+      gate: {
+        predicate: () =>
+          adapter.capabilities.watchlistMembership || adapter.capabilities.favoriteMembership,
+      },
+      read: (config) => config.sync[tracker].syncList,
+      write: (config, value) => ({
+        ...config,
+        sync: { ...config.sync, [tracker]: { ...config.sync[tracker], syncList: value } },
+      }),
+    },
   ];
 }
 

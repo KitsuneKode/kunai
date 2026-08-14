@@ -18,6 +18,27 @@ export type ContainerMediaActionRouterOptions = {
   readonly onDownloadQueued?: (item: MediaItemIdentity) => void;
 };
 
+/**
+ * Hand a local list change to the sync outbox.
+ *
+ * Enqueue is durable and cheap, so it happens whether or not a tracker is
+ * connected: the work waits in the outbox and goes out when one is, rather than
+ * being lost because nothing was linked at the moment the user pressed a key.
+ * Identity resolution decides which trackers can address the title at all.
+ */
+function mirrorToTrackers(
+  item: MediaItemIdentity,
+  enqueue: (source: { titleId: string; mediaKind: MediaKind }) => number,
+): void {
+  try {
+    enqueue({ titleId: item.titleId, mediaKind: normalizeMediaKind(item.mediaKind) });
+  } catch {
+    // Mirroring is secondary. The list change has already been written locally,
+    // and failing the user's keypress because the outbox is unavailable would
+    // trade a working local action for a broken one.
+  }
+}
+
 export function createContainerMediaActionRouter(
   container: Container,
   options: ContainerMediaActionRouterOptions = {},
@@ -43,6 +64,34 @@ export function createContainerMediaActionRouter(
           season: item.season,
           episode: item.episode,
         });
+        mirrorToTrackers(item, (source) =>
+          container.syncService.enqueueListMembership({
+            source,
+            list: "watchlist",
+            present: true,
+          }),
+        );
+      },
+    },
+    favorites: {
+      toggleFavorite: (item) => {
+        const outcome = container.listService.toggleFavorites({
+          titleId: item.titleId,
+          mediaKind: normalizeMediaKind(item.mediaKind),
+          title: item.title,
+          season: item.season,
+          episode: item.episode,
+        });
+        // The local list is the source of truth, and the tracker is told the
+        // resulting *state* rather than "toggle" — so a redelivery converges
+        // instead of undoing what the user just did.
+        mirrorToTrackers(item, (source) =>
+          container.syncService.enqueueFavoriteMembership({
+            source,
+            present: outcome === "added",
+          }),
+        );
+        return outcome;
       },
     },
     attention: {

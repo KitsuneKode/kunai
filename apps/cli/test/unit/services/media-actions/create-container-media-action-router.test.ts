@@ -18,9 +18,23 @@ describe("createContainerMediaActionRouter", () => {
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
       },
+      syncService: {
+        enqueueListMembership: (input: { present: boolean }) => {
+          calls.push(`sync:watchlist:${input.present}`);
+          return 1;
+        },
+        enqueueFavoriteMembership: (input: { present: boolean }) => {
+          calls.push(`sync:favorite:${input.present}`);
+          return 1;
+        },
+      },
       listService: {
         addToWatchlist: () => {
           calls.push("watchlist");
+        },
+        toggleFavorites: () => {
+          calls.push("favorite");
+          return "added" as const;
         },
       },
       followedTitleRepository: {
@@ -95,7 +109,17 @@ describe("createContainerMediaActionRouter", () => {
       }),
     ).resolves.toMatchObject({ status: "handled", actionId: "add-to-playlist" });
 
-    expect(calls).toEqual(["queue", "follow", "follow", "watchlist", "playlist"]);
+    // Watchlisting also hands the change to the outbox, so a connected tracker
+    // mirrors it. Enqueue is unconditional: the work waits rather than being
+    // lost because nothing happened to be linked at that moment.
+    expect(calls).toEqual([
+      "queue",
+      "follow",
+      "follow",
+      "watchlist",
+      "sync:watchlist:true",
+      "playlist",
+    ]);
     expect(preferences).toEqual(["following", "implicit"]);
   });
 
@@ -230,5 +254,88 @@ describe("queueDownloadFromMediaItem authoritative kind", () => {
       mode: "anime",
       episode: { season: 1, episode: 3 },
     });
+  });
+});
+
+/**
+ * Favourites are a desired state, not a nudge: the local list decides, and the
+ * tracker is told the resulting value. Sending "toggle" instead would let a
+ * redelivery undo what the user just did.
+ */
+describe("createContainerMediaActionRouter favourites", () => {
+  function harness(toggleResult: "added" | "removed") {
+    const calls: string[] = [];
+    const container = {
+      queueService: { enqueueMediaItem: () => {} },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
+      },
+      syncService: {
+        enqueueListMembership: () => 1,
+        enqueueFavoriteMembership: (input: { present: boolean }) => {
+          calls.push(`sync:favorite:${input.present}`);
+          return 1;
+        },
+      },
+      listService: {
+        toggleFavorites: () => {
+          calls.push("local:toggle");
+          return toggleResult;
+        },
+      },
+      followedTitleRepository: { upsert: () => {} },
+      notificationService: { listActive: () => [] },
+      stateManager: { dispatch: () => {} },
+    } as unknown as Parameters<typeof createContainerMediaActionRouter>[0];
+
+    return { calls, router: createContainerMediaActionRouter(container) };
+  }
+
+  const item = { titleId: "tmdb:123", mediaKind: "series", title: "Test" } as const;
+
+  test("mirrors the resulting state, not the gesture", async () => {
+    for (const [result, expected] of [
+      ["added", "sync:favorite:true"],
+      ["removed", "sync:favorite:false"],
+    ] as const) {
+      const { calls, router } = harness(result);
+      await router.run({ actionId: "toggle-favorite", item, source: "browse" });
+
+      expect(calls, result).toEqual(["local:toggle", expected]);
+    }
+  });
+
+  /** The local write already happened; a broken outbox must not undo the key. */
+  test("still reports handled when the outbox rejects the mirror", async () => {
+    const calls: string[] = [];
+    const container = {
+      queueService: { enqueueMediaItem: () => {} },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
+      },
+      syncService: {
+        enqueueFavoriteMembership: () => {
+          throw new Error("database is closed");
+        },
+      },
+      listService: {
+        toggleFavorites: () => {
+          calls.push("local:toggle");
+          return "added" as const;
+        },
+      },
+      followedTitleRepository: { upsert: () => {} },
+      notificationService: { listActive: () => [] },
+      stateManager: { dispatch: () => {} },
+    } as unknown as Parameters<typeof createContainerMediaActionRouter>[0];
+
+    const result = await createContainerMediaActionRouter(container).run({
+      actionId: "toggle-favorite",
+      item,
+      source: "browse",
+    });
+
+    expect(result.status).toBe("handled");
+    expect(calls).toEqual(["local:toggle"]);
   });
 });
