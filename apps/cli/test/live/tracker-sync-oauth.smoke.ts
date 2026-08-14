@@ -126,6 +126,90 @@ async function purgeListActivities(
   return deleted;
 }
 
+/**
+ * Separate "the read is wrong" from "the write never happened".
+ *
+ * A 65s re-read still reported the favourite absent, so a short-lived cache is
+ * ruled out. Two candidates remain and they need opposite fixes, so this asks
+ * three independent sources rather than trusting the one that already lied:
+ * `Media.isFavourite`, the mutation's own response, and the viewer's favourites
+ * list. Whichever disagrees with the others is the broken one.
+ */
+async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<void> {
+  const call = async (query: string, variables: Record<string, unknown> = {}) => {
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    return (await res.json()) as { data?: any; errors?: { message: string; status?: number }[] };
+  };
+
+  const viewerFavourites = async (): Promise<{ ids: number[]; total: number }> => {
+    const res = await call(
+      `query { Viewer { favourites { anime(page: 1, perPage: 50) {
+         pageInfo { total } nodes { id } } } } }`,
+    );
+    const anime = res.data?.Viewer?.favourites?.anime;
+    return {
+      ids: (anime?.nodes ?? []).map((node: { id: number }) => node.id),
+      total: anime?.pageInfo?.total ?? -1,
+    };
+  };
+
+  const mediaSays = async (): Promise<unknown> => {
+    const res = await call(`query ($id: Int) { Media(id: $id) { id isFavourite } }`, {
+      id: mediaId,
+    });
+    if (res.errors?.length) return `errors: ${res.errors[0]?.message}`;
+    return res.data?.Media?.isFavourite;
+  };
+
+  process.stdout.write("\n--- favourite diagnosis ---\n");
+
+  const before = await viewerFavourites();
+  process.stdout.write(
+    `Viewer.favourites before : ${before.ids.length} of ${before.total} listed, contains ${mediaId}: ${before.ids.includes(mediaId)}\n`,
+  );
+  process.stdout.write(`Media.isFavourite before : ${String(await mediaSays())}\n`);
+
+  const toggled = await call(
+    `mutation ($id: Int) { ToggleFavourite(animeId: $id) {
+       anime(page: 1, perPage: 50) { pageInfo { total } nodes { id } } } }`,
+    { id: mediaId },
+  );
+  if (toggled.errors?.length) {
+    process.stdout.write(`ToggleFavourite ERRORS   : ${JSON.stringify(toggled.errors)}\n`);
+  }
+  const returned = toggled.data?.ToggleFavourite?.anime;
+  const returnedIds: number[] = (returned?.nodes ?? []).map((node: { id: number }) => node.id);
+  process.stdout.write(
+    `ToggleFavourite response : ${returnedIds.length} of ${returned?.pageInfo?.total ?? "?"} listed, contains ${mediaId}: ${returnedIds.includes(mediaId)}\n`,
+  );
+
+  process.stdout.write(`Media.isFavourite after  : ${String(await mediaSays())}\n`);
+  const after = await viewerFavourites();
+  process.stdout.write(
+    `Viewer.favourites after  : ${after.ids.length} of ${after.total} listed, contains ${mediaId}: ${after.ids.includes(mediaId)}\n`,
+  );
+
+  // Leave the account as it was found.
+  if (after.ids.includes(mediaId) !== before.ids.includes(mediaId)) {
+    await call(`mutation ($id: Int) { ToggleFavourite(animeId: $id) { __typename } }`, {
+      id: mediaId,
+    });
+    const restored = await viewerFavourites();
+    process.stdout.write(
+      `restored to entry state  : contains ${mediaId}: ${restored.ids.includes(mediaId)}\n`,
+    );
+  }
+  process.stdout.write("--- end diagnosis ---\n\n");
+}
+
 function required(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -198,6 +282,11 @@ async function main(): Promise<void> {
       connection.state === "connected",
       connection.state === "connected" ? connection.username : connection.state,
     );
+
+    if (process.env.KUNAI_LIVE_SYNC_DIAGNOSE_FAVOURITE === "1") {
+      const stored = (await tokenStore.load()).anilist;
+      if (stored) await diagnoseFavourite(stored.accessToken, anilistMediaId);
+    }
 
     const target = { tracker: "anilist", anilistId: anilistMediaId, mediaKind: "anime" } as const;
     const progress: TrackerOperation = {
