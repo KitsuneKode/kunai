@@ -107,6 +107,11 @@ export async function runSetupWizard({
     await container.config.save();
   }
 
+  // The wizard IS the disclosure for this user. Clear the pending flag the
+  // startup task may have raised, or the shell would also show the upgrader
+  // banner and they would be told twice in one session.
+  container.analyticsDisclosurePending = false;
+
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
