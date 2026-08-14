@@ -144,9 +144,26 @@ const ANILIST_CAPABILITIES: SyncCapabilities = {
 const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 /** AniList's documented default wait when it does not send one itself. */
 const DEFAULT_GRAPHQL_RETRY_AFTER_MS = 60_000;
+/** Favourite membership is read by paging; both bounds keep one write cheap. */
+const FAVOURITE_PAGE_SIZE = 50;
+const MAX_FAVOURITE_PAGES = 10;
 const OAUTH_BASE = "https://anilist.co/api/v2/oauth";
 const OAUTH_TIMEOUT_MS = 90_000;
 type AniListFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+interface ViewerFavouritesResponse {
+  data?: {
+    Viewer?: {
+      favourites?: {
+        anime?: {
+          pageInfo?: { hasNextPage?: boolean };
+          nodes?: readonly { id: number }[];
+        };
+      };
+    };
+  };
+  errors?: readonly AniListGraphQlError[];
+}
 
 interface ViewerResponse {
   data: { Viewer: { id: number; name: string } };
@@ -155,11 +172,6 @@ interface ViewerResponse {
 
 interface MediaListEntryResponse {
   data: { SaveMediaListEntry: { id: number } | null };
-  errors?: readonly AniListGraphQlError[];
-}
-
-interface FavouriteLookupResponse {
-  data?: { Media?: { id: number; isFavourite?: boolean } | null };
   errors?: readonly AniListGraphQlError[];
 }
 
@@ -470,38 +482,29 @@ export class AniListAdapter implements SyncAdapter {
   }
 
   /**
-   * AniList exposes only `ToggleFavourite`, which is a relative operation — so
-   * membership is read first and the toggle is sent only when the remote
-   * actually differs from the desired state. Toggling blind would undo the
-   * user's intent whenever a response was lost in flight.
+   * Converge a favourite, without ever trusting `Media.isFavourite`.
+   *
+   * That field reported the membership absent immediately after we set it, and
+   * still did 65 seconds later — so it is not a short-lived cache, and it
+   * cannot be used to decide anything. `ToggleFavourite` is a *flip*, so a
+   * wrong read there is not a missed update but an inversion: each redelivery
+   * switched the favourite back off.
+   *
+   * The viewer's own favourites list is the authority instead. Nothing is
+   * toggled without a definite current value, and the result is confirmed by
+   * re-reading rather than assumed from a 200 — which also means that if the
+   * mutation turns out not to write at all, this reports that honestly instead
+   * of returning `ok` forever.
    */
   private async setFavoriteMembership(
     operation: Extract<TrackerOperation, { kind: "favorite-membership:set" }>,
     deadline: RequestDeadline,
   ): Promise<SyncOutcome> {
     const mediaId = operation.target.tracker === "anilist" ? operation.target.anilistId : 0;
-    const current = await this.gql<FavouriteLookupResponse>(
-      `query FavouriteFor($mediaId: Int) { Media(id: $mediaId) { id isFavourite } }`,
-      { mediaId },
-      deadline,
-    );
-    /**
-     * The read decides whether to toggle, so its failure has to stop the write.
-     *
-     * `ToggleFavourite` is a flip, not a set — the one relative operation in
-     * this adapter. Reaching it without a definite current value turns a
-     * redelivery into an unbounded flip-flop, which is precisely what desired
-     * state exists to prevent. So an unclassified or empty read refuses rather
-     * than guessing.
-     */
-    const lookupFailure = outcomeForGraphQlErrors(current.errors);
-    if (lookupFailure) return lookupFailure;
 
-    const isFavourite = current.data?.Media?.isFavourite;
-    if (isFavourite === undefined) {
-      return syncFailed("favourite-state-unknown", "remote", "lookup returned no membership");
-    }
-    if (isFavourite === operation.present) return syncOk("already-current");
+    const before = await this.readFavouriteMembership(mediaId, deadline);
+    if (!before.ok) return before.outcome;
+    if (before.present === operation.present) return syncOk("already-current");
 
     const res = await this.gql<ToggleFavouriteResponse>(
       `mutation ToggleFavourite($animeId: Int) {
@@ -510,7 +513,71 @@ export class AniListAdapter implements SyncAdapter {
       { animeId: mediaId },
       deadline,
     );
-    return outcomeForGraphQlErrors(res.errors) ?? syncOk();
+    const rejected = outcomeForGraphQlErrors(res.errors);
+    if (rejected) return rejected;
+
+    const after = await this.readFavouriteMembership(mediaId, deadline);
+    if (!after.ok) return after.outcome;
+    if (after.present !== operation.present) {
+      // The mutation answered 200 and changed nothing we can see. Retrying
+      // would flip it, so this is reported rather than papered over.
+      return syncFailed(
+        "favourite-write-ineffective",
+        "remote",
+        `wanted ${operation.present}, still ${after.present}`,
+      );
+    }
+    return syncOk();
+  }
+
+  /**
+   * Whether the viewer has this media favourited.
+   *
+   * Paged rather than filtered, because AniList offers no membership query that
+   * can be trusted. A rejection carries its own classified outcome out rather
+   * than collapsing to "unknown": a 401 during the read is a reauth demand, not
+   * a mysterious favourite problem.
+   *
+   * The page budget is bounded, so an account too large to answer within it
+   * degrades into a visible failure instead of a silent wrong write.
+   */
+  private async readFavouriteMembership(
+    mediaId: number,
+    deadline: RequestDeadline,
+  ): Promise<{ ok: true; present: boolean } | { ok: false; outcome: SyncOutcome }> {
+    for (let page = 1; page <= MAX_FAVOURITE_PAGES; page += 1) {
+      const res = await this.gql<ViewerFavouritesResponse>(
+        `query ViewerFavourites($page: Int) {
+          Viewer { favourites { anime(page: $page, perPage: ${FAVOURITE_PAGE_SIZE}) {
+            pageInfo { hasNextPage } nodes { id }
+          } } }
+        }`,
+        { page },
+        deadline,
+      );
+      const rejected = outcomeForGraphQlErrors(res.errors);
+      if (rejected) return { ok: false, outcome: rejected };
+
+      const anime = res.data?.Viewer?.favourites?.anime;
+      if (!anime) {
+        return {
+          ok: false,
+          outcome: syncFailed("favourite-state-unknown", "remote", "viewer favourites unreadable"),
+        };
+      }
+      if ((anime.nodes ?? []).some((node) => node.id === mediaId)) {
+        return { ok: true, present: true };
+      }
+      if (!anime.pageInfo?.hasNextPage) return { ok: true, present: false };
+    }
+    return {
+      ok: false,
+      outcome: syncFailed(
+        "favourite-state-unknown",
+        "remote",
+        `more than ${MAX_FAVOURITE_PAGES * FAVOURITE_PAGE_SIZE} favourites`,
+      ),
+    };
   }
 
   private async gql<T>(

@@ -18,6 +18,7 @@ function fakeAniList(options: { favourite?: boolean; failNextResponse?: boolean 
   const state = {
     favourite: options.favourite ?? false,
     toggleCalls: 0,
+    favouriteReads: 0,
     saveCalls: 0,
     deleteCalls: 0,
     lastSave: undefined as Record<string, unknown> | undefined,
@@ -46,8 +47,18 @@ function fakeAniList(options: { favourite?: boolean; failNextResponse?: boolean 
       }
       return json({ ToggleFavourite: { anime: { nodes: [{ id: 438631 }] } } });
     }
-    if (body.query.includes("isFavourite")) {
-      return json({ Media: { id: 438631, isFavourite: state.favourite } });
+    if (body.query.includes("ViewerFavourites")) {
+      state.favouriteReads += 1;
+      return json({
+        Viewer: {
+          favourites: {
+            anime: {
+              pageInfo: { hasNextPage: false },
+              nodes: state.favourite ? [{ id: 438631 }] : [],
+            },
+          },
+        },
+      });
     }
     if (body.query.includes("DeleteMediaListEntry")) {
       state.deleteCalls += 1;
@@ -455,5 +466,158 @@ describe("AniListAdapter membership lookups", () => {
 
     expect(outcome.status === "failed" && outcome.code).toBe("favourite-state-unknown");
     expect(calls.some((body) => body.includes("ToggleFavourite"))).toBe(false);
+  });
+});
+
+/**
+ * `Media.isFavourite` reported the membership absent immediately after we set
+ * it, and still did 65 seconds later against a live account. Since
+ * `ToggleFavourite` is a flip, trusting that read did not miss an update — it
+ * inverted one, switching the favourite back off on every redelivery.
+ */
+function favouriteApi(options: {
+  favourite: boolean;
+  /** The mutation answers 200 but changes nothing. */
+  inertToggle?: boolean;
+  /** Membership only appears after this many pages. */
+  pagesBeforeMatch?: number;
+  /** `hasNextPage` never goes false. */
+  endlessPages?: boolean;
+  readError?: { message: string; status?: number };
+}) {
+  const state = { favourite: options.favourite, toggleCalls: 0, reads: 0 };
+  const json = (data: unknown) =>
+    new Response(JSON.stringify(data), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  const fetchImpl = async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      query: string;
+      variables?: { page?: number };
+    };
+
+    if (body.query.includes("ToggleFavourite")) {
+      state.toggleCalls += 1;
+      if (!options.inertToggle) state.favourite = !state.favourite;
+      return json({ data: { ToggleFavourite: { anime: { nodes: [] } } } });
+    }
+
+    if (body.query.includes("ViewerFavourites")) {
+      state.reads += 1;
+      if (options.readError) return json({ data: null, errors: [options.readError] });
+
+      const page = body.variables?.page ?? 1;
+      const matchPage = (options.pagesBeforeMatch ?? 0) + 1;
+      const hit = state.favourite && !options.endlessPages && page >= matchPage;
+      return json({
+        data: {
+          Viewer: {
+            favourites: {
+              anime: {
+                pageInfo: { hasNextPage: options.endlessPages ? true : !hit && page < matchPage },
+                nodes: hit ? [{ id: 438631 }] : [],
+              },
+            },
+          },
+        },
+      });
+    }
+
+    return json({ data: {} });
+  };
+
+  return { state, fetchImpl };
+}
+
+describe("AniListAdapter favourite convergence", () => {
+  const target = { tracker: "anilist", anilistId: 438631, mediaKind: "anime" } as const;
+  const setFavourite = (present: boolean) =>
+    ({ version: 1, kind: "favorite-membership:set", target, present }) as const;
+
+  test("never consults Media.isFavourite", async () => {
+    const source = await Bun.file("src/services/sync/AniListAdapter.ts").text();
+    // Comments explain why the field is avoided and would otherwise trip this.
+    const code = source
+      .split("\n")
+      .filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line))
+      .join("\n");
+
+    expect(code).not.toContain("isFavourite");
+  });
+
+  /** The property the live run disproved: a redelivery must not flip it back. */
+  test("repeated adds converge instead of toggling", async () => {
+    const { state, fetchImpl } = favouriteApi({ favourite: false });
+    const adapter = await connectedAdapter(fetchImpl);
+    const options = { signal: new AbortController().signal };
+
+    expect((await adapter.apply(setFavourite(true), options)).status).toBe("ok");
+    expect(state.favourite).toBe(true);
+
+    for (let redelivery = 0; redelivery < 3; redelivery += 1) {
+      const outcome = await adapter.apply(setFavourite(true), options);
+      expect(outcome.status === "ok" && outcome.detail).toBe("already-current");
+    }
+
+    expect(state.toggleCalls).toBe(1);
+    expect(state.favourite).toBe(true);
+  });
+
+  /**
+   * If the mutation ever answers 200 without writing — the other candidate for
+   * the live failure — that must surface, not be reported as success forever.
+   */
+  test("reports a mutation that changes nothing rather than claiming success", async () => {
+    const { fetchImpl } = favouriteApi({ favourite: false, inertToggle: true });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(setFavourite(true), {
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(outcome.status === "failed" && outcome.code).toBe("favourite-write-ineffective");
+    expect(outcome.status === "failed" && outcome.retryable).toBe(true);
+  });
+
+  test("pages through favourites to find a membership beyond the first page", async () => {
+    const { fetchImpl } = favouriteApi({ favourite: true, pagesBeforeMatch: 2 });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(setFavourite(true), {
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.status === "ok" && outcome.detail).toBe("already-current");
+  });
+
+  /** Too large to answer within the budget is a visible failure, not a guess. */
+  test("refuses when the favourites list exceeds the page budget", async () => {
+    const { state, fetchImpl } = favouriteApi({ favourite: false, endlessPages: true });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(setFavourite(true), {
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.status === "failed" && outcome.code).toBe("favourite-state-unknown");
+    expect(state.toggleCalls).toBe(0);
+  });
+
+  /** A rejected read keeps its own meaning instead of becoming "unknown". */
+  test("surfaces a reauth demand raised during the membership read", async () => {
+    const { fetchImpl } = favouriteApi({
+      favourite: false,
+      readError: { message: "Invalid token" },
+    });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(setFavourite(true), {
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.status).toBe("needs-reauth");
   });
 });
