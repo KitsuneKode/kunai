@@ -5,7 +5,8 @@ import type { EpisodeIdentity } from "@kunai/types";
  * numbers, season is nominally 1) and the TMDB lane (real season/episode).
  * ARM's `themoviedb-season` tells us which TMDB season an AniList entry covers;
  * without that map we FAIL CLOSED (return null) instead of guessing — a wrong
- * auto-map plays the wrong episode. See .plans/catalog-identity-parity.md §5.
+ * auto-map plays the wrong episode. Rationale: the archived
+ * `.archive/plans/catalog-identity-parity.md` §5 (history, not current spec).
  */
 export type EpisodeMapHint = {
   /** TMDB season the AniList/MAL entry corresponds to (from ARM). */

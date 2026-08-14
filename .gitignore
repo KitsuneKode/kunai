@@ -2,7 +2,7 @@
 node_modules
 .worktrees
 
-# Local diagnostic/audit exports. Current audit truth lives in plans/README.md.
+# Local diagnostic/audit exports. Current audit truth lives in .plans/roadmap.md.
 kunai-diagnostics-report-*
 docs/agents/kunai-audit-handoff.html
 
@@ -85,7 +85,7 @@ stream_cache.json
 .docs/ui-audit-mockups.html
 .docs/implementation-notes.html
 .docs/playback-postplay-phase-workbook.html
-.design/cli/*.gif
+.reference/design/cli/*.gif
 artifacts/
 
 # Local-only third-party reference material. Untracked by intent: this repo is

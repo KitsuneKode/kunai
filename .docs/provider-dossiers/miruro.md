@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # Provider: Miruro
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Summary
 
@@ -99,7 +106,7 @@ Historical note (2026-05): `miruro.bz` and `miruro.ru` were the most reliable di
 Command:
 
 ```sh
-cd apps/experiments
+cd .reference/experiments
 bun scratchpads/browser-evidence-harvest.ts
 ```
 
@@ -141,14 +148,14 @@ So Miruro is not inherently broken. It needs better provider/source coverage and
 Command:
 
 ```sh
-cd apps/experiments
+cd .reference/experiments
 bun scratchpads/provider-miruro/miruro-provider-key-matrix.ts
 ```
 
 Report:
 
 ```text
-apps/experiments/scratchpads/provider-miruro/miruro-provider-key-matrix-report.json
+.reference/experiments/scratchpads/provider-miruro/miruro-provider-key-matrix-report.json
 ```
 
 The matrix only fetched `sources` for provider/audio lists that explicitly contained the target episode number. It wrote redacted counts, hosts, qualities, referer origins, active counts, timings, and first failures; it did not preserve raw stream or subtitle URLs.

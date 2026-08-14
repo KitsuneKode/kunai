@@ -64,8 +64,8 @@ const RELEASE_FORBIDDEN_INPUT_MARKERS: readonly string[] = [
   "/test/live/",
   "/test/templates/",
   "/test/__captures__/",
-  "/apps/experiments/",
-  "/archive/legacy/",
+  "/.reference/experiments/",
+  "/.archive/legacy/",
   "/.plans/",
   "/.prototypes/",
 ];

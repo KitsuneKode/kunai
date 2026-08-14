@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Provider Usage Matrix
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This document normalizes and compares behavior across all Kunai provider engines to guide the Architecture V2 implementation.
 

@@ -28,7 +28,7 @@ judgment.
   violation: `domain/` imports neither `app`, `app-shell`, nor `services`;
   `infra/` and `services/` import neither `app` nor `app-shell`; `app-shell`
   imports no provider or player runtime; nothing outside the shell imports
-  `ink`; no active code imports `archive/legacy` or `apps/experiments`. Details
+  `ink`; no active code imports `.archive/legacy` or `.reference/experiments`. Details
   in [.docs/runtime-boundary-map.md](.docs/runtime-boundary-map.md).
 - **`apps/cli/src/main.ts` is the only entrypoint.** Do not add a second one.
 - **Production providers are the ones in
@@ -149,19 +149,21 @@ research dossiers live in [.docs/provider-dossiers/](.docs/provider-dossiers/).
 
 ## Where things are written down
 
-| Folder              | Holds                                                                                                | Authority                      |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `.docs/`            | How the system works and why                                                                         | Current, unless code disagrees |
-| `.docs/archive/`    | Finished audits, shipped specs, superseded vision                                                    | **None** — history only        |
-| `.plans/`           | Unfinished work only, indexed by [.plans/roadmap.md](.plans/roadmap.md)                              | Intent, not behavior           |
-| `.plans/archive/`   | Landed, superseded, and one-shot plans                                                               | **None** — history only        |
-| `plans/`            | Numbered production-readiness plans from an external audit, board in `plans/README.md`               | Intent                         |
-| `docs/`             | The public docs site (`apps/docs`); provider, command, and flag tables are generated from source     | Current, user-facing           |
-| `docs/agents/`      | Issue tracker, triage labels, domain-doc conventions                                                 | Current                        |
-| `docs/superpowers/` | The live spec-driven-development wave, indexed by its execution board; `archive/` holds landed pairs | Intent for the live wave only  |
-| `.design/`          | Brand assets and CLI surface mockups                                                                 | Reference                      |
+One meaning per directory. If two places could hold a file, it belongs in the
+more specific one.
 
-Never cite an `archive/` file as authority for current behavior.
+| Folder          | Holds                                                                                             | Authority                      |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `.docs/`        | How the system works and why; vocabulary in [.docs/glossary.md](.docs/glossary.md)                | Current, unless code disagrees |
+| `.plans/`       | Unfinished work only — the **only** plan board, indexed by [.plans/roadmap.md](.plans/roadmap.md) | Intent, not behavior           |
+| `.reference/`   | Live material never imported by runtime: design authority, provider research lab                  | Reference                      |
+| `.archive/`     | Everything superseded — docs, plans, the closed SDD wave, dead modules                            | **None** — history only        |
+| `docs/`         | The public docs site (`apps/docs`); provider, command, and flag tables generated from source      | Current, user-facing           |
+| `.docs/agents/` | Issue tracker, triage labels, domain-doc conventions                                              | Current                        |
+
+Never cite a file under `.archive/` as authority for current behavior. See
+[.archive/README.md](.archive/README.md) and
+[.reference/README.md](.reference/README.md).
 
 ## Keeping docs honest
 
@@ -169,12 +171,12 @@ The dominant cause of doc rot here is a directory reorganization that leaves
 routing docs pointing at the old layout — silent until an agent looks in the
 wrong place. `bun run verify:doc-paths` turns that into a failure: it checks
 every backticked repo path and relative link in `AGENTS.md`, `.docs/`, and
-`docs/agents/`.
+`.docs/agents/`.
 
 When you finish work:
 
 - Update the doc that owns the subject, in the same change set.
-- If a plan's core landed, move it to `.plans/archive/` and leave one roadmap
+- If a plan's core landed, move it to `.archive/plans/` and leave one roadmap
   row for the residue. Do not leave a landed plan sitting in `.plans/`.
 - Cite a file that no longer exists only with wording that says so ("the old
   `x.ts` was removed") — the verifier keys off that.
@@ -201,8 +203,8 @@ current; JSON history and cache stores are legacy implementation details.
 ## Agent conventions
 
 - **Issues** — GitHub Issues on `KitsuneKode/kunai`. Workflow in
-  [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md); label vocabulary
-  in [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
-- **Domain language** — [docs/agents/domain.md](docs/agents/domain.md). Kunai is
+  [.docs/agents/issue-tracker.md](.docs/agents/issue-tracker.md); label vocabulary
+  in [.docs/agents/triage-labels.md](.docs/agents/triage-labels.md).
+- **Domain language** — [.docs/agents/domain.md](.docs/agents/domain.md). Kunai is
   single-context: one system-wide ADR set in `.docs/adr/`, no per-package
   context files. New ADRs get the next sequential number.

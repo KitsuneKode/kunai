@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai Target Runtime Architecture
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 > **This describes direction, not the repo.** It is the companion to
 > [architecture.md](./architecture.md), which is the only doc that describes

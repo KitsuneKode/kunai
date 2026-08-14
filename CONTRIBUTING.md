@@ -75,7 +75,7 @@ live in `apps/cli/src/services/providers/`. Before touching provider code:
 1. Read `.docs/providers.md` for the provider model and constraints.
 2. Read `.docs/provider-intake.md` for the research and hardening process.
 3. Check `.docs/provider-dossiers/` for current provider evidence. Use
-   `apps/experiments/` only as a non-runtime research lab.
+   `.reference/experiments/` only as a non-runtime research lab.
 
 When reporting a provider breakage, always include:
 

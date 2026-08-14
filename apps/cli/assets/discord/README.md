@@ -8,7 +8,7 @@ Upload these with exact asset keys:
 - `subtitles` from `subtitles.svg` (export to PNG at 1024×1024 before upload if needed)
 
 `kunai.svg` is the source artwork; `kunai.png` is the portal-ready export. Both use the sakura
-pixel mascot from `.design/brand/kunai-readme-hero.svg` on the `#100b0f` terminal background.
+pixel mascot from `.reference/design/brand/kunai-readme-hero.svg` on the `#100b0f` terminal background.
 
 Discord Rich Presence art asset requirements:
 

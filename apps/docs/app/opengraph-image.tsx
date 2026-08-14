@@ -10,7 +10,7 @@ export const contentType = "image/png";
 
 function mascotDataUrl(): string | undefined {
   try {
-    const pngPath = join(process.cwd(), "../../.design/brand/kunai-mascot-og.png");
+    const pngPath = join(process.cwd(), "../../.reference/design/brand/kunai-mascot-og.png");
     const png = readFileSync(pngPath);
     return `data:image/png;base64,${png.toString("base64")}`;
   } catch {

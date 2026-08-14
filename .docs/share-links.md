@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Share Links & PlaybackTargetRef
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Kunai uses one portable `kunai://` link format for sharing what to play across machines, providers, and surfaces.
 

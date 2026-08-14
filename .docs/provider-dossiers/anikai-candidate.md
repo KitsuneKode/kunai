@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-30"
+---
+
 # Anikai Candidate Dossier
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 - **Status:** candidate
 - **Provider ID:** anikai
@@ -17,6 +24,7 @@
 - **Minimum tests/fixtures needed before Provider SDK promotion:** Test the Client-Side Unpacker regex against mocked Dean Edwards packed strings.
 
 ## Subtitle Resolution
+
 - **Current production subtitle behavior:** Untested.
 - **Experimental/research subtitle findings:** Anikai typically hardcodes subs or relies on the 3rd-party embed player to load them.
 - **Exact endpoint or network pattern if known:** Unknown.

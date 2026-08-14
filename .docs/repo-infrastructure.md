@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Repo Infrastructure
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This is the canonical reference for local developer guardrails and GitHub CI.
 
@@ -40,9 +47,9 @@ Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
 
-`apps/experiments` is **outside** the default workspace, so it cannot use
+`.reference/experiments` is **outside** the default workspace, so it cannot use
 `catalog:` protocols. Main installs stay lean; research deps install only via
-`bun run experiments:install` (standalone `apps/experiments/bun.lock`).
+`bun run experiments:install` (standalone `.reference/experiments/bun.lock`).
 
 Default workspace packages: `apps/cli`, `apps/docs`, `apps/relay-server`,
 `apps/telemetry-ingest`, `packages/*`.

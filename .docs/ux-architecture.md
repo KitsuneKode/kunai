@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # Kunai — UX Architecture
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when designing terminal interactions, keybindings, panels, command flows, and validation behavior.
 

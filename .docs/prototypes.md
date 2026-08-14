@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-21"
+---
+
 # UI prototypes (local)
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Shell redesign HTML and issue tracking live under **`.prototypes/`** (gitignored).
 

@@ -7,7 +7,7 @@ import type {
  * Normalized, render-ready track capability model for the unified Tracks panel
  * (`/tracks`, `/source`, `/quality`). This is the backend contract the panel
  * renders from — the UI must never reach into raw provider fragments, only this
- * normalized shape. See `.design/cli/surfaces/tracks-panel.md`.
+ * normalized shape. See `.reference/design/cli/surfaces/tracks-panel.md`.
  */
 export type TrackCapabilitySection =
   | "provider"

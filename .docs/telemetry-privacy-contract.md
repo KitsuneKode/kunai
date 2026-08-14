@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Telemetry Privacy Contract
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Read this before touching `apps/cli/src/services/telemetry/*` or
 `apps/telemetry-ingest/*`. These are **contract invariants**, not preferences:

@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-19"
+---
+
 # Provider: AllManga / AllAnime
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Summary
 
@@ -59,14 +66,14 @@ Kunai currently skips `Ak`, so the provider returns no streams. This is a source
 Command:
 
 ```sh
-cd apps/experiments
+cd .reference/experiments
 bun scratchpads/provider-allmanga/allmanga-ak-dash-proof.ts
 ```
 
 Report:
 
 ```text
-apps/experiments/scratchpads/provider-allmanga/allmanga-ak-dash-proof-report.json
+.reference/experiments/scratchpads/provider-allmanga/allmanga-ak-dash-proof-report.json
 ```
 
 Result:

@@ -12,7 +12,7 @@
 // and episode codes stay muted text. Media-type hue (anime/series/movie) is
 // allowed where type is the data: the Stats surface and the Calendar surface.
 //
-// Brand authority: .design/brand/kunai-brand-system.md (Ember Dusk token table).
+// Brand authority: .reference/design/brand/kunai-brand-system.md (Ember Dusk token table).
 
 // ---- raw palette (these semantic consts are the source of truth) ----
 

@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # Provider: Videasy
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 ## Production status (2026-08-13) — cache and transport hardening
 
@@ -155,4 +162,4 @@ sequenceDiagram
 - **Cache key dimensions:** `[Provider]_[MediaID]_[Season]_[Episode]_[ISO_Language]`. Language MUST be in the key.
 - **Diagnostics events:** `WASMLoadStart`, `WASMDecryptSuccess`, `WASMDecryptFailed` (trace events exist; expand if needed).
 - **Tests:** `packages/providers/test/vidking-flavors.test.ts`, `vidking-bloodhounds` live smoke.
-- **Lab:** `apps/experiments/scratchpads/provider-cineby/` for endpoint discovery; transient `CINEBY_*.md` notes are gitignored after 2026-05-27 reconciliation.
+- **Lab:** `.reference/experiments/scratchpads/provider-cineby/` for endpoint discovery; transient `CINEBY_*.md` notes are gitignored after 2026-05-27 reconciliation.

@@ -2,7 +2,7 @@
  * Deterministic "is this anime?" classifier for TMDB items. Lets a TMDB search
  * result (which has no provider mode) be tagged + routed to anime providers and
  * badged in the picker. Research-validated 26/26 on real TMDB data (see
- * apps/experiments/scratchpads/miroru-research-report-latest.md §8). Pure, no
+ * .reference/experiments/scratchpads/miroru-research-report-latest.md §8). Pure, no
  * network — runs on fields the app already fetches (search has original_language
  * + genre_ids; the detail payload adds the deeper tiers).
  */

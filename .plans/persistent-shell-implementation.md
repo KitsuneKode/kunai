@@ -6,7 +6,7 @@ Use this file for the engineering sequence that turns the agreed product directi
 
 This plan is intentionally implementation-oriented. Product intent lives in:
 
-- [.docs/archive/product-prd.md](../.docs/archive/product-prd.md)
+- [.archive/docs/product-prd.md](../.archive/docs/product-prd.md)
 - [.docs/ux-architecture.md](../.docs/ux-architecture.md)
 - [.docs/architecture-v2.md](../.docs/architecture-v2.md)
 

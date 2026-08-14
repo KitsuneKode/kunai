@@ -1,7 +1,7 @@
 // =============================================================================
 // post-play-shell.tsx — episode page + remote (Sakura canonical rebuild)
 //
-// Design authority: .design/cli/kunai-sakura-canonical.html §3 Post-play
+// Design authority: .reference/design/cli/kunai-sakura-canonical.html §3 Post-play
 // Two-column on wide (≥120): left = hero + action list + discovery cards
 //                              right rail = poster slot + up-next card + facts
 // Narrow/medium: rail collapses, all content in single column.

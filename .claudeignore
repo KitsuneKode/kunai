@@ -1,21 +1,14 @@
 # Mirror of .cursorignore — Claude Code indexes independently.
-# History has no authority. Keep it in git; keep it out of agent context.
-.docs/archive/
-.plans/archive/
-plans/archive/
-docs/superpowers/archive/
 
-# The SDD wave is closed. New work is indexed by `.plans/roadmap.md`.
-docs/superpowers/
-apps/cli/docs/superpowers/
+# History — no authority. Kept in git, kept out of agent context.
+# One rule: everything superseded lives under .archive/. See .archive/README.md.
+.archive/
 
-# Research and non-runtime reference.
-apps/experiments/
-archive/
+# Live reference. Never imported by runtime code. See .reference/README.md.
+.reference/
 .prototypes/
-.design/
 
-# Local audit snapshot superseded by `plans/README.md`.
+# Local audit snapshot superseded by `.plans/roadmap.md`.
 docs/agents/kunai-audit-handoff.html
 
 # Local and tool clutter.

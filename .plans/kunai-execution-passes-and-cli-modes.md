@@ -3,7 +3,7 @@
 Status: Active  
 Last updated: 2026-05-04
 
-This plan sits alongside [kunai-beta-v1-scope-and-contracts.md](kunai-beta-v1-scope-and-contracts.md) (what we are building) and [beta-readiness.md](beta-readiness.md) (checklist). It answers **how we sequence work** across performance, reliability, and experience, **when** plans are refreshed, and **CLI modes** for power users.
+This plan sits alongside [kunai-beta-v1-scope-and-contracts.md](kunai-beta-v1-scope-and-contracts.md) (what we are building) and [beta-readiness.md](../.archive/plans/beta-readiness.md) (checklist). It answers **how we sequence work** across performance, reliability, and experience, **when** plans are refreshed, and **CLI modes** for power users.
 
 ---
 
@@ -94,7 +94,7 @@ prefetch falls back to the final 30 seconds so provider work remains bounded and
 ## Related
 
 - [kunai-beta-v1-scope-and-contracts.md](kunai-beta-v1-scope-and-contracts.md)
-- [beta-readiness.md](beta-readiness.md)
+- [beta-readiness.md](../.archive/plans/beta-readiness.md)
 - [roadmap.md](roadmap.md)
 - [.docs/diagnostics-guide.md](../.docs/diagnostics-guide.md)
 

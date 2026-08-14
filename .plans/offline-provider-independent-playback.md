@@ -260,7 +260,7 @@ git commit -m "fix(offline): play downloads after provider retirement"
 - Modify: `apps/cli/test/unit/app/offline-playback-launch.test.ts`
 - Modify: `.docs/download-offline-onboarding.md`
 - Modify: `.plans/roadmap.md`
-- Move on completion: `.plans/offline-provider-independent-playback.md` to `.plans/archive/offline-provider-independent-playback.md`
+- Move on completion: `.plans/offline-provider-independent-playback.md` to `.archive/plans/offline-provider-independent-playback.md`
 
 **Interfaces:**
 
@@ -302,7 +302,7 @@ Add this invariant to `.docs/download-offline-onboarding.md` after implementatio
   Provider identity is metadata for local playback and becomes mandatory only when online resolution starts.
 ```
 
-Move this plan to `.plans/archive/`, remove its active roadmap row, and describe it as historical implementation evidence.
+Move this plan to `.archive/plans/`, remove its active roadmap row, and describe it as historical implementation evidence.
 
 - [ ] **Step 4: Run complete verification**
 
@@ -322,7 +322,7 @@ Expected: every command exits zero. Existing warning-only lint output is accepta
 
 ```sh
 git add .docs/download-offline-onboarding.md .plans/roadmap.md \
-  .plans/archive/offline-provider-independent-playback.md \
+  .archive/plans/offline-provider-independent-playback.md \
   apps/cli/test/unit/app/offline-playback-launch.test.ts
 git commit -m "docs(offline): record provider-independent playback"
 ```

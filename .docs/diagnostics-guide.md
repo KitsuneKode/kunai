@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Diagnostics Guide
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this when a provider, subtitle, playback, cache, or shell flow behaves differently than expected.
 

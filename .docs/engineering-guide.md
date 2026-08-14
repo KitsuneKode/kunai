@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Engineering Guide
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when implementing or refactoring runtime architecture, shell flows, services, caching, scraping layers, or test seams.
 

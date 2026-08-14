@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-07-29"
+---
+
 # Kunai — Recommendations And Discover
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 This is the canonical product and architecture reference for the `/discover`, `/calendar`,
 and `/random` / `/surprise` discovery surfaces.
@@ -106,5 +113,5 @@ flow.
 ## Related
 
 - [search-service plan](../.plans/search-service.md)
-- [metadata and trending contract](../.plans/archive/metadata-and-trending-contract.md)
+- [metadata and trending contract](../.archive/plans/metadata-and-trending-contract.md)
 - [design system](./design-system.md)

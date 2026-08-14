@@ -17,7 +17,7 @@ Phase 1 result:
 - root `package.json` is a private workspace orchestrator
 - `turbo.json` delegates common checks to workspace packages
 - the CLI app package is named `kunai-cli` under `apps/cli`
-- provider scratchpads moved to `apps/experiments/scratchpads`
+- provider scratchpads moved to `.reference/experiments/scratchpads`
 - no provider logic or runtime behavior was intentionally changed
 
 ## Brutal Constraints
@@ -112,7 +112,7 @@ Actions:
 
 1. Create root workspace files: `package.json`, `turbo.json`, and workspace config.
 2. Move current CLI package files into `apps/cli`.
-3. Move scratchpads and experiments into `apps/experiments`.
+3. Move scratchpads and experiments into `.reference/experiments`.
 4. Keep imports mostly relative inside `apps/cli` for this phase.
 5. Add root scripts that delegate to the CLI package.
 
@@ -438,7 +438,7 @@ Phase 4G provider package:
 
 - create `@kunai/providers`
 - move provider-local pure logic from `@kunai/core` and `apps/cli` into provider modules
-- use research from `apps/experiments/scratchpads/provider-*` and reports as dossier input before moving behavior
+- use research from `.reference/experiments/scratchpads/provider-*` and reports as dossier input before moving behavior
 - keep Playwright, app logging, config, storage, mpv, and UI out of the provider package
 - expose one registry of provider modules with stable IDs, manifests, and capability declarations
 

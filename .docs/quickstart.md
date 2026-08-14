@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — Quickstart
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc for setup, local execution, and common environment issues. Architecture and file ownership live elsewhere.
 
@@ -55,7 +62,7 @@ bun install
 bun run link:global   # optional: installs local CLI command
 ```
 
-Provider research scratchpads live in `apps/experiments` and are **not** installed by
+Provider research scratchpads live in `.reference/experiments` and are **not** installed by
 default (keeps Playwright and other lab deps out of the main workspace). Opt in when
 you need them:
 
@@ -162,12 +169,12 @@ Bitcine sessions.
 **Mint a session (one-time, then reuse across episodes)**
 
 ```sh
-cd apps/experiments
+cd .reference/experiments
 bun run videasy:mint tv 61700 1 3   # opens bitcine.tv; complete Turnstile if prompted
 ```
 
 From a fresh clone, run `bun run experiments:install` once at the repo root before
-using `apps/experiments` scripts.
+using `.reference/experiments` scripts.
 
 Or from DevTools while [bitcine.tv](https://www.bitcine.tv) playback works:
 

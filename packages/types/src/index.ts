@@ -97,7 +97,8 @@ export interface CachePolicy {
  * Cross-catalog id crosswalk for one work (AniList/MAL ↔ TMDB/IMDB), plus the
  * episode-coordinate hints ARM exposes. Confidence gates what consumers may do:
  * only "high" (exact id map) may rewrite history units or enable series-lane
- * fallback for anime. See .plans/catalog-identity-parity.md.
+ * fallback for anime. Rationale: the archived
+ * `.archive/plans/catalog-identity-parity.md` (history, not current spec).
  */
 export interface CatalogIdGraph {
   readonly anilistId?: string;

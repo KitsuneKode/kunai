@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".design/brand/kunai-readme-hero.svg" alt="Kunai — terminal-native media shell" width="680" />
+<img src=".reference/design/brand/kunai-readme-hero.svg" alt="Kunai — terminal-native media shell" width="680" />
 
 **Search any title · pick your source · watch in `mpv` · download for offline.**
 One fullscreen, keyboard-driven terminal session.
@@ -79,7 +79,7 @@ help, diagnostics, and watch history without leaving the session:
 
 <div align="center">
 
-![Kunai command palette tour](.design/brand/demo-command-palette.gif)
+![Kunai command palette tour](.reference/design/brand/demo-command-palette.gif)
 
 </div>
 
@@ -573,8 +573,8 @@ subtitle track, and source mirror. Some streams are hard-sub only or expose
 incomplete subtitle metadata. The recovery paths are intentional: retry (`r`),
 source switch (`k`), provider fallback (`f`), and diagnostics export.
 
-Legacy Playwright provider code is archived under `archive/legacy/` as reference.
-Experimental provider research lives in `apps/experiments/scratchpads/` and does
+Legacy Playwright provider code is archived under `.archive/legacy/` as reference.
+Experimental provider research lives in `.reference/experiments/scratchpads/` and does
 not ship as runtime behavior.
 
 ---

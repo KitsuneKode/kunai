@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-13"
+---
+
 # Kunai — Provider Guide
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this doc when adding a provider, changing provider capabilities, or debugging stream resolution. It should explain the current contracts clearly without over-prescribing implementation style.
 
@@ -313,7 +320,7 @@ Use:
 
 When the site behavior is unclear, gather evidence first and keep knowns vs unknowns separate.
 
-Use `apps/experiments/scratchpads/provider-*` as the research lab. The reports and probes there are evidence for dossiers and implementation handoffs, not production imports.
+Use `.reference/experiments/scratchpads/provider-*` as the research lab. The reports and probes there are evidence for dossiers and implementation handoffs, not production imports.
 
 ## Migration Order From Current Dossiers
 
@@ -703,11 +710,11 @@ Default hot path prefers provider-native episode titles:
 - **Miruro** — pipe `episodes` entries (title, description, image, airDate). When ≥80% of catalog episodes have titles after merge, AniList/Jikan enrichment is skipped.
 - **AllAnime** — resolve-time `tobeparsed` `episodeInfo` seeds a per-show cache; `listEpisodes` uses seeded metadata when coverage is sufficient, otherwise falls back to AniList/Jikan via `fetchAnimeEpisodeMetadataByNumber` (deprecated for default hot path, kept for sparse catalogs and filler/recap flags).
 
-All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `apps/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
+All active providers implement `CoreProviderModule` with `resolve(input, context) → ProviderResolveResult`. Resolution flows through `ProviderEngine` which handles retry, timeout, and fallback. Candidate providers can live in `packages/providers` or `.reference/experiments`, but they are not registered in `apps/cli/src/container.ts` until they pass the quality gate.
 
 `vidking` remains accepted as a legacy config/cache alias for `videasy`.
 
-Legacy Playwright providers live under `archive/legacy/apps/cli/src/providers/` as reference-only code.
+Legacy Playwright providers live under `.archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.
 
 ## User Overrides

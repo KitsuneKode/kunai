@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-04-23"
+---
+
 # Provider Research Dossier Template
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this template for new providers and major provider hardening passes.
 

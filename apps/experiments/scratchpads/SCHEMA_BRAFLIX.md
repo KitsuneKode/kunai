@@ -1,2 +1,0 @@
-# Braflix Deep Schema Report
-

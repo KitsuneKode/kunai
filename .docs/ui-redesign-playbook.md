@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-14"
+---
+
 # Kunai — UI Redesign Playbook
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Use this when executing the shell redesign, not when re-deciding it from scratch.
 

@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-05-17"
+---
+
 # Privacy And Storage
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Kunai keeps user-owned data durable and treats provider/runtime artifacts as disposable.
 

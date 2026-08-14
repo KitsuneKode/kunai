@@ -4,7 +4,7 @@ Last updated: 2026-08-14
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
-[`archive/`](./archive/README.md) and carry **no authority**.
+[`.archive/`](../.archive/README.md) and carry **no authority**.
 
 **Code wins.** If a plan disagrees with the repo, the repo is right — fix the
 plan in the same change set. Shipped behavior belongs in `.docs/` and
@@ -63,27 +63,94 @@ archive and put only the residue here.
 
 ### Structure
 
-| Track                        | Remaining                                     | Plan                                                                         |
-| ---------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| Turborepo package boundaries | Phase 4G provider package migration           | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md) |
-| Codebase architecture sweep  | Planning                                      | [codebase-architecture-sweep.md](./codebase-architecture-sweep.md)           |
-| CLI structure and naming     | Planned                                       | [cli-structure-and-naming.md](./cli-structure-and-naming.md)                 |
-| Search/catalog service       | Active design; implementation stays pragmatic | [search-service.md](./search-service.md)                                     |
+| Track                        | Remaining                                                                                                                                                                                                          | Plan                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Turborepo package boundaries | Phase 4G provider package migration                                                                                                                                                                                | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md) |
+| Codebase architecture sweep  | Planning                                                                                                                                                                                                           | [codebase-architecture-sweep.md](./codebase-architecture-sweep.md)           |
+| CLI structure and naming     | Planned                                                                                                                                                                                                            | [cli-structure-and-naming.md](./cli-structure-and-naming.md)                 |
+| Search/catalog service       | Active design; implementation stays pragmatic                                                                                                                                                                      | [search-service.md](./search-service.md)                                     |
+| Duplicated domain types      | `ProviderLane` declared identically in `apps/cli/src/domain/types.ts` and `packages/types/src/index.ts`; neither marked canonical. Same shape as the `MediaKind` duplication. Pick one owner, re-export the other. | [turborepo-and-package-boundaries.md](./turborepo-and-package-boundaries.md) |
 
-## Separate tracker
+### Production readiness — external audit
 
-`plans/` (without a dot) holds numbered production-readiness residue from the
-external audit. Its board is [`../plans/README.md`](../plans/README.md).
+Numbered plans from an external audit. They keep their original numbers because
+the K-reconciliation below and the commit history both cite them by id.
 
-The old `docs/superpowers/` wave is closed. Its artifacts live under
-`docs/superpowers/archive/` and have no authority. Any verified residue was
-transferred to this roadmap or the numbered board.
+| Plan                                                | Remaining work                                              | Status                                              |
+| --------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| [006](./006-startup-defer-network-and-providers.md) | Startup provider loading residue                            | BLOCKED (engine registry is intentionally fixed)    |
+| [008](./008-tui-timer-and-poster-perf.md)           | Download-alert root coupling                                | BLOCKED (other timer/poster slices landed)          |
+| [010](./010-characterization-tests-for-giants.md)   | Characterization net for private `AppRoot`                  | BLOCKED (needs a full-container harness)            |
+| [011](./011-split-shell-workflows.md)               | Split `shell-workflows.ts`                                  | BLOCKED by 010                                      |
+| [012](./012-decompose-playback-phase.md)            | Extract `PlaybackPhase` transition core                     | BLOCKED by 010                                      |
+| [013](./013-split-ink-shell-host-surface.md)        | Split Ink host/surface/overlay winner                       | BLOCKED by 010                                      |
+| [014](./014-enforce-layering-boundaries.md)         | Retire remaining baselined layer inversions                 | BLOCKED (boundary ratchet is active)                |
+| [015](./015-retire-legacy-flat-modules.md)          | Retire legacy flat root modules                             | BLOCKED by 011 and 012                              |
+| [021](./021-provider-contract-enforcement.md)       | Enforce or remove unread provider/relay contracts           | PARTIAL; K-04/K-08 are the release slice            |
+| [022](./022-shell-interaction-coherence.md)         | Destructive confirms, filter capture, errors, Esc semantics | PARTIAL; 022.1 landed                               |
+| [023](./023-cli-surface-honesty.md)                 | CLI surface honesty                                         | TODO; narrow misleading global `--dry-run` for K-16 |
+| [030](./030-distribution-documentation-truth.md)    | Distribution documentation truth                            | TODO after release behavior settles                 |
+| [032](./032-sync-identity-and-capability-truth.md)  | Sync identity and capability truth                          | TODO; execute after the reliability train           |
+| [043](./043-history-key-migration-transaction.md)   | Transactional legacy history-key migration                  | TODO; independent data-migration PR                 |
+
+Status values: TODO · PARTIAL · BLOCKED (with reason) · IN PROGRESS.
+
+## K-01–K-17 reconciliation
+
+The local `docs/agents/kunai-audit-handoff.html` is an audit snapshot taken
+before most of this landed, **not** a current authority. Most of its "open"
+findings are fixed below, and its suggested first week would redo landed work.
+It is deliberately ignored by Git and agent indexes. This table replaces its
+status claims.
+
+Count: **14 fixed, 3 open** (K-04, K-08, K-16).
+
+| Finding | Current status | Evidence / owner                                                                                                                                                       |
+| ------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| K-01    | FIXED          | Exact Bun connect strings remain covered by network/TMDB regression tests.                                                                                             |
+| K-02    | FIXED          | PR #48 exports every diagnostic category in support bundles.                                                                                                           |
+| K-03    | FIXED          | PR #42 preserves sticky offline truth and search failure copy.                                                                                                         |
+| K-04    | OPEN           | `providerRelay.videoFallback` persists, but `rewriteStreamUrlForRelay` has no production reader. Remove the unused promise in plan 021; do not add shared video relay. |
+| K-05    | FIXED          | PR #46 preserves the working Windows launcher across activation failure.                                                                                               |
+| K-06    | FIXED          | Session phase moves from ready to playing only inside the confirmed `playback-started` callback.                                                                       |
+| K-07    | FIXED          | PR #27 restores playing after progress resumes and rejects stale mpv work.                                                                                             |
+| K-08    | OPEN           | Contract conformance still baselines two known orphaned relay contracts; plan 021 with K-04.                                                                           |
+| K-09    | FIXED          | PR #45 preserves the last-known-good atomic JSON target on Windows.                                                                                                    |
+| K-10    | FIXED          | This reconciliation removes stale top-level TODO/checklist authorities, archives landed plans, and corrects provider/poster docs.                                      |
+| K-11    | FIXED          | Auto-advance reads one exact queue head before catalog planning, so play-next interrupts before countdown while ordinary rows wait.                                    |
+| K-12    | FIXED          | PR #47 adds download claim CAS, state-safe publication, and crash recovery.                                                                                            |
+| K-13    | FIXED          | One-shot IPC bootstrap failure terminates and reaps its owned child; generation tests prevent clearing a replacement control.                                          |
+| K-14    | FIXED          | PR #37 gives slow installer suites an explicit reachable timeout budget.                                                                                               |
+| K-15    | FIXED          | PR #44 structurally contains recursive staging cleanup.                                                                                                                |
+| K-16    | OPEN           | Global help still promises `--dry-run` changes nothing while the reader only guards protocol install/rollback; plan 023.                                               |
+| K-17    | FIXED          | PR #53: AllAnime and Miruro prefer a proven season-relative episode; absolute-only inputs retain absolute routing.                                                     |
+
+## Release-focused train
+
+1. The docs/truth reconciliation and plan 047 lifecycle slice are complete.
+2. Provider routing plan 046 is complete. Execute plan 021 K-04/K-08 removal
+   and plan 023 K-16 narrowing together only if the diff stays reviewable.
+   Keep separate commits so any provider change can be reverted alone.
+3. Execute plan 043 as its own migration PR.
+4. Rebase and re-audit the existing `fix/tracker-sync-correctness` worktree,
+   then execute plan 032. Do not merge that stale branch as-is.
+5. Run the deterministic release gate, provider signoff, real mpv playback,
+   and poster-protocol smokes. Only then merge version PR #31.
+
+The release PR is intentionally last: Changesets will keep updating it while
+stability fixes merge, and merging it early would version an incomplete
+candidate.
 
 ## Rules
 
-1. `.plans/` holds unfinished work only.
-2. This file is the only index for `.plans/`.
+1. `.plans/` holds unfinished work only, and is the **only** plan directory.
+   There is no second board.
+2. This file is the only index for `.plans/`. A plan that is not indexed here
+   does not exist.
 3. Every active plan carries a truthful status line.
-4. A landed core moves to `archive/`; leftover polish becomes one row above.
+4. A landed core moves to `.archive/plans/` (or `.archive/numbered-plans/` for a
+   numbered audit plan); leftover polish becomes one row above.
 5. Detail belongs in a plan, not this index.
-6. Never cite `archive/` as current behavior.
+6. Never cite `.archive/` as current behavior.
+7. Numbered plans keep their ids. Do not renumber — the K-reconciliation and the
+   commit history cite them.

@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-25"
+---
+
 # Up Next
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Kunai treats **Up Next** as runtime watch intent, not a durable taste artifact. Some internal modules and storage tables still use `queue` because they predate the product vocabulary lock, but user-facing copy should say Up Next.
 

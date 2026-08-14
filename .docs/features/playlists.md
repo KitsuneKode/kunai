@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-06-25"
+---
+
 # Playlists
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Kunai playlists are durable, shareable taste artifacts. They are separate from the runtime queue.
 

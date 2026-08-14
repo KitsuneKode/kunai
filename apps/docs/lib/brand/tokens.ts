@@ -1,4 +1,4 @@
-/** Kunai brand palette for docs OG / favicon art (matches `.design/brand/kunai-brand-system.md`). */
+/** Kunai brand palette for docs OG / favicon art (matches `.reference/design/brand/kunai-brand-system.md`). */
 export const kunaiBrand = {
   bg: "#100b0f",
   surface: "#1c1620",
