@@ -157,6 +157,12 @@ export interface Container {
   readonly updateService: UpdateService;
   readonly binaryAutoUpdater: BinaryAutoUpdater;
   readonly usageAnalytics: UsageAnalyticsService;
+  /**
+   * Set when the analytics notice has not been shown yet. The shell reads it
+   * once on mount, shows the banner, and clears it. Mutable because the
+   * decision is made in a startup task and consumed by the shell.
+   */
+  analyticsDisclosurePending: boolean;
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;

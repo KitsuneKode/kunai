@@ -4,8 +4,6 @@ import { chooseFromListShell } from "@/app-shell/pickers";
 import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
 import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
-import { resolveTelemetryConsent } from "@/services/analytics/consent";
-import { ensureInstallId } from "@/services/analytics/install-id";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 
@@ -32,20 +30,6 @@ export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promi
   });
 
   return choice === "continue";
-}
-
-function resolveSetupTelemetry(
-  prefsChoice: "enabled" | "disabled",
-  outcome: "completed" | "skipped",
-): "enabled" | "disabled" {
-  return resolveTelemetryConsent({
-    env: {
-      DO_NOT_TRACK: process.env.DO_NOT_TRACK,
-      CI: process.env.CI,
-    },
-    isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-    choice: outcome === "skipped" ? "timeout" : prefsChoice,
-  });
 }
 
 export async function runSetupWizard({
@@ -79,15 +63,19 @@ export async function runSetupWizard({
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot);
   const { outcome, prefs } = await result;
-  const analytics = resolveSetupTelemetry(prefs.telemetryChoice, outcome);
-  const installId = ensureInstallId(current);
+  // One writer: the service owns what a consent choice means in config, and
+  // `consentPatch` is pure so it folds into the single batched update below.
+  // Aborting the wizard is not disclosure, so a skip stays off.
+  const analyticsPatch =
+    outcome === "skipped"
+      ? container.usageAnalytics.consentPatch("disabled")
+      : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
 
   if (outcome === "skipped") {
     await container.config.update({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
-      analytics,
-      installId,
+      ...analyticsPatch,
     });
     await container.config.save();
   } else {
@@ -101,8 +89,7 @@ export async function runSetupWizard({
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
-      analytics,
-      installId,
+      ...analyticsPatch,
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
         audio: prefs.audio,
@@ -123,7 +110,7 @@ export async function runSetupWizard({
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force, analytics },
+    context: { outcome, force, analytics: analyticsPatch.analytics },
   });
 
   return outcome === "completed" ? "completed" : "skipped";

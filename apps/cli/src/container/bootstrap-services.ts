@@ -491,6 +491,7 @@ export function bootstrapServices(input: {
     updateService,
     binaryAutoUpdater,
     usageAnalytics,
+    analyticsDisclosurePending: false,
     listRepository,
     queueRepository,
     notificationRepository,

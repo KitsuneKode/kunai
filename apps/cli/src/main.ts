@@ -875,28 +875,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (!config.offlineMode)
     void (async () => {
       try {
-        const raw = container.config.getRaw();
-        if (raw.analytics === "unset") {
-          const { resolveTelemetryConsent } = await import("./services/analytics/consent");
-          const decision = resolveTelemetryConsent({
-            env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
-            isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-            choice: "timeout",
-          });
-          // Interactive `unset` stays unset (zero network) until setup or `/analytics`.
-          // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
-          if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-            await container.usageAnalytics.setStatus("disabled");
-          } else if (decision === "disabled") {
-            // DNT or CI with a TTY still auto-decline.
-            const dntOrCi =
-              Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
-            if (dntOrCi) {
-              await container.usageAnalytics.setStatus("disabled");
-            }
-          }
+        const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+        const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
+        if (outcome.kind === "needs-disclosure") {
+          container.analyticsDisclosurePending = true;
         }
-        container.usageAnalytics.pingInBackground();
       } catch {
         // Analytics must never affect startup.
       }

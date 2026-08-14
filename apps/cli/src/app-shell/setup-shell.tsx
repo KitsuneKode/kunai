@@ -3,6 +3,12 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
+import {
+  BLOOM_FRAMES,
+  reducedMotionEnabled,
+  STATIC_PETAL,
+  useFrameTick,
+} from "./primitives/SakuraPetal";
 import { StepIndicator } from "./primitives/StepIndicator";
 import { mountRootContent } from "./root-content-state";
 import { ViewportResizeGate } from "./shell-primitives";
@@ -17,7 +23,7 @@ type Slide =
   | "prefs-audio"
   | "prefs-subtitle"
   | "downloads"
-  | "telemetry"
+  | "analytics"
   | "tips";
 
 const SLIDE_ORDER: Slide[] = [
@@ -26,7 +32,7 @@ const SLIDE_ORDER: Slide[] = [
   "prefs-audio",
   "prefs-subtitle",
   "downloads",
-  "telemetry",
+  "analytics",
   "tips",
 ];
 
@@ -39,8 +45,8 @@ export interface SetupPrefs {
   audio: string;
   subtitle: string;
   downloadsEnabled: boolean;
-  /** Setup-time telemetry choice before DO_NOT_TRACK / CI / non-TTY resolution. */
-  telemetryChoice: "enabled" | "disabled";
+  /** Setup-time analytics choice before DO_NOT_TRACK / CI resolution. */
+  analyticsChoice: "enabled" | "disabled";
 }
 
 // ─── Option data ──────────────────────────────────────────────────────────────
@@ -82,8 +88,14 @@ function SlideLayout({
   width: number;
   rows: number;
 }) {
-  // Total height: children fills up, footer always at bottom
-  const contentHeight = Math.max(4, rows - 4);
+  // Total height: children fills up, footer always at bottom.
+  //
+  // The reserve is 5, not 4: the footer block costs 4 rows (marginTop, border,
+  // paddingTop, hint) and this container adds a paddingTop of its own. At a
+  // reserve of 4 the box overflows by exactly one row and the hint line is
+  // clipped at every terminal height — which on the analytics slide would
+  // silently drop "skip (keeps it on)", the one line that must never be lost.
+  const contentHeight = Math.max(4, rows - 5);
   return (
     <Box
       flexDirection="column"
@@ -479,7 +491,14 @@ function DownloadsSlide({
   );
 }
 
-function TelemetrySlide({
+/**
+ * Slow, deliberate petal drift. Loader cadence (150ms) would say this screen
+ * is loading something; it is not. The user is reading a consent decision.
+ */
+const CONSENT_PETAL_INTERVAL_MS = 900;
+
+/** Exported only so the consent copy can be asserted in a unit test. */
+export function AnalyticsSlide({
   width,
   rows,
   selectedIndex,
@@ -488,15 +507,20 @@ function TelemetrySlide({
   rows: number;
   selectedIndex: number;
 }) {
+  // Motion lives in the frame ornaments only — never under the text being read.
+  const tick = useFrameTick(true, CONSENT_PETAL_INTERVAL_MS);
+  const still = reducedMotionEnabled();
+  const bloom = still ? STATIC_PETAL : (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL);
+  const sidePetal = still || tick % 2 === 0 ? "✿" : " ";
+
   const opts = [
     {
-      label: "Keep telemetry off (recommended default)",
-      detail: "No network calls · change later with /telemetry",
+      label: "Keep it on",
+      detail: "Shows me which versions and platforms to support",
     },
     {
-      label: "Enable anonymous usage ping",
-      detail:
-        "Optional · once / 24h · sends only installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths",
+      label: "Turn it off",
+      detail: "No network calls. No install id stored on disk.",
     },
   ];
 
@@ -507,17 +531,32 @@ function TelemetrySlide({
       footer={
         <FooterHint
           parts={[
-            { key: "Enter", label: "confirm & next" },
-            { key: "↑↓", label: "choose" },
+            { key: "Enter", label: "confirm" },
             { key: "←/b", label: "back" },
-            { key: "s", label: "skip (= off)" },
+            // Never a bare "skip": with an opt-out default, this clause is the
+            // difference between disclosure and a dark pattern, so it must
+            // survive an 80x24 terminal intact. The `↑↓ choose` hint every
+            // other picker slide carries is dropped here to make room — the
+            // user has met it on the four slides before this one, and a
+            // two-option list under a ▌ cursor teaches it anyway.
+            { key: "s", label: "skip (keeps it on)" },
           ]}
         />
       }
     >
+      <Box>
+        <Text color={palette.accent} bold>
+          {bloom}
+        </Text>
+        <Text color={palette.text} bold>
+          {"  Anonymous usage ping  "}
+        </Text>
+        <Text color={palette.dim}>{sidePetal}</Text>
+      </Box>
+
       <SlideTitle
-        text="Anonymous usage ping"
-        sub="Opt-in only. Fresh installs send nothing until you say yes. Preview the exact JSON anytime with /telemetry show."
+        text=""
+        sub="On by default. One ping per day. Turn it off right here, or anytime with /analytics."
       />
 
       <Box flexDirection="column">
@@ -533,6 +572,7 @@ function TelemetrySlide({
               <Box flexDirection="column">
                 <Text color={palette.text} bold={selected}>
                   {opt.label}
+                  {i === 0 ? "   ← default" : ""}
                 </Text>
                 <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
                   {"  "}
@@ -542,6 +582,17 @@ function TelemetrySlide({
             </Box>
           );
         })}
+      </Box>
+
+      <Box flexDirection="column" marginTop={1} paddingLeft={2}>
+        <Text color={palette.muted}>Exactly what is sent</Text>
+        <Text color={palette.text}>
+          {'{ "installId": "9f3a…", "version": "0.3.0", "os": "linux",'}
+        </Text>
+        <Text color={palette.text}>{'  "arch": "x64", "ts": 0 }'}</Text>
+        <Text color={palette.dim} dimColor>
+          Never: titles · queries · providers · URLs · paths
+        </Text>
       </Box>
     </SlideLayout>
   );
@@ -629,22 +680,23 @@ export function SetupShell({
   const [audioIdx, setAudioIdx] = useState(0);
   const [subtitleIdx, setSubtitleIdx] = useState(0);
   const [downloadsIdx, setDownloadsIdx] = useState(0);
-  // Default to "off" (index 0) so Enter without changing still declines.
-  const [telemetryIdx, setTelemetryIdx] = useState(0);
+  // Index 0 is "keep it on": analytics is opt-out, so Enter without changing
+  // accepts the default. The slide's footer states that skipping does the same.
+  const [analyticsIdx, setAnalyticsIdx] = useState(0);
 
   const slide = SLIDE_ORDER[slideIdx] as Slide;
   const isPickerSlide =
     slide === "prefs-audio" ||
     slide === "prefs-subtitle" ||
     slide === "downloads" ||
-    slide === "telemetry";
+    slide === "analytics";
 
   function buildPrefs(): SetupPrefs {
     return {
       audio: AUDIO_OPTS[audioIdx]?.value ?? "original",
       subtitle: SUBTITLE_OPTS[subtitleIdx]?.value ?? "en",
       downloadsEnabled: downloadsIdx === 0,
-      telemetryChoice: telemetryIdx === 1 ? "enabled" : "disabled",
+      analyticsChoice: analyticsIdx === 0 ? "enabled" : "disabled",
     };
   }
 
@@ -671,10 +723,11 @@ export function SetupShell({
     }
 
     if (input === "s" || input === "S") {
-      // On the telemetry slide, `s` declines the ping and continues setup —
-      // it must not abort the whole wizard.
-      if (slide === "telemetry") {
-        setTelemetryIdx(0);
+      // On the analytics slide, `s` accepts the default (on) and continues
+      // setup — it must not abort the whole wizard. The footer says
+      // "skip (keeps it on)" so this is never a silent opt-in.
+      if (slide === "analytics") {
+        setAnalyticsIdx(0);
         advance();
         return;
       }
@@ -705,8 +758,8 @@ export function SetupShell({
           setSubtitleIdx((i) => Math.max(0, i - 1));
         } else if (slide === "downloads") {
           setDownloadsIdx((i) => Math.max(0, i - 1));
-        } else if (slide === "telemetry") {
-          setTelemetryIdx((i) => Math.max(0, i - 1));
+        } else if (slide === "analytics") {
+          setAnalyticsIdx((i) => Math.max(0, i - 1));
         }
         return;
       }
@@ -717,8 +770,8 @@ export function SetupShell({
           setSubtitleIdx((i) => Math.min(SUBTITLE_OPTS.length - 1, i + 1));
         } else if (slide === "downloads") {
           setDownloadsIdx((i) => Math.min(1, i + 1));
-        } else if (slide === "telemetry") {
-          setTelemetryIdx((i) => Math.min(1, i + 1));
+        } else if (slide === "analytics") {
+          setAnalyticsIdx((i) => Math.min(1, i + 1));
         }
         return;
       }
@@ -779,11 +832,11 @@ export function SetupShell({
             selectedIndex={downloadsIdx}
           />
         ) : null}
-        {slide === "telemetry" ? (
-          <TelemetrySlide
+        {slide === "analytics" ? (
+          <AnalyticsSlide
             width={cols}
             rows={Math.max(8, rows - SETUP_CHROME_ROWS)}
-            selectedIndex={telemetryIdx}
+            selectedIndex={analyticsIdx}
           />
         ) : null}
         {slide === "tips" ? (
@@ -823,7 +876,7 @@ export function runSetupFlow(snapshot: CapabilitySnapshot): {
         audio: "original",
         subtitle: "en",
         downloadsEnabled: false,
-        telemetryChoice: "disabled",
+        analyticsChoice: "disabled",
       },
     },
   });

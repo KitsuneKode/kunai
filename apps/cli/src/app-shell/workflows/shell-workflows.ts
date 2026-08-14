@@ -1346,17 +1346,19 @@ async function handleUpdate(container: Container): Promise<"handled"> {
 }
 
 async function handleAnalyticsShow(container: Container): Promise<"handled"> {
-  const payload = await container.usageAnalytics.previewPayload();
+  // Synchronous and side-effect free: rendering a preview must never be what
+  // creates an install id.
+  const payload = container.usageAnalytics.describePayload();
   const json = JSON.stringify(payload, null, 2);
   await chooseFromListShell({
-    title: "Telemetry payload",
+    title: "Analytics payload",
     subtitle:
-      "Exact JSON that would be sent when enabled. Never includes titles, queries, providers, URLs, or paths.",
+      "Exact JSON that would be sent. Never includes titles, queries, providers, URLs, or paths.",
     options: [
       {
         value: "ok" as const,
         label: json,
-        detail: "Press Enter to close · change consent with /telemetry",
+        detail: "Press Enter to close · change consent with /analytics",
       },
     ],
   });
@@ -1365,17 +1367,17 @@ async function handleAnalyticsShow(container: Container): Promise<"handled"> {
 
 async function handleAnalytics(container: Container): Promise<"handled"> {
   const status = container.usageAnalytics.getStatus();
-  const payload = await container.usageAnalytics.previewPayload();
+  const payload = container.usageAnalytics.describePayload();
   const subtitle = [
     `Status: ${status}`,
-    "Sends at most once per day when enabled.",
+    "On by default · at most one ping per day.",
     "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
-    "DO_NOT_TRACK=1 and CI=true hard-block sends even if previously enabled.",
-    `Change anytime with /telemetry · preview with /telemetry show`,
+    "Turning it off also deletes the install id from disk.",
+    "DO_NOT_TRACK=1 and CI=true block sends regardless of this setting.",
   ].join("  ·  ");
 
   const choice = await chooseFromListShell({
-    title: "Telemetry",
+    title: "Analytics",
     subtitle,
     options: [
       {
@@ -1385,13 +1387,13 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       },
       {
         value: "enable" as const,
-        label: status === "enabled" ? "Keep enabled" : "Enable anonymous usage ping",
-        detail: "Optional · one ping / 24h · installId + version + os + arch + ts only",
+        label: status === "enabled" ? "Keep it on" : "Turn on anonymous usage ping",
+        detail: "One ping / 24h · installId + version + os + arch + ts only",
       },
       {
         value: "disable" as const,
-        label: status === "disabled" ? "Keep disabled" : "Disable telemetry",
-        detail: "No network calls from the usage ping",
+        label: status === "disabled" ? "Keep it off" : "Turn it off",
+        detail: "No network calls · install id deleted from disk",
       },
     ],
   });
@@ -1400,26 +1402,26 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
     return handleAnalyticsShow(container);
   }
   if (choice === "enable") {
-    const { applied } = await container.usageAnalytics.setStatus("enabled");
+    const { applied } = await container.usageAnalytics.setConsent("enabled");
     if (applied === "disabled") {
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: "Telemetry stays disabled (DO_NOT_TRACK or CI is set).",
+        note: "Analytics stays off (DO_NOT_TRACK or CI is set).",
       });
       return "handled";
     }
     container.usageAnalytics.pingInBackground();
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Telemetry enabled. Change anytime with /telemetry.",
+      note: "Analytics on. Turn it off anytime with /analytics.",
     });
     return "handled";
   }
   if (choice === "disable") {
-    await container.usageAnalytics.setStatus("disabled");
+    await container.usageAnalytics.setConsent("disabled");
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Telemetry disabled.",
+      note: "Analytics off. Install id deleted.",
     });
     return "handled";
   }
