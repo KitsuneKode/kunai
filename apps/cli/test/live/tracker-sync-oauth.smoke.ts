@@ -135,6 +135,11 @@ async function purgeListActivities(
  * `Media.isFavourite`, the mutation's own response, and the viewer's favourites
  * list. Whichever disagrees with the others is the broken one.
  */
+interface FavouritePage {
+  readonly pageInfo?: { readonly total?: number };
+  readonly nodes?: readonly { readonly id: number }[];
+}
+
 async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<void> {
   const call = async (query: string, variables: Record<string, unknown> = {}) => {
     const res = await fetch("https://graphql.anilist.co", {
@@ -146,7 +151,14 @@ async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<
       },
       body: JSON.stringify({ query, variables }),
     });
-    return (await res.json()) as { data?: any; errors?: { message: string; status?: number }[] };
+    return (await res.json()) as {
+      data?: {
+        Viewer?: { favourites?: { anime?: FavouritePage } };
+        Media?: { isFavourite?: boolean };
+        ToggleFavourite?: { anime?: FavouritePage };
+      };
+      errors?: { message: string; status?: number }[];
+    };
   };
 
   const viewerFavourites = async (): Promise<{ ids: number[]; total: number }> => {
@@ -156,7 +168,7 @@ async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<
     );
     const anime = res.data?.Viewer?.favourites?.anime;
     return {
-      ids: (anime?.nodes ?? []).map((node: { id: number }) => node.id),
+      ids: (anime?.nodes ?? []).map((node) => node.id),
       total: anime?.pageInfo?.total ?? -1,
     };
   };
@@ -186,7 +198,7 @@ async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<
     process.stdout.write(`ToggleFavourite ERRORS   : ${JSON.stringify(toggled.errors)}\n`);
   }
   const returned = toggled.data?.ToggleFavourite?.anime;
-  const returnedIds: number[] = (returned?.nodes ?? []).map((node: { id: number }) => node.id);
+  const returnedIds: number[] = (returned?.nodes ?? []).map((node) => node.id);
   process.stdout.write(
     `ToggleFavourite response : ${returnedIds.length} of ${returned?.pageInfo?.total ?? "?"} listed, contains ${mediaId}: ${returnedIds.includes(mediaId)}\n`,
   );
