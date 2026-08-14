@@ -16,7 +16,12 @@
  *   KUNAI_ANILIST_REDIRECT_URI=…          registered on that application, exactly
  * Optional:
  *   KUNAI_LIVE_SYNC_TMDB=1                also exercise TMDB
- *   KUNAI_LIVE_SYNC_TMDB_MOVIE_ID=550
+ *   KUNAI_LIVE_SYNC_TMDB_MOVIE_ID=550     a disposable movie to add and remove
+ *
+ * Every remote write is verified by reading the account back, not by trusting
+ * the response: a TMDB membership POST answers `{ success: true }` even when it
+ * changed nothing, so an outcome-only assertion cannot tell a working write from
+ * a silently rejected one.
  *
  * Run:
  *   bun run test:live:tracker-sync
@@ -222,6 +227,40 @@ async function diagnoseFavourite(accessToken: string, mediaId: number): Promise<
   process.stdout.write("--- end diagnosis ---\n\n");
 }
 
+/**
+ * What TMDB itself says about this title on this account.
+ *
+ * `account_states` is the authority, and reading it is the whole point: a
+ * membership POST answers `{ success: true }` for a request that changed
+ * nothing, so asserting on the adapter's own outcome proves only that a request
+ * was made. This is the same hole that let the AniList favourite path report a
+ * clean run while it flip-flopped.
+ */
+async function readTmdbAccountState(
+  apiKey: string,
+  sessionId: string,
+  movieId: number,
+): Promise<{ favorite: boolean; watchlist: boolean } | null> {
+  const url = new URL(`https://api.themoviedb.org/3/movie/${movieId}/account_states`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("session_id", sessionId);
+  const res = await fetch(url.toString());
+  if (!res.ok) return null;
+  const body = (await res.json()) as { favorite?: boolean; watchlist?: boolean };
+  return { favorite: body.favorite === true, watchlist: body.watchlist === true };
+}
+
+/** Assert a remote field actually holds the value we asked it to. */
+function recordRemote(name: string, actual: boolean | undefined, expected: boolean): boolean {
+  const ok = actual === expected;
+  steps.push({
+    name,
+    ok,
+    detail: ok ? `remote reads ${expected}` : `wanted ${expected}, remote reads ${String(actual)}`,
+  });
+  return ok;
+}
+
 function required(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -382,6 +421,24 @@ async function main(): Promise<void> {
             tmdbConnected.ok ? undefined : tmdbConnected.error,
           )
         ) {
+          // The identity the account path is built from. A username here means
+          // every subsequent write addresses an account that does not exist.
+          const tmdbTokens = (await tokenStore.load()).tmdb;
+          record(
+            "tmdb resolves a numeric account id",
+            /^\d+$/.test(tmdbTokens?.accountId ?? ""),
+            `accountId=${tmdbTokens?.accountId ?? "none"} username=${tmdbTokens?.username ?? "none"}`,
+          );
+          const tmdbConnection = tmdb.getConnection();
+          record(
+            "tmdb reports an identity",
+            tmdbConnection.state === "connected",
+            tmdbConnection.state === "connected"
+              ? `@${tmdbConnection.username ?? "?"}`
+              : tmdbConnection.state,
+          );
+
+          const sessionId = tmdbTokens?.sessionId ?? "";
           const movieId = Number(process.env.KUNAI_LIVE_SYNC_TMDB_MOVIE_ID ?? 550);
           const tmdbTarget = { tracker: "tmdb", tmdbId: movieId, mediaKind: "movie" } as const;
           const watchlistOn: TrackerOperation = {
@@ -391,12 +448,49 @@ async function main(): Promise<void> {
             list: "watchlist",
             present: true,
           };
+          const tmdbFavouriteOn: TrackerOperation = {
+            version: 1,
+            kind: "favorite-membership:set",
+            target: tmdbTarget,
+            present: true,
+          };
+
+          // Baseline first: a title already on the list would make an ineffective
+          // write look like a success.
+          const before = await readTmdbAccountState(tmdbAuth.apiKey, sessionId, movieId);
+          record(
+            "tmdb account state is readable",
+            before !== null,
+            before ? `watchlist=${before.watchlist} favourite=${before.favorite}` : "unreadable",
+          );
+
           record("tmdb watchlist add", await tmdb.apply(watchlistOn, options));
+          recordRemote(
+            "tmdb watchlist add landed remotely",
+            (await readTmdbAccountState(tmdbAuth.apiKey, sessionId, movieId))?.watchlist,
+            true,
+          );
           record("tmdb watchlist add again is idempotent", await tmdb.apply(watchlistOn, options));
+
+          record("tmdb favourite add", await tmdb.apply(tmdbFavouriteOn, options));
+          recordRemote(
+            "tmdb favourite add landed remotely",
+            (await readTmdbAccountState(tmdbAuth.apiKey, sessionId, movieId))?.favorite,
+            true,
+          );
+
           record(
             "tmdb watchlist remove (cleanup)",
             await tmdb.apply({ ...watchlistOn, present: false }, options),
           );
+          record(
+            "tmdb favourite remove (cleanup)",
+            await tmdb.apply({ ...tmdbFavouriteOn, present: false }, options),
+          );
+          const after = await readTmdbAccountState(tmdbAuth.apiKey, sessionId, movieId);
+          recordRemote("tmdb watchlist cleanup landed remotely", after?.watchlist, false);
+          recordRemote("tmdb favourite cleanup landed remotely", after?.favorite, false);
+
           await tmdb.disconnect();
           record("tmdb session deleted", true);
         }
