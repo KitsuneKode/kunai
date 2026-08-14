@@ -77,6 +77,55 @@ function describeOutcome(outcome: SyncOutcome): string {
   }
 }
 
+/**
+ * Delete the list activities this run posted.
+ *
+ * `SaveMediaListEntry` publishes to the user's activity feed — that is normal
+ * AniList behaviour and what a real user wants, so production does nothing to
+ * suppress it. But `DeleteMediaListEntry` does not remove the activity, so a
+ * test run against a real account would leave public posts behind. This is
+ * test-only cleanup; nothing in the shipped adapter deletes activities.
+ */
+async function purgeListActivities(
+  accessToken: string,
+  userId: number,
+  mediaId: number,
+): Promise<number> {
+  const call = async (query: string, variables: Record<string, unknown>) => {
+    const res = await fetch("https://graphql.anilist.co", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    return (await res.json()) as { data?: Record<string, unknown> };
+  };
+
+  const found = await call(
+    `query ($userId: Int, $mediaId: Int) {
+       Page(perPage: 50) {
+         activities(userId: $userId, mediaId: $mediaId, type: ANIME_LIST, sort: ID_DESC) {
+           ... on ListActivity { id }
+         }
+       }
+     }`,
+    { userId, mediaId },
+  );
+
+  const page = found.data?.Page as { activities?: { id?: number }[] } | undefined;
+  const ids = (page?.activities ?? []).map((activity) => activity.id).filter(Boolean) as number[];
+
+  let deleted = 0;
+  for (const id of ids) {
+    await call(`mutation ($id: Int) { DeleteActivity(id: $id) { __typename } }`, { id });
+    deleted += 1;
+  }
+  return deleted;
+}
+
 function required(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -205,6 +254,14 @@ async function main(): Promise<void> {
         options,
       ),
     );
+
+    // Deleting the list entry leaves the activity it posted, so remove those too
+    // — otherwise this run leaves public posts on a real profile.
+    const stored = (await tokenStore.load()).anilist;
+    if (stored) {
+      const removed = await purgeListActivities(stored.accessToken, stored.userId, anilistMediaId);
+      record("anilist list activities removed (cleanup)", true, `${removed} deleted`);
+    }
 
     // --- TMDB ----------------------------------------------------------------
     if (process.env.KUNAI_LIVE_SYNC_TMDB === "1") {
