@@ -13,7 +13,7 @@
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { contentKindHasEpisodes, type ContentKind } from "@/domain/media/content-kind";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
-import type { VideoMeta } from "@/domain/types";
+import type { ContentType, VideoMeta } from "@/domain/types";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -59,6 +59,8 @@ export type PostPlayShellProps = {
   currentEpisode?: number;
   /** Content kind that selects the rail media-panel layout. */
   contentKind?: ContentKind;
+  /** Catalog structure — anime films keep kind anime with type movie. */
+  titleType?: ContentType;
   /** YouTube/video metadata for the `video` rail kind. */
   videoMeta?: VideoMeta | null;
   /** Optional poster URL — rendered wide-only in the rail artwork slot. */
@@ -324,12 +326,14 @@ function NextUpHeroCard({
   title,
   width,
   contentKind,
+  titleType,
 }: {
   readonly hero: PostPlayNextUpHero;
   readonly artworkUrl?: string;
   readonly title: string;
   readonly width: number;
   readonly contentKind?: ContentKind;
+  readonly titleType?: ContentType;
 }) {
   const innerWidth = Math.max(20, width - 4);
   // Larger hero still so Kitty/Sixel episode art reads sharp next to the rail.
@@ -353,7 +357,7 @@ function NextUpHeroCard({
   // no episode list, so advertising the key pointed at nothing.
   const countdownLine = [
     hero.kind === "resume" ? "↵ resume" : "↵ play",
-    ...(contentKindHasEpisodes(contentKind) ? ["e episodes"] : []),
+    ...(contentKindHasEpisodes(contentKind, titleType) ? ["e episodes"] : []),
   ].join(" · ");
   return (
     <Box
@@ -410,6 +414,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   currentSeason,
   currentEpisode,
   contentKind,
+  titleType,
   videoMeta,
   posterUrl,
   nextEpisodeThumbUrl,
@@ -451,6 +456,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     autoskipPaused,
     stopAfterCurrent,
     watchTimeSummary,
+    titleType,
   });
 
   const hColor = heroColor(view.heroColor);
@@ -464,21 +470,25 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   // fallback only guards the rare missing case. Infer it from the data we hold
   // instead of forcing movies/videos into a "series" layout: a video snapshot
   // means video, an episode/season signal means series, otherwise movie.
+  const filmStructure = titleType === "movie" || titleDetail?.type === "movie";
   const resolvedContentKind =
     contentKind ??
     (videoMeta
       ? "video"
-      : currentEpisode !== undefined ||
-          currentSeason !== undefined ||
-          Boolean(nextEpisodeLabel) ||
-          Boolean(previousEpisodeLabel) ||
-          Boolean(episodeLabel)
-        ? "series"
-        : "movie");
+      : filmStructure
+        ? "movie"
+        : currentEpisode !== undefined ||
+            currentSeason !== undefined ||
+            Boolean(nextEpisodeLabel) ||
+            Boolean(previousEpisodeLabel) ||
+            Boolean(episodeLabel.trim())
+          ? "series"
+          : "movie");
 
   const railModel = buildMediaPanel({
     surface: "post-play",
     contentKind: resolvedContentKind,
+    titleType: titleType ?? titleDetail?.type,
     title,
     titleDetail,
     videoMeta,
@@ -492,9 +502,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
     queueNextLabel,
     autoplayPaused,
     progress:
-      totalEpisodes && totalEpisodes > 0
-        ? { watched: watchedEpisodes ?? 0, total: totalEpisodes }
-        : undefined,
+      filmStructure || !totalEpisodes || totalEpisodes <= 0
+        ? undefined
+        : { watched: watchedEpisodes ?? 0, total: totalEpisodes },
   });
 
   return (
@@ -503,7 +513,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
         {/* ── Left / body column ─────────────────────────────────────────── */}
         <Box flexDirection="column" width={bodyWidth}>
           {/* Title hero */}
-          <Text color={palette.text} bold>
+          <Text color={palette.text} bold wrap="truncate-end">
             {truncateLine(title, bodyWidth)}
           </Text>
 
@@ -557,6 +567,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               title={title}
               width={bodyWidth}
               contentKind={resolvedContentKind}
+              titleType={titleType ?? titleDetail?.type}
             />
           ) : null}
 

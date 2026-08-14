@@ -2,14 +2,24 @@ import { expect, test } from "bun:test";
 
 import {
   classifyPersistedKind,
+  contentKindHasEpisodes,
   mediaLanguageProfileFor,
   resolveContentKind,
   showsEpisodeLabel,
 } from "@/domain/media/content-kind";
 
-test("movie content type wins over mode (never renders as series)", () => {
+test("movie content type wins over mode when the title is not anime", () => {
   expect(resolveContentKind({ type: "movie" }, "series")).toBe("movie");
   expect(resolveContentKind({ type: "movie" }, "anime")).toBe("movie");
+});
+
+test("anime identity wins over movie structure — theatrical films stay @ anime", () => {
+  expect(resolveContentKind({ type: "movie", externalIds: { anilistId: "181053" } }, "anime")).toBe(
+    "anime",
+  );
+  expect(
+    classifyPersistedKind({ type: "movie", externalIds: { anilistId: "181053" } }, "series"),
+  ).toBe("anime");
 });
 
 test("anime mode renders anime for non-movie titles", () => {
@@ -21,10 +31,11 @@ test("series is the default for non-movie, non-anime", () => {
   expect(resolveContentKind(null, "series")).toBe("series");
 });
 
-test("episode label is hidden for movies, shown otherwise", () => {
+test("episode chrome is hidden for movies even when the kind is anime", () => {
   expect(showsEpisodeLabel({ type: "movie" })).toBe(false);
-  expect(showsEpisodeLabel({ type: "series" })).toBe(true);
-  expect(showsEpisodeLabel(null)).toBe(true);
+  expect(contentKindHasEpisodes("anime", "movie")).toBe(false);
+  expect(contentKindHasEpisodes("anime", "series")).toBe(true);
+  expect(contentKindHasEpisodes("movie")).toBe(false);
 });
 
 test("youtube mode resolves video content kind for history and profiles", () => {
@@ -58,6 +69,13 @@ test("mediaLanguageProfileFor picks the profile matching content kind (movie not
   expect(
     mediaLanguageProfileFor({ mode: "series", currentTitle: { type: "movie" }, ...profiles }),
   ).toBe(profiles.movieLanguageProfile);
+  expect(
+    mediaLanguageProfileFor({
+      mode: "anime",
+      currentTitle: { type: "movie", externalIds: { anilistId: "181053" } },
+      ...profiles,
+    }),
+  ).toBe(profiles.animeLanguageProfile);
   expect(
     mediaLanguageProfileFor({ mode: "anime", currentTitle: { type: "series" }, ...profiles }),
   ).toBe(profiles.animeLanguageProfile);

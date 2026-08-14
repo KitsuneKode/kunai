@@ -207,8 +207,9 @@ export function DownloadConfirmationContent({
         mediaKind,
         season: items[0]?.kind === "episode" ? items[0].episode.season : undefined,
         episode: items[0]?.kind === "episode" ? items[0].episode.episode : undefined,
+        contentType: title.type,
       }),
-    [title.name, mediaKind, items],
+    [title.name, title.type, mediaKind, items],
   );
 
   const actions = useMemo(
@@ -231,6 +232,7 @@ export function DownloadConfirmationContent({
               mediaKind,
               season: item.episode.season,
               episode: item.episode.episode,
+              contentType: title.type,
             }).positionLabel ?? [],
           ].flat()
         : [],

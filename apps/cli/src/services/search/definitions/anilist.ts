@@ -1,3 +1,5 @@
+import { stripHtml } from "@/domain/catalog/strip-html";
+import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchIntent } from "@/domain/search/SearchIntent";
 import type { SearchMetadata, SearchResult, TitleAlias, TitleInfo } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
@@ -19,6 +21,8 @@ type AniListSearchMedia = {
   } | null;
   readonly description?: string | null;
   readonly episodes?: number | null;
+  readonly format?: string | null;
+  readonly duration?: number | null;
   readonly averageScore?: number | null;
   readonly popularity?: number | null;
   readonly startDate?: { readonly year?: number | null } | null;
@@ -115,6 +119,8 @@ export function buildAniListSearchRequest(intent: SearchIntent): {
           coverImage{extraLarge large}
           description(asHtml:false)
           episodes
+          format
+          duration
           averageScore
           popularity
           startDate{year}
@@ -145,10 +151,15 @@ function toAniListGenre(genre: string): string {
 function anilistMediaToSearchResult(media: AniListSearchMedia): SearchResult {
   const title = media.title?.english || media.title?.romaji || media.title?.native || "Unknown";
   const posterPath = media.coverImage?.extraLarge ?? media.coverImage?.large ?? null;
+  const structure = anilistCatalogStructure({
+    format: media.format,
+    episodes: media.episodes,
+    durationMinutes: media.duration,
+  });
 
   return {
     id: String(media.id),
-    type: "series",
+    type: structure.type,
     title,
     titleAliases: buildAniListAliases(title, media),
     year: media.startDate?.year ? String(media.startDate.year) : "",
@@ -158,7 +169,8 @@ function anilistMediaToSearchResult(media: AniListSearchMedia): SearchResult {
     metadataSource: "AniList search",
     rating: typeof media.averageScore === "number" ? media.averageScore / 10 : null,
     popularity: media.popularity ?? null,
-    episodeCount: media.episodes ?? undefined,
+    episodeCount: structure.episodeCount,
+    durationSeconds: structure.durationSeconds,
     externalIds: { anilistId: String(media.id) },
   };
 }
@@ -171,8 +183,4 @@ function buildAniListAliases(providerTitle: string, media: AniListSearchMedia): 
     media.title?.native ? { kind: "native", value: media.title.native } : null,
     ...(media.synonyms ?? []).slice(0, 3).map((value): TitleAlias => ({ kind: "synonym", value })),
   ].filter((value): value is TitleAlias => Boolean(value?.value));
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 }

@@ -1,3 +1,8 @@
+import { stripHtml } from "@/domain/catalog/strip-html";
+import {
+  anilistCatalogStructure,
+  upgradeContentTypeFromAniListFormat,
+} from "@/domain/media/anilist-format";
 import type { SearchResult, TitleAlias } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 
@@ -17,6 +22,8 @@ type AniListMedia = {
   readonly bannerImage?: string | null;
   readonly description?: string | null;
   readonly episodes?: number | null;
+  readonly format?: string | null;
+  readonly duration?: number | null;
   readonly averageScore?: number | null;
   readonly popularity?: number | null;
   readonly startDate?: { readonly year?: number | null } | null;
@@ -44,9 +51,20 @@ export async function enrichAnimeSearchResultsWithAniList(
 
     const aliases = buildTitleAliases(result.title, match);
     const posterPath = match.coverImage?.extraLarge ?? match.coverImage?.large ?? result.posterPath;
+    const structure = anilistCatalogStructure({
+      format: match.format,
+      episodes: match.episodes,
+      durationMinutes: match.duration,
+    });
+    const type = upgradeContentTypeFromAniListFormat(
+      result.type,
+      match.format ?? undefined,
+      match.episodes ?? undefined,
+    );
 
     return {
       ...result,
+      type,
       titleAliases: mergeTitleAliases(result.titleAliases, aliases),
       year: result.year || (match.startDate?.year ? String(match.startDate.year) : ""),
       overview: result.overview || stripHtml(match.description ?? "").slice(0, 240),
@@ -55,7 +73,8 @@ export async function enrichAnimeSearchResultsWithAniList(
       metadataSource: "AniList",
       rating: result.rating ?? scoreToRating(match.averageScore),
       popularity: result.popularity ?? match.popularity ?? null,
-      episodeCount: result.episodeCount ?? match.episodes ?? undefined,
+      episodeCount: type === "movie" ? undefined : (result.episodeCount ?? structure.episodeCount),
+      durationSeconds: result.durationSeconds ?? structure.durationSeconds,
     };
   });
 }
@@ -77,6 +96,8 @@ async function fetchAniListSearchPage(
         bannerImage
         description(asHtml:false)
         episodes
+        format
+        duration
         averageScore
         popularity
         startDate{year}
@@ -164,10 +185,6 @@ function normalizeTitle(value: string): string {
 function titlesOverlap(left: string, right: string): boolean {
   if (!left || !right) return false;
   return left.includes(right) || right.includes(left);
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function scoreToRating(score: number | null | undefined): number | null {

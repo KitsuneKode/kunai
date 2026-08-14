@@ -61,3 +61,46 @@ test("enrichAnimeSearchResultsWithAniList adds title aliases and poster metadata
   });
   expect(enriched[0]?.titleAliases?.map((alias) => alias.kind)).toContain("english");
 });
+
+test("enrichAnimeSearchResultsWithAniList upgrades MOVIE format to film structure", async () => {
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          Page: {
+            media: [
+              {
+                id: 181053,
+                title: {
+                  english: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+                  romaji: "Kimetsu no Yaiba: Mugen Jou-hen",
+                },
+                description: "<i>Part 1</i><br><br>Tanjiro Kamado",
+                format: "MOVIE",
+                episodes: 1,
+                duration: 155,
+                startDate: { year: 2025 },
+              },
+            ],
+          },
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as unknown as typeof fetch;
+
+  const result: SearchResult = {
+    id: "provider-id",
+    type: "series",
+    title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+    year: "",
+    overview: "",
+    posterPath: null,
+    episodeCount: 2,
+  };
+
+  const enriched = await enrichAnimeSearchResultsWithAniList("infinity castle", [result]);
+  expect(enriched[0]?.type).toBe("movie");
+  expect(enriched[0]?.episodeCount).toBeUndefined();
+  expect(enriched[0]?.durationSeconds).toBe(9300);
+  expect(enriched[0]?.overview).toBe("Part 1 Tanjiro Kamado");
+});

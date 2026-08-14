@@ -139,7 +139,7 @@ export function toBrowseResultOption(
       : result.liveStatus === "upcoming"
         ? "Upcoming"
         : undefined,
-    result.episodeCount
+    result.episodeCount && result.type !== "movie"
       ? result.contentShape === "channel"
         ? `${result.episodeCount} videos`
         : `${result.episodeCount} episodes`

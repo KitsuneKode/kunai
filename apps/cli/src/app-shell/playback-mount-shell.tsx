@@ -260,6 +260,7 @@ export function buildPlaybackRootLoadingShellState(
     currentSeason: state.currentEpisode?.season,
     currentEpisode: state.currentEpisode?.episode,
     contentKind: resolveContentKind(state.currentTitle, state.mode),
+    titleType: state.currentTitle?.type,
     videoMeta: state.videoMeta,
     onCommandAction: handlers.onCommandAction,
   };
@@ -592,6 +593,7 @@ function PlaybackShell({
           currentSeason={state.currentSeason ?? state.season}
           currentEpisode={state.currentEpisode ?? state.episode}
           contentKind={state.contentKind}
+          titleType={state.titleType}
           videoMeta={state.videoMeta}
           posterUrl={state.posterUrl}
           nextEpisodeThumbUrl={state.nextEpisodeThumbUrl}

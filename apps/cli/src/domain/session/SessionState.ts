@@ -477,7 +477,13 @@ export function reduceState(state: SessionState, transition: StateTransition): S
       if (!state.currentTitle || state.currentTitle.id !== transition.titleId) {
         return state;
       }
-      return { ...state, titleDetail: transition.detail };
+      // Catalog format may stamp a film after search. Upgrade only — never
+      // turn a movie back into a series from a later fetch.
+      const currentTitle =
+        state.currentTitle.type !== "movie" && transition.detail.type === "movie"
+          ? { ...state.currentTitle, type: "movie" as const, episodeCount: undefined }
+          : state.currentTitle;
+      return { ...state, titleDetail: transition.detail, currentTitle };
     }
 
     case "SELECT_EPISODE":

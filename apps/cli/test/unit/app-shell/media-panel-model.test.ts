@@ -236,6 +236,37 @@ describe("buildMediaPanel — series/anime", () => {
   });
 });
 
+describe("buildMediaPanel — anime film", () => {
+  test("uses movie layout with an anime badge and no S/E line", () => {
+    const filmDetail: TitleDetail = {
+      id: "anilist:181053",
+      type: "movie",
+      title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+      year: "2025",
+      runtimeMinutes: 155,
+      score: 8.4,
+      genres: ["Action"],
+      synopsis: "Tanjiro Kamado",
+    };
+    const model = buildMediaPanel(
+      ctx({
+        contentKind: "anime",
+        titleType: "movie",
+        title: filmDetail.title,
+        titleDetail: filmDetail,
+        currentSeason: 1,
+        currentEpisode: 1,
+      }),
+    );
+    expect(model.kind).toBe("anime");
+    expect(model.kindBadge).toBe("anime");
+    expect(model.secondary).toBe("2025 · 2h 35m");
+    expect(model.facts).toContainEqual({ label: "runtime", value: "2h 35m" });
+    expect(model.secondary).not.toContain("S01");
+    expect(model.miniCards.find((card) => card.kind === "next")).toBeUndefined();
+  });
+});
+
 describe("buildMediaPanel — movie", () => {
   test("uses runtime/rating facts and never invents an episode chain", () => {
     const movieDetail: TitleDetail = {

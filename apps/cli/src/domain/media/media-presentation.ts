@@ -36,6 +36,12 @@ export type MediaPresentationInput = {
   readonly season?: number;
   readonly episode?: number;
   /**
+   * Catalog structure. When `"movie"`, stored S1E1 slots stay internal even if
+   * `mediaKind` is `"anime"` — theatrical films keep the anime badge, not an
+   * episode code.
+   */
+  readonly contentType?: "movie" | "series";
+  /**
    * Anime only. Callers set this when they can prove the season number came
    * from a real multi-season identity rather than a default slot.
    */
@@ -148,7 +154,8 @@ export function normalizeMediaKind(value: string | undefined): MediaKind {
  */
 export function presentMedia(input: MediaPresentationInput): MediaPresentation {
   const policy = resolveMediaKindPolicy(input.mediaKind);
-  const episode = policy.episodic ? normalizeOrdinal(input.episode) : undefined;
+  const episodic = policy.episodic && input.contentType !== "movie";
+  const episode = episodic ? normalizeOrdinal(input.episode) : undefined;
   const season = normalizeOrdinal(input.season);
 
   let position: CanonicalMediaPosition = TITLE_POSITION;

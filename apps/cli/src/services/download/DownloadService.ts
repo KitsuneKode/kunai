@@ -1490,6 +1490,7 @@ export class DownloadService {
       mediaKind: resolveEnqueueMediaKind(input),
       season: input.episode?.season,
       episode: input.episode?.episode,
+      contentType: input.title.type,
     });
 
     return resolveDownloadOutputPath({

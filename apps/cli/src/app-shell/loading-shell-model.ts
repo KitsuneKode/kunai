@@ -95,9 +95,9 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
   const fallbackLabel = state.fallbackProviderName
     ? `fallback ${state.fallbackProviderName}`
     : "fallback";
-  const isSeriesPlayback = Boolean(
-    state.isSeriesPlayback || state.hasNextEpisode || state.hasPreviousEpisode,
-  );
+  const isSeriesPlayback =
+    state.titleType !== "movie" &&
+    Boolean(state.isSeriesPlayback || state.hasNextEpisode || state.hasPreviousEpisode);
 
   if (state.operation === "playing") {
     const playingFooterActions: readonly FooterAction[] = [

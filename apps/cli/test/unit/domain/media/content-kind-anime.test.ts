@@ -21,7 +21,7 @@ describe("isAnimeContent", () => {
 });
 
 describe("classifyPersistedKind (content-derived)", () => {
-  test("movie wins regardless of mode", () => {
+  test("movie wins regardless of mode when the title is not anime", () => {
     expect(classifyPersistedKind({ type: "movie" }, "anime")).toBe("movie");
   });
 
@@ -35,10 +35,13 @@ describe("classifyPersistedKind (content-derived)", () => {
     ).toBe("anime");
   });
 
-  test("series mode is always series for tv content", () => {
+  test("anilist identity stamps anime even in series mode, including films", () => {
     expect(
       classifyPersistedKind({ type: "series", externalIds: { anilistId: "1" } }, "series"),
-    ).toBe("series");
+    ).toBe("anime");
+    expect(
+      classifyPersistedKind({ type: "movie", externalIds: { anilistId: "181053" } }, "series"),
+    ).toBe("anime");
   });
 
   test("an anime-only provider stamps anime even with no markers, any mode", () => {

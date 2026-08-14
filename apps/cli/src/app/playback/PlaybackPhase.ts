@@ -1229,7 +1229,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.dispatch({
                   type: "SET_TITLE_DETAIL",
                   titleId: title.id,
-                  titleType: title.type,
+                  titleType: detail.type,
                   detail,
                 });
                 return undefined;
