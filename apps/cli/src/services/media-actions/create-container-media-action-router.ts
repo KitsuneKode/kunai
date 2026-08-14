@@ -54,7 +54,18 @@ async function mirrorToTrackers(
       });
       return;
     }
-    enqueue(targets.identities);
+    if (enqueue(targets.identities) === 0) return;
+
+    // Deliver now rather than at the next launch. The only automatic drain was
+    // `sync.startup`, so a favourite queued mid-session sat in the outbox until
+    // the process restarted — indistinguishable, from the user's side, from a
+    // favourite that never queued at all. `drain()` is single-flight, so a
+    // second keypress joins the active batch instead of racing it, and it is
+    // deliberately not awaited: the keypress must not wait on a remote call.
+    void container.syncService.drain().catch(() => {
+      // Delivery failures are already recorded as outbox transitions, and the
+      // rows stay queued for the next drain.
+    });
   } catch {
     // Mirroring is secondary. The list change has already been written locally,
     // and failing the user's keypress because the outbox is unavailable would

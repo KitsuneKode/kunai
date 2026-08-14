@@ -293,6 +293,72 @@ describe("createContainerMediaActionRouter favourites", () => {
 
   const item = { titleId: "tmdb:123", mediaKind: "series", title: "Test" } as const;
 
+  /**
+   * `sync.startup` was the only automatic drain, so a change queued mid-session
+   * waited for the next launch — which, from the user's side, looks exactly like
+   * a change that was never queued.
+   */
+  test("delivers the queued change instead of waiting for the next launch", async () => {
+    let drains = 0;
+    const container = {
+      queueService: { enqueueMediaItem: () => {} },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
+      },
+      syncService: {
+        enqueueFavoriteMembership: () => 1,
+        drain: async () => {
+          drains += 1;
+        },
+      },
+      listService: { toggleFavorites: () => "added" as const },
+      followedTitleRepository: { upsert: () => {} },
+      notificationService: { listActive: () => [] },
+      stateManager: { dispatch: () => {} },
+    } as unknown as Parameters<typeof createContainerMediaActionRouter>[0];
+
+    await createContainerMediaActionRouter(container).run({
+      actionId: "toggle-favorite",
+      item,
+      source: "browse",
+    });
+
+    expect(drains).toBe(1);
+  });
+
+  /** Nothing queued, nothing to deliver — an empty drain is wasted work. */
+  test("does not drain when no tracker could address the title", async () => {
+    let drains = 0;
+    const container = {
+      queueService: { enqueueMediaItem: () => {} },
+      downloadService: {
+        getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
+      },
+      catalogIdentityService: {
+        enrich: async () => ({ graph: { confidence: "low", source: "arm" } }),
+      },
+      syncService: {
+        enqueueFavoriteMembership: () => 0,
+        drain: async () => {
+          drains += 1;
+        },
+      },
+      diagnosticsService: { record: () => {} },
+      listService: { toggleFavorites: () => "added" as const },
+      followedTitleRepository: { upsert: () => {} },
+      notificationService: { listActive: () => [] },
+      stateManager: { dispatch: () => {} },
+    } as unknown as Parameters<typeof createContainerMediaActionRouter>[0];
+
+    await createContainerMediaActionRouter(container).run({
+      actionId: "toggle-favorite",
+      item: { titleId: "allanime:xyz", mediaKind: "anime", title: "Test" },
+      source: "browse",
+    });
+
+    expect(drains).toBe(0);
+  });
+
   test("mirrors the resulting state, not the gesture", async () => {
     for (const [result, expected] of [
       ["added", "sync:favorite:true"],
