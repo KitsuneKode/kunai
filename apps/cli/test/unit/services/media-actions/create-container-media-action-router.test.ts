@@ -307,7 +307,7 @@ describe("createContainerMediaActionRouter favourites", () => {
       },
       syncService: {
         enqueueFavoriteMembership: () => 1,
-        drain: async () => {
+        deliverSoon: () => {
           drains += 1;
         },
       },
@@ -339,7 +339,7 @@ describe("createContainerMediaActionRouter favourites", () => {
       },
       syncService: {
         enqueueFavoriteMembership: () => 0,
-        drain: async () => {
+        deliverSoon: () => {
           drains += 1;
         },
       },

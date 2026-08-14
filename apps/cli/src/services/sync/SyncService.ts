@@ -284,6 +284,23 @@ export class SyncService {
   }
 
   /**
+   * Ask for delivery without waiting for it.
+   *
+   * Enqueueing promises eventual delivery, but for a long time the only
+   * automatic drain was `sync.startup` — so anything queued mid-session sat in
+   * the outbox until the process restarted, which is indistinguishable from
+   * never having queued at all. Every enqueue site calls this instead of
+   * awaiting `drain()`: a keypress or a playback teardown must not block on a
+   * remote call, and `drain()` is single-flight so a burst joins one batch.
+   *
+   * Failures are deliberately swallowed here. They are already recorded as
+   * outbox transitions, and the rows stay queued for the next drain.
+   */
+  deliverSoon(): void {
+    void this.drain().catch(() => {});
+  }
+
+  /**
    * Deliver one bounded batch. Duplicate callers join the active drain rather
    * than starting a second one — two drains would race for the same claims.
    */
