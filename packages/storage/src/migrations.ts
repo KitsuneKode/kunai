@@ -580,6 +580,34 @@ export const dataMigrations: readonly Migration[] = [
         ON sync_outbox(state, claimed_at ASC);
     `,
   },
+  {
+    id: "029_data_list_items_unique_title",
+    database: "data",
+    sql: `
+      -- Membership is a set, but nothing enforced it: 'add to watchlist' ran a
+      -- bare INSERT, so pressing it twice stored the title twice. The duplicate
+      -- was invisible through 'isInList' (LIMIT 1) and through removal (DELETE
+      -- without a limit), and only showed up as an inflated list.
+      --
+      -- Collapse existing duplicates onto the earliest row, which is the one
+      -- whose added_at the user would recognise.
+      DELETE FROM list_items
+      WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY list_id, title_id ORDER BY added_at ASC, rowid ASC
+          ) AS rn
+          FROM list_items
+        ) ranked
+        WHERE ranked.rn = 1
+      );
+
+      -- Also the covering index for the membership check, which previously had
+      -- to scan the per-list index and compare title_id row by row.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_list_items_list_title
+        ON list_items(list_id, title_id);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

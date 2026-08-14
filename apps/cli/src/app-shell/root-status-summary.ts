@@ -165,15 +165,19 @@ export function buildRootStatusSummary({
     }
     // Only states the user can act on earn a crumb: "disconnected" is the
     // default for most people and would be permanent noise.
-    if (syncHealth === "ok") {
-      crumbParts.push("sync✓");
-    } else if (syncHealth === "paused") {
-      crumbParts.push("sync⏸");
-    } else if (syncHealth === "warn") {
-      crumbParts.push("sync⚠");
-    } else if (syncHealth === "error") {
-      crumbParts.push("sync✗");
-    }
+    // Glyph then word, like the 🔥 streak and 🔔 bell beside it — `sync✓` set
+    // the state glyph flush against the label, where a narrow ambiguous-width
+    // check read as a typo rather than a status. The glyph carries the state so
+    // it survives a 16-colour terminal, and the word stays the same across all
+    // four so the row is scannable.
+    const syncCrumb: Record<string, string> = {
+      ok: "🔄 sync",
+      paused: "⏸ sync",
+      warn: "⚠ sync",
+      error: "✗ sync",
+    };
+    const syncLabel = syncHealth ? syncCrumb[syncHealth] : undefined;
+    if (syncLabel) crumbParts.push(syncLabel);
     if (playlistCount !== undefined && playlistCount > 0) {
       crumbParts.push(`${playlistCount} up next`);
     }

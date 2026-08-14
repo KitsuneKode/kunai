@@ -27,6 +27,32 @@ cannot reach the wrong tracker. Only complete positive decimals from a typed
 external id or a matching namespace prefix resolve — bare numerics and foreign
 namespaces do not.
 
+## Which tracker gets a list change
+
+`resolveMirrorTargets` in `apps/cli/src/services/sync/mirror-targets.ts` is the
+one place that answers this, and every list surface routes through it.
+
+- **AniList wins when it resolves.** Anime reaches the shell as a TMDB row typed
+  `series` — the anime-ness rides on a separate flag — so both resolvers can
+  succeed for the same show. Writing to both would file one title in two
+  accounts from a single keypress, and AniList is where anime progress,
+  favourites and lists actually live.
+- **TMDB covers what AniList does not catalogue**: films and non-anime series.
+- **Lane is never a precondition for AniList.** An `anilist:` title id or an
+  explicit `externalIds.anilistId` is unambiguous on its own, and what it
+  resolves to is anime by definition.
+- **Enrichment is a fallback, not a step.** A row that already carries the right
+  id resolves with no cache read and no network. Only a title that would
+  otherwise mirror nowhere pays for `CatalogIdentityService.enrich`, which
+  degrades to "no ids" rather than throwing.
+- **Zero targets is a reportable outcome.** "Saved locally, addressable by no
+  tracker" is recorded to diagnostics and said in the surface's own message —
+  it is the one result the user cannot infer from the list itself.
+
+Callers pass resolved identities to `enqueueListMembership` /
+`enqueueFavoriteMembership`. Those methods deliberately do **not** accept a
+title: resolution is async and belongs to whoever owns the keypress.
+
 ## Capabilities
 
 Declared by each adapter and read by callers; never restated.
@@ -116,6 +142,24 @@ host, an explicit port, and exactly `/callback`.
 `services/catalog/tmdb-proxy.ts`. `KUNAI_TMDB_API_KEY` overrides it; an
 explicitly empty or placeholder override fails closed rather than silently
 falling back.
+
+Connecting mints a request token, opens the approval page, then **polls**
+`authentication/session/new` until TMDB stops answering `401`. There is no
+callback for a device-style flow, so session creation is itself the approval
+check — and the poll is what makes it work inside the Ink shell, which owns
+stdin in raw mode and would never deliver a keypress to a listener.
+
+Two things about the v3 write path are easy to get wrong, and both were:
+
+- **Auth is query-string, not headers.** `api_key` and `session_id` are query
+  parameters. Bearer auth belongs to v4 and takes a read access token, not the
+  32-character v3 key; there is no `X-Session-Id` header in the API at all.
+  Credentials in URLs are the trade-off, so `api_key` and `session_id` are both
+  in `SENSITIVE_QUERY_KEYS` and the adapter logs no URLs.
+- **`/account/{account_id}/…` takes the numeric id.** The username is stored
+  separately, for display only. A stored identity from before that split is
+  repaired by `refreshIdentity()` on the next start rather than forcing the user
+  to reconnect.
 
 ## Privacy
 

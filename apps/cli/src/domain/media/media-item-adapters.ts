@@ -26,6 +26,9 @@ export function mediaItemFromSearchResult(result: SearchResult): MediaItemIdenti
     sourceId: result.metadataSource,
     titleId: result.id,
     title: result.title,
+    // Carried, not dropped: this is the only place a search row's AniList/TMDB
+    // ids are known, and tracker sync cannot address the title without them.
+    ...(result.externalIds ? { externalIds: result.externalIds } : {}),
   };
 }
 

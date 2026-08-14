@@ -6,6 +6,8 @@ import {
   commitDownloadIntent,
   resolveDownloadIntentItems,
 } from "@/services/download/DownloadIntentService";
+import { resolveMirrorTargets } from "@/services/sync/mirror-targets";
+import type { SyncIdentity } from "@/services/sync/types";
 import type { MediaKind } from "@kunai/types";
 
 import { MediaActionRouter, type MediaActionRouterDeps } from "./MediaActionRouter";
@@ -24,14 +26,35 @@ export type ContainerMediaActionRouterOptions = {
  * Enqueue is durable and cheap, so it happens whether or not a tracker is
  * connected: the work waits in the outbox and goes out when one is, rather than
  * being lost because nothing was linked at the moment the user pressed a key.
- * Identity resolution decides which trackers can address the title at all.
+ *
+ * The item's own `mediaKind` is passed through untouched. Flattening it to
+ * `series` first — as the list write does, because the column wants a coarse
+ * kind — made `resolveAniListIdentity` reject every anime title outright, so
+ * AniList membership could never be queued from any surface.
  */
-function mirrorToTrackers(
+async function mirrorToTrackers(
+  container: Container,
   item: MediaItemIdentity,
-  enqueue: (source: { titleId: string; mediaKind: MediaKind }) => number,
-): void {
+  enqueue: (identities: readonly SyncIdentity[]) => number,
+): Promise<void> {
   try {
-    enqueue({ titleId: item.titleId, mediaKind: normalizeMediaKind(item.mediaKind) });
+    const targets = await resolveMirrorTargets(container, {
+      titleId: item.titleId,
+      mediaKind: item.mediaKind,
+      title: item.title,
+      ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+    });
+    if (targets.identities.length === 0) {
+      // Recorded rather than swallowed: "saved locally, addressable by no
+      // tracker" is the one outcome the user cannot see from the list itself.
+      container.diagnosticsService?.record({
+        category: "sync",
+        message: "List change could not be mirrored: no tracker id for title",
+        context: { titleId: item.titleId, mediaKind: item.mediaKind },
+      });
+      return;
+    }
+    enqueue(targets.identities);
   } catch {
     // Mirroring is secondary. The list change has already been written locally,
     // and failing the user's keypress because the outbox is unavailable would
@@ -56,7 +79,7 @@ export function createContainerMediaActionRouter(
       },
     },
     watchlist: {
-      addToWatchlist: (item) => {
+      addToWatchlist: async (item) => {
         container.listService.addToWatchlist({
           titleId: item.titleId,
           mediaKind: normalizeMediaKind(item.mediaKind),
@@ -64,9 +87,9 @@ export function createContainerMediaActionRouter(
           season: item.season,
           episode: item.episode,
         });
-        mirrorToTrackers(item, (source) =>
+        await mirrorToTrackers(container, item, (identities) =>
           container.syncService.enqueueListMembership({
-            source,
+            identities,
             list: "watchlist",
             present: true,
           }),
@@ -74,7 +97,7 @@ export function createContainerMediaActionRouter(
       },
     },
     favorites: {
-      toggleFavorite: (item) => {
+      toggleFavorite: async (item) => {
         const outcome = container.listService.toggleFavorites({
           titleId: item.titleId,
           mediaKind: normalizeMediaKind(item.mediaKind),
@@ -85,9 +108,9 @@ export function createContainerMediaActionRouter(
         // The local list is the source of truth, and the tracker is told the
         // resulting *state* rather than "toggle" — so a redelivery converges
         // instead of undoing what the user just did.
-        mirrorToTrackers(item, (source) =>
+        await mirrorToTrackers(container, item, (identities) =>
           container.syncService.enqueueFavoriteMembership({
-            source,
+            identities,
             present: outcome === "added",
           }),
         );

@@ -245,7 +245,8 @@ export function BrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
-  onFavoriteSelected?: (value: T) => Promise<void> | void;
+  /** Resolves to the message to flash, so add and remove can read differently. */
+  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
   /** Live lookup, re-read on every render so a toggle shows immediately. */
   isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;
@@ -864,9 +865,15 @@ export function BrowseShell<T>({
   );
 
   const runMutationWithFeedback = useCallback(
-    (operation: () => Promise<void> | void, successMessage: string, failurePrefix: string) => {
+    (
+      operation: () => Promise<string | void> | string | void,
+      successMessage: string,
+      failurePrefix: string,
+    ) => {
       void runBrowseMutation(operation).then((result) => {
-        flashActionFeedback(result.ok ? successMessage : `${failurePrefix}: ${result.message}`);
+        flashActionFeedback(
+          result.ok ? (result.note ?? successMessage) : `${failurePrefix}: ${result.message}`,
+        );
         return undefined;
       });
     },
@@ -1402,10 +1409,13 @@ export function BrowseShell<T>({
         if (listEffect.kind === "toggle-favorite" && onFavoriteSelected) {
           runMutationWithFeedback(
             async () => {
-              await onFavoriteSelected(selectedOption.value);
+              // The handler reports which way the toggle went and whether a
+              // tracker can carry it; a fixed string here could only guess.
+              const note = await onFavoriteSelected(selectedOption.value);
               // `isFavorite` reads through to the list on render, so the mark
               // only appears once something asks for a new frame.
               setFavoriteTick((tick) => tick + 1);
+              return note;
             },
             `Updated favourites for ${selectedOption.label}`,
             "Could not update favourites",
@@ -1965,18 +1975,20 @@ export function BrowseShell<T>({
                     const typeMeta =
                       !badge && resultsAreMixed ? option.previewMeta?.[0] : undefined;
                     const metaText = badge ?? typeMeta;
-                    // A favourite is marked on the title itself rather than in
-                    // the badge slot, which a preview badge can take over.
-                    const favouriteMark = isFavorite?.(option.value) ? "♥ " : "";
                     const columns: ListRowColumn[] = [
-                      listRowTitleColumn(
-                        `${favouriteMark}${option.label}`,
-                        browseRowLayout.titleWidth,
-                      ),
+                      listRowTitleColumn(option.label, browseRowLayout.titleWidth),
                     ];
                     if (metaText) {
                       const metaWidth = Math.min(12, Math.max(6, measureColumns(metaText)));
                       columns.push(listRowStatusColumn(metaText, metaWidth, palette.muted, true));
+                    }
+                    // The favourite mark trails the row in its own accent-tinted
+                    // column. Prefixed into the title it inherited the title's
+                    // colour, so it read as punctuation rather than a state, and
+                    // it shifted every title one glyph out of alignment with its
+                    // unfavourited neighbours.
+                    if (isFavorite?.(option.value)) {
+                      columns.push(listRowStatusColumn("♥", 2, palette.accent));
                     }
                     return (
                       <ListRow
@@ -2313,7 +2325,8 @@ export function openBrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
-  onFavoriteSelected?: (value: T) => Promise<void> | void;
+  /** Resolves to the message to flash, so add and remove can read differently. */
+  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
   /** Live lookup, re-read on every render so a toggle shows immediately. */
   isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;

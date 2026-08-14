@@ -6,7 +6,10 @@ import { TmdbAdapter } from "@/services/sync/TmdbAdapter";
 const tokenStore = { load: async () => ({}) } as unknown as SyncTokenStore;
 
 const connectedTokenStore = {
-  load: async () => ({ tmdb: { sessionId: "session-1", accountId: "account-1" } }),
+  load: async () => ({
+    tmdb: { sessionId: "session-1", accountId: "12345", username: "kitsune" },
+  }),
+  patchTmdb: async () => {},
 } as unknown as SyncTokenStore;
 
 const movieTarget = { tracker: "tmdb", tmdbId: 550, mediaKind: "movie" } as const;
@@ -14,9 +17,17 @@ const seriesTarget = { tracker: "tmdb", tmdbId: 1396, mediaKind: "series" } as c
 const signal = () => ({ signal: new AbortController().signal });
 
 function recordingFetch() {
-  const calls: { url: string; body: Record<string, unknown> }[] = [];
+  const calls: {
+    url: string;
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+  }[] = [];
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(input), body: JSON.parse(String(init?.body ?? "{}")) });
+    calls.push({
+      url: String(input),
+      body: JSON.parse(String(init?.body ?? "{}")),
+      headers: (init?.headers ?? {}) as Record<string, string>,
+    });
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -81,7 +92,7 @@ describe("TmdbAdapter.apply", () => {
       signal(),
     );
 
-    expect(calls[0]?.url).toContain("/account/account-1/watchlist");
+    expect(calls[0]?.url).toContain("/account/12345/watchlist");
     expect(calls[0]?.body).toEqual({ media_type: "movie", media_id: 550, watchlist: true });
     expect(calls[1]?.body).toEqual({ media_type: "tv", media_id: 1396, watchlist: false });
   });
@@ -95,7 +106,7 @@ describe("TmdbAdapter.apply", () => {
       signal(),
     );
 
-    expect(calls[0]?.url).toContain("/account/account-1/favorite");
+    expect(calls[0]?.url).toContain("/account/12345/favorite");
     expect(calls[0]?.body).toEqual({ media_type: "movie", media_id: 550, favorite: true });
   });
 
@@ -140,8 +151,17 @@ describe("TmdbAdapter.apply", () => {
     expect(outcome).toMatchObject({ status: "failed", kind: "remote", retryable: true });
   });
 
-  /** Credentials belong in the request, not in a URL that lands in logs. */
-  test("never puts the session id or api key in the request URL", async () => {
+  /**
+   * TMDB v3 authenticates account writes with `api_key` and `session_id` in the
+   * query string. There is no `X-Session-Id` header in the API, and bearer auth
+   * belongs to v4 and takes a read access token rather than the 32-character v3
+   * key — sending the v3 key as a bearer made TMDB reject every write as
+   * unauthenticated, which surfaced to the user as a permanent "reconnect TMDB".
+   *
+   * The previous test here asserted the opposite and passed, because it was
+   * checking an invented contract rather than the documented one.
+   */
+  test("authenticates in the query string, the way TMDB v3 requires", async () => {
     const { calls, fetchImpl } = recordingFetch();
     const adapter = await connectedAdapter(fetchImpl);
 
@@ -150,8 +170,77 @@ describe("TmdbAdapter.apply", () => {
       signal(),
     );
 
-    expect(calls[0]?.url).not.toContain("session-1");
-    expect(calls[0]?.url).not.toContain("test-key");
+    const url = new URL(String(calls[0]?.url));
+    expect(url.searchParams.get("api_key")).toBe("test-key");
+    expect(url.searchParams.get("session_id")).toBe("session-1");
+    expect(calls[0]?.headers.Authorization).toBeUndefined();
+    expect(calls[0]?.headers["X-Session-Id"]).toBeUndefined();
+  });
+
+  /**
+   * `/account/{account_id}/…` takes the numeric id. Connect used to prefer the
+   * username, so the path addressed an account that does not exist.
+   */
+  test("addresses the account by its numeric id, never the username", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.apply(
+      { version: 1, kind: "favorite-membership:set", target: movieTarget, present: true },
+      signal(),
+    );
+
+    expect(new URL(String(calls[0]?.url)).pathname).toBe("/3/account/12345/favorite");
+    expect(String(calls[0]?.url)).not.toContain("kitsune");
+  });
+
+  /** The handle is what the user recognises, so it is what settings shows. */
+  test("reports the username as the connected identity", async () => {
+    const adapter = await connectedAdapter(recordingFetch().fetchImpl);
+    expect(adapter.getConnection()).toMatchObject({ state: "connected", username: "kitsune" });
+  });
+});
+
+/**
+ * Builds before the account-id/username split stored the handle in `accountId`.
+ * Those sessions are still valid — only the stored shape is wrong — so start-up
+ * repairs them rather than making the user reconnect.
+ */
+describe("TmdbAdapter.refreshIdentity", () => {
+  function legacyStore() {
+    const patched: unknown[] = [];
+    const store = {
+      load: async () => ({ tmdb: { sessionId: "session-1", accountId: "kitsune" } }),
+      patchTmdb: async (data: unknown) => {
+        patched.push(data);
+      },
+    } as unknown as SyncTokenStore;
+    return { patched, store };
+  }
+
+  test("re-resolves a non-numeric stored account id and persists the repair", async () => {
+    const { patched, store } = legacyStore();
+    const adapter = new TmdbAdapter(
+      store,
+      "test-key",
+      async () => new Response(JSON.stringify({ id: 12345, username: "kitsune" }), { status: 200 }),
+    );
+    await adapter.init();
+    await adapter.refreshIdentity(signal());
+
+    expect(patched[0]).toMatchObject({ accountId: "12345", username: "kitsune" });
+  });
+
+  test("leaves a numeric account id alone, making no request", async () => {
+    let requests = 0;
+    const adapter = new TmdbAdapter(connectedTokenStore, "test-key", async () => {
+      requests += 1;
+      return new Response("{}", { status: 200 });
+    });
+    await adapter.init();
+    await adapter.refreshIdentity(signal());
+
+    expect(requests).toBe(0);
   });
 });
 

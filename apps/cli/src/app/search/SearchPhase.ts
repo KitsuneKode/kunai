@@ -76,6 +76,7 @@ import {
   collectReleaseReconciliationRows,
 } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 import { searchTitles, type SearchFilterEvidence } from "@/services/search/SearchRoutingService";
+import { describeMirrorTargets, resolveMirrorTargets } from "@/services/sync/mirror-targets";
 import type { FollowedTitlePreference, HistoryProgress } from "@kunai/storage";
 
 /**
@@ -638,10 +639,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             // true or the next keypress reads as a no-op.
             const favourited = container.listService.isInFavorites(item.titleId);
             const title = chooseSearchResultTitle(result, container.config.animeTitlePreference);
+            // The mirror ran during `router.run`, so this resolve hits the warm
+            // crosswalk and reports the same targets the enqueue used. Saying
+            // "saved here only" is the whole point: a title no tracker can
+            // address used to look exactly like one that synced.
+            const targets = await resolveMirrorTargets(container, item);
+            const reach =
+              describeMirrorTargets(targets) ??
+              (container.syncService.getConnectedAdapters().length > 0
+                ? "saved here only — no tracker id for this title"
+                : null);
+            const note = favourited ? `♥ Favourited ${title}` : `Removed ${title} from favourites`;
             stateManager.dispatch({
               type: "SET_PLAYBACK_FEEDBACK",
-              note: favourited ? `♥ Favourited ${title}.` : `Removed ${title} from favourites.`,
+              note: reach ? `${note} · ${reach}` : `${note}.`,
             });
+            return reach ? `${note} · ${reach}` : `${note}.`;
           },
           onFollowSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);

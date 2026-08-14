@@ -44,8 +44,11 @@ export class TmdbAdapter implements SyncAdapter {
   readonly displayName = "TMDB";
   readonly capabilities = TMDB_CAPABILITIES;
 
-  private sessionId: string | undefined;
+  /** The numeric v3 account id — what `/account/{account_id}/…` addresses. */
   private accountId: string | undefined;
+  /** Display only. Storing this *as* the account id is what broke every write. */
+  private username: string | undefined;
+  private sessionId: string | undefined;
   private readonly limiter = new TrackerRateLimiter();
 
   constructor(
@@ -81,14 +84,10 @@ export class TmdbAdapter implements SyncAdapter {
     const deadline = startRequestDeadline(options.signal);
     try {
       await this.limiter.waitInline(deadline.signal);
-      const res = await this.fetchImpl(`${TMDB_API_BASE}/account/${this.accountId}/${path}`, {
+      const res = await this.fetchImpl(this.accountUrl(path), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Credentials travel in headers and body rather than the query
-          // string, which is what ends up in proxy and crash logs.
-          Authorization: `Bearer ${this.apiKey}`,
-          "X-Session-Id": this.sessionId,
         },
         body: JSON.stringify({
           media_type: mediaKind === "movie" ? "movie" : "tv",
@@ -118,6 +117,7 @@ export class TmdbAdapter implements SyncAdapter {
     if (tokens.tmdb) {
       this.sessionId = tokens.tmdb.sessionId;
       this.accountId = tokens.tmdb.accountId;
+      this.username = tokens.tmdb.username;
     }
   }
 
@@ -127,16 +127,31 @@ export class TmdbAdapter implements SyncAdapter {
 
   getConnection(): ConnectionState {
     if (!this.sessionId) return disconnectedConnection();
-    return connectedConnection(this.accountId);
+    return connectedConnection(this.username ?? this.accountId);
   }
 
   /**
-   * TMDB session ids do not expire and carry no separate identity call worth
-   * making on every start: the account id arrives with the session and is
-   * stored beside it. Nothing to refresh, so this is honestly empty rather
-   * than a request that would only ever confirm what is already known.
+   * TMDB session ids do not expire, so this exists for one job: repair a stored
+   * identity that predates the split between account id and username.
+   *
+   * Earlier builds wrote the username into `accountId`, which is not what
+   * `/account/{account_id}/…` accepts — every watchlist and favourite write
+   * 404'd or 401'd. Re-resolving here means an already-connected account is
+   * fixed on next start instead of needing the user to reconnect.
    */
-  async refreshIdentity(): Promise<void> {}
+  async refreshIdentity(options?: SyncMutationOptions): Promise<void> {
+    if (!this.sessionId) return;
+    if (this.accountId !== undefined && /^\d+$/.test(this.accountId)) return;
+    const identity = await this.fetchAccountIdentity(this.sessionId, options?.signal);
+    if (!identity) return;
+    this.accountId = identity.accountId;
+    this.username = identity.username;
+    await this.tokenStore.patchTmdb({
+      sessionId: this.sessionId,
+      accountId: identity.accountId,
+      ...(identity.username ? { username: identity.username } : {}),
+    });
+  }
 
   /** What the last response said about the budget, for status and diagnostics. */
   getRateLimit() {
@@ -193,18 +208,21 @@ export class TmdbAdapter implements SyncAdapter {
 
       this.sessionId = sessionData.session_id;
 
-      const accountRes = await fetch(
-        `${TMDB_API_BASE}/account?api_key=${this.apiKey}&session_id=${this.sessionId}`,
-        { signal },
-      );
-      if (accountRes.ok) {
-        const account = (await accountRes.json()) as { id: number; username?: string };
-        this.accountId = account.username ?? String(account.id);
+      // The numeric id is required, not decorative: without it there is no
+      // account path to write to, so a connect that cannot resolve one is a
+      // failed connect rather than a half-usable link.
+      const identity = await this.fetchAccountIdentity(this.sessionId, signal);
+      if (!identity) {
+        this.sessionId = undefined;
+        return { ok: false, error: "TMDB approved the session but returned no account id." };
       }
+      this.accountId = identity.accountId;
+      this.username = identity.username;
 
       await this.tokenStore.patchTmdb({
         sessionId: this.sessionId,
-        accountId: this.accountId,
+        accountId: identity.accountId,
+        ...(identity.username ? { username: identity.username } : {}),
       });
 
       return { ok: true };
@@ -227,7 +245,46 @@ export class TmdbAdapter implements SyncAdapter {
     }
     this.sessionId = undefined;
     this.accountId = undefined;
+    this.username = undefined;
     await this.tokenStore.patchTmdb(undefined);
+  }
+
+  /**
+   * Build an authenticated v3 account URL.
+   *
+   * TMDB v3 authenticates account writes with `api_key` and `session_id` in the
+   * query string. This previously sent `Authorization: Bearer <v3 key>` and an
+   * invented `X-Session-Id` header — neither is part of the API (bearer auth is
+   * v4 and takes a read access token, not the 32-character v3 key), so every
+   * write was rejected as unauthenticated and reported as "reconnect TMDB".
+   *
+   * Credentials in a URL are a real hazard, which is what the header shape was
+   * reaching for; the mitigation is that this adapter never logs a URL, and
+   * `redactSensitive` covers `api_key`/`session_id` for anything that does.
+   */
+  private accountUrl(path: "watchlist" | "favorite"): string {
+    const url = new URL(`${TMDB_API_BASE}/account/${this.accountId}/${path}`);
+    url.searchParams.set("api_key", this.apiKey);
+    url.searchParams.set("session_id", this.sessionId ?? "");
+    return url.toString();
+  }
+
+  /** Resolve `{ accountId, username }` for a session, or null if TMDB refuses. */
+  private async fetchAccountIdentity(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<{ accountId: string; username?: string } | null> {
+    const url = new URL(`${TMDB_API_BASE}/account`);
+    url.searchParams.set("api_key", this.apiKey);
+    url.searchParams.set("session_id", sessionId);
+    const res = await this.fetchImpl(url.toString(), signal ? { signal } : {});
+    if (!res.ok) return null;
+    const account = (await res.json()) as { id?: number; username?: string };
+    if (typeof account.id !== "number" || !Number.isInteger(account.id)) return null;
+    return {
+      accountId: String(account.id),
+      ...(account.username ? { username: account.username } : {}),
+    };
   }
 
   /**

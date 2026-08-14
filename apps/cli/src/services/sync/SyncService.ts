@@ -7,20 +7,16 @@ import {
   type TrackerOperation,
 } from "./operations";
 import { SYNC_SHUTDOWN_REASON } from "./request-deadline";
-import {
-  resolveAniListIdentity,
-  resolveAniListProgressEpisode,
-  resolveTmdbIdentity,
-} from "./sync-identity";
+import { resolveAniListIdentity, resolveAniListProgressEpisode } from "./sync-identity";
 import { resolvePauseState } from "./sync-pause";
 import type { SyncAdapter } from "./SyncAdapter";
 import {
   syncCancelled,
   type SyncCapabilities,
   type SyncMutationOptions,
+  type SyncIdentity,
   type SyncOutcome,
   type TrackerId,
-  type TrackerIdSource,
 } from "./types";
 
 export type SyncHealth = "ok" | "warn" | "error" | "disconnected" | "paused";
@@ -232,12 +228,20 @@ export class SyncService {
     });
   }
 
+  /**
+   * Membership writes take already-resolved identities rather than a title.
+   *
+   * Resolution needs the crosswalk and may enrich, which is async and belongs to
+   * the caller that owns the keypress. Taking a `TrackerIdSource` here meant
+   * this class silently resolved to zero targets and returned 0 to a caller
+   * that ignored the count — the favourite that never left the device.
+   */
   enqueueListMembership(input: {
-    readonly source: TrackerIdSource;
+    readonly identities: readonly SyncIdentity[];
     readonly list: "watchlist";
     readonly present: boolean;
   }): number {
-    return this.enqueueForEachTracker(input.source, (target) => ({
+    return this.enqueueForEach(input.identities, (target) => ({
       version: 1,
       kind: "list-membership:set",
       target,
@@ -247,10 +251,10 @@ export class SyncService {
   }
 
   enqueueFavoriteMembership(input: {
-    readonly source: TrackerIdSource;
+    readonly identities: readonly SyncIdentity[];
     readonly present: boolean;
   }): number {
-    return this.enqueueForEachTracker(input.source, (target) => ({
+    return this.enqueueForEach(input.identities, (target) => ({
       version: 1,
       kind: "favorite-membership:set",
       target,
@@ -258,14 +262,11 @@ export class SyncService {
     }));
   }
 
-  private enqueueForEachTracker(
-    source: TrackerIdSource,
+  private enqueueForEach(
+    identities: readonly SyncIdentity[],
     build: (target: TrackerOperation["target"]) => TrackerOperation,
   ): number {
-    const targets = [resolveAniListIdentity(source), resolveTmdbIdentity(source)].filter(
-      (target): target is NonNullable<typeof target> => target !== null,
-    );
-    return targets.reduce((count, target) => count + this.enqueueOperation(build(target)), 0);
+    return identities.reduce((count, target) => count + this.enqueueOperation(build(target)), 0);
   }
 
   /**

@@ -161,6 +161,15 @@ export class ListRepository {
       .map(mapListItemRow);
   }
 
+  /**
+   * Add a title to a list, or refresh the one already there.
+   *
+   * Membership is a set, so adding twice is not an error and must not store a
+   * second row — `(list_id, title_id)` is unique and the conflict updates the
+   * descriptive columns instead. `added_at` and `sort_order` are deliberately
+   * left alone: re-adding something is not re-discovering it, and rewriting
+   * either would silently reorder the user's list.
+   */
   addItem(input: ListItemInput): ListItem {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -174,7 +183,13 @@ export class ListRepository {
     this.db
       .query(
         `INSERT INTO list_items (id, list_id, title_id, media_kind, title, season, episode, notes, added_at, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(list_id, title_id) DO UPDATE SET
+           media_kind = excluded.media_kind,
+           title = excluded.title,
+           season = excluded.season,
+           episode = excluded.episode,
+           notes = excluded.notes`,
       )
       .run(
         id,
@@ -189,10 +204,14 @@ export class ListRepository {
         sortOrder,
       );
 
+    // Read back by (list, title) rather than by the generated id: on conflict
+    // the surviving row keeps the id it was first inserted with.
     const row = this.db
-      .query<ListItemRow, [string]>("SELECT * FROM list_items WHERE id = ?")
-      .get(id);
-    if (!row) throw new Error(`List item not found after insert: ${id}`);
+      .query<ListItemRow, [string, string]>(
+        "SELECT * FROM list_items WHERE list_id = ? AND title_id = ?",
+      )
+      .get(input.listId, input.titleId);
+    if (!row) throw new Error(`List item not found after insert: ${input.listId}/${input.titleId}`);
     return mapListItemRow(row);
   }
 

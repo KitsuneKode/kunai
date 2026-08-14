@@ -29,12 +29,20 @@ function namespacedId(titleId: string, namespace: string): number | null {
  * fallback. MAL and TMDB ids are never reinterpreted — they index different
  * catalogues, so the same integer denotes a different show and a write would
  * land silently on the wrong entry of the user's real list.
+ *
+ * Lane is deliberately *not* consulted. Most anime reaches the shell as a TMDB
+ * row whose `type` is `series` — anime-ness rides on a separate flag — so a
+ * `mediaKind === "anime"` guard here rejected nearly every real anime while
+ * still admitting it to TMDB. The result was the exact inversion of what a user
+ * expects: favouriting an anime wrote to TMDB and never to AniList. Both id
+ * sources are unambiguous by construction, so they need no lane corroboration.
  */
 export function resolveAniListIdentity(source: TrackerIdSource): AniListIdentity | null {
-  if (source.mediaKind !== "anime") return null;
   const anilistId =
     positiveDecimal(source.externalIds?.anilistId) ?? namespacedId(source.titleId, "anilist");
   if (anilistId === null) return null;
+  // AniList catalogues anime only, so a resolved entry is anime by definition
+  // regardless of the lane the row arrived through.
   return { tracker: "anilist", anilistId, mediaKind: "anime" };
 }
 

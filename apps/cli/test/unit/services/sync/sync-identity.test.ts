@@ -101,10 +101,22 @@ describe("resolveAniListIdentity", () => {
     ).toBeNull();
   });
 
-  /** AniList's list is anime. A movie/series entry is not addressable there. */
-  test("resolves only anime", () => {
-    expect(resolveAniListIdentity({ titleId: "anilist:438631", mediaKind: "movie" })).toBeNull();
-    expect(resolveAniListIdentity({ titleId: "anilist:438631", mediaKind: "series" })).toBeNull();
+  /**
+   * Lane is not a precondition. Anime overwhelmingly reaches the shell as a
+   * TMDB row typed `series`, so requiring `mediaKind === "anime"` rejected the
+   * real titles while TMDB happily accepted them — favouriting an anime wrote
+   * to the wrong tracker and never to AniList. An `anilist:` id or an explicit
+   * `anilistId` is unambiguous without lane corroboration, and what it resolves
+   * to is anime by definition.
+   */
+  test("resolves from any lane, and always reports the entry as anime", () => {
+    for (const mediaKind of ["anime", "series", "movie"] as const) {
+      expect(resolveAniListIdentity({ titleId: "anilist:438631", mediaKind }), mediaKind).toEqual({
+        tracker: "anilist",
+        anilistId: 438631,
+        mediaKind: "anime",
+      });
+    }
   });
 });
 

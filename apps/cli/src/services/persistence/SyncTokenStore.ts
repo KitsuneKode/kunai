@@ -13,7 +13,10 @@ export interface AniListTokens {
 
 export interface TmdbTokens {
   readonly sessionId: string;
+  /** Numeric v3 account id. Account-scoped writes address this, not the name. */
   readonly accountId?: string;
+  /** Display handle, kept apart so it can never be used to build a request path. */
+  readonly username?: string;
 }
 
 export interface SyncTokens {

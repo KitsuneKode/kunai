@@ -161,13 +161,19 @@ export function syncSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] 
 
   const backlog =
     status.pending > 0 ? `${status.pending} change${status.pending === 1 ? "" : "s"} queued` : null;
+  // Dead-lettered rows are the one state nothing else reports: they are never
+  // due, never reclaimed, and never counted in `pending`, so a page that only
+  // knew about the backlog showed "up to date" while changes sat permanently
+  // undelivered. They outrank the backlog because they need a decision.
+  const stuck =
+    status.deadLettered > 0
+      ? `${status.deadLettered} change${status.deadLettered === 1 ? "" : "s"} could not be delivered`
+      : null;
   const overallDetail =
     describePauseState(pause) ??
     (status.needsReauth > 0
       ? "a tracker needs signing in again"
-      : status.connected === 0
-        ? "no trackers connected"
-        : (backlog ?? "up to date"));
+      : (stuck ?? (status.connected === 0 ? "no trackers connected" : (backlog ?? "up to date"))));
 
   return [
     {
@@ -186,10 +192,10 @@ export function syncSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] 
       // pausing did not throw anything away.
       detail: pause.paused && backlog ? `${overallDetail} · ${backlog}` : overallDetail,
       tone:
-        status.health === "ok"
-          ? "success"
-          : status.health === "error"
-            ? "error"
+        status.health === "error" || stuck
+          ? "error"
+          : status.health === "ok"
+            ? "success"
             : status.health === "warn" || status.health === "paused"
               ? "warning"
               : "info",
