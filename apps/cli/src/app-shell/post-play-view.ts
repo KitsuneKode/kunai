@@ -335,7 +335,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         {
           id: "try-again",
           label: "Try again",
-          detail: "retry the same episode",
+          detail: isMovie ? "retry playback" : "retry the same episode",
           shortcut: postPlayShortcut(bindings, "post-replay", "r"),
           primary: true,
         },

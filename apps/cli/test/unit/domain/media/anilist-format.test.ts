@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   contentTypeFromAniListFormat,
   anilistCatalogStructure,
+  upgradeContentTypeFromAniListFormat,
 } from "@/domain/media/anilist-format";
 
 describe("contentTypeFromAniListFormat", () => {
@@ -53,5 +54,17 @@ describe("anilistCatalogStructure", () => {
       type: "series",
       episodeCount: 12,
     });
+  });
+});
+
+describe("upgradeContentTypeFromAniListFormat", () => {
+  test("upgrades series to movie when catalog format is a film", () => {
+    expect(upgradeContentTypeFromAniListFormat("series", "MOVIE")).toBe("movie");
+    expect(upgradeContentTypeFromAniListFormat("series", "OVA", 1)).toBe("movie");
+  });
+
+  test("never downgrades a film back to series", () => {
+    expect(upgradeContentTypeFromAniListFormat("movie", "TV", 12)).toBe("movie");
+    expect(upgradeContentTypeFromAniListFormat("movie", undefined)).toBe("movie");
   });
 });

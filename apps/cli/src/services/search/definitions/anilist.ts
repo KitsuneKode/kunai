@@ -171,6 +171,7 @@ function anilistMediaToSearchResult(media: AniListSearchMedia): SearchResult {
     popularity: media.popularity ?? null,
     episodeCount: structure.episodeCount,
     durationSeconds: structure.durationSeconds,
+    isAnime: true,
     externalIds: { anilistId: String(media.id) },
   };
 }

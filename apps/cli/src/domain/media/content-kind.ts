@@ -70,9 +70,11 @@ function isAnimeIdentity(
 }
 
 /**
- * Content kind for the CURRENT SESSION (header crumb, language profile). ShellMode
- * is the right signal here — it reflects the routing/profile in use right now, not
- * a permanent label. Use classifyPersistedKind for anything stored in history.
+ * Content kind for the CURRENT SESSION (header crumb, language profile).
+ * Anime identity (AniList/MAL, TMDB Animation, anime-only provider) wins over
+ * both ShellMode and movie structure so theatrical films stay `@ anime`.
+ * ShellMode is the fallback when the title has no identity markers.
+ * Use classifyPersistedKind for anything stored in history.
  *
  * Structure (`title.type`) is a separate axis from identity. An anime theatrical
  * film is type "movie" and kind "anime" so it keeps the anime badge and language

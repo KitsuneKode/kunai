@@ -103,4 +103,6 @@ test("enrichAnimeSearchResultsWithAniList upgrades MOVIE format to film structur
   expect(enriched[0]?.episodeCount).toBeUndefined();
   expect(enriched[0]?.durationSeconds).toBe(9300);
   expect(enriched[0]?.overview).toBe("Part 1 Tanjiro Kamado");
+  expect(enriched[0]?.isAnime).toBe(true);
+  expect(enriched[0]?.externalIds?.anilistId).toBe("181053");
 });

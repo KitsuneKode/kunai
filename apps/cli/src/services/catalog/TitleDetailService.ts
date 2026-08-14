@@ -309,9 +309,10 @@ function mergeDetails(
     contentRating: tmdb?.contentRating ?? undefined,
     releaseDate: tmdb?.releaseDate ?? anilist?.releaseDate ?? undefined,
     status,
-    seasonCount: tmdb?.seasonCount ?? undefined,
-    episodeCount: tmdb?.episodeCount ?? anilist?.episodeCount ?? undefined,
-    seasons,
+    seasonCount: resolvedType === "movie" ? undefined : (tmdb?.seasonCount ?? undefined),
+    episodeCount:
+      resolvedType === "movie" ? undefined : (tmdb?.episodeCount ?? anilist?.episodeCount),
+    seasons: resolvedType === "movie" ? undefined : seasons,
     cast: cast.length ? cast : undefined,
     artwork: Object.keys(artwork).length ? artwork : undefined,
     externalIds: Object.keys(externalIds).length ? externalIds : undefined,

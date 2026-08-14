@@ -119,6 +119,30 @@ describe("launch entry helpers", () => {
     });
   });
 
+  test("titleFromHistorySelection keeps anime theatrical films off the episode axis", () => {
+    const selection = {
+      titleId: "181053",
+      entry: history({
+        title: "Demon Slayer: Infinity Castle",
+        mediaKind: "anime",
+        season: undefined,
+        episode: undefined,
+        absoluteEpisode: undefined,
+        externalIds: { anilistId: "181053" },
+        providerId: "allanime",
+      }),
+    };
+    expect(titleFromHistorySelection(selection)).toEqual({
+      id: "181053",
+      type: "movie",
+      name: "Demon Slayer: Infinity Castle",
+      externalIds: { anilistId: "181053" },
+      launchSource: "history",
+      isAnime: true,
+    });
+    expect(episodeFromHistorySelection(selection)).toBeUndefined();
+  });
+
   test("anime replay restores the anime default provider instead of the active YouTube provider", async () => {
     const transitions: unknown[] = [];
     let state: {
@@ -525,5 +549,45 @@ describe("launch entry helpers", () => {
     ]);
 
     expect(picked?.job.id).toBe("ready");
+  });
+
+  test("selectLocalContinueCandidate matches an anime-kind job for a theatrical film", () => {
+    const selection = {
+      titleId: "181053",
+      entry: history({
+        title: "Infinity Castle",
+        mediaKind: "anime",
+        season: undefined,
+        episode: undefined,
+        absoluteEpisode: undefined,
+        externalIds: { anilistId: "181053" },
+      }),
+    };
+
+    const picked = selectLocalContinueCandidate(selection, [
+      {
+        status: "ready",
+        job: {
+          id: "film",
+          titleId: "181053",
+          titleName: "Infinity Castle",
+          mediaKind: "anime",
+          providerId: "allanime",
+          streamUrl: "https://example/film.m3u8",
+          headers: {},
+          status: "completed",
+          progressPercent: 100,
+          outputPath: "/downloads/infinity-castle.mp4",
+          tempPath: "/downloads/film.tmp",
+          retryCount: 0,
+          attempt: 1,
+          maxAttempts: 3,
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z",
+        },
+      },
+    ]);
+
+    expect(picked?.job.id).toBe("film");
   });
 });

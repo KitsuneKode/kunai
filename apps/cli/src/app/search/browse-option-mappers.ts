@@ -3,6 +3,7 @@ import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
+import { isAnimeContent } from "@/domain/media/content-kind";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
@@ -119,17 +120,13 @@ export function toBrowseResultOption(
       : result.contentShape === "channel"
         ? "Channel"
         : "Video"
-    : result.type === "series"
-      ? "Series"
-      : "Movie";
+    : isAnimeContent(result)
+      ? "Anime"
+      : result.type === "series"
+        ? "Series"
+        : "Movie";
   const meta = [
-    isYoutubeResult
-      ? contentLabel
-      : result.isAnime
-        ? "Anime"
-        : result.type === "series"
-          ? "Series"
-          : "Movie",
+    contentLabel,
     isYoutubeResult ? undefined : result.year || undefined,
     formatDurationSeconds(result.durationSeconds),
     result.channelTitle,

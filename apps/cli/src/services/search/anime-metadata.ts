@@ -75,6 +75,11 @@ export async function enrichAnimeSearchResultsWithAniList(
       popularity: result.popularity ?? match.popularity ?? null,
       episodeCount: type === "movie" ? undefined : (result.episodeCount ?? structure.episodeCount),
       durationSeconds: result.durationSeconds ?? structure.durationSeconds,
+      isAnime: true,
+      externalIds: {
+        ...result.externalIds,
+        anilistId: String(match.id),
+      },
     };
   });
 }

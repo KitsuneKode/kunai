@@ -10,12 +10,17 @@ export function mediaItemFromHistoryEntry(
   titleId: string,
   entry: HistoryProgress,
 ): MediaItemIdentity {
+  const type = historyContentType(entry);
   return {
-    mediaKind: historyContentType(entry),
+    mediaKind: type,
     titleId,
     title: entry.title,
-    season: entry.season ?? 1,
-    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    ...(type === "series"
+      ? {
+          season: entry.season ?? 1,
+          episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+        }
+      : {}),
     providerHints: [{ providerId: entry.providerId ?? "unknown" }],
   };
 }

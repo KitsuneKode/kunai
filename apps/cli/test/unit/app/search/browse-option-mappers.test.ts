@@ -31,7 +31,7 @@ test("toBrowseResultOption labels YouTube videos by content shape, not transport
   expect(option.previewNote).toBe("Press Enter to open this video and continue to playback.");
 });
 
-test("toBrowseResultOption omits episode counts for films", () => {
+test("toBrowseResultOption labels AniList films as Anime even without isAnime", () => {
   const result: SearchResult = {
     id: "181053",
     type: "movie",
@@ -39,15 +39,15 @@ test("toBrowseResultOption omits episode counts for films", () => {
     year: "2025",
     overview: "",
     posterPath: null,
-    isAnime: true,
-    episodeCount: 1,
     durationSeconds: 9300,
     externalIds: { anilistId: "181053" },
   };
 
   const option = toBrowseResultOption(result);
-  expect(option.previewMeta?.some((item) => /episodes/i.test(item))).toBe(false);
+  expect(option.detail?.startsWith("Anime")).toBe(true);
+  expect(option.detail?.startsWith("Movie")).toBe(false);
   expect(option.previewMeta).toContain("Anime");
+  expect(option.previewMeta?.some((item) => /episodes/i.test(item))).toBe(false);
 });
 
 test("toBrowseResultOption explains YouTube playlists as picker flows", () => {

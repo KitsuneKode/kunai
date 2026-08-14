@@ -72,28 +72,26 @@ export function historyEpisodeLabel(progress: HistoryProgress): string | undefin
   return `S${String(season).padStart(2, "0")}E${String(episode).padStart(2, "0")}`;
 }
 
+function hasHistoryEpisodeIdentity(
+  progress: Pick<HistoryProgress, "episode" | "absoluteEpisode">,
+): boolean {
+  return typeof progress.episode === "number" || typeof progress.absoluteEpisode === "number";
+}
+
 /**
- * The movie|series content type for a history row, collapsing anime → "series".
+ * Structure (`movie` | `series`) for a history row — not identity.
  *
- * The retired `HistoryStore` facade flattened `mediaKind` this way in
- * `HistoryEntry.type`, and several consumers branch on it (offline cleanup,
- * badges, episode labels). This is the single authority for that flatten so
- * callers migrating off `HistoryEntry.type` preserve the exact prior behavior —
- * a naïve `mediaKind` substitution would wrongly treat anime as a third kind.
+ * `mediaKind` is the badge (`anime` / `movie` / `series` / `video`). Anime
+ * theatrical films persist as `mediaKind: "anime"` with no episode identity;
+ * collapsing every anime row to `"series"` relaunches them as S01E01.
  */
 export function historyContentType(progress: HistoryProgress): ContentType {
   if (progress.mediaKind === "video") {
-    const hasEpisode =
-      typeof progress.episode === "number" || typeof progress.absoluteEpisode === "number";
-    return hasEpisode ? "series" : "movie";
+    return hasHistoryEpisodeIdentity(progress) ? "series" : "movie";
   }
-  if (
-    progress.mediaKind === "movie" &&
-    (progress.providerId === "youtube" || progress.externalIds?.youtubeId)
-  ) {
-    return "movie";
-  }
-  return progress.mediaKind === "movie" ? "movie" : "series";
+  if (progress.mediaKind === "movie") return "movie";
+  if (progress.mediaKind === "anime" && !hasHistoryEpisodeIdentity(progress)) return "movie";
+  return "series";
 }
 
 export function latestHistoryByTitle(
