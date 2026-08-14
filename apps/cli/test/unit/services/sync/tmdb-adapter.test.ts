@@ -278,3 +278,43 @@ describe("TmdbAdapter capabilities", () => {
     expect(adapter.capabilities.rating).toBe(false);
   });
 });
+
+/**
+ * Connect used to call `api.themoviedb.org` with no timeout at all, so a
+ * network that cannot reach TMDB directly produced an indefinite hang with no
+ * output — not a slow failure, no failure. Catalogue reads survive that network
+ * because they try a third-party mirror first; account linking cannot take that
+ * route, because a request token and session id are credentials.
+ */
+describe("TmdbAdapter.connect reachability", () => {
+  const unreachable = {
+    load: async () => ({}),
+    patchTmdb: async () => {},
+  } as unknown as SyncTokenStore;
+
+  test("reports an unreachable TMDB instead of hanging", async () => {
+    const adapter = new TmdbAdapter(unreachable, "test-key", async () => {
+      throw new Error("getaddrinfo ENOTFOUND api.themoviedb.org");
+    });
+
+    const result = await adapter.connect({ signal: new AbortController().signal });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain("Could not reach api.themoviedb.org");
+  });
+
+  /** Opening a consent tab for a flow that cannot finish is worse than saying why. */
+  test("fails before prompting the user to approve anything", async () => {
+    const prompts: string[] = [];
+    const adapter = new TmdbAdapter(unreachable, "test-key", async () => {
+      throw new Error("network down");
+    });
+
+    await adapter.connect({
+      signal: new AbortController().signal,
+      onPrompt: (note) => prompts.push(note),
+    });
+
+    expect(prompts).toEqual([]);
+  });
+});

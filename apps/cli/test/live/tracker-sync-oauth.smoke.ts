@@ -407,7 +407,36 @@ async function main(): Promise<void> {
     if (process.env.KUNAI_LIVE_SYNC_TMDB === "1") {
       const tmdbAuth = resolveTmdbAuth();
       record("tmdb auth contract resolves", tmdbAuth.availability.available);
+
+      // Reachability is checked before anything opens a browser. Account
+      // linking cannot use the catalogue mirror — a request token and session
+      // id are credentials — so a network that only reaches TMDB through the
+      // mirror will fail here, and that is worth saying plainly rather than
+      // discovering after a consent screen.
+      let tmdbReachable = false;
       if (tmdbAuth.apiKey) {
+        const reach = await (async () => {
+          try {
+            const res = await fetch(
+              `https://api.themoviedb.org/3/authentication/token/new?api_key=${tmdbAuth.apiKey}`,
+              { signal: AbortSignal.timeout(8_000) },
+            );
+            return `HTTP ${res.status}`;
+          } catch (error) {
+            return `unreachable: ${error instanceof Error ? error.name : "unknown"}`;
+          }
+        })();
+        tmdbReachable = reach.startsWith("HTTP 2");
+        record(
+          "api.themoviedb.org is reachable directly",
+          tmdbReachable,
+          tmdbReachable
+            ? reach
+            : `${reach} — metadata may still work through the mirror; linking cannot`,
+        );
+      }
+
+      if (tmdbAuth.apiKey && tmdbReachable) {
         const tmdb = new TmdbAdapter(tokenStore, tmdbAuth.apiKey);
         await tmdb.init();
         const tmdbConnected = await tmdb.connect({

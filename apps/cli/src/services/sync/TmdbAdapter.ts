@@ -1,3 +1,4 @@
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
@@ -38,6 +39,25 @@ const TMDB_API_BASE = "https://api.themoviedb.org/3";
 const TMDB_AUTHENTICATE_BASE = "https://www.themoviedb.org/authenticate";
 const TMDB_TIMEOUT_MS = 90_000;
 const TMDB_APPROVAL_POLL_MS = 2_000;
+/** Per-request ceiling, matching the catalogue path's own TMDB budget. */
+const TMDB_REQUEST_TIMEOUT_MS = 8_000;
+
+/**
+ * Account linking must talk to `api.themoviedb.org` directly.
+ *
+ * Catalogue reads go through a third-party TMDB mirror first and fall back to
+ * direct (`fetchTmdbJsonWithFallback`), which is why metadata can work on a
+ * network where this does not. Authentication may not take that route: a
+ * request token and session id are account credentials, and handing them to
+ * someone else's server to relay would give that server control of the user's
+ * TMDB account. So a network that cannot reach TMDB directly cannot link a
+ * TMDB account, and the honest thing is to say exactly that instead of hanging.
+ */
+const UNREACHABLE_ERROR =
+  "Could not reach api.themoviedb.org. Account linking must connect to TMDB " +
+  "directly — unlike artwork and metadata, which can fall back to a mirror — so " +
+  "a blocked or filtered connection stops it here. Check a proxy, VPN, or DNS " +
+  "filter and try again.";
 
 export class TmdbAdapter implements SyncAdapter {
   readonly id = "tmdb" as const;
@@ -160,10 +180,17 @@ export class TmdbAdapter implements SyncAdapter {
 
   async connect({ signal, onPrompt }: SyncConnectOptions): Promise<SyncResult> {
     try {
-      const tokenRes = await fetch(
-        `${TMDB_API_BASE}/authentication/token/new?api_key=${this.apiKey}`,
-        { signal },
-      );
+      let tokenRes: Response;
+      try {
+        tokenRes = await this.fetchImpl(
+          `${TMDB_API_BASE}/authentication/token/new?api_key=${this.apiKey}`,
+          { signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS) },
+        );
+      } catch {
+        // Reached before the browser opens, deliberately: opening a tab for a
+        // flow that cannot complete is worse than saying why up front.
+        return { ok: false, error: UNREACHABLE_ERROR };
+      }
       if (!tokenRes.ok) {
         return { ok: false, error: `TMDB token request failed: ${tokenRes.status}` };
       }
@@ -277,7 +304,9 @@ export class TmdbAdapter implements SyncAdapter {
     const url = new URL(`${TMDB_API_BASE}/account`);
     url.searchParams.set("api_key", this.apiKey);
     url.searchParams.set("session_id", sessionId);
-    const res = await this.fetchImpl(url.toString(), signal ? { signal } : {});
+    const res = await this.fetchImpl(url.toString(), {
+      signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
+    });
     if (!res.ok) return null;
     const account = (await res.json()) as { id?: number; username?: string };
     if (typeof account.id !== "number" || !Number.isInteger(account.id)) return null;
@@ -300,15 +329,25 @@ export class TmdbAdapter implements SyncAdapter {
   ): Promise<Response | null> {
     const deadline = Date.now() + TMDB_TIMEOUT_MS;
     while (Date.now() < deadline && !signal.aborted) {
-      const res = await this.fetchImpl(
-        `${TMDB_API_BASE}/authentication/session/new?api_key=${this.apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ request_token: requestToken }),
-          signal,
-        },
-      );
+      let res: Response;
+      try {
+        res = await this.fetchImpl(
+          `${TMDB_API_BASE}/authentication/session/new?api_key=${this.apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ request_token: requestToken }),
+            signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
+          },
+        );
+      } catch {
+        // A dropped poll is not a failed approval — the user may still be on
+        // the consent page. Keep polling until the outer deadline, so a flaky
+        // connection does not abandon a link the user is in the middle of.
+        if (signal.aborted) return null;
+        await Bun.sleep(TMDB_APPROVAL_POLL_MS);
+        continue;
+      }
       if (res.ok) return res;
       // 401 means "not approved yet" here, so it is the only status worth
       // waiting on; anything else is a real failure and is returned as-is.
