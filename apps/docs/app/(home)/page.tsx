@@ -1,5 +1,5 @@
 import HomePageShell from "@/app/(home)/home-page-shell";
-import { OptInTelemetryLine } from "@/components/home/opt-in-telemetry-line";
+import { UsageLine } from "@/components/home/usage-line";
 import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
 import { websiteJsonLd } from "@/lib/json-ld";
@@ -7,7 +7,7 @@ import { docsSiteUrl } from "@/lib/site";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-/** Allow hourly refresh of the quiet opt-in metrics line without a full rebuild. */
+/** Allow hourly refresh of the quiet usage metrics line without a full rebuild. */
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
@@ -39,7 +39,7 @@ export default function HomePage() {
   const jsonLd = websiteJsonLd();
   const paletteCommands = featuredCommands(codeMetadata.commands);
   const providerSummary = summarizeProviders(codeMetadata.providers);
-  const telemetryLine: ReactNode = <OptInTelemetryLine />;
+  const usageLine: ReactNode = <UsageLine />;
 
   return (
     <>
@@ -54,7 +54,7 @@ export default function HomePage() {
         providerSummary={providerSummary}
         cliVersion={codeMetadata.cliVersion}
         runtimeBaseline={codeMetadata.runtimeBaseline}
-        telemetryLine={telemetryLine}
+        usageLine={usageLine}
       />
     </>
   );

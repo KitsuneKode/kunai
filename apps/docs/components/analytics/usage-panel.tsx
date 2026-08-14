@@ -18,7 +18,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
-import type { DocsTelemetryMetrics } from "@/lib/telemetry-metrics";
+import type { DocsAnalyticsMetrics } from "@/lib/analytics-metrics";
 import {
   IconEyeOff,
   IconLock,
@@ -41,12 +41,10 @@ function MetricHero({
   label,
   value,
   hint,
-  approximate = false,
 }: {
   readonly label: string;
   readonly value: number;
   readonly hint: string;
-  readonly approximate?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -54,10 +52,60 @@ function MetricHero({
         {label}
       </p>
       <p className="text-foreground font-heading text-4xl font-semibold tracking-tight tabular-nums md:text-5xl">
-        {approximate ? "~" : ""}
         {value.toLocaleString("en-US")}
       </p>
       <p className="text-muted-foreground text-sm text-pretty">{hint}</p>
+    </div>
+  );
+}
+
+function BreakdownBar({
+  label,
+  counts,
+}: {
+  readonly label: string;
+  readonly counts: Readonly<Record<string, number>>;
+}) {
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((sum, [, n]) => sum + n, 0) || 1;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-[11px] font-medium tracking-[0.14em] uppercase">
+        {label}
+      </p>
+      <div className="bg-muted/40 flex h-2 w-full overflow-hidden rounded-full">
+        {entries.map(([bucket, n]) => (
+          <div
+            key={bucket}
+            className="bg-primary/70 first:rounded-l-full last:rounded-r-full"
+            style={{ width: `${(n / total) * 100}%`, opacity: bucket === "other" ? 0.35 : 1 }}
+          />
+        ))}
+      </div>
+      <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
+        {entries.map(([bucket, n]) => (
+          <li key={bucket}>
+            {bucket} <span className="text-foreground">{n}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BreakdownGrid({ metrics }: { readonly metrics: DocsAnalyticsMetrics }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="grid gap-6 sm:grid-cols-3">
+        <BreakdownBar label="By version" counts={metrics.byVersion} />
+        <BreakdownBar label="By OS" counts={metrics.byOs} />
+        <BreakdownBar label="By architecture" counts={metrics.byArch} />
+      </div>
+      <p className="text-muted-foreground m-0 text-xs text-pretty">
+        Groups smaller than 5 installs are reported as <code className="font-mono">other</code>, so
+        an unusual combination cannot single out one install.
+      </p>
     </div>
   );
 }
@@ -84,9 +132,9 @@ function PayloadContractCard() {
       </CardContent>
       <CardFooter className="justify-between gap-3">
         <p className="text-muted-foreground m-0 text-xs">
-          Preview locally with <code className="font-mono">/telemetry show</code>
+          Preview locally with <code className="font-mono">/analytics show</code>
         </p>
-        <Badge variant="secondary">opt-in</Badge>
+        <Badge variant="secondary">opt-out</Badge>
       </CardFooter>
     </Card>
   );
@@ -102,12 +150,12 @@ function GuaranteesList() {
     {
       icon: IconLock,
       title: "Install ids are hashed before storage",
-      body: "The ingest keeps HMAC hashes for daily distinct counts and a lifetime HyperLogLog — not raw UUIDs.",
+      body: "The ingest keeps HMAC hashes of the install id with your platform, architecture, and version — never a raw UUID.",
     },
     {
       icon: IconShieldCheck,
-      title: "Decline stays decline",
-      body: "Fresh installs send nothing. DO_NOT_TRACK and CI hard-block sends even if config says enabled.",
+      title: "You are told before anything sends",
+      body: "Setup asks up front, or a one-time notice appears on first launch. That first run always sends nothing. DO_NOT_TRACK and CI hard-block sends even if the setting says on.",
     },
   ] as const;
 
@@ -131,7 +179,7 @@ function GuaranteesList() {
   );
 }
 
-export function TelemetryMetricsEmpty() {
+export function AnalyticsMetricsEmpty() {
   return (
     <Empty className="border-border bg-muted/20 border border-dashed">
       <EmptyHeader>
@@ -141,15 +189,14 @@ export function TelemetryMetricsEmpty() {
         <EmptyTitle>Public pulse not published yet</EmptyTitle>
         <EmptyDescription className="max-w-md text-pretty">
           The aggregate snapshot is missing or unreachable. That usually means the ingest cron has
-          not run, the metrics URL is wrong, or the deployment is still warming up. Your CLI still
-          defaults to zero network until you opt in.
+          not run, the metrics URL is wrong, or the deployment is still warming up.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent className="flex-row flex-wrap justify-center gap-2">
         <Button
           variant="outline"
           size="sm"
-          render={<Link href="/docs/users/reliability-and-privacy#opt-in-telemetry" />}
+          render={<Link href="/docs/users/reliability-and-privacy#usage-analytics" />}
           nativeButton={false}
         >
           Read the privacy rules
@@ -167,44 +214,44 @@ export function TelemetryMetricsEmpty() {
   );
 }
 
-export function TelemetryZeroDayEmpty({ day }: { readonly day: string }) {
+export function AnalyticsZeroDayEmpty({ day }: { readonly day: string }) {
   return (
     <Empty className="border-border/80 bg-card/40 border">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <IconTerminal2 />
         </EmptyMedia>
-        <EmptyTitle>No opt-in pings for {day}</EmptyTitle>
+        <EmptyTitle>No pings for {day}</EmptyTitle>
         <EmptyDescription className="max-w-md text-pretty">
-          The snapshot is live, but yesterday’s distinct count is zero. That is normal early on —
-          only consented installs send a daily ping.
+          The snapshot is live, but yesterday’s distinct count is zero. That is normal early on, or
+          if everyone nearby opted out with <code className="font-mono">/analytics</code>.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
   );
 }
 
-export function OptInUsagePanel({ metrics }: { readonly metrics: DocsTelemetryMetrics | null }) {
+export function UsagePanel({ metrics }: { readonly metrics: DocsAnalyticsMetrics | null }) {
   return (
     <div className="flex flex-col gap-8">
       <Alert className="border-border/80 bg-card/60">
         <IconShieldCheck />
-        <AlertTitle>Opt-in only · aggregates only</AlertTitle>
+        <AlertTitle>On by default · opt out anytime · aggregates only</AlertTitle>
         <AlertDescription>
-          This page shows public day/lifetime counts when the ingest publishes them. It never shows
-          who opted in, what they watched, or any install UUID. Abuse can inflate a counter; it
-          cannot expose a watch history.
+          This page shows public day/lifetime counts and version, OS, and architecture breakdowns.
+          It never shows who is running Kunai, what they watched, or any install UUID. Abuse can
+          inflate a counter; it cannot expose a watch history.
         </AlertDescription>
       </Alert>
 
       {!metrics ? (
-        <TelemetryMetricsEmpty />
+        <AnalyticsMetricsEmpty />
       ) : (
         <Card className="overflow-hidden">
           <CardHeader className="border-border gap-3 border-b md:flex-row md:items-start md:justify-between">
             <div className="flex flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-lg">Public opt-in pulse</CardTitle>
+                <CardTitle className="text-lg">Public usage pulse</CardTitle>
                 <Badge variant="outline">schema v{metrics.schemaVersion}</Badge>
               </div>
               <CardDescription>
@@ -213,27 +260,28 @@ export function OptInUsagePanel({ metrics }: { readonly metrics: DocsTelemetryMe
                 updated {formatUpdatedAt(metrics.updatedAt)}
               </CardDescription>
             </div>
-            <Badge variant="secondary">lifetime via {metrics.lifetimeMethod}</Badge>
+            <Badge variant="secondary">opt out with /analytics</Badge>
           </CardHeader>
           <CardContent className="flex flex-col gap-8 pt-2">
-            {metrics.activeInstalls === 0 ? <TelemetryZeroDayEmpty day={metrics.day} /> : null}
+            {metrics.activeInstalls === 0 ? <AnalyticsZeroDayEmpty day={metrics.day} /> : null}
             <div className="grid gap-8 md:grid-cols-2">
               <MetricHero
-                label="Yesterday’s opt-in installs"
+                label="Yesterday’s active installs"
                 value={metrics.activeInstalls}
-                hint="Distinct consented installs that pinged on the snapshot day."
+                hint="Distinct installs that pinged on the snapshot day."
               />
               <MetricHero
-                label="Lifetime opt-in estimate"
-                value={metrics.lifetimeInstallsApprox}
-                approximate
-                hint="Approximate distinct installs ever (HyperLogLog). Not exact by design."
+                label="Lifetime installs"
+                value={metrics.lifetimeInstalls}
+                hint="Exact distinct installs ever seen."
               />
             </div>
+            <BreakdownGrid metrics={metrics} />
           </CardContent>
           <CardFooter>
             <p className="text-muted-foreground m-0 text-xs text-pretty">
-              Lifetime is approximate on purpose so the server never needs a forever UUID list.
+              Lifetime is exact — the server keeps one hashed row per install, not a forever UUID
+              list.
             </p>
           </CardFooter>
         </Card>
@@ -253,9 +301,9 @@ export function OptInUsagePanel({ metrics }: { readonly metrics: DocsTelemetryMe
         <h2 className="kunai-type-title text-xl">Control it in the CLI</h2>
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { cmd: "/telemetry", detail: "Show status and toggle consent" },
-            { cmd: "/telemetry show", detail: "Print the exact JSON that would be sent" },
-            { cmd: "DO_NOT_TRACK=1", detail: "Hard-blocks sends and enable" },
+            { cmd: "/analytics", detail: "Show status and toggle consent" },
+            { cmd: "/analytics show", detail: "Print the exact JSON that would be sent" },
+            { cmd: "DO_NOT_TRACK=1", detail: "Hard-blocks sends even if enabled" },
           ].map((row) => (
             <Card key={row.cmd} size="sm">
               <CardHeader>
@@ -269,7 +317,7 @@ export function OptInUsagePanel({ metrics }: { readonly metrics: DocsTelemetryMe
           <Button
             variant="outline"
             size="sm"
-            render={<Link href="/docs/users/reliability-and-privacy#opt-in-telemetry" />}
+            render={<Link href="/docs/users/reliability-and-privacy#usage-analytics" />}
             nativeButton={false}
           >
             Full privacy guide
