@@ -2,7 +2,7 @@
 
 Date: 2026-08-14
 Status: approved design, not yet implemented
-Supersedes: `docs/superpowers/archive/specs/2026-07-25-telemetry-privacy-and-observability-design.md`
+Supersedes: `.archive/superpowers/archive/specs/2026-07-25-telemetry-privacy-and-observability-design.md`
 
 ## Why
 
