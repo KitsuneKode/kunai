@@ -37,6 +37,7 @@ const TMDB_CAPABILITIES: SyncCapabilities = {
 const TMDB_API_BASE = "https://api.themoviedb.org/3";
 const TMDB_AUTHENTICATE_BASE = "https://www.themoviedb.org/authenticate";
 const TMDB_TIMEOUT_MS = 90_000;
+const TMDB_APPROVAL_POLL_MS = 2_000;
 
 export class TmdbAdapter implements SyncAdapter {
   readonly id = "tmdb" as const;
@@ -158,20 +159,25 @@ export class TmdbAdapter implements SyncAdapter {
 
       const requestToken = tokenData.request_token;
       const authorizeUrl = `${TMDB_AUTHENTICATE_BASE}/${requestToken}`;
-      onPrompt?.(`Approve Kunai at ${authorizeUrl} — then press Enter here.`);
+      onPrompt?.("Approve Kunai in the browser tab that just opened; waiting…");
       void openExternalUrl(authorizeUrl);
 
-      await this.waitForEnterOrTimeout(signal);
-
-      const sessionRes = await fetch(
-        `${TMDB_API_BASE}/authentication/session/new?api_key=${this.apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ request_token: requestToken }),
-          signal,
-        },
-      );
+      /**
+       * Poll for approval instead of waiting on a keypress.
+       *
+       * This used to read `process.stdin` directly, which cannot work inside
+       * the shell: Ink owns stdin in raw mode, so the listener never fired and
+       * TMDB Connect simply hung until it timed out and then failed. TMDB has
+       * no callback for a device-style flow, but session creation itself is the
+       * signal — it refuses until the request token is approved.
+       */
+      const sessionRes = await this.awaitApprovedSession(requestToken, signal);
+      if (!sessionRes) {
+        return {
+          ok: false,
+          error: "Timed out waiting for TMDB approval. Approve in the browser, then try again.",
+        };
+      }
 
       if (!sessionRes.ok) {
         return {
@@ -224,23 +230,34 @@ export class TmdbAdapter implements SyncAdapter {
     await this.tokenStore.patchTmdb(undefined);
   }
 
-  private async waitForEnterOrTimeout(signal: AbortSignal): Promise<void> {
-    return new Promise<void>((resolve) => {
-      let settled = false;
-      const settle = () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      };
-      const timeout = setTimeout(settle, TMDB_TIMEOUT_MS);
-      signal.addEventListener("abort", () => {
-        clearTimeout(timeout);
-        settle();
-      });
-      process.stdin.once("data", () => {
-        clearTimeout(timeout);
-        settle();
-      });
-    });
+  /**
+   * Ask for a session until TMDB stops refusing, or the deadline passes.
+   *
+   * A pending request token yields 401; an approved one yields the session. So
+   * the poll is the approval check, and no terminal input is involved — which
+   * is what makes this work from inside the Ink shell.
+   */
+  private async awaitApprovedSession(
+    requestToken: string,
+    signal: AbortSignal,
+  ): Promise<Response | null> {
+    const deadline = Date.now() + TMDB_TIMEOUT_MS;
+    while (Date.now() < deadline && !signal.aborted) {
+      const res = await this.fetchImpl(
+        `${TMDB_API_BASE}/authentication/session/new?api_key=${this.apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ request_token: requestToken }),
+          signal,
+        },
+      );
+      if (res.ok) return res;
+      // 401 means "not approved yet" here, so it is the only status worth
+      // waiting on; anything else is a real failure and is returned as-is.
+      if (res.status !== 401) return res;
+      await Bun.sleep(TMDB_APPROVAL_POLL_MS);
+    }
+    return null;
   }
 }

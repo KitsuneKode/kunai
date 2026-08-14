@@ -89,9 +89,16 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
           return `Disconnected ${adapter.displayName}.`;
         }
 
+        // TMDB's flow has an out-of-band step and says so through `onPrompt`.
+        // Dropping it on the floor is why Connect TMDB looked like it did
+        // nothing: the browser opened and nothing on screen explained the wait.
         const result = await target.connect({
           signal: new AbortController().signal,
-          onPrompt: () => {},
+          onPrompt: (note) =>
+            context.container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note,
+            }),
         });
         if (!result.ok) return `${adapter.displayName}: ${result.error}`;
 

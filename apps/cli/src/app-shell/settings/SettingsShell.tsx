@@ -58,10 +58,20 @@ export function SettingsShell({
     };
   });
 
-  const registryCtx = useMemo(
-    () => buildSettingsRegistryContext(container, state.draft),
-    [container, state.draft],
-  );
+  /**
+   * Actions change things the draft cannot see.
+   *
+   * Connecting a tracker mutates adapter state, not config — so a context
+   * memoized on the draft alone kept reporting "not connected" after a
+   * successful connect. `revision` is bumped whenever an action completes,
+   * which is exactly when out-of-band state may have moved.
+   */
+  const registryCtx = useMemo(() => {
+    // Read so the dependency is honest: its only job is to re-run this after an
+    // action, which is when adapter state the draft cannot see may have moved.
+    void state.revision;
+    return buildSettingsRegistryContext(container, state.draft);
+  }, [container, state.draft, state.revision]);
 
   const page = useMemo(
     () =>
@@ -82,16 +92,15 @@ export function SettingsShell({
       try {
         const message = await def.run(registryCtx);
         if (message) onStatus(message);
-        if (def.id === "presenceConnection") {
-          setState((current) => ({
-            ...current,
-            draft: container.config.getRaw(),
-            busy: false,
-            error: message ?? null,
-          }));
-          return;
-        }
-        setState((current) => ({ ...current, busy: false, error: message ?? null }));
+        // An action's message is its result, not a failure. Storing it in
+        // `error` is what painted "Connected to AniList as @you." in red.
+        setState((current) => ({
+          ...current,
+          draft: container.config.getRaw(),
+          busy: false,
+          error: null,
+          revision: current.revision + 1,
+        }));
       } catch (error) {
         setState((current) => ({
           ...current,

@@ -627,6 +627,22 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               note: `Added ${chooseSearchResultTitle(result, container.config.animeTitlePreference)} to Watchlist.`,
             });
           },
+          isFavorite: (result) =>
+            container.listService.isInFavorites(mediaItemFromSearchResult(result).titleId),
+          onFavoriteSelected: async (result) => {
+            const router = createContainerMediaActionRouter(container);
+            const item = mediaItemFromSearchResult(result);
+            await router.run({ actionId: "toggle-favorite", item, source: "search" });
+            // Read the state back rather than assuming which way it went: the
+            // list is the authority, and the message has to match what is now
+            // true or the next keypress reads as a no-op.
+            const favourited = container.listService.isInFavorites(item.titleId);
+            const title = chooseSearchResultTitle(result, container.config.animeTitlePreference);
+            stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: favourited ? `♥ Favourited ${title}.` : `Removed ${title} from favourites.`,
+            });
+          },
           onFollowSelected: async (result) => {
             const router = createContainerMediaActionRouter(container);
             await router.run({

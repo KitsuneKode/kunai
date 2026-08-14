@@ -152,6 +152,12 @@ export type SettingsUiState = {
   readonly selectedIndex: number;
   readonly error: string | null;
   readonly busy: boolean;
+  /**
+   * Bumped when an action completes. Actions can change state the draft cannot
+   * see — connecting a tracker moves adapter state, not config — so this is
+   * what re-derives the registry context.
+   */
+  readonly revision: number;
 };
 
 export type BuiltSettingsRow = {

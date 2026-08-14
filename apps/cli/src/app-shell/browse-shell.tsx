@@ -207,6 +207,7 @@ export function BrowseShell<T>({
   onQueueSelected,
   onWatchlistSelected,
   onFavoriteSelected,
+  isFavorite,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -245,6 +246,8 @@ export function BrowseShell<T>({
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
   onFavoriteSelected?: (value: T) => Promise<void> | void;
+  /** Live lookup, re-read on every render so a toggle shows immediately. */
+  isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -266,6 +269,10 @@ export function BrowseShell<T>({
     },
     [queryDraft],
   );
+  // Forces a frame after a favourite toggle: `isFavorite` reads through to the
+  // list, so nothing re-renders on its own when the underlying row changes.
+  // Only the setter is needed — the count itself is never read.
+  const [, setFavoriteTick] = useState(0);
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
@@ -1394,7 +1401,12 @@ export function BrowseShell<T>({
         }
         if (listEffect.kind === "toggle-favorite" && onFavoriteSelected) {
           runMutationWithFeedback(
-            () => onFavoriteSelected(selectedOption.value),
+            async () => {
+              await onFavoriteSelected(selectedOption.value);
+              // `isFavorite` reads through to the list on render, so the mark
+              // only appears once something asks for a new frame.
+              setFavoriteTick((tick) => tick + 1);
+            },
             `Updated favourites for ${selectedOption.label}`,
             "Could not update favourites",
           );
@@ -1953,8 +1965,14 @@ export function BrowseShell<T>({
                     const typeMeta =
                       !badge && resultsAreMixed ? option.previewMeta?.[0] : undefined;
                     const metaText = badge ?? typeMeta;
+                    // A favourite is marked on the title itself rather than in
+                    // the badge slot, which a preview badge can take over.
+                    const favouriteMark = isFavorite?.(option.value) ? "♥ " : "";
                     const columns: ListRowColumn[] = [
-                      listRowTitleColumn(option.label, browseRowLayout.titleWidth),
+                      listRowTitleColumn(
+                        `${favouriteMark}${option.label}`,
+                        browseRowLayout.titleWidth,
+                      ),
                     ];
                     if (metaText) {
                       const metaWidth = Math.min(12, Math.max(6, measureColumns(metaText)));
@@ -2264,6 +2282,7 @@ export function openBrowseShell<T>({
   onQueueSelected,
   onWatchlistSelected,
   onFavoriteSelected,
+  isFavorite,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -2295,6 +2314,8 @@ export function openBrowseShell<T>({
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
   onFavoriteSelected?: (value: T) => Promise<void> | void;
+  /** Live lookup, re-read on every render so a toggle shows immediately. */
+  isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -2332,6 +2353,7 @@ export function openBrowseShell<T>({
         onQueueSelected={onQueueSelected}
         onWatchlistSelected={onWatchlistSelected}
         onFavoriteSelected={onFavoriteSelected}
+        isFavorite={isFavorite}
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}
