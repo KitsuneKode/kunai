@@ -79,13 +79,12 @@ jobs:
             # pure-code PR would add an unrouted directory and skip the gate
             # that exists to catch exactly that.
             doc-coverage:
-              - 'apps/cli/src/services/**'
-              - 'apps/cli/src/domain/**'
-              - 'apps/cli/src/infra/**'
-              - 'apps/cli/src/app/**'
+              - 'apps/**'
               - 'packages/**'
-              - '.docs/feature-map.md'
+              - 'scripts/*.ts'
+              - '.docs/**'
               - 'scripts/verify-doc-coverage.ts'
+              - 'scripts/verify-doc-paths.ts'
             installer:
               - 'apps/cli/scripts/build*.ts'
               - 'apps/cli/src/services/update/**'
@@ -444,14 +443,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # No `bun install`: verify-doc-coverage.ts imports only node:fs and
-      # node:path, so the workspace install would be pure latency here.
+      # No `bun install`: these scripts import only node:fs, node:path, and
+      # Bun.Glob, so the workspace install would be pure latency here.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
 
       - name: Verify every code area is routed in the feature map
         run: bun run verify:doc-coverage
+
+      # verify:doc-paths also scans source comments, so it belongs on a filter
+      # that fires for code changes. The docs job runs it too, for doc-only PRs.
+      - name: Verify cited paths resolve
+        run: bun run verify:doc-paths
 
   build-binaries:
     name: Build linux binaries

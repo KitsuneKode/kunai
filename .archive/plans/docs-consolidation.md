@@ -1,8 +1,7 @@
 # Docs and reference consolidation
 
-Status: PARTIAL — content practices and all four directory migrations landed
-2026-08-14. Remaining: the source-comment verifier (step 5) and the ADR
-promotion.
+Status: DONE — landed 2026-08-14. All five steps plus the content practices.
+The ADR promotion was investigated and deliberately dropped; see below.
 Origin: roadmap.
 
 **Done:** glossary (`.docs/glossary.md`, 12 trap-first terms, anchors checked by
@@ -16,7 +15,10 @@ four workspace apps), **step 3 — `.plans/` merge** (`plans/` deleted, K-table
 moved verbatim, 15 numbered plans keep their ids), **step 4 — `.docs/agents/`**
 (`docs/` is now purely the published site).
 
-**Not started:** step 5 (source-comment scanning) and the ADR promotion.
+**Done (cont.):** **step 5 — source-comment scanning**. `verify:doc-paths` now
+covers 1854 source files as well as 46 docs, resolving package-relative first.
+It found five dead citations that no checker could previously see: three to the
+old `docs/superpowers/` and two to a plan that had been archived.
 
 ### Step 1 notes
 
@@ -60,6 +62,25 @@ moved verbatim, 15 numbered plans keep their ids), **step 4 — `.docs/agents/`*
 - That exposed a real hole: `lastReviewed: "unknown"` satisfied the original
   check. `verify-doc-frontmatter.ts` now requires an ISO `YYYY-MM-DD` date.
 - `docs/installer-reference/` is gitignored local material, left alone.
+
+### Step 5 notes
+
+- **Paths in comments are usually package-relative.** A comment inside
+  `apps/cli/scripts/` naming `scripts/build-binaries.ts` means its sibling. A
+  naive repo-root check reported 17 dead paths; 14 were this false positive.
+  The check resolves package-relative first, then repo-relative.
+- **A negative test found a real bug in the checker.** A path ending a sentence
+  (`…/foo.md.`) captured its trailing period, failed the extension test, and was
+  skipped silently. Stripping trailing punctuation then exposed two more genuine
+  dead citations that had been invisible. A checker nobody has watched fail is
+  not known to work.
+- Only comment spans are scanned, never string literals — a path in a literal is
+  usually runtime data, not a citation.
+- CI: `verify:doc-paths` moved onto the cheap `checks-doc-coverage` job, whose
+  filter now covers `apps/**` and `packages/**`. Putting it only on the `docs`
+  filter would have skipped it on the code PRs most likely to break it, and
+  widening the `docs` filter instead would drag the full site build onto every
+  code PR.
 
 One meaning per top-level directory, one archive, one plan board, and doc
 authority that a grepped fragment can state about itself.
@@ -216,17 +237,36 @@ hedging, relay, support bundle, K-id.
 
 Retire the `CONTEXT.md` pointer in `docs/agents/domain.md` in the same change.
 
-### ADRs
+### ADRs — investigated, deliberately not done
 
-Promote the pressure-tested decisions out of `.plans/kunai-principal-grill-qa.md`
-into numbered ADRs under `.docs/adr/`. The roadmap declares everything in
-`.plans/` "unfinished by construction", so settled decisions are misfiled there.
+The plan was to promote "pressure-tested decisions" out of
+`.plans/kunai-principal-grill-qa.md` into numbered ADRs. **Reading the source
+killed the idea**, which is the outcome the "confirm before writing" instruction
+existed to produce.
 
-Candidates: dual-lane resolve identity, relay stays metadata-only, Ink over
-OpenTUI, telemetry opt-in posture. Confirm each against the source doc before
-writing; do not promote a decision the file does not actually record.
+All ~40 sections of that 937-line file are framed as **"Recommended answer"** —
+strategic direction, not ratified decisions. Worse, most of it governs surfaces
+the roadmap explicitly parks:
 
-Leave the plan file in place with the promoted sections replaced by links.
+- The three-tier architecture and "should the web app depend on cloud compute"
+  concern web/desktop/premium-cloud tiers that are **not scheduled**.
+- The Cloudflare "provider RPC relay" is a design for that future web tier, not
+  the relay Kunai ships today.
+- The provider spec section is already **implemented and documented** —
+  `ProviderManifest`, `ResolveTrace`, health deltas, structured failure codes —
+  in `.docs/providers.md` and `.docs/provider-intake.md`.
+
+Promoting any of these would elevate parked speculation to system-wide
+architectural authority and duplicate the `AGENTS.md` non-negotiables. That is
+precisely the aspirational-vs-current confusion this consolidation exists to
+remove.
+
+**Decision: leave the file where it is.** `.plans/` is the right home for
+direction that is not yet a decision, the roadmap already labels it correctly,
+and the genuinely load-bearing rules (relay stays metadata-only, no shared public
+relay URL, production providers come from one loader) are already
+non-negotiables in `AGENTS.md`. Write an ADR when a decision is actually ratified
+and governs current code — not to relocate prose.
 
 ### Banners and frontmatter
 

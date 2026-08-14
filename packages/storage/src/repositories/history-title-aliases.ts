@@ -6,7 +6,8 @@ import type { KunaiDatabase } from "../sqlite";
  * Alias index for history title identity: any known external id (catalog or
  * provider-native) maps to the canonical history `title_id`. This is what lets
  * the same work found via AniList, TMDB, or an opaque provider id collapse to
- * one continue-watching unit. See .plans/catalog-identity-parity.md Phase 0.
+ * one continue-watching unit. Rationale: the archived
+ * `.archive/plans/catalog-identity-parity.md` Phase 0 (history, not current spec).
  */
 export type HistoryTitleAliasNs =
   | "anilist"

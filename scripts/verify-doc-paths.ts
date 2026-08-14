@@ -11,6 +11,16 @@
 //   1. Backtick-quoted repo paths (`apps/cli/src/...`) resolve on disk.
 //   2. Relative markdown links ([x](./y.md)) resolve on disk.
 //
+// And one thing across source comments in apps/** and packages/**:
+//   3. Doc and file paths cited in comments resolve on disk.
+//
+// (3) exists because a comment is documentation that no doc checker could see.
+// Three files pointed at `docs/superpowers/` and two at a plan that had been
+// archived; nothing failed, because nothing was looking. Comments are checked
+// package-relative first, then repo-relative, because a comment inside
+// `apps/cli/scripts/build-binaries.ts` naming a sibling means the package's own
+// directory, not a repo-root path.
+//
 // Usage:
 //   bun run verify:doc-paths
 // =============================================================================
@@ -24,8 +34,13 @@ const ROOT = resolve(import.meta.dir, "..");
  * Docs that route agents. `archive/` is history — its paths are expected to be
  * stale. `provider-dossiers/` is field research citing live sites and captures,
  * not repo layout, so path checking there is noise.
+ *
+ * Only `.plans/roadmap.md` is scanned, not `.plans/**`. The roadmap is an index
+ * of files that must exist. The plans it indexes are *intent*: they routinely
+ * name files they propose to create, so gating them on existence would be a
+ * category error and would punish planning ahead.
  */
-const SCANNED_ROOTS = ["AGENTS.md", ".docs"];
+const SCANNED_ROOTS = ["AGENTS.md", ".docs", ".plans/roadmap.md"];
 const EXCLUDED_DIRS = new Set(["archive", "node_modules", "provider-dossiers"]);
 
 /**
@@ -113,11 +128,89 @@ function checkFile(absolute: string): Finding[] {
   return findings;
 }
 
+// ---------------------------------------------------------------------------
+// Source comments
+// ---------------------------------------------------------------------------
+
+/** Workspace roots whose comments are checked. `.reference/` and `.archive/` are excluded. */
+const SOURCE_GLOBS = ["apps/**/*.{ts,tsx,mjs}", "packages/**/*.{ts,tsx,mjs}", "scripts/*.ts"];
+const SOURCE_SKIP = /(^|\/)(node_modules|dist|\.next|\.turbo)\//;
+
+/** A cited path is only checked when it names a file — bare directories are noise. */
+const CITED_FILE = /\.(ts|tsx|md|mdx|json|ya?ml|sh|ps1|html|lua|mjs|js|tape)$/;
+
+const COMMENT_PATH =
+  /(?:^|[\s`("'[<])((?:\.docs|\.plans|\.reference|\.archive|docs|apps|packages|scripts|test)\/[A-Za-z0-9._/*?-]*[A-Za-z0-9._*?-])/g;
+
+/** Comment spans only. A path inside a string literal is usually runtime data, not a citation. */
+function commentSpans(text: string): { line: number; text: string }[] {
+  const spans: { line: number; text: string }[] = [];
+  let inBlock = false;
+
+  text.split("\n").forEach((raw, index) => {
+    let segment = "";
+    if (inBlock) {
+      const end = raw.indexOf("*/");
+      segment = end === -1 ? raw : raw.slice(0, end);
+      if (end !== -1) inBlock = false;
+    } else {
+      const block = raw.indexOf("/*");
+      const line = raw.indexOf("//");
+      if (block !== -1 && (line === -1 || block < line)) {
+        const end = raw.indexOf("*/", block + 2);
+        if (end === -1) {
+          inBlock = true;
+          segment = raw.slice(block + 2);
+        } else {
+          segment = raw.slice(block + 2, end);
+        }
+      } else if (line !== -1) {
+        segment = raw.slice(line + 2);
+      }
+    }
+    if (segment.trim()) spans.push({ line: index + 1, text: segment });
+  });
+
+  return spans;
+}
+
+/** Maps a source file to its workspace root, so package-relative citations resolve. */
+function owningPackage(relative: string): string | undefined {
+  const parts = relative.split("/");
+  return parts[0] === "apps" || parts[0] === "packages" ? `${parts[0]}/${parts[1]}` : undefined;
+}
+
+function checkSourceFile(relative: string): Finding[] {
+  const findings: Finding[] = [];
+  const pkg = owningPackage(relative);
+
+  for (const span of commentSpans(readFileSync(join(ROOT, relative), "utf8"))) {
+    if (isHistorical(span.text)) continue;
+
+    for (const [, raw] of span.text.matchAll(COMMENT_PATH)) {
+      // A path ending a sentence captures its punctuation: `x.md.` or `x.ts),`.
+      const target = raw?.replace(/[.,;:)\]]+$/, "");
+      if (!target || !CITED_FILE.test(target) || isAllowedMissing(target)) continue;
+      const resolvesInPackage = pkg !== undefined && existsSync(join(ROOT, pkg, target));
+      if (resolvesInPackage || existsSync(join(ROOT, target))) continue;
+      findings.push({ file: relative, target, line: span.line });
+    }
+  }
+
+  return findings;
+}
+
+const sourceFiles = SOURCE_GLOBS.flatMap((pattern) => [
+  ...new Bun.Glob(pattern).scanSync({ cwd: ROOT }),
+])
+  .map((path) => path.replaceAll("\\", "/"))
+  .filter((path) => !SOURCE_SKIP.test(path));
+
 const files = SCANNED_ROOTS.flatMap(collectMarkdown);
-const findings = files.flatMap(checkFile);
+const findings = [...files.flatMap(checkFile), ...sourceFiles.flatMap(checkSourceFile)];
 
 if (findings.length > 0) {
-  console.error(`\nDead paths in agent-facing docs (${findings.length}):\n`);
+  console.error(`\nDead paths in agent-facing docs and comments (${findings.length}):\n`);
   for (const { file, line, target } of findings) {
     console.error(`  ${file}:${line}  →  ${target}`);
   }
@@ -129,4 +222,7 @@ genuinely cannot exist on a clean checkout.\n`,
   process.exit(1);
 }
 
-console.log(`verify:doc-paths — ${files.length} docs scanned, all paths resolve.`);
+console.log(
+  `verify:doc-paths — ${files.length} docs and ${sourceFiles.length} source files scanned, ` +
+    `all paths resolve.`,
+);

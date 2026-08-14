@@ -5,7 +5,8 @@
 // AniList/MAL/TMDB/IMDB bag: pass-through when both lane ids exist, then the
 // SQLite crosswalk cache, then ARM. High confidence comes only from exact id
 // maps; low-confidence results never rewrite history (callers must check
-// graph.confidence before rekeying). See .plans/catalog-identity-parity.md.
+// graph.confidence before rekeying). Rationale: the archived
+// `.archive/plans/catalog-identity-parity.md` (history, not current spec).
 // =============================================================================
 
 import { mergeBackfillExternalIds } from "@kunai/core";

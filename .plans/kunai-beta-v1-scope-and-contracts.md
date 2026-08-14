@@ -71,7 +71,7 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ### 10 — Determinism, SDK-shaped providers, packaging (npm, AUR, brew)
 
-- **Contract:** Provider registry + manifests define behavior; tests lock golden resolves where possible. Releases require `typecheck` + agreed lint bar documented in [beta-readiness.md](beta-readiness.md).
+- **Contract:** Provider registry + manifests define behavior; tests lock golden resolves where possible. Releases require `typecheck` + agreed lint bar documented in [beta-readiness.md](../.archive/plans/beta-readiness.md).
 - **Acceptance:** `kunai` binary behavior matches docs; install paths documented per target.
 
 ---
@@ -93,7 +93,7 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ## Doc / plan hygiene (agreed process)
 
-1. Keep [beta-readiness.md](beta-readiness.md) as the **checklist**.
+1. Keep [beta-readiness.md](../.archive/plans/beta-readiness.md) as the **checklist**.
 2. Keep [roadmap.md](roadmap.md) as the **index**; mark moonshot plans **Parked** with one line each.
 3. Move superseded or principal-only plans to **`.archive/plans/`** (create folder when ready); leave a stub line in roadmap pointing to archive for archeology.
 4. Runtime truth for agents: [architecture.md](../.docs/architecture.md); target shape: [architecture-v2.md](../.docs/architecture-v2.md).
@@ -103,7 +103,7 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 
 ## Suggested implementation order (next rounds)
 
-1. **Truth:** Finish open items in [beta-readiness.md](beta-readiness.md) (autoplay live verify, Playwright guardrail, lint policy, shell transition polish).
+1. **Truth:** Finish open items in [beta-readiness.md](../.archive/plans/beta-readiness.md) (autoplay live verify, Playwright guardrail, lint policy, shell transition polish).
 2. **Contracts:** Introduce `StreamResolveCache` (or equivalent) module—single key API used by `PlaybackPhase` and `BrowserServiceImpl`.
 3. **UX:** History right pane density; autonext loading state; fail-fast/retry copy.
 4. **Prefs:** Quality selector + dub/sub preference surfaced in UI + threaded into resolve/cache keys.
@@ -114,7 +114,7 @@ Each pillar implies **one primary seam** in code (interface + owner module). Fea
 ## Related
 
 - [kunai-execution-passes-and-cli-modes.md](kunai-execution-passes-and-cli-modes.md) — sequencing (perf vs reliability vs UX), CLI minimal/quick flags, autoskip notes
-- [beta-readiness.md](beta-readiness.md) — operational checklist
+- [beta-readiness.md](../.archive/plans/beta-readiness.md) — operational checklist
 - [roadmap.md](roadmap.md) — index and parked tracks
 - [.docs/diagnostics-guide.md](../.docs/diagnostics-guide.md) — tracing for support
 - [.plans/kunai-architecture-and-cache-hardening.md](kunai-architecture-and-cache-hardening.md) — post-beta scale (do not conflate with v1 beta gate)

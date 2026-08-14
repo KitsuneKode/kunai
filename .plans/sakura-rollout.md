@@ -4,7 +4,7 @@ Status: **in progress** — foundation landed (tokens + theme contract). Slices 
 
 Goal: ship the Sakura design system (dusk plum · rose · mint) as the next Kunai version, then keep it future-proof. Source code is truth; the design contract is [.docs/design-system.md](../.docs/design-system.md); visual reference is [`.reference/design/cli/kunai-sakura*.html`](../.reference/design/cli/).
 
-Parallel handoff prompts: [.plans/sakura-parallel-agent-prompts.md](sakura-parallel-agent-prompts.md)
+Parallel handoff prompts: [.plans/sakura-parallel-agent-prompts.md](../.archive/plans/sakura-parallel-agent-prompts.md)
 
 ## Guiding rules (apply to every slice)
 
@@ -49,7 +49,7 @@ Done when no `palette.{amber,pink,teal,cyan,info,lavender,green,red,yellow,gray,
 
 The real product for a scraper app. Draw + implement, using `danger` + glyph + one recovery action:
 
-Implementation plan: [.plans/sakura-shared-primitives-recovery-plan.md](sakura-shared-primitives-recovery-plan.md) — **COMPLETE (2026-05-23)**: shared primitives (ContextCard/ActionList/StateBlock/PreviewRail) + playback-recovery view model built and wired into LoadingShell + playback/post-play. 954 tests / build green.
+Implementation plan: [.plans/sakura-shared-primitives-recovery-plan.md](../.archive/plans/sakura-shared-primitives-recovery-plan.md) — **COMPLETE (2026-05-23)**: shared primitives (ContextCard/ActionList/StateBlock/PreviewRail) + playback-recovery view model built and wired into LoadingShell + playback/post-play. 954 tests / build green.
 
 - `Playback did not start` (never marks watched, never offers next as primary).
 - `Stream stalled` (promote recover/fallback into body+footer while relevant).

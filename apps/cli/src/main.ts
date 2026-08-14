@@ -17,9 +17,9 @@
 //   bun run dev -- --random                # Open a rerollable random recommendation tray first
 //   bun run dev -- -m                      # Minimal footer for this session
 //
-// This file owns the current fullscreen session runtime.
-// Keep new architecture work here. apps/cli/index.ts is only a temporary
-// compatibility shim while migration residue is retired.
+// This file owns the current fullscreen session runtime, and is the only
+// entrypoint. Keep new architecture work here.
+// (The old `apps/cli/index.ts` compatibility shim was removed in c1d48ffb.)
 // =============================================================================
 
 import { existsSync } from "node:fs";
