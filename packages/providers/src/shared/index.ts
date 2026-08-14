@@ -7,6 +7,7 @@ export * from "./hls-manifest";
 export * from "./hls-ladder";
 export * from "./direct-stream-source";
 export * from "./provider-cycle";
+export * from "./provider-episode-number";
 export * from "./resolve-helpers";
 export * from "./resolve-inventory-anomaly";
 export * from "./stream-reachability";

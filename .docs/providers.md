@@ -530,6 +530,10 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   results are remapped to opaque AllAnime show ids before resolve; `externalIds.anilistId` is
   preserved on merge. An AllAnime lookup may populate only `providerNativeIds.allanime`.
 - **Miruro** — `anilist`. Discovery ids stay numeric AniList ids; no AllManga Tier-1 remapping runs.
+- **AllAnime and Miruro episode numbering** — when a request carries both a
+  season-relative `episode` and `absoluteEpisode`, their APIs receive the
+  season-relative value. Absolute numbering is used only for an absolute-only
+  request. AniDB keeps its separate catalog-proven routing policy below.
 
 A catalog's own id space is numeric, so a non-numeric id is never accepted into the `anilistId` or
 `tmdbId` slot even when the active provider declares that catalog identity.

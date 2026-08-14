@@ -49,6 +49,7 @@ import {
   findLastCycleFailure,
   providerFailureCodeFromCycleFailure,
 } from "../shared/provider-cycle";
+import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
@@ -1671,7 +1672,7 @@ export const miruroProviderModule: CoreProviderModule = {
       });
     }
 
-    const episodeNum = input.episode?.absoluteEpisode ?? input.episode?.episode ?? 1;
+    const episodeNum = selectProviderEpisodeNumber(input.episode);
     const startedAt = context.now();
     const events: ProviderTraceEvent[] = [];
     const failures: ProviderFailure[] = [];
