@@ -489,11 +489,16 @@ export async function runPostPlaybackMenu(
           queueNextEntryId,
           nextEpisodeThumbUrl,
           previousEpisodeThumbUrl,
-          totalEpisodes: title.episodeCount ?? iteration.shellEpisodePicker.options.length,
+          totalEpisodes:
+            title.type === "movie" || postPlayTitleDetail?.type === "movie"
+              ? undefined
+              : (title.episodeCount ?? iteration.shellEpisodePicker.options.length),
           watchedEpisodes,
           currentSeason: currentEpisode.season,
           currentEpisode: currentEpisode.episode,
           contentKind: resolveContentKind(title, mode),
+          titleType:
+            title.type === "movie" || postPlayTitleDetail?.type === "movie" ? "movie" : title.type,
           // Carry the session's captured video metadata so the post-play `video`
           // panel keeps channel/views/length facts that were shown during playback.
           videoMeta: container.stateManager.getState().videoMeta,

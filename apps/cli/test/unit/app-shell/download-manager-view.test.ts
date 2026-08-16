@@ -116,6 +116,24 @@ describe("buildDownloadManagerRailModel", () => {
     ).toBe("E03");
   });
 
+  test("an anime film rail stays title-level even when a legacy episode slot remains", () => {
+    const model = buildDownloadManagerRailModel(
+      job({
+        id: "1",
+        titleName: "Infinity Castle",
+        mediaKind: "anime",
+        contentType: "movie",
+        season: 1,
+        episode: 1,
+      }),
+      "none",
+    );
+
+    expect(model?.subtitle).toBe("Anime");
+    expect(JSON.stringify(model)).not.toContain("E01");
+    expect(model?.facts).toContainEqual({ label: "Kind", value: "1 movie" });
+  });
+
   test("carries the required poster state through unchanged", () => {
     expect(
       buildDownloadManagerRailModel(job({ id: "1", posterUrl: "https://x/p.jpg" }), "pending")

@@ -73,7 +73,7 @@ export function buildPostPlayEpisodeLabel(
   totalEpisodesInSeason?: number,
 ): string {
   if (title.type !== "series") {
-    return "Movie";
+    return "";
   }
   const location = `S${String(currentEpisode.season).padStart(2, "0")}  ·  E${String(currentEpisode.episode).padStart(2, "0")}`;
   if (totalEpisodesInSeason && totalEpisodesInSeason > 0) {

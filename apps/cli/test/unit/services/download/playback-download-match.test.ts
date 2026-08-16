@@ -134,6 +134,22 @@ describe("formatPlaybackDownloadStripe", () => {
     ).toBe("E03  ·  queued");
   });
 
+  test("presents an anime film as Anime rather than a legacy episode code", () => {
+    const line = formatPlaybackDownloadStripe(
+      job({
+        id: "1",
+        titleId: "infinity-castle",
+        mediaKind: "anime",
+        contentType: "movie",
+        season: 1,
+        episode: 1,
+        status: "queued",
+      }),
+    );
+    expect(line).toBe("Anime  ·  queued");
+    expect(line).not.toContain("E01");
+  });
+
   test("presents a video job as Video rather than an episode code", () => {
     const line = formatPlaybackDownloadStripe(
       job({

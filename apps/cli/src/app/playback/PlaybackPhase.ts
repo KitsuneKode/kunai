@@ -160,6 +160,7 @@ import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-re
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
+import { upgradeTitleInfoStructure } from "@/domain/media/anilist-format";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
@@ -721,6 +722,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return result.startIntent;
       };
       const provider = providerRegistry.get(stateManager.getState().provider);
+      const catalogDetailPromise = isOfflineLaunch
+        ? Promise.resolve(undefined)
+        : fetchTitleDetail(title.id, title.type, undefined, {
+            externalIds: title.externalIds,
+            isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
+          }).catch(() => undefined);
       const initialAnimeEpisodes = isOfflineLaunch
         ? undefined
         : await this.getAnimeEpisodeOptions({
@@ -734,6 +741,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               config,
             }),
           });
+      const catalogDetail = await catalogDetailPromise;
+      if (catalogDetail) {
+        title = upgradeTitleInfoStructure(title, catalogDetail.type);
+        stateManager.dispatch({
+          type: "SET_TITLE_DETAIL",
+          titleId: title.id,
+          titleType: catalogDetail.type,
+          detail: catalogDetail,
+        });
+      }
       logger.info("Episode selection metadata", {
         titleId: title.id,
         mode: stateManager.getState().mode,
@@ -887,9 +904,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         // from the beginning (no menu). Previously movies started at 0 always.
         const movieHistory =
           historyRepository.getLatestForTitleIdentity({
-            id: title.id,
-            kind: stateManager.getState().mode === "youtube" ? "video" : "movie",
-            externalIds: title.externalIds,
+            id: historyTitleLookup.id,
+            kind: historyTitleLookup.kind,
+            externalIds: historyTitleLookup.externalIds,
           }) ?? null;
         const { chooseMovieStartingPoint } = await import("@/session-flow");
         const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
@@ -1229,7 +1246,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.dispatch({
                   type: "SET_TITLE_DETAIL",
                   titleId: title.id,
-                  titleType: title.type,
+                  titleType: detail.type,
                   detail,
                 });
                 return undefined;

@@ -84,6 +84,30 @@ describe("post-play action shortcuts", () => {
   });
 });
 
+describe("anime film complete", () => {
+  it("uses movie-complete, not episode-count progress, and aired/runtime meta", () => {
+    const view = buildPostPlayView({
+      title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+      episodeLabel: "",
+      titleType: "movie",
+      postPlayState: { kind: "mid-series" },
+      totalEpisodes: 2,
+      watchedEpisodes: 1,
+      titleDetail: {
+        id: "anilist:181053",
+        type: "movie",
+        title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+        releaseDate: "2025-07-18",
+        runtimeMinutes: 155,
+      },
+    });
+    expect(view.heroKind).toBe("movie-complete");
+    expect(view.progressBar).toBeUndefined();
+    expect(view.episodeMeta).toBe("2025-07-18 · 2h 35m");
+    expect(view.episodeMeta).not.toContain("S01");
+  });
+});
+
 describe("series-complete celebration", () => {
   it("includes catalog stats and the watch-time summary when provided", () => {
     const view = buildPostPlayView({

@@ -1,3 +1,4 @@
+import type { ContentType } from "@/domain/types";
 import type { MediaKind } from "@kunai/types";
 
 export interface MediaProviderHint {
@@ -8,6 +9,8 @@ export interface MediaProviderHint {
 
 export interface MediaItemIdentity {
   readonly mediaKind: MediaKind;
+  /** Structure is carried independently from the identity badge. */
+  readonly contentType?: ContentType;
   readonly sourceId?: string;
   readonly titleId: string;
   readonly title: string;

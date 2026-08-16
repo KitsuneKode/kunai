@@ -402,6 +402,7 @@ export function DownloadManagerContent({
     const { positionLabel, kindLabel } = presentMedia({
       title: job.titleName,
       mediaKind: job.mediaKind,
+      contentType: job.contentType,
       season: job.season,
       episode: job.episode,
     });

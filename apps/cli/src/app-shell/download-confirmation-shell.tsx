@@ -10,6 +10,7 @@
 // =============================================================================
 
 import type { Container } from "@/container";
+import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { TitleInfo } from "@/domain/types";
 import type {
@@ -183,7 +184,7 @@ export function DownloadConfirmationContent({
 }): React.ReactElement {
   const [draft, setDraft] = useState(initialProfile);
   const [cursor, setCursor] = useState(0);
-  const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
+  const isTitleLevel = isTitleLevelContent(mediaKind, title.type);
   // Same list/rail split the download manager uses, so the two surfaces cannot
   // drift and there is only one width reservation to reason about.
   const { cols } = useOverlayOrTerminalSize();
@@ -207,8 +208,9 @@ export function DownloadConfirmationContent({
         mediaKind,
         season: items[0]?.kind === "episode" ? items[0].episode.season : undefined,
         episode: items[0]?.kind === "episode" ? items[0].episode.episode : undefined,
+        contentType: title.type,
       }),
-    [title.name, mediaKind, items],
+    [title.name, title.type, mediaKind, items],
   );
 
   const actions = useMemo(
@@ -231,6 +233,7 @@ export function DownloadConfirmationContent({
               mediaKind,
               season: item.episode.season,
               episode: item.episode.episode,
+              contentType: title.type,
             }).positionLabel ?? [],
           ].flat()
         : [],
@@ -238,7 +241,7 @@ export function DownloadConfirmationContent({
     .join(", ");
 
   const subtitle = [
-    formatMediaItemCount({ mediaKind, count: items.length }),
+    formatMediaItemCount({ mediaKind, contentType: title.type, count: items.length }),
     positionCodes || null,
     "edits stay local until you queue",
   ]
@@ -295,7 +298,10 @@ export function DownloadConfirmationContent({
     posterUrl: title.posterUrl,
     posterState: title.posterUrl ? "ready" : "none",
     facts: [
-      { label: "Items", value: formatMediaItemCount({ mediaKind, count: items.length }) },
+      {
+        label: "Items",
+        value: formatMediaItemCount({ mediaKind, contentType: title.type, count: items.length }),
+      },
       { label: "Quality", value: draft.qualityPreference ?? "highest" },
       { label: "Audio", value: draft.audioPreference },
       { label: "Subtitles", value: draft.subtitlePreference },

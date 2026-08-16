@@ -20,6 +20,7 @@
 // season detail endpoints are used instead and labeled "tmdb".
 // =============================================================================
 
+import { stripHtml } from "@/domain/catalog/strip-html";
 import {
   ARTWORK_PREFERENCE,
   type ArtworkCandidate,
@@ -32,6 +33,7 @@ import {
   episodeThumbKey,
   mergeArtwork,
 } from "@/domain/catalog/title-detail";
+import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
@@ -241,10 +243,19 @@ function mergeDetails(
   if (tmdb) sources.push("tmdb");
   if (anilist) sources.push("anilist");
 
-  // Determine content kind for artwork preference
+  // Determine content kind for artwork preference. Anime identity wins over
+  // movie structure so theatrical films keep AniList-first posters.
+  const resolvedType = upgradeContentTypeFromAniListFormat(
+    type,
+    anilist?.format,
+    anilist?.episodeCount,
+  );
   const isAnime = anilist !== null || tmdb?.genres?.includes("Animation") === true;
-  const artworkKind: "anime" | "series" | "movie" =
-    type === "movie" ? "movie" : isAnime ? "anime" : "series";
+  const artworkKind: "anime" | "series" | "movie" = isAnime
+    ? "anime"
+    : resolvedType === "movie"
+      ? "movie"
+      : "series";
   const preference = ARTWORK_PREFERENCE[artworkKind];
 
   // Collect artwork candidates
@@ -288,7 +299,7 @@ function mergeDetails(
 
   return {
     id,
-    type,
+    type: resolvedType,
     title,
     year: tmdb?.year ?? anilist?.year ?? undefined,
     synopsis,
@@ -298,9 +309,10 @@ function mergeDetails(
     contentRating: tmdb?.contentRating ?? undefined,
     releaseDate: tmdb?.releaseDate ?? anilist?.releaseDate ?? undefined,
     status,
-    seasonCount: tmdb?.seasonCount ?? undefined,
-    episodeCount: tmdb?.episodeCount ?? anilist?.episodeCount ?? undefined,
-    seasons,
+    seasonCount: resolvedType === "movie" ? undefined : (tmdb?.seasonCount ?? undefined),
+    episodeCount:
+      resolvedType === "movie" ? undefined : (tmdb?.episodeCount ?? anilist?.episodeCount),
+    seasons: resolvedType === "movie" ? undefined : seasons,
     cast: cast.length ? cast : undefined,
     artwork: Object.keys(artwork).length ? artwork : undefined,
     externalIds: Object.keys(externalIds).length ? externalIds : undefined,
@@ -653,6 +665,7 @@ interface AniListDetailResult {
   readonly releaseDate?: string;
   readonly status?: TitleStatus;
   readonly episodeCount?: number;
+  readonly format?: string;
   readonly cast?: readonly CastMember[];
   readonly artwork: ArtworkCandidate;
   readonly externalIds?: ProviderExternalIds;
@@ -672,6 +685,7 @@ query($id: Int) {
     genres
     episodes
     duration
+    format
     status
     startDate { year month day }
     endDate { year }
@@ -734,8 +748,7 @@ async function fetchAniListDetail(
     typeof startDate.day === "number" ? String(startDate.day).padStart(2, "0") : undefined;
   const releaseDate = year && month && day ? `${year}-${month}-${day}` : undefined;
 
-  const synopsis =
-    readString(media.description).replace(/[<>]/g, "").replace(/\s+/g, " ").trim() || undefined;
+  const synopsis = stripHtml(readString(media.description)) || undefined;
 
   const genres = Array.isArray(media.genres)
     ? media.genres.filter((g): g is string => typeof g === "string")
@@ -775,6 +788,7 @@ async function fetchAniListDetail(
 
   const episodeCount = typeof media.episodes === "number" ? media.episodes : undefined;
   const runtimeMinutes = typeof media.duration === "number" ? media.duration : undefined;
+  const format = readString(media.format) || undefined;
 
   // Voice cast
   const charsNode = readRecord(media.characters);
@@ -817,6 +831,7 @@ async function fetchAniListDetail(
     releaseDate,
     status,
     episodeCount,
+    format,
     cast: cast.length ? cast : undefined,
     artwork,
     externalIds: {

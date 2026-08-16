@@ -499,6 +499,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       buildMediaPanel({
         surface: "playing",
         contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
+        titleType: state.titleType,
         title: state.title,
         titleDetail: state.titleDetail,
         videoMeta: state.videoMeta,
@@ -512,6 +513,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       }),
     [
       state.contentKind,
+      state.titleType,
       state.isSeriesPlayback,
       state.title,
       state.titleDetail,
@@ -874,6 +876,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 <PlaybackKeysCard
                   model={buildPlaybackKeysPanel({
                     contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
+                    titleType: state.titleType,
                     sessionsSeen: state.playbackKeysSessionsSeen ?? 0,
                   })}
                   width={infoWidth}

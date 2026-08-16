@@ -1,3 +1,5 @@
+import { stripHtml } from "@/domain/catalog/strip-html";
+import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { loadYoutubeTrending } from "@/services/youtube/YoutubeRecommendationService";
@@ -216,6 +218,8 @@ async function loadAnimeDiscoveryList(signal?: AbortSignal): Promise<SearchResul
         coverImage{extraLarge large}
         description(asHtml:false)
         episodes
+        format
+        duration
         averageScore
         popularity
         startDate{year}
@@ -275,6 +279,8 @@ async function loadAnimeSurpriseList(
         coverImage{extraLarge large}
         description(asHtml:false)
         episodes
+        format
+        duration
         averageScore
         popularity
         startDate{year}
@@ -321,6 +327,8 @@ type AniListDiscoveryMedia = {
   } | null;
   readonly description?: string | null;
   readonly episodes?: number | null;
+  readonly format?: string | null;
+  readonly duration?: number | null;
   readonly averageScore?: number | null;
   readonly popularity?: number | null;
   readonly startDate?: { readonly year?: number | null } | null;
@@ -331,10 +339,15 @@ function anilistMediaToSearchResult(media: AniListDiscoveryMedia): SearchResult 
   const title = media.title?.english || media.title?.romaji || media.title?.native || "Unknown";
   const aliases = buildAniListAliases(title, media);
   const posterPath = media.coverImage?.extraLarge ?? media.coverImage?.large ?? null;
+  const structure = anilistCatalogStructure({
+    format: media.format,
+    episodes: media.episodes,
+    durationMinutes: media.duration,
+  });
 
   return {
     id: String(media.id),
-    type: "series",
+    type: structure.type,
     title,
     titleAliases: aliases,
     year: media.startDate?.year ? String(media.startDate.year) : "",
@@ -344,7 +357,10 @@ function anilistMediaToSearchResult(media: AniListDiscoveryMedia): SearchResult 
     metadataSource: "AniList trending",
     rating: typeof media.averageScore === "number" ? media.averageScore / 10 : null,
     popularity: media.popularity ?? null,
-    episodeCount: media.episodes ?? undefined,
+    episodeCount: structure.episodeCount,
+    durationSeconds: structure.durationSeconds,
+    isAnime: true,
+    externalIds: { anilistId: String(media.id) },
   };
 }
 
@@ -366,10 +382,6 @@ function readRecord(value: unknown): Record<string, unknown> {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-function stripHtml(value: string): string {
-  return value.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function pickRandom<T>(values: readonly T[], random: () => number): T | undefined {

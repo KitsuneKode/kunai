@@ -192,6 +192,35 @@ test("a legacy synthetic movie job never renders S01E01 in the download list", (
   }
 });
 
+test("an anime film job never renders E01 in the download list", () => {
+  const fixture = createContainerFixture();
+  fixture.setActiveJobs([
+    queuedJob({
+      id: "anime-film-1",
+      titleName: "Infinity Castle",
+      mediaKind: "anime",
+      contentType: "movie",
+      season: 1,
+      episode: 1,
+    }),
+  ]);
+
+  const handle = render(
+    <DownloadManagerContent container={fixture.container} onClose={() => undefined} />,
+    { columns: 120, rows: 35 },
+  );
+
+  try {
+    fixture.emit({ type: "enqueued" });
+    const frame = stripAnsi(handle.lastFrame() ?? "");
+    expect(frame).toContain("Infinity Castle");
+    expect(frame).toContain("Anime");
+    expect(frame).not.toContain("E01");
+  } finally {
+    handle.unmount();
+  }
+});
+
 /**
  * Raw cursor movement must stay immediate. Only the settled selection may drive
  * poster work, otherwise holding the down arrow spawns a renderer subprocess

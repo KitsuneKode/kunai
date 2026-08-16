@@ -225,7 +225,10 @@ export function selectLocalContinueCandidate(
     entries.find((entry) => {
       if (entry.status !== "ready") return false;
       if (entry.job.titleId !== selection.titleId) return false;
-      if (historyContentType(selection.entry) === "movie") return entry.job.mediaKind === "movie";
+      if (historyContentType(selection.entry) === "movie") {
+        // Films persist identity as anime|movie|video; structure is title-level.
+        return entry.job.mediaKind !== "series";
+      }
       const target = selection.targetEpisode ?? {
         season: selection.entry.season ?? 1,
         episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,

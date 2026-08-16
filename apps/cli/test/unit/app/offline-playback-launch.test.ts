@@ -61,4 +61,29 @@ describe("requestUnifiedOfflinePlayback", () => {
       launchSource: "offline-library",
     });
   });
+
+  test("replays an anime film with movie structure and no synthetic episode", () => {
+    const launch = buildOfflinePlaybackLaunch(
+      readyJob({
+        titleId: "anilist:181053",
+        titleName: "Infinity Castle",
+        mediaKind: "anime",
+        contentType: "movie",
+        mode: "anime",
+        season: undefined,
+        episode: undefined,
+      }),
+    );
+
+    expect(launch).toEqual({
+      title: {
+        id: "anilist:181053",
+        type: "movie",
+        name: "Infinity Castle",
+        isAnime: true,
+        launchSource: "offline-library",
+      },
+      episode: undefined,
+    });
+  });
 });

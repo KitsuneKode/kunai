@@ -1,6 +1,7 @@
 import { openDownloadConfirmationShell } from "@/app-shell/download-confirmation-shell";
 import { pickEpisodesToDownload } from "@/app/bootstrap/download-episode-checklist";
 import type { Phase, PhaseContext, PhaseResult } from "@/app/session/Phase";
+import { isTitleLevelContent } from "@/domain/media/content-kind";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import {
   buildDefaultDownloadProfile,
@@ -74,7 +75,7 @@ export class DownloadOnlyPhase implements Phase<DownloadOnlyInput, "queued" | "b
     // YouTube video has nothing to pick, so it never reaches the episode
     // checklist or its first-episode fallback.
     const mediaKind = resolveDownloadOnlyMediaKind(state.mode, input.title);
-    const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
+    const isTitleLevel = isTitleLevelContent(mediaKind, input.title.type);
     let items: readonly DownloadIntentItem[];
 
     if (isTitleLevel) {

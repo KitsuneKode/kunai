@@ -545,6 +545,13 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN external_ids_json TEXT;
     `,
   },
+  {
+    id: "028_data_download_job_content_type",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN content_type TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

@@ -20,6 +20,7 @@ import type { PostPlayState } from "@/domain/playback/post-play-state";
 
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
 import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
+import { formatRuntimeMinutes } from "./media-panel-model";
 import { resolvePostPlayContinueResult } from "./post-play-footer-actions";
 import { RETURN_LOOP_POST_PLAY_CAUGHT_UP_CALENDAR } from "./return-loop-copy";
 import type { PlaybackRecommendationRailItem } from "./types";
@@ -149,6 +150,8 @@ export type BuildPostPlayViewProps = {
   readonly stopAfterCurrent?: boolean;
   /** Pre-formatted personal watch-time line; omitted when disabled or below threshold. */
   readonly watchTimeSummary?: string;
+  /** Catalog structure — films use movie-complete, never episode-count progress. */
+  readonly titleType?: import("@/domain/types").ContentType;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -310,17 +313,16 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   } = props;
 
   const bindings = props.bindings ?? KEYBINDINGS;
-  const isMovie = episodeLabel === "Movie";
+  const isMovie = props.titleType === "movie" || titleDetail?.type === "movie";
   const discovery = buildDiscovery(recommendations);
 
-  // Season progress bar — show when we have both watched + total episode counts
+  // Season progress bar — films never use watched/total episode counts.
   const progressBar =
-    totalEpisodes && watchedEpisodes !== undefined && totalEpisodes > 0
+    !isMovie && totalEpisodes && watchedEpisodes !== undefined && totalEpisodes > 0
       ? buildProgressBar(watchedEpisodes, totalEpisodes, "")
       : undefined;
 
-  // Episode meta line from catalog (ratings, audio, etc.)
-  const episodeMeta = buildEpisodeMeta(episodeLabel, titleDetail);
+  const episodeMeta = buildEpisodeMeta(episodeLabel, titleDetail, isMovie);
 
   // ── did-not-start ────────────────────────────────────────────────────────
   if (postPlayState.kind === "did-not-start") {
@@ -333,7 +335,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         {
           id: "try-again",
           label: "Try again",
-          detail: "retry the same episode",
+          detail: isMovie ? "retry playback" : "retry the same episode",
           shortcut: postPlayShortcut(bindings, "post-replay", "r"),
           primary: true,
         },
@@ -373,7 +375,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       nextUpHero: buildNextUpHero(props, "resume"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
-      progressBar,
+      progressBar: isMovie ? undefined : progressBar,
       actions: [
         {
           id: "resume",
@@ -382,13 +384,17 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
           shortcut: "↵",
           primary: true,
         },
-        {
-          id: "episodes",
-          label: "Episodes",
-          detail: "open season list",
-          shortcut: postPlayShortcut(bindings, "post-episode", "e"),
-          primary: false,
-        },
+        ...(isMovie
+          ? []
+          : [
+              {
+                id: "episodes",
+                label: "Episodes",
+                detail: "open season list",
+                shortcut: postPlayShortcut(bindings, "post-episode", "e"),
+                primary: false,
+              },
+            ]),
         {
           id: "replay",
           label: "Replay",
@@ -399,8 +405,15 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
       ],
       discoveryHeading: "you might also like",
       discovery,
-      upNext: buildUpNextCard(nextEpisodeLabel, titleDetail, autoplayPaused, queueNextLabel),
-      railFacts: buildSeriesRailFacts(props, progressBar),
+      upNext: buildUpNextCard(
+        isMovie ? undefined : nextEpisodeLabel,
+        titleDetail,
+        autoplayPaused,
+        queueNextLabel,
+      ),
+      railFacts: isMovie
+        ? buildMovieRailFacts(titleDetail)
+        : buildSeriesRailFacts(props, progressBar),
       episodeMeta,
     };
   }
@@ -664,11 +677,20 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
 function buildEpisodeMeta(
   episodeLabel: string,
   detail: TitleDetail | undefined,
+  isMovie = false,
 ): string | undefined {
-  const parts: string[] = [episodeLabel];
+  if (isMovie) {
+    const runtime = formatRuntimeMinutes(detail?.runtimeMinutes);
+    const parts = [detail?.releaseDate, runtime, detail?.contentRating].filter(
+      (part): part is string => Boolean(part),
+    );
+    return parts.length > 0 ? parts.join(" · ") : undefined;
+  }
+  const parts: string[] = [];
+  if (episodeLabel.trim()) parts.push(episodeLabel);
   if (detail?.contentRating) parts.push(detail.contentRating);
   if (detail?.releaseDate) parts.push(`aired ${detail.releaseDate}`);
-  return parts.length > 1 ? parts.join(" · ") : undefined;
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 function buildBasicRailFacts(

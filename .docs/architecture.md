@@ -104,6 +104,8 @@ For new providers or major provider hardening, do not jump straight from this do
 | Search-service registry           | Keeps room for multiple search backends without hardwiring everything into one provider |
 | `isAnimeProvider` flag            | Anime routing should be explicit and cheap to evaluate                                  |
 
+Identity (`ContentKind`: anime / series / movie / video) is the badge, history stamp, and language profile. Structure (`TitleInfo.type`: movie / series) is whether season/episode chrome is product-visible. An AniList `format: MOVIE` title is kind `anime` and type `movie` — `@ anime`, runtime, no S/E. Host episode lists do not override catalog format.
+
 ## Critical Invariants
 
 ### Provider and anime invariants

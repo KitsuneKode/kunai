@@ -31,6 +31,8 @@ export type OfflineLibraryShelfGroup = {
   readonly titleName: string;
   /** Authoritative content kind, so the shell never re-derives it from copy. */
   readonly mediaKind: OfflineLibraryEntry["job"]["mediaKind"];
+  /** Catalog structure controls title-level versus episodic copy. */
+  readonly contentType?: OfflineLibraryEntry["job"]["contentType"];
   readonly label: string;
   readonly detail: string;
   readonly nextPlayableEpisodeLabel?: string;
@@ -61,11 +63,12 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
           presentation: presentMedia({
             title: entry.job.titleName,
             mediaKind: entry.job.mediaKind,
+            contentType: group.contentType ?? entry.job.contentType,
             season: entry.job.season,
             episode: entry.job.episode,
           }),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
-          detail: formatOfflineShelfDetail(entry.job, entry.status),
+          detail: formatOfflineShelfDetail(entry.job, entry.status, group.contentType),
           previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
           playable: entry.status === "ready",
         }));
@@ -79,6 +82,7 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
           titleId: group.titleId,
           titleName: group.titleName,
           mediaKind: group.mediaKind,
+          contentType: group.contentType,
           label: group.titleName,
           detail: formatOfflineLibraryGroupDetail(group),
           nextPlayableEpisodeLabel,
@@ -87,6 +91,7 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
             issueCount: group.issueCount,
             entryCount: group.entries.length,
             mediaKind: group.mediaKind,
+            contentType: group.contentType,
           }),
           artifactSummary: formatArtifactSummary(group.entries),
           readyCount: group.readyCount,
@@ -115,10 +120,15 @@ function formatActionSummary(input: {
   readonly issueCount: number;
   readonly entryCount: number;
   readonly mediaKind: OfflineLibraryEntry["job"]["mediaKind"];
+  readonly contentType?: OfflineLibraryEntry["job"]["contentType"];
 }): string {
   const parts = [
     input.nextPlayableEpisodeLabel ? `Play ${input.nextPlayableEpisodeLabel}` : "No playable files",
-    `inspect ${formatMediaItemCount({ mediaKind: input.mediaKind, count: input.entryCount })}`,
+    `inspect ${formatMediaItemCount({
+      mediaKind: input.mediaKind,
+      contentType: input.contentType,
+      count: input.entryCount,
+    })}`,
     input.issueCount > 0
       ? `repair ${input.issueCount} ${input.issueCount === 1 ? "issue" : "issues"}`
       : null,

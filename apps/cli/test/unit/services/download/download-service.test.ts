@@ -104,6 +104,34 @@ describe("DownloadService", () => {
       expect(record?.episode).toBeUndefined();
     });
 
+    test("an anime film preserves anime identity with movie structure", async () => {
+      const service = buildService({
+        repo,
+        downloadsEnabled: true,
+        ytDlpAvailable: true,
+        downloadPath: tempDir,
+      });
+
+      const job = await service.enqueue({
+        title: {
+          id: "anilist:181053",
+          type: "movie",
+          name: "Infinity Castle",
+          isAnime: true,
+          externalIds: { anilistId: "181053" },
+        },
+        providerId: "allanime",
+        mode: "anime",
+      });
+
+      const record = repo.get(job.id);
+      expect(record?.mediaKind).toBe("anime");
+      expect(record?.contentType).toBe("movie");
+      expect(record?.season).toBeUndefined();
+      expect(record?.episode).toBeUndefined();
+      expect(record?.outputPath).not.toContain("S01E01");
+    });
+
     test("enqueue persists the title's external ids and registers them as aliases", async () => {
       // Both halves of the identity contract. The row keeps the ids so nothing
       // has to guess them back out of the title id later, and the alias index

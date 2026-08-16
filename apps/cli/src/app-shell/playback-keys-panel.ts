@@ -46,13 +46,14 @@ function rowFor(binding: KeyBinding): { keys: string; label: string } {
 
 export function buildPlaybackKeysPanel(input: {
   readonly contentKind: ContentKind | undefined;
+  readonly titleType?: import("@/domain/types").ContentType;
   /** How many playbacks have already shown this card. */
   readonly sessionsSeen: number;
   /** User turned it off, or the terminal has no room for it. */
   readonly suppressed?: boolean;
   readonly bindings?: readonly KeyBinding[];
 }): PlaybackKeysPanelModel {
-  const episodic = contentKindHasEpisodes(input.contentKind);
+  const episodic = contentKindHasEpisodes(input.contentKind, input.titleType);
   const available = input.bindings ?? bindingsForScope("player");
   const byId = new Map(available.map((binding) => [binding.id, binding]));
 
