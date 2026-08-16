@@ -104,8 +104,11 @@ export function LibraryTitleDetail({
       {
         kind: "action",
         id: "download-more",
-        label: "Download more episodes",
-        detail: "Open the download episode picker for this title",
+        label: group.contentType === "movie" ? "Download this movie" : "Download more episodes",
+        detail:
+          group.contentType === "movie"
+            ? "Open title-level download confirmation for this movie"
+            : "Open the download episode picker for this title",
         flatIndex: -1,
       },
       {
@@ -123,7 +126,7 @@ export function LibraryTitleDetail({
         flatIndex: -1,
       },
     ],
-    [],
+    [group.contentType],
   );
 
   const episodeRows: DetailRow[] = useMemo(
@@ -220,14 +223,16 @@ export function LibraryTitleDetail({
             return;
           }
 
+          const actionType = selectedRow.id as
+            | "search-online"
+            | "download-more"
+            | "check-integrity"
+            | "repair-missing"
+            | "toggle-continuation"
+            | "delete-group";
           const result = await routeOfflineLibraryGroupAction(container, entries, {
-            type: selectedRow.id as
-              | "search-online"
-              | "download-more"
-              | "check-integrity"
-              | "repair-missing"
-              | "toggle-continuation"
-              | "delete-group",
+            type: actionType,
+            ...(actionType === "download-more" ? { contentType: group.contentType } : {}),
           });
           if (result === "exit") {
             onBack();

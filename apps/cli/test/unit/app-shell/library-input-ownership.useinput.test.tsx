@@ -162,6 +162,7 @@ describe("library input ownership", () => {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("\r");
       await waitForFrame(handle, "Continue this title online");
+      expect(stripAnsi(handle.lastFrame())).toContain("Download more episodes");
       await pressEscape(handle);
       expect(handle.lastFrame()).toContain("Dune");
       expect(handle.lastFrame()).not.toContain("Continue this title online");
@@ -285,7 +286,7 @@ describe("library input ownership", () => {
         })}
         onClose={() => {}}
       />,
-      { columns: 140, rows: 40 },
+      { columns: 200, rows: 40 },
     );
     try {
       await waitForFrame(handle, "Infinity Castle");
@@ -296,6 +297,10 @@ describe("library input ownership", () => {
       expect(frame).not.toContain("S01");
       expect(frame).toContain("2 of 2 movies");
       expect(frame).not.toContain("2 of 2 episodes");
+      expect(frame).toContain("Download this movie");
+      expect(frame).toContain("Open title-level down");
+      expect(frame).not.toContain("Download more episodes");
+      expect(frame).not.toContain("Open the download epi");
     } finally {
       handle.unmount();
     }

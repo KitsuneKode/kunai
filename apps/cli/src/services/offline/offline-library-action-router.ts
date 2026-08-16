@@ -23,6 +23,8 @@ export type OfflineLibraryGroupActionType =
 
 export type OfflineLibraryGroupAction = {
   readonly type: OfflineLibraryGroupActionType;
+  /** Structure of the selected shelf partition, including inherited legacy rows. */
+  readonly contentType?: OfflineLibraryEntry["job"]["contentType"];
 };
 
 export type OfflineLibraryActionResult = "continue" | "exit" | "refresh";
@@ -149,7 +151,7 @@ export async function routeOfflineLibraryGroupAction(
   }
 
   if (action.type === "download-more") {
-    await queueMoreOfflineTitleEpisodes(container, first, actionContext);
+    await queueMoreOfflineTitleEpisodes(container, first, action.contentType, actionContext);
     return "continue";
   }
 

@@ -32,6 +32,7 @@ import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
+import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
@@ -190,6 +191,7 @@ export async function openCompletedDownloadsPicker(
     await openOfflineLibraryGroupPicker(container, entries, actionContext, {
       actionSummary: group.actionSummary,
       artifactSummary: group.artifactSummary,
+      contentType: group.contentType,
     });
   }
 }
@@ -198,7 +200,11 @@ export async function openOfflineLibraryGroupPicker(
   container: Container,
   entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   actionContext?: ListShellActionContext,
-  groupSummary?: { readonly actionSummary: string; readonly artifactSummary: string },
+  groupSummary?: {
+    readonly actionSummary: string;
+    readonly artifactSummary: string;
+    readonly contentType?: DownloadJobRecord["contentType"];
+  },
 ): Promise<void> {
   while (true) {
     const first = entries[0]?.job;
@@ -240,6 +246,7 @@ export async function openOfflineLibraryGroupPicker(
         container.config.protectedDownloadJobIds,
         offlinePolicy?.enrolled === true,
         parseOfflineTitleCleanupPreference(offlinePolicy?.cleanupJson),
+        groupSummary?.contentType,
       ),
       { value: { type: "back" as const }, label: "Back to titles" },
     ];
@@ -310,7 +317,12 @@ export async function openOfflineLibraryGroupPicker(
       continue;
     }
     if (picked.type === "download-more") {
-      await queueMoreOfflineTitleEpisodes(container, first, actionContext);
+      await queueMoreOfflineTitleEpisodes(
+        container,
+        first,
+        groupSummary?.contentType,
+        actionContext,
+      );
       continue;
     }
     if (picked.type === "toggle-continuation") {
@@ -604,6 +616,7 @@ function buildOfflineGroupActions(
   protectedJobIds: readonly string[] = [],
   continuationEnrolled = false,
   cleanupPreference?: OfflineTitleCleanupPreference,
+  contentType?: DownloadJobRecord["contentType"],
 ): ShellOption<DownloadJobAction>[] {
   const missingCount = entries.filter((entry) => entry.status !== "ready").length;
   const protectedSet = new Set(protectedJobIds);
@@ -617,8 +630,11 @@ function buildOfflineGroupActions(
     },
     {
       value: { type: "download-more" },
-      label: "Download more episodes",
-      detail: "Open the download episode picker for this title",
+      label: contentType === "movie" ? "Download this movie" : "Download more episodes",
+      detail:
+        contentType === "movie"
+          ? "Open title-level download confirmation for this movie"
+          : "Open the download episode picker for this title",
     },
     {
       value: { type: "toggle-continuation" },
@@ -666,6 +682,7 @@ function buildOfflineGroupActions(
 export async function queueMoreOfflineTitleEpisodes(
   container: Container,
   first: DownloadJobRecord,
+  contentType: DownloadJobRecord["contentType"],
   actionContext?: ListShellActionContext,
 ): Promise<void> {
   const provider = container.providerRegistry.get(first.providerId);
@@ -681,7 +698,7 @@ export async function queueMoreOfflineTitleEpisodes(
 
   const title: TitleInfo = {
     id: first.titleId,
-    type: first.mediaKind === "movie" ? "movie" : "series",
+    type: isTitleLevelContent(first.mediaKind, contentType) ? "movie" : "series",
     name: first.titleName,
     posterUrl: first.posterUrl,
   };
