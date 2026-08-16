@@ -1,51 +1,43 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { persistSettingsDraft } from "@/app-shell/settings/persist";
 import { SettingsShell } from "@/app-shell/settings/SettingsShell";
 import type { Container } from "@/container";
+import { FileStorage } from "@/infra/storage/FileStorage";
 import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-service";
-import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import type { ConfigService } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
-import type { ConfigStore } from "@/services/persistence/ConfigStore";
+import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
 import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
 
-class MemoryConfigStore implements ConfigStore {
-  constructor(private value: Partial<KitsuneConfig> = {}) {}
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-  async load(): Promise<Partial<KitsuneConfig>> {
-    return this.value;
-  }
-
-  async save(config: KitsuneConfig): Promise<void> {
-    this.value = structuredClone(config);
-  }
-
-  async reset(): Promise<void> {
-    this.value = {};
-  }
+async function createTemporaryProfile(): Promise<{
+  readonly directory: string;
+  readonly loadConfig: () => Promise<ConfigServiceImpl>;
+}> {
+  const directory = await mkdtemp(join(tmpdir(), "kunai-settings-analytics-"));
+  const configPath = join(directory, "config.json");
+  return {
+    directory,
+    loadConfig: () =>
+      ConfigServiceImpl.load(new ConfigStoreImpl(new FileStorage({ config: configPath }))),
+  };
 }
 
-async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (predicate()) return;
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-  }
-  throw new Error(message);
-}
-
-test("Settings enable keeps the service-derived install id through the delayed draft save", async () => {
-  const store = new MemoryConfigStore();
-  const config = await ConfigServiceImpl.load(store);
+function createSettingsContainer(config: ConfigService): Container {
   const usageAnalytics = new UsageAnalyticsService({
     config,
     currentVersion: "0.3.0",
     endpoint: "",
     env: {},
   });
-  const container = {
+  return {
     config,
     usageAnalytics,
     providerRegistry: {
@@ -63,7 +55,28 @@ test("Settings enable keeps the service-derived install id through the delayed d
     connectivity: { notifyIntentChanged: () => undefined },
     featureFlags: {},
   } as unknown as Container;
+}
 
+async function waitUntil(predicate: () => boolean, message: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
+  throw new Error(message);
+}
+
+async function waitForDelayedSettingsSave(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  });
+}
+
+test("Settings enable and an unrelated save preserve one install id on disk", async () => {
+  const profile = await createTemporaryProfile();
+  const config = await profile.loadConfig();
+  const container = createSettingsContainer(config);
   const handle = render(
     <SettingsShell
       container={container}
@@ -87,15 +100,58 @@ test("Settings enable keeps the service-derived install id through the delayed d
       "Settings never persisted an enabled preference with an install id",
     );
     const derivedId = config.getRaw().installId;
+    expect(derivedId).toMatch(UUID_PATTERN);
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-    });
+    await waitForDelayedSettingsSave();
 
-    expect(config.getRaw().analytics).toBe("enabled");
-    expect(config.getRaw().installId).toBe(derivedId);
-    expect((await store.load()).installId).toBe(derivedId);
+    const afterEnable = await profile.loadConfig();
+    expect(afterEnable.getRaw().analytics).toBe("enabled");
+    expect(afterEnable.getRaw().installId).toBe(derivedId);
+
+    // Change Footer hints through the same mounted SettingsShell. Its draft was
+    // created before analytics minted the id, so this also covers a stale,
+    // unrelated whole-draft save after explicit consent.
+    handle.stdin.enqueue("\x1b[A");
+    handle.stdin.enqueue("\r");
+    handle.stdin.enqueue("\x1b[B");
+    handle.stdin.enqueue("\r");
+
+    await waitUntil(
+      () => config.getRaw().footerHints === "minimal",
+      "Settings never persisted the unrelated footer preference",
+    );
+    await waitForDelayedSettingsSave();
+
+    const afterUnrelatedSave = await profile.loadConfig();
+    expect(afterUnrelatedSave.getRaw().footerHints).toBe("minimal");
+    expect(afterUnrelatedSave.getRaw().analytics).toBe("enabled");
+    expect(afterUnrelatedSave.getRaw().installId).toBe(derivedId);
   } finally {
     handle.unmount();
+    await config.flushPending();
+    await rm(profile.directory, { recursive: true, force: true });
   }
 });
+
+for (const analytics of ["unset", "disabled"] as const) {
+  test(`a ${analytics} Settings draft cannot preserve an injected install id on disk`, async () => {
+    const profile = await createTemporaryProfile();
+    const config = await profile.loadConfig();
+    const container = createSettingsContainer(config);
+
+    try {
+      await persistSettingsDraft(container, {
+        ...config.getRaw(),
+        analytics,
+        installId: "injected-install-id",
+      });
+
+      const reloaded = await profile.loadConfig();
+      expect(reloaded.getRaw().analytics).toBe(analytics);
+      expect(reloaded.getRaw().installId).toBe("");
+    } finally {
+      await config.flushPending();
+      await rm(profile.directory, { recursive: true, force: true });
+    }
+  });
+}
