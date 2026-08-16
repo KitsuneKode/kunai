@@ -847,8 +847,8 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   providers: (c) => handleProvidersHub(c),
   provider: (c) => handleProvidersHub(c),
   presence: (c) => handleSettings(c),
-  telemetry: (c) => handleTelemetry(c),
-  "telemetry-show": (c) => handleTelemetryShow(c),
+  analytics: (c) => handleAnalytics(c),
+  "analytics-show": (c) => handleAnalyticsShow(c),
   setup: async (container) => {
     await openSetupWizardFromShell(container, { force: true, closeOverlays: true });
     return "handled";
@@ -1359,37 +1359,39 @@ async function handleUpdate(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-async function handleTelemetryShow(container: Container): Promise<"handled"> {
-  const payload = await container.telemetryService.previewPayload();
+async function handleAnalyticsShow(container: Container): Promise<"handled"> {
+  // Synchronous and side-effect free: rendering a preview must never be what
+  // creates an install id.
+  const payload = container.usageAnalytics.describePayload();
   const json = JSON.stringify(payload, null, 2);
   await chooseFromListShell({
-    title: "Telemetry payload",
+    title: "Analytics payload",
     subtitle:
-      "Exact JSON that would be sent when enabled. Never includes titles, queries, providers, URLs, or paths.",
+      "Exact JSON that would be sent. Never includes titles, queries, providers, URLs, or paths.",
     options: [
       {
         value: "ok" as const,
         label: json,
-        detail: "Press Enter to close · change consent with /telemetry",
+        detail: "Press Enter to close · change consent with /analytics",
       },
     ],
   });
   return "handled";
 }
 
-async function handleTelemetry(container: Container): Promise<"handled"> {
-  const status = container.telemetryService.getStatus();
-  const payload = await container.telemetryService.previewPayload();
+async function handleAnalytics(container: Container): Promise<"handled"> {
+  const status = container.usageAnalytics.getStatus();
+  const payload = container.usageAnalytics.describePayload();
   const subtitle = [
     `Status: ${status}`,
-    "Sends at most once per day when enabled.",
+    "Off by default · explicit opt-in · at most one ping per day.",
     "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
-    "DO_NOT_TRACK=1 and CI=true hard-block sends even if previously enabled.",
-    `Change anytime with /telemetry · preview with /telemetry show`,
+    "Turning it off also deletes the install id from disk.",
+    "DO_NOT_TRACK=1 and CI=true block sends regardless of this setting.",
   ].join("  ·  ");
 
   const choice = await chooseFromListShell({
-    title: "Telemetry",
+    title: "Analytics",
     subtitle,
     options: [
       {
@@ -1399,41 +1401,44 @@ async function handleTelemetry(container: Container): Promise<"handled"> {
       },
       {
         value: "enable" as const,
-        label: status === "enabled" ? "Keep enabled" : "Enable anonymous usage ping",
-        detail: "Optional · one ping / 24h · installId + version + os + arch + ts only",
+        label: status === "enabled" ? "Analytics enabled" : "Turn on anonymous usage ping",
+        detail: "One ping / 24h · installId + version + os + arch + ts only",
       },
       {
         value: "disable" as const,
-        label: status === "disabled" ? "Keep disabled" : "Disable telemetry",
-        detail: "No network calls from the usage ping",
+        label: status === "disabled" ? "Keep it off" : "Turn it off",
+        detail: "No network calls · install id deleted from disk",
       },
     ],
   });
 
   if (choice === "show") {
-    return handleTelemetryShow(container);
+    return handleAnalyticsShow(container);
   }
   if (choice === "enable") {
-    const { applied } = await container.telemetryService.setStatus("enabled");
+    const { applied } = await container.usageAnalytics.setConsent("enabled");
     if (applied === "disabled") {
       container.stateManager.dispatch({
         type: "SET_PLAYBACK_FEEDBACK",
-        note: "Telemetry stays disabled (DO_NOT_TRACK or CI is set).",
+        note: "Analytics stays off (DO_NOT_TRACK or CI is set).",
       });
       return "handled";
     }
-    container.telemetryService.pingInBackground();
+    // Deliberately no ping here. This menu is reachable during the very run
+    // that disclosed, so sending would break "the first run never sends" — and
+    // affirming a setting that is already on is not a reason to emit traffic.
+    // The next launch pings on the normal 24h cadence.
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Telemetry enabled. Change anytime with /telemetry.",
+      note: "Analytics on. Turn it off anytime with /analytics.",
     });
     return "handled";
   }
   if (choice === "disable") {
-    await container.telemetryService.setStatus("disabled");
+    await container.usageAnalytics.setConsent("disabled");
     container.stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",
-      note: "Telemetry disabled.",
+      note: "Analytics off. Install id deleted.",
     });
     return "handled";
   }

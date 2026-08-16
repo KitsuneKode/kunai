@@ -43,5 +43,16 @@ export function generalSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
           ? { ...config, footerHints: "minimal" }
           : { ...config, footerHints: "detailed" },
     },
+    {
+      kind: "boolean",
+      id: "usageAnalytics",
+      label: "Usage analytics",
+      detail: "Optional anonymous install, version, OS, architecture, and timestamp ping",
+      read: (config) => config.analytics === "enabled",
+      write: (config, value) =>
+        value
+          ? { ...config, analytics: "enabled" }
+          : { ...config, analytics: "disabled", installId: "" },
+    },
   ];
 }

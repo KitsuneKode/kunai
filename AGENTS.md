@@ -47,9 +47,13 @@ judgment.
   implementation; `apps/relay-server` stays a thin adapter.
 - **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
   is empty by default and user-owned.
-- **Telemetry is opt-in and payload-bounded.** See
-  [.docs/telemetry-privacy-contract.md](.docs/telemetry-privacy-contract.md)
-  before touching `services/telemetry` or `apps/telemetry-ingest`.
+- **Analytics is explicit opt-in and endpoint-disabled by default.** A fresh
+  install is `unset`; only an explicit enable creates `installId` or permits a
+  send. No TTY, CI, and DNT send nothing. The payload is bounded to five keys.
+  See
+  [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md)
+  before touching `services/analytics`, `domain/analytics`, or
+  `apps/analytics-ingest`.
 
 ## Commands
 

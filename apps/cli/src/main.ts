@@ -741,7 +741,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // column layout renders for this run without touching the user's config file.
   // They go through applySessionOverrides, NOT update() — update() writes into the
   // persisted object, and save() persists that whole object, so the unconditional
-  // background saves from UpdateService/TelemetryService below would otherwise
+  // background saves from UpdateService/UsageAnalyticsService below would otherwise
   // make a one-run flag permanent.
   // `--zen` implies minimal (cli-args sets args.minimal), so a zen launch collapses
   // the companion pane and dims chrome too — matching what each flag's name claims.
@@ -872,35 +872,24 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         // checkForUpdate records its own failures; keep startup fire-and-forget.
       }
     })();
-  if (!config.offlineMode)
-    void (async () => {
-      try {
-        const raw = container.config.getRaw();
-        if (raw.telemetry === "unset") {
-          const { resolveTelemetryConsent } = await import("./services/telemetry/consent");
-          const decision = resolveTelemetryConsent({
-            env: { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI },
-            isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-            choice: "timeout",
-          });
-          // Interactive `unset` stays unset (zero network) until setup or `/telemetry`.
-          // CI / DO_NOT_TRACK / non-TTY auto-decline to disabled.
-          if (decision === "disabled" && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-            await container.telemetryService.setStatus("disabled");
-          } else if (decision === "disabled") {
-            // DNT or CI with a TTY still auto-decline.
-            const dntOrCi =
-              Boolean(process.env.DO_NOT_TRACK?.trim()) || Boolean(process.env.CI?.trim());
-            if (dntOrCi) {
-              await container.telemetryService.setStatus("disabled");
-            }
-          }
-        }
-        container.telemetryService.pingInBackground();
-      } catch {
-        // Telemetry must never affect startup.
+  if (!config.offlineMode) {
+    try {
+      // Awaited, not fire-and-forget: the shell reads
+      // `analyticsDisclosurePending` during render with no subscription, so the
+      // decision has to be settled before the first paint rather than racing
+      // it. `onSessionStart` awaits no network — the ping is backgrounded.
+      const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+      const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
+      // The setup wizard carries its own consent slide, so raising the banner
+      // here too would disclose twice. The banner only records that the
+      // recommendation was shown; it never answers the setup choice.
+      if (outcome.kind === "needs-disclosure" && !onboardingWillRun) {
+        container.analyticsDisclosurePending = true;
       }
-    })();
+    } catch {
+      // Analytics must never affect startup.
+    }
+  }
   if (capabilitySnapshot.issues.length > 0) {
     container.diagnosticsService.record({
       category: "session",

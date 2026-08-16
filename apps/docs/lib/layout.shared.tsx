@@ -58,7 +58,7 @@ export function baseOptions(): BaseLayoutProps {
         active: "url",
       },
       {
-        text: "Telemetry",
+        text: "Analytics",
         url: "/telemetry",
         icon: <IconRadar2 className="size-4" stroke={1.5} />,
         active: "url",

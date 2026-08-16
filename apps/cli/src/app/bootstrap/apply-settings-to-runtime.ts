@@ -6,7 +6,7 @@ import { providerForLane } from "./lane-settings-sync";
 
 export async function applySettingsToRuntime({
   container,
-  next,
+  next: requested,
   previous,
 }: {
   readonly container: Container;
@@ -15,6 +15,14 @@ export async function applySettingsToRuntime({
 }): Promise<void> {
   const { stateManager, config } = container;
   const before = previous ?? config.getRaw();
+  // Settings offers the visible control, but the analytics service remains the
+  // sole owner of what an enable/disable choice writes. In particular, enable
+  // mints the id atomically with the preference and disable clears it.
+  const analyticsPatch =
+    requested.analytics === "unset"
+      ? { analytics: "unset" as const, installId: "" }
+      : container.usageAnalytics.consentPatch(requested.analytics);
+  const next = { ...requested, ...analyticsPatch };
 
   await config.update(next);
   await config.save();

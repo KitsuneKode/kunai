@@ -21,6 +21,32 @@ class MemoryConfigStore implements ConfigStore {
 }
 
 describe("ConfigServiceImpl", () => {
+  test("migrates a pre-opt-in analytics preference to unset and clears its legacy id", async () => {
+    const store = new MemoryConfigStore({ analytics: "enabled", installId: "legacy-install-id" });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.analytics).toBe("unset");
+    expect(service.installId).toBe("");
+    expect(service.analyticsNoticeShown).toBe(false);
+    expect((await store.load()).installId).toBe("");
+  });
+
+  test("repairs and persists an orphan install id for every non-enabled preference", async () => {
+    for (const analytics of ["disabled", "unset"] as const) {
+      const store = new MemoryConfigStore({
+        analytics,
+        analyticsNoticeShown: false,
+        installId: `${analytics}-orphan-id`,
+      });
+
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.analytics).toBe(analytics);
+      expect(service.installId).toBe("");
+      expect((await store.load()).installId).toBe("");
+    }
+  });
+
   test("loads the default startup mode when persisted config overrides it", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
@@ -310,7 +336,7 @@ describe("session overrides", () => {
     expect(service.getRaw().zenMode).toBe(true);
 
     // ...but any save during the session must not bake it in. UpdateService and
-    // TelemetryService both call save() unconditionally on startup, so this is
+    // UsageAnalyticsService both call save() unconditionally on startup, so this is
     // the routine path, not an edge case.
     await service.save();
 

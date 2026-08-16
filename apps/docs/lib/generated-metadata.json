@@ -1,10 +1,10 @@
 {
-  "syncedAt": "2026-08-14T09:10:16.593Z",
+  "syncedAt": "2026-08-16T10:23:43.428Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "6af2b56c",
-  "cliSourceFingerprint": "791212685deacad7c3ea972294d8a8e5d63c0e9b84ebe700e10544686a4e6734",
-  "docsContentFingerprint": "2eebb2d8881d5a4221a510ca573408b8afc9d98c9ed00580564738afae66a877",
+  "cliSourceRevision": "884068af",
+  "cliSourceFingerprint": "38ef1edd2dc50a764212330cbb30e9aea2c1d65dd228c199e27e49a91be78a4e",
+  "docsContentFingerprint": "9b95290c0ebfe6c962e4bf5e330878ae3d401042642e08d815da0543d47af785",
   "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
@@ -226,16 +226,16 @@
       "description": "Open settings for Discord Rich Presence setup and status"
     },
     {
-      "id": "telemetry",
-      "label": "Telemetry",
-      "aliases": ["telemetry"],
-      "description": "Show or change the opt-in anonymous usage ping"
+      "id": "analytics",
+      "label": "Analytics",
+      "aliases": ["analytics", "telemetry"],
+      "description": "Anonymous usage ping — status, payload, and consent"
     },
     {
-      "id": "telemetry-show",
-      "label": "Telemetry payload",
-      "aliases": ["telemetry show", "telemetry-show"],
-      "description": "Print the exact JSON that would be sent if telemetry is enabled"
+      "id": "analytics-show",
+      "label": "Analytics payload",
+      "aliases": ["analytics show", "analytics-show", "telemetry show", "telemetry-show"],
+      "description": "Print the exact JSON that would be sent"
     },
     {
       "id": "notifications",

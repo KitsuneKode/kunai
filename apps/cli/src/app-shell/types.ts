@@ -26,8 +26,8 @@ export type ShellAction =
   | "settings"
   | "providers"
   | "presence"
-  | "telemetry"
-  | "telemetry-show"
+  | "analytics"
+  | "analytics-show"
   | "notifications"
   | "toggle-mode"
   | "toggle-mode-reverse"
@@ -443,8 +443,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "settings":
     case "providers":
     case "presence":
-    case "telemetry":
-    case "telemetry-show":
+    case "analytics":
+    case "analytics-show":
     case "notifications":
     case "toggle-mode":
     case "series-mode":
