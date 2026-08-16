@@ -2,9 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { startLoopbackServer } from "@/services/sync/oauth-loopback";
 
-const EXACT_PORT = 43871;
-
-function allocatePort(): number {
+function reserveConfiguredPort(): number {
   const probe = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -18,7 +16,7 @@ function allocatePort(): number {
 
 function server(
   overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = {},
-  configuredPort = allocatePort(),
+  configuredPort = reserveConfiguredPort(),
 ) {
   return startLoopbackServer({
     redirectUri: `http://127.0.0.1:${configuredPort}/callback`,
@@ -57,9 +55,10 @@ function callbackUrl(loopback: ReturnType<typeof server>): string {
 describe("startLoopbackServer", () => {
   /** The whole point: the bound port is the registered one, not an OS pick. */
   test("binds the exact port from the configured redirect URI", async () => {
-    const loopback = server({}, EXACT_PORT);
+    const configuredPort = reserveConfiguredPort();
+    const loopback = server({}, configuredPort);
     try {
-      expect(loopback.port).toBe(EXACT_PORT);
+      expect(loopback.port).toBe(configuredPort);
     } finally {
       loopback.close();
     }
@@ -113,7 +112,7 @@ describe("startLoopbackServer", () => {
 
   /** A settled server must free the port, or the next attempt cannot bind it. */
   test("releases the port so a subsequent attempt can bind it again", async () => {
-    const port = allocatePort();
+    const port = reserveConfiguredPort();
     const first = server({ timeoutMs: 20 }, port);
     await first.result;
 

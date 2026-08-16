@@ -629,6 +629,14 @@ export const dataMigrations: readonly Migration[] = [
         ON sync_reconciliation(created_at ASC);
     `,
   },
+  {
+    id: "031_data_sync_reconciliation_generation",
+    database: "data",
+    sql: `
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN generation INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

@@ -226,8 +226,20 @@ operation, or token. The immediate/startup resolver rereads the durable local
 state, proves tracker-native identity, applies the current opt-in gates, and
 only then creates or coalesces an outbox row. A hard kill before projection
 therefore leaves a replayable fact; a failed projection retains it and records a
-bounded diagnostic. Disabled or unresolved facts are settled without creating
-remote intent, preventing deferred consent.
+bounded diagnostic. Disabled facts and definitive crosswalk misses are settled
+without creating remote intent, preventing deferred consent; timeouts, lookup
+errors, and caller cancellation retain the fact for a later attempt. History
+from provider-native lanes such as AniDB reaches AniList only through a proven
+`CatalogIdentityService` crosswalk — provider ids are never reinterpreted.
+
+Each reconciliation row carries a monotonic generation. A changed local fact
+advances it, and workers compare-and-delete the exact id plus generation they
+projected. If a list or history mutation supersedes an awaiting worker, stale
+completion cannot erase the new fact; the worker rereads and immediately
+projects the newer generation. Processing uses yielding batches under row and
+time budgets, then schedules continuation while eligible facts remain, so a
+large restart backlog does not stop at the first 100 or monopolise the event
+loop.
 
 Progress coalescing is monotonic at the SQLite outbox conflict boundary: the
 maximum proven episode wins in either arrival order, `completed` wins an equal

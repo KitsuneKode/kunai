@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
 
 import {
+  dataMigrations,
   HistoryRepository,
   ListRepository,
   openKunaiDatabase,
@@ -95,4 +96,70 @@ test("reconciliation survives a process restart with non-tracker local identity"
     payload: { historyKey: "anime:local-anime:1:12:none" },
   });
   reopened.close(true);
+});
+
+test("changed reconciliation state advances generation and rejects stale completion", () => {
+  const db = stores.store("sync-reconciliation-generation");
+  const reconciliation = new SyncReconciliationRepository(db);
+  const item = {
+    titleId: "local-anime",
+    mediaKind: "anime" as const,
+    title: "Example",
+    externalIds: { anilistId: "123" },
+  };
+
+  const added = reconciliation.record({
+    kind: "list",
+    list: "favorites",
+    present: true,
+    item,
+  });
+  const removed = reconciliation.record({
+    kind: "list",
+    list: "favorites",
+    present: false,
+    item,
+  });
+
+  expect(added.generation).toBe(1);
+  expect(removed).toMatchObject({ id: added.id, generation: 2 });
+  expect(reconciliation.complete(added)).toBe(false);
+  expect(reconciliation.listPending()).toEqual([removed]);
+  expect(reconciliation.complete(removed)).toBe(true);
+  expect(reconciliation.listPending()).toHaveLength(0);
+});
+
+test("generation migration upgrades an existing reconciliation queue without losing facts", () => {
+  const db = openKunaiDatabase(":memory:");
+  const throughReconciliation = dataMigrations.slice(
+    0,
+    dataMigrations.findIndex(
+      (migration) => migration.id === "031_data_sync_reconciliation_generation",
+    ),
+  );
+  runMigrations(db, "data", throughReconciliation);
+  db.query(
+    `INSERT INTO sync_reconciliation (
+       id, mutation_kind, entity_key, payload_json, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "existing-fact",
+    "list",
+    "favorites:local-anime",
+    JSON.stringify({
+      kind: "list",
+      list: "favorites",
+      present: true,
+      item: { titleId: "local-anime", mediaKind: "anime", title: "Example" },
+    }),
+    "2026-08-16T00:00:00.000Z",
+    "2026-08-16T00:00:00.000Z",
+  );
+
+  runMigrations(db, "data");
+
+  expect(new SyncReconciliationRepository(db).listPending()).toMatchObject([
+    { id: "existing-fact", generation: 1 },
+  ]);
+  db.close();
 });

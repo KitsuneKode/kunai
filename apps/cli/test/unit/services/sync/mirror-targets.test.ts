@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { describeMirrorTargets, resolveMirrorTargets } from "@/services/sync/mirror-targets";
+import {
+  describeMirrorTargets,
+  resolveMirrorTargets,
+  resolveMirrorTargetsStrict,
+} from "@/services/sync/mirror-targets";
 
 /**
  * Regression cover for the defect that made favouriting an anime look like it
@@ -150,5 +154,41 @@ describe("resolveMirrorTargets deadline", () => {
     );
 
     expect(targets.identities).toHaveLength(0);
+  });
+});
+
+describe("resolveMirrorTargetsStrict", () => {
+  test("distinguishes a definitive crosswalk miss from a transient lookup error", async () => {
+    const missing = await resolveMirrorTargetsStrict(
+      {
+        catalogIdentityService: {
+          enrich: async () => ({ graph: { confidence: "low", source: "arm" } }),
+        },
+      },
+      { titleId: "anidb:native", mediaKind: "anime" },
+    );
+    const failed = await resolveMirrorTargetsStrict(
+      {
+        catalogIdentityService: {
+          enrich: async () => {
+            throw new Error("network detail");
+          },
+        },
+      },
+      { titleId: "anidb:native", mediaKind: "anime" },
+    );
+
+    expect(missing).toEqual({ status: "no-mapping", identities: [] });
+    expect(failed).toEqual({ status: "transient", reason: "error", identities: [] });
+  });
+
+  test("reports caller cancellation separately from a timeout or missing mapping", async () => {
+    const result = await resolveMirrorTargetsStrict(
+      { catalogIdentityService: { enrich: () => new Promise(() => {}) } },
+      { titleId: "anidb:native", mediaKind: "anime" },
+      { signal: AbortSignal.abort() },
+    );
+
+    expect(result).toEqual({ status: "aborted", identities: [] });
   });
 });

@@ -15,6 +15,16 @@ export type MirrorTargets = {
   readonly identities: readonly SyncIdentity[];
 };
 
+export type StrictMirrorTargets =
+  | { readonly status: "resolved"; readonly identities: readonly SyncIdentity[] }
+  | { readonly status: "no-mapping"; readonly identities: readonly [] }
+  | {
+      readonly status: "transient";
+      readonly reason: "timeout" | "error";
+      readonly identities: readonly [];
+    }
+  | { readonly status: "aborted"; readonly identities: readonly [] };
+
 /**
  * How long a keypress may spend resolving identity before giving up.
  *
@@ -66,14 +76,36 @@ export async function resolveMirrorTargets(
   },
   options: { readonly signal?: AbortSignal } = {},
 ): Promise<MirrorTargets> {
+  const result = await resolveMirrorTargetsStrict(deps, item, options);
+  return { identities: result.identities };
+}
+
+/**
+ * Reconciliation needs to distinguish a stable crosswalk miss from a lookup
+ * that may succeed later. UI callers intentionally use the best-effort wrapper
+ * above, while durable workers retain transient and cancelled facts.
+ */
+export async function resolveMirrorTargetsStrict(
+  deps: MirrorIdentityDeps,
+  item: {
+    readonly titleId: string;
+    readonly mediaKind: TrackerIdSource["mediaKind"];
+    readonly title?: string;
+    readonly externalIds?: TrackerIdSource["externalIds"];
+  },
+  options: { readonly signal?: AbortSignal; readonly requiredTracker?: "anilist" | "tmdb" } = {},
+): Promise<StrictMirrorTargets> {
   const source: TrackerIdSource = {
     titleId: item.titleId,
     mediaKind: item.mediaKind,
     ...(item.externalIds ? { externalIds: item.externalIds } : {}),
   };
 
-  const direct = identitiesFor(source);
-  if (direct.length > 0) return { identities: direct };
+  if (options.signal?.aborted) return { status: "aborted", identities: [] };
+  const direct = identitiesFor(source).filter(
+    (identity) => !options.requiredTracker || identity.tracker === options.requiredTracker,
+  );
+  if (direct.length > 0) return { status: "resolved", identities: direct };
 
   const deadline = AbortSignal.timeout(ENRICH_DEADLINE_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
@@ -83,16 +115,18 @@ export async function resolveMirrorTargets(
   // it. The race is what actually bounds the keypress, and the signal is still
   // forwarded so a well-behaved lookup also stops doing work.
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const expiry = new Promise<null>((resolve) => {
+  const expired = Symbol("identity-expired");
+  const expiry = new Promise<typeof expired>((resolve) => {
     if (signal.aborted) {
-      resolve(null);
+      resolve(expired);
       return;
     }
-    timer = setTimeout(() => resolve(null), ENRICH_DEADLINE_MS);
-    signal.addEventListener("abort", () => resolve(null), { once: true });
+    timer = setTimeout(() => resolve(expired), ENRICH_DEADLINE_MS);
+    signal.addEventListener("abort", () => resolve(expired), { once: true });
   });
 
   let enrichedIds: TrackerIdSource["externalIds"];
+  let graph: Awaited<ReturnType<CatalogIdentityService["enrich"]>>["graph"];
   try {
     const result = await Promise.race([
       deps.catalogIdentityService.enrich(
@@ -106,21 +140,40 @@ export async function resolveMirrorTargets(
       ),
       expiry,
     ]);
-    if (!result) return { identities: [] };
+    if (result === expired) {
+      return options.signal?.aborted
+        ? { status: "aborted", identities: [] }
+        : { status: "transient", reason: "timeout", identities: [] };
+    }
     enrichedIds = result.externalIds;
+    graph = result.graph;
   } catch {
-    // Enrichment is an optimisation over "we could not address this title".
-    // Failing it — or timing out — must not fail the list change that already
-    // landed.
-    return { identities: [] };
+    return options.signal?.aborted
+      ? { status: "aborted", identities: [] }
+      : { status: "transient", reason: "error", identities: [] };
   } finally {
     // The timer holds the event loop open for the whole deadline otherwise,
     // which turns a fast keypress into a delayed exit.
     if (timer) clearTimeout(timer);
   }
 
-  if (!enrichedIds) return { identities: [] };
-  return { identities: identitiesFor({ ...source, externalIds: enrichedIds }) };
+  const identities = enrichedIds
+    ? identitiesFor({ ...source, externalIds: enrichedIds }).filter(
+        (identity) => !options.requiredTracker || identity.tracker === options.requiredTracker,
+      )
+    : [];
+  if (identities.length > 0) return { status: "resolved", identities };
+
+  const hadLookupSource = Boolean(
+    source.externalIds?.anilistId ||
+    source.externalIds?.malId ||
+    source.externalIds?.tmdbId ||
+    source.externalIds?.imdbId,
+  );
+  if (graph.source === "passthrough" && graph.confidence !== "high" && hadLookupSource) {
+    return { status: "transient", reason: "error", identities: [] };
+  }
+  return { status: "no-mapping", identities: [] };
 }
 
 /** Tracker display order for user-facing copy, so messages read consistently. */

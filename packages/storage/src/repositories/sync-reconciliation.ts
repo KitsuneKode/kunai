@@ -3,7 +3,12 @@ import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 import type { KunaiDatabase } from "../sqlite";
 
 export type SyncReconciliationPayload =
-  | { readonly kind: "history"; readonly historyKey: string }
+  | {
+      readonly kind: "history";
+      readonly historyKey: string;
+      /** Tracker-neutral revision proving this exact local write was observed. */
+      readonly localMutationId: string;
+    }
   | {
       readonly kind: "list";
       readonly list: "watchlist" | "favorites";
@@ -20,6 +25,7 @@ export type SyncReconciliationPayload =
 
 export interface SyncReconciliationRecord {
   readonly id: string;
+  readonly generation: number;
   readonly kind: SyncReconciliationPayload["kind"];
   readonly entityKey: string;
   readonly payload: SyncReconciliationPayload;
@@ -29,6 +35,7 @@ export interface SyncReconciliationRecord {
 
 interface SyncReconciliationRow {
   readonly id: string;
+  readonly generation: number;
   readonly mutation_kind: SyncReconciliationPayload["kind"];
   readonly entity_key: string;
   readonly payload_json: string;
@@ -51,10 +58,15 @@ export class SyncReconciliationRepository {
     this.db
       .query(
         `INSERT INTO sync_reconciliation (
-           id, mutation_kind, entity_key, payload_json, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?)
+           id, mutation_kind, entity_key, payload_json, generation, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 1, ?, ?)
          ON CONFLICT(mutation_kind, entity_key) DO UPDATE SET
            payload_json = excluded.payload_json,
+           generation = CASE
+             WHEN sync_reconciliation.payload_json != excluded.payload_json
+             THEN sync_reconciliation.generation + 1
+             ELSE sync_reconciliation.generation
+           END,
            updated_at = excluded.updated_at`,
       )
       .run(crypto.randomUUID(), payload.kind, entityKey, JSON.stringify(payload), nowIso, nowIso);
@@ -74,8 +86,19 @@ export class SyncReconciliationRepository {
       .map(mapRow);
   }
 
-  complete(id: string): boolean {
-    return this.db.query("DELETE FROM sync_reconciliation WHERE id = ?").run(id).changes > 0;
+  getById(id: string): SyncReconciliationRecord | undefined {
+    const row = this.db
+      .query<SyncReconciliationRow, [string]>("SELECT * FROM sync_reconciliation WHERE id = ?")
+      .get(id);
+    return row ? mapRow(row) : undefined;
+  }
+
+  complete(record: Pick<SyncReconciliationRecord, "id" | "generation">): boolean {
+    return (
+      this.db
+        .query("DELETE FROM sync_reconciliation WHERE id = ? AND generation = ?")
+        .run(record.id, record.generation).changes > 0
+    );
   }
 
   private get(
@@ -94,6 +117,7 @@ export class SyncReconciliationRepository {
 function mapRow(row: SyncReconciliationRow): SyncReconciliationRecord {
   return {
     id: row.id,
+    generation: row.generation,
     kind: row.mutation_kind,
     entityKey: row.entity_key,
     payload: JSON.parse(row.payload_json) as SyncReconciliationPayload,

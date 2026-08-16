@@ -191,7 +191,10 @@ export class HistoryRepository {
       externalIdsToAliases(persistedTitle.externalIds),
       now,
     );
-    this.syncReconciliation.record({ kind: "history", historyKey: key }, new Date(now));
+    this.syncReconciliation.record(
+      { kind: "history", historyKey: key, localMutationId: crypto.randomUUID() },
+      new Date(now),
+    );
   }
 
   /**
