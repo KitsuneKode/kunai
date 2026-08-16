@@ -23,6 +23,7 @@ export type OfflineLibraryGroup = {
   readonly titleId: string;
   readonly titleName: string;
   readonly mediaKind: DownloadJobRecord["mediaKind"];
+  readonly contentType?: DownloadJobRecord["contentType"];
   readonly entries: readonly OfflineLibraryEntry[];
   readonly readyCount: number;
   readonly issueCount: number;
@@ -61,7 +62,7 @@ export function groupOfflineLibraryEntries(
 ): readonly OfflineLibraryGroup[] {
   const groups = new Map<string, OfflineLibraryEntry[]>();
   for (const entry of entries) {
-    const key = `${entry.job.titleId || entry.job.titleName}:${entry.job.mediaKind}`;
+    const key = `${entry.job.titleId || entry.job.titleName}:${entry.job.mediaKind}:${entry.job.contentType ?? ""}`;
     const current = groups.get(key) ?? [];
     current.push(entry);
     groups.set(key, current);
@@ -85,6 +86,7 @@ export function groupOfflineLibraryEntries(
       titleId: first.titleId,
       titleName: first.titleName,
       mediaKind: first.mediaKind,
+      contentType: first.contentType,
       entries: sortedEntries,
       readyCount: sortedEntries.filter((entry) => entry.status === "ready").length,
       issueCount: sortedEntries.filter((entry) => entry.status !== "ready").length,
@@ -102,6 +104,7 @@ export function groupOfflineLibraryEntries(
 export function formatOfflineLibraryGroupLabel(group: OfflineLibraryGroup): string {
   const itemLabel = formatMediaItemCount({
     mediaKind: group.mediaKind,
+    contentType: group.contentType,
     count: group.entries.length,
   });
   return `${group.titleName}  ·  ${itemLabel}`;
@@ -124,6 +127,7 @@ export function formatOfflineJobListingTitle(job: DownloadJobRecord): string {
   const { positionLabel, kindLabel } = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
+    contentType: job.contentType,
     season: job.season,
     episode: job.episode,
   });
@@ -254,6 +258,7 @@ function formatOfflineEpisodeLabel(job: DownloadJobRecord): string {
   const { positionLabel, kindLabel } = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
+    contentType: job.contentType,
     season: job.season,
     episode: job.episode,
   });

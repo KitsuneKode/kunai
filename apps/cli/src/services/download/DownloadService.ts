@@ -2,6 +2,7 @@ import { mkdir, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
+import { resolveContentKind } from "@/domain/media/content-kind";
 import { presentMedia } from "@/domain/media/media-presentation";
 import type {
   EpisodeInfo,
@@ -332,6 +333,7 @@ export class DownloadService {
       externalIds: input.title.externalIds,
       titleName: input.title.name,
       mediaKind,
+      contentType: input.title.type,
       season: input.episode?.season,
       episode: input.episode?.episode,
       providerId: input.providerId,
@@ -1561,10 +1563,7 @@ export class DownloadService {
  * disagree with the `mediaKind` stored beside it.
  */
 function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
-  if (input.mode === "youtube") return "video";
-  if (input.title.type === "movie") return "movie";
-  if (input.mode === "anime") return "anime";
-  return "series";
+  return resolveContentKind(input.title, input.mode ?? "series", { providerId: input.providerId });
 }
 
 /**

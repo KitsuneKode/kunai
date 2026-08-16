@@ -14,11 +14,11 @@ describe("contentTypeFromAniListFormat", () => {
     expect(contentTypeFromAniListFormat("movie", 12)).toBe("movie");
   });
 
-  test("one-shot OVA, SPECIAL, TV_SHORT, and MUSIC are films", () => {
-    expect(contentTypeFromAniListFormat("OVA")).toBe("movie");
+  test("one-shot OVA, SPECIAL, TV_SHORT, and MUSIC are films only with a known single episode", () => {
+    expect(contentTypeFromAniListFormat("OVA")).toBe("series");
     expect(contentTypeFromAniListFormat("OVA", 1)).toBe("movie");
     expect(contentTypeFromAniListFormat("SPECIAL", 1)).toBe("movie");
-    expect(contentTypeFromAniListFormat("TV_SHORT")).toBe("movie");
+    expect(contentTypeFromAniListFormat("TV_SHORT")).toBe("series");
     expect(contentTypeFromAniListFormat("MUSIC", 1)).toBe("movie");
   });
 

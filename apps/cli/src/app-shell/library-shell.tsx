@@ -625,6 +625,7 @@ function formatLibraryStatus(
     return {
       label: `↓ ${formatMediaItemCount({
         mediaKind: group.mediaKind,
+        contentType: group.contentType,
         count: group.readyCount,
       })}`,
       color: palette.ok,
@@ -660,6 +661,7 @@ function buildLibraryPreviewRailModel(
       label: "offline",
       value: `${group.readyCount} of ${formatMediaItemCount({
         mediaKind: group.mediaKind,
+        contentType: group.contentType,
         count: group.entries.length,
       })}`,
       tone: group.readyCount > 0 ? "success" : "warning",

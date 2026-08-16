@@ -34,6 +34,25 @@ test("history entries convert to media identity without provider URLs", () => {
   expect(JSON.stringify(item)).not.toContain("http");
 });
 
+test("an anime-film history row keeps anime identity and movie structure", () => {
+  const item = mediaItemFromHistoryEntry("anilist:181053", {
+    key: "k",
+    titleId: "anilist:181053",
+    title: "Infinity Castle",
+    mediaKind: "anime",
+    positionSeconds: 600,
+    durationSeconds: 7200,
+    completed: false,
+    providerId: "allanime",
+    updatedAt: "2026-08-16T00:00:00.000Z",
+    createdAt: "2026-08-16T00:00:00.000Z",
+  });
+
+  expect(item).toMatchObject({ mediaKind: "anime", contentType: "movie" });
+  expect(item.episode).toBeUndefined();
+  expect(titleInfoFromMediaItemIdentity(item)).toMatchObject({ type: "movie", isAnime: true });
+});
+
 test("search results convert to media identity for shared action policy", () => {
   expect(
     mediaItemFromSearchResult({

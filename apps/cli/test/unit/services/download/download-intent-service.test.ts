@@ -39,6 +39,17 @@ describe("resolveDownloadIntentItems", () => {
     ).toEqual([{ kind: "title" }]);
   });
 
+  test("an anime film is title-level even though its identity remains anime", () => {
+    expect(
+      resolveDownloadIntentItems({
+        title: { id: "anilist:181053", type: "movie", name: "Infinity Castle", isAnime: true },
+        mediaKind: "anime",
+        season: 1,
+        episode: 1,
+      }),
+    ).toEqual([{ kind: "title" }]);
+  });
+
   test("video download intent is title-level", () => {
     expect(
       resolveDownloadIntentItems({

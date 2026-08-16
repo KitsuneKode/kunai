@@ -9,6 +9,7 @@ import {
   selectLocalContinueCandidate,
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
+import { upgradeTitleInfoStructure } from "@/domain/media/anilist-format";
 import type { HistoryProgress } from "@kunai/storage";
 
 function history(patch: Partial<HistoryProgress> = {}): HistoryProgress {
@@ -141,6 +142,39 @@ describe("launch entry helpers", () => {
       isAnime: true,
     });
     expect(episodeFromHistorySelection(selection)).toBeUndefined();
+  });
+
+  test("catalog confirmation repairs a persisted anime-film S01E01 without flattening episodic anime", () => {
+    const legacyFilm = titleFromHistorySelection({
+      titleId: "181053",
+      entry: history({
+        title: "Demon Slayer: Infinity Castle",
+        mediaKind: "anime",
+        season: 1,
+        episode: 1,
+        externalIds: { anilistId: "181053" },
+        providerId: "allanime",
+      }),
+    });
+    expect(legacyFilm).toMatchObject({ type: "series", isAnime: true });
+    expect(upgradeTitleInfoStructure(legacyFilm, "movie")).toMatchObject({
+      type: "movie",
+      isAnime: true,
+      episodeCount: undefined,
+    });
+
+    const episodicAnime = titleFromHistorySelection({
+      titleId: "52991",
+      entry: history({
+        title: "Frieren",
+        mediaKind: "anime",
+        season: 1,
+        episode: 28,
+        externalIds: { anilistId: "52991" },
+        providerId: "allanime",
+      }),
+    });
+    expect(upgradeTitleInfoStructure(episodicAnime, "series")).toBe(episodicAnime);
   });
 
   test("anime replay restores the anime default provider instead of the active YouTube provider", async () => {

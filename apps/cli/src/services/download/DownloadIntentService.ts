@@ -1,5 +1,5 @@
 import type { Container } from "@/container";
-import { mediaLanguageProfileFor } from "@/domain/media/content-kind";
+import { isTitleLevelContent, mediaLanguageProfileFor } from "@/domain/media/content-kind";
 import { formatMediaItemCount } from "@/domain/media/media-presentation";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -77,10 +77,10 @@ export function buildDefaultDownloadProfile(
 /**
  * Resolve what to queue for a non-interactive download intent.
  *
- * Movies and videos are title-level. Series and anime use the carried
- * season/episode when present (e.g. a new-episode notification), and only they
- * fall back to the first episode. Episodic identity comes from `mediaKind`,
- * never from `title.type` — that field cannot tell a video from a series.
+ * Title-level structure (and videos) has no episode slot. Series and anime use
+ * the carried season/episode when present (e.g. a new-episode notification),
+ * and only they fall back to the first episode. An anime film therefore keeps
+ * its anime identity while using its movie structure.
  */
 export function resolveDownloadIntentItems(input: {
   readonly title: TitleInfo;
@@ -88,7 +88,7 @@ export function resolveDownloadIntentItems(input: {
   readonly season?: number;
   readonly episode?: number;
 }): readonly DownloadIntentItem[] {
-  if (input.mediaKind === "movie" || input.mediaKind === "video") return [{ kind: "title" }];
+  if (isTitleLevelContent(input.mediaKind, input.title.type)) return [{ kind: "title" }];
   if (typeof input.season === "number" && typeof input.episode === "number") {
     return [{ kind: "episode", episode: { season: input.season, episode: input.episode } }];
   }
@@ -134,7 +134,7 @@ export async function commitDownloadIntent(
   const { title, mediaKind, items, profile } = input;
   if (items.length === 0) return { status: "none", queuedCount: 0 };
   const mode = enqueueModeForMediaKind(mediaKind);
-  const isTitleLevel = mediaKind === "movie" || mediaKind === "video";
+  const isTitleLevel = isTitleLevelContent(mediaKind, title.type);
 
   const state = container.stateManager.getState();
   const existingPolicy = isTitleLevel ? undefined : container.offlineTitlePolicies.get(title.id);
@@ -241,7 +241,11 @@ export async function commitDownloadIntent(
     note:
       queuedCount === 1
         ? `Download queued: ${title.name}`
-        : `Downloads queued: ${formatMediaItemCount({ mediaKind, count: queuedCount })} · ${title.name}`,
+        : `Downloads queued: ${formatMediaItemCount({
+            mediaKind,
+            contentType: title.type,
+            count: queuedCount,
+          })} · ${title.name}`,
   });
   void container.downloadService.processQueue();
   return { status: "queued", queuedCount };

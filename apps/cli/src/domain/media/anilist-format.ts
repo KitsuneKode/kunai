@@ -26,7 +26,7 @@ export function contentTypeFromAniListFormat(
   if (!normalized) return "series";
   if (normalized === "MOVIE") return "movie";
   if (ONE_SHOT_FORMATS.has(normalized)) {
-    if (episodeCount === undefined || episodeCount <= 1) return "movie";
+    if (episodeCount === 1) return "movie";
     return "series";
   }
   return "series";

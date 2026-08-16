@@ -92,7 +92,14 @@ export function buildDownloadManagerRailModel(
       : null,
     { label: "Provider", value: job.providerId },
     job.selectedQualityLabel ? { label: "Quality", value: job.selectedQualityLabel } : null,
-    { label: "Kind", value: formatMediaItemCount({ mediaKind: job.mediaKind, count: 1 }) },
+    {
+      label: "Kind",
+      value: formatMediaItemCount({
+        mediaKind: job.mediaKind,
+        contentType: job.contentType,
+        count: 1,
+      }),
+    },
     job.errorMessage ? { label: "Detail", value: job.errorMessage } : null,
   ].filter((fact): fact is { label: string; value: string } => fact !== null);
 

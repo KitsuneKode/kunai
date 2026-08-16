@@ -9,8 +9,13 @@ describe("stripHtml", () => {
     );
   });
 
-  test("decodes common entities and collapses whitespace", () => {
-    expect(stripHtml("A &amp; B&nbsp;&lt;test&gt;")).toBe("A & B <test>");
+  test("decodes common entities without preserving tag-shaped text", () => {
+    expect(stripHtml("A &amp; B&nbsp;&lt;test&gt;")).toBe("A & B");
+  });
+
+  test("never recreates markup while decoding adversarial angle-bracket entities", () => {
+    expect(stripHtml("safe &lt;img src=x onerror=alert(1)&gt; text")).toBe("safe text");
+    expect(stripHtml("&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;")).toBe("alert(1)");
   });
 
   test("plain text is unchanged", () => {

@@ -126,6 +126,14 @@ export function contentKindHasEpisodes(kind: ContentKind | undefined, type?: Con
   return kind === "series" || kind === "anime";
 }
 
+/** A title-level item has no episode/runway axis, regardless of its identity badge. */
+export function isTitleLevelContent(
+  kind: ContentKind | undefined,
+  type: ContentType | undefined,
+): boolean {
+  return kind === "movie" || kind === "video" || type === "movie";
+}
+
 /** Pick the language profile (audio/subtitle/quality) matching the content kind. */
 export function mediaLanguageProfileFor(input: {
   readonly mode: ShellMode;

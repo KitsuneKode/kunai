@@ -183,9 +183,17 @@ export function presentMedia(input: MediaPresentationInput): MediaPresentation {
 
 export function formatMediaItemCount(input: {
   readonly mediaKind: MediaKind;
+  /**
+   * Structure wins for the noun while `mediaKind` continues to supply the
+   * catalog identity and badge. An anime film is one movie, not one episode.
+   */
+  readonly contentType?: "movie" | "series";
   readonly count: number;
 }): string {
-  const policy = resolveMediaKindPolicy(input.mediaKind);
+  const policy =
+    input.contentType === "movie"
+      ? MEDIA_KIND_POLICY.movie
+      : resolveMediaKindPolicy(input.mediaKind);
   const noun = input.count === 1 ? policy.itemNoun : policy.pluralNoun;
   return `${input.count} ${noun}`;
 }

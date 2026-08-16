@@ -21,7 +21,9 @@ export type OfflinePlaybackRequestOptions = {
 export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
   return {
     id: job.titleId,
-    type: job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series",
+    type:
+      job.contentType ??
+      (job.mediaKind === "movie" || job.mediaKind === "video" ? "movie" : "series"),
     name: job.titleName,
     posterUrl: job.posterUrl,
     isAnime: job.mediaKind === "anime" || job.mode === "anime",
@@ -30,7 +32,7 @@ export function titleInfoFromDownloadJob(job: DownloadJobRecord): TitleInfo {
 }
 
 export function episodeInfoFromDownloadJob(job: DownloadJobRecord): EpisodeInfo | undefined {
-  if (job.mediaKind === "movie") return undefined;
+  if (job.contentType === "movie" || job.mediaKind === "movie") return undefined;
   if (job.season === undefined && job.episode === undefined) return undefined;
   return {
     season: job.season ?? 1,
