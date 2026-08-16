@@ -18,15 +18,11 @@ export async function applySettingsToRuntime({
   // Settings offers the visible control, but the analytics service remains the
   // sole owner of what an enable/disable choice writes. In particular, enable
   // mints the id atomically with the preference and disable clears it.
-  const next =
-    before.analytics === requested.analytics
-      ? requested
-      : {
-          ...requested,
-          ...container.usageAnalytics.consentPatch(
-            requested.analytics === "enabled" ? "enabled" : "disabled",
-          ),
-        };
+  const analyticsPatch =
+    requested.analytics === "unset"
+      ? { analytics: "unset" as const, installId: "" }
+      : container.usageAnalytics.consentPatch(requested.analytics);
+  const next = { ...requested, ...analyticsPatch };
 
   await config.update(next);
   await config.save();

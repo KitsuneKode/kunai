@@ -163,6 +163,15 @@ export class ConfigServiceImpl implements ConfigService {
     // revoke it and erase the old local identifier before startup can send.
     const requiresExplicitAnalyticsConsent =
       loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
+    const normalizedAnalytics = requiresExplicitAnalyticsConsent
+      ? "unset"
+      : normalizeAnalyticsPreference(loaded.analytics);
+    const normalizedInstallId =
+      normalizedAnalytics === "enabled" && typeof loaded.installId === "string"
+        ? loaded.installId.trim()
+        : "";
+    const repairedAnalyticsIdentity =
+      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
@@ -218,14 +227,9 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
-      analytics: requiresExplicitAnalyticsConsent
-        ? "unset"
-        : normalizeAnalyticsPreference(loaded.analytics),
+      analytics: normalizedAnalytics,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
-      installId:
-        requiresExplicitAnalyticsConsent || typeof loaded.installId !== "string"
-          ? ""
-          : loaded.installId.trim(),
+      installId: normalizedInstallId,
       lastAnalyticsPingAt:
         typeof loaded.lastAnalyticsPingAt === "number" &&
         Number.isFinite(loaded.lastAnalyticsPingAt)
@@ -240,7 +244,7 @@ export class ConfigServiceImpl implements ConfigService {
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
-    if (requiresExplicitAnalyticsConsent || migratedVideasyAppId) {
+    if (requiresExplicitAnalyticsConsent || repairedAnalyticsIdentity || migratedVideasyAppId) {
       await store.save(service.config);
       service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }

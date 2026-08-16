@@ -31,6 +31,22 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).installId).toBe("");
   });
 
+  test("repairs and persists an orphan install id for every non-enabled preference", async () => {
+    for (const analytics of ["disabled", "unset"] as const) {
+      const store = new MemoryConfigStore({
+        analytics,
+        analyticsNoticeShown: false,
+        installId: `${analytics}-orphan-id`,
+      });
+
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.analytics).toBe(analytics);
+      expect(service.installId).toBe("");
+      expect((await store.load()).installId).toBe("");
+    }
+  });
+
   test("loads the default startup mode when persisted config overrides it", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({
