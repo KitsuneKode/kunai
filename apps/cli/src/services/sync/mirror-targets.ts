@@ -125,7 +125,6 @@ export async function resolveMirrorTargetsStrict(
     signal.addEventListener("abort", () => resolve(expired), { once: true });
   });
 
-  let enrichedIds: TrackerIdSource["externalIds"];
   let graph: Awaited<ReturnType<CatalogIdentityService["enrich"]>>["graph"];
   try {
     const result = await Promise.race([
@@ -136,7 +135,7 @@ export async function resolveMirrorTargetsStrict(
           title: item.title ?? "",
           ...(item.externalIds ? { externalIds: item.externalIds } : {}),
         },
-        { signal },
+        { signal, seedBareNumericAnimeId: false },
       ),
       expiry,
     ]);
@@ -145,7 +144,6 @@ export async function resolveMirrorTargetsStrict(
         ? { status: "aborted", identities: [] }
         : { status: "transient", reason: "timeout", identities: [] };
     }
-    enrichedIds = result.externalIds;
     graph = result.graph;
   } catch {
     return options.signal?.aborted
@@ -157,8 +155,15 @@ export async function resolveMirrorTargetsStrict(
     if (timer) clearTimeout(timer);
   }
 
-  const identities = enrichedIds
-    ? identitiesFor({ ...source, externalIds: enrichedIds }).filter(
+  const provenIds =
+    graph.confidence === "high"
+      ? {
+          ...(graph.anilistId ? { anilistId: graph.anilistId } : {}),
+          ...(graph.tmdbId ? { tmdbId: graph.tmdbId } : {}),
+        }
+      : undefined;
+  const identities = provenIds
+    ? identitiesFor({ ...source, externalIds: provenIds }).filter(
         (identity) => !options.requiredTracker || identity.tracker === options.requiredTracker,
       )
     : [];

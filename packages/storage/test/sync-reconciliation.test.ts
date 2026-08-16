@@ -159,7 +159,77 @@ test("generation migration upgrades an existing reconciliation queue without los
   runMigrations(db, "data");
 
   expect(new SyncReconciliationRepository(db).listPending()).toMatchObject([
-    { id: "existing-fact", generation: 1 },
+    {
+      id: "existing-fact",
+      generation: 1,
+      attempts: 0,
+      nextAttemptAt: "2026-08-16T00:00:00.000Z",
+    },
   ]);
   db.close();
+});
+
+test("deferred reconciliation is ineligible until its persisted retry time", () => {
+  const db = stores.store("sync-reconciliation-backoff");
+  const reconciliation = new SyncReconciliationRepository(db);
+  const start = new Date("2026-08-16T00:00:00.000Z");
+  const transient = reconciliation.record(
+    {
+      kind: "list",
+      list: "favorites",
+      present: true,
+      item: { titleId: "transient", mediaKind: "anime", title: "Transient" },
+    },
+    start,
+  );
+  const eligible = reconciliation.record(
+    {
+      kind: "list",
+      list: "favorites",
+      present: true,
+      item: {
+        titleId: "eligible",
+        mediaKind: "anime",
+        title: "Eligible",
+        externalIds: { anilistId: "123" },
+      },
+    },
+    start,
+  );
+
+  expect(reconciliation.defer(transient, start)).toBe(true);
+  expect(reconciliation.listDue(new Date(start.getTime() + 999))).toEqual([eligible]);
+  expect(reconciliation.listDue(new Date(start.getTime() + 1_000))).toMatchObject([
+    { id: eligible.id, attempts: 0 },
+    { id: transient.id, attempts: 1, nextAttemptAt: "2026-08-16T00:00:01.000Z" },
+  ]);
+});
+
+test("a newer local generation resets reconciliation backoff and becomes immediately due", () => {
+  const db = stores.store("sync-reconciliation-backoff-reset");
+  const reconciliation = new SyncReconciliationRepository(db);
+  const start = new Date("2026-08-16T00:00:00.000Z");
+  const initial = reconciliation.record(
+    {
+      kind: "list",
+      list: "favorites",
+      present: true,
+      item: { titleId: "anime", mediaKind: "anime", title: "Anime" },
+    },
+    start,
+  );
+  reconciliation.defer(initial, start);
+
+  const updated = reconciliation.record(
+    {
+      kind: "list",
+      list: "favorites",
+      present: false,
+      item: { titleId: "anime", mediaKind: "anime", title: "Anime" },
+    },
+    new Date(start.getTime() + 100),
+  );
+
+  expect(updated).toMatchObject({ generation: 2, attempts: 0 });
+  expect(reconciliation.listDue(new Date(start.getTime() + 100))).toEqual([updated]);
 });

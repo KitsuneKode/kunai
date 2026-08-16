@@ -19,14 +19,15 @@ receive a `pushProgress` operation.
 - **Risk:** HIGH (remote account mutation)
 - **Planned at:** `36da54c4`, 2026-08-11
 - **Implementation state (2026-08-16):** Deterministic implementation and
-  regression work is complete. Data migrations 030–031 add a tracker-neutral,
-  generation-checked reconciliation fact that commits in the same transaction
-  as local list/history mutations. Startup replay distinguishes definitive
-  mapping misses from retryable identity failures, enriches provider-native
-  history through proven crosswalks, and continues in bounded yielding batches
-  before creating an opt-in-gated outbox row. Tracker sync remains experimental
-  until the disposable-account CLI → SQLite outbox → restart recovery → remote
-  mutation smoke below passes.
+  regression work is complete. Data migrations 030–032 add a tracker-neutral,
+  generation-checked reconciliation fact plus durable retry eligibility, all
+  committed in the same transaction as local list/history mutations. Startup
+  replay checks opt-in before enrichment, distinguishes definitive mapping
+  misses from retryable identity failures, accepts provider-native history only
+  through explicit or high-confidence tracker proof, and drains in bounded
+  yielding batches without retained-row starvation. Tracker sync remains
+  experimental until the disposable-account CLI → SQLite outbox → restart
+  recovery → remote mutation smoke below passes.
 
 ## Confirmed defects
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { CatalogIdentityService } from "@/services/catalog/CatalogIdentityService";
 import {
   describeMirrorTargets,
   resolveMirrorTargets,
@@ -25,7 +26,11 @@ function deps(enriched?: { anilistId?: string; tmdbId?: string }) {
         enrichCalls += 1;
         return {
           ...(enriched ? { externalIds: enriched } : {}),
-          graph: { confidence: "high" as const, source: "arm" as const },
+          graph: {
+            ...enriched,
+            confidence: "high" as const,
+            source: "arm" as const,
+          },
         };
       },
     },
@@ -158,6 +163,44 @@ describe("resolveMirrorTargets deadline", () => {
 });
 
 describe("resolveMirrorTargetsStrict", () => {
+  test("never treats a bare numeric provider-native anime id as AniList proof", async () => {
+    const catalogIdentityService = new CatalogIdentityService({
+      arm: { fetchIds: async () => null },
+    });
+
+    const result = await resolveMirrorTargetsStrict(
+      { catalogIdentityService },
+      {
+        titleId: "3942",
+        mediaKind: "anime",
+        externalIds: { providerNativeIds: { anidb: "3942" } },
+      },
+      { requiredTracker: "anilist" },
+    );
+
+    expect(result).toEqual({ status: "no-mapping", identities: [] });
+  });
+
+  test("accepts an explicit AniList id without enrichment", async () => {
+    const d = deps();
+
+    const result = await resolveMirrorTargetsStrict(
+      d,
+      {
+        titleId: "3942",
+        mediaKind: "anime",
+        externalIds: { anilistId: "21334", providerNativeIds: { anidb: "3942" } },
+      },
+      { requiredTracker: "anilist" },
+    );
+
+    expect(result).toEqual({
+      status: "resolved",
+      identities: [{ tracker: "anilist", anilistId: 21334, mediaKind: "anime" }],
+    });
+    expect(d.enrichCalls).toBe(0);
+  });
+
   test("distinguishes a definitive crosswalk miss from a transient lookup error", async () => {
     const missing = await resolveMirrorTargetsStrict(
       {

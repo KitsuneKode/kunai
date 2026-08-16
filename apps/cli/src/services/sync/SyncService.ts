@@ -55,6 +55,16 @@ export interface SyncConfigPort {
   }>;
 }
 
+export type AutomaticSyncCapability = "progress" | "watchlist" | "favorite";
+export type AutomaticSyncAdmission = "allowed" | "disabled" | "aborted";
+
+export class SyncAdmissionAbortedError extends Error {
+  constructor() {
+    super("Tracker sync admission was cancelled");
+    this.name = "SyncAdmissionAbortedError";
+  }
+}
+
 export type SyncPushSummary = {
   readonly connected: number;
   readonly claimed: number;
@@ -255,16 +265,49 @@ export class SyncService {
     return 1;
   }
 
+  /** Read the current user gate before identity work creates tracker intent. */
+  async checkAutomaticAdmission(
+    input: { readonly tracker: TrackerId; readonly capability: AutomaticSyncCapability },
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<AutomaticSyncAdmission> {
+    let config: Awaited<ReturnType<SyncConfigPort["read"]>>;
+    try {
+      config = await this.readConfig(options.signal);
+    } catch (error) {
+      if (error instanceof SyncAdmissionAbortedError) return "aborted";
+      throw error;
+    }
+    if (options.signal?.aborted) return "aborted";
+    const gate = config.sync[input.tracker];
+    const adapter = this.adaptersById.get(input.tracker);
+    if (!gate?.enabled || !adapter) return "disabled";
+    if (input.capability === "progress") {
+      return gate.trackWatched && adapter.capabilities.episodeProgress ? "allowed" : "disabled";
+    }
+    const supported =
+      input.capability === "watchlist"
+        ? adapter.capabilities.watchlistMembership
+        : adapter.capabilities.favoriteMembership;
+    return gate.syncList && supported ? "allowed" : "disabled";
+  }
+
   /**
    * Admission gate for newly-created automatic work. Disabled sync is opt-out,
    * not a deferred consent prompt: do not persist history for later delivery.
    */
-  async enqueueProgressIfEnabled(entry: HistoryProgress): Promise<number> {
+  async enqueueProgressIfEnabled(
+    entry: HistoryProgress,
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<number> {
     const identity = resolveAniListIdentity(entry);
     const progress = resolveAniListProgressEpisode(entry);
     if (!identity || progress === null) return 0;
-    const gate = (await this.config.read()).sync.anilist;
-    if (!gate.enabled || !gate.trackWatched) return 0;
+    const admission = await this.checkAutomaticAdmission(
+      { tracker: "anilist", capability: "progress" },
+      options,
+    );
+    if (admission === "aborted") throw new SyncAdmissionAbortedError();
+    if (admission === "disabled") return 0;
     return this.enqueueOperation({
       version: 1,
       kind: "progress:set",
@@ -283,46 +326,81 @@ export class SyncService {
    * this class silently resolved to zero targets and returned 0 to a caller
    * that ignored the count — the favourite that never left the device.
    */
-  async enqueueListMembershipIfEnabled(input: {
-    readonly identities: readonly SyncIdentity[];
-    readonly list: "watchlist";
-    readonly present: boolean;
-  }): Promise<number> {
-    return this.enqueueForEachIfEnabled(input.identities, (target) => ({
-      version: 1,
-      kind: "list-membership:set",
-      target,
-      list: input.list,
-      present: input.present,
-    }));
+  async enqueueListMembershipIfEnabled(
+    input: {
+      readonly identities: readonly SyncIdentity[];
+      readonly list: "watchlist";
+      readonly present: boolean;
+    },
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<number> {
+    return this.enqueueForEachIfEnabled(
+      input.identities,
+      (target) => ({
+        version: 1,
+        kind: "list-membership:set",
+        target,
+        list: input.list,
+        present: input.present,
+      }),
+      options,
+    );
   }
 
-  async enqueueFavoriteMembershipIfEnabled(input: {
-    readonly identities: readonly SyncIdentity[];
-    readonly present: boolean;
-  }): Promise<number> {
-    return this.enqueueForEachIfEnabled(input.identities, (target) => ({
-      version: 1,
-      kind: "favorite-membership:set",
-      target,
-      present: input.present,
-    }));
+  async enqueueFavoriteMembershipIfEnabled(
+    input: {
+      readonly identities: readonly SyncIdentity[];
+      readonly present: boolean;
+    },
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<number> {
+    return this.enqueueForEachIfEnabled(
+      input.identities,
+      (target) => ({
+        version: 1,
+        kind: "favorite-membership:set",
+        target,
+        present: input.present,
+      }),
+      options,
+    );
   }
 
   private async enqueueForEachIfEnabled(
     identities: readonly SyncIdentity[],
     build: (target: TrackerOperation["target"]) => TrackerOperation,
+    options: { readonly signal?: AbortSignal },
   ): Promise<number> {
     let count = 0;
     for (const identity of identities) {
       const operation = build(identity);
-      const gate = (await this.config.read()).sync[trackerOf(operation)];
-      const adapter = this.adaptersById.get(trackerOf(operation));
-      if (!adapter || !gate?.enabled || !allowedByConfig(operation, gate)) continue;
-      if (!adapter.capabilities[requiredCapability(operation)]) continue;
+      const capability = operation.kind === "list-membership:set" ? "watchlist" : "favorite";
+      const admission = await this.checkAutomaticAdmission(
+        { tracker: trackerOf(operation), capability },
+        options,
+      );
+      if (admission === "aborted") throw new SyncAdmissionAbortedError();
+      if (admission === "disabled") continue;
       count += this.enqueueOperation(operation);
     }
     return count;
+  }
+
+  private async readConfig(
+    signal?: AbortSignal,
+  ): Promise<Awaited<ReturnType<SyncConfigPort["read"]>>> {
+    if (!signal) return this.config.read();
+    if (signal.aborted) throw new SyncAdmissionAbortedError();
+    let abort!: () => void;
+    const cancelled = new Promise<never>((_, reject) => {
+      abort = () => reject(new SyncAdmissionAbortedError());
+      signal.addEventListener("abort", abort, { once: true });
+    });
+    try {
+      return await Promise.race([this.config.read(), cancelled]);
+    } finally {
+      signal.removeEventListener("abort", abort);
+    }
   }
 
   /**

@@ -211,11 +211,13 @@ so "Send episode progress" is absent for TMDB rather than present and inert.
 Watchlist and favourite add/remove surfaces route through the same mirror seam
 as media actions. It resolves a tracker-native identity before queuing, and
 records a bounded diagnostic if a locally successful change cannot be mirrored.
-`trackWatched` and `syncList` are checked before an intent is persisted and
-again in `deliver()` beside `enabled`, against the same freshly-read config.
-A write the settings forbid creates no tracker-specific intent. Its local
-reconciliation fact is settled under the current setting, so opting in later
-does not unexpectedly replay mutations made while sync was disabled.
+`trackWatched` and `syncList` are checked before identity enrichment, rechecked
+at outbox admission, and checked again in `deliver()` beside `enabled`, against
+fresh config each time. A write the settings forbid creates no tracker-specific
+intent. Its local reconciliation fact is settled under the current setting, so
+opting in later does not unexpectedly replay mutations made while sync was
+disabled. Cancellation while either admission read is awaiting config retains
+the neutral fact and never creates or settles tracker intent.
 
 ## Durability boundary
 
@@ -229,8 +231,9 @@ therefore leaves a replayable fact; a failed projection retains it and records a
 bounded diagnostic. Disabled facts and definitive crosswalk misses are settled
 without creating remote intent, preventing deferred consent; timeouts, lookup
 errors, and caller cancellation retain the fact for a later attempt. History
-from provider-native lanes such as AniDB reaches AniList only through a proven
-`CatalogIdentityService` crosswalk — provider ids are never reinterpreted.
+from provider-native lanes such as AniDB reaches AniList only through an
+explicit AniList id or a high-confidence `CatalogIdentityService` crosswalk —
+bare numeric and provider ids are never reinterpreted.
 
 Each reconciliation row carries a monotonic generation. A changed local fact
 advances it, and workers compare-and-delete the exact id plus generation they
@@ -239,7 +242,10 @@ completion cannot erase the new fact; the worker rereads and immediately
 projects the newer generation. Processing uses yielding batches under row and
 time budgets, then schedules continuation while eligible facts remain, so a
 large restart backlog does not stop at the first 100 or monopolise the event
-loop.
+loop. Retry attempt count and `next_attempt_at` are durable. Transient facts use
+bounded exponential backoff and become temporarily ineligible, allowing later
+facts to run; continuation waits until the earliest retry is due instead of
+recursing at zero delay.
 
 Progress coalescing is monotonic at the SQLite outbox conflict boundary: the
 maximum proven episode wins in either arrival order, `completed` wins an equal

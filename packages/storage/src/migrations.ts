@@ -637,6 +637,21 @@ export const dataMigrations: readonly Migration[] = [
         ADD COLUMN generation INTEGER NOT NULL DEFAULT 1;
     `,
   },
+  {
+    id: "032_data_sync_reconciliation_retry",
+    database: "data",
+    sql: `
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z';
+
+      UPDATE sync_reconciliation SET next_attempt_at = updated_at;
+
+      CREATE INDEX idx_sync_reconciliation_due
+        ON sync_reconciliation(next_attempt_at ASC, created_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

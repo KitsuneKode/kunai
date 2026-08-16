@@ -1,11 +1,12 @@
 import type { CatalogIdentityService } from "@/services/catalog/CatalogIdentityService";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
-import type { SyncService } from "@/services/sync/SyncService";
+import { SyncAdmissionAbortedError, type SyncService } from "@/services/sync/SyncService";
 import type {
   HistoryRepository,
   SyncReconciliationRecord,
   SyncReconciliationRepository,
 } from "@kunai/storage";
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
 import { resolveMirrorTargetsStrict } from "./mirror-targets";
 
@@ -31,8 +32,9 @@ export interface SyncReconciliationOptions {
   readonly timeBudgetMs?: number;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
+  readonly wallNow?: () => Date;
   readonly yieldToEventLoop?: () => Promise<void>;
-  readonly scheduleContinuation?: (task: () => Promise<void>) => void;
+  readonly scheduleContinuation?: (task: () => Promise<void>, delayMs?: number) => void;
 }
 
 const DEFAULT_BATCH_SIZE = 25;
@@ -54,10 +56,10 @@ export async function reconcileSyncMutations(
   const yieldToEventLoop =
     options.yieldToEventLoop ?? (() => new Promise<void>((resolve) => setImmediate(resolve)));
   const now = options.now ?? (() => performance.now());
+  const wallNow = options.wallNow ?? (() => new Date());
   const startedAt = now();
-  const snapshot = deps.syncReconciliationRepository.listPending(maxRows + 1);
+  const snapshot = deps.syncReconciliationRepository.listDue(wallNow(), maxRows + 1);
   const records = snapshot.slice(0, maxRows);
-  const retainedRefs = new Set<string>();
   let needsContinuation = snapshot.length > maxRows;
   let processed = 0;
   let queued = 0;
@@ -76,15 +78,18 @@ export async function reconcileSyncMutations(
       for (let generationAttempt = 0; current && generationAttempt < 8; generationAttempt += 1) {
         const projection = await projectRecord(deps, current, options.signal);
         if (projection.status === "retained") {
-          retained += 1;
-          retainedRefs.add(reconciliationRef(current));
-          deps.diagnosticsService?.record({
-            category: "sync",
-            message: "Local sync reconciliation retained for retry",
-            context: { kind: current.kind, reason: projection.reason },
-          });
-          current = undefined;
-          break;
+          if (deps.syncReconciliationRepository.defer(current, wallNow())) {
+            retained += 1;
+            deps.diagnosticsService?.record({
+              category: "sync",
+              message: "Local sync reconciliation retained for retry",
+              context: { kind: current.kind, reason: projection.reason },
+            });
+            current = undefined;
+            break;
+          }
+          current = deps.syncReconciliationRepository.getById(current.id);
+          continue;
         }
         queued += projection.queued;
         if (projection.reason === "no-mapping") {
@@ -104,7 +109,9 @@ export async function reconcileSyncMutations(
       if (current) needsContinuation = true;
     } catch (error) {
       retained += 1;
-      if (current) retainedRefs.add(reconciliationRef(current));
+      if (current && !deps.syncReconciliationRepository.defer(current, wallNow())) {
+        needsContinuation = true;
+      }
       deps.diagnosticsService?.record({
         category: "sync",
         message: "Local sync reconciliation retained for retry",
@@ -120,17 +127,26 @@ export async function reconcileSyncMutations(
     }
   }
 
+  let continuationDelayMs = 0;
   if (!options.signal?.aborted) {
-    const pending = deps.syncReconciliationRepository.listPending(maxRows + 1);
-    if (pending.some((record) => !retainedRefs.has(reconciliationRef(record)))) {
+    const currentWallTime = wallNow();
+    const due = deps.syncReconciliationRepository.listDue(currentWallTime, 1);
+    if (due.length > 0) {
       needsContinuation = true;
+    } else {
+      const nextAttemptAt = deps.syncReconciliationRepository.nextAttemptAt();
+      if (nextAttemptAt) {
+        needsContinuation = true;
+        continuationDelayMs = Math.max(1, Date.parse(nextAttemptAt) - currentWallTime.getTime());
+      }
     }
   }
   if (needsContinuation && !options.signal?.aborted) {
     const schedule =
       options.scheduleContinuation ??
-      ((task: () => Promise<void>) => {
-        setTimeout(() => void task(), 0);
+      ((task: () => Promise<void>, delayMs = 0) => {
+        const timer = setTimeout(() => void task(), delayMs);
+        timer.unref();
       });
     schedule(async () => {
       try {
@@ -143,7 +159,7 @@ export async function reconcileSyncMutations(
           context: { error: error instanceof Error ? error.name : "unknown" },
         });
       }
-    });
+    }, continuationDelayMs);
   }
   return { processed, queued, retained };
 }
@@ -156,10 +172,6 @@ function boundedInteger(
 ): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;
   return Math.max(minimum, Math.min(maximum, Math.trunc(value)));
-}
-
-function reconciliationRef(record: Pick<SyncReconciliationRecord, "id" | "generation">): string {
-  return `${record.id}:${record.generation}`;
 }
 
 async function projectRecord(
@@ -181,6 +193,14 @@ async function projectRecord(
   if (payload.kind === "history") {
     const history = deps.historyRepository.getProgressByKey(payload.historyKey);
     if (!history) return { status: "settled", queued: 0 };
+    const admission = await deps.syncService.checkAutomaticAdmission(
+      { tracker: "anilist", capability: "progress" },
+      signal ? { signal } : undefined,
+    );
+    if (admission === "aborted") {
+      return { status: "retained", reason: "caller-aborted" };
+    }
+    if (admission === "disabled") return { status: "settled", queued: 0 };
     const targets = await resolveMirrorTargetsStrict(
       deps,
       {
@@ -200,18 +220,26 @@ async function projectRecord(
     if (!anilist || anilist.tracker !== "anilist") {
       return { status: "settled", queued: 0, reason: "no-mapping" };
     }
-    return {
-      status: "settled",
-      queued: await deps.syncService.enqueueProgressIfEnabled({
-        ...history,
-        externalIds: {
-          ...history.externalIds,
-          anilistId: String(anilist.anilistId),
+    return enqueueWithAdmissionSignal(() =>
+      deps.syncService.enqueueProgressIfEnabled(
+        {
+          ...history,
+          externalIds: {
+            ...history.externalIds,
+            anilistId: String(anilist.anilistId),
+          },
         },
-      }),
-    };
+        signal ? { signal } : undefined,
+      ),
+    );
   }
 
+  const capability = payload.list === "watchlist" ? "watchlist" : "favorite";
+  const admission = await checkListAdmission(deps.syncService, payload.item, capability, signal);
+  if (admission === "aborted") {
+    return { status: "retained", reason: "caller-aborted" };
+  }
+  if (admission === "disabled") return { status: "settled", queued: 0 };
   const targets = await resolveMirrorTargetsStrict(
     deps,
     payload.item,
@@ -223,22 +251,71 @@ async function projectRecord(
     return { status: "settled", queued: 0, reason: "no-mapping" };
   }
   if (payload.list === "watchlist") {
-    return {
-      status: "settled",
-      queued: await deps.syncService.enqueueListMembershipIfEnabled({
-        identities: targets.identities,
-        list: "watchlist",
-        present: payload.present,
-      }),
-    };
+    return enqueueWithAdmissionSignal(() =>
+      deps.syncService.enqueueListMembershipIfEnabled(
+        {
+          identities: targets.identities,
+          list: "watchlist",
+          present: payload.present,
+        },
+        signal ? { signal } : undefined,
+      ),
+    );
   }
-  return {
-    status: "settled",
-    queued: await deps.syncService.enqueueFavoriteMembershipIfEnabled({
-      identities: targets.identities,
-      present: payload.present,
-    }),
-  };
+  return enqueueWithAdmissionSignal(() =>
+    deps.syncService.enqueueFavoriteMembershipIfEnabled(
+      {
+        identities: targets.identities,
+        present: payload.present,
+      },
+      signal ? { signal } : undefined,
+    ),
+  );
+}
+
+async function checkListAdmission(
+  syncService: SyncService,
+  item: {
+    readonly titleId: string;
+    readonly mediaKind: MediaKind;
+    readonly externalIds?: ProviderExternalIds;
+  },
+  capability: "watchlist" | "favorite",
+  signal?: AbortSignal,
+): Promise<"allowed" | "disabled" | "aborted"> {
+  const trackers: Array<"anilist" | "tmdb"> = ["anilist"];
+  if (
+    item.mediaKind !== "anime" &&
+    !item.titleId.startsWith("anilist:") &&
+    !item.externalIds?.anilistId &&
+    !item.externalIds?.malId
+  ) {
+    trackers.push("tmdb");
+  }
+  for (const tracker of trackers) {
+    const admission = await syncService.checkAutomaticAdmission(
+      { tracker, capability },
+      signal ? { signal } : undefined,
+    );
+    if (admission !== "disabled") return admission;
+  }
+  return "disabled";
+}
+
+async function enqueueWithAdmissionSignal(
+  enqueue: () => Promise<number>,
+): Promise<
+  | { readonly status: "settled"; readonly queued: number }
+  | { readonly status: "retained"; readonly reason: "caller-aborted" }
+> {
+  try {
+    return { status: "settled", queued: await enqueue() };
+  } catch (error) {
+    if (error instanceof SyncAdmissionAbortedError) {
+      return { status: "retained", reason: "caller-aborted" };
+    }
+    throw error;
+  }
 }
 
 function retainedIdentityProjection(
