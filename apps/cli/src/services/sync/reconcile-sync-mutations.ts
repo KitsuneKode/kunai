@@ -57,6 +57,9 @@ export async function reconcileSyncMutations(
     options.yieldToEventLoop ?? (() => new Promise<void>((resolve) => setImmediate(resolve)));
   const now = options.now ?? (() => performance.now());
   const wallNow = options.wallNow ?? (() => new Date());
+  const signal = options.signal
+    ? AbortSignal.any([deps.syncService.lifetimeSignal, options.signal])
+    : deps.syncService.lifetimeSignal;
   const startedAt = now();
   const snapshot = deps.syncReconciliationRepository.listDue(wallNow(), maxRows + 1);
   const records = snapshot.slice(0, maxRows);
@@ -66,8 +69,8 @@ export async function reconcileSyncMutations(
   let retained = 0;
   let attempted = 0;
   for (const record of records) {
-    if (options.signal?.aborted || now() - startedAt >= timeBudgetMs) {
-      needsContinuation = !options.signal?.aborted;
+    if (signal.aborted || now() - startedAt >= timeBudgetMs) {
+      needsContinuation = !signal.aborted;
       break;
     }
     let current: SyncReconciliationRecord | undefined = record;
@@ -76,7 +79,7 @@ export async function reconcileSyncMutations(
       // awaited. Compare-and-delete refuses the stale completion; immediately
       // reread the same durable fact so callers never need another keypress.
       for (let generationAttempt = 0; current && generationAttempt < 8; generationAttempt += 1) {
-        const projection = await projectRecord(deps, current, options.signal);
+        const projection = await projectRecord(deps, current, signal);
         if (projection.status === "retained") {
           if (deps.syncReconciliationRepository.defer(current, wallNow())) {
             retained += 1;
@@ -128,7 +131,7 @@ export async function reconcileSyncMutations(
   }
 
   let continuationDelayMs = 0;
-  if (!options.signal?.aborted) {
+  if (!signal.aborted) {
     const currentWallTime = wallNow();
     const due = deps.syncReconciliationRepository.listDue(currentWallTime, 1);
     if (due.length > 0) {
@@ -141,7 +144,7 @@ export async function reconcileSyncMutations(
       }
     }
   }
-  if (needsContinuation && !options.signal?.aborted) {
+  if (needsContinuation && !signal.aborted) {
     const schedule =
       options.scheduleContinuation ??
       ((task: () => Promise<void>, delayMs = 0) => {

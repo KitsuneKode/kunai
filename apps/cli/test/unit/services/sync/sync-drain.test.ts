@@ -7,6 +7,7 @@ import { trackerOperationDedupeKey, type TrackerOperation } from "@/services/syn
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import {
   buildProgressUpdates,
+  SyncAdmissionAbortedError,
   SyncService,
   type SyncConfigPort,
 } from "@/services/sync/SyncService";
@@ -436,8 +437,8 @@ describe("SyncService drain", () => {
     expect(repo.counts().pending).toBe(1);
   });
 
-  /** Shutdown stops accepting work rather than queueing what will never drain. */
-  test("stops accepting enqueues after shutdown", async () => {
+  /** Shutdown is retryable lifetime cancellation, not a disabled user choice. */
+  test("reports admission and gated enqueue as aborted after shutdown", async () => {
     const repo = outbox();
     const service = new SyncService({
       adapters: [adapter("anilist").adapter],
@@ -448,11 +449,14 @@ describe("SyncService drain", () => {
     await service.shutdown();
 
     await expect(
+      service.checkAutomaticAdmission({ tracker: "anilist", capability: "favorite" }),
+    ).resolves.toBe("aborted");
+    await expect(
       service.enqueueFavoriteMembershipIfEnabled({
         identities: [anilistFavourite.target],
         present: true,
       }),
-    ).resolves.toBe(0);
+    ).rejects.toBeInstanceOf(SyncAdmissionAbortedError);
     expect(repo.counts().pending).toBe(0);
   });
 

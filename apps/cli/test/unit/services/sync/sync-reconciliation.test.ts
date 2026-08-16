@@ -267,6 +267,136 @@ test("abort during delayed post-identity admission retains without enqueueing", 
   expect(reconciliation.listPending()).toHaveLength(1);
 });
 
+test("service shutdown during post-identity admission retains for a fresh service replay", async () => {
+  const db = stores.store("cli-sync-reconciliation-shutdown-admission");
+  const outbox = new SyncOutboxRepository(db);
+  const history = new HistoryRepository(db);
+  const reconciliation = new SyncReconciliationRepository(db);
+  history.markWatched(
+    {
+      id: "local-anime",
+      kind: "anime",
+      title: "Example",
+      externalIds: { anilistId: "123" },
+    },
+    { season: 1, episode: 12 },
+  );
+  const gate = { enabled: true, trackWatched: true, syncList: true };
+  let configReads = 0;
+  let markSecondRead!: () => void;
+  const secondRead = new Promise<void>((resolve) => {
+    markSecondRead = resolve;
+  });
+  let releaseSecondRead!: () => void;
+  const secondReadReleased = new Promise<void>((resolve) => {
+    releaseSecondRead = resolve;
+  });
+  const sync = new SyncService({
+    adapters: [adapter],
+    outbox,
+    config: {
+      read: async () => {
+        configReads += 1;
+        if (configReads === 2) {
+          markSecondRead();
+          await secondReadReleased;
+        }
+        return { sync: { anilist: gate, tmdb: gate } };
+      },
+    },
+  });
+  const deps = {
+    syncReconciliationRepository: reconciliation,
+    historyRepository: history,
+    syncService: sync,
+    catalogIdentityService: {
+      enrich: async () => {
+        throw new Error("unexpected enrichment");
+      },
+    },
+  };
+  const run = reconcileSyncMutations(deps, { scheduleContinuation: () => {} });
+
+  await secondRead;
+  await sync.shutdown();
+  releaseSecondRead();
+  const result = await run;
+
+  expect(result).toEqual({ processed: 0, queued: 0, retained: 1 });
+  expect(outbox.counts().pending).toBe(0);
+  const retained = reconciliation.listPending()[0];
+  expect(retained).toMatchObject({ attempts: 1 });
+
+  const freshSync = new SyncService({
+    adapters: [adapter],
+    outbox,
+    config: { read: async () => ({ sync: { anilist: gate, tmdb: gate } }) },
+  });
+  const replay = await reconcileSyncMutations(
+    { ...deps, syncService: freshSync },
+    {
+      wallNow: () => new Date(retained!.nextAttemptAt),
+      scheduleContinuation: () => {},
+    },
+  );
+
+  expect(replay).toEqual({ processed: 1, queued: 1, retained: 0 });
+  expect(reconciliation.listPending()).toHaveLength(0);
+  expect(outbox.counts().pending).toBe(1);
+});
+
+test("service shutdown promptly cancels in-flight reconciliation enrichment", async () => {
+  const state = fixture();
+  state.lists.addItem({
+    listId: "favorites",
+    titleId: "anidb:native-title",
+    mediaKind: "anime",
+    title: "Example",
+    externalIds: { malId: "21", providerNativeIds: { anidb: "native-title-123" } },
+  });
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  let releaseEnrichment!: () => void;
+  let enrichmentSignal: AbortSignal | undefined;
+  const enrichment = new Promise<{
+    graph: { confidence: "low"; source: "arm" };
+  }>((resolve) => {
+    releaseEnrichment = () => resolve({ graph: { confidence: "low", source: "arm" } });
+  });
+  const run = reconcileSyncMutations(
+    {
+      syncReconciliationRepository: state.reconciliation,
+      historyRepository: state.history,
+      syncService: state.sync,
+      catalogIdentityService: {
+        enrich: async (_input, options) => {
+          enrichmentSignal = options?.signal;
+          markStarted();
+          return enrichment;
+        },
+      },
+    },
+    { scheduleContinuation: () => {} },
+  );
+
+  await started;
+  await state.sync.shutdown();
+  const phase = await Promise.race([
+    run.then(() => "settled" as const),
+    Bun.sleep(50).then(() => "still-running" as const),
+  ]);
+  if (phase === "still-running") releaseEnrichment();
+  const result = await run;
+
+  expect(phase).toBe("settled");
+  expect(enrichmentSignal?.aborted).toBe(true);
+  expect(result).toEqual({ processed: 0, queued: 0, retained: 1 });
+  expect(state.outbox.counts().pending).toBe(0);
+  expect(state.reconciliation.listPending()).toMatchObject([{ attempts: 1 }]);
+});
+
 test("a hard-kill fact is replayed into the outbox after the database reopens", async () => {
   const path = join(stores.dir("cli-sync-reconciliation-restart"), "data.sqlite");
   const firstDb = openKunaiDatabase(path);

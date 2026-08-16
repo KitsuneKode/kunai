@@ -217,7 +217,10 @@ fresh config each time. A write the settings forbid creates no tracker-specific
 intent. Its local reconciliation fact is settled under the current setting, so
 opting in later does not unexpectedly replay mutations made while sync was
 disabled. Cancellation while either admission read is awaiting config retains
-the neutral fact and never creates or settles tracker intent.
+the neutral fact and never creates or settles tracker intent. Reconciliation
+composes the caller signal with the `SyncService` lifetime signal, so shutdown
+also cancels an in-flight config read or identity enrichment promptly and
+defers the neutral fact for a fresh service instance to replay.
 
 ## Durability boundary
 

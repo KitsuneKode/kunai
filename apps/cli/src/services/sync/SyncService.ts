@@ -221,6 +221,11 @@ export class SyncService {
     return [...this.adaptersById.values()];
   }
 
+  /** Lifetime cancellation shared by admission, reconciliation, and delivery. */
+  get lifetimeSignal(): AbortSignal {
+    return this.shutdownController.signal;
+  }
+
   getConnectedAdapters(): SyncAdapter[] {
     return this.adapters.filter((adapter) => adapter.isConnected());
   }
@@ -253,7 +258,9 @@ export class SyncService {
    * callers can report an exact count rather than an intention.
    */
   private enqueueOperation(operation: TrackerOperation): number {
-    if (!this.accepting) return 0;
+    if (!this.accepting || this.shutdownController.signal.aborted) {
+      throw new SyncAdmissionAbortedError();
+    }
     const tracker = trackerOf(operation);
     if (!this.adaptersById.has(tracker)) return 0;
 
@@ -270,6 +277,7 @@ export class SyncService {
     input: { readonly tracker: TrackerId; readonly capability: AutomaticSyncCapability },
     options: { readonly signal?: AbortSignal } = {},
   ): Promise<AutomaticSyncAdmission> {
+    if (!this.accepting || this.shutdownController.signal.aborted) return "aborted";
     let config: Awaited<ReturnType<SyncConfigPort["read"]>>;
     try {
       config = await this.readConfig(options.signal);
@@ -277,7 +285,9 @@ export class SyncService {
       if (error instanceof SyncAdmissionAbortedError) return "aborted";
       throw error;
     }
-    if (options.signal?.aborted) return "aborted";
+    if (!this.accepting || this.shutdownController.signal.aborted || options.signal?.aborted) {
+      return "aborted";
+    }
     const gate = config.sync[input.tracker];
     const adapter = this.adaptersById.get(input.tracker);
     if (!gate?.enabled || !adapter) return "disabled";
@@ -389,17 +399,19 @@ export class SyncService {
   private async readConfig(
     signal?: AbortSignal,
   ): Promise<Awaited<ReturnType<SyncConfigPort["read"]>>> {
-    if (!signal) return this.config.read();
-    if (signal.aborted) throw new SyncAdmissionAbortedError();
+    const admissionSignal = signal
+      ? AbortSignal.any([this.shutdownController.signal, signal])
+      : this.shutdownController.signal;
+    if (admissionSignal.aborted) throw new SyncAdmissionAbortedError();
     let abort!: () => void;
     const cancelled = new Promise<never>((_, reject) => {
       abort = () => reject(new SyncAdmissionAbortedError());
-      signal.addEventListener("abort", abort, { once: true });
+      admissionSignal.addEventListener("abort", abort, { once: true });
     });
     try {
       return await Promise.race([this.config.read(), cancelled]);
     } finally {
-      signal.removeEventListener("abort", abort);
+      admissionSignal.removeEventListener("abort", abort);
     }
   }
 
