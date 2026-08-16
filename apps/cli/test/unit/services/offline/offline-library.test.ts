@@ -299,6 +299,8 @@ describe("offline-library helpers", () => {
         persisted.map((job) => ({ job, status: "ready" as const })),
       );
       expect(groups).toHaveLength(1);
+      expect(groups[0]?.contentType).toBe("series");
+      expect(formatOfflineLibraryGroupLabel(groups[0]!)).toBe("Frieren  ·  2 episodes");
       expect(groups[0]?.entries.map((entry) => entry.job.episode)).toEqual([1, 2]);
     } finally {
       Bun.gc(true);
@@ -306,6 +308,89 @@ describe("offline-library helpers", () => {
       db.close(true);
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  test("explicit movie and series structures for one identity remain separate groups", () => {
+    const groups = groupOfflineLibraryEntries([
+      {
+        job: minimalJob({
+          id: "movie",
+          titleId: "anilist:shared",
+          mediaKind: "anime",
+          contentType: "movie",
+          season: 1,
+          episode: 1,
+        }),
+        status: "ready",
+      },
+      {
+        job: minimalJob({
+          id: "series",
+          titleId: "anilist:shared",
+          mediaKind: "anime",
+          contentType: "series",
+          season: 1,
+          episode: 2,
+        }),
+        status: "ready",
+      },
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.contentType).sort()).toEqual(["movie", "series"]);
+    expect(groups.map(formatOfflineLibraryGroupLabel).sort()).toEqual([
+      "Demo  ·  1 episode",
+      "Demo  ·  1 movie",
+    ]);
+  });
+
+  test("legacy null structure stays unresolved when movie and series both exist", () => {
+    const groups = groupOfflineLibraryEntries([
+      {
+        job: minimalJob({
+          id: "movie",
+          titleId: "anilist:ambiguous",
+          mediaKind: "anime",
+          contentType: "movie",
+          season: 1,
+          episode: 1,
+        }),
+        status: "ready",
+      },
+      {
+        job: minimalJob({
+          id: "series",
+          titleId: "anilist:ambiguous",
+          mediaKind: "anime",
+          contentType: "series",
+          season: 1,
+          episode: 2,
+        }),
+        status: "ready",
+      },
+      {
+        job: minimalJob({
+          id: "legacy",
+          titleId: "anilist:ambiguous",
+          mediaKind: "anime",
+          contentType: undefined,
+          season: 1,
+          episode: 3,
+        }),
+        status: "ready",
+      },
+    ]);
+
+    expect(groups).toHaveLength(3);
+    const entriesByStructure = new Map(
+      groups.map((group) => [
+        group.contentType ?? "unresolved",
+        group.entries.map((entry) => entry.job.id),
+      ]),
+    );
+    expect(entriesByStructure.get("movie")).toEqual(["movie"]);
+    expect(entriesByStructure.get("series")).toEqual(["series"]);
+    expect(entriesByStructure.get("unresolved")).toEqual(["legacy"]);
   });
 
   test("offline previews prefer local thumbnails and avoid remote artwork while offline", () => {

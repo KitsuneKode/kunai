@@ -60,16 +60,42 @@ export function groupOfflineLibraryEntries(
   entries: readonly OfflineLibraryEntry[],
   artworkPolicy: OfflineArtworkPolicy = {},
 ): readonly OfflineLibraryGroup[] {
-  const groups = new Map<string, OfflineLibraryEntry[]>();
+  const identities = new Map<string, OfflineLibraryEntry[]>();
   for (const entry of entries) {
     const key = `${entry.job.titleId || entry.job.titleName}:${entry.job.mediaKind}`;
-    const current = groups.get(key) ?? [];
+    const current = identities.get(key) ?? [];
     current.push(entry);
-    groups.set(key, current);
+    identities.set(key, current);
+  }
+
+  const partitions = new Map<
+    string,
+    {
+      readonly contentType?: DownloadJobRecord["contentType"];
+      readonly entries: OfflineLibraryEntry[];
+    }
+  >();
+  for (const [identityKey, identityEntries] of identities) {
+    const explicitStructures = new Set(
+      identityEntries.flatMap((entry) =>
+        entry.job.contentType === undefined ? [] : [entry.job.contentType],
+      ),
+    );
+    const soleExplicitStructure =
+      explicitStructures.size === 1 ? explicitStructures.values().next().value : undefined;
+
+    for (const entry of identityEntries) {
+      const contentType = entry.job.contentType ?? soleExplicitStructure;
+      const key = `${identityKey}:${contentType ?? "unresolved"}`;
+      const partition = partitions.get(key) ?? { contentType, entries: [] };
+      partition.entries.push(entry);
+      partitions.set(key, partition);
+    }
   }
 
   const libraryGroups: OfflineLibraryGroup[] = [];
-  for (const [key, groupEntries] of groups.entries()) {
+  for (const [key, partition] of partitions.entries()) {
+    const groupEntries = partition.entries;
     const sortedEntries = [...groupEntries].sort(compareOfflineEntries);
     const first = sortedEntries[0]?.job;
     if (!first) continue;
@@ -86,7 +112,7 @@ export function groupOfflineLibraryEntries(
       titleId: first.titleId,
       titleName: first.titleName,
       mediaKind: first.mediaKind,
-      contentType: first.contentType,
+      contentType: partition.contentType,
       entries: sortedEntries,
       readyCount: sortedEntries.filter((entry) => entry.status === "ready").length,
       issueCount: sortedEntries.filter((entry) => entry.status !== "ready").length,
@@ -117,7 +143,7 @@ export function formatOfflineLibraryGroupDetail(group: OfflineLibraryGroup): str
     group.totalSize !== null ? `${(group.totalSize / 1_048_576).toFixed(1)} MB local` : null,
     group.previewImageUrl ? "artwork ready" : null,
     group.entries.some((entry) => entry.job.introSkipJson) ? "timing cached" : null,
-    formatOfflineRange(group.entries),
+    formatOfflineRange(group.entries, group.contentType),
   ].filter(Boolean);
   return parts.join("  ·  ");
 }
@@ -174,9 +200,10 @@ export function formatOfflineShelfBadge(
 export function formatOfflineShelfDetail(
   job: DownloadJobRecord,
   status: OfflineArtifactStatus,
+  contentType: DownloadJobRecord["contentType"] = job.contentType,
 ): string {
   const parts = [
-    formatOfflineEpisodeLabel(job),
+    formatOfflineEpisodeLabel(job, contentType),
     formatOfflineMediaDuration(job.durationMs),
     typeof job.fileSize === "number" ? `${(job.fileSize / 1_048_576).toFixed(1)} MB` : null,
     job.subtitlePath ? "subtitles cached" : "no subtitles cached",
@@ -254,11 +281,14 @@ function offlineStatusLabel(status: OfflineArtifactStatus): string {
   return "invalid-file";
 }
 
-function formatOfflineEpisodeLabel(job: DownloadJobRecord): string {
+function formatOfflineEpisodeLabel(
+  job: DownloadJobRecord,
+  contentType: DownloadJobRecord["contentType"] = job.contentType,
+): string {
   const { positionLabel, kindLabel } = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
-    contentType: job.contentType,
+    contentType,
     season: job.season,
     episode: job.episode,
   });
@@ -279,12 +309,15 @@ function compareOfflineEntries(left: OfflineLibraryEntry, right: OfflineLibraryE
  * range, and synthesizing one from a legacy season 1 slot invented a span the
  * user never downloaded.
  */
-function formatOfflineRange(entries: readonly OfflineLibraryEntry[]): string | null {
+function formatOfflineRange(
+  entries: readonly OfflineLibraryEntry[],
+  contentType?: DownloadJobRecord["contentType"],
+): string | null {
   const positioned = entries.flatMap((entry) => {
     const presentation = presentMedia({
       title: entry.job.titleName,
       mediaKind: entry.job.mediaKind,
-      contentType: entry.job.contentType,
+      contentType: contentType ?? entry.job.contentType,
       season: entry.job.season,
       episode: entry.job.episode,
     });

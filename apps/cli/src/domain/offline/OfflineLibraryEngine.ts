@@ -63,12 +63,12 @@ export function createOfflineLibraryEngine(): OfflineLibraryEngine {
           presentation: presentMedia({
             title: entry.job.titleName,
             mediaKind: entry.job.mediaKind,
-            contentType: entry.job.contentType,
+            contentType: group.contentType ?? entry.job.contentType,
             season: entry.job.season,
             episode: entry.job.episode,
           }),
           badge: formatOfflineShelfBadge(entry.job, entry.status),
-          detail: formatOfflineShelfDetail(entry.job, entry.status),
+          detail: formatOfflineShelfDetail(entry.job, entry.status, group.contentType),
           previewImageUrl: entry.job.thumbnailPath ?? entry.job.posterUrl,
           playable: entry.status === "ready",
         }));
