@@ -9,8 +9,12 @@ import { render, stripAnsi } from "../../harness/render-capture";
 
 type FixtureOptions = {
   readonly updates?: unknown[];
+  readonly deletes?: string[];
+  readonly metadataRepairs?: string[][];
+  readonly protectedDownloadJobIds?: readonly string[];
   readonly initialView?: "library" | "queue";
   readonly entries?: readonly OfflineLibraryEntry[];
+  readonly entryResponses?: readonly (readonly OfflineLibraryEntry[])[];
 };
 
 function offlineEntry(overrides: Partial<OfflineLibraryEntry["job"]> = {}): OfflineLibraryEntry {
@@ -44,11 +48,12 @@ function offlineEntry(overrides: Partial<OfflineLibraryEntry["job"]> = {}): Offl
 
 function fixture(options: FixtureOptions = {}): Container {
   const updates = options.updates ?? [];
+  let entryResponseIndex = 0;
   return {
     config: {
       zenMode: false,
       downloadsEnabled: true,
-      protectedDownloadJobIds: [] as string[],
+      protectedDownloadJobIds: [...(options.protectedDownloadJobIds ?? [])],
       update: async (patch: unknown) => {
         updates.push(patch);
       },
@@ -59,7 +64,9 @@ function fixture(options: FixtureOptions = {}): Container {
       listCompleted: () => [],
       listFailed: () => [],
       onEvent: () => () => undefined,
-      deleteJob: () => undefined,
+      deleteJob: (jobId: string) => {
+        options.deletes?.push(jobId);
+      },
       abort: async () => undefined,
       retry: async () => undefined,
       processQueue: async () => undefined,
@@ -69,13 +76,26 @@ function fixture(options: FixtureOptions = {}): Container {
         stillRepairable: 0,
         failed: 0,
       }),
+      repairArtifactMetadata: async (jobIds: readonly string[]) => {
+        options.metadataRepairs?.push([...jobIds]);
+        return jobIds.length;
+      },
     },
     offlineLibraryService: {
-      listCompletedEntries: async () => options.entries ?? [offlineEntry()],
+      listCompletedEntries: async () => {
+        const responses = options.entryResponses;
+        if (!responses || responses.length === 0) return options.entries ?? [offlineEntry()];
+        const response = responses[Math.min(entryResponseIndex, responses.length - 1)] ?? [];
+        entryResponseIndex += 1;
+        return response;
+      },
     },
     historyRepository: {
       listLatestByTitle: () => [],
       listByTitle: () => [],
+    },
+    offlineTitlePolicies: {
+      get: () => null,
     },
     stateManager: {
       dispatch: () => undefined,
@@ -238,6 +258,49 @@ describe("library input ownership", () => {
     }
   });
 
+  test("movie detail renders an inherited legacy null row without E01", async () => {
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          entries: [
+            offlineEntry({
+              id: "legacy",
+              titleId: "infinity-castle",
+              titleName: "Infinity Castle",
+              mediaKind: "anime",
+              contentType: undefined,
+              season: 1,
+              episode: 1,
+            }),
+            offlineEntry({
+              id: "movie",
+              titleId: "infinity-castle",
+              titleName: "Infinity Castle",
+              mediaKind: "anime",
+              contentType: "movie",
+              season: undefined,
+              episode: undefined,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 140, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Infinity Castle");
+      handle.stdin.enqueue("\r");
+      await waitForFrame(handle, "Continue this title online");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).not.toContain("E01");
+      expect(frame).not.toContain("S01");
+      expect(frame).toContain("2 of 2 movies");
+      expect(frame).not.toContain("2 of 2 episodes");
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("ready-item counts use the canonical item noun rather than fixed ep copy", async () => {
     const handle = render(
       <LibraryShell
@@ -261,6 +324,226 @@ describe("library input ownership", () => {
       const frame = stripAnsi(handle.lastFrame());
       expect(frame).toContain("1 movie");
       expect(frame).not.toContain("1 ep");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("movie partition preview size excludes same-identity series and unresolved jobs", async () => {
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          entries: [
+            offlineEntry({
+              id: "movie",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "movie",
+              fileSize: 1_048_576,
+            }),
+            offlineEntry({
+              id: "series",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "series",
+              episode: 2,
+              fileSize: 8 * 1_048_576,
+            }),
+            offlineEntry({
+              id: "legacy",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: undefined,
+              episode: 3,
+              fileSize: 16 * 1_048_576,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 140, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "size");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).toContain("1.0 MB");
+      expect(frame).not.toContain("25.0 MB");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("movie partition does not inherit same-identity series cleanup protection", async () => {
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          protectedDownloadJobIds: ["series"],
+          entries: [
+            offlineEntry({
+              id: "movie",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "movie",
+            }),
+            offlineEntry({
+              id: "series",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "series",
+              episode: 2,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Anime");
+      const movieRow = stripAnsi(handle.lastFrame())
+        .split("\n")
+        .find((line) => line.includes("Anime"));
+      expect(movieRow).not.toContain("⚲");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("deleting a movie partition leaves same-identity series and unresolved jobs intact", async () => {
+    const deletes: string[] = [];
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          deletes,
+          entries: [
+            offlineEntry({
+              id: "movie",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "movie",
+            }),
+            offlineEntry({
+              id: "series",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "series",
+              episode: 2,
+            }),
+            offlineEntry({
+              id: "legacy",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: undefined,
+              episode: 3,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Dune");
+      handle.stdin.enqueue("x");
+      await waitForFrame(handle, "Press x again");
+      handle.stdin.enqueue("x");
+      expect(deletes).toEqual(["movie"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("protecting a movie partition leaves same-identity series and unresolved jobs unchanged", async () => {
+    const updates: unknown[] = [];
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          updates,
+          entries: [
+            offlineEntry({
+              id: "movie",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "movie",
+            }),
+            offlineEntry({
+              id: "series",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: "series",
+              episode: 2,
+            }),
+            offlineEntry({
+              id: "legacy",
+              titleId: "shared",
+              mediaKind: "anime",
+              contentType: undefined,
+              episode: 3,
+            }),
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Dune");
+      handle.stdin.enqueue("p");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(updates).toEqual([{ protectedDownloadJobIds: ["movie"] }]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("detail repair and refresh stay inside the selected movie partition", async () => {
+    const metadataRepairs: string[][] = [];
+    const movie = offlineEntry({
+      id: "movie",
+      titleId: "shared",
+      mediaKind: "anime",
+      contentType: "movie",
+    });
+    const series = offlineEntry({
+      id: "series",
+      titleId: "shared",
+      mediaKind: "anime",
+      contentType: "series",
+      episode: 2,
+    });
+    const legacy = offlineEntry({
+      id: "legacy",
+      titleId: "shared",
+      mediaKind: "anime",
+      contentType: undefined,
+      episode: 3,
+    });
+    const handle = render(
+      <LibraryShell
+        container={fixture({
+          metadataRepairs,
+          entryResponses: [
+            [movie, series, legacy],
+            [series, legacy],
+          ],
+        })}
+        onClose={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "Dune");
+      handle.stdin.enqueue("\r");
+      await waitForFrame(handle, "Continue this title online");
+      for (let index = 0; index < 4; index += 1) {
+        handle.stdin.enqueue("\u001b[B");
+      }
+      handle.stdin.enqueue("\r");
+      await waitForFrame(handle, "1 title · 2 local items");
+      expect(metadataRepairs).toEqual([["movie"]]);
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Continue this title online");
     } finally {
       handle.unmount();
     }

@@ -149,11 +149,14 @@ export function formatOfflineLibraryGroupDetail(group: OfflineLibraryGroup): str
 }
 
 /** Short label for pickers; matches `/downloads` completed row style. */
-export function formatOfflineJobListingTitle(job: DownloadJobRecord): string {
+export function formatOfflineJobListingTitle(
+  job: DownloadJobRecord,
+  contentType: DownloadJobRecord["contentType"] = job.contentType,
+): string {
   const { positionLabel, kindLabel } = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
-    contentType: job.contentType,
+    contentType,
     season: job.season,
     episode: job.episode,
   });

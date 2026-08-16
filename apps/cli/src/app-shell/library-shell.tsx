@@ -238,14 +238,14 @@ function LibraryTab({
 
   const detailEntries = useMemo(() => {
     if (!detailGroup || !entries) return [];
-    return entries.filter((entry) => entry.job.titleId === detailGroup.titleId);
+    return selectOfflineGroupEntries(detailGroup, entries);
   }, [detailGroup, entries]);
 
   const refreshEntries = () => {
     void (async () => {
       const result = await container.offlineLibraryService.listCompletedEntries(200);
       setEntries(result);
-      if (detailGroup && !result.some((entry) => entry.job.titleId === detailGroup.titleId)) {
+      if (detailGroup && selectOfflineGroupEntries(detailGroup, result).length === 0) {
         setLibraryView("titles");
         setDetailGroup(null);
       }
@@ -307,16 +307,13 @@ function LibraryTab({
         if (!selectedOfflineGroup) return;
         if (confirmDeleteKey === selectedOfflineGroup.key) {
           setConfirmDeleteKey(null);
-          const groupEntryIds: string[] = [];
-          for (const entry of entries) {
-            if (entry.job.titleId === selectedOfflineGroup.titleId)
-              groupEntryIds.push(entry.job.id);
-          }
+          const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
+          const groupEntryIdSet = offlineGroupJobIdSet(selectedOfflineGroup);
           for (const jobId of groupEntryIds) {
             container.downloadService.deleteJob(jobId, { deleteArtifact: true });
           }
           setEntries((prev) =>
-            prev ? prev.filter((e) => e.job.titleId !== selectedOfflineGroup.titleId) : null,
+            prev ? prev.filter((entry) => !groupEntryIdSet.has(entry.job.id)) : null,
           );
         } else {
           setConfirmDeleteKey(selectedOfflineGroup.key);
@@ -325,10 +322,7 @@ function LibraryTab({
       }
       if (input === "p" || input === "P") {
         if (!selectedOfflineGroup) return;
-        const groupEntryIds: string[] = [];
-        for (const entry of entries) {
-          if (entry.job.titleId === selectedOfflineGroup.titleId) groupEntryIds.push(entry.job.id);
-        }
+        const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
         const protectedSet = new Set(container.config.protectedDownloadJobIds);
         const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
         void (async () => {
@@ -473,7 +467,7 @@ function LibraryTab({
         const { row, selected } = item;
         const title = formatLibraryTitle(
           row.group,
-          isLibraryGroupProtected(row.group, entries ?? [], protectedIds),
+          isLibraryGroupProtected(row.group, protectedIds),
         );
         const ep = formatLibrarySeasonCode(row.group);
         const status = formatLibraryStatus(row, historyMap);
@@ -565,12 +559,21 @@ function buildVisibleLibraryItems(
 
 function isLibraryGroupProtected(
   group: OfflineLibraryShelfGroup,
-  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
   protectedIds: ReadonlySet<string>,
 ): boolean {
-  return entries
-    .filter((entry) => entry.job.titleId === group.titleId)
-    .some((entry) => protectedIds.has(entry.job.id));
+  return group.entries.some((entry) => protectedIds.has(entry.jobId));
+}
+
+function offlineGroupJobIdSet(group: OfflineLibraryShelfGroup): ReadonlySet<string> {
+  return new Set(group.entries.map((entry) => entry.jobId));
+}
+
+function selectOfflineGroupEntries(
+  group: OfflineLibraryShelfGroup,
+  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
+): readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] {
+  const jobIds = offlineGroupJobIdSet(group);
+  return entries.filter((entry) => jobIds.has(entry.job.id));
 }
 
 function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boolean): string {
@@ -645,10 +648,11 @@ function buildLibraryPreviewRailModel(
   protectedIds: ReadonlySet<string>,
 ): PreviewRailModel {
   const hist = historyMap[group.titleId];
-  const protectedTitle = isLibraryGroupProtected(group, entries, protectedIds);
-  const sizeBytes = entries
-    .filter((entry) => entry.job.titleId === group.titleId)
-    .reduce((sum, entry) => sum + (entry.job.fileSize ?? 0), 0);
+  const protectedTitle = isLibraryGroupProtected(group, protectedIds);
+  const sizeBytes = selectOfflineGroupEntries(group, entries).reduce(
+    (sum, entry) => sum + (entry.job.fileSize ?? 0),
+    0,
+  );
   const sizeLabel =
     sizeBytes >= 1_073_741_824
       ? `${(sizeBytes / 1_073_741_824).toFixed(1)} GB`

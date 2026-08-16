@@ -19,7 +19,7 @@ import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
-import { presentMedia } from "@/domain/media/media-presentation";
+import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
@@ -265,11 +265,11 @@ export function LibraryTitleDetail({
         const selected = flatIndex === safeIndex;
         if (row.kind === "episode") {
           const { entry } = row;
-          const label = `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`;
+          const label = `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job, group.contentType)}`;
           const detail = [
             formatOfflineShelfBadge(entry.job, entry.status),
             formatOfflineHistoryProgress(entry.job, historyEntries),
-            formatOfflineShelfDetail(entry.job, entry.status),
+            formatOfflineShelfDetail(entry.job, entry.status, group.contentType),
           ]
             .filter(Boolean)
             .join("  ·  ");
@@ -281,7 +281,7 @@ export function LibraryTitleDetail({
               flexColumnIndex={rowLayout.flexColumnIndex}
               columns={buildMediaListRowColumns({
                 title: label,
-                episodeCode: formatLibraryEntryPosition(entry.job),
+                episodeCode: formatLibraryEntryPosition(entry.job, group.contentType),
                 statusLabel: detail,
                 statusColor: palette.muted,
                 statusDim: true,
@@ -327,7 +327,11 @@ export function LibraryTitleDetail({
     facts: [
       {
         label: "offline",
-        value: `${group.readyCount} of ${group.entries.length} episodes`,
+        value: `${group.readyCount} of ${formatMediaItemCount({
+          mediaKind: group.mediaKind,
+          contentType: group.contentType,
+          count: group.entries.length,
+        })}`,
         tone: group.readyCount > 0 ? "success" : "warning",
       },
     ],
@@ -350,10 +354,14 @@ export function LibraryTitleDetail({
  * video has no episode code, so it shows its quiet content-kind label instead
  * of a synthesized season the file does not have.
  */
-function formatLibraryEntryPosition(job: DownloadJobRecord): string {
+function formatLibraryEntryPosition(
+  job: DownloadJobRecord,
+  contentType: DownloadJobRecord["contentType"] = job.contentType,
+): string {
   const { positionLabel, kindLabel } = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
+    contentType,
     season: job.season,
     episode: job.episode,
   });
