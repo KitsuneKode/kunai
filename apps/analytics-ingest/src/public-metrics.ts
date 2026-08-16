@@ -6,10 +6,10 @@ export const METRICS_SCHEMA_VERSION = 2;
  * Any dimension bucket smaller than this folds into "other".
  *
  * byVersion + byOs + byArch published together identify a single user on an
- * unusual combination in a small population. That is the cost of aggregating
- * dimensions at all, and a k-anonymity floor is the standard answer to it.
+ * unusual combination in a small population. That is the cost of publishing
+ * separate aggregates. This is small-cell suppression, not joint anonymity.
  */
-export const K_ANONYMITY_FLOOR = 5;
+export const SMALL_CELL_FLOOR = 5;
 
 /**
  * The snapshot is rewritten once per day by cron, so a CDN may safely serve a
@@ -33,7 +33,7 @@ export type PublicAnalyticsMetrics = {
 /** Totals are preserved: suppressed counts move into "other", they are not dropped. */
 export function suppressSmallBuckets(
   counts: Readonly<Record<string, number>>,
-  floor = K_ANONYMITY_FLOOR,
+  floor = SMALL_CELL_FLOOR,
 ): Record<string, number> {
   const kept: Record<string, number> = {};
   let other = 0;
@@ -45,7 +45,7 @@ export function suppressSmallBuckets(
   return kept;
 }
 
-export function buildPublicMetrics(rollup: DailyRollup, updatedAt: string): PublicAnalyticsMetrics {
+export function buildPublicMetrics(rollup: DailyRollup): PublicAnalyticsMetrics {
   return {
     schemaVersion: METRICS_SCHEMA_VERSION,
     day: rollup.day,
@@ -54,7 +54,7 @@ export function buildPublicMetrics(rollup: DailyRollup, updatedAt: string): Publ
     byVersion: suppressSmallBuckets(rollup.byVersion),
     byOs: suppressSmallBuckets(rollup.byOs),
     byArch: suppressSmallBuckets(rollup.byArch),
-    updatedAt,
+    updatedAt: rollup.computedAt,
   };
 }
 

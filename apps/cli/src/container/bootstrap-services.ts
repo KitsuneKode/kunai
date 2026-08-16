@@ -12,7 +12,7 @@ import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
 import {
   resolveAnalyticsEndpoint,
   UsageAnalyticsService,
-} from "../services/analytics/UsageAnalyticsService";
+} from "../services/analytics/usage-analytics-service";
 import { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import { createProviderAvailabilityRefresh } from "../services/attention/provider-availability-refresh";
 import { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";

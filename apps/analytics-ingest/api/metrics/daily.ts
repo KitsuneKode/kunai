@@ -9,7 +9,7 @@ import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
 
 /**
  * Public read-only aggregates. No install hashes, IPs, or raw ids — and
- * dimension buckets under the k-anonymity floor are folded into "other" by
+ * dimension buckets under the small-cell floor are folded into "other" by
  * `buildPublicMetrics` before anything leaves here.
  *
  * Served as /metrics/daily.json via vercel rewrite.
@@ -43,7 +43,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.statusCode = 200;
     res.setHeader("Cache-Control", PUBLIC_METRICS_CACHE_CONTROL);
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify(buildPublicMetrics(rollup, new Date().toISOString())));
+    res.end(JSON.stringify(buildPublicMetrics(rollup)));
   } catch {
     res.statusCode = 503;
     res.setHeader("Cache-Control", "no-store");

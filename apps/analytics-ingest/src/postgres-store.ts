@@ -4,6 +4,21 @@ import type { AnalyticsStore, DailyRollup, RecordPingInput } from "./store";
 
 type CountRow = { readonly bucket: string; readonly n: number };
 
+/**
+ * A data-modifying CTE gives the two retention tables one all-or-nothing
+ * driver call while retaining their independent idempotency keys.
+ */
+export const RECORD_PING_SQL = `with ping_day_insert as (
+  insert into ping_day (day, install_hash, version, os, arch)
+  values ($1, $2, $3, $4, $5)
+  on conflict (day, install_hash) do nothing
+), install_lifetime_insert as (
+  insert into install_lifetime (install_hash, first_seen)
+  values ($2, $1)
+  on conflict (install_hash) do nothing
+)
+select 1`;
+
 function toCounts(rows: readonly CountRow[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const row of rows) counts[row.bucket] = Number(row.n);
@@ -13,6 +28,7 @@ function toCounts(rows: readonly CountRow[]): Record<string, number> {
 function toRollup(row: Record<string, unknown>): DailyRollup {
   return {
     day: String(row.day),
+    computedAt: String(row.computed_at),
     activeInstalls: Number(row.active_installs),
     byVersion: row.by_version as Record<string, number>,
     byOs: row.by_os as Record<string, number>,
@@ -27,20 +43,7 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
   return {
     async recordPing(input: RecordPingInput): Promise<void> {
       const hash = Buffer.from(input.installHash, "hex");
-      // Idempotent by primary key. This single statement is the once-per-day
-      // gate — atomic, unlike the claim-then-record pair it replaces.
-      await sql.query(
-        `insert into ping_day (day, install_hash, version, os, arch)
-         values ($1, $2, $3, $4, $5)
-         on conflict (day, install_hash) do nothing`,
-        [input.day, hash, input.version, input.os, input.arch],
-      );
-      await sql.query(
-        `insert into install_lifetime (install_hash, first_seen)
-         values ($1, $2)
-         on conflict (install_hash) do nothing`,
-        [hash, input.day],
-      );
+      await sql.query(RECORD_PING_SQL, [input.day, hash, input.version, input.os, input.arch]);
     },
 
     async rollUpDay(day: string): Promise<DailyRollup> {
@@ -63,6 +66,7 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
 
       const rollup: DailyRollup = {
         day,
+        computedAt: "",
         activeInstalls: Number(active[0]?.n ?? 0),
         byVersion: await grouped("version"),
         byOs: await grouped("os"),
@@ -70,7 +74,7 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
         lifetimeInstalls: Number(lifetime[0]?.n ?? 0),
       };
 
-      await sql.query(
+      const persisted = (await sql.query(
         `insert into daily_rollup
            (day, active_installs, by_version, by_os, by_arch, lifetime_installs, computed_at)
          values ($1, $2, $3, $4, $5, $6, now())
@@ -80,7 +84,8 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
            by_os = excluded.by_os,
            by_arch = excluded.by_arch,
            lifetime_installs = excluded.lifetime_installs,
-           computed_at = now()`,
+           computed_at = now()
+         returning computed_at::text`,
         [
           rollup.day,
           rollup.activeInstalls,
@@ -89,14 +94,14 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
           JSON.stringify(rollup.byArch),
           rollup.lifetimeInstalls,
         ],
-      );
+      )) as { computed_at: string }[];
 
-      return rollup;
+      return { ...rollup, computedAt: String(persisted[0]?.computed_at ?? "") };
     },
 
     async readRollup(day: string): Promise<DailyRollup | null> {
       const rows = (await sql.query(
-        `select day::text, active_installs, by_version, by_os, by_arch, lifetime_installs
+        `select day::text, active_installs, by_version, by_os, by_arch, lifetime_installs, computed_at::text
          from daily_rollup where day = $1`,
         [day],
       )) as Record<string, unknown>[];
@@ -106,7 +111,7 @@ export function createPostgresAnalyticsStore(connectionString: string): Analytic
 
     async readRollups(fromDay: string, toDay: string): Promise<readonly DailyRollup[]> {
       const rows = (await sql.query(
-        `select day::text, active_installs, by_version, by_os, by_arch, lifetime_installs
+        `select day::text, active_installs, by_version, by_os, by_arch, lifetime_installs, computed_at::text
          from daily_rollup where day >= $1 and day <= $2 order by day asc`,
         [fromDay, toDay],
       )) as Record<string, unknown>[];

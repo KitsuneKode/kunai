@@ -3,8 +3,8 @@
  * Fetches aggregates only — never Redis, never install ids.
  */
 
-export const DEFAULT_ANALYTICS_METRICS_URL =
-  "https://kunai-analytics.vercel.app/metrics/daily.json";
+/** Empty until a verified analytics deployment is deliberately configured. */
+export const DEFAULT_ANALYTICS_METRICS_URL = "";
 
 export type DocsAnalyticsMetrics = {
   readonly schemaVersion: 2;
@@ -94,6 +94,7 @@ export async function fetchDocsAnalyticsMetrics(options?: {
   readonly fetchImpl?: typeof fetch;
 }): Promise<DocsAnalyticsMetrics | null> {
   const url = options?.url ?? resolveAnalyticsMetricsUrl();
+  if (!url) return null;
   const fetchImpl = options?.fetchImpl ?? fetch;
   try {
     const response = await fetchImpl(url, {

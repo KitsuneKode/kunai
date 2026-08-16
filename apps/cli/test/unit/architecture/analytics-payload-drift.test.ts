@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   ANALYTICS_PAYLOAD_KEYS,
   type AnalyticsPayload,
-} from "@/services/analytics/UsageAnalyticsService";
+} from "@/services/analytics/usage-analytics-service";
 
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
@@ -62,22 +62,27 @@ describe("analytics payload documentation drift", () => {
       }
     });
 
-    test(`${label} states the opt-out default, not opt-in`, () => {
+    test(`${label} states explicit opt-in and a disabled default`, () => {
       const body = prose(path).toLowerCase();
-      expect(body).toMatch(/opt[- ]out/);
-      expect(body).not.toMatch(/analytics is \*\*opt-in\*\*|telemetry is \*\*opt-in\*\*/);
+      expect(body).toMatch(/opt[- ]in|explicitly enable/);
+      expect(body).toMatch(/off by default|defaults to off/);
     });
 
-    test(`${label} states the k-anonymity floor`, () => {
-      expect(prose(path)).toMatch(/fewer than 5|under 5|floor of 5|floor: 5/i);
+    test(`${label} states the small-cell floor without promising joint anonymity`, () => {
+      const body = prose(path);
+      expect(body).toMatch(/fewer than 5|under 5|below five|floor of 5|floor: 5/i);
+      expect(body).toMatch(/small-cell/i);
+      expect(body).toMatch(/not (a (claim of )?)?joint (k-)?anonymity/i);
     });
 
-    test(`${label} states that the first run does not send`, () => {
-      expect(prose(path).toLowerCase()).toMatch(/first run (never sends|sends nothing)/);
+    test(`${label} states that the notice cannot send before consent`, () => {
+      expect(prose(path).toLowerCase()).toMatch(/before consent|notice does not.*send/);
     });
 
     test(`${label} states that turning it off deletes the install id`, () => {
-      expect(prose(path).toLowerCase()).toMatch(/delet\w+ (it|the install id)|install id.*delet/);
+      expect(prose(path).toLowerCase()).toMatch(
+        /delet\w+ (it|the install id)|install id.*delet|clears `?installid`?/,
+      );
     });
   }
 

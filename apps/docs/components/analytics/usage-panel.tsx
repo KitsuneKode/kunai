@@ -103,8 +103,8 @@ function BreakdownGrid({ metrics }: { readonly metrics: DocsAnalyticsMetrics }) 
         <BreakdownBar label="By architecture" counts={metrics.byArch} />
       </div>
       <p className="text-muted-foreground m-0 text-xs text-pretty">
-        Groups smaller than 5 installs are reported as <code className="font-mono">other</code>, so
-        an unusual combination cannot single out one install.
+        Groups smaller than 5 installs are reported as <code className="font-mono">other</code>.
+        This small-cell suppression is applied per breakdown; it is not a joint anonymity guarantee.
       </p>
     </div>
   );
@@ -134,7 +134,7 @@ function PayloadContractCard() {
         <p className="text-muted-foreground m-0 text-xs">
           Preview locally with <code className="font-mono">/analytics show</code>
         </p>
-        <Badge variant="secondary">opt-out</Badge>
+        <Badge variant="secondary">opt-in</Badge>
       </CardFooter>
     </Card>
   );
@@ -236,7 +236,7 @@ export function UsagePanel({ metrics }: { readonly metrics: DocsAnalyticsMetrics
     <div className="flex flex-col gap-8">
       <Alert className="border-border/80 bg-card/60">
         <IconShieldCheck />
-        <AlertTitle>On by default · opt out anytime · aggregates only</AlertTitle>
+        <AlertTitle>Optional · enable or disable in Settings · aggregates only</AlertTitle>
         <AlertDescription>
           This page shows public day/lifetime counts and version, OS, and architecture breakdowns.
           It never shows who is running Kunai, what they watched, or any install UUID. Abuse can

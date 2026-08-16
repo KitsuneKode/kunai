@@ -414,14 +414,12 @@ function AppRoot({ container }: { container: Container }) {
 
   useEffect(() => {
     if (!showAnalyticsNotice) return undefined;
-    // Showing the notice IS the disclosure, so persist the default now rather
-    // than on dismissal — a session that ends abruptly must not re-prompt
-    // forever. This run still sends nothing: pings only happen in
-    // onSessionStart, which already returned, and in the /analytics menu.
-    void container.usageAnalytics.setConsent("enabled").catch(() => {
-      // Analytics must never surface as a user-facing failure.
-    });
+    // This is a recommendation, not consent. It must never enable analytics or
+    // mint an install id; it only records that the one-time notice was shown.
     const timer = setTimeout(() => {
+      void container.usageAnalytics.markNoticeShown().catch(() => {
+        // Analytics must never surface as a user-facing failure.
+      });
       container.analyticsDisclosurePending = false;
       setAnalyticsNoticeHidden(true);
     }, ANALYTICS_NOTICE_VISIBLE_MS);

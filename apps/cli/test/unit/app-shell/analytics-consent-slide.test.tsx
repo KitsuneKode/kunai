@@ -17,10 +17,8 @@ function frame(selectedIndex = 0): string {
 }
 
 describe("analytics consent slide", () => {
-  test("states that skipping keeps it on", () => {
-    // With an opt-out default, a bare "skip" would be a dark pattern: the user
-    // would be accepting collection without being told that is what skip does.
-    expect(frame()).toContain("skip (keeps it on)");
+  test("states that skipping keeps analytics off", () => {
+    expect(frame()).toContain("skip (keeps it off)");
   });
 
   test("shows the exact payload inline, not behind another command", () => {
@@ -36,16 +34,16 @@ describe("analytics consent slide", () => {
     expect(rendered).toContain("titles");
   });
 
-  test("index 0 is keep-it-on and is marked as the default", () => {
+  test("index 0 keeps analytics off and is marked as the default", () => {
     const rendered = frame();
-    expect(rendered).toContain("Keep it on");
+    expect(rendered).toContain("Keep analytics off");
     expect(rendered).toContain("← default");
   });
 
-  test("says it is on by default and how to turn it off", () => {
+  test("requires an explicit choice to turn analytics on", () => {
     const rendered = frame();
-    expect(rendered).toContain("On by default");
-    expect(rendered).toContain("/analytics");
+    expect(rendered).toContain("Off by default");
+    expect(rendered).toContain("Turn on analytics");
   });
 
   test("reduced motion renders the static petal only", () => {

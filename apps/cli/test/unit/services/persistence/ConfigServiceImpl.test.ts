@@ -21,6 +21,16 @@ class MemoryConfigStore implements ConfigStore {
 }
 
 describe("ConfigServiceImpl", () => {
+  test("migrates a pre-opt-in analytics preference to unset and clears its legacy id", async () => {
+    const store = new MemoryConfigStore({ analytics: "enabled", installId: "legacy-install-id" });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.analytics).toBe("unset");
+    expect(service.installId).toBe("");
+    expect(service.analyticsNoticeShown).toBe(false);
+    expect((await store.load()).installId).toBe("");
+  });
+
   test("loads the default startup mode when persisted config overrides it", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({

@@ -9,7 +9,7 @@ const ADMIN_WINDOW_DAYS = 30;
 /**
  * Unsuppressed rollups for the maintainer. Never linked from the docs site
  * and never cached. Rollups hold counts only — no identity — but the
- * k-anonymity floor does not apply here, so it stays behind a token.
+ * public small-cell suppression does not apply here, so it stays behind a token.
  */
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   res.setHeader("Cache-Control", "no-store");

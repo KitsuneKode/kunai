@@ -8,7 +8,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "Usage analytics",
   description:
-    "See Kunai’s public usage pulse, the exact ping payload, and how the opt-out default works.",
+    "See Kunai’s public usage pulse, the exact optional ping payload, and its privacy limits.",
   alternates: {
     canonical: `${docsSiteUrl}/telemetry`,
   },
@@ -33,8 +33,8 @@ export default async function TelemetryPage() {
         </p>
         <h1 className="kunai-display-title max-w-none text-4xl md:text-5xl">Usage analytics</h1>
         <p className="text-muted-foreground max-w-3xl text-base leading-7 text-pretty">
-          A quiet public pulse for installs running Kunai — not a growth dashboard. Analytics is on
-          by default; opt out anytime with <code className="font-mono">/analytics</code>.
+          A quiet public pulse for installs running Kunai — not a growth dashboard. Analytics is
+          optional; enable or disable it in Settings.
         </p>
       </header>
 

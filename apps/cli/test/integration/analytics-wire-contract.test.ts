@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  DEFAULT_ANALYTICS_ENDPOINT,
-  UsageAnalyticsService,
-} from "@/services/analytics/UsageAnalyticsService";
+import { UsageAnalyticsService } from "@/services/analytics/usage-analytics-service";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
@@ -37,6 +34,7 @@ import {
 
 const HASH_SECRET = "integration-secret-not-for-prod";
 const NOW = Date.UTC(2026, 7, 14, 12, 0, 0);
+const TEST_ENDPOINT = "https://analytics.example.test/api/ping";
 
 function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   let raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...overrides };
@@ -64,7 +62,7 @@ function wireCliToIngest(options: {
   const service = new UsageAnalyticsService({
     config: options.config,
     currentVersion: options.version ?? "0.3.0",
-    endpoint: DEFAULT_ANALYTICS_ENDPOINT,
+    endpoint: TEST_ENDPOINT,
     now: () => NOW,
     platform: { os: options.os ?? "linux", arch: options.arch ?? "x64" },
     env: {},
@@ -126,7 +124,7 @@ describe("CLI → ingest → docs wire contract", () => {
     await service.maybePing();
 
     const rollup = await store.rollUpDay(utcDayKey(NOW));
-    const published = buildPublicMetrics(rollup, new Date(NOW).toISOString());
+    const published = buildPublicMetrics({ ...rollup, computedAt: new Date(NOW).toISOString() });
 
     // Round-trip through JSON: consumers receive text over HTTP, not the
     // in-memory object.
@@ -145,10 +143,7 @@ describe("CLI → ingest → docs wire contract", () => {
     const { service } = wireCliToIngest({ store, config, os: "win32", arch: "arm64" });
     await service.maybePing();
 
-    const published = buildPublicMetrics(
-      await store.rollUpDay(utcDayKey(NOW)),
-      new Date(NOW).toISOString(),
-    );
+    const published = buildPublicMetrics(await store.rollUpDay(utcDayKey(NOW)));
 
     expect(published.byOs).toEqual({ other: 1 });
     expect(published.byOs.win32).toBeUndefined();

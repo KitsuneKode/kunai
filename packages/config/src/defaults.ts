@@ -93,6 +93,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   downloadOnboardingDismissed: false,
   playbackKeysSessionsSeen: 0,
   analytics: "unset",
+  analyticsNoticeShown: false,
   installId: "",
   lastAnalyticsPingAt: 0,
   analyticsRetryAfter: 0,

@@ -30,7 +30,7 @@ import type { ShellService } from "../infra/shell/ShellService";
 import type { StorageService } from "../infra/storage/StorageService";
 import type { Tracer } from "../infra/tracer/Tracer";
 import type { WorkControlService } from "../infra/work/WorkControlService";
-import type { UsageAnalyticsService } from "../services/analytics/UsageAnalyticsService";
+import type { UsageAnalyticsService } from "../services/analytics/usage-analytics-service";
 import type { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import type { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
 import type { CatalogIdentityService } from "../services/catalog/CatalogIdentityService";

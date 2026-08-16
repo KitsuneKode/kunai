@@ -2,14 +2,16 @@ import { describe, expect, test } from "bun:test";
 
 import {
   DEFAULT_ANALYTICS_ENDPOINT,
+  resolveAnalyticsEndpoint,
   UNSET_INSTALL_ID_PLACEHOLDER,
   UsageAnalyticsService,
   type AnalyticsFetch,
-} from "@/services/analytics/UsageAnalyticsService";
+} from "@/services/analytics/usage-analytics-service";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 const UUID = "11111111-2222-4333-8444-555555555555";
+const TEST_ENDPOINT = "https://analytics.example.test/api/ping";
 
 function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   let raw: KitsuneConfig = { ...DEFAULT_CONFIG, ...overrides };
@@ -38,7 +40,7 @@ function makeService(
   return new UsageAnalyticsService({
     config,
     currentVersion: "0.3.0",
-    endpoint: DEFAULT_ANALYTICS_ENDPOINT,
+    endpoint: TEST_ENDPOINT,
     fetchImpl:
       options.fetchImpl ??
       (async () => {
@@ -104,7 +106,7 @@ describe("consentPatch", () => {
 });
 
 describe("onSessionStart", () => {
-  test("first run discloses, persists, and does NOT send", async () => {
+  test("an unconsented interactive run requests the notice without persisting or sending", async () => {
     const config = makeConfig({ analytics: "unset" });
     const calls: string[] = [];
     const service = makeService(config, {
@@ -118,6 +120,9 @@ describe("onSessionStart", () => {
 
     expect(outcome).toEqual({ kind: "needs-disclosure" });
     expect(calls).toEqual([]);
+    expect(config.rawRef.analytics).toBe("unset");
+    expect(config.rawRef.installId).toBe("");
+    expect(config.saveCount).toBe(0);
   });
 
   test("the launch after disclosure does send", async () => {
@@ -133,7 +138,7 @@ describe("onSessionStart", () => {
     const outcome = await service.onSessionStart({ isInteractive: true });
 
     expect(outcome).toEqual({ kind: "pinged" });
-    expect(calls).toEqual([DEFAULT_ANALYTICS_ENDPOINT]);
+    expect(calls).toEqual([TEST_ENDPOINT]);
   });
 
   test("no TTY stays unset — writes nothing, sends nothing", async () => {
@@ -142,6 +147,34 @@ describe("onSessionStart", () => {
     expect(outcome).toEqual({ kind: "quiet" });
     expect(config.rawRef.analytics).toBe("unset");
     expect(config.saveCount).toBe(0);
+  });
+
+  test("no TTY prevents a send even after the user previously opted in", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    const calls: string[] = [];
+    const service = makeService(config, {
+      fetchImpl: async (input) => {
+        calls.push(String(input));
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    expect(await service.onSessionStart({ isInteractive: false })).toEqual({ kind: "quiet" });
+    expect(calls).toEqual([]);
+  });
+
+  test("recording the upgrader notice leaves analytics unset and prevents another prompt", async () => {
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    const service = makeService(config);
+
+    await service.markNoticeShown();
+
+    expect(config.rawRef).toMatchObject({
+      analytics: "unset",
+      installId: "",
+      analyticsNoticeShown: true,
+    });
+    expect(await service.onSessionStart({ isInteractive: true })).toEqual({ kind: "quiet" });
   });
 
   test("env block rewrites a stale enabled config to disabled and clears the id", async () => {
@@ -167,5 +200,12 @@ describe("onSessionStart", () => {
     await service.onSessionStart({ isInteractive: true });
     expect(config.rawRef.analytics).toBe("enabled");
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("endpoint configuration", () => {
+  test("has no production endpoint until an operator explicitly configures one", () => {
+    expect(DEFAULT_ANALYTICS_ENDPOINT).toBe("");
+    expect(resolveAnalyticsEndpoint({})).toBe("");
   });
 });

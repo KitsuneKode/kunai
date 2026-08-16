@@ -33,7 +33,7 @@ export function AnalyticsDisclosureBanner({ width }: { readonly width: number })
           {STATIC_PETAL}
         </Text>
         <Text color={palette.text} bold>
-          {"  Anonymous usage ping is on"}
+          {"  Anonymous usage analytics is not enabled"}
         </Text>
       </Box>
       <Text color={palette.muted}>
@@ -42,7 +42,7 @@ export function AnalyticsDisclosureBanner({ width }: { readonly width: number })
       <Text color={palette.dim} dimColor>
         Never: titles · queries · providers · URLs · paths
       </Text>
-      <Text color={palette.muted}>Turn it off anytime with /analytics.</Text>
+      <Text color={palette.muted}>This is opt-in. Enable or disable it later in Settings.</Text>
     </Box>
   );
 }

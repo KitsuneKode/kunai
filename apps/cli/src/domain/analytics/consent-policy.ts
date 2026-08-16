@@ -42,13 +42,13 @@ export function resolveConsentState(inputs: {
 }): ConsentState {
   const flag = envBlockFlag(inputs.env);
   if (flag) return { kind: "blocked-by-env", flag };
-  if (inputs.stored === "enabled") return { kind: "enabled" };
   if (inputs.stored === "disabled") return { kind: "disabled" };
-  // `unset` without a TTY stays unset rather than persisting a decline: the
-  // notice could not be shown, so a later interactive run must still disclose.
-  return inputs.isInteractive
-    ? { kind: "awaiting-disclosure" }
-    : { kind: "undisclosed-non-interactive" };
+  // A prior opt-in does not permit a scripted or piped invocation to emit a
+  // ping. Keeping this before the enabled preference makes non-TTY a hard
+  // delivery gate while preserving an explicit disabled state.
+  if (!inputs.isInteractive) return { kind: "undisclosed-non-interactive" };
+  if (inputs.stored === "enabled") return { kind: "enabled" };
+  return { kind: "awaiting-disclosure" };
 }
 
 export function canSend(state: ConsentState): boolean {

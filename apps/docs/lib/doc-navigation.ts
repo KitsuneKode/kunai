@@ -234,7 +234,7 @@ export const docNavEntries: readonly DocNavEntry[] = [
   {
     title: "Usage analytics",
     href: "/telemetry",
-    description: "Public usage pulse, exact ping payload, and opt-out controls.",
+    description: "Public usage pulse, exact ping payload, and opt-in controls.",
     group: "reference",
     surfaces: ["hub", "sidebar"],
   },

@@ -94,7 +94,7 @@ function SlideLayout({
   // paddingTop, hint) and this container adds a paddingTop of its own. At a
   // reserve of 4 the box overflows by exactly one row and the hint line is
   // clipped at every terminal height — which on the analytics slide would
-  // silently drop "skip (keeps it on)", the one line that must never be lost.
+  // silently drop "skip (keeps it off)", the one line that must never be lost.
   const contentHeight = Math.max(4, rows - 5);
   return (
     <Box
@@ -515,12 +515,12 @@ export function AnalyticsSlide({
 
   const opts = [
     {
-      label: "Keep it on",
-      detail: "Shows me which versions and platforms to support",
+      label: "Keep analytics off",
+      detail: "No network calls. No install id stored on disk.",
     },
     {
-      label: "Turn it off",
-      detail: "No network calls. No install id stored on disk.",
+      label: "Turn on analytics",
+      detail: "Sends one bounded anonymous ping per day.",
     },
   ];
 
@@ -533,13 +533,7 @@ export function AnalyticsSlide({
           parts={[
             { key: "Enter", label: "confirm" },
             { key: "←/b", label: "back" },
-            // Never a bare "skip": with an opt-out default, this clause is the
-            // difference between disclosure and a dark pattern, so it must
-            // survive an 80x24 terminal intact. The `↑↓ choose` hint every
-            // other picker slide carries is dropped here to make room — the
-            // user has met it on the four slides before this one, and a
-            // two-option list under a ▌ cursor teaches it anyway.
-            { key: "s", label: "skip (keeps it on)" },
+            { key: "s", label: "skip (keeps it off)" },
           ]}
         />
       }
@@ -556,7 +550,7 @@ export function AnalyticsSlide({
 
       <SlideTitle
         text=""
-        sub="On by default. One ping per day. Turn it off right here, or anytime with /analytics."
+        sub="Off by default. Turn it on only if you want to share bounded anonymous usage."
       />
 
       <Box flexDirection="column">
@@ -680,8 +674,7 @@ export function SetupShell({
   const [audioIdx, setAudioIdx] = useState(0);
   const [subtitleIdx, setSubtitleIdx] = useState(0);
   const [downloadsIdx, setDownloadsIdx] = useState(0);
-  // Index 0 is "keep it on": analytics is opt-out, so Enter without changing
-  // accepts the default. The slide's footer states that skipping does the same.
+  // Index 0 keeps analytics off. Enabling must be an explicit setup choice.
   const [analyticsIdx, setAnalyticsIdx] = useState(0);
 
   const slide = SLIDE_ORDER[slideIdx] as Slide;
@@ -696,7 +689,7 @@ export function SetupShell({
       audio: AUDIO_OPTS[audioIdx]?.value ?? "original",
       subtitle: SUBTITLE_OPTS[subtitleIdx]?.value ?? "en",
       downloadsEnabled: downloadsIdx === 0,
-      analyticsChoice: analyticsIdx === 0 ? "enabled" : "disabled",
+      analyticsChoice: analyticsIdx === 1 ? "enabled" : "disabled",
     };
   }
 
@@ -723,9 +716,8 @@ export function SetupShell({
     }
 
     if (input === "s" || input === "S") {
-      // On the analytics slide, `s` accepts the default (on) and continues
-      // setup — it must not abort the whole wizard. The footer says
-      // "skip (keeps it on)" so this is never a silent opt-in.
+      // On the analytics slide, `s` accepts the safe default and continues
+      // setup without turning analytics on.
       if (slide === "analytics") {
         setAnalyticsIdx(0);
         advance();

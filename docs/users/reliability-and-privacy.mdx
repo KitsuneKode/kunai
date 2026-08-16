@@ -69,14 +69,13 @@ or a download artifact was validated.
 
 ## Usage analytics
 
-Anonymous usage analytics are **on by default**, and you can **opt out** at any
-time with `/analytics`.
+Anonymous usage analytics are **off by default**. You can explicitly enable or
+disable them in **Settings → General → Usage analytics**.
 
-Kunai tells you before it sends anything. On a fresh install the setup wizard
-asks; if you skip setup, a one-time notice appears on first launch. **That first
-run sends nothing** — disclosure happens, your choice is saved, and the first
-ping only goes out on the next launch. Until you have been shown the notice,
-Kunai performs zero network calls for analytics.
+On a fresh install, setup offers an explicit choice. Existing installs get one
+non-blocking recommendation explaining the payload; that notice does not enable
+analytics, create an id, or send anything. No analytics requests run before you
+enable it, in a non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
 
 When on, Kunai sends at most one tiny ping per day:
 
@@ -85,8 +84,8 @@ When on, Kunai sends at most one tiny ping per day:
 ```
 
 - Never titles, queries, providers, stream URLs, or file paths
-- Turning it off also **deletes the install id from disk**. The id exists only
-  while analytics is on
+- Turning it off **deletes the install id from disk**. The id exists only while
+  analytics is enabled
 - `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
   of `0`, `false`, or `no` does not block
 - Without an interactive terminal — piped or scripted output — analytics stays
@@ -97,11 +96,12 @@ When on, Kunai sends at most one tiny ping per day:
   install with a first-seen date, which is what an exact lifetime count costs
 - Public docs show yesterday's active installs, a lifetime total, and version /
   platform / architecture breakdowns. Any group with **fewer than 5** installs is
-  reported as `other`, so an unusual combination cannot single you out. Those
-  numbers can be inflated by abuse; they cannot expose what you watch. See the
-  live [usage analytics](/telemetry) page.
+  reported as `other`. This is per-breakdown small-cell suppression, not a joint
+  anonymity guarantee. Those numbers can be inflated by abuse; they cannot expose
+  what you watch. See the live [usage analytics](/telemetry) page.
 
-Preview the exact JSON with `/analytics show`.
+Preview the exact JSON with `/analytics show`. Until an operator configures and
+verifies an analytics endpoint, no production analytics request can be sent.
 
 ## Release Confidence
 

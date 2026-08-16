@@ -19,7 +19,8 @@ This README is the operator's guide; the contract wins on any disagreement.
   mitigation, and the `(day, install_hash)` primary key, which caps a real
   install at one row per day no matter how often it pings.
 - Publishes a daily aggregate JSON with dimension buckets under **5 installs**
-  folded into `other`.
+  folded into `other`. This is per-dimension small-cell suppression, not a
+  joint k-anonymity guarantee.
 
 ## Tables
 
@@ -62,10 +63,13 @@ Cron runs at `5 0 * * *` (see `vercel.json`).
    DATABASE_URL="postgres://..." bun run --cwd apps/analytics-ingest migrate
    ```
 
-4. Deploy. Point the CLI at it with `KUNAI_ANALYTICS_URL`, or ship the host as
-   `DEFAULT_ANALYTICS_ENDPOINT` in
-   `apps/cli/src/services/analytics/UsageAnalyticsService.ts`. The docs site
-   reads `KUNAI_ANALYTICS_METRICS_URL` / `DEFAULT_ANALYTICS_METRICS_URL`.
+4. Deploy and run a live smoke. Then explicitly set `KUNAI_ANALYTICS_URL` and
+   `KUNAI_ANALYTICS_METRICS_URL`; neither has a production default.
+
+5. Treat `ANALYTICS_HASH_SECRET` as stable. Do not rotate it in place: plan a
+   versioned migration and reconciliation first, or exact lifetime counts will
+   double-count. Configure Vercel firewall/request-rate limits and platform /
+   database budget alerts without adding application IP collection.
 
 **Fail closed:** `/api/ping` returns **503** when `DATABASE_URL` or
 `ANALYTICS_HASH_SECRET` is missing. It never falls back to storing raw ids or

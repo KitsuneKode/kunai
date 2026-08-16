@@ -881,9 +881,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
       const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
       // The setup wizard carries its own consent slide, so raising the banner
-      // here too would disclose twice — and worse, the banner persists consent
-      // on render, which would answer the slide's question while it is still
-      // being asked.
+      // here too would disclose twice. The banner only records that the
+      // recommendation was shown; it never answers the setup choice.
       if (outcome.kind === "needs-disclosure" && !onboardingWillRun) {
         container.analyticsDisclosurePending = true;
       }

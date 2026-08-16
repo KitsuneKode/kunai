@@ -7,6 +7,8 @@
 
 export type DailyRollup = {
   readonly day: string;
+  /** Persisted cron completion time; public `updatedAt` must report this value. */
+  readonly computedAt: string;
   readonly activeInstalls: number;
   readonly byVersion: Readonly<Record<string, number>>;
   readonly byOs: Readonly<Record<string, number>>;

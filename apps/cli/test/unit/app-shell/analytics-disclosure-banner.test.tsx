@@ -10,10 +10,12 @@ function frame(): string {
 }
 
 describe("analytics disclosure banner", () => {
-  test("says it is on and how to turn it off", () => {
+  test("recommends opt-in without claiming that analytics is enabled", () => {
     const rendered = frame();
-    expect(rendered).toContain("is on");
-    expect(rendered).toContain("/analytics");
+    expect(rendered).toContain("not enabled");
+    expect(rendered).toContain("opt-in");
+    expect(rendered).toContain("Settings");
+    expect(rendered).toContain("disable");
   });
 
   test("lists every payload field", () => {

@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-import { createPostgresAnalyticsStore } from "../src/postgres-store";
+import { createPostgresAnalyticsStore, RECORD_PING_SQL } from "../src/postgres-store";
 
 const DATABASE_URL = process.env.DATABASE_URL?.trim();
+
+test("recordPing writes ping-day and lifetime state in one SQL statement", () => {
+  expect(RECORD_PING_SQL).toContain("with ping_day_insert as");
+  expect(RECORD_PING_SQL).toContain("insert into install_lifetime");
+  expect(RECORD_PING_SQL).toContain("on conflict (day, install_hash) do nothing");
+  expect(RECORD_PING_SQL).toContain("on conflict (install_hash) do nothing");
+});
 
 /**
  * Runs only when a scratch database is configured. Never point this at a

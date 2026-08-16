@@ -9,8 +9,11 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { ensureInstallId } from "./install-id";
 
-/** Official ping endpoint. Override with `KUNAI_ANALYTICS_URL`. */
-export const DEFAULT_ANALYTICS_ENDPOINT = "https://kunai-analytics.vercel.app/api/ping";
+/**
+ * Analytics is disabled until a deploy is verified and an operator configures
+ * either `KUNAI_ANALYTICS_URL` or `analyticsEndpoint`.
+ */
+export const DEFAULT_ANALYTICS_ENDPOINT = "";
 
 export const ANALYTICS_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -120,6 +123,12 @@ export class UsageAnalyticsService {
     return { applied: patch.analytics as AnalyticsConsentChoice };
   }
 
+  /** Records the non-interactive upgrader recommendation without granting consent. */
+  async markNoticeShown(): Promise<void> {
+    await this.deps.config.update({ analyticsNoticeShown: true });
+    await this.deps.config.save();
+  }
+
   /**
    * Exact JSON that would be sent. A query: performs no writes, and does not
    * mint an install id for someone who has not enabled analytics.
@@ -139,9 +148,9 @@ export class UsageAnalyticsService {
   /**
    * The one entry point `main.ts` calls. All branching lives here.
    *
-   * The first run never sends: disclosure is raised, the caller persists the
-   * outcome, and the ping goes out on the next launch. Without that rule
-   * "on by default, disclosed" would mean the data left before the notice.
+   * An unconsented interactive run raises a non-blocking recommendation. The
+   * caller records that it was shown, but cannot enable analytics or mint an
+   * id; only a later explicit enable may make a future session eligible.
    *
    * Awaits no network. The ping is fired in the background so the caller can
    * `await` this before mounting the shell and get a deterministic
@@ -165,7 +174,11 @@ export class UsageAnalyticsService {
       return { kind: "quiet" };
     }
 
-    if (state.kind === "awaiting-disclosure") return { kind: "needs-disclosure" };
+    if (state.kind === "awaiting-disclosure") {
+      return this.deps.config.getRaw().analyticsNoticeShown
+        ? { kind: "quiet" }
+        : { kind: "needs-disclosure" };
+    }
     if (!canSend(state)) return { kind: "quiet" };
 
     this.pingInBackground();

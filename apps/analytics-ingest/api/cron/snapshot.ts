@@ -44,7 +44,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     const day = snapshotDayKey();
     const rollup = await runtime.store.rollUpDay(day);
-    const metrics = buildPublicMetrics(rollup, new Date().toISOString());
+    const metrics = buildPublicMetrics(rollup);
 
     // Raw dimension rows past retention go now; the rollup above already
     // captured everything the public JSON and the admin view need.

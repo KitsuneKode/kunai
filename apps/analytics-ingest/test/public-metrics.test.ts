@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildPublicMetrics,
-  K_ANONYMITY_FLOOR,
+  SMALL_CELL_FLOOR,
   METRICS_SCHEMA_VERSION,
   parsePublicMetrics,
   snapshotDayKey,
@@ -11,6 +11,7 @@ import {
 
 const rollup = {
   day: "2026-08-13",
+  computedAt: "2026-08-14T00:05:00.000Z",
   activeInstalls: 128,
   byVersion: { "0.3.0": 96, "0.2.5": 30, "0.1.0": 2 },
   byOs: { linux: 80, darwin: 44, win32: 4 },
@@ -18,9 +19,9 @@ const rollup = {
   lifetimeInstalls: 512,
 };
 
-describe("k-anonymity", () => {
+describe("small-cell suppression", () => {
   test("floor is 5", () => {
-    expect(K_ANONYMITY_FLOOR).toBe(5);
+    expect(SMALL_CELL_FLOOR).toBe(5);
   });
 
   test("buckets under the floor fold into other", () => {
@@ -43,8 +44,13 @@ describe("k-anonymity", () => {
 });
 
 describe("public metrics v2", () => {
+  test("reports stale cron time instead of refreshing updatedAt at read time", () => {
+    const metrics = buildPublicMetrics({ ...rollup, computedAt: "2026-08-14T00:05:00.000Z" });
+    expect(metrics.updatedAt).toBe("2026-08-14T00:05:00.000Z");
+  });
+
   test("suppresses small buckets and drops lifetimeMethod", () => {
-    const metrics = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const metrics = buildPublicMetrics(rollup);
     expect(metrics.schemaVersion).toBe(2);
     expect(metrics.byVersion).toEqual({ "0.3.0": 96, "0.2.5": 30, other: 2 });
     expect(metrics.byOs).toEqual({ linux: 80, darwin: 44, other: 4 });
@@ -55,7 +61,7 @@ describe("public metrics v2", () => {
   });
 
   test("round-trips through parse", () => {
-    const metrics = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const metrics = buildPublicMetrics(rollup);
     expect(parsePublicMetrics(JSON.parse(JSON.stringify(metrics)) as unknown)).toEqual(metrics);
   });
 
@@ -71,12 +77,12 @@ describe("public metrics v2", () => {
       }),
     ).toBeNull();
 
-    const metrics = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const metrics = buildPublicMetrics(rollup);
     expect(parsePublicMetrics({ ...metrics, sneaky: 1 })).toBeNull();
   });
 
   test("rejects malformed counts and days", () => {
-    const metrics = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const metrics = buildPublicMetrics(rollup);
     expect(parsePublicMetrics({ ...metrics, day: "14-08-2026" })).toBeNull();
     expect(parsePublicMetrics({ ...metrics, activeInstalls: -1 })).toBeNull();
     expect(parsePublicMetrics({ ...metrics, byOs: { linux: "many" } })).toBeNull();

@@ -1370,7 +1370,7 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
   const payload = container.usageAnalytics.describePayload();
   const subtitle = [
     `Status: ${status}`,
-    "On by default · at most one ping per day.",
+    "Off by default · explicit opt-in · at most one ping per day.",
     "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
     "Turning it off also deletes the install id from disk.",
     "DO_NOT_TRACK=1 and CI=true block sends regardless of this setting.",
@@ -1387,7 +1387,7 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       },
       {
         value: "enable" as const,
-        label: status === "enabled" ? "Keep it on" : "Turn on anonymous usage ping",
+        label: status === "enabled" ? "Analytics enabled" : "Turn on anonymous usage ping",
         detail: "One ping / 24h · installId + version + os + arch + ts only",
       },
       {

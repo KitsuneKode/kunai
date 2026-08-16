@@ -158,6 +158,11 @@ export class ConfigServiceImpl implements ConfigService {
   static async load(store: ConfigStore): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store);
     const loaded = await store.load();
+    // Configs written before explicit consent had no notice marker. Their
+    // enabled value was opt-out state, not evidence of a current opt-in, so
+    // revoke it and erase the old local identifier before startup can send.
+    const requiresExplicitAnalyticsConsent =
+      loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
@@ -213,8 +218,14 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
-      analytics: normalizeAnalyticsPreference(loaded.analytics),
-      installId: typeof loaded.installId === "string" ? loaded.installId.trim() : "",
+      analytics: requiresExplicitAnalyticsConsent
+        ? "unset"
+        : normalizeAnalyticsPreference(loaded.analytics),
+      analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      installId:
+        requiresExplicitAnalyticsConsent || typeof loaded.installId !== "string"
+          ? ""
+          : loaded.installId.trim(),
       lastAnalyticsPingAt:
         typeof loaded.lastAnalyticsPingAt === "number" &&
         Number.isFinite(loaded.lastAnalyticsPingAt)
@@ -228,9 +239,10 @@ export class ConfigServiceImpl implements ConfigService {
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
-    if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
+    const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
+    if (requiresExplicitAnalyticsConsent || migratedVideasyAppId) {
       await store.save(service.config);
-      service.videasyAppIdMigratedOnLoad = true;
+      service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
   }
@@ -494,6 +506,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get analytics(): KitsuneConfig["analytics"] {
     return this.config.analytics;
+  }
+
+  get analyticsNoticeShown(): boolean {
+    return this.config.analyticsNoticeShown;
   }
 
   get installId(): string {

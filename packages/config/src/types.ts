@@ -122,12 +122,10 @@ export interface KitsuneConfig {
    * becoming permanent furniture for someone who already knows them.
    */
   playbackKeysSessionsSeen: number;
-  /**
-   * Anonymous usage ping. Default `unset` → zero network calls until the
-   * disclosure has been shown. See .docs/analytics-privacy-contract.md.
-   * Payload is only `{ installId, version, os, arch, ts }`.
-   */
+  /** Optional usage ping. Fresh installs are off until explicitly enabled. */
   analytics: AnalyticsPreference;
+  /** Whether the one-time recommendation notice for an existing install was shown. */
+  analyticsNoticeShown: boolean;
   /** Random UUID install id. Present if and only if `analytics === "enabled"`. */
   installId: string;
   /** Last successful cadence mark for the daily analytics ping (epoch ms). */
@@ -138,7 +136,7 @@ export interface KitsuneConfig {
    * send fails, so the next CLI launch retries rather than losing the day.
    */
   analyticsRetryAfter: number;
-  /** Optional override for the analytics ingest URL (else env / built-in default). */
+  /** Optional operator-configured analytics ingest URL. Empty disables sending. */
   analyticsEndpoint: string;
   updateChecksEnabled: boolean;
   autoApplyBinaryUpdates: boolean;

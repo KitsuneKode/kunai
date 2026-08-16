@@ -21,6 +21,7 @@ export function createMemoryAnalyticsStore(): AnalyticsStore & {
       const rows = [...raw.values()].filter((row) => row.day === day);
       const rollup: DailyRollup = {
         day,
+        computedAt: new Date().toISOString(),
         activeInstalls: rows.length,
         byVersion: countBy(rows, (row) => row.version),
         byOs: countBy(rows, (row) => row.os),

@@ -48,6 +48,7 @@ describe("docs analytics metrics", () => {
 describe("ingest output is accepted by the docs parser", () => {
   const rollup = {
     day: "2026-08-13",
+    computedAt: "2026-08-14T00:05:00.000Z",
     activeInstalls: 3,
     byVersion: { "0.3.0": 2, "0.2.5": 1 },
     byOs: { linux: 2, darwin: 1 },
@@ -56,7 +57,7 @@ describe("ingest output is accepted by the docs parser", () => {
   };
 
   test("real published metrics parse and keep their values", () => {
-    const published = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const published = buildPublicMetrics(rollup);
     const overWire: unknown = JSON.parse(JSON.stringify(published));
     const parsed = parseDocsAnalyticsMetrics(overWire);
 
@@ -64,13 +65,13 @@ describe("ingest output is accepted by the docs parser", () => {
     expect(parsed?.schemaVersion).toBe(2);
     expect(parsed?.activeInstalls).toBe(3);
     expect(parsed?.lifetimeInstalls).toBe(9);
-    // Every bucket here is under the k-anonymity floor, so the ingest folds
+    // Every bucket here is under the small-cell floor, so the ingest folds
     // them all into `other` before the site ever sees them.
     expect(parsed?.byOs).toEqual({ other: 3 });
   });
 
   test("the home line renders from real published output", () => {
-    const published = buildPublicMetrics(rollup, "2026-08-14T00:05:00.000Z");
+    const published = buildPublicMetrics(rollup);
     const parsed = parseDocsAnalyticsMetrics(JSON.parse(JSON.stringify(published)) as unknown);
     expect(parsed).not.toBeNull();
     expect(formatUsageLine(parsed as NonNullable<typeof parsed>)).toContain("3");
