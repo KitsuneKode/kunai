@@ -4,7 +4,9 @@ import {
   contentTypeFromAniListFormat,
   anilistCatalogStructure,
   upgradeContentTypeFromAniListFormat,
+  upgradeTitleInfoStructure,
 } from "@/domain/media/anilist-format";
+import type { TitleInfo } from "@/domain/types";
 
 describe("contentTypeFromAniListFormat", () => {
   test("MOVIE is always a film", () => {
@@ -66,5 +68,35 @@ describe("upgradeContentTypeFromAniListFormat", () => {
   test("never downgrades a film back to series", () => {
     expect(upgradeContentTypeFromAniListFormat("movie", "TV", 12)).toBe("movie");
     expect(upgradeContentTypeFromAniListFormat("movie", undefined)).toBe("movie");
+  });
+});
+
+describe("upgradeTitleInfoStructure", () => {
+  const seriesTitle: TitleInfo = {
+    id: "181053",
+    type: "series",
+    name: "Infinity Castle",
+    episodeCount: 1,
+    isAnime: true,
+    externalIds: { anilistId: "181053" },
+    launchSource: "history",
+  };
+
+  test("upgrades a leftover S01E01 history title when catalog says film", () => {
+    expect(upgradeTitleInfoStructure(seriesTitle, "movie")).toEqual({
+      ...seriesTitle,
+      type: "movie",
+      episodeCount: undefined,
+    });
+  });
+
+  test("does not guess a film when catalog structure is missing or still series", () => {
+    expect(upgradeTitleInfoStructure(seriesTitle, undefined)).toBe(seriesTitle);
+    expect(upgradeTitleInfoStructure(seriesTitle, "series")).toBe(seriesTitle);
+  });
+
+  test("never downgrades a film back to series", () => {
+    const film = { ...seriesTitle, type: "movie" as const, episodeCount: undefined };
+    expect(upgradeTitleInfoStructure(film, "series")).toBe(film);
   });
 });

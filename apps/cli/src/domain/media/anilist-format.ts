@@ -6,7 +6,7 @@
 // that stamps structure. Host episode lists are not an input.
 // =============================================================================
 
-import type { ContentType } from "@/domain/types";
+import type { ContentType, TitleInfo } from "@/domain/types";
 
 const ONE_SHOT_FORMATS: ReadonlySet<string> = new Set(["OVA", "SPECIAL", "TV_SHORT", "MUSIC"]);
 
@@ -40,6 +40,19 @@ export function upgradeContentTypeFromAniListFormat(
 ): ContentType {
   if (current === "movie") return "movie";
   return contentTypeFromAniListFormat(format, episodeCount);
+}
+
+/**
+ * Apply catalog structure onto a playback title. Upgrade-only: a film stamp
+ * drops episode counts so History/Continue cannot keep a leftover S01E01 axis.
+ * Missing catalog type leaves the title unchanged — never guess a film.
+ */
+export function upgradeTitleInfoStructure(
+  title: TitleInfo,
+  catalogType: ContentType | undefined,
+): TitleInfo {
+  if (catalogType !== "movie" || title.type === "movie") return title;
+  return { ...title, type: "movie", episodeCount: undefined };
 }
 
 export type AniListCatalogStructure = {
