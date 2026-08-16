@@ -1,14 +1,17 @@
+---
+status: current
+---
+
 # Tracker Sync
 
 How Kunai delivers watch state to AniList and TMDB, and what it deliberately
 does not claim to do.
 
-**Status: experimental, and not reachable from the shell.** The `sync`,
-`sync-connect-anilist`, `sync-connect-tmdb`, and `sync-disconnect` commands
-exist in `command-registry.ts` but appear in no `COMMAND_CONTEXTS` entry, so no
-palette offers them. That is deliberate: no live OAuth run against a real
-account has been performed, so the flow is unproven end to end. Do not describe
-tracker sync as release-ready until one has.
+**Status: experimental.** The dedicated commands select the named tracker (and
+disconnect only a connected tracker), but tracker sync remains withheld from a
+release claim until a disposable-account smoke has exercised the CLI, SQLite
+outbox, restart recovery, and one remote mutation end to end. Do not describe
+it as release-ready before that gate passes.
 
 ## Why the machinery exists
 
@@ -49,9 +52,11 @@ one place that answers this, and every list surface routes through it.
   tracker" is recorded to diagnostics and said in the surface's own message —
   it is the one result the user cannot infer from the list itself.
 
-Callers pass resolved identities to `enqueueListMembership` /
-`enqueueFavoriteMembership`. Those methods deliberately do **not** accept a
-title: resolution is async and belongs to whoever owns the keypress.
+Callers pass resolved identities to `enqueueListMembershipIfEnabled` /
+`enqueueFavoriteMembershipIfEnabled`. Those methods deliberately do **not**
+accept a title: resolution is async and belongs to whoever owns the keypress.
+They reject intent before persistence unless the adapter is enabled, list sync
+is opted in, and the resolved identity is proven.
 
 ## Capabilities
 
@@ -86,10 +91,11 @@ resolves to nothing rather than being guessed at.
   batch in one transaction. A killed process's claim ages out and the row is
   redelivered with a new token and the same generation. `needs-reauth` and
   `dead-letter` rows are never reclaimed — they are waiting on a person.
-- **One drain.** Exactly one drain is active; duplicate callers join it. An
+- **One bounded drain.** Exactly one drain is active; duplicate callers join it. An
   awaited `syncNow()` arriving mid-drain returns `already-running` rather than
   that batch's summary, because its rows were enqueued after the batch was
-  claimed.
+  claimed. It walks batches beyond the first 25 up to a fixed operation budget;
+  disabled rows are held briefly so they cannot repeatedly occupy every claim.
 - **Live config.** The gate is re-read immediately before every external
   mutation, so disabling a tracker stops the very next write. Queued work is
   released untouched — not delivered, not discarded, and attempts unchanged.
@@ -170,8 +176,9 @@ are serialized so concurrent patches cannot erase each other.
 Dead-letter diagnostics are bounded (64-char code, 256-char detail) and never
 contain payload JSON, since an unparseable row is the likeliest to hold
 something that must not be recorded. The OAuth completion page shown in the
-browser echoes no code or state. TMDB credentials travel in headers, not the
-query string, so they stay out of proxy and crash logs.
+browser echoes no code or state. TMDB credentials travel in query parameters,
+not headers, so the adapter redacts the full URL before diagnostics or logs can
+observe it.
 
 ## Recovery
 
@@ -201,13 +208,23 @@ resolved `SyncAuthAvailability`, and a `SyncStatus` snapshot. It never reads
 internals; a unit test pins that. Controls are gated on declared capabilities,
 so "Send episode progress" is absent for TMDB rather than present and inert.
 
-There is no "Send watchlist and favourites" row yet. The adapters implement
-those writes and the drain honours `syncList`, but nothing in Kunai _produces_
-them: `enqueueListMembership` and `enqueueFavoriteMembership` have no callers
-and `ListsRepository` is not wired into the app. The row appears when a producer
-does. `trackWatched` and `syncList` are both checked in `deliver()` beside
-`enabled`, against the same freshly-read config; a write the settings forbid is
-released and stays queued rather than being dropped.
+Watchlist and favourite add/remove surfaces route through the same mirror seam
+as media actions. It resolves a tracker-native identity before queuing, and
+records a bounded diagnostic if a locally successful change cannot be mirrored.
+`trackWatched` and `syncList` are checked before an intent is persisted and
+again in `deliver()` beside `enabled`, against the same freshly-read config.
+A write the settings forbid is held for a later opt-in rather than being sent or
+discarded.
+
+## Durability boundary
+
+The local list/history write and the sync-outbox insert share the data database
+but do not yet form one SQLite transaction. A process failure in that narrow
+interval can leave a local mutation without a remote intent; the action records
+a bounded diagnostic when enqueueing fails, but it cannot reconstruct an intent
+after a hard process kill. This is a known experimental limitation and one of
+the reasons the disposable-account CLI → SQLite → restart → remote smoke is a
+release gate rather than a claim that tracker sync is durable end to end.
 
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while

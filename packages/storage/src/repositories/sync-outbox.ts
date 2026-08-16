@@ -303,6 +303,34 @@ export class SyncOutboxRepository {
     return apply();
   }
 
+  /**
+   * Keep a claim pending without spending or refunding its delivery attempt.
+   * Configuration is neither a remote failure nor a rate limit; it must not be
+   * retried immediately, but the fact that a claim was started remains visible.
+   */
+  hold(input: {
+    readonly item: SyncOutboxClaimRef;
+    readonly notBefore: Date;
+    readonly errorCode: string;
+    readonly now?: Date;
+  }): SyncOutboxMutationResult {
+    const now = input.now ?? new Date();
+    return this.transition(
+      input.item,
+      `state = 'pending',
+       claim_token = NULL,
+       claimed_at = NULL,
+       next_attempt_at = ?,
+       last_error_code = ?,
+       updated_at = ?`,
+      [
+        input.notBefore.toISOString(),
+        clamp(input.errorCode, MAX_ERROR_CODE_LENGTH),
+        now.toISOString(),
+      ],
+    );
+  }
+
   /** Hand the row back untouched — shutdown, not failure. */
   release(item: SyncOutboxClaimRef, now = new Date()): SyncOutboxMutationResult {
     return this.transition(

@@ -258,16 +258,20 @@ export class TmdbAdapter implements SyncAdapter {
     }
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(options?: SyncMutationOptions): Promise<void> {
     if (this.sessionId) {
+      const deadline = startRequestDeadline(options?.signal ?? new AbortController().signal);
       try {
-        await fetch(`${TMDB_API_BASE}/authentication/session?api_key=${this.apiKey}`, {
+        await this.fetchImpl(`${TMDB_API_BASE}/authentication/session?api_key=${this.apiKey}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: this.sessionId }),
+          signal: deadline.signal,
         });
       } catch {
         // best effort
+      } finally {
+        deadline.release();
       }
     }
     this.sessionId = undefined;

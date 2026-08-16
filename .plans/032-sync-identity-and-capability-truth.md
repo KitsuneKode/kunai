@@ -18,6 +18,11 @@ receive a `pushProgress` operation.
 - **Effort:** M
 - **Risk:** HIGH (remote account mutation)
 - **Planned at:** `36da54c4`, 2026-08-11
+- **Implementation state (2026-08-16):** Code and deterministic regression work
+  are in progress; tracker sync remains experimental. Promotion requires the
+  disposable-account CLI → SQLite outbox → restart recovery → remote mutation
+  smoke below, and the local-write/outbox atomicity gap must be resolved or
+  covered by a durable reconciliation record before a durable-sync claim.
 
 ## Confirmed defects
 

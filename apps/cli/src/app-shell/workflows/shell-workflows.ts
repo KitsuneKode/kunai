@@ -66,7 +66,12 @@ import {
 } from "@/services/download/download-cleanup-policy";
 import { resolveDownloadQualityCeiling } from "@/services/download/download-quality-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
-import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import {
+  createContainerMediaActionRouter,
+  markMediaItemWatched,
+  markSeasonThroughMediaItemWatched,
+  mirrorListMembershipChange,
+} from "@/services/media-actions/create-container-media-action-router";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -1890,6 +1895,18 @@ async function handleBookmark(container: Container): Promise<"handled"> {
     season: episode?.season,
     episode: episode?.episode,
   });
+  await mirrorListMembershipChange(
+    container,
+    {
+      titleId: title.id,
+      mediaKind: resolveCurrentMediaKind(state),
+      title: title.name,
+      season: episode?.season,
+      episode: episode?.episode,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    },
+    { list: "watchlist", present: result === "added" },
+  );
 
   container.stateManager.dispatch({
     type: "SET_PLAYBACK_FEEDBACK",
@@ -1965,20 +1982,19 @@ async function handleMarkWatched(container: Container): Promise<"handled"> {
 
   const episode = title.type === "series" ? state.currentEpisode : null;
   const mediaKind = resolveCurrentMediaKind(state);
-  const titleIdentity = {
-    id: title.id,
-    kind: mediaKind,
-    title: title.name,
-    externalIds: title.externalIds,
-  };
-  const episodeIdentity = episode
-    ? {
-        season: episode.season,
-        episode: episode.episode,
-        externalIds: episode.externalIds,
-      }
-    : undefined;
-  container.historyRepository.markWatched(titleIdentity, episodeIdentity);
+  markMediaItemWatched(
+    container,
+    {
+      titleId: title.id,
+      mediaKind,
+      title: title.name,
+      season: episode?.season,
+      episode: episode?.episode,
+      absoluteEpisode: episode?.absoluteEpisode,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    },
+    true,
+  );
 
   const episodeLabel = episode
     ? ` S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
@@ -2003,17 +2019,19 @@ async function handleMarkUnwatched(container: Container): Promise<"handled"> {
 
   const episode = title.type === "series" ? state.currentEpisode : null;
   const mediaKind = resolveCurrentMediaKind(state);
-  const titleIdentity = {
-    id: title.id,
-    kind: mediaKind,
-    title: title.name,
-    externalIds: title.externalIds,
-  };
-  const episodeIdentity = episode
-    ? { season: episode.season, episode: episode.episode, externalIds: episode.externalIds }
-    : undefined;
-
-  container.historyRepository.markUnwatched(titleIdentity, episodeIdentity);
+  markMediaItemWatched(
+    container,
+    {
+      titleId: title.id,
+      mediaKind,
+      title: title.name,
+      season: episode?.season,
+      episode: episode?.episode,
+      absoluteEpisode: episode?.absoluteEpisode,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    },
+    false,
+  );
 
   const episodeLabel = episode
     ? ` S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
@@ -2038,16 +2056,14 @@ async function handleMarkSeasonWatched(container: Container): Promise<"handled">
   }
 
   const mediaKind = resolveCurrentMediaKind(state);
-  const titleIdentity = {
-    id: title.id,
-    kind: mediaKind,
-    title: title.name,
-    externalIds: title.externalIds,
-  };
-  const { markSeasonThroughEpisode } = await import("@/app/search/history-actions");
-  const count = markSeasonThroughEpisode(
-    container.historyRepository,
-    titleIdentity,
+  const count = markSeasonThroughMediaItemWatched(
+    container,
+    {
+      titleId: title.id,
+      mediaKind,
+      title: title.name,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    },
     episode.season,
     episode.episode,
   );
@@ -2092,16 +2108,14 @@ async function handleMarkUpToEpisode(container: Container): Promise<"handled"> {
   if (!throughEpisode) return "handled";
 
   const mediaKind = resolveCurrentMediaKind(state);
-  const titleIdentity = {
-    id: title.id,
-    kind: mediaKind,
-    title: title.name,
-    externalIds: title.externalIds,
-  };
-  const { markSeasonThroughEpisode } = await import("@/app/search/history-actions");
-  const count = markSeasonThroughEpisode(
-    container.historyRepository,
-    titleIdentity,
+  const count = markSeasonThroughMediaItemWatched(
+    container,
+    {
+      titleId: title.id,
+      mediaKind,
+      title: title.name,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    },
     currentEpisode.season,
     throughEpisode,
   );
@@ -2349,6 +2363,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     }
 
     if (sub === "remove") {
+      const pickedItem = items.find((item) => item.titleId === picked.titleId);
       const confirm = await chooseFromListShell({
         title: `Remove "${picked.title}" from watchlist?`,
         subtitle: "This only removes it from your watchlist, not your history",
@@ -2358,7 +2373,18 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
           { value: false, label: "Keep it" },
         ],
       });
-      if (confirm) listService.removeFromWatchlist(picked.titleId);
+      if (confirm) {
+        listService.removeFromWatchlist(picked.titleId);
+        await mirrorListMembershipChange(
+          container,
+          {
+            titleId: picked.titleId,
+            mediaKind: pickedItem?.mediaKind === "movie" ? "movie" : "series",
+            title: picked.title,
+          },
+          { list: "watchlist", present: false },
+        );
+      }
     }
   }
 }
@@ -2398,6 +2424,18 @@ async function handleFavorites(container: Container): Promise<"handled"> {
     if (!picked || picked.type === "back") return "handled";
 
     listService.removeFromFavorites(picked.titleId);
+    await mirrorListMembershipChange(
+      container,
+      {
+        titleId: picked.titleId,
+        mediaKind:
+          items.find((item) => item.titleId === picked.titleId)?.mediaKind === "movie"
+            ? "movie"
+            : "series",
+        title: picked.title,
+      },
+      { list: "favorite", present: false },
+    );
   }
 }
 
@@ -3230,16 +3268,76 @@ async function handleSync(container: Container): Promise<"handled"> {
 }
 
 async function handleSyncConnectAniList(container: Container): Promise<"handled"> {
-  await handleSync(container);
+  await connectNamedTracker(container, "anilist");
   return "handled";
 }
 
 async function handleSyncConnectTmdb(container: Container): Promise<"handled"> {
-  await handleSync(container);
+  await connectNamedTracker(container, "tmdb");
   return "handled";
 }
 
 async function handleSyncDisconnect(container: Container): Promise<"handled"> {
-  await handleSync(container);
+  const connected = container.syncService.adapters.filter(
+    (adapter) => adapter.getConnection().state === "connected",
+  );
+  if (connected.length === 0) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: "No connected sync services to disconnect.",
+    });
+    return "handled";
+  }
+  const picked = await chooseFromListShell({
+    title: "Disconnect sync",
+    subtitle: "Choose the connected account to remove from this device",
+    actionContext: buildPickerActionContext({ container, taskLabel: "Disconnect sync" }),
+    options: connected.map((adapter) => {
+      const connection = adapter.getConnection();
+      return {
+        value: adapter.id,
+        label: `Disconnect ${adapter.displayName}`,
+        detail: connection.state === "connected" ? connection.username : undefined,
+      };
+    }),
+  });
+  const adapter = connected.find((candidate) => candidate.id === picked);
+  if (!adapter) return "handled";
+  await adapter.disconnect({ signal: new AbortController().signal });
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Disconnected from ${adapter.displayName}.`,
+  });
   return "handled";
+}
+
+async function connectNamedTracker(
+  container: Container,
+  tracker: "anilist" | "tmdb",
+): Promise<void> {
+  const adapter = container.syncService.adapters.find((candidate) => candidate.id === tracker);
+  if (!adapter) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Sync service ${tracker} is not available.`,
+    });
+    return;
+  }
+  const result = await adapter.connect({
+    signal: new AbortController().signal,
+    onPrompt: (note) => container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note }),
+  });
+  if (!result.ok) {
+    container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: `Failed: ${result.error}`,
+    });
+    return;
+  }
+  const resumed = container.syncService.resumeAfterReauth(adapter.id);
+  if (resumed > 0) container.syncService.deliverSoon();
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Connected to ${adapter.displayName}.`,
+  });
 }

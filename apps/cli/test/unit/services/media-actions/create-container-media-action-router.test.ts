@@ -19,11 +19,11 @@ describe("createContainerMediaActionRouter", () => {
         getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
       },
       syncService: {
-        enqueueListMembership: (input: { present: boolean }) => {
+        enqueueListMembershipIfEnabled: (input: { present: boolean }) => {
           calls.push(`sync:watchlist:${input.present}`);
           return 1;
         },
-        enqueueFavoriteMembership: (input: { present: boolean }) => {
+        enqueueFavoriteMembershipIfEnabled: (input: { present: boolean }) => {
           calls.push(`sync:favorite:${input.present}`);
           return 1;
         },
@@ -271,8 +271,8 @@ describe("createContainerMediaActionRouter favourites", () => {
         getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
       },
       syncService: {
-        enqueueListMembership: () => 1,
-        enqueueFavoriteMembership: (input: { present: boolean }) => {
+        enqueueListMembershipIfEnabled: () => 1,
+        enqueueFavoriteMembershipIfEnabled: (input: { present: boolean }) => {
           calls.push(`sync:favorite:${input.present}`);
           return 1;
         },
@@ -306,7 +306,7 @@ describe("createContainerMediaActionRouter favourites", () => {
         getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
       },
       syncService: {
-        enqueueFavoriteMembership: () => 1,
+        enqueueFavoriteMembershipIfEnabled: () => 1,
         deliverSoon: () => {
           drains += 1;
         },
@@ -338,7 +338,7 @@ describe("createContainerMediaActionRouter favourites", () => {
         enrich: async () => ({ graph: { confidence: "low", source: "arm" } }),
       },
       syncService: {
-        enqueueFavoriteMembership: () => 0,
+        enqueueFavoriteMembershipIfEnabled: () => 0,
         deliverSoon: () => {
           drains += 1;
         },
@@ -380,7 +380,7 @@ describe("createContainerMediaActionRouter favourites", () => {
         getEnqueueEligibility: () => ({ allowed: false, reason: "disabled", code: "disabled" }),
       },
       syncService: {
-        enqueueFavoriteMembership: () => {
+        enqueueFavoriteMembershipIfEnabled: () => {
           throw new Error("database is closed");
         },
       },

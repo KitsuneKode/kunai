@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 
 import type { Container } from "@/container";
-import { markMediaItemWatched } from "@/services/media-actions/create-container-media-action-router";
+import {
+  markMediaItemWatched,
+  markSeasonThroughMediaItemWatched,
+} from "@/services/media-actions/create-container-media-action-router";
 import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 function makeContainer(): Container {
@@ -87,4 +90,56 @@ test("markMediaItemWatched unwatched preserves resume fields", () => {
   expect(unwatched?.completed).toBe(false);
   expect(unwatched?.positionSeconds).toBe(watched?.positionSeconds);
   expect(unwatched?.watchedSeconds).toBe(watched?.watchedSeconds);
+});
+
+test("markMediaItemWatched mirrors the durable history row through the opt-in sync seam", async () => {
+  const container = makeContainer();
+  const calls: unknown[] = [];
+  let delivered = 0;
+  Object.assign(container, {
+    syncService: {
+      enqueueProgressIfEnabled: async (entry: unknown) => {
+        calls.push(entry);
+        return 1;
+      },
+      deliverSoon: () => {
+        delivered += 1;
+      },
+    },
+  });
+
+  markMediaItemWatched(container, { ...item, externalIds: { anilistId: "123" } }, true);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(calls).toHaveLength(1);
+  expect(delivered).toBe(1);
+});
+
+test("markSeasonThroughMediaItemWatched persists every episode but queues only its maximum", async () => {
+  const container = makeContainer();
+  const calls: Array<{ episode?: number }> = [];
+  Object.assign(container, {
+    syncService: {
+      enqueueProgressIfEnabled: async (entry: { episode?: number }) => {
+        calls.push(entry);
+        return 1;
+      },
+      deliverSoon: () => {},
+    },
+  });
+
+  expect(
+    markSeasonThroughMediaItemWatched(
+      container,
+      { ...item, externalIds: { anilistId: "123" } },
+      1,
+      3,
+    ),
+  ).toBe(3);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(container.historyRepository.listByTitle(item.titleId)).toHaveLength(3);
+  expect(calls.map((entry) => entry.episode)).toEqual([3]);
 });

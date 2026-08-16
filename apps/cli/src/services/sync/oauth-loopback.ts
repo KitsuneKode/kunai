@@ -15,6 +15,8 @@ export type LoopbackResult =
 
 export interface LoopbackServer {
   readonly port: number;
+  /** Private single-attempt endpoint used only by the bridge document. */
+  readonly collectorUrl: string;
   readonly result: Promise<LoopbackResult>;
   close(): void;
 }
@@ -31,7 +33,9 @@ export interface LoopbackServer {
 export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   const url = new URL(options.redirectUri);
   const callbackPath = url.pathname;
-  const collectPath = `${callbackPath}/collect`;
+  const collectorNonce = crypto.randomUUID();
+  const collectPath = `${callbackPath}/collect/${collectorNonce}`;
+  const collectorUrl = new URL(collectPath, url.origin).toString();
 
   let settled = false;
   let resolveResult!: (value: LoopbackResult) => void;
@@ -70,7 +74,7 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   const server = Bun.serve({
     port: Number(url.port),
     hostname: url.hostname,
-    fetch: (request) => {
+    fetch: async (request) => {
       const requestUrl = new URL(request.url);
 
       // The callback lands here first with nothing readable: the token is after
@@ -80,8 +84,18 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
         return bridgePage(collectPath, options.serviceName);
       }
       if (requestUrl.pathname !== collectPath) return new Response("Not found", { status: 404 });
+      if (request.method !== "POST") {
+        return new Response("Method not allowed", { status: 405, headers: { Allow: "POST" } });
+      }
+      if (request.headers.get("origin") !== url.origin) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const fetchSite = request.headers.get("sec-fetch-site");
+      if (fetchSite !== null && fetchSite !== "same-origin") {
+        return new Response("Forbidden", { status: 403 });
+      }
 
-      const params = requestUrl.searchParams;
+      const params = new URLSearchParams(await request.text());
       if (params.get("error")) {
         settle({ ok: false, reason: "denied" });
         return bridgeAck();
@@ -113,6 +127,7 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
 
   return {
     port: server.port ?? Number(url.port),
+    collectorUrl,
     result,
     close: () => teardown({ ok: false, reason: "aborted" }),
   };
@@ -142,7 +157,12 @@ function bridgePage(collectPath: string, serviceName: string): Response {
 (async () => {
   const hash = location.hash.slice(1);
   try {
-    await fetch(${JSON.stringify(collectPath)} + "?" + hash, { credentials: "omit" });
+    await fetch(${JSON.stringify(collectPath)}, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: hash,
+      credentials: "omit",
+    });
     history.replaceState(null, "", location.pathname);
     document.getElementById("m").textContent =
       ${JSON.stringify(serviceName)} + " authorization complete. You can close this tab.";

@@ -16,6 +16,18 @@ function server(overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = 
   });
 }
 
+function submitCollector(loopback: ReturnType<typeof server>, body: string) {
+  return fetch(loopback.collectorUrl, {
+    method: "POST",
+    headers: {
+      Origin: `http://127.0.0.1:${PORT}`,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+}
+
 /**
  * The listener binds the exact registered address and settles once. The shipped
  * flow bound an OS-assigned port, which cannot match a registration, so it was
@@ -38,9 +50,7 @@ describe("startLoopbackServer", () => {
   test("accepts a callback whose state matches", async () => {
     const loopback = server();
     try {
-      const response = await fetch(
-        `${redirectUri}/collect?access_token=tok-abc&state=expected-state`,
-      );
+      const response = await submitCollector(loopback, "access_token=tok-abc&state=expected-state");
       expect(response.status).toBe(200);
 
       const result = await loopback.result;
@@ -54,7 +64,7 @@ describe("startLoopbackServer", () => {
   test("rejects a mismatched state", async () => {
     const loopback = server();
     try {
-      await fetch(`${redirectUri}/collect?access_token=tok-abc&state=wrong`);
+      await submitCollector(loopback, "access_token=tok-abc&state=wrong");
       expect(await loopback.result).toEqual({ ok: false, reason: "state-mismatch" });
     } finally {
       loopback.close();
@@ -64,7 +74,7 @@ describe("startLoopbackServer", () => {
   test("reports an explicit denial", async () => {
     const loopback = server();
     try {
-      await fetch(`${redirectUri}/collect?error=access_denied&state=expected-state`);
+      await submitCollector(loopback, "error=access_denied&state=expected-state");
       expect(await loopback.result).toEqual({ ok: false, reason: "denied" });
     } finally {
       loopback.close();
@@ -116,7 +126,6 @@ describe("startLoopbackServer", () => {
 
       expect(html).not.toContain("secret-code");
       expect(html).not.toContain("expected-state");
-      await loopback.result;
     } finally {
       loopback.close();
     }
@@ -154,6 +163,16 @@ describe("startLoopbackServer bridge", () => {
     }
   });
 
+  test("refuses a GET collector request even when it carries an access token", async () => {
+    const loopback = fragmentServer();
+    try {
+      const response = await fetch(loopback.collectorUrl);
+      expect(response.status).toBe(405);
+    } finally {
+      loopback.close();
+    }
+  });
+
   /**
    * AniList's implicit grant rejects the request outright when `state` is sent,
    * so there is no nonce to echo back. Requiring one would make the only
@@ -162,7 +181,7 @@ describe("startLoopbackServer bridge", () => {
   test("accepts a missing state but still rejects a wrong one", async () => {
     const without = fragmentServer();
     try {
-      await fetch(`${redirectUri}/collect?access_token=tok-123`);
+      await submitCollector(without, "access_token=tok-123");
       expect((await without.result).ok).toBe(true);
     } finally {
       without.close();
@@ -170,7 +189,7 @@ describe("startLoopbackServer bridge", () => {
 
     const wrong = fragmentServer();
     try {
-      await fetch(`${redirectUri}/collect?access_token=tok-123&state=forged`);
+      await submitCollector(wrong, "access_token=tok-123&state=forged");
       expect(await wrong.result).toEqual({ ok: false, reason: "state-mismatch" });
     } finally {
       wrong.close();

@@ -83,6 +83,10 @@ export interface SyncServiceDeps {
   readonly diagnostics?: Pick<DiagnosticsService, "record">;
 }
 
+const DRAIN_BATCH_LIMIT = 25;
+const DRAIN_MAX_OPERATIONS = 100;
+const DISABLED_RECHECK_MS = 60_000;
+
 const emptySummary = (pending: number): SyncPushSummary => ({
   connected: 0,
   claimed: 0,
@@ -98,6 +102,24 @@ const emptySummary = (pending: number): SyncPushSummary => ({
   pending,
   failures: [],
 });
+
+function mergeSummaries(left: SyncPushSummary, right: SyncPushSummary): SyncPushSummary {
+  return {
+    connected: right.connected,
+    claimed: left.claimed + right.claimed,
+    succeeded: left.succeeded + right.succeeded,
+    skipped: left.skipped + right.skipped,
+    failed: left.failed + right.failed,
+    retrying: left.retrying + right.retrying,
+    needsReauth: left.needsReauth + right.needsReauth,
+    deadLettered: left.deadLettered + right.deadLettered,
+    released: left.released + right.released,
+    superseded: left.superseded + right.superseded,
+    deferred: left.deferred + right.deferred,
+    pending: right.pending,
+    failures: [...left.failures, ...right.failures],
+  };
+}
 
 /**
  * Whether the user's per-tracker settings permit this kind of write.
@@ -131,6 +153,33 @@ function requiredCapability(operation: TrackerOperation): keyof SyncCapabilities
 
 function trackerOf(operation: TrackerOperation): TrackerId {
   return operation.target.tracker;
+}
+
+/**
+ * Collapse history facts into the monotonic remote state each AniList title
+ * should receive. History is ordered for presentation, not delivery: a newest
+ * episode followed by an older one must never overwrite it in the outbox.
+ */
+export function buildProgressUpdates(
+  entries: readonly HistoryProgress[],
+): readonly HistoryProgress[] {
+  const byAniListId = new Map<number, HistoryProgress>();
+  for (const entry of entries) {
+    const identity = resolveAniListIdentity(entry);
+    const episode = resolveAniListProgressEpisode(entry);
+    if (!identity || episode === null) continue;
+    const previous = byAniListId.get(identity.anilistId);
+    const previousEpisode = previous ? resolveAniListProgressEpisode(previous) : null;
+    if (
+      !previous ||
+      previousEpisode === null ||
+      episode > previousEpisode ||
+      (episode === previousEpisode && entry.completed && !previous.completed)
+    ) {
+      byAniListId.set(identity.anilistId, entry);
+    }
+  }
+  return [...byAniListId.values()];
 }
 
 /**
@@ -229,6 +278,26 @@ export class SyncService {
   }
 
   /**
+   * Admission gate for newly-created automatic work. Disabled sync is opt-out,
+   * not a deferred consent prompt: do not persist history for later delivery.
+   */
+  async enqueueProgressIfEnabled(entry: HistoryProgress): Promise<number> {
+    const identity = resolveAniListIdentity(entry);
+    const progress = resolveAniListProgressEpisode(entry);
+    if (!identity || progress === null) return 0;
+    const gate = (await this.config.read()).sync.anilist;
+    if (!gate.enabled || !gate.trackWatched) return 0;
+    return this.enqueueOperation({
+      version: 1,
+      kind: "progress:set",
+      target: identity,
+      progress,
+      status: entry.completed ? "completed" : "watching",
+      ...(entry.completedAt ? { watchedAt: entry.completedAt } : {}),
+    });
+  }
+
+  /**
    * Membership writes take already-resolved identities rather than a title.
    *
    * Resolution needs the crosswalk and may enrich, which is async and belongs to
@@ -250,11 +319,37 @@ export class SyncService {
     }));
   }
 
+  async enqueueListMembershipIfEnabled(input: {
+    readonly identities: readonly SyncIdentity[];
+    readonly list: "watchlist";
+    readonly present: boolean;
+  }): Promise<number> {
+    return this.enqueueForEachIfEnabled(input.identities, (target) => ({
+      version: 1,
+      kind: "list-membership:set",
+      target,
+      list: input.list,
+      present: input.present,
+    }));
+  }
+
   enqueueFavoriteMembership(input: {
     readonly identities: readonly SyncIdentity[];
     readonly present: boolean;
   }): number {
     return this.enqueueForEach(input.identities, (target) => ({
+      version: 1,
+      kind: "favorite-membership:set",
+      target,
+      present: input.present,
+    }));
+  }
+
+  async enqueueFavoriteMembershipIfEnabled(input: {
+    readonly identities: readonly SyncIdentity[];
+    readonly present: boolean;
+  }): Promise<number> {
+    return this.enqueueForEachIfEnabled(input.identities, (target) => ({
       version: 1,
       kind: "favorite-membership:set",
       target,
@@ -269,6 +364,22 @@ export class SyncService {
     return identities.reduce((count, target) => count + this.enqueueOperation(build(target)), 0);
   }
 
+  private async enqueueForEachIfEnabled(
+    identities: readonly SyncIdentity[],
+    build: (target: TrackerOperation["target"]) => TrackerOperation,
+  ): Promise<number> {
+    let count = 0;
+    for (const identity of identities) {
+      const operation = build(identity);
+      const gate = (await this.config.read()).sync[trackerOf(operation)];
+      const adapter = this.adaptersById.get(trackerOf(operation));
+      if (!adapter || !gate?.enabled || !allowedByConfig(operation, gate)) continue;
+      if (!adapter.capabilities[requiredCapability(operation)]) continue;
+      count += this.enqueueOperation(operation);
+    }
+    return count;
+  }
+
   /**
    * Enqueue then deliver, for an explicit user action.
    *
@@ -278,7 +389,10 @@ export class SyncService {
    * make true.
    */
   async syncNow(entries: readonly HistoryProgress[]): Promise<SyncNowResult> {
-    const enqueued = entries.reduce((count, entry) => count + this.enqueueProgress(entry), 0);
+    let enqueued = 0;
+    for (const entry of buildProgressUpdates(entries)) {
+      enqueued += await this.enqueueProgressIfEnabled(entry);
+    }
     if (this.activeDrain) return { status: "already-running", enqueued };
     return { status: "completed", enqueued, summary: await this.drain() };
   }
@@ -293,11 +407,18 @@ export class SyncService {
    * awaiting `drain()`: a keypress or a playback teardown must not block on a
    * remote call, and `drain()` is single-flight so a burst joins one batch.
    *
-   * Failures are deliberately swallowed here. They are already recorded as
-   * outbox transitions, and the rows stay queued for the next drain.
+   * The caller does not wait for delivery, but setup failures are still made
+   * visible to diagnostics. Row-level delivery failures record their own
+   * transition and remain queued for retry.
    */
   deliverSoon(): void {
-    void this.drain().catch(() => {});
+    void this.drain().catch((error) => {
+      this.diagnostics?.record({
+        category: "sync",
+        message: "Deferred tracker-sync drain failed before completing",
+        context: { error: error instanceof Error ? error.name : "unknown" },
+      });
+    });
   }
 
   /**
@@ -306,11 +427,26 @@ export class SyncService {
    */
   async drain(limit = 25, options?: SyncMutationOptions): Promise<SyncPushSummary> {
     if (this.activeDrain) return this.activeDrain;
-    const run = this.drainOnce(limit, options).finally(() => {
+    const run = this.drainBatches(Math.min(limit, DRAIN_BATCH_LIMIT), options).finally(() => {
       if (this.activeDrain === run) this.activeDrain = null;
     });
     this.activeDrain = run;
     return run;
+  }
+
+  private async drainBatches(
+    batchSize: number,
+    options?: SyncMutationOptions,
+  ): Promise<SyncPushSummary> {
+    let total: SyncPushSummary | null = null;
+    let remaining = DRAIN_MAX_OPERATIONS;
+    while (remaining > 0) {
+      const summary = await this.drainOnce(Math.min(batchSize, remaining), options);
+      total = total ? mergeSummaries(total, summary) : summary;
+      remaining -= summary.claimed;
+      if (summary.claimed < batchSize) break;
+    }
+    return total ?? emptySummary(this.outbox.counts().pending);
   }
 
   private async drainOnce(limit: number, options?: SyncMutationOptions): Promise<SyncPushSummary> {
@@ -418,7 +554,14 @@ export class SyncService {
     // tracker stops the very next write instead of the next session.
     const gate = (await this.config.read()).sync[adapter.id];
     if (!gate?.enabled || !allowedByConfig(operation, gate)) {
-      this.outbox.release(claim);
+      // Legacy rows may predate opt-in. Hold them briefly rather than putting
+      // them straight back at the head of every batch, where they could starve
+      // another eligible tracker forever.
+      this.outbox.hold({
+        item: claim,
+        notBefore: new Date(Date.now() + DISABLED_RECHECK_MS),
+        errorCode: "disabled-by-config",
+      });
       return { transition: "applied", bucket: "released" };
     }
 

@@ -14,6 +14,7 @@ import {
   type SyncOutcome,
 } from "@/services/sync/types";
 import { openKunaiDatabase, runMigrations, SyncOutboxRepository } from "@kunai/storage";
+import type { HistoryProgress } from "@kunai/storage";
 
 const dirs: string[] = [];
 const openDatabases: { close(): void }[] = [];
@@ -97,7 +98,111 @@ const anilistFavourite: TrackerOperation = {
   present: true,
 };
 
+function historyProgress(episode: number, updatedAt: string): HistoryProgress {
+  return {
+    key: `anilist:438631:s1:e${episode}`,
+    titleId: "anilist:438631",
+    mediaKind: "anime",
+    title: "Example",
+    season: 1,
+    episode,
+    positionSeconds: 1,
+    completed: true,
+    updatedAt,
+    createdAt: updatedAt,
+  };
+}
+
 describe("SyncService drain", () => {
+  test("continues past a disabled first batch to deliver an eligible tracker", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const tmdb = adapter("tmdb");
+    const service = new SyncService({
+      adapters: [anilist.adapter, tmdb.adapter],
+      outbox: repo,
+      config: {
+        read: async () => ({
+          sync: {
+            anilist: { enabled: false, trackWatched: false, syncList: false },
+            tmdb: enabled,
+          },
+        }),
+      },
+    });
+
+    for (let id = 1; id <= 26; id += 1) {
+      service.enqueueOperation({
+        version: 1,
+        kind: "favorite-membership:set",
+        target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
+        present: true,
+      });
+    }
+    service.enqueueOperation({
+      version: 1,
+      kind: "favorite-membership:set",
+      target: { tracker: "tmdb", tmdbId: 550, mediaKind: "movie" },
+      present: true,
+    });
+
+    await service.drain();
+
+    expect(tmdb.calls).toMatchObject([
+      { kind: "favorite-membership:set", target: { tracker: "tmdb", tmdbId: 550 } },
+    ]);
+    expect(repo.counts().pending).toBe(26);
+  });
+
+  test("does not persist automatic progress before watch tracking is opted in", async () => {
+    const repo = outbox();
+    const service = new SyncService({
+      adapters: [adapter("anilist").adapter],
+      outbox: repo,
+      config: configPort({ ...enabled, trackWatched: false }),
+    });
+
+    await expect(
+      service.enqueueProgressIfEnabled(historyProgress(3, "2026-08-16T12:00:00.000Z")),
+    ).resolves.toBe(0);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("does not persist favourite intent before list sync is opted in", async () => {
+    const repo = outbox();
+    const service = new SyncService({
+      adapters: [adapter("anilist").adapter],
+      outbox: repo,
+      config: configPort({ ...enabled, syncList: false }),
+    });
+
+    await expect(
+      service.enqueueFavoriteMembershipIfEnabled({
+        identities: [{ tracker: "anilist", anilistId: 438631, mediaKind: "anime" }],
+        present: true,
+      }),
+    ).resolves.toBe(0);
+    expect(repo.counts().pending).toBe(0);
+  });
+
+  test("syncNow sends the highest proven episode regardless of history order", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = new SyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+    });
+
+    await service.syncNow([
+      historyProgress(12, "2026-08-16T12:00:00.000Z"),
+      historyProgress(11, "2026-08-16T11:00:00.000Z"),
+    ]);
+
+    expect(anilist.calls).toMatchObject([
+      { kind: "progress:set", progress: 12, target: { anilistId: 438631 } },
+    ]);
+  });
   /**
    * Config is read immediately before each external mutation, not captured at
    * construction or checked only at enqueue. A user who turns a tracker off

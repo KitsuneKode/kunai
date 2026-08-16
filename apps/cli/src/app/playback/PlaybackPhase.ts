@@ -2493,14 +2493,15 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // local history does not have. This only writes SQLite — remote
               // delivery is the drain's job, so playback never waits on a
               // tracker, and repeated updates coalesce instead of stacking up.
-              if (container.syncService.enqueueProgress(savedHistoryRow) > 0) {
-                // Deliver in this session. Without this the row waited for the
-                // next `sync.startup`, so finishing an episode updated the
-                // tracker only after a restart — the same defect the list path
-                // had. Not awaited: playback teardown must not block on a
-                // remote call.
-                container.syncService.deliverSoon();
-              }
+              // Admission reads the live opt-in before it writes the outbox.
+              // Keep that asynchronous check outside the playback teardown:
+              // persistence is already complete and tracker work is optional.
+              void container.syncService
+                .enqueueProgressIfEnabled(savedHistoryRow)
+                .then((queued) => {
+                  if (queued > 0) container.syncService.deliverSoon();
+                  return undefined;
+                });
             }
             enqueueReleaseReconciliation(
               container,

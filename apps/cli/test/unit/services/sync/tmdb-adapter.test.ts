@@ -201,6 +201,18 @@ describe("TmdbAdapter.apply", () => {
   });
 });
 
+describe("TmdbAdapter.disconnect", () => {
+  test("uses the injected transport and cancellation signal to revoke the session", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.disconnect(signal());
+
+    expect(calls[0]?.url).toContain("/authentication/session?api_key=test-key");
+    expect(calls[0]?.body).toEqual({ session_id: "session-1" });
+  });
+});
+
 /**
  * Builds before the account-id/username split stored the handle in `accountId`.
  * Those sessions are still valid — only the stored shape is wrong — so start-up
