@@ -552,6 +552,113 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN content_type TEXT;
     `,
   },
+  {
+    id: "029_data_sync_outbox",
+    database: "data",
+    sql: `
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        id TEXT PRIMARY KEY,
+        tracker_id TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        generation INTEGER NOT NULL DEFAULT 1,
+        claim_token TEXT,
+        claimed_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        state TEXT NOT NULL DEFAULT 'pending',
+        next_attempt_at TEXT NOT NULL,
+        last_error_code TEXT,
+        last_error_detail TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      -- One live row per tracker intent: a newer payload supersedes in place
+      -- rather than queueing a second delivery for the same thing.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_outbox_tracker_dedupe
+        ON sync_outbox(tracker_id, dedupe_key);
+
+      -- Due-row scan.
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_due
+        ON sync_outbox(state, next_attempt_at ASC);
+
+      -- Expired-claim scan, for leases a dead process never released.
+      CREATE INDEX IF NOT EXISTS idx_sync_outbox_claimed
+        ON sync_outbox(state, claimed_at ASC);
+    `,
+  },
+  {
+    id: "030_data_list_items_unique_title",
+    database: "data",
+    sql: `
+      -- Membership is a set, but nothing enforced it: 'add to watchlist' ran a
+      -- bare INSERT, so pressing it twice stored the title twice. The duplicate
+      -- was invisible through 'isInList' (LIMIT 1) and through removal (DELETE
+      -- without a limit), and only showed up as an inflated list.
+      --
+      -- Collapse existing duplicates onto the earliest row, which is the one
+      -- whose added_at the user would recognise.
+      DELETE FROM list_items
+      WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY list_id, title_id ORDER BY added_at ASC, rowid ASC
+          ) AS rn
+          FROM list_items
+        ) ranked
+        WHERE ranked.rn = 1
+      );
+
+      -- Also the covering index for the membership check, which previously had
+      -- to scan the per-list index and compare title_id row by row.
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_list_items_list_title
+        ON list_items(list_id, title_id);
+    `,
+  },
+  {
+    id: "031_data_sync_reconciliation",
+    database: "data",
+    sql: `
+      ALTER TABLE list_items ADD COLUMN external_ids_json TEXT;
+
+      CREATE TABLE sync_reconciliation (
+        id TEXT PRIMARY KEY,
+        mutation_kind TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX idx_sync_reconciliation_entity
+        ON sync_reconciliation(mutation_kind, entity_key);
+      CREATE INDEX idx_sync_reconciliation_pending
+        ON sync_reconciliation(created_at ASC);
+    `,
+  },
+  {
+    id: "032_data_sync_reconciliation_generation",
+    database: "data",
+    sql: `
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN generation INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
+  {
+    id: "033_data_sync_reconciliation_retry",
+    database: "data",
+    sql: `
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sync_reconciliation
+        ADD COLUMN next_attempt_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00.000Z';
+
+      UPDATE sync_reconciliation SET next_attempt_at = updated_at;
+
+      CREATE INDEX idx_sync_reconciliation_due
+        ON sync_reconciliation(next_attempt_at ASC, created_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

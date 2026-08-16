@@ -4,6 +4,7 @@ import { createSettingsUiState } from "@/app-shell/settings/state";
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import { SHIPPED_ANILIST_REDIRECT_URI } from "@/services/sync/auth-contract";
 import React from "react";
 
 import { captureSurface } from "./render-capture";
@@ -26,6 +27,24 @@ const registryCtx = {
   seriesProviderOptions: [],
   animeProviderOptions: [],
   youtubeProviderOptions: [],
+  sync: {
+    adapters: [],
+    authAvailability: {
+      anilist: {
+        available: true as const,
+        redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+        clientIdSource: "shipped-default" as const,
+      },
+      tmdb: { available: true as const, apiKeySource: "shipped-fallback" as const },
+    },
+    status: {
+      connected: 0,
+      pending: 0,
+      needsReauth: 0,
+      deadLettered: 0,
+      health: "disconnected" as const,
+    },
+  },
   container: {} as Container,
 };
 

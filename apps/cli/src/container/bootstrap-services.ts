@@ -121,6 +121,8 @@ export function bootstrapServices(input: {
     statsFormatter,
     syncTokenStore,
     syncService,
+    syncReconciliationRepository,
+    syncAuthAvailability,
     debugTracePath,
     debugSessionInstructions,
   } = persistence;
@@ -504,6 +506,8 @@ export function bootstrapServices(input: {
     statsFormatter,
     syncTokenStore,
     syncService,
+    syncReconciliationRepository,
+    syncAuthAvailability,
     continuationProjectionService,
     continueWatchingService,
     attentionRefreshWorker,

@@ -18,6 +18,16 @@ receive a `pushProgress` operation.
 - **Effort:** M
 - **Risk:** HIGH (remote account mutation)
 - **Planned at:** `36da54c4`, 2026-08-11
+- **Implementation state (2026-08-16):** Deterministic implementation and
+  regression work is complete. Data migrations 030–032 add a tracker-neutral,
+  generation-checked reconciliation fact plus durable retry eligibility, all
+  committed in the same transaction as local list/history mutations. Startup
+  replay checks opt-in before enrichment, distinguishes definitive mapping
+  misses from retryable identity failures, accepts provider-native history only
+  through explicit or high-confidence tracker proof, and drains in bounded
+  yielding batches without retained-row starvation. Tracker sync remains
+  experimental until the disposable-account CLI → SQLite outbox → restart
+  recovery → remote mutation smoke below passes.
 
 ## Confirmed defects
 
@@ -38,51 +48,51 @@ receive a `pushProgress` operation.
 
 ### Task 1: Fail closed before any remote mutation
 
-- [ ] Add adapter tests proving AniList accepts only an explicit AniList id. MAL,
+- [x] Add adapter tests proving AniList accepts only an explicit AniList id. MAL,
       TMDB, bare numeric, and provider-native ids must return a mapping error and make no
       request.
-- [ ] Remove the MAL/TMDB fallthrough from `extractAniListId`.
-- [ ] Stop `SyncService.pushWatched` from invoking TMDB. Add an explicit capability
+- [x] Remove the MAL/TMDB fallthrough from `extractAniListId`.
+- [x] Stop `SyncService.pushWatched` from invoking TMDB. Add an explicit capability
       such as `progress: "episode" | "none"` to the sync adapter interface and select
       adapters by the requested operation.
-- [ ] Relabel or hide TMDB progress actions. Do not replace the current call with a
+- [x] Relabel or hide TMDB progress actions. Do not replace the current call with a
       different TMDB mutation without a separately specified product meaning.
 
 ### Task 2: Introduce a canonical sync input
 
-- [ ] Replace `pushWatched(HistoryProgress)` at the adapter seam with a small input
+- [x] Replace `pushWatched(HistoryProgress)` at the adapter seam with a small input
       containing progress plus explicit external ids, for example
       `SyncProgressUpdate { anilistId?: string; tmdbId?: string; mediaKind; episode?; completed }`.
-- [ ] Resolve identities before crossing the seam using existing catalog/history
+- [x] Resolve identities before crossing the seam using existing catalog/history
       metadata. Low-confidence or absent crosswalks skip with a diagnostic; they never
       guess by numeric equality.
-- [ ] Test AniDB/provider-native history with and without a proven AniList crosswalk.
+- [x] Test AniDB/provider-native history with and without a proven AniList crosswalk.
 
 ### Task 3: Aggregate monotonically
 
-- [ ] Extract a pure builder that groups history rows by canonical title and emits
+- [x] Extract a pure builder that groups history rows by canonical title and emits
       one update with maximum proven episode progress.
-- [ ] Add tests with recent rows in both orders, repeated episodes, movies, and mixed
+- [x] Add tests with recent rows in both orders, repeated episodes, movies, and mixed
       titles. No ordering may reduce remote progress.
-- [ ] Have manual `Sync now` report titles attempted, not raw history rows pushed.
+- [x] Have manual `Sync now` report titles attempted, not raw history rows pushed.
 
 ### Task 4: Make configuration and commands real
 
-- [ ] Either wire `sync.<adapter>.enabled/trackWatched/syncList` to documented
+- [x] Either wire `sync.<adapter>.enabled/trackWatched/syncList` to documented
       behavior or delete them. Do not keep unread persisted switches.
-- [ ] `sync-connect-anilist` must start/select AniList; `sync-connect-tmdb` must
+- [x] `sync-connect-anilist` must start/select AniList; `sync-connect-tmdb` must
       start/select TMDB; `sync-disconnect` must select only connected adapters.
-- [ ] Update command descriptions and `docs/feature-status.yaml` to say exactly what
+- [x] Update command descriptions and `docs/feature-status.yaml` to say exactly what
       each adapter supports. Keep the feature experimental until an opt-in live mutation
       test passes with a disposable account.
 
 ### Task 5: Add automatic AniList progress delivery safely
 
-- [ ] After a successful durable history write, enqueue one best-effort AniList
+- [x] After a successful durable history write, enqueue one best-effort AniList
       update only when `trackWatched` is enabled and identity is proven.
-- [ ] Do not await remote sync on the playback/UI path. Use a bounded, deduplicated
+- [x] Do not await remote sync on the playback/UI path. Use a bounded, deduplicated
       queue with retry/backoff and last-write-wins progress per title.
-- [ ] Persist enough pending state to survive a clean exit, or explicitly keep this
+- [x] Persist enough pending state to survive a clean exit, or explicitly keep this
       manual-only for the release. Do not claim automatic sync without that behavior.
 
 ## Release-today safe cut

@@ -93,6 +93,71 @@ describe("contract conformance", () => {
   });
 
   /**
+   * A command being unreachable is survivable while nothing mentions it. Copy
+   * that tells the user to run it is not: the instruction is the whole
+   * interaction, and following it does nothing. This is the unreachable-command
+   * debt above turned outward, where the user rather than an agent pays for it.
+   */
+  test("user-facing copy never instructs the user to run an unreachable command", () => {
+    const offered = new Set<string>(Object.values(COMMAND_CONTEXTS).flat());
+    const unreachableAlias = new Map<string, string>();
+    for (const command of COMMANDS) {
+      if (offered.has(command.id)) continue;
+      for (const alias of command.aliases) unreachableAlias.set(alias, command.id);
+    }
+
+    // Only double-quoted literals: comments and doc prose describe the code,
+    // they are not shown to anyone. Prose is then separated from request paths
+    // by three cheap signals — copy has whitespace, a path segment is followed
+    // by another segment, and a URL carries a scheme. Without these, every
+    // `"/trending/all/week"` TMDB call reads as an instruction.
+    const found: string[] = [];
+    for (const { file, text } of PRODUCTION_SOURCES) {
+      // Comments quote copy while explaining it ("idle hints say \"/trending\"").
+      // Dropping whole comment lines is enough and, unlike stripping `//`
+      // anywhere, leaves `"https://…"` inside real code intact.
+      const code = text
+        .split("\n")
+        .filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line))
+        .join("\n");
+      for (const [literal] of code.matchAll(/"(?:[^"\\\n]|\\.)*"/g)) {
+        if (!/\s/.test(literal) || literal.includes("://")) continue;
+        for (const [, alias] of literal.matchAll(/(?<![\w./-])\/([a-z][a-z-]*)(?![\w/-])/g)) {
+          const commandId = alias ? unreachableAlias.get(alias) : undefined;
+          if (commandId) found.push(`${file}: "/${alias}" -> ${commandId}`);
+        }
+      }
+    }
+
+    // DEBT (2026-08-13): the same defect as the `/sync` nudge this test was
+    // written for — copy naming a command no palette offers — but in the
+    // discover//filters//playlist-add surfaces rather than tracker sync, so
+    // each belongs to whoever wires that command up. Fixing one means deleting
+    // its entry.
+    const KNOWN_DEAD_INSTRUCTIONS = new Set<string>([
+      'apps/cli/src/app-shell/browse-shell.tsx: "/filters" -> filters',
+      'apps/cli/src/app-shell/browse-shell.tsx: "/trending" -> trending',
+      'apps/cli/src/app-shell/details-panel.ts: "/playlist-add" -> playlist-add',
+      'apps/cli/src/app-shell/settings/registry/discover.ts: "/random" -> random',
+      'apps/cli/src/app-shell/settings/registry/discover.ts: "/surprise" -> surprise',
+      'apps/cli/src/app-shell/setup-shell.tsx: "/random" -> random',
+      'apps/cli/src/app-shell/workflows/shell-workflows.ts: "/playlist-add" -> playlist-add',
+      'apps/cli/src/app/discover/random-results.ts: "/random" -> random',
+      'apps/cli/src/app/discover/random-results.ts: "/surprise" -> surprise',
+      'apps/cli/src/app/discover/random-results.ts: "/trending" -> trending',
+    ]);
+
+    expect(
+      found.filter((entry) => !KNOWN_DEAD_INSTRUCTIONS.has(entry)),
+      "copy points at a command no palette offers",
+    ).toEqual([]);
+    expect(
+      [...KNOWN_DEAD_INSTRUCTIONS].filter((entry) => !found.includes(entry)),
+      "fixed — delete these from KNOWN_DEAD_INSTRUCTIONS",
+    ).toEqual([]);
+  });
+
+  /**
    * `helpOnly` bindings are filtered out of the footer, so a `footerPriority`
    * beside one is ordering metadata nothing can ever read.
    */

@@ -7,6 +7,7 @@ import { presenceSettingsRows } from "./presence";
 import { providerSettingsRows } from "./providers";
 import { relaySettingsRows } from "./relay";
 import { storageSettingsRows } from "./storage";
+import { syncSettingsRows } from "./sync";
 import { updateSettingsRows } from "./updates";
 import { youtubeSettingsRows } from "./youtube";
 
@@ -20,6 +21,7 @@ export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowD
     ...languageSettingsRows(ctx),
     ...playbackSettingsRows(ctx),
     ...presenceSettingsRows(ctx),
+    ...syncSettingsRows(ctx),
     ...updateSettingsRows(ctx),
     ...storageSettingsRows(ctx),
   ];

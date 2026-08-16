@@ -42,6 +42,11 @@ const SENSITIVE_KEYS = new Set([
 
 const SENSITIVE_QUERY_KEYS = new Set([
   "access_token",
+  // TMDB v3 authenticates in the query string, so both of these ride in URLs
+  // that reach diagnostics — the catalogue proxy sends `api_key` on every
+  // metadata call, and account writes add `session_id`.
+  "api_key",
+  "session_id",
   "auth",
   "authorization",
   "expires",

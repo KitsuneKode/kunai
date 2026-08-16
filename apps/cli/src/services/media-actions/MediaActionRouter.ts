@@ -22,6 +22,12 @@ export interface MediaActionRouterDeps {
   readonly watchlist?: {
     readonly addToWatchlist: (item: MediaItemIdentity) => Promise<void> | void;
   };
+  readonly favorites?: {
+    /** Reports which way it went, so the caller can say so without re-reading. */
+    readonly toggleFavorite: (
+      item: MediaItemIdentity,
+    ) => Promise<"added" | "removed"> | "added" | "removed";
+  };
   readonly attention?: {
     readonly follow: (item: MediaItemIdentity) => Promise<void> | void;
     readonly unfollow: (item: MediaItemIdentity) => Promise<void> | void;
@@ -128,6 +134,12 @@ export class MediaActionRouter {
       }
       case "add-to-watchlist": {
         const executor = this.deps.watchlist?.addToWatchlist;
+        if (!executor) return unsupported(input.actionId);
+        await executor(input.item);
+        return handled(input.actionId);
+      }
+      case "toggle-favorite": {
+        const executor = this.deps.favorites?.toggleFavorite;
         if (!executor) return unsupported(input.actionId);
         await executor(input.item);
         return handled(input.actionId);

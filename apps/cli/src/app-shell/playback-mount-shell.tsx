@@ -12,12 +12,12 @@ import type { PostPlaybackRecommendationRail } from "@/app/post-play/post-playba
 import { postPlaybackRecommendationItemsToRailItems } from "@/app/post-play/post-playback-recommendations";
 import type { Container } from "@/container";
 import { effectiveFooterHints } from "@/container";
-import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import {
   mediaLanguageProfileFor,
   resolveContentKind,
   showsEpisodeLabel,
 } from "@/domain/media/content-kind";
+import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import {
   describePlaybackTelemetrySnapshot,
   type PlaybackTelemetrySnapshot,
@@ -28,6 +28,7 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { buildRuntimeHealthSnapshot } from "@/services/diagnostics/runtime-health";
+import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
 import { isEpisodeDownloaded } from "@/services/offline/offline-episode-index";
 import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -324,6 +325,46 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
     [telemetryInput],
   );
 
+  /**
+   * The playing title as a media item, or null when nothing is playing.
+   *
+   * `externalIds` is carried deliberately: it is what lets an anime resolve to
+   * AniList instead of falling through to TMDB, and dropping it here would
+   * reproduce the browse defect where a favourite wrote locally and queued
+   * nothing.
+   */
+  const favoriteTitle = useMemo((): MediaItemIdentity | null => {
+    const title = state.currentTitle;
+    if (!title) return null;
+    return {
+      mediaKind: title.isAnime ? "anime" : title.type === "movie" ? "movie" : "series",
+      titleId: title.id,
+      title: title.name,
+      ...(title.externalIds ? { externalIds: title.externalIds } : {}),
+    };
+  }, [state.currentTitle]);
+
+  const isFavorite = useCallback(
+    () =>
+      favoriteTitle ? input.container.listService.isInFavorites(favoriteTitle.titleId) : false,
+    [favoriteTitle, input.container.listService],
+  );
+
+  const toggleFavorite = useCallback(async () => {
+    if (!favoriteTitle) return;
+    const router = createContainerMediaActionRouter(input.container);
+    await router.run({ actionId: "toggle-favorite", item: favoriteTitle, source: "playback" });
+    // Read back rather than assume: the list is the authority, and the message
+    // has to match what is now true.
+    const favourited = input.container.listService.isInFavorites(favoriteTitle.titleId);
+    input.container.stateManager.dispatch({
+      type: "SET_PLAYBACK_FEEDBACK",
+      note: favourited
+        ? `♥ Favourited ${favoriteTitle.title}.`
+        : `Removed ${favoriteTitle.title} from favourites.`,
+    });
+  }, [favoriteTitle, input.container]);
+
   return (
     <LoadingShell
       key={`playback-ep-${state.currentTitle?.id ?? "none"}:${state.currentEpisode?.season ?? 0}:${state.currentEpisode?.episode ?? 0}`}
@@ -344,6 +385,8 @@ export function PlaybackRootContent(input: PlaybackRootContentInput) {
       onPickSource={handlers.onPickSource}
       onPickQuality={handlers.onPickQuality}
       onReturnToSearch={handlers.onReturnToSearch}
+      onToggleFavorite={favoriteTitle ? toggleFavorite : undefined}
+      isFavorite={favoriteTitle ? isFavorite : undefined}
     />
   );
 }
@@ -374,6 +417,16 @@ function PlaybackShell({
   usePosterSurfaceBoundaryCleanup(true);
   useEffect(preloadTracksPanelModules, []);
   const playbackViewport = useDebouncedViewportPolicy("playback");
+  // `PlaybackShellState` carries no title id, so the session is the authority
+  // for which title just finished.
+  const finishedTitleId = useSessionSelector(
+    container.stateManager,
+    (session) => session.currentTitle?.id ?? null,
+    (left, right) => left === right,
+  );
+  const postPlayIsFavorite = finishedTitleId
+    ? container.listService.isInFavorites(finishedTitleId)
+    : false;
   const overlayBlocksInput = useSessionSelector(
     container.stateManager,
     (session) => session.activeModals.length > 0,
@@ -579,6 +632,7 @@ function PlaybackShell({
         />
       ) : (
         <PostPlayShell
+          isFavorite={postPlayIsFavorite}
           title={state.title}
           episodeLabel={state.episodeLabel ?? ""}
           nextEpisodeLabel={state.nextEpisodeLabel}

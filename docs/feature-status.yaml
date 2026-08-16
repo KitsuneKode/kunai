@@ -34,8 +34,8 @@ features:
     description: /diagnostics panel and redacted /export-diagnostics with DB-backed recent export.
   - id: catalog-sync
     label: AniList / TMDB sync
-    status: shipped
-    description: Opt-in account sync for watch state and metadata.
+    status: beta
+    description: Experimental opt-in AniList progress and tracker list membership sync; requires a disposable-account live smoke before release-ready status.
   - id: notifications-inbox
     label: Notifications inbox
     status: shipped

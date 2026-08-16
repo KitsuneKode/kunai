@@ -61,6 +61,11 @@ export function buildSettingsRegistryContext(
       providers: youtubeProviderMetadata,
       currentProvider: config.youtubeProvider,
     }),
+    sync: {
+      adapters: container.syncService.adapters,
+      authAvailability: container.syncAuthAvailability,
+      status: container.syncService.getStatus(config.sync.pausedUntil),
+    },
     container,
   };
 }

@@ -206,6 +206,8 @@ export function BrowseShell<T>({
   settings,
   onQueueSelected,
   onWatchlistSelected,
+  onFavoriteSelected,
+  isFavorite,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -243,6 +245,10 @@ export function BrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
+  /** Resolves to the message to flash, so add and remove can read differently. */
+  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
+  /** Live lookup, re-read on every render so a toggle shows immediately. */
+  isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -264,6 +270,10 @@ export function BrowseShell<T>({
     },
     [queryDraft],
   );
+  // Forces a frame after a favourite toggle: `isFavorite` reads through to the
+  // list, so nothing re-renders on its own when the underlying row changes.
+  // Only the setter is needed — the count itself is never read.
+  const [, setFavoriteTick] = useState(0);
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const [highlightedCommandIndex, setHighlightedCommandIndex] = useState(0);
@@ -855,9 +865,15 @@ export function BrowseShell<T>({
   );
 
   const runMutationWithFeedback = useCallback(
-    (operation: () => Promise<void> | void, successMessage: string, failurePrefix: string) => {
+    (
+      operation: () => Promise<string | void> | string | void,
+      successMessage: string,
+      failurePrefix: string,
+    ) => {
       void runBrowseMutation(operation).then((result) => {
-        flashActionFeedback(result.ok ? successMessage : `${failurePrefix}: ${result.message}`);
+        flashActionFeedback(
+          result.ok ? (result.note ?? successMessage) : `${failurePrefix}: ${result.message}`,
+        );
         return undefined;
       });
     },
@@ -1375,6 +1391,7 @@ export function BrowseShell<T>({
         listEffect &&
         (listEffect.kind === "add-to-up-next" ||
           listEffect.kind === "add-to-watchlist" ||
+          listEffect.kind === "toggle-favorite" ||
           listEffect.kind === "follow") &&
         selectedOption &&
         displayOptions.length > 0 &&
@@ -1386,6 +1403,22 @@ export function BrowseShell<T>({
             () => onQueueSelected(selectedOption.value),
             `Added ${selectedOption.label} to Up Next`,
             "Could not queue",
+          );
+          return;
+        }
+        if (listEffect.kind === "toggle-favorite" && onFavoriteSelected) {
+          runMutationWithFeedback(
+            async () => {
+              // The handler reports which way the toggle went and whether a
+              // tracker can carry it; a fixed string here could only guess.
+              const note = await onFavoriteSelected(selectedOption.value);
+              // `isFavorite` reads through to the list on render, so the mark
+              // only appears once something asks for a new frame.
+              setFavoriteTick((tick) => tick + 1);
+              return note;
+            },
+            `Updated favourites for ${selectedOption.label}`,
+            "Could not update favourites",
           );
           return;
         }
@@ -1949,6 +1982,14 @@ export function BrowseShell<T>({
                       const metaWidth = Math.min(12, Math.max(6, measureColumns(metaText)));
                       columns.push(listRowStatusColumn(metaText, metaWidth, palette.muted, true));
                     }
+                    // The favourite mark trails the row in its own accent-tinted
+                    // column. Prefixed into the title it inherited the title's
+                    // colour, so it read as punctuation rather than a state, and
+                    // it shifted every title one glyph out of alignment with its
+                    // unfavourited neighbours.
+                    if (isFavorite?.(option.value)) {
+                      columns.push(listRowStatusColumn("♥", 2, palette.accent));
+                    }
                     return (
                       <ListRow
                         key={`${option.label}-${option.detail ?? ""}`}
@@ -2151,6 +2192,7 @@ export function BrowseShell<T>({
                 "browse-download",
                 ...(onQueueSelected ? ["browse-queue"] : []),
                 ...(onWatchlistSelected ? ["browse-watchlist"] : []),
+                ...(onFavoriteSelected ? ["browse-favorite"] : []),
                 ...(onFollowSelected ? ["browse-follow"] : []),
               ]
             : []),
@@ -2251,6 +2293,8 @@ export function openBrowseShell<T>({
   settings,
   onQueueSelected,
   onWatchlistSelected,
+  onFavoriteSelected,
+  isFavorite,
   onFollowSelected,
   onPlayTrailer,
   onOpenLink,
@@ -2281,6 +2325,10 @@ export function openBrowseShell<T>({
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
+  /** Resolves to the message to flash, so add and remove can read differently. */
+  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
+  /** Live lookup, re-read on every render so a toggle shows immediately. */
+  isFavorite?: (value: T) => boolean;
   onFollowSelected?: (value: T) => Promise<void> | void;
   onPlayTrailer?: (url: string) => void;
   onOpenLink?: (url: string) => void;
@@ -2317,6 +2365,8 @@ export function openBrowseShell<T>({
         settings={settings}
         onQueueSelected={onQueueSelected}
         onWatchlistSelected={onWatchlistSelected}
+        onFavoriteSelected={onFavoriteSelected}
+        isFavorite={isFavorite}
         onFollowSelected={onFollowSelected}
         onPlayTrailer={onPlayTrailer}
         onOpenLink={onOpenLink}

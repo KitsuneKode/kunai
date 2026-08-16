@@ -146,10 +146,17 @@ export interface KitsuneConfig {
   lastUpdateCheckFailedAt: number;
   lastKnownLatestVersion: string;
   sync: {
+    /**
+     * A timed pause across every tracker, distinct from turning one off.
+     *
+     * `enabled: false` means "never"; this means "not right now". Work keeps
+     * queueing while paused and is delivered on resume, so pausing never costs
+     * the user an episode. ISO-8601, or null/absent when not paused.
+     */
+    pausedUntil?: string | null;
     anilist: { enabled: boolean; trackWatched: boolean; syncList: boolean };
     tmdb: { enabled: boolean; trackWatched: boolean; syncList: boolean };
   };
-  syncNudgeDismissedAt?: string;
   lastWeeklyDigestShownAt?: string | null;
   lastStreakMilestoneDays?: number;
   tuningOverrides?: ConfigTuningOverrides;

@@ -79,6 +79,7 @@
     "test:installer:scenarios": "bash test/install/run.sh",
     "test:live:allanime": "bun run --cwd apps/cli test:live:allanime",
     "test:live:anidb": "bun run --cwd apps/cli test:live:anidb",
+    "test:live:tracker-sync": "bun run --cwd apps/cli test:live:tracker-sync",
     "test:live:discord": "bun run --cwd apps/cli test:live:discord",
     "test:live:miruro": "bun run --cwd apps/cli test:live:miruro",
     "test:live:matrix": "bun run --cwd apps/cli test:live:matrix",

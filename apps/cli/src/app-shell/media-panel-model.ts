@@ -85,6 +85,13 @@ export type MediaPanelContext = {
   readonly resumeLabel?: string;
   readonly autoplayPaused?: boolean;
   readonly progress?: { readonly watched: number; readonly total: number };
+  /**
+   * Whether the title is on the favourites list.
+   *
+   * Set on the context rather than inside each kind's builder so the playing
+   * rail and the post-play panel agree without either restating the rule.
+   */
+  readonly isFavorite?: boolean;
 };
 
 // ── Humanizers ─────────────────────────────────────────────────────────────
@@ -420,17 +427,28 @@ export function parseEpisodeNumber(label: string | undefined): number | undefine
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 export function buildMediaPanel(ctx: MediaPanelContext): MediaPanelModel {
-  switch (ctx.contentKind) {
-    case "video":
-      return buildVideoPanel(ctx);
-    case "movie":
-      return buildMoviePanel(ctx);
-    case "anime":
-      return isFilmStructure(ctx)
-        ? buildMoviePanel(ctx, { kind: "anime", kindBadge: "anime" })
-        : buildSeriesPanel(ctx, true);
-    case "series":
-    default:
-      return isFilmStructure(ctx) ? buildMoviePanel(ctx) : buildSeriesPanel(ctx, false);
-  }
+  const model = ((): MediaPanelModel => {
+    switch (ctx.contentKind) {
+      case "video":
+        return buildVideoPanel(ctx);
+      case "movie":
+        return buildMoviePanel(ctx);
+      case "anime":
+        return isFilmStructure(ctx)
+          ? buildMoviePanel(ctx, { kind: "anime", kindBadge: "anime" })
+          : buildSeriesPanel(ctx, true);
+      case "series":
+      default:
+        return isFilmStructure(ctx) ? buildMoviePanel(ctx) : buildSeriesPanel(ctx, false);
+    }
+  })();
+
+  // Applied once, after the kind-specific build, so every content kind and both
+  // surfaces show it identically. It leads the facts because it is the one fact
+  // the user just changed and is looking for confirmation of.
+  if (!ctx.isFavorite) return model;
+  return {
+    ...model,
+    facts: [{ label: "♥", value: "favourite", tone: "success" }, ...model.facts],
+  };
 }

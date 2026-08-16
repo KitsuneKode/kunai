@@ -1,11 +1,11 @@
 {
-  "syncedAt": "2026-08-16T10:23:43.428Z",
+  "syncedAt": "2026-08-16T10:38:36.708Z",
   "version": "0.3.0",
   "cliVersion": "0.3.0",
-  "cliSourceRevision": "884068af",
-  "cliSourceFingerprint": "38ef1edd2dc50a764212330cbb30e9aea2c1d65dd228c199e27e49a91be78a4e",
-  "docsContentFingerprint": "9b95290c0ebfe6c962e4bf5e330878ae3d401042642e08d815da0543d47af785",
-  "featureStatusRevision": "cfb217102303c9ee08bc57588f58ac7e278e7c1bf9ca607ebac1c712c5eb129b",
+  "cliSourceRevision": "520c36c1",
+  "cliSourceFingerprint": "178d0832826823139f8b53f7988cb125e7b72b8d637e4e585bca7f7af6749d91",
+  "docsContentFingerprint": "3311367d534c1c9f29cde9ecf49f75ed0f7069979b2a014b488101e3e2ad87e9",
+  "featureStatusRevision": "d4c1e1d0943d18f05bca1a12a5b0ff966754a588f12e4a86a03510d2bc424c1d",
   "commandCount": 81,
   "providerIds": ["videasy", "vidlink", "rivestream", "anidb", "allanime", "miruro", "youtube"],
   "providers": [
@@ -604,7 +604,7 @@
       "id": "sync",
       "label": "Sync",
       "aliases": ["sync", "sync-settings", "integrations"],
-      "description": "Sync watch progress with AniList or TMDB"
+      "description": "Experimental AniList progress and tracker list sync"
     },
     {
       "id": "sync-connect-anilist",
@@ -616,7 +616,7 @@
       "id": "sync-connect-tmdb",
       "label": "Connect TMDB",
       "aliases": ["connect-tmdb", "tmdb-connect", "tmdb"],
-      "description": "Link your TMDB account to sync watch progress"
+      "description": "Link your TMDB account to sync watchlist and favourites"
     },
     {
       "id": "sync-disconnect",
@@ -839,8 +839,8 @@
     {
       "id": "catalog-sync",
       "label": "AniList / TMDB sync",
-      "status": "shipped",
-      "description": "Opt-in account sync for watch state and metadata."
+      "status": "beta",
+      "description": "Experimental opt-in AniList progress and tracker list membership sync; requires a disposable-account live smoke before release-ready status."
     },
     {
       "id": "notifications-inbox",
@@ -1038,6 +1038,15 @@
       "order": 240
     },
     {
+      "id": "browse-favorite",
+      "scope": "browse",
+      "group": "While browsing",
+      "keys": "f",
+      "label": "Favourite or unfavourite the highlighted title",
+      "tier": "surface",
+      "order": 245
+    },
+    {
       "id": "browse-follow",
       "scope": "browse",
       "group": "While browsing",
@@ -1108,6 +1117,15 @@
       "label": "Choose episode",
       "tier": "surface",
       "order": 330
+    },
+    {
+      "id": "player-favorite",
+      "scope": "player",
+      "group": "In the player",
+      "keys": "l",
+      "label": "Favourite or unfavourite the current title",
+      "tier": "surface",
+      "order": 335
     },
     {
       "id": "player-skip",

@@ -15,6 +15,7 @@ export type StoredDiagnosticCategory =
   | "presence"
   | "download"
   | "offline"
+  | "sync"
   | "update";
 
 export interface StoredDiagnosticEvent {

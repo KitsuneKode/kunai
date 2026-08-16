@@ -445,7 +445,7 @@ function AppRoot({ container }: { container: Container }) {
       } catch {
         setStreak(undefined);
       }
-      setSyncHealth(container.syncService.getHealth());
+      setSyncHealth(container.syncService.getHealth(container.config.sync.pausedUntil));
       try {
         setPlaylistCount(container.queueService.getStatus().unplayedCount);
       } catch {

@@ -162,7 +162,7 @@ export function resolveBrowseDetailsSecondary<T>(
 
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
-const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Release follow", "Up Next"]);
+const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Favourite", "Release follow", "Up Next"]);
 
 export type BrowseDetailsPanel = {
   title: string;

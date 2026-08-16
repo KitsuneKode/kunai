@@ -727,7 +727,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "sync",
     label: "Sync",
     aliases: ["sync", "sync-settings", "integrations"],
-    description: "Sync watch progress with AniList or TMDB",
+    description: "Experimental AniList progress and tracker list sync",
   },
   {
     id: "sync-connect-anilist",
@@ -739,7 +739,7 @@ export const COMMANDS: readonly AppCommand[] = [
     id: "sync-connect-tmdb",
     label: "Connect TMDB",
     aliases: ["connect-tmdb", "tmdb-connect", "tmdb"],
-    description: "Link your TMDB account to sync watch progress",
+    description: "Link your TMDB account to sync watchlist and favourites",
   },
   {
     id: "sync-disconnect",

@@ -78,6 +78,7 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | `k`         | Open quality picker in the terminal (mpv itself may still use `v`)                   |
 | `o`         | Open source picker without changing source until selection is confirmed              |
 | `Shift+F`   | Try fallback provider when available (bare `f` is intentionally unbound)             |
+| `l`         | Favourite / unfavourite the current title (not `f`, which sits beside `Shift+F`)     |
 | `/provider` | Open provider picker without changing provider until a row is confirmed              |
 | `Ctrl+R`    | Refresh / recover the current stream                                                 |
 | `s`         | Reload subtitles                                                                     |
@@ -96,18 +97,21 @@ in `apps/cli/src/app-shell/keybindings.ts`. Prefer that generated table and in-a
 
 ## Playback Loading And Resolving
 
-| Key   | Action                                                           |
-| ----- | ---------------------------------------------------------------- |
-| `/`   | Open command palette                                             |
-| `f`   | Skip remaining retries and try fallback provider, when available |
-| `g`   | Settings                                                         |
-| `h`   | History                                                          |
-| `d`   | Diagnostics                                                      |
-| `?`   | Help                                                             |
-| `Esc` | Cancel when the loading state is cancellable                     |
+| Key       | Action                                                           |
+| --------- | ---------------------------------------------------------------- |
+| `/`       | Open command palette                                             |
+| `Shift+F` | Skip remaining retries and try fallback provider, when available |
+| `l`       | Favourite / unfavourite the title being opened                   |
+| `g`       | Settings                                                         |
+| `h`       | History                                                          |
+| `d`       | Diagnostics                                                      |
+| `?`       | Help                                                             |
+| `Esc`     | Cancel when the loading state is cancellable                     |
 
-Loading-shell fallback may still accept a bare `f` while resolving; active
-playback uses `Shift+F` only.
+Fallback is `Shift+F` everywhere. A bare `f` is bound only while browsing (where
+it toggles a favourite) and is deliberately unbound in the loading and player
+scopes, so a slipped shift cannot turn "favourite this" into "switch provider
+mid-session". `l` carries the favourite toggle on those screens instead.
 
 ## Post-Playback
 

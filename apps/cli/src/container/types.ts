@@ -71,6 +71,7 @@ import type { RecommendationService } from "../services/recommendations/Recommen
 import type { ReleaseProgressWriter } from "../services/release-reconciliation/ReleaseProgressWriter";
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import type { UpdateService } from "../services/update/UpdateService";
@@ -177,6 +178,9 @@ export interface Container {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly syncReconciliationRepository: import("@kunai/storage").SyncReconciliationRepository;
+  /** Typed, non-secret: whether each tracker's auth flow can start at all. */
+  readonly syncAuthAvailability: SyncAuthAvailability;
   readonly continuationProjectionService: ContinuationProjectionService;
   readonly continueWatchingService: ContinueWatchingService;
   readonly attentionRefreshWorker: AttentionRefreshWorker;

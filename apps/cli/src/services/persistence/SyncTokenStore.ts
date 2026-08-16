@@ -13,7 +13,10 @@ export interface AniListTokens {
 
 export interface TmdbTokens {
   readonly sessionId: string;
+  /** Numeric v3 account id. Account-scoped writes address this, not the name. */
   readonly accountId?: string;
+  /** Display handle, kept apart so it can never be used to build a request path. */
+  readonly username?: string;
 }
 
 export interface SyncTokens {
@@ -21,37 +24,97 @@ export interface SyncTokens {
   readonly tmdb?: TmdbTokens;
 }
 
-export class SyncTokenStore {
-  private readonly path: string;
+/**
+ * File seam for the token store: reading the whole token file and replacing it.
+ *
+ * Production reads `sync-tokens.json` and rewrites it atomically with
+ * owner-only permissions. Tests substitute a controllable in-memory
+ * implementation so mutation interleavings are forced rather than raced.
+ */
+export interface SyncTokenFileIo {
+  /** Persisted tokens, or `{}` when the file is absent or unreadable. */
+  readonly readTokens: (path: string) => Promise<SyncTokens>;
+  /** Replace the whole file with `tokens`. */
+  readonly writeTokens: (path: string, tokens: SyncTokens) => Promise<void>;
+}
 
-  constructor(paths: KunaiPaths) {
-    this.path = join(paths.configDir, "sync-tokens.json");
-  }
-
-  async load(): Promise<SyncTokens> {
+export const realSyncTokenFileIo: SyncTokenFileIo = {
+  async readTokens(path: string): Promise<SyncTokens> {
     try {
-      const raw = await readFile(this.path, "utf8");
+      const raw = await readFile(path, "utf8");
       return JSON.parse(raw) as SyncTokens;
     } catch {
       return {};
     }
+  },
+  writeTokens(path: string, tokens: SyncTokens): Promise<void> {
+    return writeAtomicSecretJson(path, tokens);
+  },
+};
+
+/**
+ * Reads and writes `sync-tokens.json`.
+ *
+ * Every mutation is serialized through one chain. Tracker connects arrive
+ * independently -- connecting AniList and TMDB close together used to run two
+ * unserialized read-modify-write cycles against the same snapshot, and the
+ * later write erased the other tracker's credentials.
+ */
+export class SyncTokenStore {
+  private readonly path: string;
+  private readonly io: SyncTokenFileIo;
+  /** Tail of the serialized mutation queue. Settled form only -- never rejects. */
+  private mutationChain: Promise<void> = Promise.resolve();
+
+  constructor(paths: KunaiPaths, io: SyncTokenFileIo = realSyncTokenFileIo) {
+    this.path = join(paths.configDir, "sync-tokens.json");
+    this.io = io;
   }
 
-  async save(tokens: SyncTokens): Promise<void> {
-    await writeAtomicSecretJson(this.path, tokens);
+  /** Persisted tokens, read once every mutation queued before this call has settled. */
+  async load(): Promise<SyncTokens> {
+    await this.mutationChain;
+    return this.io.readTokens(this.path);
   }
 
-  async clear(): Promise<void> {
-    await writeAtomicSecretJson(this.path, {});
+  /** Replace the whole token file, ordered against concurrent patches. */
+  save(tokens: SyncTokens): Promise<void> {
+    return this.mutate(() => tokens);
   }
 
-  async patchAniList(data: AniListTokens | undefined): Promise<void> {
-    const current = await this.load();
-    await this.save({ ...current, anilist: data });
+  clear(): Promise<void> {
+    return this.mutate(() => ({}));
   }
 
-  async patchTmdb(data: TmdbTokens | undefined): Promise<void> {
-    const current = await this.load();
-    await this.save({ ...current, tmdb: data });
+  patchAniList(data: AniListTokens | undefined): Promise<void> {
+    return this.mutate((current) => ({ ...current, anilist: data }));
+  }
+
+  patchTmdb(data: TmdbTokens | undefined): Promise<void> {
+    return this.mutate((current) => ({ ...current, tmdb: data }));
+  }
+
+  /** Resolves once the mutations queued so far have settled, failures included. */
+  whenIdle(): Promise<void> {
+    return this.mutationChain;
+  }
+
+  private mutate(update: (current: SyncTokens) => SyncTokens): Promise<void> {
+    const operation = this.applyAfter(this.mutationChain, update);
+    // The caller still sees the rejection; the queue keeps a settled handle so
+    // one failed write cannot wedge every later mutation.
+    this.mutationChain = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async applyAfter(
+    previous: Promise<void>,
+    update: (current: SyncTokens) => SyncTokens,
+  ): Promise<void> {
+    await previous;
+    // Re-read inside this turn: an earlier mutation in the chain may have
+    // changed the other tracker's slot since this call was made.
+    const current = await this.io.readTokens(this.path);
+    await this.io.writeTokens(this.path, update(current));
   }
 }

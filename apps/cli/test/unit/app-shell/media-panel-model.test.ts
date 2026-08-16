@@ -237,7 +237,7 @@ describe("buildMediaPanel — series/anime", () => {
 });
 
 describe("buildMediaPanel — anime film", () => {
-  test("uses movie layout with an anime badge and no S/E line", () => {
+  test("uses movie layout with an anime badge, favorite state, and no S/E line", () => {
     const filmDetail: TitleDetail = {
       id: "anilist:181053",
       type: "movie",
@@ -256,12 +256,14 @@ describe("buildMediaPanel — anime film", () => {
         titleDetail: filmDetail,
         currentSeason: 1,
         currentEpisode: 1,
+        isFavorite: true,
       }),
     );
     expect(model.kind).toBe("anime");
     expect(model.kindBadge).toBe("anime");
     expect(model.secondary).toBe("2025 · 2h 35m");
     expect(model.facts).toContainEqual({ label: "runtime", value: "2h 35m" });
+    expect(model.facts[0]).toEqual({ label: "♥", value: "favourite", tone: "success" });
     expect(model.secondary).not.toContain("S01");
     expect(model.miniCards.find((card) => card.kind === "next")).toBeUndefined();
   });

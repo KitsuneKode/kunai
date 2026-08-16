@@ -268,6 +268,16 @@ function buildManagementFacts(
     tone: inWatchlist ? "success" : "neutral",
   });
 
+  // Favourite state belongs beside watchlist state: the row marker says *that*
+  // a title is favourited, and this says what to press to change it. Without
+  // it the panel described one half of the same pair of lists.
+  const inFavorites = listService?.isInFavorites(result.id) ?? false;
+  facts.push({
+    label: "Favourite",
+    detail: inFavorites ? "♥ Favourited · f to remove" : "Not favourited · f to add",
+    tone: inFavorites ? "success" : "neutral",
+  });
+
   const followPreference = optionContext?.followPreference;
   if (followPreference === "following") {
     facts.push({

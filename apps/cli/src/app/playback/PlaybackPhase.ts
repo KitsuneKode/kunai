@@ -223,6 +223,7 @@ import {
   buildSubtitleDiagnosticEvent,
   type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
+import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
@@ -2504,6 +2505,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               engaged: decision.isEngaged,
             });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
+            if (savedHistoryRow) {
+              // Enqueued from the row that was actually persisted, not from the
+              // in-flight result: the outbox must never describe progress the
+              // local history does not have. This only writes SQLite — remote
+              // delivery is the drain's job, so playback never waits on a
+              // tracker, and repeated updates coalesce instead of stacking up.
+              // Admission reads the live opt-in before it writes the outbox.
+              // Keep that asynchronous check outside the playback teardown:
+              // persistence is already complete and tracker work is optional.
+              queueHistoryMirror(container, historyTitleId, savedHistoryRow);
+            }
             enqueueReleaseReconciliation(
               container,
               savedHistoryRow ? [savedHistoryRow] : [],
@@ -2557,17 +2569,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 duration: result.duration,
                 endReason: result.endReason,
               },
-            });
-          }
-
-          // One-time sync nudge: show on first episode completion if no sync is connected.
-          if (
-            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode) &&
-            !config.syncNudgeDismissedAt &&
-            container.syncService.getConnectedAdapters().length === 0
-          ) {
-            this.updatePlaybackFeedback(context, {
-              note: "Connect AniList or TMDB to sync progress. /sync to set up  ·  [d] dismiss",
             });
           }
 

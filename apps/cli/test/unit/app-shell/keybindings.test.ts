@@ -297,3 +297,32 @@ test("stats puts Tab on the tab strip and gives every filter a reverse", () => {
   expect(hints.find((hint) => hint.label === "type")?.keys).toBe("←→");
   expect(hints[0]?.keys).toBe("Tab / ⇧Tab");
 });
+
+/**
+ * The favourite key must be bound *and* reachable. `browse-favorite` shipped as
+ * a binding no caller offered, so `f` did nothing and the hint row never listed
+ * it — a declaration with no reader, which is this repo's house failure mode.
+ */
+test("the player favourite key is bound, hinted, and clear of the fallback chord", () => {
+  const favorite = KEYBINDINGS.find((binding) => binding.id === "player-favorite");
+  expect(favorite?.scope).toBe("player");
+  expect(favorite?.hintLabel).toBe("favourite");
+  expect(favorite?.helpOnly).toBeUndefined();
+
+  // Never `f`: the same scope keeps `⇧F` for the provider switch, and a slipped
+  // shift must not turn "favourite this" into "switch provider mid-session".
+  expect(favorite?.chord.input?.toLowerCase()).not.toBe("f");
+  expect(favorite?.chord.shift).toBeUndefined();
+
+  // And it must not collide with anything else live in the loading/player scopes.
+  const collisions = KEYBINDINGS.filter(
+    (binding) =>
+      binding.id !== "player-favorite" &&
+      !binding.helpOnly &&
+      (binding.scope === "player" || binding.scope === "loading") &&
+      binding.chord.input === favorite?.chord.input &&
+      Boolean(binding.chord.shift) === Boolean(favorite?.chord.shift) &&
+      Boolean(binding.chord.ctrl) === Boolean(favorite?.chord.ctrl),
+  );
+  expect(collisions.map((binding) => binding.id)).toEqual([]);
+});

@@ -57,6 +57,10 @@ export class ListService {
     this.repo.removeItemByTitle("favorites", titleId);
   }
 
+  toggleFavorites(input: Omit<ListItemInput, "listId">): "added" | "removed" {
+    return this.repo.toggleItem("favorites", { ...input, listId: "favorites" });
+  }
+
   createList(name: string, kind: ListKind = "custom"): KunaiList {
     return this.repo.createList({ name, kind });
   }

@@ -37,6 +37,11 @@ describe("toBrowseResultOption", () => {
           tone: "neutral",
         },
         {
+          label: "Favourite",
+          detail: "Not favourited · f to add",
+          tone: "neutral",
+        },
+        {
           label: "Metadata source",
           detail: "provider response",
           tone: "neutral",
@@ -100,6 +105,7 @@ describe("toBrowseResultOption", () => {
       previewImageUrl: "https://img.example/demon.jpg",
       previewFacts: [
         { label: "Watchlist", detail: "Not saved · /bookmark to add", tone: "neutral" },
+        { label: "Favourite", detail: "Not favourited · f to add", tone: "neutral" },
         { label: "Metadata source", detail: "AniList", tone: "success" },
         {
           label: "Title aliases",
