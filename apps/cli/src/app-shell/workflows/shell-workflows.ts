@@ -35,7 +35,6 @@ import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
-import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
@@ -65,6 +64,7 @@ import {
   parseOfflineTitleCleanupPreference,
   type OfflineTitleCleanupPreference,
 } from "@/services/download/download-cleanup-policy";
+import { downloadJobShellMode } from "@/services/download/download-job-mode";
 import { resolveDownloadQualityCeiling } from "@/services/download/download-quality-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
@@ -686,21 +686,18 @@ export async function queueMoreOfflineTitleEpisodes(
   actionContext?: ListShellActionContext,
 ): Promise<void> {
   const provider = container.providerRegistry.get(first.providerId);
-  if (provider) {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode: resolveProviderLaneFromMetadata(provider.metadata),
-      provider: provider.metadata.id,
-    });
-  } else {
-    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: first.providerId });
-  }
+  container.stateManager.dispatch({
+    type: "SET_MODE",
+    mode: downloadJobShellMode(first),
+    provider: provider?.metadata.id ?? first.providerId,
+  });
 
   const title: TitleInfo = {
     id: first.titleId,
     type: isTitleLevelContent(first.mediaKind, contentType) ? "movie" : "series",
     name: first.titleName,
     posterUrl: first.posterUrl,
+    isAnime: first.mediaKind === "anime",
   };
   const { DownloadOnlyPhase } = await import("@/app/playback/DownloadOnlyPhase");
   const result = await new DownloadOnlyPhase().execute(
