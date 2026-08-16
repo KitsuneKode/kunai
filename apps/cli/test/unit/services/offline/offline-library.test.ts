@@ -16,7 +16,13 @@ import {
   resolveOfflineJobPreviewImage,
   resolveOfflineArtifactStatus,
 } from "@/services/offline/offline-library";
-import type { DownloadJobRecord } from "@kunai/storage";
+import {
+  dataMigrations,
+  DownloadJobsRepository,
+  openKunaiDatabase,
+  runMigrations,
+  type DownloadJobRecord,
+} from "@kunai/storage";
 
 function minimalJob(
   patch: Partial<DownloadJobRecord> & Pick<DownloadJobRecord, "id">,
@@ -85,6 +91,27 @@ describe("offline-library helpers", () => {
         }),
       ),
     ).toBe("Frieren  ·  E03");
+  });
+
+  test("an anime film library group never exposes a legacy episode slot", () => {
+    const groups = groupOfflineLibraryEntries([
+      {
+        job: minimalJob({
+          id: "1",
+          titleId: "anilist:181053",
+          titleName: "Infinity Castle",
+          mediaKind: "anime",
+          contentType: "movie",
+          season: 1,
+          episode: 1,
+          outputPath: "/downloads/infinity-castle.mp4",
+        }),
+        status: "ready",
+      },
+    ]);
+
+    expect(formatOfflineLibraryGroupLabel(groups[0]!)).toBe("Infinity Castle  ·  1 movie");
+    expect(formatOfflineLibraryGroupDetail(groups[0]!)).not.toContain("E01");
   });
 
   test("formatOfflineJobListingTitle keeps video title-level", () => {
@@ -209,6 +236,76 @@ describe("offline-library helpers", () => {
     expect(formatOfflineLibraryGroupDetail(groups[1]!)).toContain("timing cached");
     expect(groups[1]!.previewImageUrl).toBe("https://img.example/bb.jpg");
     expect(groups[1]!.entries.map((entry) => entry.job.episode)).toEqual([1, 2]);
+  });
+
+  test("legacy null structure and new series jobs for one title remain one offline group", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-offline-legacy-content-type-"));
+    const db = openKunaiDatabase(join(dir, "data.sqlite"), { wal: false });
+    try {
+      runMigrations(
+        db,
+        "data",
+        dataMigrations.filter((migration) => migration.id !== "028_data_download_job_content_type"),
+      );
+      db.query(
+        `INSERT INTO download_jobs (
+          id, title_id, title_name, media_kind, season, episode, provider_id,
+          stream_url, headers_json, status, progress_percent, output_path, temp_path,
+          retry_count, created_at, updated_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "legacy-1",
+        "anilist:1",
+        "Frieren",
+        "anime",
+        1,
+        1,
+        "allanime",
+        "https://example.invalid/legacy.m3u8",
+        "{}",
+        "completed",
+        100,
+        "/downloads/frieren-e01.mp4",
+        "/downloads/frieren-e01.mp4.tmp",
+        0,
+        "2026-08-01T00:00:00.000Z",
+        "2026-08-01T00:00:00.000Z",
+        "2026-08-01T00:00:00.000Z",
+      );
+
+      runMigrations(db, "data");
+      const jobs = new DownloadJobsRepository(db);
+      jobs.enqueue({
+        id: "new-2",
+        titleId: "anilist:1",
+        titleName: "Frieren",
+        mediaKind: "anime",
+        contentType: "series",
+        season: 1,
+        episode: 2,
+        providerId: "allanime",
+        mode: "anime",
+        streamUrl: "https://example.invalid/new.m3u8",
+        headers: {},
+        outputPath: "/downloads/frieren-e02.mp4",
+        tempPath: "/downloads/frieren-e02.mp4.tmp",
+        createdAt: "2026-08-02T00:00:00.000Z",
+        updatedAt: "2026-08-02T00:00:00.000Z",
+      });
+
+      const persisted = jobs.listByTitle("anilist:1");
+      expect(persisted.map((job) => job.contentType)).toEqual(["series", undefined]);
+      const groups = groupOfflineLibraryEntries(
+        persisted.map((job) => ({ job, status: "ready" as const })),
+      );
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.entries.map((entry) => entry.job.episode)).toEqual([1, 2]);
+    } finally {
+      Bun.gc(true);
+      (db as unknown as { clearQueryCache?: () => void }).clearQueryCache?.();
+      db.close(true);
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("offline previews prefer local thumbnails and avoid remote artwork while offline", () => {

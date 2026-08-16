@@ -62,7 +62,7 @@ export function groupOfflineLibraryEntries(
 ): readonly OfflineLibraryGroup[] {
   const groups = new Map<string, OfflineLibraryEntry[]>();
   for (const entry of entries) {
-    const key = `${entry.job.titleId || entry.job.titleName}:${entry.job.mediaKind}:${entry.job.contentType ?? ""}`;
+    const key = `${entry.job.titleId || entry.job.titleName}:${entry.job.mediaKind}`;
     const current = groups.get(key) ?? [];
     current.push(entry);
     groups.set(key, current);
@@ -284,6 +284,7 @@ function formatOfflineRange(entries: readonly OfflineLibraryEntry[]): string | n
     const presentation = presentMedia({
       title: entry.job.titleName,
       mediaKind: entry.job.mediaKind,
+      contentType: entry.job.contentType,
       season: entry.job.season,
       episode: entry.job.episode,
     });

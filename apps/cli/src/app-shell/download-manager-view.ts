@@ -78,6 +78,7 @@ export function buildDownloadManagerRailModel(
   const presentation = presentMedia({
     title: job.titleName,
     mediaKind: job.mediaKind,
+    contentType: job.contentType,
     season: job.season,
     episode: job.episode,
   });
