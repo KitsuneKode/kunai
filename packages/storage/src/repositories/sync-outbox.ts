@@ -112,9 +112,10 @@ export class SyncOutboxRepository {
 
   /**
    * Record the latest intent for `(trackerId, dedupeKey)`. An existing row is
-   * superseded in place: the payload is replaced, the generation advances, and
-   * claim ownership, attempts, backoff, and diagnostics all reset. `created_at`
-   * survives so the age of the intent stays readable.
+   * superseded in place when it is at least as strong: progress keeps the
+   * maximum episode and prefers completed on an equal episode. Accepted state
+   * advances the generation and resets claim ownership, attempts, backoff, and
+   * diagnostics. `created_at` survives so the age stays readable.
    */
   enqueue(input: SyncOutboxEnqueueInput, now = new Date()): SyncOutboxItem {
     const nowIso = now.toISOString();
@@ -136,7 +137,17 @@ export class SyncOutboxRepository {
            next_attempt_at = excluded.next_attempt_at,
            last_error_code = NULL,
            last_error_detail = NULL,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE json_extract(excluded.payload_json, '$.kind') != 'progress:set'
+            OR json_extract(sync_outbox.payload_json, '$.kind') != 'progress:set'
+            OR json_extract(excluded.payload_json, '$.progress')
+                 > json_extract(sync_outbox.payload_json, '$.progress')
+            OR (
+              json_extract(excluded.payload_json, '$.progress')
+                = json_extract(sync_outbox.payload_json, '$.progress')
+              AND json_extract(excluded.payload_json, '$.status') = 'completed'
+              AND json_extract(sync_outbox.payload_json, '$.status') != 'completed'
+            )`,
       )
       .run(
         crypto.randomUUID(),

@@ -1,4 +1,7 @@
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
+import { SyncReconciliationRepository } from "./sync-reconciliation";
 
 export type ListKind = "watchlist" | "favorites" | "custom";
 
@@ -22,6 +25,7 @@ export interface ListItem {
   readonly season?: number;
   readonly episode?: number;
   readonly notes?: string;
+  readonly externalIds?: ProviderExternalIds;
   readonly addedAt: string;
   readonly sortOrder: number;
 }
@@ -34,6 +38,7 @@ export interface ListItemInput {
   readonly season?: number;
   readonly episode?: number;
   readonly notes?: string;
+  readonly externalIds?: ProviderExternalIds;
 }
 
 interface ListRow {
@@ -56,6 +61,7 @@ interface ListItemRow {
   readonly season: number | null;
   readonly episode: number | null;
   readonly notes: string | null;
+  readonly external_ids_json: string | null;
   readonly added_at: string;
   readonly sort_order: number;
 }
@@ -83,13 +89,18 @@ function mapListItemRow(row: ListItemRow): ListItem {
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
     notes: row.notes ?? undefined,
+    externalIds: parseExternalIds(row.external_ids_json),
     addedAt: row.added_at,
     sortOrder: row.sort_order,
   };
 }
 
 export class ListRepository {
-  constructor(private readonly db: KunaiDatabase) {}
+  private readonly syncReconciliation: SyncReconciliationRepository;
+
+  constructor(private readonly db: KunaiDatabase) {
+    this.syncReconciliation = new SyncReconciliationRepository(db);
+  }
 
   getLists(): KunaiList[] {
     return this.db
@@ -171,6 +182,10 @@ export class ListRepository {
    * either would silently reorder the user's list.
    */
   addItem(input: ListItemInput): ListItem {
+    return this.db.transaction((value: ListItemInput) => this.addItemInTransaction(value))(input);
+  }
+
+  private addItemInTransaction(input: ListItemInput): ListItem {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const maxOrder = this.db
@@ -182,14 +197,15 @@ export class ListRepository {
 
     this.db
       .query(
-        `INSERT INTO list_items (id, list_id, title_id, media_kind, title, season, episode, notes, added_at, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO list_items (id, list_id, title_id, media_kind, title, season, episode, notes, external_ids_json, added_at, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(list_id, title_id) DO UPDATE SET
            media_kind = excluded.media_kind,
            title = excluded.title,
            season = excluded.season,
            episode = excluded.episode,
-           notes = excluded.notes`,
+           notes = excluded.notes,
+           external_ids_json = excluded.external_ids_json`,
       )
       .run(
         id,
@@ -200,6 +216,7 @@ export class ListRepository {
         input.season ?? null,
         input.episode ?? null,
         input.notes ?? null,
+        serializeExternalIds(input.externalIds),
         now,
         sortOrder,
       );
@@ -212,15 +229,33 @@ export class ListRepository {
       )
       .get(input.listId, input.titleId);
     if (!row) throw new Error(`List item not found after insert: ${input.listId}/${input.titleId}`);
-    return mapListItemRow(row);
+    const stored = mapListItemRow(row);
+    this.recordListReconciliation(stored, true, now);
+    return stored;
   }
 
   removeItem(id: string): void {
-    this.db.query("DELETE FROM list_items WHERE id = ?").run(id);
+    this.db.transaction((itemId: string) => {
+      const row = this.db
+        .query<ListItemRow, [string]>("SELECT * FROM list_items WHERE id = ?")
+        .get(itemId);
+      if (!row) return;
+      this.db.query("DELETE FROM list_items WHERE id = ?").run(itemId);
+      this.recordListReconciliation(mapListItemRow(row), false, new Date().toISOString());
+    })(id);
   }
 
   removeItemByTitle(listId: string, titleId: string): void {
-    this.db.query("DELETE FROM list_items WHERE list_id = ? AND title_id = ?").run(listId, titleId);
+    this.db.transaction((list: string, title: string) => {
+      const row = this.db
+        .query<ListItemRow, [string, string]>(
+          "SELECT * FROM list_items WHERE list_id = ? AND title_id = ?",
+        )
+        .get(list, title);
+      if (!row) return;
+      this.db.query("DELETE FROM list_items WHERE list_id = ? AND title_id = ?").run(list, title);
+      this.recordListReconciliation(mapListItemRow(row), false, new Date().toISOString());
+    })(listId, titleId);
   }
 
   isInList(listId: string, titleId: string): boolean {
@@ -251,5 +286,38 @@ export class ListRepository {
     }
     this.addItem({ ...input, listId });
     return "added";
+  }
+
+  private recordListReconciliation(item: ListItem, present: boolean, now: string): void {
+    if (item.listId !== "watchlist" && item.listId !== "favorites") return;
+    this.syncReconciliation.record(
+      {
+        kind: "list",
+        list: item.listId,
+        present,
+        item: {
+          titleId: item.titleId,
+          mediaKind: item.mediaKind as MediaKind,
+          title: item.title,
+          ...(item.season === undefined ? {} : { season: item.season }),
+          ...(item.episode === undefined ? {} : { episode: item.episode }),
+          ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+        },
+      },
+      new Date(now),
+    );
+  }
+}
+
+function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
+  return externalIds && Object.keys(externalIds).length > 0 ? JSON.stringify(externalIds) : null;
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as ProviderExternalIds;
+  } catch {
+    return undefined;
   }
 }

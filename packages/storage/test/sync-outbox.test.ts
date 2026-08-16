@@ -42,6 +42,20 @@ const tmdbRating = {
   payload: { kind: "rating", version: 1, value: 9 },
 } as const;
 
+function progressSet(progress: number, status: "watching" | "completed" = "watching") {
+  return {
+    trackerId: "anilist" as const,
+    dedupeKey: "anilist:anime:1535|progress:set",
+    payload: {
+      version: 1,
+      kind: "progress:set",
+      target: { tracker: "anilist", anilistId: 1535, mediaKind: "anime" },
+      progress,
+      status,
+    },
+  };
+}
+
 interface RawOutboxRow {
   readonly id: string;
   readonly tracker_id: string;
@@ -155,6 +169,52 @@ test("enqueue starts at generation 1 and supersedes the payload in place", () =>
   expect(other.id).not.toBe(first.id);
   expect(other.generation).toBe(1);
   expect(repo.counts().pending).toBe(2);
+});
+
+test("progress coalescing keeps the maximum episode in both arrival orders", () => {
+  for (const [name, entries] of [
+    ["newer-then-older", [progressSet(12), progressSet(11)]],
+    ["older-then-newer", [progressSet(11), progressSet(12)]],
+  ] as const) {
+    const db = stores.store(`sync-outbox-monotonic-${name}`);
+    const repo = new SyncOutboxRepository(db);
+
+    for (const entry of entries) repo.enqueue(entry, T0);
+
+    expect(repo.claimDue(1, T0)[0]?.payload).toMatchObject({ progress: 12 });
+  }
+});
+
+test("progress coalescing keeps completed when equal episodes arrive in either order", () => {
+  for (const [name, entries] of [
+    ["completed-then-watching", [progressSet(12, "completed"), progressSet(12, "watching")]],
+    ["watching-then-completed", [progressSet(12, "watching"), progressSet(12, "completed")]],
+  ] as const) {
+    const db = stores.store(`sync-outbox-completed-${name}`);
+    const repo = new SyncOutboxRepository(db);
+
+    for (const entry of entries) repo.enqueue(entry, T0);
+
+    expect(repo.claimDue(1, T0)[0]?.payload).toMatchObject({ progress: 12, status: "completed" });
+  }
+});
+
+test("an older progress enqueue cannot supersede an in-flight newer generation", () => {
+  const db = stores.store("sync-outbox-inflight-monotonic");
+  const repo = new SyncOutboxRepository(db);
+  const newer = repo.enqueue(progressSet(12), T0);
+  const claimed = repo.claimDue(1, T0)[0]!;
+
+  const ignored = repo.enqueue(progressSet(11), at(1_000));
+
+  expect(ignored).toMatchObject({
+    id: newer.id,
+    generation: newer.generation,
+    state: "claimed",
+  });
+  expect(ignored.payload).toMatchObject({ progress: 12 });
+  expect(ignored.claimToken).toBe(claimed.claimToken);
+  expect(repo.complete(claimed)).toBe("applied");
 });
 
 test("claims are exclusive, carry a unique token, and only cover due pending rows", () => {

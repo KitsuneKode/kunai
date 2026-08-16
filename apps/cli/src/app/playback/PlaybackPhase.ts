@@ -222,6 +222,7 @@ import {
   buildSubtitleDiagnosticEvent,
   type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
+import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
@@ -2496,12 +2497,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               // Admission reads the live opt-in before it writes the outbox.
               // Keep that asynchronous check outside the playback teardown:
               // persistence is already complete and tracker work is optional.
-              void container.syncService
-                .enqueueProgressIfEnabled(savedHistoryRow)
-                .then((queued) => {
-                  if (queued > 0) container.syncService.deliverSoon();
-                  return undefined;
-                });
+              queueHistoryMirror(container, historyTitleId, savedHistoryRow);
             }
             enqueueReleaseReconciliation(
               container,

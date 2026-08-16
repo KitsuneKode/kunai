@@ -172,6 +172,7 @@ export interface Container {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly syncReconciliationRepository: import("@kunai/storage").SyncReconciliationRepository;
   /** Typed, non-secret: whether each tracker's auth flow can start at all. */
   readonly syncAuthAvailability: SyncAuthAvailability;
   readonly continuationProjectionService: ContinuationProjectionService;

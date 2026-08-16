@@ -2,12 +2,26 @@ import { describe, expect, test } from "bun:test";
 
 import { startLoopbackServer } from "@/services/sync/oauth-loopback";
 
-const PORT = 43871;
-const redirectUri = `http://127.0.0.1:${PORT}/callback`;
+const EXACT_PORT = 43871;
 
-function server(overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = {}) {
+function allocatePort(): number {
+  const probe = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("probe"),
+  });
+  const port = probe.port;
+  probe.stop(true);
+  if (!port) throw new Error("Could not allocate OAuth test port");
+  return port;
+}
+
+function server(
+  overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = {},
+  configuredPort = allocatePort(),
+) {
   return startLoopbackServer({
-    redirectUri,
+    redirectUri: `http://127.0.0.1:${configuredPort}/callback`,
     expectedState: "expected-state",
     signal: new AbortController().signal,
     timeoutMs: 5_000,
@@ -20,12 +34,16 @@ function submitCollector(loopback: ReturnType<typeof server>, body: string) {
   return fetch(loopback.collectorUrl, {
     method: "POST",
     headers: {
-      Origin: `http://127.0.0.1:${PORT}`,
+      Origin: new URL(loopback.collectorUrl).origin,
       "Sec-Fetch-Site": "same-origin",
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
   });
+}
+
+function callbackUrl(loopback: ReturnType<typeof server>): string {
+  return new URL("/callback", loopback.collectorUrl).toString();
 }
 
 /**
@@ -39,9 +57,9 @@ function submitCollector(loopback: ReturnType<typeof server>, body: string) {
 describe("startLoopbackServer", () => {
   /** The whole point: the bound port is the registered one, not an OS pick. */
   test("binds the exact port from the configured redirect URI", async () => {
-    const loopback = server();
+    const loopback = server({}, EXACT_PORT);
     try {
-      expect(loopback.port).toBe(PORT);
+      expect(loopback.port).toBe(EXACT_PORT);
     } finally {
       loopback.close();
     }
@@ -95,12 +113,13 @@ describe("startLoopbackServer", () => {
 
   /** A settled server must free the port, or the next attempt cannot bind it. */
   test("releases the port so a subsequent attempt can bind it again", async () => {
-    const first = server({ timeoutMs: 20 });
+    const port = allocatePort();
+    const first = server({ timeoutMs: 20 }, port);
     await first.result;
 
-    const second = server();
+    const second = server({}, port);
     try {
-      expect(second.port).toBe(PORT);
+      expect(second.port).toBe(port);
     } finally {
       second.close();
     }
@@ -109,7 +128,7 @@ describe("startLoopbackServer", () => {
   test("ignores a request to another path without settling", async () => {
     const loopback = server({ timeoutMs: 200 });
     try {
-      const response = await fetch(`http://127.0.0.1:${PORT}/not-the-callback`);
+      const response = await fetch(new URL("/not-the-callback", loopback.collectorUrl));
       expect(response.status).toBe(404);
       expect(await loopback.result).toEqual({ ok: false, reason: "timeout" });
     } finally {
@@ -121,7 +140,9 @@ describe("startLoopbackServer", () => {
   test("never echoes the code or state into the completion page", async () => {
     const loopback = server();
     try {
-      const response = await fetch(`${redirectUri}?code=secret-code&state=expected-state`);
+      const response = await fetch(
+        `${callbackUrl(loopback)}?code=secret-code&state=expected-state`,
+      );
       const html = await response.text();
 
       expect(html).not.toContain("secret-code");
@@ -138,20 +159,13 @@ describe("startLoopbackServer", () => {
  * returns it over same-origin loopback.
  */
 describe("startLoopbackServer bridge", () => {
-  const fragmentServer = (overrides: Record<string, unknown> = {}) =>
-    startLoopbackServer({
-      redirectUri,
-      expectedState: "expected-state",
-      signal: new AbortController().signal,
-      timeoutMs: 5_000,
-      serviceName: "AniList",
-      ...overrides,
-    });
+  const fragmentServer = (overrides: Partial<Parameters<typeof startLoopbackServer>[0]> = {}) =>
+    server(overrides);
 
   test("serves a bridge on the callback without settling", async () => {
     const loopback = fragmentServer({ timeoutMs: 150 });
     try {
-      const response = await fetch(redirectUri);
+      const response = await fetch(callbackUrl(loopback));
       const html = await response.text();
 
       expect(response.status).toBe(200);
@@ -199,7 +213,7 @@ describe("startLoopbackServer bridge", () => {
   test("never writes the token into the bridge document", async () => {
     const loopback = fragmentServer({ timeoutMs: 150 });
     try {
-      const html = await (await fetch(redirectUri)).text();
+      const html = await (await fetch(callbackUrl(loopback))).text();
       expect(html).not.toContain("access_token=");
     } finally {
       loopback.close();

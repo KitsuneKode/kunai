@@ -213,18 +213,28 @@ as media actions. It resolves a tracker-native identity before queuing, and
 records a bounded diagnostic if a locally successful change cannot be mirrored.
 `trackWatched` and `syncList` are checked before an intent is persisted and
 again in `deliver()` beside `enabled`, against the same freshly-read config.
-A write the settings forbid is held for a later opt-in rather than being sent or
-discarded.
+A write the settings forbid creates no tracker-specific intent. Its local
+reconciliation fact is settled under the current setting, so opting in later
+does not unexpectedly replay mutations made while sync was disabled.
 
 ## Durability boundary
 
-The local list/history write and the sync-outbox insert share the data database
-but do not yet form one SQLite transaction. A process failure in that narrow
-interval can leave a local mutation without a remote intent; the action records
-a bounded diagnostic when enqueueing fails, but it cannot reconstruct an intent
-after a hard process kill. This is a known experimental limitation and one of
-the reasons the disposable-account CLI → SQLite → restart → remote smoke is a
-release gate rather than a claim that tracker sync is durable end to end.
+Every watchlist, favourite, and history mutation upserts a tracker-neutral
+`sync_reconciliation` fact in the same SQLite transaction as the local write.
+The fact contains the local key and media identity, not a tracker, remote
+operation, or token. The immediate/startup resolver rereads the durable local
+state, proves tracker-native identity, applies the current opt-in gates, and
+only then creates or coalesces an outbox row. A hard kill before projection
+therefore leaves a replayable fact; a failed projection retains it and records a
+bounded diagnostic. Disabled or unresolved facts are settled without creating
+remote intent, preventing deferred consent.
+
+Progress coalescing is monotonic at the SQLite outbox conflict boundary: the
+maximum proven episode wins in either arrival order, `completed` wins an equal
+episode tie, and an older enqueue cannot replace a newer claimed generation.
+The disposable-account CLI → SQLite → restart → remote smoke remains the
+release gate because deterministic recovery tests do not prove a real remote
+account mutation end to end.
 
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while

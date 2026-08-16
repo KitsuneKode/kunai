@@ -4,6 +4,7 @@ import type { Container } from "@/container";
 import {
   markMediaItemWatched,
   markSeasonThroughMediaItemWatched,
+  queueHistoryMirror,
 } from "@/services/media-actions/create-container-media-action-router";
 import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
@@ -142,4 +143,38 @@ test("markSeasonThroughMediaItemWatched persists every episode but queues only i
 
   expect(container.historyRepository.listByTitle(item.titleId)).toHaveLength(3);
   expect(calls.map((entry) => entry.episode)).toEqual([3]);
+});
+
+test("queueHistoryMirror reports a bounded diagnostic when admission fails", async () => {
+  const container = makeContainer();
+  const diagnostics: unknown[] = [];
+  Object.assign(container, {
+    syncService: {
+      enqueueProgressIfEnabled: async () => {
+        throw new Error("sqlite details that must not escape");
+      },
+      deliverSoon: () => {},
+    },
+    diagnosticsService: { record: (event: unknown) => diagnostics.push(event) },
+  });
+  container.historyRepository.markWatched(
+    { id: item.titleId, kind: "series", title: item.title },
+    { season: 1, episode: 2 },
+  );
+  const saved = container.historyRepository.getProgress(
+    { id: item.titleId, kind: "series", title: item.title },
+    { season: 1, episode: 2 },
+  );
+
+  queueHistoryMirror(container, item.titleId, saved);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(diagnostics).toEqual([
+    {
+      category: "sync",
+      message: "History change was saved locally but could not be queued for tracker sync",
+      context: { titleId: item.titleId, error: "Error" },
+    },
+  ]);
 });

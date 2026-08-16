@@ -608,6 +608,27 @@ export const dataMigrations: readonly Migration[] = [
         ON list_items(list_id, title_id);
     `,
   },
+  {
+    id: "030_data_sync_reconciliation",
+    database: "data",
+    sql: `
+      ALTER TABLE list_items ADD COLUMN external_ids_json TEXT;
+
+      CREATE TABLE sync_reconciliation (
+        id TEXT PRIMARY KEY,
+        mutation_kind TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX idx_sync_reconciliation_entity
+        ON sync_reconciliation(mutation_kind, entity_key);
+      CREATE INDEX idx_sync_reconciliation_pending
+        ON sync_reconciliation(created_at ASC);
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

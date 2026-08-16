@@ -242,7 +242,7 @@ export class SyncService {
    * Persist one operation. Returns how many rows were written (0 or 1) so
    * callers can report an exact count rather than an intention.
    */
-  enqueueOperation(operation: TrackerOperation): number {
+  private enqueueOperation(operation: TrackerOperation): number {
     if (!this.accepting) return 0;
     const tracker = trackerOf(operation);
     if (!this.adaptersById.has(tracker)) return 0;
@@ -253,28 +253,6 @@ export class SyncService {
       payload: operation,
     });
     return 1;
-  }
-
-  /**
-   * Project a persisted history fact into tracker operations.
-   *
-   * Only AniList receives progress, and only when a strict AniList identity and
-   * a cour-relative episode both exist. A title we cannot address is not an
-   * error to retry — there is nothing to deliver.
-   */
-  enqueueProgress(entry: HistoryProgress): number {
-    const identity = resolveAniListIdentity(entry);
-    const progress = resolveAniListProgressEpisode(entry);
-    if (!identity || progress === null) return 0;
-
-    return this.enqueueOperation({
-      version: 1,
-      kind: "progress:set",
-      target: identity,
-      progress,
-      status: entry.completed ? "completed" : "watching",
-      ...(entry.completedAt ? { watchedAt: entry.completedAt } : {}),
-    });
   }
 
   /**
@@ -305,20 +283,6 @@ export class SyncService {
    * this class silently resolved to zero targets and returned 0 to a caller
    * that ignored the count — the favourite that never left the device.
    */
-  enqueueListMembership(input: {
-    readonly identities: readonly SyncIdentity[];
-    readonly list: "watchlist";
-    readonly present: boolean;
-  }): number {
-    return this.enqueueForEach(input.identities, (target) => ({
-      version: 1,
-      kind: "list-membership:set",
-      target,
-      list: input.list,
-      present: input.present,
-    }));
-  }
-
   async enqueueListMembershipIfEnabled(input: {
     readonly identities: readonly SyncIdentity[];
     readonly list: "watchlist";
@@ -333,18 +297,6 @@ export class SyncService {
     }));
   }
 
-  enqueueFavoriteMembership(input: {
-    readonly identities: readonly SyncIdentity[];
-    readonly present: boolean;
-  }): number {
-    return this.enqueueForEach(input.identities, (target) => ({
-      version: 1,
-      kind: "favorite-membership:set",
-      target,
-      present: input.present,
-    }));
-  }
-
   async enqueueFavoriteMembershipIfEnabled(input: {
     readonly identities: readonly SyncIdentity[];
     readonly present: boolean;
@@ -355,13 +307,6 @@ export class SyncService {
       target,
       present: input.present,
     }));
-  }
-
-  private enqueueForEach(
-    identities: readonly SyncIdentity[],
-    build: (target: TrackerOperation["target"]) => TrackerOperation,
-  ): number {
-    return identities.reduce((count, target) => count + this.enqueueOperation(build(target)), 0);
   }
 
   private async enqueueForEachIfEnabled(

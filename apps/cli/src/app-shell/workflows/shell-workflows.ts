@@ -1894,6 +1894,7 @@ async function handleBookmark(container: Container): Promise<"handled"> {
     title: title.name,
     season: episode?.season,
     episode: episode?.episode,
+    externalIds: title.externalIds,
   });
   await mirrorListMembershipChange(
     container,

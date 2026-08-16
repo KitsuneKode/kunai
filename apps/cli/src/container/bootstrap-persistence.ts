@@ -40,6 +40,7 @@ import {
   SourceInventoryRepository,
   StreamCacheRepository,
   SyncOutboxRepository,
+  SyncReconciliationRepository,
   TitleProviderHealthRepository,
   type KunaiDatabase,
 } from "@kunai/storage";
@@ -144,6 +145,7 @@ export type PersistenceBootstrap = {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly syncReconciliationRepository: SyncReconciliationRepository;
   readonly syncAuthAvailability: SyncAuthAvailability;
   readonly debugTracePath?: string;
   readonly debugSessionInstructions?: readonly string[];
@@ -251,6 +253,7 @@ export async function bootstrapPersistence(
   const offlineTitlePolicies = new OfflineTitlePoliciesRepository(dataDb);
   const offlineMaintenanceJobs = new OfflineMaintenanceJobsRepository(dataDb);
   const listRepository = new ListRepository(dataDb);
+  const syncReconciliationRepository = new SyncReconciliationRepository(dataDb);
   const queueRepository = new QueueRepository(dataDb);
   const notificationRepository = new NotificationRepository(dataDb);
   const followedTitleRepository = new FollowedTitleRepository(dataDb);
@@ -399,6 +402,7 @@ export async function bootstrapPersistence(
     statsFormatter,
     syncTokenStore,
     syncService,
+    syncReconciliationRepository,
     syncAuthAvailability,
     debugTracePath,
     debugSessionInstructions,

@@ -148,6 +148,11 @@ export {
   SYNC_OUTBOX_RETRY_MAX_MS,
   SyncOutboxRepository,
 } from "./repositories/sync-outbox";
+export { SyncReconciliationRepository } from "./repositories/sync-reconciliation";
+export type {
+  SyncReconciliationPayload,
+  SyncReconciliationRecord,
+} from "./repositories/sync-reconciliation";
 export type {
   SyncOutboxClaim,
   SyncOutboxClaimRef,

@@ -3,9 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { TrackerOperation } from "@/services/sync/operations";
+import { trackerOperationDedupeKey, type TrackerOperation } from "@/services/sync/operations";
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
-import { SyncService, type SyncConfigPort } from "@/services/sync/SyncService";
+import {
+  buildProgressUpdates,
+  SyncService,
+  type SyncConfigPort,
+} from "@/services/sync/SyncService";
 import {
   syncFailed,
   syncNeedsReauth,
@@ -98,6 +102,14 @@ const anilistFavourite: TrackerOperation = {
   present: true,
 };
 
+function seedOperation(repo: SyncOutboxRepository, operation: TrackerOperation): void {
+  repo.enqueue({
+    trackerId: operation.target.tracker,
+    dedupeKey: trackerOperationDedupeKey(operation),
+    payload: operation,
+  });
+}
+
 function historyProgress(episode: number, updatedAt: string): HistoryProgress {
   return {
     key: `anilist:438631:s1:e${episode}`,
@@ -132,14 +144,14 @@ describe("SyncService drain", () => {
     });
 
     for (let id = 1; id <= 26; id += 1) {
-      service.enqueueOperation({
+      seedOperation(repo, {
         version: 1,
         kind: "favorite-membership:set",
         target: { tracker: "anilist", anilistId: id, mediaKind: "anime" },
         present: true,
       });
     }
-    service.enqueueOperation({
+    seedOperation(repo, {
       version: 1,
       kind: "favorite-membership:set",
       target: { tracker: "tmdb", tmdbId: 550, mediaKind: "movie" },
@@ -203,6 +215,46 @@ describe("SyncService drain", () => {
       { kind: "progress:set", progress: 12, target: { anilistId: 438631 } },
     ]);
   });
+
+  test("manual progress builder covers both orders, duplicates, movies, and mixed titles", () => {
+    const episode12 = historyProgress(12, "2026-08-16T12:00:00.000Z");
+    const episode11 = historyProgress(11, "2026-08-16T11:00:00.000Z");
+    const duplicateWatching = { ...episode12, completed: false };
+    const otherTitle = {
+      ...historyProgress(4, "2026-08-16T10:00:00.000Z"),
+      key: "anilist:999:s1:e4",
+      titleId: "anilist:999",
+      title: "Other",
+    };
+    const movie: HistoryProgress = {
+      key: "movie:550:none:none:none",
+      titleId: "tmdb:550",
+      mediaKind: "movie",
+      title: "Movie",
+      positionSeconds: 100,
+      completed: true,
+      updatedAt: "2026-08-16T09:00:00.000Z",
+      createdAt: "2026-08-16T09:00:00.000Z",
+    };
+
+    for (const entries of [
+      [episode12, episode11, duplicateWatching, movie, otherTitle],
+      [otherTitle, movie, duplicateWatching, episode11, episode12],
+    ]) {
+      expect(
+        buildProgressUpdates(entries)
+          .map((entry) => ({
+            titleId: entry.titleId,
+            episode: entry.episode,
+            completed: entry.completed,
+          }))
+          .sort((left, right) => left.titleId.localeCompare(right.titleId)),
+      ).toEqual([
+        { titleId: "anilist:438631", episode: 12, completed: true },
+        { titleId: "anilist:999", episode: 4, completed: true },
+      ]);
+    }
+  });
   /**
    * Config is read immediately before each external mutation, not captured at
    * construction or checked only at enqueue. A user who turns a tracker off
@@ -218,7 +270,7 @@ describe("SyncService drain", () => {
       config,
     });
 
-    expect(service.enqueueOperation(anilistFavourite)).toBe(1);
+    seedOperation(repo, anilistFavourite);
     config.set(disabled);
 
     const summary = await service.drain();
@@ -239,7 +291,7 @@ describe("SyncService drain", () => {
       config,
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
     const [claimed] = repo.claimDue(1, new Date(Date.now() + 60 * 60 * 1000));
 
@@ -255,7 +307,7 @@ describe("SyncService drain", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     const summary = await service.drain();
 
     expect(anilist.calls).toEqual([anilistFavourite]);
@@ -298,7 +350,7 @@ describe("SyncService drain", () => {
         outbox: repo,
         config: configPort(),
       });
-      service.enqueueOperation(anilistFavourite);
+      seedOperation(repo, anilistFavourite);
 
       const summary = await service.drain();
 
@@ -324,7 +376,7 @@ describe("SyncService drain", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     const summary = await service.drain();
 
     expect(summary.retrying).toBe(1);
@@ -353,7 +405,7 @@ describe("SyncService drain", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     const first = service.drain();
     await Promise.resolve();
 
@@ -375,7 +427,7 @@ describe("SyncService drain", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
     expect(repo.counts().needsReauth).toBe(1);
 
@@ -395,7 +447,12 @@ describe("SyncService drain", () => {
 
     await service.shutdown();
 
-    expect(service.enqueueOperation(anilistFavourite)).toBe(0);
+    await expect(
+      service.enqueueFavoriteMembershipIfEnabled({
+        identities: [anilistFavourite.target],
+        present: true,
+      }),
+    ).resolves.toBe(0);
     expect(repo.counts().pending).toBe(0);
   });
 
@@ -448,7 +505,7 @@ describe("SyncService rate limiting", () => {
     });
 
     for (let episode = 1; episode <= 5; episode += 1) {
-      service.enqueueOperation({
+      seedOperation(repo, {
         version: 1,
         kind: "progress:set",
         target: { tracker: "anilist", anilistId: 100 + episode, mediaKind: "anime" },
@@ -479,7 +536,7 @@ describe("SyncService rate limiting", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
 
     const [row] = repo.claimDue(10, new Date(Date.now() + 60_000));
@@ -496,7 +553,7 @@ describe("SyncService rate limiting", () => {
       config: configPort(),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
 
     // Well past the 30s first-retry backoff, still parked.
@@ -526,7 +583,12 @@ describe("SyncService pause", () => {
       config: pausedConfig(new Date(Date.now() + 60 * 60 * 1000).toISOString()),
     });
 
-    expect(service.enqueueOperation(anilistFavourite)).toBe(1);
+    await expect(
+      service.enqueueFavoriteMembershipIfEnabled({
+        identities: [anilistFavourite.target],
+        present: true,
+      }),
+    ).resolves.toBe(1);
     const summary = await service.drain();
 
     expect(anilist.calls.length).toBe(0);
@@ -545,7 +607,7 @@ describe("SyncService pause", () => {
       config: pausedConfig(new Date(Date.now() - 1_000).toISOString()),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
 
     expect(anilist.calls.length).toBe(1);
@@ -561,7 +623,7 @@ describe("SyncService pause", () => {
       config: pausedConfig("whenever"),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
 
     expect(anilist.calls.length).toBe(1);
@@ -589,7 +651,7 @@ describe("SyncService per-kind config gates", () => {
       config: gated({ trackWatched: false }),
     });
 
-    service.enqueueOperation({
+    seedOperation(repo, {
       version: 1,
       kind: "progress:set",
       target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
@@ -612,7 +674,7 @@ describe("SyncService per-kind config gates", () => {
       config: gated({ syncList: false }),
     });
 
-    service.enqueueOperation(anilistFavourite);
+    seedOperation(repo, anilistFavourite);
     await service.drain();
 
     expect(anilist.calls.length).toBe(0);
@@ -629,7 +691,7 @@ describe("SyncService per-kind config gates", () => {
       config: gated({ syncList: false }),
     });
 
-    service.enqueueOperation({
+    seedOperation(repo, {
       version: 1,
       kind: "progress:set",
       target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },

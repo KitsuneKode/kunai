@@ -7,6 +7,7 @@ import {
   resolveDownloadIntentItems,
 } from "@/services/download/DownloadIntentService";
 import { resolveMirrorTargets } from "@/services/sync/mirror-targets";
+import { reconcileSyncMutations } from "@/services/sync/reconcile-sync-mutations";
 import type { SyncIdentity } from "@/services/sync/types";
 import type { MediaKind } from "@kunai/types";
 
@@ -84,6 +85,11 @@ export async function mirrorListMembershipChange(
   item: MediaItemIdentity,
   change: { readonly list: "watchlist" | "favorite"; readonly present: boolean },
 ): Promise<void> {
+  if (container.syncReconciliationRepository) {
+    const result = await reconcileSyncMutations(container);
+    if (result.queued > 0) container.syncService.deliverSoon();
+    return;
+  }
   await mirrorToTrackers(container, item, (identities) =>
     change.list === "watchlist"
       ? container.syncService.enqueueListMembershipIfEnabled({
@@ -118,10 +124,11 @@ export function createContainerMediaActionRouter(
       addToWatchlist: async (item) => {
         container.listService.addToWatchlist({
           titleId: item.titleId,
-          mediaKind: normalizeMediaKind(item.mediaKind),
+          mediaKind: item.mediaKind,
           title: item.title,
           season: item.season,
           episode: item.episode,
+          externalIds: item.externalIds,
         });
         await mirrorListMembershipChange(container, item, { list: "watchlist", present: true });
       },
@@ -130,10 +137,11 @@ export function createContainerMediaActionRouter(
       toggleFavorite: async (item) => {
         const outcome = container.listService.toggleFavorites({
           titleId: item.titleId,
-          mediaKind: normalizeMediaKind(item.mediaKind),
+          mediaKind: item.mediaKind,
           title: item.title,
           season: item.season,
           episode: item.episode,
+          externalIds: item.externalIds,
         });
         // The local list is the source of truth, and the tracker is told the
         // resulting *state* rather than "toggle" — so a redelivery converges
@@ -285,15 +293,17 @@ function persistMediaItemWatched(
   return container.historyRepository.getProgress(title, episode);
 }
 
-function queueHistoryMirror(
+export function queueHistoryMirror(
   container: Container,
   titleId: string,
   saved: ReturnType<Container["historyRepository"]["getProgress"]>,
 ): void {
   const syncService = container.syncService;
   if (!saved || !syncService) return;
-  void syncService
-    .enqueueProgressIfEnabled(saved)
+  const enqueue = container.syncReconciliationRepository
+    ? reconcileSyncMutations(container).then((result) => result.queued)
+    : syncService.enqueueProgressIfEnabled(saved);
+  void enqueue
     .then((queued) => {
       if (queued > 0) syncService.deliverSoon();
       return undefined;

@@ -1006,6 +1006,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       logger,
       run: async (signal?: AbortSignal) => {
         await container.syncService.refreshIdentities(signal ? { signal } : undefined);
+        const { reconcileSyncMutations } = await import("./services/sync/reconcile-sync-mutations");
+        await reconcileSyncMutations(container, signal ? { signal } : undefined);
         await container.syncService.drain(25, signal ? { signal } : undefined);
       },
     });
