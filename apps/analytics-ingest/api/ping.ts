@@ -3,26 +3,58 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ingestAnalyticsPing, MAX_BODY_BYTES } from "../src/ingest";
 import { loadAnalyticsRuntimeConfig } from "../src/runtime-config";
 
-async function readJsonBodyLimited(
-  req: IncomingMessage,
-  maxBytes: number,
-): Promise<{ ok: true; body: unknown } | { ok: false; error: "body_too_large" | "invalid_json" }> {
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buf.length;
-    if (total > maxBytes) {
-      return { ok: false, error: "body_too_large" };
-    }
-    chunks.push(buf);
-  }
-  if (chunks.length === 0) return { ok: true, body: null };
-  try {
-    return { ok: true, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown };
-  } catch {
-    return { ok: false, error: "invalid_json" };
-  }
+type ReadResult =
+  | { ok: true; body: unknown }
+  | { ok: false; error: "body_too_large" | "invalid_json" };
+
+/**
+ * Read at most `maxBytes` of request body.
+ *
+ * Deliberately not `for await`: breaking out of that loop early calls the
+ * iterator's `return()`, which destroys the request *and its socket* while the
+ * caller is still one microtask away from writing the response. The reply then
+ * never reaches the client, which sees Node's default empty `200` — so the
+ * size cap, the primary abuse control here, reported success for exactly the
+ * bodies it was meant to refuse.
+ *
+ * Pausing instead stops the upload without tearing down the socket, leaving
+ * the caller free to answer. The caller destroys the request afterwards.
+ */
+function readJsonBodyLimited(req: IncomingMessage, maxBytes: number): Promise<ReadResult> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+
+    const settle = (result: ReadResult): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    req.on("data", (chunk: Buffer | string) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.length;
+      if (total > maxBytes) {
+        req.pause();
+        settle({ ok: false, error: "body_too_large" });
+        return;
+      }
+      chunks.push(buf);
+    });
+
+    req.on("end", () => {
+      if (chunks.length === 0) return settle({ ok: true, body: null });
+      try {
+        settle({ ok: true, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown });
+      } catch {
+        settle({ ok: false, error: "invalid_json" });
+      }
+    });
+
+    req.on("error", () => settle({ ok: false, error: "invalid_json" }));
+    req.on("aborted", () => settle({ ok: false, error: "invalid_json" }));
+  });
 }
 
 function sendJson(
@@ -64,10 +96,17 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   const parsed = await readJsonBodyLimited(req, MAX_BODY_BYTES);
   if (!parsed.ok) {
+    const tooLarge = parsed.error === "body_too_large";
+    // The sender may still be uploading. Close rather than pretend to keep the
+    // connection alive for a body already refused.
+    if (tooLarge) res.setHeader("Connection", "close");
     sendJson(res, 400, {
       ok: false,
-      error: parsed.error === "body_too_large" ? "body_too_large" : "invalid_payload",
+      error: tooLarge ? "body_too_large" : "invalid_payload",
     });
+    // Only now: destroying before the reply is written is what silently turned
+    // this rejection into an empty 200.
+    if (tooLarge) req.destroy();
     return;
   }
 

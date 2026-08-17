@@ -17,9 +17,15 @@ import { join } from "node:path";
 const appDir = join(import.meta.dir, "..");
 const keep = process.argv.includes("--keep");
 
-/** Matches docker-compose.yml. Non-default ports so nothing collides. */
-const LOCAL_DATABASE_URL = "postgres://kunai:kunai@db.localtest.me:55432/kunai_analytics";
-const LOCAL_FETCH_ENDPOINT = "http://db.localtest.me:54444/sql";
+/**
+ * Matches docker-compose.yml. Non-default ports so nothing collides.
+ *
+ * A literal loopback address rather than a `*.localtest.me` hostname: that
+ * convention needs public DNS, so it fails offline and behind split-horizon
+ * resolvers. `127.0.0.1` needs no resolution anywhere, on any platform.
+ */
+const LOCAL_DATABASE_URL = "postgres://kunai:kunai@127.0.0.1:55432/kunai_analytics";
+const LOCAL_FETCH_ENDPOINT = "http://127.0.0.1:54444/sql";
 
 const external = process.env.ANALYTICS_TEST_DATABASE_URL?.trim();
 

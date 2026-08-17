@@ -194,11 +194,17 @@ Run before any release that adds a data migration. Fresh-install coverage does
 not prove an upgrade: the rows that break a migration are the ones an old
 version wrote, and no fixture reproduces those faithfully.
 
-Never point this at the live database — copy it first.
+Never point this at the live database — copy it first. The data directory is
+platform-resolved by `getKunaiPaths()` in `packages/storage/src/paths.ts`:
+Linux `~/.local/share/kunai`, macOS `~/Library/Application Support/kunai`,
+Windows `%LOCALAPPDATA%\kunai`.
+
+Copy the `-wal` and `-shm` siblings too, or the copy loses whatever the last
+session had not yet checkpointed.
 
 ```sh
 SHADOW=/tmp/kunai-shadow && rm -rf "$SHADOW" && mkdir -p "$SHADOW"
-cp ~/.local/share/kunai/kunai-data.sqlite* "$SHADOW"/
+cp ~/.local/share/kunai/kunai-data.sqlite* "$SHADOW"/   # Linux
 ```
 
 Record every table's row count, run the migrations against the copy, then
