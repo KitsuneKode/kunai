@@ -9,19 +9,22 @@ import { providerFetch } from "../runtime/fetch";
  *
  * Upstream left the ani-cli `72d7f72` "no buildId / scrape epoch+partB from HTML"
  * path. Live mkissa now:
- * - ships `buildId` `"81"` and four base64 mask fragments in the app chunk
+ * - ships `buildId` `"119"` and four base64 mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot` (`aa-boot:{buildId}` then payload)
  * - signs `aaReq` as AES-GCM over `{v,ts,epoch,buildId,qh,k}` with IV
  *   `SHA-256(epoch:buildId:qh:ts:k)[0:12]`
+ * - rotates the epoch scale: 7-day epochs (604800000 ms), 1-day grace
  *
  * Mask fragments and buildId are recovered from the rotated string table in
  * `cdn.mkissa.net/.../chunks/*.js` (same values as browser `Cf` / `ud`).
+ * The episode persisted-query hash is SHA-256 of the interpolated `_9`
+ * episode GraphQL template in the crypto chunk (re-derived 2026-08-17).
  */
 
-export const ALLMANGA_BUILD_ID = "81";
+export const ALLMANGA_BUILD_ID = "119";
 export const ALLMANGA_QUERY_HASH =
-  "f4662f4b7510b26795dd53ef824a0bf1740fbbc5d1273fab18222ac831bca8d0";
+  "ca735f1436927eaf7abb05d1589bb93c43cf606d87eecc2030357c1aad8fb455";
 /** Episode GraphQL lane (`Lf` → `k7`). */
 export const ALLMANGA_CONTENT_LANE_EPISODE = "k7";
 export const ALLMANGA_KEY_GROUP = "mkissa";
@@ -29,7 +32,7 @@ export const ALLMANGA_BOOTSTRAP_URL = "https://api.mkissa.net/client-crypto/v1/b
 export const ALLMANGA_SITE_ORIGIN = "https://mkissa.to";
 
 /** Epoch length (ms) and near-boundary grace from live bootstrap JSON. */
-export const ALLMANGA_EPOCH_MS = 259_200_000;
+export const ALLMANGA_EPOCH_MS = 604_800_000;
 export const ALLMANGA_EPOCH_GRACE_MS = 86_400_000;
 /** aaReq timestamp bucket (5 minutes). */
 export const ALLMANGA_AA_REQ_BUCKET_MS = 300_000;
@@ -39,10 +42,10 @@ export const ALLMANGA_AA_REQ_BUCKET_MS = 300_000;
  * string-table rotation. Combined with `hashBuildId(buildId)` in `deriveMaskKey`.
  */
 export const ALLMANGA_MASK_FRAGMENTS = [
-  "O1c1LQKxjeA=",
-  "czMdvsR/WAM=",
-  "KElSgK/l8jM=",
-  "Q7wraL6U5Tg=",
+  "hbFWg2oyTVE=",
+  "5kzA8QKXvTE=",
+  "ROxjxlPAJ+8=",
+  "TdpAYUVrag8=",
 ] as const;
 
 /** How long derived crypto material stays trusted before a lazy refetch. */
@@ -56,9 +59,9 @@ export type AllMangaCryptoMaterial = {
   readonly contentLane: string;
 };
 
-/** Last-known-good material when bootstrap fails (epoch 6888, build 81). */
-export const ALLMANGA_KEY_HEX = "bf44b51b82ef0736c06e62a4b889dc5b8494f8cb6fe7e8b820dd33494b99c540";
-export const ALLMANGA_EPOCH = 6888;
+/** Last-known-good material when bootstrap fails (epoch 2954, build 119). */
+export const ALLMANGA_KEY_HEX = "cf5487de30b64387b21614d641cfcf6174d7f3e24f2e9c6433c916c867db8a1d";
+export const ALLMANGA_EPOCH = 2954;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,

@@ -14,7 +14,12 @@ import {
 } from "./types";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const RELAY_RESPONSE_HEADERS = ["content-type", "content-length", "cache-control"] as const;
+const RELAY_RESPONSE_HEADERS = [
+  "content-type",
+  "content-length",
+  "cache-control",
+  "x-obfuscated",
+] as const;
 
 export async function handleRpcRequest(
   request: Request,

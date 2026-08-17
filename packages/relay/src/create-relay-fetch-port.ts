@@ -80,11 +80,16 @@ function normalizeMethod(method: string): RelayRpcRequest["method"] | null {
 }
 
 function mergeHeaders(base: RelayHeadersInit | undefined, override: RelayHeadersInit | undefined) {
-  const headers = new Headers(base);
+  const merged: Record<string, string> = {};
+  new Headers(base).forEach((value, key) => {
+    merged[key] = value;
+  });
   if (override) {
-    new Headers(override).forEach((value, key) => headers.set(key, value));
+    new Headers(override).forEach((value, key) => {
+      merged[key] = value;
+    });
   }
-  return Object.fromEntries(headers.entries());
+  return merged;
 }
 
 async function bodyToString(

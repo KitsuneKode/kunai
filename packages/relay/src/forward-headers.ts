@@ -8,6 +8,10 @@ const METADATA_HEADER_ALLOWLIST = new Set([
   "referer",
   "referrer",
   "user-agent",
+  "x-build-id",
+  "x-aa-boot",
+  "x-obfuscated",
+  "x-session-token",
 ]);
 
 const MEDIA_HEADER_ALLOWLIST = new Set([...METADATA_HEADER_ALLOWLIST, "range", "if-range"]);
@@ -45,18 +49,16 @@ export function filterForwardHeaders(
   const allowed = kind === "media" ? MEDIA_HEADER_ALLOWLIST : METADATA_HEADER_ALLOWLIST;
   const output: Record<string, string> = {};
 
-  for (const [rawName, rawValue] of source.entries()) {
+  source.forEach((rawValue, rawName) => {
     const name = rawName.toLowerCase();
     const value = rawValue.trim();
     if (containsInvalidHeaderText(name) || containsInvalidHeaderText(value)) {
       throw new RelayValidationError("headers-rejected", "Unsafe header text rejected", 400);
     }
-    if (HOP_BY_HOP_HEADERS.has(name) || name === "authorization" || name === "cookie") {
-      continue;
-    }
-    if (!allowed.has(name)) continue;
+    if (HOP_BY_HOP_HEADERS.has(name) || name === "authorization" || name === "cookie") return;
+    if (!allowed.has(name)) return;
     output[canonicalHeaderName(name)] = value;
-  }
+  });
 
   return output;
 }

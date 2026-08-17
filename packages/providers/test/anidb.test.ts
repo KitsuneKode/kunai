@@ -7,6 +7,7 @@ import {
   anidbProviderModule,
   chooseAnidbSearchMatch,
   clearAnidbCachesForTest,
+  fetchAnidbMalId,
   looksLikeAnidbShowId,
   parseAnidbBrowseHtml,
   parseAnidbSeasonEvidence,
@@ -459,5 +460,191 @@ describe("anidb direct resolve season routing", () => {
       }),
     );
     expect(result.externalIds?.providerNativeIds?.anidb).toBe("plain-show-700");
+  });
+
+  test("propagates resolved malId into externalIds when not provided in input", async () => {
+    clearAnidbCachesForTest();
+    const result = await resolveWithStub(
+      {
+        title: { id: "onigiri-3942", kind: "anime", title: "Onigiri" },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      (async (input: unknown) => {
+        const url = String(
+          typeof input === "string" ? input : ((input as { url?: string })?.url ?? input),
+        );
+        if (url.includes("/anime/onigiri-3942")) {
+          return new Response('<a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a>', {
+            status: 200,
+          });
+        }
+        if (url.includes("/api/frontend/anime/3942/episodes")) {
+          return new Response(JSON.stringify({ episodes: [{ id: 101, number: 1 }] }), {
+            status: 200,
+          });
+        }
+        if (/\/api\/frontend\/episode\/101\/languages/.test(url)) {
+          return new Response(
+            JSON.stringify({
+              languages: [
+                { code: "jpn", name: "Japanese", embed_url: "https://anidb.app/embed/jpn-1" },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/embed/")) {
+          return new Response("file: 'https://cdn.example/stream.m3u8'", { status: 200 });
+        }
+        if (url.includes("stream.m3u8")) {
+          return new Response("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\n720p.m3u8", {
+            status: 200,
+          });
+        }
+        return new Response("", { status: 404 });
+      }) as unknown as typeof fetch,
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.externalIds?.malId).toBe("32612");
+    expect(result.externalIds?.providerNativeIds?.anidb).toBe("onigiri-3942");
+  });
+
+  test("preserves existing input malId over resolving new malId", async () => {
+    clearAnidbCachesForTest();
+    const result = await resolveWithStub(
+      {
+        title: {
+          id: "onigiri-3942",
+          kind: "anime",
+          title: "Onigiri",
+          externalIds: { malId: "99999" },
+        },
+        episode: { season: 1, episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      } as Parameters<typeof anidbProviderModule.resolve>[0],
+      anidbFetchStub({
+        episodesByNumericId: {
+          "3942": [{ id: 101, number: 1 }],
+        },
+      }),
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.externalIds?.malId).toBe("99999");
+  });
+});
+
+describe("fetchAnidbMalId", () => {
+  test("extracts MAL id from anime page and caches result", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async (url: string) => {
+        fetchCalls++;
+        if (String(url).includes("/anime/onigiri-3942")) {
+          return new Response(
+            '<html><body><a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a></body></html>',
+            { status: 200 },
+          );
+        }
+        return new Response("Not found", { status: 404 });
+      }) as unknown as typeof fetch;
+
+      const first = await fetchAnidbMalId("onigiri-3942");
+      expect(first).toBe(32612);
+      expect(fetchCalls).toBe(1);
+
+      // Second call hits TTL cache
+      const second = await fetchAnidbMalId("onigiri-3942");
+      expect(second).toBe(32612);
+      expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("returns undefined on missing or invalid MAL URL", async () => {
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () =>
+        new Response("<html><body>No links here</body></html>", {
+          status: 200,
+        })) as unknown as typeof fetch;
+
+      expect(await fetchAnidbMalId("unknown-123")).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("caches a genuine absence instead of re-scraping every resolve", async () => {
+    // "No MAL link on the page" is an answer, not a miss. Representing it the
+    // same way as a cache miss silently disables the cache for every show
+    // without a MAL id, which is the population that gets scraped repeatedly.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        return new Response("<html><body>No links here</body></html>", { status: 200 });
+      }) as unknown as typeof fetch;
+
+      expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
+      expect(await fetchAnidbMalId("no-mal-1")).toBeUndefined();
+      expect(fetchCalls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
+  });
+
+  test("does not cache a transport failure, so a retry can still succeed", async () => {
+    // A Cloudflare block or dropped connection says nothing about the show.
+    // Caching it would suppress auto-skip for the full hour-long TTL.
+    clearAnidbCachesForTest();
+    const originalWhich = Bun.which;
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+
+    try {
+      Bun.which = ((_cmd: string) => null) as typeof Bun.which;
+      globalThis.fetch = (async () => {
+        fetchCalls++;
+        if (fetchCalls === 1) throw new Error("connection reset");
+        return new Response(
+          '<html><body><a href="https://myanimelist.net/anime/32612/Onigiri">MAL</a></body></html>',
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch;
+
+      expect(await fetchAnidbMalId("flaky-1")).toBeUndefined();
+      expect(await fetchAnidbMalId("flaky-1")).toBe(32612);
+      expect(fetchCalls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.which = originalWhich;
+    }
   });
 });

@@ -431,7 +431,7 @@ If the provider has native search or episode listing, export standalone function
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=81&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=119&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
@@ -472,6 +472,43 @@ module.
 **Do not "fix" this by changing crypto.** Build id 81, the bootstrap, HMAC
 `x-aa-boot`, and AES-256-GCM are all working and verified. The historical
 epoch/partB query construction and AES-CTR decryption must not be restored.
+
+### AllAnime via user relay (2026-08-17)
+
+With a user-owned relay in place, AllAnime works end-to-end. `bun run
+test:live:relay-allanime` passes with real streams (e.g. `video.wixstatic.com`
+1080p mp4 via the `Default` source).
+
+- The relay egress (Vercel `iad1` in the reference deployment) reaches
+  `api.mkissa.net` and `cdn.mkissa.net` without a Cloudflare challenge and is
+  **not** captcha-gated for the episode sources query.
+- On 2026-08-17 the upstream build rotated **81 → 119** and the epoch scale
+  moved from 3-day to **7-day** (`epochMs: 604800000`, 1-day grace, plus a
+  `switchAt` boundary). The old material answered `AA_CRYPTO_MISSING_BUILD`.
+  The new constants (build id `119`, mask fragments, epoch scale, and the
+  episode persisted-query hash `ca735f…`) were re-derived from the live site:
+  string table + rotation from the crypto chunk (`CA0Qy_FU.js`, 144-entry
+  table, rotation verified by recomputing the browser's `x-aa-boot` HMAC) and
+  the episode hash from the `_9` GraphQL template in the same chunk, then
+  confirmed against a real browser session's network traffic. The same
+  procedure applies on the next rotation.
+- The episode sources request now also carries `k: "k7"` in `extensions`
+  (alongside `persistedQuery` + `aaReq`), matching the live site.
+
+**Relay gaps found and fixed the same day:**
+
+- **The relay metadata allowlist was dropping provider-auth headers.**
+  `x-build-id`, `x-aa-boot`, `x-obfuscated`, and `x-session-token` were not in
+  `METADATA_HEADER_ALLOWLIST`, so every bootstrap through a relay failed with
+  `invalid_boot_token` even when the client material was correct. They are now
+  forwarded (header-text validation still applies); `x-obfuscated` is also
+  passed through on relay responses for Miruro pipe decoding.
+- **Deployed relays go stale with provider manifests.** The relay server builds
+  its host registry from `@kunai/providers` manifests at deploy time. A relay
+  deployed before the mkissa migration rejects `api.mkissa.net` with
+  `host-not-allowed`. After any change to a provider's `relayProfile.upstreamHosts`,
+  redeploy the relay. `apps/relay-server` also pins `typescript@5.9.3` because
+  Vercel's `@vercel/node` builder crashes on the repo-wide TypeScript 7.
 
 **wixmp referer: current behaviour retained.** Plan 036 proposed attaching the
 mkissa site referer for `repackager.wixmp.com`, gated on a fixture proving the
@@ -697,7 +734,28 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
 - **The WAF fail-fast threshold of 2 is deliberate, not a defect.** It equals the real
   mirror count (`www.miruro.bz` + `www.miruro.ru`); when both return Cloudflare HTML
   the block is region-wide and further candidates fail identically. Changing it needs
-  a reproducible failure sequence, not a guess.
+  a reproducible failure sequence, not a guess. The block message names the one
+  escape hatch that exists — a user-owned relay (`providerRelay.baseUrl`) in an
+  ungated region; as of 2026-08-17 the `curl --http2` fallback is itself CF-403'd
+  from some networks, so the hint is the actionable part of the failure.
+  Verified live the same day: a relay deployed on Vercel `iad1` receives the
+  "Just a moment" challenge on the pipe too, so that region does **not** count
+  as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
+  (unproven region, likely non-US cloud IPs) would clear the gate.
+- **The pipe itself is fingerprint-gated, not dead.** From a real browser the
+  envelope (`?e=base64url({path,method,query,body,version})`, e.g.
+  `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
+  200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by
+  network. The curl fallback now reuses the AniDB curl-impersonate candidate
+  list (`shared/curl-impersonate.ts`): with `curl_chrome136`/`curl_firefox135`
+  installed, the pipe request carries a browser TLS fingerprint and clears the
+  gate. Without an impersonate build, a WAF 403 is expected behavior, not a bug.
+- **Per-server failures are not provider failures.** Miruro's site marks single
+  servers under maintenance ("Some servers are under maintenance. Please switch
+  servers if needed.") while others keep working. Kunai mirrors that: after the
+  pipe resolves, each server is attempted as its own source candidate
+  (`source:miruro:pipe:<server>:<audio>`), and a failed candidate moves to the
+  next server in `MIRURO_SERVER_TRY_ORDER` instead of exhausting the provider.
 - **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
   `container.engine.resolve(...)`, probes the selected stream itself, and reports
   `streamReachable` and `resolverAttestedReachable` separately. It passes on measured

@@ -5,6 +5,7 @@ import {
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
+import { fetchAnidbMalId } from "@kunai/providers";
 import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
@@ -84,6 +85,21 @@ async function fetchMalIdFromAllAnimeShow(
   }
 }
 
+/**
+ * Resolve MAL numeric id from an AniDB catalog show id, matching ani-cli `anidb_desc`.
+ *
+ * Delegates to the provider package rather than scraping here: AniDB sits behind
+ * Cloudflare, and `fetchAnidbMalId` goes through the shared curl transport that
+ * gets past it. A plain `fetch` from this side would be served the interstitial,
+ * find no MAL link in it, and cache that as "this show has no MAL id".
+ */
+async function fetchMalIdFromAnidbShow(
+  showId: string,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  return (await fetchAnidbMalId(showId, signal)) ?? null;
+}
+
 async function resolveMalIdForAniSkip(opts: {
   catalogTitleId: string;
   externalIds?: ProviderExternalIds;
@@ -106,6 +122,11 @@ async function resolveMalIdForAniSkip(opts: {
   if (providerId === "allanime" && catalogTitleId && !isNumericAniListId(catalogTitleId)) {
     const fromAllAnime = await fetchMalIdFromAllAnimeShow(catalogTitleId, signal);
     if (fromAllAnime !== null) return fromAllAnime;
+  }
+
+  if (providerId === "anidb" && catalogTitleId && !isNumericAniListId(catalogTitleId)) {
+    const fromAnidb = await fetchMalIdFromAnidbShow(catalogTitleId, signal);
+    if (fromAnidb !== null) return fromAnidb;
   }
 
   const nativeAniListId = normalizeNumericId(externalIds?.anilistId);
