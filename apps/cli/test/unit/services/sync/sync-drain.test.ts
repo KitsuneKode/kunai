@@ -400,9 +400,14 @@ describe("SyncService drain", () => {
   test("automatically wakes when a retry becomes due and cancels the wake on shutdown", async () => {
     const repo = outbox();
     const scheduled: Array<{ task: () => void; delayMs: number; cancelled: boolean }> = [];
-    // Anchored to the real clock: `seedOperation` stamps `next_attempt_at`
-    // from `Date.now()`, so a fixed literal here stops being due the day
-    // after it is written and the row is never claimed.
+    // Set from the real clock *after* seeding, below.
+    //
+    // `seedOperation` stamps `next_attempt_at` from `Date.now()`, so this
+    // clock has to relate to that one. A fixed literal stops being due the day
+    // after it is written; reading the real clock before seeding is due only
+    // while both land in the same millisecond, which held locally and failed
+    // on a slower CI runner. Advancing past the seed is the only form that
+    // does not depend on either the date or the machine.
     let now = new Date();
     let calls = 0;
     const anilist = adapter("anilist", () => {
@@ -424,6 +429,7 @@ describe("SyncService drain", () => {
     });
 
     seedOperation(repo, anilistFavourite);
+    now = new Date(Date.now() + 1000);
     await service.drain();
 
     expect(scheduled).toHaveLength(1);
