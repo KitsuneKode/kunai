@@ -864,6 +864,11 @@ test("reconciliation drains more than 100 mixed facts in yielding bounded batche
     {
       batchSize: 25,
       maxRows: 200,
+      // Frozen: the drain also stops on a 250ms wall-clock budget, and this
+      // test is about the row batching, not about how fast the runner is.
+      // Left real, it processed all 103 rows on Linux and stopped at 38 on
+      // Windows CI — a machine-speed assertion wearing a correctness costume.
+      now: () => 0,
       yieldToEventLoop: async () => {
         yields += 1;
       },
