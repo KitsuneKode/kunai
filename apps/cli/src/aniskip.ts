@@ -84,6 +84,42 @@ async function fetchMalIdFromAllAnimeShow(
   }
 }
 
+const ANIDB_MAL_LOOKUP_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const malIdFromAnidbShowCache = new Map<string, number | null>();
+
+/**
+ * Resolve MAL numeric id from an AniDB catalog show id, matching ani-cli `anidb_desc`.
+ */
+async function fetchMalIdFromAnidbShow(
+  showId: string,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  if (malIdFromAnidbShowCache.has(showId)) return malIdFromAnidbShowCache.get(showId) ?? null;
+
+  try {
+    const res = await fetch(`https://anidb.app/anime/${encodeURIComponent(showId)}`, {
+      headers: {
+        "User-Agent": ANIDB_MAL_LOOKUP_UA,
+        Referer: "https://anidb.app/",
+      },
+      signal: signal ?? AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      malIdFromAnidbShowCache.set(showId, null);
+      return null;
+    }
+    const page = await res.text();
+    const match = /https:\/\/myanimelist\.net\/anime\/(\d+)/.exec(page);
+    const parsed = match?.[1] ? Number.parseInt(match[1], 10) : null;
+    malIdFromAnidbShowCache.set(showId, parsed);
+    return parsed;
+  } catch {
+    malIdFromAnidbShowCache.set(showId, null);
+    return null;
+  }
+}
+
 async function resolveMalIdForAniSkip(opts: {
   catalogTitleId: string;
   externalIds?: ProviderExternalIds;
@@ -106,6 +142,11 @@ async function resolveMalIdForAniSkip(opts: {
   if (providerId === "allanime" && catalogTitleId && !isNumericAniListId(catalogTitleId)) {
     const fromAllAnime = await fetchMalIdFromAllAnimeShow(catalogTitleId, signal);
     if (fromAllAnime !== null) return fromAllAnime;
+  }
+
+  if (providerId === "anidb" && catalogTitleId && !isNumericAniListId(catalogTitleId)) {
+    const fromAnidb = await fetchMalIdFromAnidbShow(catalogTitleId, signal);
+    if (fromAnidb !== null) return fromAnidb;
   }
 
   const nativeAniListId = normalizeNumericId(externalIds?.anilistId);
