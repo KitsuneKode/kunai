@@ -127,12 +127,24 @@ with a maintainer's real library.
 Analytics may ship with an empty endpoint and explicit opt-in because that
 configuration sends nothing. Before deploying or configuring a public endpoint:
 
+Run the storage path against a real Postgres. The local harness needs only
+Docker — it starts a throwaway database plus the Neon HTTP proxy the driver
+requires, migrates, runs, and tears down:
+
 ```sh
-TEST_DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest test
-DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest migrate
+bun run --cwd apps/analytics-ingest test:pg
 ```
 
-Expected evidence: all three Postgres integration cases run instead of skip;
+Against an isolated Neon project instead, opt in explicitly. The suites write
+and prune, so they gate on `ANALYTICS_TEST_DATABASE_URL` rather than
+`DATABASE_URL`:
+
+```sh
+DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest migrate
+ANALYTICS_TEST_DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest test
+```
+
+Expected evidence: all 12 Postgres integration cases run instead of skip;
 the production stable-hash secret is configured; Vercel/Neon secrets, firewall,
 retention, cron freshness, and cost limits are verified; a live opt-in ping is
 stored once, appears only as bounded aggregate data, and disabling analytics in
