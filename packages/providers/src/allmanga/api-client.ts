@@ -704,6 +704,7 @@ export async function resolveEpisodeSources(opts: {
     const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
       JSON.stringify({
         persistedQuery: { version: 1, sha256Hash: material.queryHash },
+        k: material.contentLane,
         aaReq,
       }),
     )}`;

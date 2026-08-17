@@ -346,7 +346,7 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
     expect(material?.epoch).toBe(6900);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
-    expect(material?.buildId).toBe("81");
+    expect(material?.buildId).toBe("119");
 
     const again = await getAllMangaCryptoMaterial(TEST_CONTEXT, "ua");
     expect(again?.keyHex).toBe(EXPECTED_KEY_HEX);

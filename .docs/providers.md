@@ -431,7 +431,7 @@ If the provider has native search or episode listing, export standalone function
   - search GraphQL query shape
   - episode list query shape
   - episode source GET with persisted query + `aaReq` AES-256-GCM attestation — without this the API returns `AA_CRYPTO_MISSING`; a rotated key/epoch/build returns `AA_CRYPTO_STALE`/`AA_CRYPTO_INVALID`/`AA_CRYPTO_MISSING_BUILD`
-  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=81&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
+  - dynamic key derivation (`getAllMangaCryptoMaterial`): bootstrap `GET /client-crypto/v1/bootstrap?buildId=119&k=k7` with HMAC `x-aa-boot`, then `key = deriveMaskKey(buildId) XOR partB` (see `packages/providers/src/allmanga/crypto.ts`). Bundled material is fallback only
   - `aaReq` AES-256-GCM over `{v,ts,epoch,buildId,qh,k}` with IV `SHA-256(epoch:buildId:qh:ts:k)[0:12]`; send `x-build-id` on API GETs
   - `tobeparsed` AES-256-GCM decoding: base64(0x01 || iv12 || ct || tag16)
   - source-name inventory and ranking (`Default`, `Yt-mp4`, `S-mp4`, `Mp4`/mp4upload, `Luf-Mp4`, `Ak`; Filemoon removed upstream)
@@ -475,23 +475,34 @@ epoch/partB query construction and AES-CTR decryption must not be restored.
 
 ### AllAnime via user relay (2026-08-17)
 
-With a user-owned relay in place, the picture changes:
+With a user-owned relay in place, AllAnime works end-to-end. `bun run
+test:live:relay-allanime` passes with real streams (e.g. `video.wixstatic.com`
+1080p mp4 via the `Default` source).
 
 - The relay egress (Vercel `iad1` in the reference deployment) reaches
-  `api.mkissa.net` and `cdn.mkissa.net` without a Cloudflare challenge —
-  `GET https://api.mkissa.net/` answers with a plain upstream 404, not CF HTML.
-- Bootstrap, search, and the episode **catalog** all succeed through the relay.
-- The episode **sources** query now answers `AA_CRYPTO_MISSING_BUILD` — upstream
-  rotated the build id/string-table material out from under build 81. The
-  bootstrap endpoint still serves build-81 material (queryHash
-  `f4662f4b7510b26795dd53ef824a0bf1740fbbc5d1273fab18222ac831bca8d0`), which the
-  API no longer accepts. Both the dynamic and bundled material fail identically,
-  so this is a fresh crypto-intake task: re-derive the current build id, mask
-  fragments, and query hash from the live chunks on
-  `cdn.mkissa.net/all/mk/_app/immutable/` (the string-table rotator lives in the
-  crypto chunk, e.g. `CA0Qy_FU.js`). Until then AllAnime stays catalog-only even
-  through a relay.
+  `api.mkissa.net` and `cdn.mkissa.net` without a Cloudflare challenge and is
+  **not** captcha-gated for the episode sources query.
+- On 2026-08-17 the upstream build rotated **81 → 119** and the epoch scale
+  moved from 3-day to **7-day** (`epochMs: 604800000`, 1-day grace, plus a
+  `switchAt` boundary). The old material answered `AA_CRYPTO_MISSING_BUILD`.
+  The new constants (build id `119`, mask fragments, epoch scale, and the
+  episode persisted-query hash `ca735f…`) were re-derived from the live site:
+  string table + rotation from the crypto chunk (`CA0Qy_FU.js`, 144-entry
+  table, rotation verified by recomputing the browser's `x-aa-boot` HMAC) and
+  the episode hash from the `_9` GraphQL template in the same chunk, then
+  confirmed against a real browser session's network traffic. The same
+  procedure applies on the next rotation.
+- The episode sources request now also carries `k: "k7"` in `extensions`
+  (alongside `persistedQuery` + `aaReq`), matching the live site.
 
+**Relay gaps found and fixed the same day:**
+
+- **The relay metadata allowlist was dropping provider-auth headers.**
+  `x-build-id`, `x-aa-boot`, `x-obfuscated`, and `x-session-token` were not in
+  `METADATA_HEADER_ALLOWLIST`, so every bootstrap through a relay failed with
+  `invalid_boot_token` even when the client material was correct. They are now
+  forwarded (header-text validation still applies); `x-obfuscated` is also
+  passed through on relay responses for Miruro pipe decoding.
 - **Deployed relays go stale with provider manifests.** The relay server builds
   its host registry from `@kunai/providers` manifests at deploy time. A relay
   deployed before the mkissa migration rejects `api.mkissa.net` with

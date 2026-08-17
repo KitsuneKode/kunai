@@ -8,6 +8,10 @@ const METADATA_HEADER_ALLOWLIST = new Set([
   "referer",
   "referrer",
   "user-agent",
+  "x-build-id",
+  "x-aa-boot",
+  "x-obfuscated",
+  "x-session-token",
 ]);
 
 const MEDIA_HEADER_ALLOWLIST = new Set([...METADATA_HEADER_ALLOWLIST, "range", "if-range"]);

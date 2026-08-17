@@ -29,7 +29,7 @@ The source flow matches ani-cli:
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 81)
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 119, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS / DASH-shaped candidates
@@ -94,7 +94,7 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - GraphQL search/catalog is working with `youtu-chan.com` referer.
-- The AES-256-GCM `tobeparsed` decode path and build id 81 crypto bootstrap are verified working; AES-CTR must not be restored (see `.docs/providers.md`).
+- The AES-256-GCM `tobeparsed` decode path and build id 119 crypto bootstrap are verified working (re-derived 2026-08-17 after the 81→119 build rotation; episodes resolve through a user relay); AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - The provider contract already allows `protocol: "dash"` and `container: "mpd"`, but there is no implemented AllManga MPD/EDL handoff for `rawUrls`.
