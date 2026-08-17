@@ -742,6 +742,20 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
   "Just a moment" challenge on the pipe too, so that region does **not** count
   as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
   (unproven region, likely non-US cloud IPs) would clear the gate.
+- **The pipe itself is fingerprint-gated, not dead.** From a real browser the
+  envelope (`?e=base64url({path,method,query,body,version})`, e.g.
+  `{"path":"episodes","query":{"anilistId":"21"},"version":"0.2.0"}`) answers
+  200 with `x-obfuscated: 2` while plain curl gets CF HTML — intermittent by
+  network. The curl fallback now reuses the AniDB curl-impersonate candidate
+  list (`shared/curl-impersonate.ts`): with `curl_chrome136`/`curl_firefox135`
+  installed, the pipe request carries a browser TLS fingerprint and clears the
+  gate. Without an impersonate build, a WAF 403 is expected behavior, not a bug.
+- **Per-server failures are not provider failures.** Miruro's site marks single
+  servers under maintenance ("Some servers are under maintenance. Please switch
+  servers if needed.") while others keep working. Kunai mirrors that: after the
+  pipe resolves, each server is attempted as its own source candidate
+  (`source:miruro:pipe:<server>:<audio>`), and a failed candidate moves to the
+  next server in `MIRURO_SERVER_TRY_ORDER` instead of exhausting the provider.
 - **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
   `container.engine.resolve(...)`, probes the selected stream itself, and reports
   `streamReachable` and `resolverAttestedReachable` separately. It passes on measured

@@ -42,6 +42,7 @@ import {
   formatAnimeSourceDetail,
   miruroSubtitleDeliveryToMode,
 } from "../shared/anime-source-presentation";
+import { curlCipherArgs, resolveCurlCandidate } from "../shared/curl-impersonate";
 import { expandHlsMasterPlaylist, looksLikeHlsMasterUrl } from "../shared/hls-ladder";
 import { TTLCache } from "../shared/provider-cache";
 import {
@@ -1428,8 +1429,8 @@ async function fetchMiruroPipeBody(
     };
   }
 
-  const curlPath = Bun.which("curl");
-  if (!curlPath) {
+  const curl = resolveCurlCandidate();
+  if (!curl) {
     return {
       status: response.status || 403,
       text: responseText,
@@ -1440,7 +1441,8 @@ async function fetchMiruroPipeBody(
 
   const hasCurlHttp2 = detectCurlHttp2Support();
   const args = [
-    curlPath,
+    curl.path,
+    ...curlCipherArgs(curl.impersonates),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),
     "-L",
