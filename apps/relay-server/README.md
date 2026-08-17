@@ -41,6 +41,27 @@ The bundle step is required because this app imports Bun workspace packages
 (`@kunai/relay`, `@kunai/providers`). It replaces Vercel's generated function
 handlers with standalone bundled handlers before `--prebuilt` upload.
 
+This app pins `typescript@5.9.3` in `package.json`: Vercel's `@vercel/node`
+builder crashes ("Cannot read properties of undefined (reading 'readFile')")
+on the repo-wide TypeScript 7 catalog entry. Keep the pin; `packages/relay`
+code is kept TS 5.9-compatible for the same reason (no `Headers.entries()`).
+
+**Redeploy after provider manifest host changes.** The RPC registry is built
+from `@kunai/providers` manifests at deploy time. If a provider's
+`relayProfile.upstreamHosts` changes upstream, an already-deployed relay keeps
+rejecting the new hosts with `host-not-allowed` until it is redeployed. After
+deploying, run the drift check to confirm the live registry matches the
+current manifests:
+
+```sh
+KUNAI_RELAY_BASE_URL=https://your-relay.vercel.app \
+KUNAI_RELAY_TOKEN=same-token-as-RELAY_TOKEN \
+bun run verify:deploy
+```
+
+The `registry-matches-current-manifests` check probes one upstream host per
+provider and fails loudly if the deployed registry still rejects it.
+
 `vercel.json` rewrites `/rpc/:providerId` to the Vercel function and pins execution to `iad1`. Change the region only if you know the provider works better from another Vercel region.
 
 Set `RELAY_TOKEN` for internet deployments:

@@ -473,6 +473,32 @@ module.
 `x-aa-boot`, and AES-256-GCM are all working and verified. The historical
 epoch/partB query construction and AES-CTR decryption must not be restored.
 
+### AllAnime via user relay (2026-08-17)
+
+With a user-owned relay in place, the picture changes:
+
+- The relay egress (Vercel `iad1` in the reference deployment) reaches
+  `api.mkissa.net` and `cdn.mkissa.net` without a Cloudflare challenge —
+  `GET https://api.mkissa.net/` answers with a plain upstream 404, not CF HTML.
+- Bootstrap, search, and the episode **catalog** all succeed through the relay.
+- The episode **sources** query now answers `AA_CRYPTO_MISSING_BUILD` — upstream
+  rotated the build id/string-table material out from under build 81. The
+  bootstrap endpoint still serves build-81 material (queryHash
+  `f4662f4b7510b26795dd53ef824a0bf1740fbbc5d1273fab18222ac831bca8d0`), which the
+  API no longer accepts. Both the dynamic and bundled material fail identically,
+  so this is a fresh crypto-intake task: re-derive the current build id, mask
+  fragments, and query hash from the live chunks on
+  `cdn.mkissa.net/all/mk/_app/immutable/` (the string-table rotator lives in the
+  crypto chunk, e.g. `CA0Qy_FU.js`). Until then AllAnime stays catalog-only even
+  through a relay.
+
+- **Deployed relays go stale with provider manifests.** The relay server builds
+  its host registry from `@kunai/providers` manifests at deploy time. A relay
+  deployed before the mkissa migration rejects `api.mkissa.net` with
+  `host-not-allowed`. After any change to a provider's `relayProfile.upstreamHosts`,
+  redeploy the relay. `apps/relay-server` also pins `typescript@5.9.3` because
+  Vercel's `@vercel/node` builder crashes on the repo-wide TypeScript 7.
+
 **wixmp referer: current behaviour retained.** Plan 036 proposed attaching the
 mkissa site referer for `repackager.wixmp.com`, gated on a fixture proving the
 current final-stream fallback insufficient. No such fixture can be built from this
@@ -701,6 +727,10 @@ Miruro resolves entirely through `GET /api/secure/pipe?e=…` on `www.miruro.bz`
   escape hatch that exists — a user-owned relay (`providerRelay.baseUrl`) in an
   ungated region; as of 2026-08-17 the `curl --http2` fallback is itself CF-403'd
   from some networks, so the hint is the actionable part of the failure.
+  Verified live the same day: a relay deployed on Vercel `iad1` receives the
+  "Just a moment" challenge on the pipe too, so that region does **not** count
+  as ungated for Miruro — only a relay on an egress Miruro's WAF tolerates
+  (unproven region, likely non-US cloud IPs) would clear the gate.
 - **Live evidence is the smoke's job.** `bun run test:live:miruro` resolves through
   `container.engine.resolve(...)`, probes the selected stream itself, and reports
   `streamReachable` and `resolverAttestedReachable` separately. It passes on measured
