@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { authorizeBearer } from "../../src/bearer-auth";
 import { snapshotDayKey } from "../../src/public-metrics";
 import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
 
@@ -28,9 +29,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  const header = req.headers.authorization;
-  const match = typeof header === "string" ? /^Bearer\s+(.+)$/i.exec(header.trim()) : null;
-  if (!match || match[1] !== runtime.adminToken) {
+  if (!authorizeBearer(req, runtime.adminToken)) {
     res.statusCode = 401;
     res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
     return;

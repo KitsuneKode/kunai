@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { authorizeBearer } from "../../src/bearer-auth";
 import { RAW_RETENTION_DAYS } from "../../src/ingest";
 import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics";
 import { loadAnalyticsRuntimeConfig } from "../../src/runtime-config";
@@ -9,14 +10,6 @@ function unauthorized(res: ServerResponse): void {
   res.setHeader("Content-Type", "application/json");
   res.statusCode = 401;
   res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
-}
-
-function authorize(req: IncomingMessage, cronSecret: string): boolean {
-  if (!cronSecret) return false;
-  const header = req.headers.authorization;
-  if (typeof header !== "string") return false;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return Boolean(match && match[1] === cronSecret);
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -36,7 +29,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  if (!authorize(req, runtime.cronSecret)) {
+  if (!authorizeBearer(req, runtime.cronSecret)) {
     unauthorized(res);
     return;
   }

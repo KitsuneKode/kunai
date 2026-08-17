@@ -634,6 +634,26 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
 
+  // Everything past this point reaches the Ink shell, which needs raw mode on
+  // stdin. Without a TTY that fails deep inside the reconciler and prints a
+  // React stack trace, which tells the user nothing and looks like a crash.
+  // Refuse here instead, while the message can still say what to do — and
+  // before the lifetime lock, so a piped run leaves no residue.
+  if (!process.stdin.isTTY) {
+    console.error(
+      [
+        "kunai needs an interactive terminal, and stdin is not a TTY.",
+        "",
+        "This happens when kunai is piped, redirected, or run from a script.",
+        "These work without a terminal:",
+        "  kunai --version        kunai doctor",
+        "  kunai --help           kunai diagnostics",
+      ].join("\n"),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   // Versioned binary: hold lifetime lock and prune old versions (binary channel).
   // The acquisition promise is tracked so coordinated shutdown can await it
   // before releasing — a late lock must never survive the process.

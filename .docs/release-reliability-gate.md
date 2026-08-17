@@ -176,6 +176,47 @@ For playback-sensitive changes, confirm the deterministic fake IPC harness remai
 
 The fake harness does not replace a manual mpv smoke. It proves app-side orchestration without requiring a real player.
 
+## Migration Upgrade Check
+
+Run before any release that adds a data migration. Fresh-install coverage does
+not prove an upgrade: the rows that break a migration are the ones an old
+version wrote, and no fixture reproduces those faithfully.
+
+Never point this at the live database — copy it first.
+
+```sh
+SHADOW=/tmp/kunai-shadow && rm -rf "$SHADOW" && mkdir -p "$SHADOW"
+cp ~/.local/share/kunai/kunai-data.sqlite* "$SHADOW"/
+```
+
+Record every table's row count, run the migrations against the copy, then
+compare. Pass criteria:
+
+- every pre-existing table holds the same number of rows afterwards
+- new tables appear empty rather than back-filled with guesses
+- the repositories read the migrated rows, and a column added to existing rows
+  comes back as `undefined` rather than throwing
+
+Verified for 031–034 on a 2.7 MB database at migration 029: 6 ms, no row
+changed, `content_type` reads as `undefined` on all 78 legacy queue rows.
+
+## Time-Rot Sweep
+
+```sh
+bun run --cwd apps/cli test:future
+```
+
+Runs the unit suite 180 days ahead. A test that owns both sides of its clock
+does not care what day it is; one that freezes an injected clock at a literal
+while its fixtures use the real clock fails immediately. This class has shipped
+three times — the prune-clock bomb, the stats-service window, and the sync
+retry wake — and each time it looked like an unrelated CI regression months
+later.
+
+Two known wall-clock-dependent tests currently fail under it and are not
+release blockers: the install-manifest `updatedAt` test and the `downloadToFile`
+total-deadline test. Investigate any _new_ name that appears.
+
 ## Manual Smoke
 
 After major playback or shell changes, run at least one real mpv flow:
