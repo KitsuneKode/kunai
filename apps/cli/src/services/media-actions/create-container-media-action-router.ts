@@ -6,6 +6,9 @@ import {
   commitDownloadIntent,
   resolveDownloadIntentItems,
 } from "@/services/download/DownloadIntentService";
+import { resolveMirrorTargets } from "@/services/sync/mirror-targets";
+import { reconcileSyncMutations } from "@/services/sync/reconcile-sync-mutations";
+import type { SyncIdentity } from "@/services/sync/types";
 import type { MediaKind } from "@kunai/types";
 
 import { MediaActionRouter, type MediaActionRouterDeps } from "./MediaActionRouter";
@@ -17,6 +20,89 @@ export type ContainerMediaActionRouterOptions = {
   readonly playlists?: MediaActionRouterDeps["playlists"];
   readonly onDownloadQueued?: (item: MediaItemIdentity) => void;
 };
+
+/**
+ * Hand a local list change to the sync outbox.
+ *
+ * Enqueue is durable and cheap, so it happens whether or not a tracker is
+ * connected: the work waits in the outbox and goes out when one is, rather than
+ * being lost because nothing was linked at the moment the user pressed a key.
+ *
+ * The item's own `mediaKind` is passed through untouched. Flattening it to
+ * `series` first — as the list write does, because the column wants a coarse
+ * kind — made `resolveAniListIdentity` reject every anime title outright, so
+ * AniList membership could never be queued from any surface.
+ */
+async function mirrorToTrackers(
+  container: Container,
+  item: MediaItemIdentity,
+  enqueue: (identities: readonly SyncIdentity[]) => Promise<number>,
+): Promise<void> {
+  try {
+    const targets = await resolveMirrorTargets(container, {
+      titleId: item.titleId,
+      mediaKind: item.mediaKind,
+      title: item.title,
+      ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+    });
+    if (targets.identities.length === 0) {
+      // Recorded rather than swallowed: "saved locally, addressable by no
+      // tracker" is the one outcome the user cannot see from the list itself.
+      container.diagnosticsService?.record({
+        category: "sync",
+        message: "List change could not be mirrored: no tracker id for title",
+        context: { titleId: item.titleId, mediaKind: item.mediaKind },
+      });
+      return;
+    }
+    if ((await enqueue(targets.identities)) === 0) return;
+    // Nothing queued means nothing to deliver, so an unaddressable title starts
+    // no drain.
+    container.syncService.deliverSoon();
+  } catch (error) {
+    // Mirroring is secondary. The list change has already been written locally,
+    // and failing the user's keypress because the outbox is unavailable would
+    // trade a working local action for a broken one.
+    container.diagnosticsService?.record({
+      category: "sync",
+      message: "List change was saved locally but could not be queued for tracker sync",
+      context: {
+        titleId: item.titleId,
+        mediaKind: item.mediaKind,
+        error: error instanceof Error ? error.name : "unknown",
+      },
+    });
+  }
+}
+
+/**
+ * The one seam for list mutations made outside `MediaActionRouter` (notably
+ * command-palette removal actions).  It deliberately takes the post-mutation
+ * state so redelivery converges instead of replaying a toggle.
+ */
+export async function mirrorListMembershipChange(
+  container: Container,
+  item: MediaItemIdentity,
+  change: { readonly list: "watchlist" | "favorite"; readonly present: boolean },
+): Promise<void> {
+  if (container.syncReconciliationRepository) {
+    const result = await reconcileSyncMutations(container);
+    if (result.queued > 0) container.syncService.deliverSoon();
+    return;
+  }
+  await mirrorToTrackers(container, item, (identities) =>
+    change.list === "watchlist"
+      ? container.syncService.enqueueListMembershipIfEnabled({
+          identities,
+          list: "watchlist",
+          present: change.present,
+        })
+      : container.syncService.enqueueFavoriteMembershipIfEnabled({
+          identities,
+          present: change.present,
+        }),
+  );
+}
 
 export function createContainerMediaActionRouter(
   container: Container,
@@ -35,14 +121,38 @@ export function createContainerMediaActionRouter(
       },
     },
     watchlist: {
-      addToWatchlist: (item) => {
+      addToWatchlist: async (item) => {
         container.listService.addToWatchlist({
           titleId: item.titleId,
-          mediaKind: normalizeMediaKind(item.mediaKind),
+          mediaKind: item.mediaKind,
+          contentType: item.contentType,
           title: item.title,
           season: item.season,
           episode: item.episode,
+          externalIds: item.externalIds,
         });
+        await mirrorListMembershipChange(container, item, { list: "watchlist", present: true });
+      },
+    },
+    favorites: {
+      toggleFavorite: async (item) => {
+        const outcome = container.listService.toggleFavorites({
+          titleId: item.titleId,
+          mediaKind: item.mediaKind,
+          contentType: item.contentType,
+          title: item.title,
+          season: item.season,
+          episode: item.episode,
+          externalIds: item.externalIds,
+        });
+        // The local list is the source of truth, and the tracker is told the
+        // resulting *state* rather than "toggle" — so a redelivery converges
+        // instead of undoing what the user just did.
+        await mirrorListMembershipChange(container, item, {
+          list: "favorite",
+          present: outcome === "added",
+        });
+        return outcome;
       },
     },
     attention: {
@@ -132,6 +242,35 @@ export function markMediaItemWatched(
   item: MediaItemIdentity,
   completed: boolean,
 ): void {
+  const saved = persistMediaItemWatched(container, item, completed);
+  queueHistoryMirror(container, item.titleId, saved);
+}
+
+/**
+ * Mark an entire season locally, then mirror the greatest durable episode once.
+ * This keeps a bulk command from racing several progress payloads through the
+ * outbox and makes it use the same local-write/mirror boundary as one episode.
+ */
+export function markSeasonThroughMediaItemWatched(
+  container: Container,
+  item: MediaItemIdentity,
+  season: number,
+  throughEpisode: number,
+): number {
+  const maximum = Math.max(1, Math.floor(throughEpisode));
+  let latest: ReturnType<Container["historyRepository"]["getLatestForTitle"]>;
+  for (let episode = 1; episode <= maximum; episode += 1) {
+    latest = persistMediaItemWatched(container, { ...item, season, episode }, true);
+  }
+  queueHistoryMirror(container, item.titleId, latest);
+  return maximum;
+}
+
+function persistMediaItemWatched(
+  container: Container,
+  item: MediaItemIdentity,
+  completed: boolean,
+) {
   const hasEpisode = typeof item.season === "number" && typeof item.episode === "number";
   const kind: MediaKind =
     item.mediaKind === "movie" ? "movie" : item.mediaKind === "anime" ? "anime" : "series";
@@ -139,6 +278,7 @@ export function markMediaItemWatched(
     id: item.titleId,
     kind,
     title: item.title,
+    ...(item.externalIds ? { externalIds: item.externalIds } : {}),
   };
   const episode = hasEpisode
     ? {
@@ -149,9 +289,37 @@ export function markMediaItemWatched(
     : undefined;
   if (completed) {
     container.historyRepository.markWatched(title, episode);
-    return;
+  } else {
+    container.historyRepository.markUnwatched(title, episode);
   }
-  container.historyRepository.markUnwatched(title, episode);
+  return container.historyRepository.getProgress(title, episode);
+}
+
+export function queueHistoryMirror(
+  container: Container,
+  titleId: string,
+  saved: ReturnType<Container["historyRepository"]["getProgress"]>,
+): void {
+  const syncService = container.syncService;
+  if (!saved || !syncService) return;
+  const enqueue = container.syncReconciliationRepository
+    ? reconcileSyncMutations(container).then((result) => result.queued)
+    : syncService.enqueueProgressIfEnabled(saved);
+  void enqueue
+    .then((queued) => {
+      if (queued > 0) syncService.deliverSoon();
+      return undefined;
+    })
+    .catch((error) => {
+      container.diagnosticsService?.record({
+        category: "sync",
+        message: "History change was saved locally but could not be queued for tracker sync",
+        context: {
+          titleId,
+          error: error instanceof Error ? error.name : "unknown",
+        },
+      });
+    });
 }
 
 function upsertAttentionPreference(

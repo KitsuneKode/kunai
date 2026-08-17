@@ -1,3 +1,5 @@
+import type { ProviderExternalIds } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
 
 export type QueueItemStatus = "pending" | "in-flight" | "played" | "skipped" | "failed";
@@ -19,6 +21,8 @@ export interface QueueEntry {
   readonly id: string;
   readonly title: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
+  readonly externalIds?: ProviderExternalIds;
   readonly titleId: string;
   readonly season?: number;
   readonly episode?: number;
@@ -53,6 +57,8 @@ export interface QueueSessionRecord extends QueueSessionInput {
 export interface QueueEntryInput {
   readonly title: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
+  readonly externalIds?: ProviderExternalIds;
   readonly titleId: string;
   readonly season?: number;
   readonly episode?: number;
@@ -67,6 +73,8 @@ interface QueueEntryRow {
   readonly id: string;
   readonly title: string;
   readonly media_kind: string;
+  readonly content_type: string | null;
+  readonly external_ids_json: string | null;
   readonly title_id: string;
   readonly season: number | null;
   readonly episode: number | null;
@@ -146,6 +154,9 @@ function mapQueueRow(row: QueueEntryRow): QueueEntry {
     id: row.id,
     title: row.title,
     mediaKind: row.media_kind,
+    contentType:
+      row.content_type === "movie" || row.content_type === "series" ? row.content_type : undefined,
+    externalIds: parseExternalIds(row.external_ids_json),
     titleId: row.title_id,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
@@ -204,14 +215,16 @@ export class QueueRepository {
     this.db
       .query(
         `INSERT INTO playlist_queue
-           (id, title, media_kind, title_id, season, episode, absolute_episode,
+           (id, title, media_kind, content_type, external_ids_json, title_id, season, episode, absolute_episode,
             priority, source, added_at, played_at, session_id, status, queue_position, completed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'pending', ?, NULL)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'pending', ?, NULL)`,
       )
       .run(
         id,
         input.title,
         input.mediaKind,
+        input.contentType ?? null,
+        serializeExternalIds(input.externalIds),
         input.titleId,
         input.season ?? null,
         input.episode ?? null,
@@ -513,5 +526,18 @@ export class QueueRepository {
          WHERE id = ?`,
       )
       .run(at, at, sessionId);
+  }
+}
+
+function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
+  return externalIds && Object.keys(externalIds).length > 0 ? JSON.stringify(externalIds) : null;
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as ProviderExternalIds;
+  } catch {
+    return undefined;
   }
 }

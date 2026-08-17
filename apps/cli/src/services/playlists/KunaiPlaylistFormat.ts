@@ -1,4 +1,5 @@
 import { sanitizeProviderHints, type MediaProviderHint } from "@/domain/media/media-item-identity";
+import type { ProviderExternalIds } from "@kunai/types";
 
 export interface KunaiPlaylistExportInput {
   readonly playlist: {
@@ -9,6 +10,8 @@ export interface KunaiPlaylistExportInput {
   readonly items: readonly {
     readonly titleId: string;
     readonly mediaKind: string;
+    readonly contentType?: "movie" | "series";
+    readonly externalIds?: ProviderExternalIds;
     readonly title: string;
     readonly season?: number;
     readonly episode?: number;
@@ -33,6 +36,8 @@ export interface KunaiPlaylistDocument {
   readonly items: readonly {
     readonly titleId: string;
     readonly mediaKind: string;
+    readonly contentType?: "movie" | "series";
+    readonly externalIds?: ProviderExternalIds;
     readonly title: string;
     readonly season?: number;
     readonly episode?: number;
@@ -62,6 +67,8 @@ export function exportKunaiPlaylist(input: KunaiPlaylistExportInput): KunaiPlayl
     items: input.items.map((item) => ({
       titleId: item.titleId,
       mediaKind: item.mediaKind,
+      contentType: item.contentType,
+      externalIds: item.externalIds,
       title: item.title,
       season: item.season,
       episode: item.episode,
@@ -72,12 +79,26 @@ export function exportKunaiPlaylist(input: KunaiPlaylistExportInput): KunaiPlayl
   };
 }
 
+function unresolvedImportedTitleId(titleId: string): string {
+  return titleId.startsWith("imported-unresolved:") ? titleId : `imported-unresolved:${titleId}`;
+}
+
 export function importKunaiPlaylist(document: KunaiPlaylistDocument): ImportedKunaiPlaylist {
   return {
     playlist: document.playlist,
     items: document.items.map((item) => ({
-      ...item,
+      titleId: unresolvedImportedTitleId(item.titleId),
+      mediaKind: item.mediaKind,
+      contentType: item.contentType,
+      title: item.title,
+      season: item.season,
+      episode: item.episode,
+      sortOrder: item.sortOrder,
       providerHints: sanitizeProviderHints(item.providerHints),
+      progressPercent: item.progressPercent,
+      // Exchange files are untrusted. Catalogue ids become authoritative for
+      // tracker mutations, so imported ids must be re-resolved locally before
+      // they can ever be promoted into persisted identity.
       resolved: false,
       canAutoplay: false,
     })),

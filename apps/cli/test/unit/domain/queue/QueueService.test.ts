@@ -1,7 +1,81 @@
 import { expect, test } from "bun:test";
 
+import { ListService } from "@/domain/lists/ListService";
+import { titleInfoFromQueueEntry } from "@/domain/media/media-item-adapters";
 import { QueueService } from "@/domain/queue/QueueService";
-import { openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
+import { ListRepository, openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
+
+test("QueueService durably preserves anime movie structure through playback intent", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const repo = new QueueRepository(db);
+  repo.createQueueSession({
+    id: "s",
+    status: "active",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    updatedAt: "2026-08-16T00:00:00.000Z",
+  });
+  const service = new QueueService(repo, "s");
+
+  const entry = service.enqueueMediaItem(
+    {
+      mediaKind: "anime",
+      contentType: "movie",
+      titleId: "anilist:181053",
+      title: "Infinity Castle",
+      externalIds: { anilistId: "181053", malId: "40456" },
+    },
+    { placement: "end", source: "manual" },
+  );
+
+  expect(entry).toMatchObject({
+    mediaKind: "anime",
+    contentType: "movie",
+    externalIds: { anilistId: "181053", malId: "40456" },
+  });
+  expect(service.beginPlayback(entry.id, "queue")).toMatchObject({
+    mediaKind: "anime",
+    contentType: "movie",
+    externalIds: { anilistId: "181053", malId: "40456" },
+  });
+  expect(titleInfoFromQueueEntry(entry)).toMatchObject({
+    type: "movie",
+    isAnime: true,
+    externalIds: { anilistId: "181053", malId: "40456" },
+  });
+  db.close();
+});
+
+test("refillFromWatchlist preserves an anime film's structure and catalogue identity", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const queueRepo = new QueueRepository(db);
+  queueRepo.createQueueSession({
+    id: "watchlist-refill",
+    status: "active",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    updatedAt: "2026-08-16T00:00:00.000Z",
+  });
+  const lists = new ListService(new ListRepository(db));
+  lists.addToWatchlist({
+    titleId: "anilist:181053",
+    mediaKind: "anime",
+    contentType: "movie",
+    title: "Infinity Castle",
+    externalIds: { anilistId: "181053" },
+  });
+
+  const queue = new QueueService(queueRepo, "watchlist-refill");
+  expect(queue.refillFromWatchlist(lists)).toBe(1);
+  expect(queue.getAll()).toMatchObject([
+    {
+      mediaKind: "anime",
+      contentType: "movie",
+      externalIds: { anilistId: "181053" },
+    },
+  ]);
+  db.close();
+});
 
 test("beginPlayback claims requested row, not head", () => {
   const db = openKunaiDatabase(":memory:");

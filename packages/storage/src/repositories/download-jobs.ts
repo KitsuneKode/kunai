@@ -33,6 +33,8 @@ export interface DownloadJobRecord {
   readonly externalIds?: ProviderExternalIds;
   readonly titleName: string;
   readonly mediaKind: MediaKind;
+  /** Product structure; independent from identity (for example, an anime film). */
+  readonly contentType?: "movie" | "series";
   readonly season?: number;
   readonly episode?: number;
   readonly providerId: ProviderId;
@@ -79,6 +81,7 @@ interface DownloadJobRow {
   readonly external_ids_json: string | null;
   readonly title_name: string;
   readonly media_kind: MediaKind;
+  readonly content_type: "movie" | "series" | null;
   readonly season: number | null;
   readonly episode: number | null;
   readonly provider_id: string;
@@ -149,14 +152,14 @@ export class DownloadJobsRepository {
       .query(
         `
           INSERT INTO download_jobs (
-            id, title_id, external_ids_json, title_name, media_kind, season, episode, provider_id,
+            id, title_id, external_ids_json, title_name, media_kind, content_type, season, episode, provider_id,
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
             stream_url, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
             intro_skip_json, poster_url, thumbnail_path, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
             started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
             created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
       )
       .run(
@@ -165,6 +168,7 @@ export class DownloadJobsRepository {
         input.externalIds ? JSON.stringify(input.externalIds) : null,
         input.titleName,
         input.mediaKind,
+        input.contentType ?? null,
         input.season ?? null,
         input.episode ?? null,
         input.providerId,
@@ -637,6 +641,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     externalIds: parseExternalIds(row.external_ids_json),
     titleName: row.title_name,
     mediaKind: row.media_kind,
+    contentType: row.content_type ?? undefined,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
     providerId: row.provider_id as ProviderId,

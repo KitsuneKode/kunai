@@ -1,0 +1,56 @@
+# Local stand-in for Neon, so the Postgres-backed analytics tests run without
+# touching a real project.
+#
+# The store talks to Neon over HTTP (`neon()` from @neondatabase/serverless),
+# not the Postgres wire protocol, so a bare postgres container is not enough on
+# its own: `neon-proxy` terminates that HTTP `/sql` endpoint and forwards to
+# `postgres`. Point the driver at it with `neonConfig.fetchEndpoint`, which
+# `src/neon-fetch-endpoint.ts` does from `NEON_FETCH_ENDPOINT`.
+#
+#   bun run --cwd apps/analytics-ingest test:pg           # up, migrate, run, down
+#   bun run --cwd apps/analytics-ingest test:pg -- --keep  # leave it running
+#   bun run --cwd apps/analytics-ingest db:down            # clean up after --keep
+#
+# `kunai:kunai` is not a secret. The container listens on loopback only, keeps
+# its data in tmpfs, and is destroyed when the run ends. Two alternatives were
+# tried and are worse: a per-run generated password races Postgres, which only
+# reads POSTGRES_PASSWORD when it initialises, and `trust` auth makes the Neon
+# proxy answer 502. Secret scanners flag this line; see .gitguardian.yaml.
+#
+# Ports are deliberately non-default so this never collides with — or writes
+# into — a Postgres the developer is already running on 5432.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: kunai
+      POSTGRES_PASSWORD: kunai
+      POSTGRES_DB: kunai_analytics
+    ports:
+      - "55432:5432"
+    # No named volume: every run starts from an empty database, so a test
+    # run can never inherit rows from the previous one.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # `-h 127.0.0.1` forces TCP. The default unix socket answers during the
+      # entrypoint's temporary init server, which listens on the socket only —
+      # so a socket probe reports healthy, `--wait` returns, and the first real
+      # connection races the restart into the actual server. That surfaced as
+      # "password authentication failed", which sends you looking at the
+      # credential rather than the clock.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U kunai -d kunai_analytics"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    environment:
+      PG_CONNECTION_STRING: postgres://kunai:kunai@postgres:5432/kunai_analytics
+    ports:
+      - "54444:4444"
+    depends_on:
+      postgres:
+        condition: service_healthy

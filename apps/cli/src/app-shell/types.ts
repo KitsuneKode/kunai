@@ -26,8 +26,8 @@ export type ShellAction =
   | "settings"
   | "providers"
   | "presence"
-  | "telemetry"
-  | "telemetry-show"
+  | "analytics"
+  | "analytics-show"
   | "notifications"
   | "toggle-mode"
   | "toggle-mode-reverse"
@@ -172,6 +172,8 @@ export type PlaybackShellState = {
   readonly currentEpisode?: number;
   /** Content kind that selects the post-play media-panel layout. */
   readonly contentKind?: import("@/domain/media/content-kind").ContentKind;
+  /** Catalog structure for post-play film vs series chrome. */
+  readonly titleType?: import("@/domain/types").ContentType;
   /** YouTube/video metadata for the `video` post-play panel kind. */
   readonly videoMeta?: import("@/domain/types").VideoMeta | null;
   /** Next-episode thumbnail for the post-play rail (preferred over the poster). */
@@ -278,6 +280,8 @@ export type LoadingShellState = {
   currentEpisode?: number;
   /** Content kind that selects the media-panel layout (movie/series/anime/video). */
   contentKind?: import("@/domain/media/content-kind").ContentKind;
+  /** Catalog structure — anime films keep kind anime with type movie. */
+  titleType?: import("@/domain/types").ContentType;
   /** YouTube/video metadata for the `video` media-panel kind. */
   videoMeta?: import("@/domain/types").VideoMeta | null;
   onCommandAction?: (action: ShellAction) => void;
@@ -439,8 +443,8 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "settings":
     case "providers":
     case "presence":
-    case "telemetry":
-    case "telemetry-show":
+    case "analytics":
+    case "analytics-show":
     case "notifications":
     case "toggle-mode":
     case "series-mode":

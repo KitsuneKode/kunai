@@ -6,6 +6,7 @@ import type { Container } from "@/container";
 import { CONFIG_METADATA } from "@/services/persistence/config-metadata";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
+import { SHIPPED_ANILIST_REDIRECT_URI } from "@/services/sync/auth-contract";
 
 test("buildSettingsRegistry includes relay text rows without keep/clear submenu", () => {
   const config = {
@@ -18,6 +19,24 @@ test("buildSettingsRegistry includes relay text rows without keep/clear submenu"
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],
+    sync: {
+      adapters: [],
+      authAvailability: {
+        anilist: {
+          available: true as const,
+          redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+          clientIdSource: "shipped-default" as const,
+        },
+        tmdb: { available: true as const, apiKeySource: "shipped-fallback" as const },
+      },
+      status: {
+        connected: 0,
+        pending: 0,
+        needsReauth: 0,
+        deadLettered: 0,
+        health: "disconnected" as const,
+      },
+    },
     container: {} as Container,
   };
   const rows = buildSettingsRegistry(ctx);
@@ -35,6 +54,24 @@ test("buildSettingsPage filters rows by search query", () => {
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],
+    sync: {
+      adapters: [],
+      authAvailability: {
+        anilist: {
+          available: true as const,
+          redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+          clientIdSource: "shipped-default" as const,
+        },
+        tmdb: { available: true as const, apiKeySource: "shipped-fallback" as const },
+      },
+      status: {
+        connected: 0,
+        pending: 0,
+        needsReauth: 0,
+        deadLettered: 0,
+        health: "disconnected" as const,
+      },
+    },
     container: {} as Container,
   };
   const page = buildSettingsPage(ctx, { searchQuery: "relay" });
@@ -49,6 +86,24 @@ test("editable config metadata is represented by registry rows", () => {
     seriesProviderOptions: [],
     animeProviderOptions: [],
     youtubeProviderOptions: [],
+    sync: {
+      adapters: [],
+      authAvailability: {
+        anilist: {
+          available: true as const,
+          redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+          clientIdSource: "shipped-default" as const,
+        },
+        tmdb: { available: true as const, apiKeySource: "shipped-fallback" as const },
+      },
+      status: {
+        connected: 0,
+        pending: 0,
+        needsReauth: 0,
+        deadLettered: 0,
+        health: "disconnected" as const,
+      },
+    },
     container: {} as Container,
   };
   const rows = buildSettingsRegistry(ctx);

@@ -67,27 +67,41 @@ presence, download, and offline. Each section includes the latest operation so a
 report can show whether a provider fallback happened, Discord failed to clear,
 or a download artifact was validated.
 
-## Opt-in telemetry
+## Usage analytics
 
-Telemetry is **opt-in**. A fresh install sends nothing until you consent in setup
-or with `/telemetry`.
+Anonymous usage analytics are **off by default**. You can explicitly enable or
+disable them in **Settings → General → Usage analytics**.
 
-When enabled, Kunai may send at most one tiny ping per day:
+On a fresh install, setup offers an explicit choice. Existing installs get one
+non-blocking recommendation explaining the payload; that notice does not enable
+analytics, create an id, or send anything. No analytics requests run before you
+enable it, in a non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
+
+When on, Kunai sends at most one tiny ping per day:
 
 ```json
 { "installId": "<uuid>", "version": "<semver>", "os": "<platform>", "arch": "<arch>", "ts": 0 }
 ```
 
 - Never titles, queries, providers, stream URLs, or file paths
-- `DO_NOT_TRACK=1` and `CI=true` hard-block sends even if config says enabled
-- The ingest stores only HMAC-hashed install ids for daily distinct counts and a
-  lifetime HyperLogLog estimate — not raw UUIDs, not IPs as identity
-- Public docs may show yesterday’s opt-in actives and an approximate lifetime
-  total. Those numbers can be inflated by abuse; they cannot expose what you
-  watch. See the live [opt-in telemetry](/telemetry) page for the public pulse
-  and empty states when the snapshot is not ready yet.
+- Turning it off **deletes the install id from disk**. The id exists only while
+  analytics is enabled
+- `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
+  of `0`, `false`, or `no` does not block
+- Without an interactive terminal — piped or scripted output — analytics stays
+  off, because the notice could not be shown
+- The ingest stores HMAC-hashed install ids with your platform, architecture,
+  and version, and never a raw UUID. It does not read your IP address at all
+- Raw rows are deleted after 35 days. A permanent table keeps one hashed row per
+  install with a first-seen date, which is what an exact lifetime count costs
+- Public docs show yesterday's active installs, a lifetime total, and version /
+  platform / architecture breakdowns. Any group with **fewer than 5** installs is
+  reported as `other`. This is per-breakdown small-cell suppression, not a joint
+  anonymity guarantee. Those numbers can be inflated by abuse; they cannot expose
+  what you watch. See the live [usage analytics](/telemetry) page.
 
-Preview the exact JSON with `/telemetry show`.
+Preview the exact JSON with `/analytics show`. Until an operator configures and
+verifies an analytics endpoint, no production analytics request can be sent.
 
 ## Release Confidence
 
@@ -106,6 +120,6 @@ provider and machine reality checks, not default CI.
 
 ## Related guides
 
-- [Opt-in telemetry pulse](/telemetry)
+- [Usage analytics pulse](/telemetry)
 - [Diagnostics and reporting](/docs/users/diagnostics-and-reporting)
 - [Supported and unsupported](/docs/users/supported-and-unsupported)

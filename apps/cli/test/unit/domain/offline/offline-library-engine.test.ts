@@ -130,6 +130,42 @@ describe("OfflineLibraryEngine", () => {
     expect(shelf.groups[0]?.actionSummary).toBe("Play E03 · inspect 1 episode");
   });
 
+  test("a legacy null row inherits the sole movie partition presentation", () => {
+    const shelf = createOfflineLibraryEngine().buildShelf([
+      {
+        job: job({
+          id: "legacy",
+          titleId: "infinity-castle",
+          titleName: "Infinity Castle",
+          mediaKind: "anime",
+          season: 1,
+          episode: 1,
+        }),
+        status: "ready",
+      },
+      {
+        job: job({
+          id: "movie",
+          titleId: "infinity-castle",
+          titleName: "Infinity Castle",
+          mediaKind: "anime",
+          contentType: "movie",
+        }),
+        status: "ready",
+      },
+    ]);
+
+    const group = shelf.groups[0];
+    expect(shelf.groups).toHaveLength(1);
+    expect(group?.contentType).toBe("movie");
+    expect(group?.entries.map((entry) => entry.presentation.position.kind)).toEqual([
+      "title",
+      "title",
+    ]);
+    expect(group?.actionSummary).toBe("Play Anime · inspect 2 movies");
+    expect(JSON.stringify(group)).not.toContain("E01");
+  });
+
   test("keeps empty shelf actionable without network work", () => {
     const shelf = createOfflineLibraryEngine().buildShelf([]);
 

@@ -18,6 +18,7 @@ export type PlaybackShellInputHandlers = {
   readonly onToggleAutoplay?: () => void;
   readonly onToggleAutoskip?: () => void;
   readonly onStopAfterCurrent?: () => void;
+  readonly onToggleFavorite?: () => void;
   readonly onFallback?: () => void;
   readonly onCommandAction?: (action: ShellAction) => void;
 };
@@ -50,6 +51,7 @@ export type PlaybackShellInputEffect =
   | { readonly kind: "toggle-autoplay" }
   | { readonly kind: "toggle-autoskip" }
   | { readonly kind: "stop-after-current" }
+  | { readonly kind: "toggle-favorite" }
   | { readonly kind: "toggle-memory-panel" }
   | { readonly kind: "shell-action"; readonly action: ShellAction };
 
@@ -197,6 +199,9 @@ export function applyPlaybackShellInputEffect(
       return;
     case "stop-after-current":
       handlers.onStopAfterCurrent?.();
+      return;
+    case "toggle-favorite":
+      handlers.onToggleFavorite?.();
       return;
     case "toggle-memory-panel":
       onToggleMemoryPanel?.();

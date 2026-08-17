@@ -80,8 +80,10 @@ export function resolveQueueRowPlaySelection(
 export function titleInfoFromQueuePlaybackLaunch(launch: QueuePlaybackLaunch): TitleInfo {
   return {
     id: launch.intent.titleId,
-    type: launch.intent.mediaKind === "movie" ? "movie" : "series",
+    type: launch.intent.contentType ?? (launch.intent.mediaKind === "movie" ? "movie" : "series"),
     name: launch.title,
+    ...(launch.intent.mediaKind === "anime" ? { isAnime: true } : {}),
+    ...(launch.intent.externalIds ? { externalIds: launch.intent.externalIds } : {}),
     queuePlaybackIntent: launch.intent,
   };
 }
@@ -90,7 +92,7 @@ export function episodeInfoFromQueuePlaybackLaunch(
   launch: QueuePlaybackLaunch,
 ): EpisodeInfo | undefined {
   const { intent } = launch;
-  if (intent.mediaKind === "movie") return undefined;
+  if (intent.mediaKind === "movie" || intent.contentType === "movie") return undefined;
   if (
     intent.season === undefined &&
     intent.episode === undefined &&

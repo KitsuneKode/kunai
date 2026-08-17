@@ -14,7 +14,7 @@
 
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
-import type { VideoMeta } from "@/domain/types";
+import type { ContentType, VideoMeta } from "@/domain/types";
 
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
 
@@ -62,6 +62,12 @@ export type MediaPanelContext = {
   readonly surface: MediaPanelSurface;
   readonly contentKind: ContentKind;
   readonly title: string;
+  /**
+   * Catalog structure. Anime films are kind "anime" and type "movie" — the
+   * panel uses movie layout (runtime, no S/E) while keeping the anime badge.
+   * Prefer this over `titleDetail.type` because detail may not be loaded yet.
+   */
+  readonly titleType?: ContentType;
   readonly titleDetail?: TitleDetail;
   readonly videoMeta?: VideoMeta | null;
   /** Title-level poster fallback (catalog posterUrl / video thumbnail). */
@@ -79,6 +85,13 @@ export type MediaPanelContext = {
   readonly resumeLabel?: string;
   readonly autoplayPaused?: boolean;
   readonly progress?: { readonly watched: number; readonly total: number };
+  /**
+   * Whether the title is on the favourites list.
+   *
+   * Set on the context rather than inside each kind's builder so the playing
+   * rail and the post-play panel agree without either restating the rule.
+   */
+  readonly isFavorite?: boolean;
 };
 
 // ── Humanizers ─────────────────────────────────────────────────────────────
@@ -267,7 +280,13 @@ function buildSeriesPanel(ctx: MediaPanelContext, isAnime: boolean): MediaPanelM
   };
 }
 
-function buildMoviePanel(ctx: MediaPanelContext): MediaPanelModel {
+function buildMoviePanel(
+  ctx: MediaPanelContext,
+  identity: { readonly kind: ContentKind; readonly kindBadge: string } = {
+    kind: "movie",
+    kindBadge: "movie",
+  },
+): MediaPanelModel {
   const detail = ctx.titleDetail;
   const runtime = formatRuntimeMinutes(detail?.runtimeMinutes);
   const secondary = [detail?.year, runtime].filter(Boolean).join(" · ") || undefined;
@@ -296,8 +315,8 @@ function buildMoviePanel(ctx: MediaPanelContext): MediaPanelModel {
   }
 
   return {
-    kind: "movie",
-    kindBadge: "movie",
+    kind: identity.kind,
+    kindBadge: identity.kindBadge,
     posterUrl: resolveSeasonAwarePosterUrl({
       titleDetail: detail,
       fallbackPosterUrl: ctx.posterUrl,
@@ -396,6 +415,10 @@ export function parseEpisodeRef(label: string | undefined): {
   return {};
 }
 
+function isFilmStructure(ctx: MediaPanelContext): boolean {
+  return ctx.titleType === "movie" || ctx.titleDetail?.type === "movie";
+}
+
 /** Pull the episode number out of a provider/catalog episode label. */
 export function parseEpisodeNumber(label: string | undefined): number | undefined {
   return parseEpisodeRef(label).episode;
@@ -404,15 +427,28 @@ export function parseEpisodeNumber(label: string | undefined): number | undefine
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 export function buildMediaPanel(ctx: MediaPanelContext): MediaPanelModel {
-  switch (ctx.contentKind) {
-    case "video":
-      return buildVideoPanel(ctx);
-    case "movie":
-      return buildMoviePanel(ctx);
-    case "anime":
-      return buildSeriesPanel(ctx, true);
-    case "series":
-    default:
-      return buildSeriesPanel(ctx, false);
-  }
+  const model = ((): MediaPanelModel => {
+    switch (ctx.contentKind) {
+      case "video":
+        return buildVideoPanel(ctx);
+      case "movie":
+        return buildMoviePanel(ctx);
+      case "anime":
+        return isFilmStructure(ctx)
+          ? buildMoviePanel(ctx, { kind: "anime", kindBadge: "anime" })
+          : buildSeriesPanel(ctx, true);
+      case "series":
+      default:
+        return isFilmStructure(ctx) ? buildMoviePanel(ctx) : buildSeriesPanel(ctx, false);
+    }
+  })();
+
+  // Applied once, after the kind-specific build, so every content kind and both
+  // surfaces show it identically. It leads the facts because it is the one fact
+  // the user just changed and is looking for confirmation of.
+  if (!ctx.isFavorite) return model;
+  return {
+    ...model,
+    facts: [{ label: "♥", value: "favourite", tone: "success" }, ...model.facts],
+  };
 }

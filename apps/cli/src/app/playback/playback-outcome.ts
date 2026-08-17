@@ -35,16 +35,22 @@ export function playlistAdvanceFromQueueIntent(input: {
   readonly episode?: number;
 }): Extract<PlaybackOutcome, { type: "playlist-advance" }> {
   const absoluteEpisode = input.intent.absoluteEpisode;
-  const episode = input.episode ?? input.intent.episode ?? absoluteEpisode;
-  const season =
-    input.season ?? input.intent.season ?? (absoluteEpisode !== undefined ? 1 : undefined);
+  const titleLevel = input.intent.mediaKind === "movie" || input.intent.contentType === "movie";
+  const episode = titleLevel
+    ? undefined
+    : (input.episode ?? input.intent.episode ?? absoluteEpisode);
+  const season = titleLevel
+    ? undefined
+    : (input.season ?? input.intent.season ?? (absoluteEpisode !== undefined ? 1 : undefined));
 
   return {
     type: "playlist-advance",
     titleInfo: {
       id: input.intent.titleId,
       name: input.title,
-      type: input.intent.mediaKind === "movie" ? "movie" : "series",
+      type: input.intent.contentType ?? (input.intent.mediaKind === "movie" ? "movie" : "series"),
+      ...(input.intent.mediaKind === "anime" ? { isAnime: true } : {}),
+      ...(input.intent.externalIds ? { externalIds: input.intent.externalIds } : {}),
       queuePlaybackIntent: input.intent,
     },
     mode: input.intent.mediaKind === "anime" ? "anime" : "series",

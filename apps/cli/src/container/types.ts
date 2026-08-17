@@ -30,6 +30,7 @@ import type { ShellService } from "../infra/shell/ShellService";
 import type { StorageService } from "../infra/storage/StorageService";
 import type { Tracer } from "../infra/tracer/Tracer";
 import type { WorkControlService } from "../infra/work/WorkControlService";
+import type { UsageAnalyticsService } from "../services/analytics/usage-analytics-service";
 import type { AttentionRefreshWorker } from "../services/attention/AttentionRefreshWorker";
 import type { BackgroundWorkScheduler } from "../services/background/BackgroundWorkScheduler";
 import type { CatalogIdentityService } from "../services/catalog/CatalogIdentityService";
@@ -70,8 +71,8 @@ import type { RecommendationService } from "../services/recommendations/Recommen
 import type { ReleaseProgressWriter } from "../services/release-reconciliation/ReleaseProgressWriter";
 import type { ReleaseReconciliationService } from "../services/release-reconciliation/ReleaseReconciliationService";
 import type { SearchRegistry } from "../services/search/SearchRegistry";
+import type { SyncAuthAvailability } from "../services/sync/auth-contract";
 import type { SyncService } from "../services/sync/SyncService";
-import type { TelemetryService } from "../services/telemetry/TelemetryService";
 import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import type { UpdateService } from "../services/update/UpdateService";
 import type { CapabilitySnapshot } from "../ui";
@@ -156,7 +157,13 @@ export interface Container {
   readonly historyCatalogEpisodeCounts: Map<string, number>;
   readonly updateService: UpdateService;
   readonly binaryAutoUpdater: BinaryAutoUpdater;
-  readonly telemetryService: TelemetryService;
+  readonly usageAnalytics: UsageAnalyticsService;
+  /**
+   * Set when the analytics notice has not been shown yet. The shell reads it
+   * once on mount, shows the banner, and clears it. Mutable because the
+   * decision is made in a startup task and consumed by the shell.
+   */
+  analyticsDisclosurePending: boolean;
 
   // Lists, playlist, stats, and sync
   readonly listRepository: ListRepository;
@@ -171,6 +178,9 @@ export interface Container {
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
   readonly syncService: SyncService;
+  readonly syncReconciliationRepository: import("@kunai/storage").SyncReconciliationRepository;
+  /** Typed, non-secret: whether each tracker's auth flow can start at all. */
+  readonly syncAuthAvailability: SyncAuthAvailability;
   readonly continuationProjectionService: ContinuationProjectionService;
   readonly continueWatchingService: ContinueWatchingService;
   readonly attentionRefreshWorker: AttentionRefreshWorker;

@@ -5,8 +5,6 @@ import { describeKunaiHandoffLaunch, type KunaiHandoffLaunch } from "@/app/boots
 import { shouldRunSetupWizard, type SetupWizardResult } from "@/app/bootstrap/startup-setup";
 import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
-import { resolveTelemetryConsent } from "@/services/telemetry/consent";
-import { ensureInstallId } from "@/services/telemetry/install-id";
 import { probeCapabilities } from "@/ui";
 
 import { runSetupFlow } from "../setup-shell";
@@ -32,20 +30,6 @@ export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promi
   });
 
   return choice === "continue";
-}
-
-function resolveSetupTelemetry(
-  prefsChoice: "enabled" | "disabled",
-  outcome: "completed" | "skipped",
-): "enabled" | "disabled" {
-  return resolveTelemetryConsent({
-    env: {
-      DO_NOT_TRACK: process.env.DO_NOT_TRACK,
-      CI: process.env.CI,
-    },
-    isTty: Boolean(process.stdin.isTTY && process.stdout.isTTY),
-    choice: outcome === "skipped" ? "timeout" : prefsChoice,
-  });
 }
 
 export async function runSetupWizard({
@@ -79,15 +63,18 @@ export async function runSetupWizard({
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot);
   const { outcome, prefs } = await result;
-  const telemetry = resolveSetupTelemetry(prefs.telemetryChoice, outcome);
-  const installId = ensureInstallId(current);
+  // One writer: the service owns what a consent choice means in config, and
+  // `consentPatch` is pure so it folds into the single batched update below.
+  // Aborting a rerun is not a consent choice. Preserve whatever the user had
+  // already chosen; only completing the analytics slide may change it.
+  const analyticsPatch =
+    outcome === "skipped" ? {} : container.usageAnalytics.consentPatch(prefs.analyticsChoice);
 
   if (outcome === "skipped") {
     await container.config.update({
       onboardingVersion: 2,
       downloadOnboardingDismissed: true,
-      telemetry,
-      installId,
+      ...analyticsPatch,
     });
     await container.config.save();
   } else {
@@ -101,8 +88,7 @@ export async function runSetupWizard({
       downloadOnboardingDismissed: true,
       downloadsEnabled,
       downloadPath,
-      telemetry,
-      installId,
+      ...analyticsPatch,
       animeLanguageProfile: {
         ...current.animeLanguageProfile,
         audio: prefs.audio,
@@ -120,10 +106,19 @@ export async function runSetupWizard({
     await container.config.save();
   }
 
+  // The wizard IS the disclosure for this user. Clear the pending flag the
+  // startup task may have raised, or the shell would also show the upgrader
+  // banner and they would be told twice in one session.
+  container.analyticsDisclosurePending = false;
+
   container.diagnosticsService.record({
     category: "session",
     message: outcome === "completed" ? "Setup wizard completed" : "Setup wizard skipped",
-    context: { outcome, force, telemetry },
+    context: {
+      outcome,
+      force,
+      analytics: outcome === "skipped" ? current.analytics : analyticsPatch.analytics,
+    },
   });
 
   return outcome === "completed" ? "completed" : "skipped";

@@ -15,6 +15,16 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
     diagnosticsService: {
       flush: () => calls.push("diagnostics:flush"),
     },
+    syncService: {
+      shutdown: async () => {
+        calls.push("sync:shutdown");
+      },
+    },
+    syncTokenStore: {
+      whenIdle: async () => {
+        calls.push("sync:tokens-idle");
+      },
+    },
   } as unknown as Container;
 
   registerContainerDisposeHandles(container, {
@@ -31,7 +41,12 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
   return container;
 }
 
-test("disposes in order: quiesce scheduler, drain, flush, close DBs", async () => {
+/**
+ * The order is the contract, not an implementation detail. A drain still
+ * holding an outbox claim when `dataDb` closes faults on a dead handle, and a
+ * token write that has not settled loses a credential the user just granted.
+ */
+test("disposes in order: quiesce scheduler, drain, settle sync, flush, close DBs", async () => {
   const calls: string[] = [];
   const container = fakeContainer(calls);
 
@@ -40,6 +55,8 @@ test("disposes in order: quiesce scheduler, drain, flush, close DBs", async () =
   expect(calls).toEqual([
     "scheduler:shutdown:container-dispose",
     "scheduler:drain",
+    "sync:shutdown",
+    "sync:tokens-idle",
     "diagnostics:flush",
     "data:close",
     "cache:close",

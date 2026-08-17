@@ -3,6 +3,7 @@ import { buildLocalFilterFacts } from "@/app/search/browse-local-filter-facts";
 import { isCalendarSearchResult } from "@/app/search/calendar-results";
 import type { CalendarItem } from "@/domain/calendar/calendar-item";
 import type { ListService } from "@/domain/lists/ListService";
+import { isAnimeContent } from "@/domain/media/content-kind";
 import type { SearchResult, TitleAliasKind } from "@/domain/types";
 import type { ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import {
@@ -119,17 +120,13 @@ export function toBrowseResultOption(
       : result.contentShape === "channel"
         ? "Channel"
         : "Video"
-    : result.type === "series"
-      ? "Series"
-      : "Movie";
+    : isAnimeContent(result)
+      ? "Anime"
+      : result.type === "series"
+        ? "Series"
+        : "Movie";
   const meta = [
-    isYoutubeResult
-      ? contentLabel
-      : result.isAnime
-        ? "Anime"
-        : result.type === "series"
-          ? "Series"
-          : "Movie",
+    contentLabel,
     isYoutubeResult ? undefined : result.year || undefined,
     formatDurationSeconds(result.durationSeconds),
     result.channelTitle,
@@ -139,7 +136,7 @@ export function toBrowseResultOption(
       : result.liveStatus === "upcoming"
         ? "Upcoming"
         : undefined,
-    result.episodeCount
+    result.episodeCount && result.type !== "movie"
       ? result.contentShape === "channel"
         ? `${result.episodeCount} videos`
         : `${result.episodeCount} episodes`
@@ -269,6 +266,16 @@ function buildManagementFacts(
     label: "Watchlist",
     detail: inWatchlist ? "On watchlist · /bookmark to remove" : "Not saved · /bookmark to add",
     tone: inWatchlist ? "success" : "neutral",
+  });
+
+  // Favourite state belongs beside watchlist state: the row marker says *that*
+  // a title is favourited, and this says what to press to change it. Without
+  // it the panel described one half of the same pair of lists.
+  const inFavorites = listService?.isInFavorites(result.id) ?? false;
+  facts.push({
+    label: "Favourite",
+    detail: inFavorites ? "♥ Favourited · f to remove" : "Not favourited · f to add",
+    tone: inFavorites ? "success" : "neutral",
   });
 
   const followPreference = optionContext?.followPreference;

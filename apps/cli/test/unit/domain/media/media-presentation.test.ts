@@ -85,6 +85,23 @@ describe("presentMedia", () => {
     });
   });
 
+  test("anime theatrical films stay title-level even with a stored S01E01 slot", () => {
+    expect(
+      presentMedia({
+        title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+        mediaKind: "anime",
+        contentType: "movie",
+        season: 1,
+        episode: 1,
+      }),
+    ).toMatchObject({
+      kindLabel: "Anime",
+      position: { kind: "title" },
+      positionLabel: null,
+      titleWithPosition: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+    });
+  });
+
   test("an unrecognised legacy media kind degrades to a title-level presentation", () => {
     expect(
       presentMedia({
@@ -187,5 +204,11 @@ describe("formatMediaItemCount", () => {
 
   test("zero uses the plural noun", () => {
     expect(formatMediaItemCount({ mediaKind: "series", count: 0 })).toBe("0 episodes");
+  });
+
+  test("uses the structural movie noun for an anime film", () => {
+    expect(formatMediaItemCount({ mediaKind: "anime", contentType: "movie", count: 1 })).toBe(
+      "1 movie",
+    );
   });
 });

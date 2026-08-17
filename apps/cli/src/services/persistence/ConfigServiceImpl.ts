@@ -142,7 +142,7 @@ export class ConfigServiceImpl implements ConfigService {
   /**
    * Transient launch-flag overrides (`--zen`, `-m`). Held apart from `config` so
    * `save()` — which persists the whole object, and which UpdateService and
-   * TelemetryService both call unconditionally on startup — can never bake a
+   * UsageAnalyticsService both call unconditionally on startup — can never bake a
    * one-run flag into the user's config file.
    */
   private sessionOverrides: Partial<KitsuneConfig> = {};
@@ -158,6 +158,20 @@ export class ConfigServiceImpl implements ConfigService {
   static async load(store: ConfigStore): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store);
     const loaded = await store.load();
+    // Configs written before explicit consent had no notice marker. Their
+    // enabled value was opt-out state, not evidence of a current opt-in, so
+    // revoke it and erase the old local identifier before startup can send.
+    const requiresExplicitAnalyticsConsent =
+      loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
+    const normalizedAnalytics = requiresExplicitAnalyticsConsent
+      ? "unset"
+      : normalizeAnalyticsPreference(loaded.analytics);
+    const normalizedInstallId =
+      normalizedAnalytics === "enabled" && typeof loaded.installId === "string"
+        ? loaded.installId.trim()
+        : "";
+    const repairedAnalyticsIdentity =
+      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     service.config = {
       ...DEFAULT_CONFIG,
       ...loaded,
@@ -213,24 +227,26 @@ export class ConfigServiceImpl implements ConfigService {
       ),
       providerRelay: normalizeProviderRelayConfig(loaded.providerRelay),
       titleProviderPreferences: normalizeTitleProviderPreferences(loaded.titleProviderPreferences),
-      telemetry: normalizeTelemetryPreference(loaded.telemetry),
-      installId: typeof loaded.installId === "string" ? loaded.installId.trim() : "",
-      lastTelemetryPingAt:
-        typeof loaded.lastTelemetryPingAt === "number" &&
-        Number.isFinite(loaded.lastTelemetryPingAt)
-          ? Math.max(0, loaded.lastTelemetryPingAt)
+      analytics: normalizedAnalytics,
+      analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      installId: normalizedInstallId,
+      lastAnalyticsPingAt:
+        typeof loaded.lastAnalyticsPingAt === "number" &&
+        Number.isFinite(loaded.lastAnalyticsPingAt)
+          ? Math.max(0, loaded.lastAnalyticsPingAt)
           : 0,
-      telemetryRetryAfter:
-        typeof loaded.telemetryRetryAfter === "number" &&
-        Number.isFinite(loaded.telemetryRetryAfter)
-          ? Math.max(0, loaded.telemetryRetryAfter)
+      analyticsRetryAfter:
+        typeof loaded.analyticsRetryAfter === "number" &&
+        Number.isFinite(loaded.analyticsRetryAfter)
+          ? Math.max(0, loaded.analyticsRetryAfter)
           : 0,
-      telemetryEndpoint:
-        typeof loaded.telemetryEndpoint === "string" ? loaded.telemetryEndpoint.trim() : "",
+      analyticsEndpoint:
+        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
-    if (shouldPersistVideasyAppIdMigration(loaded, service.config)) {
+    const migratedVideasyAppId = shouldPersistVideasyAppIdMigration(loaded, service.config);
+    if (requiresExplicitAnalyticsConsent || repairedAnalyticsIdentity || migratedVideasyAppId) {
       await store.save(service.config);
-      service.videasyAppIdMigratedOnLoad = true;
+      service.videasyAppIdMigratedOnLoad = migratedVideasyAppId;
     }
     return service;
   }
@@ -492,24 +508,28 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.playbackKeysSessionsSeen;
   }
 
-  get telemetry(): KitsuneConfig["telemetry"] {
-    return this.config.telemetry;
+  get analytics(): KitsuneConfig["analytics"] {
+    return this.config.analytics;
+  }
+
+  get analyticsNoticeShown(): boolean {
+    return this.config.analyticsNoticeShown;
   }
 
   get installId(): string {
     return this.config.installId;
   }
 
-  get lastTelemetryPingAt(): number {
-    return this.config.lastTelemetryPingAt;
+  get lastAnalyticsPingAt(): number {
+    return this.config.lastAnalyticsPingAt;
   }
 
-  get telemetryRetryAfter(): number {
-    return this.config.telemetryRetryAfter;
+  get analyticsRetryAfter(): number {
+    return this.config.analyticsRetryAfter;
   }
 
-  get telemetryEndpoint(): string {
-    return this.config.telemetryEndpoint;
+  get analyticsEndpoint(): string {
+    return this.config.analyticsEndpoint;
   }
 
   get updateChecksEnabled(): boolean {
@@ -586,10 +606,6 @@ export class ConfigServiceImpl implements ConfigService {
 
   get sync(): KitsuneConfig["sync"] {
     return this.config.sync;
-  }
-
-  get syncNudgeDismissedAt(): string | undefined {
-    return this.config.syncNudgeDismissedAt;
   }
 
   get lastWeeklyDigestShownAt(): string | null | undefined {
@@ -821,7 +837,7 @@ function normalizeContinueSourcePreference(value: unknown): ContinueSourcePrefer
   return value === "local" || value === "stream" || value === "ask" ? value : "auto";
 }
 
-function normalizeTelemetryPreference(value: unknown): KitsuneConfig["telemetry"] {
+function normalizeAnalyticsPreference(value: unknown): KitsuneConfig["analytics"] {
   return value === "enabled" || value === "disabled" || value === "unset" ? value : "unset";
 }
 

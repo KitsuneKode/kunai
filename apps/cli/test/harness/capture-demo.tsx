@@ -42,7 +42,7 @@ const states: ReadonlyArray<readonly [string, Partial<PostPlayShellProps>]> = [
     { postPlayState: { kind: "season-finale", hasNextSeason: true } as PostPlayState },
   ],
   ["series-complete", { postPlayState: { kind: "series-complete" } as PostPlayState }],
-  ["movie", { episodeLabel: "Movie", postPlayState: { kind: "mid-series" } }],
+  ["movie", { episodeLabel: "", postPlayState: { kind: "mid-series" }, titleType: "movie" }],
   ["did-not-start", { postPlayState: { kind: "did-not-start" } as PostPlayState }],
 ];
 

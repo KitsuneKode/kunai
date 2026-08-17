@@ -482,6 +482,43 @@ test("DownloadOnlyPhase confirms a movie as one title item and never picks episo
   expect(enqueued[0]).toMatchObject({ episode: undefined });
 });
 
+test("DownloadOnlyPhase keeps an anime film title-level without losing anime identity", async () => {
+  const enqueued: Record<string, unknown>[] = [];
+  let confirmedKind: string | undefined;
+  let confirmedItems: unknown;
+  let pickCalls = 0;
+
+  const phase = new DownloadOnlyPhase({
+    pickEpisodes: async () => {
+      pickCalls += 1;
+      return [{ season: 1, episode: 1 }];
+    },
+    confirmProfile: async ({ mediaKind, items, profile }) => {
+      confirmedKind = mediaKind;
+      confirmedItems = items;
+      return profile;
+    },
+  });
+
+  const result = await phase.execute(
+    {
+      title: {
+        id: "anilist:181053",
+        type: "movie",
+        name: "Infinity Castle",
+        isAnime: true,
+      },
+    },
+    titleLevelContext("anime", enqueued),
+  );
+
+  expect(result).toEqual({ status: "success", value: "queued" });
+  expect(pickCalls).toBe(0);
+  expect(confirmedKind).toBe("anime");
+  expect(confirmedItems).toEqual([{ kind: "title" }]);
+  expect(enqueued[0]).toMatchObject({ episode: undefined, mode: "anime" });
+});
+
 test("DownloadOnlyPhase treats youtube playback as a title-level video", async () => {
   const enqueued: Record<string, unknown>[] = [];
   let confirmedKind: string | undefined;

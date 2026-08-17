@@ -44,6 +44,16 @@ describe("playback keys panel", () => {
     expect(labels).toContain("stop");
   });
 
+  test("an anime film is not offered episode keys", () => {
+    const labels = allRows(
+      buildPlaybackKeysPanel({ contentKind: "anime", titleType: "movie", sessionsSeen: 0 }),
+    ).map((row) => row.label);
+
+    expect(labels).not.toContain("next");
+    expect(labels).not.toContain("prev");
+    expect(labels).not.toContain("episodes");
+  });
+
   test("a series gets the episode keys", () => {
     const labels = allRows(buildPlaybackKeysPanel({ contentKind: "series", sessionsSeen: 0 })).map(
       (row) => row.label,

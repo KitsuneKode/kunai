@@ -29,6 +29,7 @@ describe("playlistAdvanceFromQueueIntent", () => {
         id: "anilist:42",
         name: "Abs Anime",
         type: "series",
+        isAnime: true,
         queuePlaybackIntent: ABS_ONLY_INTENT,
       },
       mode: "anime",
@@ -55,6 +56,23 @@ describe("playlistAdvanceFromQueueIntent", () => {
     });
     expect(outcome.season).toBe(2);
     expect(outcome.episode).toBe(4);
+  });
+
+  test("anime movie intent stays title-level while retaining anime mode", () => {
+    const intent: QueuePlaybackIntent = {
+      queueEntryId: "qe-film",
+      titleId: "anilist:181053",
+      mediaKind: "anime",
+      contentType: "movie",
+      source: "auto-next",
+    };
+
+    const outcome = playlistAdvanceFromQueueIntent({ intent, title: "Infinity Castle" });
+
+    expect(outcome.titleInfo).toMatchObject({ type: "movie", isAnime: true });
+    expect(outcome.mode).toBe("anime");
+    expect(outcome.season).toBeUndefined();
+    expect(outcome.episode).toBeUndefined();
   });
 });
 

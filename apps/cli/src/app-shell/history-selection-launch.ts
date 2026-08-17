@@ -1,12 +1,12 @@
 import {
   episodeFromHistorySelection,
   recordLocalHistorySourceDecision,
+  titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
 import { resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { historyContentType } from "@/services/continuation/history-progress";
 
 import type { RootHistorySelection } from "./root-history-bridge";
 
@@ -65,9 +65,7 @@ export async function resolveHistorySelectionLaunch(
   const episode = episodeFromHistorySelection(selection);
   return {
     title: {
-      id: selection.titleId,
-      type: historyContentType(selection.entry),
-      name: selection.entry.title,
+      ...titleFromHistorySelection(selection),
       launchSource: reason === "history" ? "history" : "continue",
     },
     ...(episode ? { episode } : {}),

@@ -1,4 +1,7 @@
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
+import { SyncReconciliationRepository } from "./sync-reconciliation";
 
 export type ListKind = "watchlist" | "favorites" | "custom";
 
@@ -18,10 +21,12 @@ export interface ListItem {
   readonly listId: string;
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
   readonly notes?: string;
+  readonly externalIds?: ProviderExternalIds;
   readonly addedAt: string;
   readonly sortOrder: number;
 }
@@ -30,10 +35,12 @@ export interface ListItemInput {
   readonly listId: string;
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
   readonly notes?: string;
+  readonly externalIds?: ProviderExternalIds;
 }
 
 interface ListRow {
@@ -52,10 +59,12 @@ interface ListItemRow {
   readonly list_id: string;
   readonly title_id: string;
   readonly media_kind: string;
+  readonly content_type: string | null;
   readonly title: string;
   readonly season: number | null;
   readonly episode: number | null;
   readonly notes: string | null;
+  readonly external_ids_json: string | null;
   readonly added_at: string;
   readonly sort_order: number;
 }
@@ -79,17 +88,24 @@ function mapListItemRow(row: ListItemRow): ListItem {
     listId: row.list_id,
     titleId: row.title_id,
     mediaKind: row.media_kind,
+    contentType:
+      row.content_type === "movie" || row.content_type === "series" ? row.content_type : undefined,
     title: row.title,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
     notes: row.notes ?? undefined,
+    externalIds: parseExternalIds(row.external_ids_json),
     addedAt: row.added_at,
     sortOrder: row.sort_order,
   };
 }
 
 export class ListRepository {
-  constructor(private readonly db: KunaiDatabase) {}
+  private readonly syncReconciliation: SyncReconciliationRepository;
+
+  constructor(private readonly db: KunaiDatabase) {
+    this.syncReconciliation = new SyncReconciliationRepository(db);
+  }
 
   getLists(): KunaiList[] {
     return this.db
@@ -161,7 +177,20 @@ export class ListRepository {
       .map(mapListItemRow);
   }
 
+  /**
+   * Add a title to a list, or refresh the one already there.
+   *
+   * Membership is a set, so adding twice is not an error and must not store a
+   * second row — `(list_id, title_id)` is unique and the conflict updates the
+   * descriptive columns instead. `added_at` and `sort_order` are deliberately
+   * left alone: re-adding something is not re-discovering it, and rewriting
+   * either would silently reorder the user's list.
+   */
   addItem(input: ListItemInput): ListItem {
+    return this.db.transaction((value: ListItemInput) => this.addItemInTransaction(value))(input);
+  }
+
+  private addItemInTransaction(input: ListItemInput): ListItem {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const maxOrder = this.db
@@ -173,35 +202,67 @@ export class ListRepository {
 
     this.db
       .query(
-        `INSERT INTO list_items (id, list_id, title_id, media_kind, title, season, episode, notes, added_at, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO list_items (id, list_id, title_id, media_kind, content_type, title, season, episode, notes, external_ids_json, added_at, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(list_id, title_id) DO UPDATE SET
+           media_kind = excluded.media_kind,
+           content_type = excluded.content_type,
+           title = excluded.title,
+           season = excluded.season,
+           episode = excluded.episode,
+           notes = excluded.notes,
+           external_ids_json = excluded.external_ids_json`,
       )
       .run(
         id,
         input.listId,
         input.titleId,
         input.mediaKind,
+        input.contentType ?? null,
         input.title,
         input.season ?? null,
         input.episode ?? null,
         input.notes ?? null,
+        serializeExternalIds(input.externalIds),
         now,
         sortOrder,
       );
 
+    // Read back by (list, title) rather than by the generated id: on conflict
+    // the surviving row keeps the id it was first inserted with.
     const row = this.db
-      .query<ListItemRow, [string]>("SELECT * FROM list_items WHERE id = ?")
-      .get(id);
-    if (!row) throw new Error(`List item not found after insert: ${id}`);
-    return mapListItemRow(row);
+      .query<ListItemRow, [string, string]>(
+        "SELECT * FROM list_items WHERE list_id = ? AND title_id = ?",
+      )
+      .get(input.listId, input.titleId);
+    if (!row) throw new Error(`List item not found after insert: ${input.listId}/${input.titleId}`);
+    const stored = mapListItemRow(row);
+    this.recordListReconciliation(stored, true, now);
+    return stored;
   }
 
   removeItem(id: string): void {
-    this.db.query("DELETE FROM list_items WHERE id = ?").run(id);
+    this.db.transaction((itemId: string) => {
+      const row = this.db
+        .query<ListItemRow, [string]>("SELECT * FROM list_items WHERE id = ?")
+        .get(itemId);
+      if (!row) return;
+      this.db.query("DELETE FROM list_items WHERE id = ?").run(itemId);
+      this.recordListReconciliation(mapListItemRow(row), false, new Date().toISOString());
+    })(id);
   }
 
   removeItemByTitle(listId: string, titleId: string): void {
-    this.db.query("DELETE FROM list_items WHERE list_id = ? AND title_id = ?").run(listId, titleId);
+    this.db.transaction((list: string, title: string) => {
+      const row = this.db
+        .query<ListItemRow, [string, string]>(
+          "SELECT * FROM list_items WHERE list_id = ? AND title_id = ?",
+        )
+        .get(list, title);
+      if (!row) return;
+      this.db.query("DELETE FROM list_items WHERE list_id = ? AND title_id = ?").run(list, title);
+      this.recordListReconciliation(mapListItemRow(row), false, new Date().toISOString());
+    })(listId, titleId);
   }
 
   isInList(listId: string, titleId: string): boolean {
@@ -232,5 +293,38 @@ export class ListRepository {
     }
     this.addItem({ ...input, listId });
     return "added";
+  }
+
+  private recordListReconciliation(item: ListItem, present: boolean, now: string): void {
+    if (item.listId !== "watchlist" && item.listId !== "favorites") return;
+    this.syncReconciliation.record(
+      {
+        kind: "list",
+        list: item.listId,
+        present,
+        item: {
+          titleId: item.titleId,
+          mediaKind: item.mediaKind as MediaKind,
+          title: item.title,
+          ...(item.season === undefined ? {} : { season: item.season }),
+          ...(item.episode === undefined ? {} : { episode: item.episode }),
+          ...(item.externalIds ? { externalIds: item.externalIds } : {}),
+        },
+      },
+      new Date(now),
+    );
+  }
+}
+
+function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
+  return externalIds && Object.keys(externalIds).length > 0 ? JSON.stringify(externalIds) : null;
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as ProviderExternalIds;
+  } catch {
+    return undefined;
   }
 }

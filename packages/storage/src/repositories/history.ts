@@ -13,6 +13,7 @@ import type {
 
 import type { KunaiDatabase } from "../sqlite";
 import { externalIdsToAliases, HistoryTitleAliasRepository } from "./history-title-aliases";
+import { SyncReconciliationRepository } from "./sync-reconciliation";
 
 export interface HistoryProgressInput {
   readonly title: TitleIdentity;
@@ -80,12 +81,20 @@ interface HistoryProgressRow {
 
 export class HistoryRepository {
   private readonly titleAliases: HistoryTitleAliasRepository;
+  private readonly syncReconciliation: SyncReconciliationRepository;
 
   constructor(private readonly db: KunaiDatabase) {
     this.titleAliases = new HistoryTitleAliasRepository(db);
+    this.syncReconciliation = new SyncReconciliationRepository(db);
   }
 
   upsertProgress(input: HistoryProgressInput): void {
+    this.db.transaction((value: HistoryProgressInput) => this.upsertProgressInTransaction(value))(
+      input,
+    );
+  }
+
+  private upsertProgressInTransaction(input: HistoryProgressInput): void {
     const persistedTitle = input.providerId
       ? resolvePersistedHistoryTitle(input.title, input.providerId)
       : input.title;
@@ -181,6 +190,10 @@ export class HistoryRepository {
       persistedTitle.id,
       externalIdsToAliases(persistedTitle.externalIds),
       now,
+    );
+    this.syncReconciliation.record(
+      { kind: "history", historyKey: key, localMutationId: crypto.randomUUID() },
+      new Date(now),
     );
   }
 

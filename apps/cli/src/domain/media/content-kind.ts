@@ -1,14 +1,14 @@
 // =============================================================================
-// content-kind.ts — derive content kind (and the matching language profile) from
-// content truth, not ShellMode.
+// content-kind.ts — identity (anime vs series vs movie vs video) is separate
+// from structure (does this title have an episode axis?).
 //
-// ShellMode ("series" | "anime") is provider routing only and must never decide
-// content labels. Content kind is the title's ContentType ("movie" | "series"),
-// with "anime" distinguished by mode. Lives in domain/ alongside playable-ref so
-// both the shell (app-shell/) and phases (app/) reuse one source of truth.
+// ContentKind is the badge, history stamp, and language profile. ContentType
+// (`title.type`) is whether season/episode chrome is product-visible. An anime
+// theatrical film is kind "anime" and type "movie": `@ anime`, runtime, no S/E.
+// ShellMode is provider routing only and must never decide either axis.
 // =============================================================================
 
-import type { ShellMode, TitleInfo } from "@/domain/types";
+import type { ContentType, ShellMode, TitleInfo } from "@/domain/types";
 import type { MediaLanguageProfile } from "@/services/persistence/ConfigService";
 
 export type ContentKind = "movie" | "series" | "anime" | "video";
@@ -58,43 +58,54 @@ export function isAnimeContent(
   );
 }
 
+export type ContentKindTitle = Pick<TitleInfo, "type" | "externalIds" | "genreIds" | "isAnime">;
+
+function isAnimeIdentity(
+  title: ContentKindTitle | null | undefined,
+  options: { readonly providerId?: string | null } = {},
+): boolean {
+  return (
+    title?.isAnime === true || isAnimeContent(title) || isAnimeOnlyProviderId(options.providerId)
+  );
+}
+
 /**
- * Content kind for the CURRENT SESSION (header crumb, language profile). ShellMode
- * is the right signal here — it reflects the routing/profile in use right now, not
- * a permanent label. Use classifyPersistedKind for anything stored in history.
+ * Content kind for the CURRENT SESSION (header crumb, language profile).
+ * Anime identity (AniList/MAL, TMDB Animation, anime-only provider) wins over
+ * both ShellMode and movie structure so theatrical films stay `@ anime`.
+ * ShellMode is the fallback when the title has no identity markers.
+ * Use classifyPersistedKind for anything stored in history.
+ *
+ * Structure (`title.type`) is a separate axis from identity. An anime theatrical
+ * film is type "movie" and kind "anime" so it keeps the anime badge and language
+ * profile while hiding season/episode chrome.
  */
 export function resolveContentKind(
-  title: Pick<TitleInfo, "type"> | null | undefined,
+  title: ContentKindTitle | null | undefined,
   mode: ShellMode,
+  options: { readonly providerId?: string | null } = {},
 ): ContentKind {
   if (isYoutubeShellMode(mode)) return "video";
+  if (isAnimeIdentity(title, options)) return "anime";
   if (title?.type === "movie") return "movie";
   return mode === "anime" ? "anime" : "series";
 }
 
 /**
  * Content kind to PERSIST (watch history). Unlike resolveContentKind, "anime" is
- * only stamped when the ShellMode is anime AND the content corroborates it (an
- * AniList/MAL id or TMDB Animation genre) — so a live-action drama watched in
- * anime mode (AllAnime hosts these) is not labeled anime forever. See #1.
+ * only stamped when the content corroborates it (an AniList/MAL id, TMDB
+ * Animation genre, anime-only provider, or the deterministic `isAnime` tag) —
+ * so a live-action drama watched in anime mode (AllAnime hosts these) is not
+ * labeled anime forever. Anime films keep kind "anime" even when type is movie.
  */
 export function classifyPersistedKind(
-  title: Pick<TitleInfo, "type" | "externalIds" | "genreIds" | "isAnime"> | null | undefined,
+  title: ContentKindTitle | null | undefined,
   mode: ShellMode,
   options: { readonly providerId?: string | null } = {},
 ): ContentKind {
   if (isYoutubeShellMode(mode) || isYoutubeProviderId(options.providerId)) return "video";
+  if (isAnimeIdentity(title, options)) return "anime";
   if (title?.type === "movie") return "movie";
-  // The deterministic classifier tag (TMDB original_language=ja etc.) is
-  // authoritative regardless of ShellMode — so an anime watched via a series
-  // provider (e.g. vidking) is still labeled anime in history. Without that tag,
-  // fall back to the old rule: anime mode AND a content marker (so AllAnime's
-  // live-action dramas in anime mode aren't mislabeled).
-  if (title?.isAnime === true) return "anime";
-  // An anime-only provider is itself a content marker: AllAnime/Miruro serve anime,
-  // so a title streamed through one is anime even with no external id.
-  if (isAnimeOnlyProviderId(options.providerId)) return "anime";
-  if (mode === "anime" && isAnimeContent(title)) return "anime";
   return "series";
 }
 
@@ -110,14 +121,23 @@ export function showsEpisodeLabel(title: Pick<TitleInfo, "type"> | null | undefi
  * a resolved kind rather than a `TitleInfo`. A standalone video has no episode
  * list either, so offering "e episodes" on one is as wrong as on a movie.
  */
-export function contentKindHasEpisodes(kind: ContentKind | undefined): boolean {
+export function contentKindHasEpisodes(kind: ContentKind | undefined, type?: ContentType): boolean {
+  if (type === "movie") return false;
   return kind === "series" || kind === "anime";
+}
+
+/** A title-level item has no episode/runway axis, regardless of its identity badge. */
+export function isTitleLevelContent(
+  kind: ContentKind | undefined,
+  type: ContentType | undefined,
+): boolean {
+  return kind === "movie" || kind === "video" || type === "movie";
 }
 
 /** Pick the language profile (audio/subtitle/quality) matching the content kind. */
 export function mediaLanguageProfileFor(input: {
   readonly mode: ShellMode;
-  readonly currentTitle: Pick<TitleInfo, "type"> | null;
+  readonly currentTitle: ContentKindTitle | null;
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;

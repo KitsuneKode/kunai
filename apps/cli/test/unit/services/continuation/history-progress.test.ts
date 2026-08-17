@@ -50,13 +50,24 @@ test("formatTimestamp renders mm:ss and h:mm:ss", () => {
   expect(formatTimestamp(3725)).toBe("1:02:05");
 });
 
-test("historyContentType collapses anime to series, preserving the facade flatten", () => {
-  // Consumers that previously read HistoryEntry.type relied on the facade
-  // flattening anime -> "series". Preserve that exact mapping so anime rows keep
-  // matching movie/series branches after the facade is retired.
+test("historyContentType keeps episodic anime as series", () => {
   expect(historyContentType(row({ mediaKind: "movie" }))).toBe("movie");
   expect(historyContentType(row({ mediaKind: "series" }))).toBe("series");
   expect(historyContentType(row({ mediaKind: "anime" }))).toBe("series");
+});
+
+test("historyContentType treats anime films without an episode slot as movies", () => {
+  expect(
+    historyContentType(
+      row({
+        mediaKind: "anime",
+        season: undefined,
+        episode: undefined,
+        absoluteEpisode: undefined,
+        externalIds: { anilistId: "181053" },
+      }),
+    ),
+  ).toBe("movie");
 });
 
 test("historyContentType treats standalone youtube video rows as movie-shaped", () => {

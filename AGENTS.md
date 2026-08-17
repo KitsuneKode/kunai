@@ -47,9 +47,13 @@ judgment.
   implementation; `apps/relay-server` stays a thin adapter.
 - **Kunai must never ship a shared public relay URL.** `providerRelay.baseUrl`
   is empty by default and user-owned.
-- **Telemetry is opt-in and payload-bounded.** See
-  [.docs/telemetry-privacy-contract.md](.docs/telemetry-privacy-contract.md)
-  before touching `services/telemetry` or `apps/telemetry-ingest`.
+- **Analytics is explicit opt-in and endpoint-disabled by default.** A fresh
+  install is `unset`; only an explicit enable creates `installId` or permits a
+  send. No TTY, CI, and DNT send nothing. The payload is bounded to five keys.
+  See
+  [.docs/analytics-privacy-contract.md](.docs/analytics-privacy-contract.md)
+  before touching `services/analytics`, `domain/analytics`, or
+  `apps/analytics-ingest`.
 
 ## Commands
 
@@ -136,6 +140,7 @@ Read one when your change lands in its subject. Not before.
 | Share URLs, `/share`, `/watch`, `kunai --open`                                | [.docs/share-links.md](.docs/share-links.md)                                                                                                                           |
 | Discord presence and social status                                            | [.docs/presence-integrations.md](.docs/presence-integrations.md)                                                                                                       |
 | Download, offline library, setup, onboarding                                  | [.docs/download-offline-onboarding.md](.docs/download-offline-onboarding.md)                                                                                           |
+| AniList/TMDB sync, the outbox, tracker auth                                   | [.docs/tracker-sync.md](.docs/tracker-sync.md)                                                                                                                         |
 | Tests, test seams, new runtime behaviors                                      | [.docs/testing-strategy.md](.docs/testing-strategy.md)                                                                                                                 |
 | CI, Husky, lint-staged, issue and PR templates                                | [.docs/repo-infrastructure.md](.docs/repo-infrastructure.md) · [.docs/lint-policy.md](.docs/lint-policy.md)                                                            |
 | Release gating                                                                | [.docs/release-reliability-gate.md](.docs/release-reliability-gate.md)                                                                                                 |

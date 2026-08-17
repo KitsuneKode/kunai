@@ -9,6 +9,7 @@ import type { PlaybackShellResult, ShellAction } from "./types";
 export type BrowseBindingEffect =
   | { readonly kind: "add-to-up-next" }
   | { readonly kind: "add-to-watchlist" }
+  | { readonly kind: "toggle-favorite" }
   | { readonly kind: "follow" }
   | { readonly kind: "open-up-next" }
   | { readonly kind: "shell-action"; readonly action: ShellAction };
@@ -19,6 +20,8 @@ export function resolveBrowseBindingEffect(binding: KeyBinding): BrowseBindingEf
       return { kind: "add-to-up-next" };
     case "browse-watchlist":
       return { kind: "add-to-watchlist" };
+    case "browse-favorite":
+      return { kind: "toggle-favorite" };
     case "browse-follow":
       return { kind: "follow" };
     case "queue-open":
@@ -37,6 +40,7 @@ export function resolveBrowseMediaAction(binding: KeyBinding): MediaActionId | n
   if (!effect) return null;
   if (effect.kind === "add-to-up-next") return "add-to-up-next";
   if (effect.kind === "add-to-watchlist") return "add-to-watchlist";
+  if (effect.kind === "toggle-favorite") return "toggle-favorite";
   if (effect.kind === "follow") return "follow";
   return null;
 }
@@ -91,6 +95,8 @@ export function resolvePlaybackBindingEffect(
       return input.canOpenSourcePicker && handlers.onPickSource ? { kind: "pick-source" } : null;
     case "player-episode":
       return handlers.onPickEpisode ? { kind: "pick-episode" } : null;
+    case "player-favorite":
+      return handlers.onToggleFavorite ? { kind: "toggle-favorite" } : null;
     case "player-skip":
       return handlers.onSkipSegment ? { kind: "skip-segment" } : null;
     case "player-quality":

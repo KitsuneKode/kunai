@@ -11,7 +11,7 @@ export type PresenceProvider = "off" | "discord";
 export type PresencePrivacy = "full" | "private";
 
 /** Opt-in usage ping. Fresh installs stay `unset` and never send network traffic. */
-export type TelemetryPreference = "unset" | "enabled" | "disabled";
+export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type AutoDownloadMode = "off" | "next" | "season";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
@@ -122,23 +122,22 @@ export interface KitsuneConfig {
    * becoming permanent furniture for someone who already knows them.
    */
   playbackKeysSessionsSeen: number;
-  /**
-   * Opt-in anonymous usage ping. Default `unset` → zero network calls.
-   * Payload is only `{ installId, version, os, arch, ts }`.
-   */
-  telemetry: TelemetryPreference;
-  /** Random UUID install id for opt-in telemetry. Never hostname/MAC/username-derived. */
+  /** Optional usage ping. Fresh installs are off until explicitly enabled. */
+  analytics: AnalyticsPreference;
+  /** Whether the one-time recommendation notice for an existing install was shown. */
+  analyticsNoticeShown: boolean;
+  /** Random UUID install id. Present if and only if `analytics === "enabled"`. */
   installId: string;
-  /** Last successful cadence mark for the daily telemetry ping (epoch ms). */
-  lastTelemetryPingAt: number;
+  /** Last successful cadence mark for the daily analytics ping (epoch ms). */
+  lastAnalyticsPingAt: number;
   /**
-   * Earliest epoch ms at which a failed telemetry send may be retried.
-   * `0` means no retry is pending. Set instead of `lastTelemetryPingAt` when a
+   * Earliest epoch ms at which a failed analytics send may be retried.
+   * `0` means no retry is pending. Set instead of `lastAnalyticsPingAt` when a
    * send fails, so the next CLI launch retries rather than losing the day.
    */
-  telemetryRetryAfter: number;
-  /** Optional override for the telemetry ingest URL (else env / built-in default). */
-  telemetryEndpoint: string;
+  analyticsRetryAfter: number;
+  /** Optional operator-configured analytics ingest URL. Empty disables sending. */
+  analyticsEndpoint: string;
   updateChecksEnabled: boolean;
   autoApplyBinaryUpdates: boolean;
   updateCheckIntervalDays: number;
@@ -147,10 +146,17 @@ export interface KitsuneConfig {
   lastUpdateCheckFailedAt: number;
   lastKnownLatestVersion: string;
   sync: {
+    /**
+     * A timed pause across every tracker, distinct from turning one off.
+     *
+     * `enabled: false` means "never"; this means "not right now". Work keeps
+     * queueing while paused and is delivered on resume, so pausing never costs
+     * the user an episode. ISO-8601, or null/absent when not paused.
+     */
+    pausedUntil?: string | null;
     anilist: { enabled: boolean; trackWatched: boolean; syncList: boolean };
     tmdb: { enabled: boolean; trackWatched: boolean; syncList: boolean };
   };
-  syncNudgeDismissedAt?: string;
   lastWeeklyDigestShownAt?: string | null;
   lastStreakMilestoneDays?: number;
   tuningOverrides?: ConfigTuningOverrides;

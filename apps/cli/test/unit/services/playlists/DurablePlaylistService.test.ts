@@ -77,6 +77,49 @@ test("DurablePlaylistService loads playlist items into the runtime queue", () =>
   db.close();
 });
 
+test("DurablePlaylistService round-trips anime movie structure into the runtime queue", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const queueRepo = new QueueRepository(db);
+  queueRepo.createQueueSession({
+    id: "session-film",
+    status: "active",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    updatedAt: "2026-08-16T00:00:00.000Z",
+  });
+  const service = new DurablePlaylistService(new PlaylistsRepository(db), {
+    now: () => "2026-08-16T00:00:00.000Z",
+    id: (prefix) => `${prefix}-film`,
+  });
+  const playlist = service.createPlaylist("Anime films");
+  service.addItem(playlist.id, {
+    titleId: "anilist:181053",
+    mediaKind: "anime",
+    contentType: "movie",
+    title: "Infinity Castle",
+    externalIds: { anilistId: "181053" },
+  });
+
+  expect(service.listItems(playlist.id)).toMatchObject([
+    { contentType: "movie", externalIds: { anilistId: "181053" } },
+  ]);
+  const exported = service.exportPlaylist(playlist.id, "Anime films", []);
+  expect(exported.items).toMatchObject([
+    { contentType: "movie", externalIds: { anilistId: "181053" } },
+  ]);
+
+  const queue = new QueueService(queueRepo, "session-film");
+  expect(service.loadIntoQueue(queue, playlist.id)).toBe(1);
+  expect(queue.getAll()).toMatchObject([
+    {
+      mediaKind: "anime",
+      contentType: "movie",
+      externalIds: { anilistId: "181053" },
+    },
+  ]);
+  db.close();
+});
+
 test("DurablePlaylistService imports safe playlist documents without autoplay intent", () => {
   const db = openKunaiDatabase(":memory:");
   runMigrations(db, "data");
@@ -94,6 +137,8 @@ test("DurablePlaylistService imports safe playlist documents without autoplay in
       {
         titleId: "tmdb:1",
         mediaKind: "series",
+        contentType: "series",
+        externalIds: { anilistId: "999999", tmdbId: "1" },
         title: "Example",
         season: 1,
         episode: 2,
@@ -107,12 +152,13 @@ test("DurablePlaylistService imports safe playlist documents without autoplay in
   expect(service.listPlaylists()[0]?.id).toBe(playlist.id);
   expect(service.listItems(playlist.id)).toMatchObject([
     {
-      titleId: "tmdb:1",
+      titleId: "imported-unresolved:tmdb:1",
       title: "Example",
       season: 1,
       episode: 2,
     },
   ]);
+  expect(service.listItems(playlist.id)[0]?.externalIds).toBeUndefined();
 
   db.close();
 });

@@ -28,6 +28,10 @@ import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import {
+  AnalyticsDisclosureBanner,
+  ANALYTICS_NOTICE_VISIBLE_MS,
+} from "./AnalyticsDisclosureBanner";
 import { useBrowseDestinationLabel } from "./browse-destination";
 import { dispatchAppCommand } from "./command-router";
 import { recordRender } from "./diagnostics/render-trace";
@@ -401,6 +405,27 @@ function AppRoot({ container }: { container: Container }) {
   const [playlistCount, setPlaylistCount] = useState<number>(0);
   const [streakMilestoneAlert, setStreakMilestoneAlert] = useState<string | null>(null);
   const [streakAtRiskAlert, setStreakAtRiskAlert] = useState<string | null>(null);
+  // Upgraders who never saw the setup wizard sit at analytics: "unset".
+  // `main.ts` flips the container flag during startup; read it each render
+  // rather than latching it at mount, because that startup task may resolve
+  // after the shell has already mounted.
+  const [analyticsNoticeHidden, setAnalyticsNoticeHidden] = useState(false);
+  const showAnalyticsNotice = container.analyticsDisclosurePending && !analyticsNoticeHidden;
+
+  useEffect(() => {
+    if (!showAnalyticsNotice) return undefined;
+    // This is a recommendation, not consent. It must never enable analytics or
+    // mint an install id; it only records that the one-time notice was shown.
+    const timer = setTimeout(() => {
+      void container.usageAnalytics.markNoticeShown().catch(() => {
+        // Analytics must never surface as a user-facing failure.
+      });
+      container.analyticsDisclosurePending = false;
+      setAnalyticsNoticeHidden(true);
+    }, ANALYTICS_NOTICE_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [showAnalyticsNotice, container]);
+
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
   const [notificationToastPriority, setNotificationToastPriority] =
     useState<NotificationPriority | null>(null);
@@ -420,7 +445,7 @@ function AppRoot({ container }: { container: Container }) {
       } catch {
         setStreak(undefined);
       }
-      setSyncHealth(container.syncService.getHealth());
+      setSyncHealth(container.syncService.getHealth(container.config.sync.pausedUntil));
       try {
         setPlaylistCount(container.queueService.getStatus().unplayedCount);
       } catch {
@@ -1165,6 +1190,9 @@ function AppRoot({ container }: { container: Container }) {
           );
         })()}
       </TransientRowSlot>
+      {showAnalyticsNotice ? (
+        <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
+      ) : null}
       <Box marginTop={1} flexDirection="column" flexGrow={1}>
         <RootContentBody
           resolved={resolvedRootContent}

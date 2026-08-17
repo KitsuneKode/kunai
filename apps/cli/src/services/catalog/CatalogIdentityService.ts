@@ -42,6 +42,12 @@ export type CatalogIdentityEnrichResult = {
   readonly graph: CatalogIdGraph;
 };
 
+export type CatalogIdentityEnrichOptions = {
+  readonly signal?: AbortSignal;
+  /** Ordinary catalog rows use bare numeric anime ids as AniList ids. */
+  readonly seedBareNumericAnimeId?: boolean;
+};
+
 export type CatalogIdentityServiceDeps = {
   readonly arm: ArmClientPort;
   readonly cache?: CrosswalkCachePort;
@@ -59,9 +65,9 @@ export class CatalogIdentityService {
 
   async enrich(
     input: CatalogIdentityEnrichInput,
-    options: { readonly signal?: AbortSignal } = {},
+    options: CatalogIdentityEnrichOptions = {},
   ): Promise<CatalogIdentityEnrichResult> {
-    const seeded = seedExternalIds(input);
+    const seeded = seedExternalIds(input, options.seedBareNumericAnimeId ?? true);
 
     // Both lane keys known → nothing ARM could add that changes routing.
     if (seeded?.anilistId && seeded.tmdbId) {
@@ -128,10 +134,13 @@ export class CatalogIdentityService {
 }
 
 /** Fold obvious id-shape knowledge into the bag before any lookup. */
-function seedExternalIds(input: CatalogIdentityEnrichInput): ProviderExternalIds | undefined {
+function seedExternalIds(
+  input: CatalogIdentityEnrichInput,
+  seedBareNumericAnimeId: boolean,
+): ProviderExternalIds | undefined {
   const { id, kind, externalIds } = input;
 
-  if (kind === "anime" && !externalIds?.anilistId && /^\d+$/.test(id)) {
+  if (seedBareNumericAnimeId && kind === "anime" && !externalIds?.anilistId && /^\d+$/.test(id)) {
     // Bare numeric anime ids are AniList ids everywhere in the runtime.
     return { ...externalIds, anilistId: id };
   }

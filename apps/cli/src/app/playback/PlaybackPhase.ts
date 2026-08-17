@@ -160,6 +160,7 @@ import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-re
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { resolveProvenNumericTmdbId } from "@/domain/catalog/tmdb-identity";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
+import { upgradeTitleInfoStructure } from "@/domain/media/anilist-format";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { usesProviderNativeEpisodeCatalog } from "@/domain/media/provider-native-episodes";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
@@ -222,6 +223,7 @@ import {
   buildSubtitleDiagnosticEvent,
   type DiagnosticFailureClass,
 } from "@/services/diagnostics/diagnostic-event-helpers";
+import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
@@ -721,6 +723,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         return result.startIntent;
       };
       const provider = providerRegistry.get(stateManager.getState().provider);
+      const catalogDetailPromise = isOfflineLaunch
+        ? Promise.resolve(undefined)
+        : fetchTitleDetail(title.id, title.type, undefined, {
+            externalIds: title.externalIds,
+            isAnime: stateManager.getState().mode === "anime" || title.isAnime === true,
+          }).catch(() => undefined);
       const initialAnimeEpisodes = isOfflineLaunch
         ? undefined
         : await this.getAnimeEpisodeOptions({
@@ -734,6 +742,16 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               config,
             }),
           });
+      const catalogDetail = await catalogDetailPromise;
+      if (catalogDetail) {
+        title = upgradeTitleInfoStructure(title, catalogDetail.type);
+        stateManager.dispatch({
+          type: "SET_TITLE_DETAIL",
+          titleId: title.id,
+          titleType: catalogDetail.type,
+          detail: catalogDetail,
+        });
+      }
       logger.info("Episode selection metadata", {
         titleId: title.id,
         mode: stateManager.getState().mode,
@@ -887,9 +905,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         // from the beginning (no menu). Previously movies started at 0 always.
         const movieHistory =
           historyRepository.getLatestForTitleIdentity({
-            id: title.id,
-            kind: stateManager.getState().mode === "youtube" ? "video" : "movie",
-            externalIds: title.externalIds,
+            id: historyTitleLookup.id,
+            kind: historyTitleLookup.kind,
+            externalIds: historyTitleLookup.externalIds,
           }) ?? null;
         const { chooseMovieStartingPoint } = await import("@/session-flow");
         const selection = await chooseMovieStartingPoint({ history: movieHistory, container });
@@ -1229,7 +1247,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 stateManager.dispatch({
                   type: "SET_TITLE_DETAIL",
                   titleId: title.id,
-                  titleType: title.type,
+                  titleType: detail.type,
                   detail,
                 });
                 return undefined;
@@ -2487,6 +2505,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               engaged: decision.isEngaged,
             });
             const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
+            if (savedHistoryRow) {
+              // Enqueued from the row that was actually persisted, not from the
+              // in-flight result: the outbox must never describe progress the
+              // local history does not have. This only writes SQLite — remote
+              // delivery is the drain's job, so playback never waits on a
+              // tracker, and repeated updates coalesce instead of stacking up.
+              // Admission reads the live opt-in before it writes the outbox.
+              // Keep that asynchronous check outside the playback teardown:
+              // persistence is already complete and tracker work is optional.
+              queueHistoryMirror(container, historyTitleId, savedHistoryRow);
+            }
             enqueueReleaseReconciliation(
               container,
               savedHistoryRow ? [savedHistoryRow] : [],
@@ -2540,17 +2569,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 duration: result.duration,
                 endReason: result.endReason,
               },
-            });
-          }
-
-          // One-time sync nudge: show on first episode completion if no sync is connected.
-          if (
-            shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode) &&
-            !config.syncNudgeDismissedAt &&
-            container.syncService.getConnectedAdapters().length === 0
-          ) {
-            this.updatePlaybackFeedback(context, {
-              note: "Connect AniList or TMDB to sync progress. /sync to set up  ·  [d] dismiss",
             });
           }
 

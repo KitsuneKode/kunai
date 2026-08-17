@@ -29,7 +29,7 @@ Kunai is **single-context**: one glossary, and one system-wide ADR set. There is
 │   ├── architecture.md
 │   ├── runtime-boundary-map.md
 │   └── …                      ← see AGENTS.md § Deep docs
-├── apps/{cli,docs,relay-server,telemetry-ingest,experiments}
+├── apps/{cli,docs,relay-server,analytics-ingest}
 └── packages/{core,providers,storage,relay,schemas,types,config,design}
 ```
 

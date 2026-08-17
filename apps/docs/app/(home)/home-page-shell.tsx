@@ -19,7 +19,7 @@ type HomePageShellProps = {
   readonly providerSummary: ProviderSummary;
   readonly cliVersion: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
-  readonly telemetryLine?: ReactNode;
+  readonly usageLine?: ReactNode;
 };
 
 export default function HomePageShell({
@@ -29,7 +29,7 @@ export default function HomePageShell({
   providerSummary,
   cliVersion,
   runtimeBaseline,
-  telemetryLine,
+  usageLine,
 }: HomePageShellProps) {
   return (
     <main className="kunai-home relative mx-auto min-h-[100dvh] w-[min(1400px,calc(100vw-32px))] overflow-x-hidden py-8 max-md:w-[min(760px,calc(100vw-20px))]">
@@ -89,7 +89,7 @@ export default function HomePageShell({
             </li>
           ))}
         </ul>
-        {telemetryLine}
+        {usageLine}
       </section>
 
       <section className="kunai-home-providers">

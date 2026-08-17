@@ -232,9 +232,9 @@ export const docNavEntries: readonly DocNavEntry[] = [
     surfaces: ["hub", "sidebar"],
   },
   {
-    title: "Opt-in telemetry",
+    title: "Usage analytics",
     href: "/telemetry",
-    description: "Public opt-in usage pulse, exact ping payload, and consent controls.",
+    description: "Public usage pulse, exact ping payload, and opt-in controls.",
     group: "reference",
     surfaces: ["hub", "sidebar"],
   },

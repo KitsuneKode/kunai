@@ -192,7 +192,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         {visible.map((row, index) => {
           const absolute = start + index;
           const selected = absolute === state.selectedIndex;
-          if (row.def.kind === "section" || row.def.kind === "status") {
+          // Status rows render their own detail, with the tone colour that
+          // carries the meaning. Only sections need one added here.
+          if (row.def.kind === "section") {
             return (
               <Box key={row.def.id} flexDirection="column">
                 {renderMainRow(row, false, rowWidth)}

@@ -31,6 +31,25 @@ test("toBrowseResultOption labels YouTube videos by content shape, not transport
   expect(option.previewNote).toBe("Press Enter to open this video and continue to playback.");
 });
 
+test("toBrowseResultOption labels AniList films as Anime even without isAnime", () => {
+  const result: SearchResult = {
+    id: "181053",
+    type: "movie",
+    title: "Demon Slayer: Kimetsu no Yaiba Infinity Castle",
+    year: "2025",
+    overview: "",
+    posterPath: null,
+    durationSeconds: 9300,
+    externalIds: { anilistId: "181053" },
+  };
+
+  const option = toBrowseResultOption(result);
+  expect(option.detail?.startsWith("Anime")).toBe(true);
+  expect(option.detail?.startsWith("Movie")).toBe(false);
+  expect(option.previewMeta).toContain("Anime");
+  expect(option.previewMeta?.some((item) => /episodes/i.test(item))).toBe(false);
+});
+
 test("toBrowseResultOption explains YouTube playlists as picker flows", () => {
   const result: SearchResult = {
     id: "youtube-playlist:PL123",

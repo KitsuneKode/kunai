@@ -1,7 +1,10 @@
 import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
 import { queuePlaybackIntentFromEntry } from "@/domain/queue/queue-playback-intent";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
-import { historyContentType } from "@/services/continuation/history-progress";
+import {
+  correctedHistoryMediaKind,
+  historyContentType,
+} from "@/services/continuation/history-progress";
 import type { HistoryProgress, QueueEntry } from "@kunai/storage";
 
 import type { MediaItemIdentity } from "./media-item-identity";
@@ -10,22 +13,32 @@ export function mediaItemFromHistoryEntry(
   titleId: string,
   entry: HistoryProgress,
 ): MediaItemIdentity {
+  const contentType = historyContentType(entry);
   return {
-    mediaKind: historyContentType(entry),
+    mediaKind: correctedHistoryMediaKind(entry),
+    contentType,
     titleId,
     title: entry.title,
-    season: entry.season ?? 1,
-    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+    ...(contentType === "series"
+      ? {
+          season: entry.season ?? 1,
+          episode: entry.episode ?? entry.absoluteEpisode ?? 1,
+        }
+      : {}),
     providerHints: [{ providerId: entry.providerId ?? "unknown" }],
   };
 }
 
 export function mediaItemFromSearchResult(result: SearchResult): MediaItemIdentity {
   return {
-    mediaKind: result.type,
+    mediaKind: result.isAnime ? "anime" : result.type,
+    contentType: result.type,
     sourceId: result.metadataSource,
     titleId: result.id,
     title: result.title,
+    // Carried, not dropped: this is the only place a search row's AniList/TMDB
+    // ids are known, and tracker sync cannot address the title without them.
+    ...(result.externalIds ? { externalIds: result.externalIds } : {}),
   };
 }
 
@@ -38,13 +51,16 @@ export function mediaItemFromSearchResult(result: SearchResult): MediaItemIdenti
 export function titleInfoFromMediaItemIdentity(item: MediaItemIdentity): TitleInfo {
   return {
     id: item.titleId,
-    type: item.mediaKind === "movie" || item.mediaKind === "video" ? "movie" : "series",
+    type:
+      item.contentType ??
+      (item.mediaKind === "movie" || item.mediaKind === "video" ? "movie" : "series"),
     name: item.title,
+    ...(item.mediaKind === "anime" ? { isAnime: true } : {}),
   };
 }
 
 export function episodeInfoFromMediaItemIdentity(item: MediaItemIdentity): EpisodeInfo | undefined {
-  if (item.mediaKind === "movie") return undefined;
+  if (item.mediaKind === "movie" || item.contentType === "movie") return undefined;
   if (
     item.season === undefined &&
     item.episode === undefined &&
@@ -69,14 +85,16 @@ export function titleInfoFromQueueEntry(
       : sourceOrIntent;
   return {
     id: entry.titleId,
-    type: entry.mediaKind === "movie" ? "movie" : "series",
+    type: entry.contentType ?? (entry.mediaKind === "movie" ? "movie" : "series"),
     name: entry.title,
+    ...(entry.mediaKind === "anime" ? { isAnime: true } : {}),
+    ...(entry.externalIds ? { externalIds: entry.externalIds } : {}),
     queuePlaybackIntent,
   };
 }
 
 export function episodeInfoFromQueueEntry(entry: QueueEntry): EpisodeInfo | undefined {
-  if (entry.mediaKind === "movie") return undefined;
+  if (entry.mediaKind === "movie" || entry.contentType === "movie") return undefined;
   if (
     entry.season === undefined &&
     entry.episode === undefined &&

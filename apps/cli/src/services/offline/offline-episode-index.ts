@@ -62,8 +62,22 @@ export function findNextReadyEpisode(
   if (!titleId) return null;
   const next = offlineAssetService
     .listNextReadyByTitleCursors([{ titleId, season: current.season, episode: current.episode }])
-    .find((asset) => asset.season != null && asset.episode != null);
-  if (!next || next.season == null || next.episode == null) return null;
+    .find(
+      (asset) =>
+        asset.season !== null &&
+        asset.season !== undefined &&
+        asset.episode !== null &&
+        asset.episode !== undefined,
+    );
+  if (
+    !next ||
+    next.season === null ||
+    next.season === undefined ||
+    next.episode === null ||
+    next.episode === undefined
+  ) {
+    return null;
+  }
   return { season: next.season, episode: next.episode };
 }
 

@@ -104,6 +104,53 @@ Before changing the default resolve hedge delay, aggregate actual
 current delay values are reasoned defaults; a single local run is not evidence
 for global calibration.
 
+## Tracker Sync Promotion Gate
+
+Tracker sync may ship as fail-closed experimental code, but must not be called
+release-ready or exposed as a stable feature until this disposable-account gate passes:
+
+```sh
+KUNAI_LIVE_SYNC=1 \
+KUNAI_LIVE_SYNC_ANILIST_MEDIA_ID=<disposable-media-id> \
+bun run test:live:tracker-sync
+```
+
+Expected evidence: OAuth returns the matching attempt state; the production
+container persists one desired-state mutation in `sync_outbox`; disposal and a
+fresh container preserve it; the restarted service drains it; remote read-back
+confirms the state; cleanup restores the disposable title and removes test
+activity. The isolated profile must be removed at exit. This check is never run
+with a maintainer's real library.
+
+## Analytics Deployment Gate
+
+Analytics may ship with an empty endpoint and explicit opt-in because that
+configuration sends nothing. Before deploying or configuring a public endpoint:
+
+Run the storage path against a real Postgres. The local harness needs only
+Docker — it starts a throwaway database plus the Neon HTTP proxy the driver
+requires, migrates, runs, and tears down:
+
+```sh
+bun run --cwd apps/analytics-ingest test:pg
+```
+
+Against an isolated Neon project instead, opt in explicitly. The suites write
+and prune, so they gate on `ANALYTICS_TEST_DATABASE_URL` rather than
+`DATABASE_URL`:
+
+```sh
+DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest migrate
+ANALYTICS_TEST_DATABASE_URL=<isolated-neon-url> bun run --cwd apps/analytics-ingest test
+```
+
+Expected evidence: all 12 Postgres integration cases run instead of skip;
+the production stable-hash secret is configured; Vercel/Neon secrets, firewall,
+retention, cron freshness, and cost limits are verified; a live opt-in ping is
+stored once, appears only as bounded aggregate data, and disabling analytics in
+Settings stops later sends. These checks block endpoint deployment, not a code
+release whose endpoint remains empty.
+
 ## Discord Presence Gate
 
 Run this only when Discord Rich Presence behavior changed:
@@ -140,6 +187,53 @@ For playback-sensitive changes, confirm the deterministic fake IPC harness remai
 - in-process reconnect after `file-loaded`
 
 The fake harness does not replace a manual mpv smoke. It proves app-side orchestration without requiring a real player.
+
+## Migration Upgrade Check
+
+Run before any release that adds a data migration. Fresh-install coverage does
+not prove an upgrade: the rows that break a migration are the ones an old
+version wrote, and no fixture reproduces those faithfully.
+
+Never point this at the live database — copy it first. The data directory is
+platform-resolved by `getKunaiPaths()` in `packages/storage/src/paths.ts`:
+Linux `~/.local/share/kunai`, macOS `~/Library/Application Support/kunai`,
+Windows `%LOCALAPPDATA%\kunai`.
+
+Copy the `-wal` and `-shm` siblings too, or the copy loses whatever the last
+session had not yet checkpointed.
+
+```sh
+SHADOW=/tmp/kunai-shadow && rm -rf "$SHADOW" && mkdir -p "$SHADOW"
+cp ~/.local/share/kunai/kunai-data.sqlite* "$SHADOW"/   # Linux
+```
+
+Record every table's row count, run the migrations against the copy, then
+compare. Pass criteria:
+
+- every pre-existing table holds the same number of rows afterwards
+- new tables appear empty rather than back-filled with guesses
+- the repositories read the migrated rows, and a column added to existing rows
+  comes back as `undefined` rather than throwing
+
+Verified for 031–034 on a 2.7 MB database at migration 029: 6 ms, no row
+changed, `content_type` reads as `undefined` on all 78 legacy queue rows.
+
+## Time-Rot Sweep
+
+```sh
+bun run --cwd apps/cli test:future
+```
+
+Runs the unit suite 180 days ahead. A test that owns both sides of its clock
+does not care what day it is; one that freezes an injected clock at a literal
+while its fixtures use the real clock fails immediately. This class has shipped
+three times — the prune-clock bomb, the stats-service window, and the sync
+retry wake — and each time it looked like an unrelated CI regression months
+later.
+
+Two known wall-clock-dependent tests currently fail under it and are not
+release blockers: the install-manifest `updatedAt` test and the `downloadToFile`
+total-deadline test. Investigate any _new_ name that appears.
 
 ## Manual Smoke
 

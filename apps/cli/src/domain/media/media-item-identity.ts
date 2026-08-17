@@ -1,4 +1,5 @@
-import type { MediaKind } from "@kunai/types";
+import type { ContentType } from "@/domain/types";
+import type { MediaKind, ProviderExternalIds } from "@kunai/types";
 
 export interface MediaProviderHint {
   readonly providerId: string;
@@ -8,6 +9,8 @@ export interface MediaProviderHint {
 
 export interface MediaItemIdentity {
   readonly mediaKind: MediaKind;
+  /** Structure is carried independently from the identity badge. */
+  readonly contentType?: ContentType;
   readonly sourceId?: string;
   readonly titleId: string;
   readonly title: string;
@@ -15,6 +18,16 @@ export interface MediaItemIdentity {
   readonly episode?: number;
   readonly absoluteEpisode?: number;
   readonly providerHints?: readonly MediaProviderHint[];
+  /**
+   * Cross-catalogue ids, when the producing surface knew them.
+   *
+   * Tracker sync addresses AniList by `anilistId` and TMDB by `tmdbId`; a
+   * `titleId` alone only resolves when it happens to carry the matching
+   * namespace. Dropping this field is why favouriting an anime row wrote the
+   * local list and queued nothing — every resolver returned null and the
+   * enqueue reported zero rows to a caller that ignored the count.
+   */
+  readonly externalIds?: ProviderExternalIds;
 }
 
 export function getMediaItemKey(item: MediaItemIdentity): string {

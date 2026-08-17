@@ -344,6 +344,8 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleAutoplay,
   onToggleAutoskip,
   onStopAfterCurrent,
+  onToggleFavorite,
+  isFavorite,
   onFallback,
 }: {
   state: LoadingShellState;
@@ -362,9 +364,16 @@ export const LoadingShell = React.memo(function LoadingShell({
   onToggleAutoplay?: () => void;
   onToggleAutoskip?: () => void;
   onStopAfterCurrent?: () => void;
+  /** Resolves to the message to flash, so add and remove read differently. */
+  onToggleFavorite?: () => Promise<string | void> | string | void;
+  /** Read at render, so the marker follows the list rather than a local copy. */
+  isFavorite?: () => boolean;
   onFallback?: () => void;
 }) {
   const [memoryPanelVisible, setMemoryPanelVisible] = React.useState(false);
+  // Forces a frame after a toggle: `isFavorite` reads through to the list, so
+  // the marker only moves once something asks for a new frame.
+  const [favoriteTick, setFavoriteTick] = React.useState(0);
   const memoryPanelPinned = Boolean(state.showMemory && memoryPanelVisible);
 
   usePlaybackPosterSurfaceCleanup(state.operation);
@@ -412,6 +421,19 @@ export const LoadingShell = React.memo(function LoadingShell({
   // healthy stream is playing (that path has its own buffer badge + controls).
   const recoveryView = !isPlaying ? buildPlaybackRecoveryViewModel(state) : null;
 
+  const handleToggleFavorite = React.useCallback(() => {
+    if (!onToggleFavorite) return;
+    void (async () => {
+      try {
+        await onToggleFavorite();
+      } finally {
+        // Bumped even when the toggle threw: the local list write happens first,
+        // so the marker may well have moved regardless.
+        setFavoriteTick((tick) => tick + 1);
+      }
+    })();
+  }, [onToggleFavorite]);
+
   const playbackInputHandlers = React.useMemo(
     () => ({
       onCancel,
@@ -428,6 +450,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       onToggleAutoplay,
       onToggleAutoskip,
       onStopAfterCurrent,
+      onToggleFavorite: onToggleFavorite ? handleToggleFavorite : undefined,
       onFallback,
       onCommandAction: state.onCommandAction,
     }),
@@ -446,6 +469,8 @@ export const LoadingShell = React.memo(function LoadingShell({
       onToggleAutoplay,
       onToggleAutoskip,
       onStopAfterCurrent,
+      onToggleFavorite,
+      handleToggleFavorite,
       onFallback,
       state.onCommandAction,
     ],
@@ -494,38 +519,47 @@ export const LoadingShell = React.memo(function LoadingShell({
   const infoWidth = showSidePanel
     ? Math.max(28, totalPlayingWidth - sidePanelWidth - 4)
     : Math.max(40, terminalColumns - 4);
-  const playingPanelModel = React.useMemo(
-    () =>
-      buildMediaPanel({
-        surface: "playing",
-        contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
-        title: state.title,
-        titleDetail: state.titleDetail,
-        videoMeta: state.videoMeta,
-        posterUrl: state.posterUrl,
-        currentSeason: state.currentSeason,
-        currentEpisode: state.currentEpisode,
-        nextEpisodeLabel: state.hasNextEpisode ? state.nextEpisodeLabel : undefined,
-        nextEpisodeThumbUrl: state.nextEpisodeThumbUrl,
-        queueNextLabel: state.queueNextLabel,
-        autoplayPaused: state.autoplayPaused,
-      }),
-    [
-      state.contentKind,
-      state.isSeriesPlayback,
-      state.title,
-      state.titleDetail,
-      state.videoMeta,
-      state.posterUrl,
-      state.currentSeason,
-      state.currentEpisode,
-      state.hasNextEpisode,
-      state.nextEpisodeLabel,
-      state.nextEpisodeThumbUrl,
-      state.queueNextLabel,
-      state.autoplayPaused,
-    ],
-  );
+  const playingPanelModel = React.useMemo(() => {
+    // Read so the dependency is honest: its only job is to rebuild this after a
+    // toggle, which is when `isFavorite` may return something new.
+    void favoriteTick;
+    return buildMediaPanel({
+      surface: "playing",
+      contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
+      titleType: state.titleType,
+      title: state.title,
+      titleDetail: state.titleDetail,
+      videoMeta: state.videoMeta,
+      posterUrl: state.posterUrl,
+      currentSeason: state.currentSeason,
+      currentEpisode: state.currentEpisode,
+      nextEpisodeLabel: state.hasNextEpisode ? state.nextEpisodeLabel : undefined,
+      nextEpisodeThumbUrl: state.nextEpisodeThumbUrl,
+      queueNextLabel: state.queueNextLabel,
+      autoplayPaused: state.autoplayPaused,
+      isFavorite: isFavorite?.() ?? false,
+    });
+  }, [
+    state.contentKind,
+    state.titleType,
+    state.isSeriesPlayback,
+    state.title,
+    state.titleDetail,
+    state.videoMeta,
+    state.posterUrl,
+    state.currentSeason,
+    state.currentEpisode,
+    state.hasNextEpisode,
+    state.nextEpisodeLabel,
+    state.nextEpisodeThumbUrl,
+    state.queueNextLabel,
+    state.autoplayPaused,
+    // Both matter: `isFavorite` is a live read, and the tick is what says a
+    // toggle happened. Omitting the tick is how a marker stays stale until an
+    // unrelated state change happens to rebuild the panel.
+    isFavorite,
+    favoriteTick,
+  ]);
 
   const activeStage = state.stage ?? (isPlaying ? "starting-playback" : "finding-stream");
   const stageRailItems = renderStageRail(activeStage, loadingIssue);
@@ -874,6 +908,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 <PlaybackKeysCard
                   model={buildPlaybackKeysPanel({
                     contentKind: state.contentKind ?? (state.isSeriesPlayback ? "series" : "movie"),
+                    titleType: state.titleType,
                     sessionsSeen: state.playbackKeysSessionsSeen ?? 0,
                   })}
                   width={infoWidth}

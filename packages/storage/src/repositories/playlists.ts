@@ -1,3 +1,5 @@
+import type { ProviderExternalIds } from "@kunai/types";
+
 import type { KunaiDatabase } from "../sqlite";
 
 export interface UserPlaylistRecord {
@@ -13,6 +15,8 @@ export interface UserPlaylistItemRecord {
   readonly playlistId: string;
   readonly titleId: string;
   readonly mediaKind: string;
+  readonly contentType?: "movie" | "series";
+  readonly externalIds?: ProviderExternalIds;
   readonly title: string;
   readonly season?: number;
   readonly episode?: number;
@@ -36,6 +40,8 @@ interface UserPlaylistItemRow {
   readonly playlist_id: string;
   readonly title_id: string;
   readonly media_kind: string;
+  readonly content_type: string | null;
+  readonly external_ids_json: string | null;
   readonly title: string;
   readonly season: number | null;
   readonly episode: number | null;
@@ -62,6 +68,9 @@ function mapPlaylistItemRow(row: UserPlaylistItemRow): UserPlaylistItemRecord {
     playlistId: row.playlist_id,
     titleId: row.title_id,
     mediaKind: row.media_kind,
+    contentType:
+      row.content_type === "movie" || row.content_type === "series" ? row.content_type : undefined,
+    externalIds: parseExternalIds(row.external_ids_json),
     title: row.title,
     season: row.season ?? undefined,
     episode: row.episode ?? undefined,
@@ -106,15 +115,17 @@ export class PlaylistsRepository {
     this.db
       .query(
         `INSERT INTO user_playlist_items
-           (id, playlist_id, title_id, media_kind, title, season, episode, absolute_episode,
+           (id, playlist_id, title_id, media_kind, content_type, external_ids_json, title, season, episode, absolute_episode,
             sort_order, provider_hints_json, notes, added_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
         input.playlistId,
         input.titleId,
         input.mediaKind,
+        input.contentType ?? null,
+        serializeExternalIds(input.externalIds),
         input.title,
         input.season ?? null,
         input.episode ?? null,
@@ -167,5 +178,18 @@ export class PlaylistsRepository {
 
   removeItem(itemId: string): void {
     this.db.query(`DELETE FROM user_playlist_items WHERE id = ?`).run(itemId);
+  }
+}
+
+function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
+  return externalIds && Object.keys(externalIds).length > 0 ? JSON.stringify(externalIds) : null;
+}
+
+function parseExternalIds(value: string | null): ProviderExternalIds | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as ProviderExternalIds;
+  } catch {
+    return undefined;
   }
 }

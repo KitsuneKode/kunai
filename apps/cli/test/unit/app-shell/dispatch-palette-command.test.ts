@@ -156,6 +156,7 @@ describe("dispatchPaletteCommand", () => {
         id: "anilist:99",
         type: "series",
         name: "Claimed Anime",
+        isAnime: true,
         queuePlaybackIntent: claimed.intent,
       },
       episode: {
