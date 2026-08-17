@@ -1,0 +1,23 @@
+# GitGuardian scan policy.
+#
+# One deliberate exception, kept narrow and explained rather than dismissed
+# silently in the dashboard, so the next person sees the reasoning next to the
+# code rather than having to reconstruct it.
+version: 2
+
+secret:
+  ignored-paths:
+    # The throwaway Postgres for `bun run --cwd apps/analytics-ingest test:pg`.
+    # `kunai:kunai` guards a container that binds loopback only, stores its
+    # data in tmpfs, and is destroyed when the run ends — it protects nothing
+    # and is never deployed.
+    #
+    # Two alternatives were tried and are worse. A per-run generated password
+    # races Postgres, which reads POSTGRES_PASSWORD only when initialising, so
+    # a reused container rejects the new value. `trust` auth makes the Neon
+    # HTTP proxy answer 502.
+    #
+    # Scoped to these two files: any other path in the repo is still scanned,
+    # including the rest of apps/analytics-ingest.
+    - apps/analytics-ingest/docker-compose.yml
+    - apps/analytics-ingest/scripts/test-postgres.ts

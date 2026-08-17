@@ -91,10 +91,13 @@ schema, runs `postgres-store` and `postgres-ingest-lifecycle` against it, and
 tears it down. `test:pg -- --keep` leaves the containers up for iteration;
 `db:down` cleans up afterwards.
 
-The container password is generated per run into `.env`, which Compose loads
-and git ignores. The container is loopback-only, tmpfs-backed and destroyed at
-the end, so the value protects nothing — but a committed credential-shaped
-literal trains scanners and reviewers to skim past the real thing.
+The container credentials are `kunai:kunai`. That protects nothing — loopback
+only, tmpfs-backed, destroyed when the run ends — and secret scanners flag it,
+so the exception is recorded in `.gitguardian.yaml` rather than dismissed
+silently. Generating a password per run instead looks tidier and is not:
+Postgres reads `POSTGRES_PASSWORD` only when it initialises, so a container
+Compose considers up to date rejects the new value on the second run. `trust`
+auth makes the Neon proxy answer 502.
 
 The store speaks Neon's **HTTP** protocol rather than the Postgres wire
 protocol, so the compose file pairs `postgres` with a local proxy that
