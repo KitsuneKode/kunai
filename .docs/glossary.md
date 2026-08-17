@@ -83,8 +83,8 @@ Two different things are called telemetry. Do not conflate them.
   `apps/cli/src/services/diagnostics/ResolveTraceSink.ts`, wired in production in
   `apps/cli/src/container/bootstrap-persistence.ts`.
 - **Analytics** — opt-in product telemetry that does leave the machine
-  (`apps/telemetry-ingest`). Payload-bounded by
-  `.docs/telemetry-privacy-contract.md`, and deliberately cannot carry a title
+  (`apps/analytics-ingest`). Payload-bounded by
+  `.docs/analytics-privacy-contract.md`, and deliberately cannot carry a title
   id — so it can never diagnose a resolve.
 
 A resolve question is answered by traces, never by analytics.

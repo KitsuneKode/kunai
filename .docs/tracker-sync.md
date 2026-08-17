@@ -1,8 +1,11 @@
 ---
 status: current
+lastReviewed: "2026-08-17"
 ---
 
 # Tracker Sync
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 How Kunai delivers watch state to AniList and TMDB, and what it deliberately
 does not claim to do.

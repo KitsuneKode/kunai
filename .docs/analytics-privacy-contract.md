@@ -1,4 +1,11 @@
+---
+status: current
+lastReviewed: "2026-08-17"
+---
+
 # Analytics Privacy Contract
+
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
 Read this before touching `apps/cli/src/services/analytics/`,
 `apps/cli/src/domain/analytics/`, or `apps/analytics-ingest/`.
