@@ -88,7 +88,13 @@ skip, and a skip reads as a pass — which is why `test:pg` exists.
 
 `test:pg` brings up the throwaway Postgres in `docker-compose.yml`, applies the
 schema, runs `postgres-store` and `postgres-ingest-lifecycle` against it, and
-tears it down. `--keep` leaves the containers up for iteration.
+tears it down. `test:pg -- --keep` leaves the containers up for iteration;
+`db:down` cleans up afterwards.
+
+The container password is generated per run into `.env`, which Compose loads
+and git ignores. The container is loopback-only, tmpfs-backed and destroyed at
+the end, so the value protects nothing — but a committed credential-shaped
+literal trains scanners and reviewers to skim past the real thing.
 
 The store speaks Neon's **HTTP** protocol rather than the Postgres wire
 protocol, so the compose file pairs `postgres` with a local proxy that
